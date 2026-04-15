@@ -102,12 +102,21 @@ export async function analyzePersonalkollenAPI(integration: any): Promise<any> {
           field_analysis: fieldAnalysis
         })
 
+        // Transform mappings to match Personalkollen interface
+        const transformedMappings = (claudeAnalysis.suggested_mappings || []).map(mapping => ({
+          personalkollen_field: mapping.fortnox_field,
+          commandcenter_table: mapping.commandcenter_table,
+          commandcenter_field: mapping.commandcenter_field,
+          confidence: mapping.confidence || 0,
+          reasoning: mapping.reasoning || ''
+        }))
+
         const discovery: PersonalkollenDiscovery = {
           endpoint: endpoint.path,
           description: endpoint.description,
           sample_data: sampleItem,
           field_analysis: fieldAnalysis,
-          potential_mappings: claudeAnalysis.suggested_mappings || []
+          potential_mappings: transformedMappings
         }
 
         discoveries.push(discovery)
