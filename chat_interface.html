@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Björken — AI Assistant</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   DESIGN DIRECTION: Refined editorial warmth.
+   Like a premium restaurant POS meets a Scandinavian design journal.
+   Warm off-white surfaces, ink-dark text, single amber accent.
+   Everything feels considered, nothing is decorative for its own sake.
+   ═══════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --cream:    #faf8f4;
+  --cream-2:  #f4f1ec;
+  --cream-3:  #ede9e2;
+  --stone:    #ddd9d2;
+  --stone-2:  #c8c3bb;
+  --ash:      #9b9690;
+  --charcoal: #3d3b38;
+  --ink:      #1a1917;
+  --amber:    #c8912a;
+  --amber-lt: #fdf3e3;
+  --amber-md: rgba(200,145,42,0.15);
+  --blue:     #2060a8;
+  --blue-lt:  #edf3fb;
+  --green:    #2d6e3e;
+  --green-lt: #eaf4ed;
+  --red:      #9b2c2c;
+  --red-lt:   #fdf0f0;
+  --r:  8px;
+  --rl: 16px;
+  --font:    'Instrument Sans', system-ui, sans-serif;
+  --serif:   'Instrument Serif', Georgia, serif;
+  --mono:    'JetBrains Mono', monospace;
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  background: var(--cream-2);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── SCROLLBAR ────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--stone); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--stone-2); }
+
+/* ══════════════════════════════════════════════
+   LAYOUT
+   3-column: sidebar | chat | context panel
+   ══════════════════════════════════════════════ */
+.shell {
+  display: grid;
+  grid-template-columns: 248px 1fr 280px;
+  grid-template-rows: 100vh;
+  overflow: hidden;
+}
+
+/* ══════════════════════════════════════════════
+   LEFT SIDEBAR — conversation history
+   ══════════════════════════════════════════════ */
+.sidebar {
+  background: var(--ink);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--cream-2);
+}
+
+.sidebar-top {
+  padding: 20px 16px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+
+.logo {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+}
+.logo-mark {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--amber); display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0;
+}
+.logo-mark svg { width: 16px; height: 16px; fill: var(--ink); }
+.logo-name { font-family: var(--serif); font-size: 17px; color: var(--cream); }
+.logo-sub  { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 0.08em; text-transform: uppercase; }
+
+.new-chat-btn {
+  width: 100%; padding: 8px 12px; border-radius: var(--r);
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
+  color: var(--cream-2); font-family: var(--font); font-size: 12px; font-weight: 500;
+  cursor: pointer; display: flex; align-items: center; gap: 8px;
+  transition: all 0.15s;
+}
+.new-chat-btn:hover { background: rgba(255,255,255,0.13); }
+.new-chat-btn svg { width: 13px; height: 13px; opacity: 0.7; }
+
+.search-box {
+  display: flex; align-items: center; gap: 6px;
+  margin: 10px 16px 0; padding: 6px 10px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--r);
+}
+.search-box svg { width: 13px; height: 13px; opacity: 0.4; flex-shrink: 0; fill: var(--cream-2); }
+.search-box input {
+  background: none; border: none; outline: none;
+  color: var(--cream-2); font-size: 12px; font-family: var(--font); flex: 1;
+  placeholder-color: rgba(255,255,255,0.3);
+}
+.search-box input::placeholder { color: rgba(255,255,255,0.3); }
+
+.conv-list { flex: 1; overflow-y: auto; padding: 8px 0; }
+
+.conv-section-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(255,255,255,0.3); padding: 10px 16px 4px;
+}
+
+.conv-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 16px; cursor: pointer; transition: background 0.1s;
+  border-radius: 0; position: relative;
+}
+.conv-item:hover { background: rgba(255,255,255,0.06); }
+.conv-item.active { background: rgba(200,145,42,0.15); }
+.conv-item.active::before {
+  content: ''; position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 3px; background: var(--amber); border-radius: 0 2px 2px 0;
+}
+.conv-icon {
+  width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
+  background: rgba(255,255,255,0.08); display: flex; align-items: center;
+  justify-content: center; font-size: 12px; margin-top: 1px;
+}
+.conv-icon.active { background: var(--amber-md); }
+.conv-text { flex: 1; min-width: 0; }
+.conv-title { font-size: 12px; font-weight: 500; color: var(--cream-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-preview { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conv-time { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 2px; font-family: var(--mono); }
+
+.sidebar-footer {
+  padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.07); flex-shrink: 0;
+}
+.api-key-row {
+  display: flex; gap: 6px; align-items: center;
+}
+.api-key-row input {
+  flex: 1; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--r); padding: 6px 8px; color: var(--cream-2);
+  font-size: 11px; font-family: var(--mono); outline: none;
+}
+.api-key-row input::placeholder { color: rgba(255,255,255,0.3); }
+.api-key-row input:focus { border-color: var(--amber); }
+.api-save-btn {
+  background: var(--amber); color: var(--ink); border: none;
+  font-family: var(--font); font-size: 11px; font-weight: 600;
+  padding: 6px 10px; border-radius: var(--r); cursor: pointer; white-space: nowrap;
+}
+.api-status {
+  font-size: 10px; margin-top: 6px; display: flex; align-items: center; gap: 5px;
+  color: rgba(255,255,255,0.4);
+}
+.api-status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--stone-2); }
+.api-status-dot.live { background: #52c374; animation: pulse 2.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+/* ══════════════════════════════════════════════
+   MIDDLE — MAIN CHAT
+   ══════════════════════════════════════════════ */
+.chat-col {
+  display: flex; flex-direction: column; background: var(--cream);
+  overflow: hidden; border-left: 1px solid var(--stone); border-right: 1px solid var(--stone);
+}
+
+/* Chat header */
+.chat-header {
+  padding: 0 20px; height: 52px; border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; background: var(--cream);
+}
+.chat-header-left { display: flex; align-items: center; gap: 10px; }
+.chat-title { font-size: 14px; font-weight: 600; }
+.chat-subtitle { font-size: 11px; color: var(--ash); }
+.chat-header-right { display: flex; align-items: center; gap: 6px; }
+
+/* Messages */
+.messages {
+  flex: 1; overflow-y: auto; padding: 20px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* Welcome state */
+.welcome {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; height: 100%; text-align: center; gap: 16px;
+  padding: 40px;
+}
+.welcome-icon {
+  width: 56px; height: 56px; background: var(--amber-lt); border-radius: 16px;
+  display: flex; align-items: center; justify-content: center; font-size: 26px;
+}
+.welcome h2 { font-family: var(--serif); font-size: 24px; font-weight: 400; color: var(--ink); }
+.welcome p  { font-size: 14px; color: var(--ash); max-width: 380px; line-height: 1.7; }
+
+.starter-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; max-width: 480px; margin-top: 8px;
+}
+.starter-card {
+  padding: 12px 14px; background: white; border: 1px solid var(--stone);
+  border-radius: var(--rl); cursor: pointer; text-align: left;
+  transition: all 0.15s; font-family: var(--font);
+}
+.starter-card:hover { border-color: var(--amber); background: var(--amber-lt); }
+.starter-card .sc-icon { font-size: 18px; margin-bottom: 6px; display: block; }
+.starter-card .sc-text { font-size: 12px; font-weight: 500; color: var(--ink); line-height: 1.4; }
+.starter-card .sc-sub  { font-size: 11px; color: var(--ash); margin-top: 3px; }
+
+/* Message rows */
+.msg-row { display: flex; gap: 10px; align-items: flex-start; }
+.msg-row.user { flex-direction: row-reverse; }
+
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; margin-top: 2px;
+}
+.av-ai {
+  background: var(--ink); color: var(--cream);
+  font-family: var(--serif); font-size: 13px; font-style: italic;
+}
+.av-user { background: var(--amber-lt); color: var(--amber); border: 1.5px solid var(--amber); }
+
+.msg-body { max-width: 76%; display: flex; flex-direction: column; gap: 5px; }
+.msg-row.user .msg-body { align-items: flex-end; }
+
+/* Bubbles */
+.bubble {
+  padding: 11px 15px; line-height: 1.65; font-size: 13.5px;
+  border-radius: 18px; position: relative; word-break: break-word;
+}
+.bubble-ai {
+  background: white; border: 1px solid var(--stone);
+  border-radius: 4px 18px 18px 18px; color: var(--ink);
+}
+.bubble-user {
+  background: var(--ink); color: var(--cream);
+  border-radius: 18px 4px 18px 18px;
+}
+.bubble-error {
+  background: var(--red-lt); border: 1px solid rgba(155,44,44,0.2);
+  border-radius: 4px 18px 18px 18px; color: var(--red);
+}
+
+/* Rich text inside bubbles */
+.bubble strong { font-weight: 600; }
+.bubble em { font-style: italic; }
+.bubble code {
+  font-family: var(--mono); font-size: 12px; background: var(--cream-2);
+  padding: 1px 5px; border-radius: 4px; border: 1px solid var(--stone);
+}
+.bubble ul, .bubble ol { padding-left: 18px; margin: 6px 0; }
+.bubble li { margin: 3px 0; line-height: 1.6; }
+.bubble h3 { font-size: 14px; font-weight: 600; margin: 8px 0 4px; }
+.bubble p  { margin: 4px 0; }
+.bubble p:first-child { margin-top: 0; }
+.bubble p:last-child  { margin-bottom: 0; }
+
+/* Data table inside bubble */
+.bubble table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
+.bubble th { background: var(--cream-2); text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--stone); font-weight: 600; }
+.bubble td { padding: 5px 8px; border-bottom: 1px solid var(--cream-3); }
+
+/* Citations */
+.citation-row {
+  display: flex; flex-wrap: wrap; gap: 5px; padding: 0 4px;
+}
+.cite-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 20px;
+  background: var(--cream-2); border: 1px solid var(--stone); color: var(--charcoal);
+  cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.cite-tag:hover { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+.cite-tag .ct-icon { font-size: 10px; }
+.cite-tag .ct-num  { font-family: var(--mono); font-size: 10px; font-weight: 600; background: var(--stone); border-radius: 3px; padding: 0 3px; }
+
+/* Query type pill */
+.qtype-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 20px;
+  letter-spacing: 0.04em; align-self: flex-end;
+}
+.qp-doc      { background: var(--blue-lt);  color: var(--blue); }
+.qp-analysis { background: var(--green-lt); color: var(--green); }
+.qp-planning { background: var(--amber-lt); color: var(--amber); }
+.qp-generate { background: var(--cream-3);  color: var(--charcoal); }
+
+/* Message timestamp */
+.msg-time { font-size: 10px; color: var(--stone-2); font-family: var(--mono); padding: 0 4px; }
+
+/* Typing indicator */
+.typing-bubble {
+  display: flex; gap: 5px; padding: 14px 16px;
+  background: white; border: 1px solid var(--stone); border-radius: 4px 18px 18px 18px;
+  width: fit-content;
+}
+.typing-bubble span {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--stone-2);
+  animation: typingDot 1.3s infinite ease-in-out;
+}
+.typing-bubble span:nth-child(2) { animation-delay: 0.18s; }
+.typing-bubble span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes typingDot { 0%,60%,100%{transform:translateY(0);opacity:0.4} 30%{transform:translateY(-5px);opacity:1} }
+
+/* Attachment preview */
+.attachment-preview {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--cream-2); border: 1px solid var(--stone); border-radius: var(--r);
+  padding: 8px 11px; font-size: 12px; max-width: 240px;
+}
+.att-icon { font-size: 18px; flex-shrink: 0; }
+.att-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-size { color: var(--ash); font-size: 10px; margin-top: 1px; }
+.att-remove { background: none; border: none; cursor: pointer; color: var(--ash); font-size: 16px; margin-left: auto; flex-shrink: 0; }
+.att-remove:hover { color: var(--red); }
+
+/* Input area */
+.input-section {
+  flex-shrink: 0; background: var(--cream); border-top: 1px solid var(--stone); padding: 12px 20px 16px;
+}
+
+/* Suggestions bar */
+.sugs {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none;
+}
+.sugs::-webkit-scrollbar { display: none; }
+.sug-btn {
+  font-family: var(--font); font-size: 11.5px; font-weight: 500;
+  padding: 5px 11px; border-radius: 20px; border: 1px solid var(--stone);
+  background: white; color: var(--charcoal); cursor: pointer; white-space: nowrap;
+  transition: all 0.12s; flex-shrink: 0;
+}
+.sug-btn:hover { border-color: var(--amber); background: var(--amber-lt); color: var(--amber); }
+
+/* Attachments staging area */
+.attachment-staging {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
+}
+
+/* Input row */
+.input-row {
+  display: flex; gap: 8px; align-items: flex-end;
+  background: white; border: 1.5px solid var(--stone);
+  border-radius: 14px; padding: 6px 6px 6px 14px;
+  transition: border-color 0.15s;
+}
+.input-row:focus-within { border-color: var(--amber); }
+
+.input-row textarea {
+  flex: 1; border: none; outline: none; resize: none; background: none;
+  font-family: var(--font); font-size: 13.5px; color: var(--ink);
+  min-height: 24px; max-height: 160px; line-height: 1.5; padding: 4px 0;
+}
+.input-row textarea::placeholder { color: var(--stone-2); }
+
+.attach-btn {
+  width: 34px; height: 34px; border-radius: 9px; border: none;
+  background: none; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; color: var(--ash); transition: all 0.12s;
+  flex-shrink: 0;
+}
+.attach-btn:hover { background: var(--cream-2); color: var(--charcoal); }
+.attach-btn input { display: none; }
+
+.send-btn {
+  width: 34px; height: 34px; border-radius: 10px; border: none;
+  background: var(--amber); cursor: pointer; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; transition: all 0.15s;
+}
+.send-btn:hover { background: #b07e22; }
+.send-btn:disabled { background: var(--stone); cursor: not-allowed; }
+.send-btn svg { width: 14px; height: 14px; fill: white; }
+
+.input-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 7px; padding: 0 2px;
+}
+.input-hint { font-size: 10px; color: var(--stone-2); }
+.char-count { font-size: 10px; color: var(--stone-2); font-family: var(--mono); }
+
+/* ══════════════════════════════════════════════
+   RIGHT PANEL — CONTEXT & LIVE DATA
+   ══════════════════════════════════════════════ */
+.context-panel {
+  background: var(--cream-2); display: flex; flex-direction: column; overflow: hidden;
+}
+
+.cp-header {
+  padding: 0 16px; height: 52px; border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.cp-header h2 {
+  font-size: 11px; font-weight: 600; color: var(--ash);
+  text-transform: uppercase; letter-spacing: 0.09em;
+}
+
+.cp-scroll { flex: 1; overflow-y: auto; }
+
+/* Context sections */
+.cp-section { border-bottom: 1px solid var(--stone); padding: 14px 16px; }
+.cp-section-title {
+  font-size: 11px; font-weight: 600; color: var(--ash);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;
+}
+
+/* Live data sources */
+.source-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+  background: white; border: 1px solid var(--stone); border-radius: var(--r);
+  margin-bottom: 6px; transition: border-color 0.15s;
+}
+.source-row:hover { border-color: var(--stone-2); }
+.source-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.sd-live     { background: #52c374; box-shadow: 0 0 0 3px rgba(82,195,116,0.2); }
+.sd-manual   { background: var(--amber); }
+.sd-offline  { background: var(--stone-2); }
+.source-info { flex: 1; min-width: 0; }
+.source-name { font-size: 12px; font-weight: 500; }
+.source-sub  { font-size: 10px; color: var(--ash); margin-top: 1px; }
+.source-badge {
+  font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 10px;
+  text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
+}
+.sb-live    { background: var(--green-lt); color: var(--green); }
+.sb-manual  { background: var(--amber-lt); color: var(--amber); }
+.sb-offline { background: var(--cream-3);  color: var(--ash); }
+
+/* Document refs */
+.doc-ref {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+  background: white; border: 1px solid var(--stone); border-radius: var(--r);
+  margin-bottom: 5px; cursor: pointer; transition: all 0.12s;
+}
+.doc-ref:hover { border-color: var(--amber); background: var(--amber-lt); }
+.doc-ref-icon {
+  width: 28px; height: 32px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; flex-shrink: 0;
+}
+.dri-pdf  { background: var(--red-lt);   color: var(--red); }
+.dri-xlsx { background: var(--green-lt); color: var(--green); }
+.dri-csv  { background: var(--blue-lt);  color: var(--blue); }
+.dri-txt  { background: var(--cream-3);  color: var(--ash); }
+.doc-ref-info { flex: 1; min-width: 0; }
+.doc-ref-name { font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-ref-meta { font-size: 10px; color: var(--ash); margin-top: 1px; }
+.doc-ref-del  { background: none; border: none; color: var(--stone-2); cursor: pointer; font-size: 15px; padding: 2px; }
+.doc-ref-del:hover { color: var(--red); }
+
+/* Add context button */
+.add-ctx-btn {
+  width: 100%; padding: 7px; border-radius: var(--r);
+  background: none; border: 1.5px dashed var(--stone); color: var(--ash);
+  font-family: var(--font); font-size: 12px; cursor: pointer; transition: all 0.12s;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.add-ctx-btn:hover { border-color: var(--amber); color: var(--amber); background: var(--amber-lt); }
+
+/* Financial snapshot */
+.fin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.fin-tile {
+  background: white; border: 1px solid var(--stone); border-radius: var(--r);
+  padding: 9px 10px; cursor: default;
+}
+.fin-tile-val { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; margin-bottom: 3px; }
+.fin-tile-lbl { font-size: 10px; color: var(--ash); }
+.fin-tile-trend { font-size: 10px; margin-top: 4px; font-family: var(--mono); }
+.t-up   { color: var(--green); }
+.t-dn   { color: var(--red); }
+.t-flat { color: var(--ash); }
+
+/* Active context note */
+.active-ctx {
+  background: var(--amber-lt); border: 1px solid rgba(200,145,42,0.25);
+  border-radius: var(--r); padding: 8px 10px; font-size: 11px;
+  color: var(--charcoal); line-height: 1.5;
+}
+.active-ctx strong { color: var(--amber); }
+
+/* Search results */
+.search-result {
+  padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--stone);
+  transition: background 0.1s;
+}
+.search-result:hover { background: var(--cream); }
+.sr-title { font-size: 12px; font-weight: 500; margin-bottom: 2px; }
+.sr-excerpt { font-size: 11px; color: var(--ash); line-height: 1.5; }
+
+/* ══════════════════════════════════════════════
+   SHARED UTILITIES
+   ══════════════════════════════════════════════ */
+.btn {
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  padding: 6px 12px; border-radius: var(--r); border: 1px solid var(--stone);
+  background: none; cursor: pointer; color: var(--charcoal); transition: all 0.12s;
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+}
+.btn:hover { background: var(--cream-2); }
+.btn-sm { font-size: 11px; padding: 4px 9px; }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; padding: 2px 7px;
+  border-radius: 20px; white-space: nowrap;
+}
+.b-green  { background: var(--green-lt); color: var(--green); }
+.b-amber  { background: var(--amber-lt); color: var(--amber); }
+.b-blue   { background: var(--blue-lt);  color: var(--blue); }
+.b-red    { background: var(--red-lt);   color: var(--red); }
+.b-gray   { background: var(--cream-3);  color: var(--ash); }
+
+/* Animations */
+@keyframes msgIn  { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.msg-in  { animation: msgIn  0.2s ease forwards; }
+.fade-in { animation: fadeIn 0.25s ease forwards; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ══════════════════════════════════════════════════════
+     LEFT SIDEBAR
+     ══════════════════════════════════════════════════════ -->
+<div class="sidebar">
+  <div class="sidebar-top">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <div>
+        <div class="logo-name">Björken</div>
+        <div class="logo-sub">AI Assistant</div>
+      </div>
+    </div>
+    <button class="new-chat-btn" onclick="newConversation()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      New conversation
+    </button>
+  </div>
+
+  <div class="search-box">
+    <svg viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+    <input type="text" placeholder="Search conversations…" id="conv-search" oninput="searchConversations(this.value)">
+  </div>
+
+  <div class="conv-list" id="conv-list"></div>
+
+  <div class="sidebar-footer">
+    <div class="api-key-row">
+      <input type="password" id="api-key" placeholder="Anthropic API key…">
+      <button class="api-save-btn" onclick="saveApiKey()">Save</button>
+    </div>
+    <div class="api-status">
+      <div class="api-status-dot" id="api-dot"></div>
+      <span id="api-status-text">No API key — demo mode</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MAIN CHAT COLUMN
+     ══════════════════════════════════════════════════════ -->
+<div class="chat-col">
+  <div class="chat-header">
+    <div class="chat-header-left">
+      <div>
+        <div class="chat-title" id="chat-title">New conversation</div>
+        <div class="chat-subtitle" id="chat-subtitle">Ask anything about Restaurang Björken</div>
+      </div>
+    </div>
+    <div class="chat-header-right">
+      <button class="btn btn-sm" onclick="exportConversation()">Export</button>
+      <button class="btn btn-sm" onclick="clearMessages()">Clear</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="messages" id="messages">
+    <!-- Welcome screen shown when no messages -->
+    <div class="welcome" id="welcome-screen">
+      <div class="welcome-icon">🍽️</div>
+      <h2>Good morning, Björken.</h2>
+      <p>Ask me anything about your business — invoices, costs, profit trends, supplier analysis. I have access to your documents and live financial data.</p>
+      <div class="starter-grid" id="starter-grid"></div>
+    </div>
+  </div>
+
+  <!-- Input section -->
+  <div class="input-section">
+    <!-- Dynamic suggestions -->
+    <div class="sugs" id="sugs"></div>
+    <!-- Attachment staging -->
+    <div class="attachment-staging" id="att-staging"></div>
+    <!-- Input row -->
+    <div class="input-row">
+      <textarea id="msg-input" placeholder="Ask about your finances, documents, or request a report…"
+        rows="1" onkeydown="handleKey(event)" oninput="handleInput(this)"></textarea>
+      <label class="attach-btn" title="Attach file">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+        </svg>
+        <input type="file" id="file-attach" multiple accept=".pdf,.xlsx,.xls,.csv,.txt,.docx" onchange="handleAttachment(this)">
+      </label>
+      <button class="send-btn" id="send-btn" onclick="sendMessage()" disabled>
+        <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>
+      </button>
+    </div>
+    <div class="input-footer">
+      <span class="input-hint">Enter to send · Shift+Enter for new line · / for commands</span>
+      <span class="char-count" id="char-count"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     RIGHT CONTEXT PANEL
+     ══════════════════════════════════════════════════════ -->
+<div class="context-panel">
+  <div class="cp-header">
+    <h2>Context</h2>
+    <button class="btn btn-sm" onclick="refreshContext()">↻ Refresh</button>
+  </div>
+  <div class="cp-scroll">
+
+    <!-- Live data sources -->
+    <div class="cp-section">
+      <div class="cp-section-title">Live Data Sources</div>
+      <div id="sources-list"></div>
+    </div>
+
+    <!-- Financial snapshot -->
+    <div class="cp-section">
+      <div class="cp-section-title">
+        Financial Snapshot
+        <span class="badge b-gray" id="snapshot-period">March 2026</span>
+      </div>
+      <div class="fin-grid" id="fin-grid"></div>
+    </div>
+
+    <!-- Documents in context -->
+    <div class="cp-section">
+      <div class="cp-section-title">
+        Documents Referenced
+        <span class="badge b-blue" id="doc-count-badge">0</span>
+      </div>
+      <div id="docs-list"></div>
+      <label class="add-ctx-btn" style="margin-top:6px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add document to context
+        <input type="file" style="display:none" multiple accept=".pdf,.xlsx,.csv,.txt" onchange="addDocumentContext(this)">
+      </label>
+    </div>
+
+    <!-- Active context note -->
+    <div class="cp-section">
+      <div class="cp-section-title">AI Context Summary</div>
+      <div class="active-ctx" id="ctx-summary">
+        Load documents and ask a question to see what context the AI is using.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div><!-- /shell -->
+
+<script>
+  // ── AUTO-LOAD API KEY FROM COMMAND CENTER ──────────────────
+  (function() {
+    const key = localStorage.getItem('bj_api_key');
+    if (!key) return;
+    // Apply to all known key storage locations
+    localStorage.setItem('rag_api_key', key);
+    localStorage.setItem('bj_api_key', key);
+    // Set on window so any inline references pick it up
+    window._CC_API_KEY = key;
+  })();
+  // ────────────────────────────────────────────────────────────
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  CHAT INTERFACE — Complete Implementation                        ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+// ── STATE ─────────────────────────────────────────────────────────
+const STATE = {
+  apiKey:        localStorage.getItem('bj_api_key') || '',
+  conversations: JSON.parse(localStorage.getItem('bj_convs') || '[]'),
+  activeConvId:  null,
+  messages:      [],          // messages in current conversation
+  documents:     [],          // documents in context
+  attachments:   [],          // staged attachments for next message
+  isThinking:    false,
+  searchQuery:   '',
+};
+
+// Restore API key display
+if (STATE.apiKey) {
+  document.getElementById('api-key').value = '••••••••••••';
+  setApiStatus(true);
+}
+
+// ── LIVE DATA SOURCES ─────────────────────────────────────────────
+const SOURCES = [
+  { name:'Fortnox',        sub:'Invoices & accounts',   status:'manual',  badge:'Manual' },
+  { name:'Ancon POS',      sub:'Daily sales via Fortnox',status:'manual', badge:'Via Fortnox' },
+  { name:'Handelsbanken',  sub:'CSV imported 2026-03-16',status:'manual', badge:'Imported' },
+  { name:'Document Library',sub:'6 docs indexed',       status:'live',    badge:'Ready' },
+];
+
+// ── FINANCIAL SNAPSHOT ────────────────────────────────────────────
+const FINANCIALS = {
+  revenue:  { val:'505 900 kr', label:'Revenue (Mar)', trend:'+9.6%', dir:'up' },
+  costs:    { val:'467 200 kr', label:'Total Costs',   trend:'+12.1%',dir:'dn' },
+  profit:   { val:'38 700 kr',  label:'Net Profit',    trend:'-18%',  dir:'dn' },
+  margin:   { val:'7.65%',      label:'Margin',        trend:'−2.1pp',dir:'dn' },
+};
+
+// ── SAMPLE DOCUMENTS ─────────────────────────────────────────────
+const SAMPLE_DOCS = [
+  { name:'PL_Mars_2026.txt',          type:'txt', date:'2026-03-31', chunks:12 },
+  { name:'Menigo_Faktura_03-12.txt',  type:'txt', date:'2026-03-12', chunks:8  },
+  { name:'Sysco_Dryck_03-15.txt',     type:'txt', date:'2026-03-15', chunks:7  },
+  { name:'Personalschema_Mars.txt',   type:'txt', date:'2026-03-10', chunks:9  },
+  { name:'Budget_Q1_2026.txt',        type:'txt', date:'2026-01-01', chunks:10 },
+  { name:'Handelsbanken_Mars.txt',    type:'txt', date:'2026-03-31', chunks:11 },
+];
+
+// ── STARTER CARDS ─────────────────────────────────────────────────
+const STARTERS = [
+  { icon:'📊', text:'Top 5 expenses this month',    sub:'Cost analysis',     q:'What are my top 5 expenses in March 2026?' },
+  { icon:'📈', text:'Profit trend last 30 days',    sub:'Trend analysis',    q:'Show me the profit trend for March 2026 and compare to February.' },
+  { icon:'✉️', text:'Draft supplier email',         sub:'Document generation',q:'Draft a professional email to Menigo about their 8% price increase in March.' },
+  { icon:'📋', text:'Monthly board report',         sub:'Report generation', q:'Create a concise monthly report for a board meeting based on March 2026 financials.' },
+  { icon:'⚠️', text:'Cost alerts & anomalies',      sub:'Risk monitoring',   q:'Are there any unusual costs or budget overruns I should be aware of this month?' },
+  { icon:'🧾', text:'Supplier cost comparison',     sub:'Supplier analysis', q:'Compare our spend with Menigo versus Sysco and which is growing faster.' },
+];
+
+// ── DYNAMIC SUGGESTIONS (context-aware) ──────────────────────────
+const SUGGESTIONS_BY_CONTEXT = {
+  default: [
+    'What are my top 5 expenses this month?',
+    'Show me profit trend for last 30 days',
+    'Are food costs above industry average?',
+    'Draft email to supplier about price increase',
+    'Create monthly report for board meeting',
+    'Which staff member costs the most?',
+  ],
+  after_invoice: [
+    'Categorise this invoice automatically',
+    'Which budget line does this affect?',
+    'Has this supplier raised prices before?',
+    'Update the live tracker with this amount',
+  ],
+  after_financial: [
+    'What changed vs last month?',
+    'Where should I cut costs?',
+    'What should I budget next quarter?',
+    'Generate an executive summary',
+  ],
+};
+
+// ── QUERY CLASSIFICATION ──────────────────────────────────────────
+function classifyQuery(q) {
+  const lower = q.toLowerCase();
+  if (/creat|generat|write|draft|make|report|email|letter|invoice/i.test(q))
+    return { type:'generate', label:'Generate', cls:'qp-generate', topK:6 };
+  if (/compar|analys|trend|higher|lower|average|percent|vs\b|versus|better|worse/i.test(q))
+    return { type:'analysis', label:'Analysis',  cls:'qp-analysis', topK:6 };
+  if (/should|could|budget|next|future|plan|recommend|improve|forecast/i.test(q))
+    return { type:'planning', label:'Planning',  cls:'qp-planning', topK:7 };
+  return { type:'document', label:'Document',   cls:'qp-doc',      topK:4 };
+}
+
+// ── CONVERSATION MANAGEMENT ───────────────────────────────────────
+function newConversation() {
+  // Save current if it has messages
+  if (STATE.messages.length > 0) saveCurrentConversation();
+
+  STATE.activeConvId = 'conv_' + Date.now();
+  STATE.messages = [];
+  document.getElementById('messages').innerHTML = `
+    <div class="welcome fade-in" id="welcome-screen">
+      <div class="welcome-icon">🍽️</div>
+      <h2>New conversation</h2>
+      <p>Ask me anything about your business — invoices, costs, profit trends, supplier analysis.</p>
+      <div class="starter-grid" id="starter-grid"></div>
+    </div>`;
+  renderStarterCards();
+  document.getElementById('chat-title').textContent = 'New conversation';
+  document.getElementById('chat-subtitle').textContent = 'Ask anything about Restaurang Björken';
+  renderSuggestions('default');
+  renderConvList();
+}
+
+function saveCurrentConversation() {
+  if (!STATE.messages.length) return;
+  const firstMsg = STATE.messages.find(m => m.role === 'user');
+  const title    = firstMsg ? firstMsg.text.slice(0, 50) : 'Untitled';
+  const existing = STATE.conversations.findIndex(c => c.id === STATE.activeConvId);
+  const conv     = {
+    id:       STATE.activeConvId,
+    title,
+    preview:  STATE.messages[STATE.messages.length-1]?.text?.slice(0,60) || '',
+    time:     new Date().toLocaleTimeString('sv-SE', { hour:'2-digit', minute:'2-digit' }),
+    messages: [...STATE.messages],
+  };
+  if (existing >= 0) STATE.conversations[existing] = conv;
+  else               STATE.conversations.unshift(conv);
+  STATE.conversations = STATE.conversations.slice(0, 50); // keep 50 max
+  localStorage.setItem('bj_convs', JSON.stringify(STATE.conversations));
+}
+
+function loadConversation(id) {
+  if (STATE.messages.length) saveCurrentConversation();
+  const conv = STATE.conversations.find(c => c.id === id);
+  if (!conv) return;
+  STATE.activeConvId = id;
+  STATE.messages = [...conv.messages];
+  document.getElementById('messages').innerHTML = '';
+  hideWelcome();
+  STATE.messages.forEach(m => renderMessage(m, false));
+  document.getElementById('chat-title').textContent = conv.title;
+  renderConvList();
+}
+
+function searchConversations(q) {
+  STATE.searchQuery = q.toLowerCase();
+  renderConvList();
+}
+
+function renderConvList() {
+  const list   = document.getElementById('conv-list');
+  const query  = STATE.searchQuery;
+  let convs    = STATE.conversations;
+  if (query) convs = convs.filter(c => c.title.toLowerCase().includes(query) || c.preview.toLowerCase().includes(query));
+
+  if (!convs.length) {
+    list.innerHTML = `<div style="padding:16px;font-size:12px;color:rgba(255,255,255,0.3);text-align:center">${query ? 'No matches' : 'No past conversations'}</div>`;
+    return;
+  }
+
+  const iconFor = title => {
+    if (/invoice|faktura/i.test(title)) return '🧾';
+    if (/cost|budget|expense/i.test(title)) return '💰';
+    if (/report|summary/i.test(title)) return '📋';
+    if (/staff|personal/i.test(title)) return '👥';
+    return '💬';
+  };
+
+  // Group by Today / Earlier
+  const today = new Date().toDateString();
+  const todayConvs   = convs.filter(c => new Date(parseInt(c.id.split('_')[1])).toDateString() === today);
+  const olderConvs   = convs.filter(c => new Date(parseInt(c.id.split('_')[1])).toDateString() !== today);
+
+  let html = '';
+  if (todayConvs.length)  html += `<div class="conv-section-label">Today</div>` + todayConvs.map(convItem).join('');
+  if (olderConvs.length)  html += `<div class="conv-section-label">Earlier</div>` + olderConvs.map(convItem).join('');
+  list.innerHTML = html;
+
+  function convItem(c) {
+    const active = c.id === STATE.activeConvId ? 'active' : '';
+    return `<div class="conv-item ${active}" onclick="loadConversation('${c.id}')">
+      <div class="conv-icon ${active}">${iconFor(c.title)}</div>
+      <div class="conv-text">
+        <div class="conv-title">${c.title}</div>
+        <div class="conv-preview">${c.preview}</div>
+        <div class="conv-time">${c.time || ''}</div>
+      </div>
+    </div>`;
+  }
+}
+
+// ── MESSAGE RENDERING ─────────────────────────────────────────────
+function hideWelcome() {
+  const w = document.getElementById('welcome-screen');
+  if (w) w.remove();
+}
+
+function renderMessage(msg, animate = true) {
+  const area = document.getElementById('messages');
+  const el   = document.createElement('div');
+  el.className = `msg-row ${msg.role} ${animate ? 'msg-in' : ''}`;
+  el.id = msg.id || '';
+
+  const time = msg.time || new Date().toLocaleTimeString('sv-SE', { hour:'2-digit', minute:'2-digit' });
+
+  // Build query type pill for user messages
+  const qtPill = msg.queryType
+    ? `<div class="qtype-pill ${msg.queryType.cls}">${msg.queryType.label}</div>` : '';
+
+  // Build citation chips for AI messages
+  let citesHTML = '';
+  if (msg.citations?.length) {
+    citesHTML = `<div class="citation-row">${msg.citations.map((c,i) =>
+      `<div class="cite-tag" onclick="highlightDoc('${c.docName}')">
+        <span class="ct-num">${i+1}</span>
+        <span class="ct-icon">📄</span>${c.docName.split('.')[0]}
+      </div>`
+    ).join('')}</div>`;
+  }
+
+  // Build attachment previews for user messages
+  let attHTML = '';
+  if (msg.attachments?.length) {
+    attHTML = msg.attachments.map(a =>
+      `<div class="attachment-preview">
+        <div class="att-icon">${fileIcon(a.name)}</div>
+        <div><div class="att-name">${a.name}</div><div class="att-size">${a.size}</div></div>
+      </div>`
+    ).join('');
+  }
+
+  const bubbleClass = msg.role === 'user' ? 'bubble-user'
+                    : msg.error          ? 'bubble-error'
+                    : 'bubble-ai';
+
+  el.innerHTML = `
+    <div class="avatar av-${msg.role}">${msg.role === 'ai' ? 'B' : 'You'}</div>
+    <div class="msg-body">
+      ${msg.role === 'user' && msg.queryType ? qtPill : ''}
+      ${attHTML}
+      <div class="bubble ${bubbleClass}">${formatBubble(msg.text)}</div>
+      ${citesHTML}
+      <div class="msg-time">${time}</div>
+    </div>`;
+
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+  return el;
+}
+
+// Format message text: markdown-lite → HTML
+function formatBubble(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`(.*?)`/g, '<code>$1</code>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^- (.+)$/gm,   '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>')
+    .replace(/^(?!<[hul])/,'<p>').replace(/(?<![>])$/,'</p>')
+    .replace(/<p><\/p>/g,'')
+    .replace(/\[Doc: ([^\]]+)\]/g,
+      '<span style="font-size:11px;background:var(--amber-lt);color:var(--amber);padding:0 5px;border-radius:4px;font-weight:500">📄 $1</span>');
+}
+
+// Typing indicator
+function showTyping() {
+  hideWelcome();
+  const area = document.getElementById('messages');
+  const el   = document.createElement('div');
+  el.className = 'msg-row ai msg-in';
+  el.id = 'typing-indicator';
+  el.innerHTML = `
+    <div class="avatar av-ai">B</div>
+    <div class="msg-body">
+      <div class="typing-bubble"><span></span><span></span><span></span></div>
+    </div>`;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+}
+function hideTyping() {
+  document.getElementById('typing-indicator')?.remove();
+}
+
+// ── SEND MESSAGE ──────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('msg-input');
+  const text  = input.value.trim();
+  if (!text || STATE.isThinking) return;
+
+  // Handle / commands
+  if (text.startsWith('/')) return handleCommand(text);
+
+  hideWelcome();
+  STATE.isThinking = true;
+  input.value = '';
+  input.style.height = 'auto';
+  document.getElementById('send-btn').disabled = true;
+  document.getElementById('char-count').textContent = '';
+
+  const queryType  = classifyQuery(text);
+  const now        = new Date().toLocaleTimeString('sv-SE', { hour:'2-digit', minute:'2-digit' });
+  const attachments = [...STATE.attachments];
+  STATE.attachments = [];
+  renderAttachmentStaging();
+
+  // Add user message
+  const userMsg = { id:'msg_'+Date.now(), role:'user', text, time:now, queryType, attachments };
+  STATE.messages.push(userMsg);
+  renderMessage(userMsg);
+
+  // Update title on first message
+  if (STATE.messages.filter(m=>m.role==='user').length === 1) {
+    const title = text.slice(0, 45);
+    document.getElementById('chat-title').textContent = title;
+    document.getElementById('chat-subtitle').textContent =
+      queryType.label + ' · ' + STATE.documents.length + ' docs in context';
+    if (!STATE.activeConvId) STATE.activeConvId = 'conv_' + Date.now();
+  }
+
+  showTyping();
+
+  try {
+    let aiText;
+    if (STATE.apiKey) {
+      aiText = await callClaudeAPI(text, queryType);
+    } else {
+      aiText = await demoResponse(text, queryType);
+    }
+    hideTyping();
+
+    // Detect which docs were referenced in the answer
+    const citations = STATE.documents.filter(d =>
+      aiText.includes(d.name.split('.')[0]) || aiText.includes('[Doc:')
+    );
+
+    const aiMsg = { id:'msg_'+Date.now(), role:'ai', text:aiText, time:now, citations };
+    STATE.messages.push(aiMsg);
+    renderMessage(aiMsg);
+
+    // Update context panel
+    updateContextSummary(text, queryType, citations);
+
+    // Save to storage
+    saveCurrentConversation();
+    renderConvList();
+
+    // Update suggestions based on query type
+    const sugKey = queryType.type === 'document' ? 'after_financial' : 'default';
+    renderSuggestions(sugKey);
+
+  } catch(err) {
+    hideTyping();
+    const errMsg = { role:'ai', text:`**Error:** ${err.message}\n\nCheck your API key or try again.`, time:now, error:true };
+    STATE.messages.push(errMsg);
+    renderMessage(errMsg);
+  }
+
+  STATE.isThinking = false;
+  document.getElementById('send-btn').disabled = false;
+  input.focus();
+}
+
+// ── CLAUDE API CALL ───────────────────────────────────────────────
+async function callClaudeAPI(query, queryType) {
+  const docContext = STATE.documents.map(d =>
+    `[Document: ${d.name} | Date: ${d.date}]\n${d.preview || '(document content)'}`
+  ).join('\n\n---\n\n');
+
+  const finContext = `Current financials (March 2026):
+Revenue: 505 900 kr | Staff costs: 311 319 kr (61.5% of revenue - HIGH)
+Food & Bev costs: 149 300 kr (29.5%) | Rent: 64 500 kr (12.7%)
+Net profit: 38 700 kr | Profit margin: 7.65%`;
+
+  const systemPrompt = `You are the AI business assistant for Restaurang Björken, a restaurant in Stockholm, Sweden.
+You have access to the following financial data and documents.
+
+FINANCIAL CONTEXT:
+${finContext}
+
+${STATE.documents.length ? `DOCUMENT CONTEXT:\n${docContext}` : ''}
+
+INSTRUCTIONS:
+- Answer in the same language as the user (Swedish or English)
+- When citing figures, note the source as [Doc: filename]
+- Be specific and practical — give exact numbers when available
+- For ${queryType.type} queries: ${
+    queryType.type === 'generate' ? 'produce well-structured, professional output' :
+    queryType.type === 'analysis' ? 'compare figures, identify trends, flag anomalies' :
+    queryType.type === 'planning' ? 'base recommendations on actual data, be specific' :
+    'answer directly with exact figures from the data'
+  }
+- Format responses clearly with **bold** for key numbers`;
+
+  const messages = STATE.messages.slice(-10).map(m => ({
+    role: m.role === 'ai' ? 'assistant' : 'user',
+    content: m.text,
+  }));
+  // Replace last user message with context-enriched version
+  messages[messages.length - 1] = { role:'user', content: query };
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model:      'claude-sonnet-4-20250514',
+      max_tokens: 1800,
+      system:     systemPrompt,
+      messages,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error?.message || `API error ${res.status}`);
+  }
+  const data = await res.json();
+  return data.content?.[0]?.text || 'No response received.';
+}
+
+// ── DEMO RESPONSES (no API key) ───────────────────────────────────
+async function demoResponse(query, queryType) {
+  // Simulate network delay
+  await new Promise(r => setTimeout(r, 900 + Math.random()*600));
+
+  const q = query.toLowerCase();
+
+  if (/top.*(expense|cost)/i.test(query)) {
+    return `Here are the **top 5 expenses in March 2026** [Doc: PL_Mars_2026]:
+
+1. **Personalkostnader** — 311 319 kr *(61.5% of revenue — significantly above target)*
+2. **Råvaror & livsmedel (Menigo)** — 35 064 kr largest single supplier invoice [Doc: Menigo_Faktura_03-12]
+3. **Sysco drycker** — 43 624 kr including moms [Doc: Sysco_Dryck_03-15]
+4. **Lokalhyra & fastighet** — 64 500 kr total (hyra + el + vatten)
+5. **Marknadsföring** — 8 400 kr
+
+⚠️ **Warning:** Staff costs at 61.5% of revenue is well above the industry benchmark of 35–40%. High sick leave in weeks 11–12 caused overtime and extra temp staff [Doc: Personalschema_Mars].`;
+  }
+
+  if (/profit|margin/i.test(query)) {
+    return `**Profit trend — March vs February 2026** [Doc: PL_Mars_2026]:
+
+| Month    | Revenue    | Costs      | Profit   | Margin |
+|----------|-----------|-----------|---------|--------|
+| February | 461 800 kr | 423 100 kr | 38 700 kr | 8.38% |
+| March    | 505 900 kr | 467 200 kr | 38 700 kr | 7.65% |
+
+Revenue grew **+9.6%** but costs grew **+12.1%**, compressing the margin by **−0.73 percentage points**.
+
+The main driver of cost growth: Menigo raised food prices **+8%** from March 1st, and Sysco raised beverage prices **+6%** [Doc: Menigo_Faktura_03-12]. Staff overtime added approximately **42 000 kr** above budget.`;
+  }
+
+  if (/email|draft|supplier|menigo/i.test(query)) {
+    return `**Draft email — Menigo price increase** [Doc: Menigo_Faktura_03-12]:
+
+---
+
+**Subject:** Prisökning mars 2026 — begäran om avtalsöverläggning
+
+Hej,
+
+Vi har noterat att priserna på kycklingfilé och nötkött i faktura **8842901** (2026-03-12) har höjts med 7,1% respektive 9,2% jämfört med föregående period.
+
+Restaurang Björken uppskattar vår långvariga relation med Menigo Foodservice. Dessa prisjusteringar påverkar dock vår rörelsemarginal betydligt. Vi skulle gärna vilja diskutera:
+
+- Möjligheten till volymrabatt baserat på vår historiska ordervolym
+- Fastprisavtal för Q2 2026 för de 5 mest beställda artiklarna
+- Alternativa produkter med likvärdig kvalitet till lägre pris
+
+Kan vi boka ett möte under vecka 13?
+
+Med vänliga hälsningar,
+Restaurang Björken
+
+---
+*Connect your API key for a fully personalised draft.*`;
+  }
+
+  if (/board|report|monthly/i.test(query)) {
+    return `**Monthly Report — March 2026** [Doc: PL_Mars_2026]
+
+**Executive Summary**
+
+Revenue for March reached **505 900 kr**, a **9.6% increase** vs February, driven by higher covers and a catering event [Doc: PL_Mars_2026]. Despite strong top-line growth, net profit remained flat at **38 700 kr** (margin: 7.65%) due to supplier price increases and elevated staff costs.
+
+**Key Highlights**
+- ✅ Revenue exceeded Q1 budget target by +15 900 kr
+- ⚠️ Food costs impacted by Menigo (+8%) and Sysco (+6%) price hikes
+- ⚠️ Staff costs at 61.5% of revenue — high sick leave caused overtime spend
+- ✅ Rent held flat at 52 000 kr as per lease agreement
+
+**Action Required**
+1. Renegotiate Menigo contract or trial Martin & Servera for 30% of volume
+2. Review staffing schedule to reduce overtime dependency
+3. Q2 budget revision recommended given new cost baseline
+
+*Powered by demo mode — connect API key for AI-generated narrative.*`;
+  }
+
+  return `Based on your documents and financial data for March 2026:
+
+**Restaurang Björken — Quick Summary:**
+- Revenue: **505 900 kr** (+9.6% vs February) [Doc: PL_Mars_2026]
+- Total costs: **467 200 kr** — primarily staff (61.5%) and food/beverages
+- Net profit: **38 700 kr** (7.65% margin)
+
+The main concern this month is **staff cost overrun** due to sick leave [Doc: Personalschema_Mars], and **supplier price increases** from both Menigo and Sysco [Doc: Menigo_Faktura_03-12, Sysco_Dryck_03-15].
+
+*This is a demo response. Add your Anthropic API key in the sidebar to get full AI-powered answers.*`;
+}
+
+// ── COMMANDS ──────────────────────────────────────────────────────
+function handleCommand(cmd) {
+  const input = document.getElementById('msg-input');
+  input.value = '';
+  const commands = {
+    '/help':    'Available commands: **/clear** — clear chat · **/docs** — list documents · **/export** — export conversation · **/new** — new conversation',
+    '/clear':   null,  // handled below
+    '/docs':    `Documents in context:\n${STATE.documents.map((d,i) => `${i+1}. **${d.name}** (${d.date})`).join('\n') || 'No documents loaded.'}`,
+    '/new':     null,
+    '/export':  null,
+  };
+  if (cmd === '/clear') { clearMessages(); return; }
+  if (cmd === '/new')   { newConversation(); return; }
+  if (cmd === '/export'){ exportConversation(); return; }
+  const response = commands[cmd] || `Unknown command: ${cmd}. Type **/help** for available commands.`;
+  const aiMsg = { role:'ai', text:response, time:new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'}) };
+  STATE.messages.push(aiMsg);
+  renderMessage(aiMsg);
+  STATE.isThinking = false;
+}
+
+// ── INPUT HANDLING ────────────────────────────────────────────────
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+function handleInput(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  document.getElementById('send-btn').disabled = !el.value.trim();
+  const len = el.value.length;
+  document.getElementById('char-count').textContent = len > 200 ? len + ' chars' : '';
+}
+
+// ── ATTACHMENTS ───────────────────────────────────────────────────
+function handleAttachment(input) {
+  [...input.files].forEach(file => {
+    STATE.attachments.push({ name:file.name, size:formatBytes(file.size), file });
+    addDocToContext({ name:file.name, type:file.name.split('.').pop(), date:today(), chunks:0 });
+  });
+  input.value = '';
+  renderAttachmentStaging();
+  document.getElementById('send-btn').disabled = !document.getElementById('msg-input').value.trim() && !STATE.attachments.length;
+}
+function renderAttachmentStaging() {
+  const el = document.getElementById('att-staging');
+  el.innerHTML = STATE.attachments.map((a,i) =>
+    `<div class="attachment-preview">
+      <div class="att-icon">${fileIcon(a.name)}</div>
+      <div><div class="att-name">${a.name}</div><div class="att-size">${a.size}</div></div>
+      <button class="att-remove" onclick="removeAttachment(${i})">×</button>
+    </div>`
+  ).join('');
+}
+function removeAttachment(i) {
+  STATE.attachments.splice(i,1);
+  renderAttachmentStaging();
+}
+
+// ── CONTEXT PANEL ─────────────────────────────────────────────────
+function renderSources() {
+  document.getElementById('sources-list').innerHTML = SOURCES.map(s => {
+    const dotCls   = { live:'sd-live', manual:'sd-manual', offline:'sd-offline' }[s.status];
+    const badgeCls = { live:'sb-live', manual:'sb-manual', offline:'sb-offline' }[s.status];
+    return `<div class="source-row">
+      <div class="source-dot ${dotCls}"></div>
+      <div class="source-info">
+        <div class="source-name">${s.name}</div>
+        <div class="source-sub">${s.sub}</div>
+      </div>
+      <span class="source-badge ${badgeCls}">${s.badge}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderFinancialSnapshot() {
+  document.getElementById('fin-grid').innerHTML = Object.values(FINANCIALS).map(f =>
+    `<div class="fin-tile">
+      <div class="fin-tile-val">${f.val}</div>
+      <div class="fin-tile-lbl">${f.label}</div>
+      <div class="fin-tile-trend t-${f.dir}">${f.dir === 'up' ? '↑' : '↓'} ${f.trend}</div>
+    </div>`
+  ).join('');
+}
+
+function addDocToContext(doc) {
+  if (!STATE.documents.find(d => d.name === doc.name)) {
+    STATE.documents.push(doc);
+    renderDocsList();
+  }
+}
+
+function renderDocsList() {
+  const count = STATE.documents.length;
+  document.getElementById('doc-count-badge').textContent = count;
+  document.getElementById('docs-list').innerHTML = STATE.documents.map((d,i) => {
+    const iconCls = { pdf:'dri-pdf', xlsx:'dri-xlsx', csv:'dri-csv', txt:'dri-txt' }[d.type] || 'dri-txt';
+    return `<div class="doc-ref">
+      <div class="doc-ref-icon ${iconCls}">${d.type.toUpperCase()}</div>
+      <div class="doc-ref-info">
+        <div class="doc-ref-name">${d.name}</div>
+        <div class="doc-ref-meta">${d.date}${d.chunks ? ' · ' + d.chunks + ' chunks' : ''}</div>
+      </div>
+      <button class="doc-ref-del" onclick="removeDoc(${i})" title="Remove">×</button>
+    </div>`;
+  }).join('') || `<div style="font-size:12px;color:var(--ash);padding:4px 0">No documents — add files or ask a question</div>`;
+}
+
+function removeDoc(i) { STATE.documents.splice(i,1); renderDocsList(); }
+function highlightDoc(name) { /* future: scroll to relevant cite */ }
+
+function updateContextSummary(query, queryType, citations) {
+  const el   = document.getElementById('ctx-summary');
+  const docs  = STATE.documents.length;
+  const cites = citations.length;
+  el.innerHTML = `<strong>${queryType.label} query</strong> processed.<br>
+    Searched across <strong>${docs} document${docs!==1?'s':''}</strong> in context.
+    ${cites ? `<br><strong>${cites} source${cites!==1?'s':''}</strong> cited in answer.` : ''}
+    <br><span style="color:var(--ash);font-size:10px">Last query: "${query.slice(0,40)}${query.length>40?'…':''}"</span>`;
+}
+
+function addDocumentContext(input) {
+  [...input.files].forEach(f => addDocToContext({ name:f.name, type:f.name.split('.').pop(), date:today(), chunks:0 }));
+  input.value = '';
+}
+
+function refreshContext() {
+  renderSources();
+  renderFinancialSnapshot();
+  renderDocsList();
+}
+
+// ── STARTER CARDS & SUGGESTIONS ───────────────────────────────────
+function renderStarterCards() {
+  const grid = document.getElementById('starter-grid');
+  if (!grid) return;
+  grid.innerHTML = STARTERS.map(s =>
+    `<button class="starter-card" onclick="useStarter('${s.q.replace(/'/g,"\\'")}')">
+      <span class="sc-icon">${s.icon}</span>
+      <div class="sc-text">${s.text}</div>
+      <div class="sc-sub">${s.sub}</div>
+    </button>`
+  ).join('');
+}
+
+function renderSuggestions(key) {
+  const sugs = SUGGESTIONS_BY_CONTEXT[key] || SUGGESTIONS_BY_CONTEXT.default;
+  document.getElementById('sugs').innerHTML = sugs.map(s =>
+    `<button class="sug-btn" onclick="useSuggestion('${s.replace(/'/g,"\\'")}')">
+      ${s.length > 42 ? s.slice(0,40)+'…' : s}
+    </button>`
+  ).join('');
+}
+
+function useStarter(q) {
+  document.getElementById('msg-input').value = q;
+  handleInput(document.getElementById('msg-input'));
+  sendMessage();
+}
+function useSuggestion(q) {
+  document.getElementById('msg-input').value = q;
+  handleInput(document.getElementById('msg-input'));
+  sendMessage();
+}
+function askSuggestion(btn) { useStarter(btn.textContent.trim()); }
+
+// ── UTILITIES ─────────────────────────────────────────────────────
+function clearMessages() {
+  STATE.messages = [];
+  document.getElementById('messages').innerHTML = `
+    <div class="welcome fade-in" id="welcome-screen">
+      <div class="welcome-icon">🍽️</div>
+      <h2>New conversation</h2>
+      <p>Ask me anything about your business — invoices, costs, profit trends, supplier analysis.</p>
+      <div class="starter-grid" id="starter-grid"></div>
+    </div>`;
+  renderStarterCards();
+}
+
+function exportConversation() {
+  if (!STATE.messages.length) { alert('No messages to export.'); return; }
+  const text = STATE.messages.map(m =>
+    `[${m.role.toUpperCase()} — ${m.time || ''}]\n${m.text}\n`
+  ).join('\n---\n\n');
+  const blob = new Blob([text], { type:'text/plain' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `bjorken-chat-${today()}.txt`;
+  a.click();
+}
+
+function saveApiKey() {
+  const val = document.getElementById('api-key').value.trim();
+  if (val && !val.startsWith('•')) {
+    STATE.apiKey = val;
+    localStorage.setItem('bj_api_key', val);
+    document.getElementById('api-key').value = '••••••••••••';
+    setApiStatus(true);
+  }
+}
+
+function setApiStatus(live) {
+  document.getElementById('api-dot').className  = 'api-status-dot' + (live ? ' live' : '');
+  document.getElementById('api-status-text').textContent = live ? 'Connected — Claude Sonnet' : 'No API key — demo mode';
+}
+
+function fileIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  return { pdf:'📕', xlsx:'📗', xls:'📗', csv:'📊', txt:'📄', docx:'📝' }[ext] || '📎';
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b/1024).toFixed(0) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+function today() { return new Date().toISOString().split('T')[0]; }
+
+// ── INIT ──────────────────────────────────────────────────────────
+function init() {
+  // Load sample documents into context
+  SAMPLE_DOCS.forEach(d => STATE.documents.push(d));
+
+  // Set up first conversation
+  STATE.activeConvId = 'conv_' + Date.now();
+
+  renderSources();
+  renderFinancialSnapshot();
+  renderDocsList();
+  renderStarterCards();
+  renderSuggestions('default');
+  renderConvList();
+
+  // Focus input
+  document.getElementById('msg-input').focus();
+}
+
+init();
+</script>
+</body>
+</html>

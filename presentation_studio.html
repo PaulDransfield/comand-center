@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Presentation Studio — Björken</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cream:#faf8f4;--cream-2:#f4f1ec;--cream-3:#ede9e2;
+  --stone:#ddd9d2;--stone-2:#c8c3bb;--ash:#9b9690;--ink:#1a1917;--charcoal:#3d3b38;
+  --amber:#c8912a;--amber-lt:#fdf3e3;
+  --blue:#185FA5;--blue-lt:#E6F1FB;--blue-dk:#0C447C;
+  --green:#3B6D11;--green-lt:#EAF3DE;
+  --red:#A32D2D;--red-lt:#FCEBEB;
+  --r:8px;--rl:14px;
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --serif:'Instrument Serif',Georgia,serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);font-size:14px;background:var(--cream-2);color:var(--ink);display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--stone);border-radius:2px}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:46px;background:white;border-bottom:1px solid var(--stone);flex-shrink:0;gap:12px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:28px;height:28px;border-radius:7px;background:var(--amber);display:flex;align-items:center;justify-content:center}
+.brand-mark svg{width:14px;height:14px;fill:white}
+.brand-name{font-family:var(--serif);font-size:15px}
+.brand-sep{color:var(--stone-2);margin:0 4px}
+.brand-sub{font-size:13px;font-weight:600;color:var(--blue)}
+.top-actions{display:flex;align-items:center;gap:8px}
+
+/* SHELL: left config | centre preview | right slides */
+.shell{display:grid;grid-template-columns:280px 1fr 260px;height:calc(100vh - 46px);overflow:hidden}
+
+/* PANELS */
+.panel{display:flex;flex-direction:column;overflow:hidden}
+.panel-l{border-right:1px solid var(--stone);background:var(--cream-2)}
+.panel-c{background:var(--cream-3)}
+.panel-r{border-left:1px solid var(--stone);background:white}
+.ph{padding:12px 16px;border-bottom:1px solid var(--stone);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:white}
+.ph h2{font-size:11px;font-weight:600;color:var(--ash);text-transform:uppercase;letter-spacing:.09em}
+.ps{flex:1;overflow-y:auto}
+
+/* DECK TYPE CARDS */
+.deck-section{padding:12px 14px;border-bottom:1px solid var(--stone)}
+.section-lbl{font-size:10px;font-weight:600;color:var(--ash);text-transform:uppercase;letter-spacing:.09em;margin-bottom:8px}
+.deck-card{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--stone);border-radius:var(--rl);cursor:pointer;transition:all .15s;background:white;margin-bottom:6px}
+.deck-card:hover{border-color:var(--blue);background:var(--blue-lt)}
+.deck-card.active{border-color:var(--amber);background:var(--amber-lt)}
+.dc-icon{width:34px;height:40px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.dci-board{background:var(--blue-lt)}
+.dci-investor{background:var(--green-lt)}
+.dci-monthly{background:var(--amber-lt)}
+.dci-budget{background:var(--red-lt)}
+.dci-strategy{background:#EEEDFE}
+.dc-info .dc-name{font-size:12px;font-weight:500}
+.dc-info .dc-desc{font-size:11px;color:var(--ash);margin-top:2px}
+.dc-slides{font-size:10px;font-weight:600;color:var(--ash);margin-left:auto;background:var(--cream-3);padding:2px 7px;border-radius:10px}
+
+/* THEME SELECTOR */
+.theme-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;padding:12px 14px}
+.theme-swatch{border-radius:var(--r);overflow:hidden;cursor:pointer;border:2px solid transparent;transition:all .15s}
+.theme-swatch:hover{border-color:var(--stone-2)}
+.theme-swatch.active{border-color:var(--amber)}
+.ts-top{height:30px;display:flex;align-items:flex-end;padding:4px 6px}
+.ts-name{font-size:9px;font-weight:600;color:white;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.ts-bot{height:14px;display:flex}
+.ts-c1,.ts-c2{flex:1}
+
+/* OPTIONS */
+.options-section{padding:12px 14px;border-top:1px solid var(--stone)}
+.opt-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px}
+.opt-label{color:var(--charcoal);font-weight:500}
+select,input[type=number]{font-size:12px;font-family:var(--font);padding:4px 8px;border-radius:var(--r);border:1px solid var(--stone-2);color:var(--ink);background:white}
+.toggle-pill{width:30px;height:17px;border-radius:9px;background:var(--stone-2);position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+.toggle-pill.on{background:var(--amber)}
+.toggle-pill::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:white;transition:left .2s}
+.toggle-pill.on::after{left:15px}
+
+/* AI PROMPT BAR */
+.ai-bar{padding:12px 14px;border-top:1px solid var(--stone);flex-shrink:0;background:white}
+.ai-bar-inner{display:flex;gap:7px;align-items:flex-end;background:var(--ink);border-radius:var(--rl);padding:8px 10px}
+.ai-bar-inner textarea{flex:1;background:none;border:none;outline:none;color:var(--cream-2);font-size:12px;font-family:var(--font);resize:none;min-height:22px;max-height:80px;line-height:1.5}
+.ai-bar-inner textarea::placeholder{color:rgba(255,255,255,.35)}
+.ai-send{width:30px;height:30px;border-radius:8px;background:var(--amber);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ai-send svg{width:13px;height:13px;fill:white}
+
+/* GENERATE BUTTON */
+.gen-bar{padding:12px 14px;border-top:1px solid var(--stone);flex-shrink:0}
+.gen-btn{width:100%;padding:10px;border-radius:var(--rl);background:var(--blue);color:white;border:none;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s}
+.gen-btn:hover{background:var(--blue-dk)}
+.gen-btn:active{transform:scale(.99)}
+.gen-btn:disabled{background:var(--stone-2);cursor:not-allowed}
+
+/* CENTRE: SLIDE PREVIEW */
+.preview-header{padding:10px 16px;background:white;border-bottom:1px solid var(--stone);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.slide-nav{display:flex;align-items:center;gap:10px}
+.nav-btn{background:none;border:1px solid var(--stone-2);border-radius:var(--r);width:28px;height:28px;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--charcoal);transition:all .1s}
+.nav-btn:hover{background:var(--cream-2)}
+.slide-counter{font-size:12px;color:var(--ash);font-family:var(--mono);min-width:55px;text-align:center}
+.zoom-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ash)}
+
+/* SLIDE CANVAS */
+.slide-canvas{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:20px}
+.slide-stage{background:white;border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,.12);overflow:hidden;position:relative;transition:all .3s}
+
+/* SLIDE RENDERING */
+.slide-inner{width:100%;height:100%;position:relative;overflow:hidden}
+.s-bg{position:absolute;inset:0}
+.s-band{position:absolute;width:100%;left:0}
+.s-text{position:absolute;font-family:'Instrument Sans',system-ui,sans-serif;line-height:1.3}
+.s-rect{position:absolute}
+.s-chart-placeholder{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(255,255,255,.08);border:1px dashed rgba(255,255,255,.2);border-radius:6px;color:rgba(255,255,255,.5);font-size:11px;gap:4px}
+.s-chart-placeholder svg{width:28px;height:28px;opacity:.4}
+
+/* NOTES PANEL */
+.notes-bar{padding:10px 16px;border-top:1px solid var(--stone);background:var(--cream-2);flex-shrink:0}
+.notes-label{font-size:10px;font-weight:600;color:var(--ash);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.notes-text{font-size:12px;color:var(--charcoal);line-height:1.6;max-height:80px;overflow-y:auto}
+
+/* RIGHT: SLIDE STRIP */
+.slide-strip{flex:1;overflow-y:auto;padding:8px}
+.slide-thumb{background:var(--cream-3);border:1.5px solid var(--stone);border-radius:var(--r);margin-bottom:7px;cursor:pointer;overflow:hidden;transition:all .15s;position:relative}
+.slide-thumb:hover{border-color:var(--stone-2)}
+.slide-thumb.active{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber-lt)}
+.slide-thumb.dragging{opacity:.4}
+.slide-thumb.drag-over{border-color:var(--blue);border-style:dashed}
+.thumb-inner{width:100%;aspect-ratio:16/9;position:relative;overflow:hidden}
+.thumb-num{position:absolute;top:4px;left:4px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.5);color:white;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;z-index:2}
+.thumb-label{padding:5px 8px;font-size:10px;font-weight:500;color:var(--charcoal);display:flex;align-items:center;justify-content:space-between;background:white;border-top:1px solid var(--stone)}
+.thumb-del{background:none;border:none;cursor:pointer;color:var(--stone-2);font-size:14px;padding:0 2px}
+.thumb-del:hover{color:var(--red)}
+.add-slide-btn{width:100%;padding:8px;border:1.5px dashed var(--stone-2);border-radius:var(--r);background:none;color:var(--ash);font-family:var(--font);font-size:12px;cursor:pointer;transition:all .15s}
+.add-slide-btn:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-lt)}
+
+/* DATA REFRESH BANNER */
+.refresh-banner{padding:8px 14px;background:var(--amber-lt);border-bottom:1px solid rgba(200,145,42,.25);display:flex;align-items:center;gap:10px;font-size:12px;flex-shrink:0}
+.rb-dot{width:7px;height:7px;border-radius:50%;background:var(--amber)}
+.refresh-btn{margin-left:auto;font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:var(--r);background:var(--amber);color:white;border:none;cursor:pointer}
+
+/* EXPORT SECTION */
+.export-section{padding:12px 14px;border-top:1px solid var(--stone);flex-shrink:0;background:var(--cream-2)}
+.export-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.exp-btn{padding:8px;border-radius:var(--r);border:1px solid var(--stone-2);background:white;cursor:pointer;font-family:var(--font);font-size:11px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .12s}
+.exp-btn:hover{border-color:var(--blue);background:var(--blue-lt);color:var(--blue)}
+.exp-btn.primary{background:var(--blue);color:white;border-color:var(--blue);grid-column:1/-1}
+.exp-btn.primary:hover{background:var(--blue-dk)}
+.exp-icon{width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+
+/* PROCESSING */
+.proc-overlay{position:fixed;inset:0;background:rgba(250,248,244,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:200}
+.proc-spinner{width:38px;height:38px;border:3px solid var(--stone);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.proc-step{font-size:13px;font-weight:500;color:var(--charcoal)}
+.proc-sub{font-size:11px;color:var(--ash)}
+
+/* BADGE */
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px}
+.b-blue{background:var(--blue-lt);color:var(--blue)}
+.b-green{background:var(--green-lt);color:var(--green)}
+.b-amber{background:var(--amber-lt);color:var(--amber)}
+.b-gray{background:var(--cream-3);color:var(--ash)}
+
+.btn{font-family:var(--font);font-size:12px;font-weight:500;padding:5px 11px;border-radius:var(--r);border:1px solid var(--stone-2);background:none;cursor:pointer;color:var(--charcoal);transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:var(--cream-2)}
+.btn-sm{font-size:11px;padding:3px 8px}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.fade-up{animation:fadeUp .2s ease}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 3l5 3-5 3-5-3 5-3zm-7 9l4-2 3 1.8 3-1.8 4 2v1l-7 4-7-4v-1z"/></svg></div>
+    <div>
+      <span class="brand-name">Björken</span>
+      <span class="brand-sep">/</span>
+      <span class="brand-studio">Presentation Studio</span>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="badge b-gray" id="deck-status">No deck loaded</span>
+    <button class="btn btn-sm" onclick="refreshData()">↻ Refresh data</button>
+    <input type="password" id="api-key" placeholder="API key…" style="width:130px;font-size:11px;padding:4px 8px;border:1px solid var(--stone-2);border-radius:var(--r);font-family:var(--mono)">
+    <button class="btn btn-sm" onclick="saveKey()">Save</button>
+  </div>
+</div>
+
+<div class="shell">
+
+<!-- ── LEFT: CONFIGURATION ── -->
+<div class="panel panel-l">
+  <div class="ph"><h2>Deck Settings</h2></div>
+  <div class="ps">
+
+    <!-- Deck types -->
+    <div class="deck-section">
+      <div class="section-lbl">Presentation Type</div>
+      <div class="deck-card active" id="dt-board" onclick="selectDeck('board',this)">
+        <div class="dc-icon dci-board">📊</div>
+        <div class="dc-info"><div class="dc-name">Board Meeting</div><div class="dc-desc">P&L, costs, actions, next steps</div></div>
+        <span class="dc-slides">10 slides</span>
+      </div>
+      <div class="deck-card" id="dt-investor" onclick="selectDeck('investor',this)">
+        <div class="dc-icon dci-investor">📈</div>
+        <div class="dc-info"><div class="dc-name">Investor Update</div><div class="dc-desc">Business performance & growth</div></div>
+        <span class="dc-slides">8 slides</span>
+      </div>
+      <div class="deck-card" id="dt-monthly" onclick="selectDeck('monthly',this)">
+        <div class="dc-icon dci-monthly">📋</div>
+        <div class="dc-info"><div class="dc-name">Monthly Review</div><div class="dc-desc">Operations & financial summary</div></div>
+        <span class="dc-slides">8 slides</span>
+      </div>
+      <div class="deck-card" id="dt-budget" onclick="selectDeck('budget',this)">
+        <div class="dc-icon dci-budget">💰</div>
+        <div class="dc-info"><div class="dc-name">Budget Proposal</div><div class="dc-desc">Cost revisions & projections</div></div>
+        <span class="dc-slides">8 slides</span>
+      </div>
+    </div>
+
+    <!-- Theme selector -->
+    <div class="deck-section">
+      <div class="section-lbl" style="margin-bottom:8px">Colour Theme</div>
+      <div class="theme-grid" id="theme-grid"></div>
+    </div>
+
+    <!-- Options -->
+    <div class="options-section">
+      <div class="section-lbl" style="margin-bottom:10px">Options</div>
+      <div class="opt-row">
+        <span class="opt-label">Include presenter notes</span>
+        <div class="toggle-pill on" id="toggle-notes" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="opt-row">
+        <span class="opt-label">Include appendix slides</span>
+        <div class="toggle-pill" id="toggle-appendix" onclick="this.classList.toggle('on')"></div>
+      </div>
+      <div class="opt-row">
+        <span class="opt-label">Period</span>
+        <select id="period-select" style="font-size:11px;padding:4px 7px">
+          <option selected>Mars 2026</option>
+          <option>Q1 2026</option>
+          <option>February 2026</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- AI Composer -->
+    <div style="padding:12px 14px;border-top:1px solid var(--stone)">
+      <div class="section-lbl" style="margin-bottom:7px">AI Composer</div>
+      <div class="ai-bar-inner">
+        <textarea id="ai-prompt" placeholder="e.g. 'Create a board deck for Q1 with focus on staff costs'" rows="2" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();aiGenerate()}"></textarea>
+        <button class="ai-send" onclick="aiGenerate()">
+          <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>
+        </button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:7px">
+        <button class="btn btn-sm" style="font-size:10px" onclick="setPrompt('Create a board meeting deck for March 2026')">Board deck</button>
+        <button class="btn btn-sm" style="font-size:10px" onclick="setPrompt('Investor update focusing on growth and cost control')">Investor deck</button>
+        <button class="btn btn-sm" style="font-size:10px" onclick="setPrompt('Q2 budget proposal with revised cost forecasts')">Budget deck</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Generate button -->
+  <div class="gen-bar">
+    <button class="gen-btn" id="gen-btn" onclick="generateDeck()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      Generate Presentation
+    </button>
+  </div>
+</div>
+
+<!-- ── CENTRE: SLIDE PREVIEW ── -->
+<div class="panel panel-c">
+
+  <!-- Data refresh banner -->
+  <div class="refresh-banner" id="refresh-banner" style="display:none">
+    <div class="rb-dot"></div>
+    <span id="refresh-msg">Financial data updated — some slides may need refreshing</span>
+    <button class="refresh-btn" onclick="refreshSlides()">Update slides</button>
+  </div>
+
+  <!-- Preview nav -->
+  <div class="preview-header">
+    <div class="slide-nav">
+      <button class="nav-btn" onclick="navSlide(-1)">‹</button>
+      <span class="slide-counter" id="slide-counter">— / —</span>
+      <button class="nav-btn" onclick="navSlide(1)">›</button>
+    </div>
+    <div id="slide-title-display" style="font-size:13px;font-weight:500;color:var(--charcoal)">Select a deck type and generate</div>
+    <div class="zoom-row">
+      <button class="btn btn-sm" onclick="zoomDelta(-0.1)">−</button>
+      <span id="zoom-label">70%</span>
+      <button class="btn btn-sm" onclick="zoomDelta(0.1)">+</button>
+    </div>
+  </div>
+
+  <!-- Main slide view -->
+  <div class="slide-canvas" id="slide-canvas">
+    <div style="text-align:center;color:var(--ash)">
+      <div style="font-size:40px;margin-bottom:12px">🎞</div>
+      <div style="font-size:14px;font-weight:500;color:var(--charcoal)">No presentation loaded</div>
+      <div style="font-size:12px;margin-top:5px">Choose a deck type and click Generate</div>
+    </div>
+  </div>
+
+  <!-- Presenter notes -->
+  <div class="notes-bar" id="notes-bar" style="display:none">
+    <div class="notes-label">Presenter Notes</div>
+    <div class="notes-text" id="notes-text"></div>
+  </div>
+</div>
+
+<!-- ── RIGHT: SLIDE STRIP + EXPORT ── -->
+<div class="panel panel-r">
+  <div class="ph">
+    <h2>Slides</h2>
+    <span class="badge b-gray" id="slide-count-badge">0 slides</span>
+  </div>
+
+  <div class="ps" id="slide-strip" style="padding:8px"></div>
+
+  <!-- Export -->
+  <div class="export-section">
+    <div class="section-lbl" style="margin-bottom:8px">Export</div>
+    <div class="export-row">
+      <button class="exp-btn primary" onclick="downloadPptx()" id="dl-btn">
+        <div class="exp-icon" style="background:#C1392B;color:white">PPT</div>
+        Download PowerPoint (.pptx)
+      </button>
+      <button class="exp-btn" onclick="downloadPdf()">
+        <div class="exp-icon" style="background:#E74C3C;color:white">PDF</div>
+        PDF (via print)
+      </button>
+      <button class="exp-btn" onclick="copyHtml()">
+        <div class="exp-icon" style="background:var(--green);color:white">HTM</div>
+        HTML slides
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--ash);margin-top:8px;line-height:1.6" id="export-meta">
+      Generate a deck to see export details.
+    </div>
+  </div>
+</div>
+
+</div><!-- /shell -->
+
+<!-- Processing overlay -->
+<div class="proc-overlay" id="proc-overlay" style="display:none">
+  <div class="proc-spinner"></div>
+  <div class="proc-step" id="proc-step">Generating presentation…</div>
+  <div class="proc-sub" id="proc-sub">Building slides with live financial data</div>
+</div>
+
+<script>
+  // ── AUTO-LOAD API KEY FROM COMMAND CENTER ──────────────────
+  (function() {
+    const key = localStorage.getItem('bj_api_key');
+    if (!key) return;
+    // Apply to all known key storage locations
+    localStorage.setItem('rag_api_key', key);
+    localStorage.setItem('bj_api_key', key);
+    // Set on window so any inline references pick it up
+    window._CC_API_KEY = key;
+  })();
+  // ────────────────────────────────────────────────────────────
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  PRESENTATION STUDIO — Interactive UI                        ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// ── FINANCIAL DATA (matches live tracker) ──────────────────────
+const FIN = {
+  company: "Restaurang Björken AB", period: "Mars 2026", quarter: "Q1 2026",
+  revenue: 505900, prevRevenue: 461800,
+  staff: 224978, food: 149300, rent: 64500, other: 28422,
+  staffPct: 44.5, foodPct: 29.5, rentPct: 12.7, otherPct: 5.6,
+  budgetRevenue: 490000, q1Revenue: 1356900, q1Budget: 1350000,
+  monthlyRevenue: [389200, 461800, 505900],
+  monthlyProfit: [12100, 38700, 38700],
+  monthlyLabels: ["Jan", "Feb", "Mars"],
+};
+FIN.totalCosts = FIN.staff + FIN.food + FIN.rent + FIN.other;
+FIN.profit     = FIN.revenue - FIN.totalCosts;
+FIN.margin     = (FIN.profit / FIN.revenue * 100).toFixed(2);
+const kr  = n => Math.round(Math.abs(n)).toLocaleString('sv-SE') + ' kr';
+const pct = n => Number(n).toFixed(1) + '%';
+
+// ── THEMES ──────────────────────────────────────────────────────
+const THEMES = {
+  midnight:   { name:"Midnight Executive", bg:"1E2761", accent:"CADCFC", accent2:"FFC040", desc:"Navy & Ice Blue" },
+  forest:     { name:"Forest & Moss",      bg:"2C5F2D", accent:"97BC62", accent2:"F5C518", desc:"Green & Gold" },
+  terracotta: { name:"Warm Terracotta",    bg:"B85042", accent:"A7BEAE", accent2:"F5C518", desc:"Terracotta & Sage" },
+  ocean:      { name:"Ocean Deep",         bg:"065A82", accent:"7EC8E3", accent2:"FFC040", desc:"Deep Blue & Teal" },
+  cherry:     { name:"Cherry Bold",        bg:"990011", accent:"FCF6F5", accent2:"2F3C7E", desc:"Cherry & Navy" },
+  charcoal:   { name:"Charcoal Minimal",   bg:"36454F", accent:"F2F2F2", accent2:"28B2A5", desc:"Charcoal & Mint" },
+};
+
+// ── SLIDE DEFINITIONS ────────────────────────────────────────────
+// Each slide has: id, label, type, notes, and a render function
+function buildSlideDefinitions(deckType) {
+  const all = [
+    {
+      id: "title", label: "Title", type: "cover",
+      notes: `Opening slide. Welcome attendees and state purpose: review ${FIN.period} performance. Duration: ~45 minutes.`,
+      render: (t, stage) => renderCover(t, stage, deckType),
+    },
+    {
+      id: "exec", label: "Executive Summary", type: "kpi",
+      notes: `Key points:\n• Revenue up ${Math.round((FIN.revenue-FIN.prevRevenue)/FIN.prevRevenue*100*10)/10}% vs February\n• Staff costs above target — sick leave overtime\n• Menigo price increase primary margin pressure\n• Action required on staffing schedule`,
+      render: (t, stage) => renderExecSummary(t, stage),
+    },
+    {
+      id: "revenue", label: "Revenue Analysis", type: "chart",
+      notes: `Revenue breakdown: Food 61.8% (${kr(312500)}), Beverages 34.6% (${kr(175000)}), Catering 3.6% (${kr(18400)}).\nRevenue vs budget: +3.2% above March budget of ${kr(FIN.budgetRevenue)}.`,
+      render: (t, stage) => renderRevenue(t, stage),
+    },
+    {
+      id: "costs", label: "Cost Breakdown", type: "chart",
+      notes: `Staff ${pct(FIN.staffPct)} (target 40%). Food ${pct(FIN.foodPct)} (OK). Rent ${pct(FIN.rentPct)}.\nBoard decision needed: Approve staffing schedule review and Menigo renegotiation.`,
+      render: (t, stage) => renderCosts(t, stage),
+    },
+    {
+      id: "pl", label: "P&L Statement", type: "table",
+      notes: `EBIT ${kr(FIN.profit)} held flat vs Feb despite higher revenue.\nAll revenue upside eaten by cost escalation.\nKey action: Return cost ratio to <90% in Q2.`,
+      render: (t, stage) => renderPL(t, stage),
+    },
+    {
+      id: "trend", label: "Profit Trend", type: "chart",
+      notes: `Jan was below budget. Feb/March recovered strongly.\nQ1 total revenue ${kr(FIN.q1Revenue)} vs budget ${kr(FIN.q1Budget)} — slightly ahead.\nFocus: cost discipline in Q2.`,
+      render: (t, stage) => renderTrend(t, stage),
+    },
+    {
+      id: "staff", label: "Staff Analysis", type: "detail",
+      notes: `Staff drivers: Kitchen 130k, Service 58k, Dishwashing 13k, Overtime 24k EXCESS.\nBoard decision: Approve permanent kock recruitment (target Q3).`,
+      render: (t, stage) => renderStaff(t, stage),
+    },
+    {
+      id: "recs", label: "Recommendations", type: "actions",
+      notes: `Board decisions required:\n1. Approve Menigo renegotiation mandate\n2. Approve kock recruitment budget\n3. Note Q2 budget revision\n4. Acknowledge cash flow monitoring`,
+      render: (t, stage) => renderRecs(t, stage),
+    },
+    {
+      id: "next", label: "Next Steps", type: "timeline",
+      notes: `Close meeting by confirming:\n• Owner to schedule Menigo meeting this week\n• Next monthly review: first week of May`,
+      render: (t, stage) => renderNextSteps(t, stage),
+    },
+    {
+      id: "close", label: "Thank You", type: "cover",
+      notes: `Open for questions.\nSend action list to all attendees within 24 hours.`,
+      render: (t, stage) => renderClosing(t, stage),
+    },
+  ];
+
+  // Subset per deck type
+  const decks = {
+    board:    ["title","exec","revenue","costs","pl","trend","staff","recs","next","close"],
+    investor: ["title","exec","revenue","costs","pl","trend","recs","close"],
+    monthly:  ["title","exec","revenue","costs","trend","recs","next","close"],
+    budget:   ["title","exec","costs","staff","trend","recs","next","close"],
+  };
+  const ids = decks[deckType] || decks.board;
+  return ids.map(id => all.find(s => s.id === id)).filter(Boolean);
+}
+
+// ── STATE ────────────────────────────────────────────────────────
+const STATE = {
+  deckType: "board",
+  theme: "midnight",
+  slides: [],
+  currentIdx: 0,
+  zoom: 0.7,
+  apiKey: localStorage.getItem('bj_api_key') || '',
+  dataTimestamp: Date.now(),
+};
+
+if (STATE.apiKey) {
+  document.getElementById('api-key').value = '••••••••';
+}
+
+// ── THEME RENDERING ──────────────────────────────────────────────
+function renderThemeGrid() {
+  const grid = document.getElementById('theme-grid');
+  grid.innerHTML = Object.entries(THEMES).map(([key, t]) => `
+    <div class="theme-swatch ${key === STATE.theme ? 'active' : ''}"
+         id="ts-${key}" onclick="selectTheme('${key}')">
+      <div class="ts-top" style="background:#${t.bg}">
+        <span class="ts-name">${t.desc}</span>
+      </div>
+      <div class="ts-bot">
+        <div class="ts-c1" style="background:#${t.accent}"></div>
+        <div class="ts-c2" style="background:#${t.accent2}"></div>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function selectTheme(key) {
+  STATE.theme = key;
+  document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+  document.getElementById('ts-'+key)?.classList.add('active');
+  if (STATE.slides.length) rerenderCurrentSlide();
+}
+
+// ── DECK SELECTION ────────────────────────────────────────────────
+function selectDeck(type, el) {
+  STATE.deckType = type;
+  document.querySelectorAll('.deck-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// ── GENERATE DECK ─────────────────────────────────────────────────
+async function generateDeck() {
+  showProc("Building slide structure…", "Applying theme and financial data");
+  await delay(200);
+
+  STATE.slides = buildSlideDefinitions(STATE.deckType);
+  STATE.currentIdx = 0;
+
+  await procStep("Composing content…", "Pulling live data from tracker"); await delay(300);
+  await procStep("Rendering slides…", "Applying Midnight Executive theme");  await delay(400);
+  await procStep("Generating charts…", "Revenue, costs, profit data");        await delay(300);
+
+  hideProc();
+
+  renderSlideStrip();
+  renderCurrentSlide();
+  updateStatus();
+  document.getElementById('notes-bar').style.display = 'block';
+  document.getElementById('export-meta').innerHTML =
+    `Template: <strong>${THEMES[STATE.theme].name}</strong><br>Slides: <strong>${STATE.slides.length}</strong><br>Data: <strong>${FIN.period}</strong><br>Generated: <strong>${new Date().toLocaleString('sv-SE')}</strong>`;
+}
+
+// ── SLIDE NAVIGATION ─────────────────────────────────────────────
+function navSlide(dir) {
+  if (!STATE.slides.length) return;
+  STATE.currentIdx = Math.max(0, Math.min(STATE.slides.length-1, STATE.currentIdx + dir));
+  renderCurrentSlide();
+  highlightThumb(STATE.currentIdx);
+}
+
+function goToSlide(idx) {
+  STATE.currentIdx = idx;
+  renderCurrentSlide();
+  highlightThumb(idx);
+}
+
+function highlightThumb(idx) {
+  document.querySelectorAll('.slide-thumb').forEach((el,i) =>
+    el.classList.toggle('active', i === idx));
+}
+
+function updateStatus() {
+  const n = STATE.slides.length;
+  document.getElementById('slide-counter').textContent = n ? `${STATE.currentIdx+1} / ${n}` : '— / —';
+  document.getElementById('slide-count-badge').textContent = n + ' slide' + (n!==1?'s':'');
+  document.getElementById('deck-status').textContent = `${STATE.deckType} · ${n} slides`;
+  document.getElementById('deck-status').className = 'badge b-amber';
+}
+
+// ── ZOOM ──────────────────────────────────────────────────────────
+function zoomDelta(d) {
+  STATE.zoom = Math.max(0.3, Math.min(1.4, STATE.zoom + d));
+  document.getElementById('zoom-label').textContent = Math.round(STATE.zoom*100) + '%';
+  const stage = document.getElementById('slide-stage');
+  if (stage) {
+    stage.style.width  = Math.round(640 * STATE.zoom) + 'px';
+    stage.style.height = Math.round(360 * STATE.zoom) + 'px';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// SLIDE RENDERERS — each returns HTML representing the slide
+// Uses CSS positioned divs to mimic PPTX layout at 640x360
+// ════════════════════════════════════════════════════════════════
+// Scale: 1 inch = 64px at 640px wide (10" slide)
+
+const SC = 64; // 1 inch = 64px
+const SH = 360; // slide height px
+function px(inches) { return Math.round(inches * SC); }
+function py(inches) { return Math.round(inches * SC * (5.625/10)); }  // height scale
+
+function hex(h) { return '#' + h; }
+
+function renderCover(t, stage, deckType) {
+  const T = THEMES[t];
+  const bg = hex(T.bg);
+  const accent = hex(T.accent);
+  const accent2 = hex(T.accent2);
+  const titles = {
+    board: { title: `Board Meeting — ${FIN.period}`, sub: "Monthly Performance Review" },
+    investor: { title: `Investor Update — ${FIN.quarter}`, sub: "Business Performance & Growth Strategy" },
+    monthly: { title: `Monthly Review — ${FIN.period}`, sub: "Operations & Financial Summary" },
+    budget: { title: "Budget Proposal — Q2 2026", sub: "Cost Revisions & Forward Projections" },
+  };
+  const { title, sub } = titles[deckType] || titles.board;
+  return `<div style="position:absolute;inset:0;background:${bg}">
+    <div style="position:absolute;top:0;left:0;right:0;height:5px;background:${accent}"></div>
+    <div style="position:absolute;bottom:0;left:0;right:0;height:5px;background:${accent}"></div>
+    <div style="position:absolute;left:32px;top:77px;width:5px;height:205px;background:${accent2};border-radius:2px"></div>
+    <div style="position:absolute;left:48px;top:80px;font-size:9px;font-weight:700;letter-spacing:.1em;color:${accent2};text-transform:uppercase">${deckType.toUpperCase()} DECK</div>
+    <div style="position:absolute;left:48px;top:109px;width:560px;font-size:26px;font-weight:700;color:white;line-height:1.2;font-family:'Instrument Sans',sans-serif">${title}</div>
+    <div style="position:absolute;left:48px;top:215px;width:440px;font-size:14px;font-style:italic;color:${accent};font-family:'Instrument Serif',Georgia,serif">${sub}</div>
+    <div style="position:absolute;left:32px;bottom:20px;font-size:9px;color:rgba(255,255,255,.4)">${FIN.company} · ${FIN.period} · Confidential</div>
+  </div>`;
+}
+
+function renderExecSummary(t, stage) {
+  const T = THEMES[t];
+  const kpis = [
+    { val: kr(FIN.revenue),    lbl: "Revenue",    col: hex(T.accent) },
+    { val: kr(FIN.totalCosts), lbl: "Total Costs", col: "#E24B4A" },
+    { val: kr(FIN.profit),     lbl: "Net Profit",  col: "#52C374" },
+    { val: pct(FIN.margin),    lbl: "Margin",      col: "#52C374" },
+  ];
+  const kpiHtml = kpis.map((k,i) => `
+    <div style="position:absolute;left:${22+i*152}px;top:60px;width:145px;height:68px;background:white;border-radius:5px;overflow:hidden">
+      <div style="position:absolute;left:0;top:0;width:4px;height:100%;background:${k.col}"></div>
+      <div style="position:absolute;left:12px;top:8px;font-size:16px;font-weight:700;color:#1a1917;font-variant-numeric:tabular-nums">${k.val}</div>
+      <div style="position:absolute;left:12px;top:34px;font-size:9px;font-weight:600;color:#9b9690;text-transform:uppercase;letter-spacing:.06em">${k.lbl}</div>
+    </div>`).join('');
+
+  const bullets = [
+    `Revenue ${kr(FIN.revenue)} — up ${Math.round((FIN.revenue-FIN.prevRevenue)/FIN.prevRevenue*100*10)/10}% vs February`,
+    `Staff costs ${pct(FIN.staffPct)} of revenue — above 40% target; sick leave overtime`,
+    `Food & Bev ${pct(FIN.foodPct)} — Menigo +8% from March 1st`,
+    `Net profit ${kr(FIN.profit)} at ${pct(FIN.margin)} margin`,
+    `Q1 revenue forecast exceeds budget by +6 900 kr`,
+  ];
+  const bulletHtml = bullets.map((b,i) => `
+    <div style="position:absolute;left:36px;top:${155+i*37}px;right:20px">
+      <div style="position:absolute;left:0;top:4px;width:4px;height:22px;background:${hex(T.bg)};border-radius:2px"></div>
+      <div style="position:absolute;left:12px;font-size:11px;color:#2a2a2a;line-height:1.4">${b}</div>
+    </div>`).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Executive Summary</div>
+      <div style="position:absolute;right:16px;top:16px;font-size:11px;color:${hex(T.accent)}">${FIN.period}</div>
+    </div>
+    ${kpiHtml}${bulletHtml}
+  </div>`;
+}
+
+function renderRevenue(t, stage) {
+  const T = THEMES[t];
+  const maxRev = Math.max(...FIN.monthlyRevenue);
+  const barsHtml = FIN.monthlyLabels.map((lbl, i) => {
+    const h = Math.round((FIN.monthlyRevenue[i]/maxRev) * 120);
+    const budgets = [380000,460000,490000];
+    const bh = Math.round((budgets[i]/maxRev) * 120);
+    const x = 80 + i * 120;
+    return `
+      <div style="position:absolute;bottom:30px;left:${x}px;width:38px;height:${h}px;background:${hex(T.bg)};border-radius:3px 3px 0 0"></div>
+      <div style="position:absolute;bottom:30px;left:${x+42}px;width:30px;height:${bh}px;background:${hex(T.accent)};border-radius:3px 3px 0 0;opacity:.7"></div>
+      <div style="position:absolute;bottom:14px;left:${x-4}px;font-size:9px;color:#9b9690;width:85px;text-align:center">${lbl}</div>
+      <div style="position:absolute;bottom:${h+33}px;left:${x}px;font-size:8px;font-weight:700;color:${hex(T.bg)};width:38px;text-align:center">${Math.round(FIN.monthlyRevenue[i]/1000)}k</div>`;
+  }).join('');
+
+  const breakdown = [
+    {lbl:"Mat",      pct:"61.8%", amt:kr(312500)},
+    {lbl:"Dryck",    pct:"34.6%", amt:kr(175000)},
+    {lbl:"Catering", pct:"3.6%",  amt:kr(18400)},
+  ];
+  const bdHtml = breakdown.map((b,i) => `
+    <div style="position:absolute;left:418px;top:${65+i*75}px;width:205px;height:66px;background:white;border-radius:5px;overflow:hidden">
+      <div style="position:absolute;left:0;top:0;width:4px;height:100%;background:${hex(T.bg)}"></div>
+      <div style="position:absolute;left:12px;top:8px;font-size:13px;font-weight:700;color:#1a1917">${b.lbl}</div>
+      <div style="position:absolute;left:12px;top:28px;font-size:18px;font-weight:700;color:${hex(T.bg)}">${b.pct}</div>
+      <div style="position:absolute;right:10px;top:28px;font-size:10px;color:#9b9690">${b.amt}</div>
+    </div>`).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Revenue Analysis</div>
+    </div>
+    <div style="position:absolute;left:20px;top:72px;width:390px;height:220px;background:white;border-radius:6px;overflow:hidden;padding:10px">
+      <div style="font-size:10px;font-weight:600;color:#9b9690;text-transform:uppercase;margin-bottom:4px">Monthly Revenue vs Budget</div>
+      <div style="position:relative;height:165px">${barsHtml}</div>
+      <div style="display:flex;gap:12px;margin-top:4px">
+        <div style="display:flex;align-items:center;gap:4px;font-size:9px;color:#9b9690"><div style="width:10px;height:10px;border-radius:2px;background:${hex(T.bg)}"></div>Actual</div>
+        <div style="display:flex;align-items:center;gap:4px;font-size:9px;color:#9b9690"><div style="width:10px;height:10px;border-radius:2px;background:${hex(T.accent)};opacity:.7"></div>Budget</div>
+      </div>
+    </div>
+    ${bdHtml}
+  </div>`;
+}
+
+function renderCosts(t, stage) {
+  const T = THEMES[t];
+  const costs = [
+    {name:"Personal",       val:FIN.staff, pct:FIN.staffPct, target:40.0, over:FIN.staffPct>40},
+    {name:"Råvaror & dryck",val:FIN.food,  pct:FIN.foodPct,  target:31.0, over:false},
+    {name:"Lokal",           val:FIN.rent,  pct:FIN.rentPct,  target:13.0, over:false},
+    {name:"Övrigt",          val:FIN.other, pct:FIN.otherPct, target:6.0,  over:false},
+  ];
+  const maxPct = 55;
+
+  // Donut SVG (simplified)
+  const donutSlices = (() => {
+    const total = FIN.totalCosts;
+    const vals = [FIN.staff, FIN.food, FIN.rent, FIN.other];
+    const colors = [hex(T.bg), hex(T.accent), hex(T.accent2), '#888'];
+    let cumulativeAngle = -90;
+    return vals.map((v, i) => {
+      const angle = (v/total)*360;
+      const startRad = cumulativeAngle * Math.PI/180;
+      const endRad   = (cumulativeAngle+angle) * Math.PI/180;
+      const cx = 95, cy = 90, r = 60, inner = 35;
+      const x1 = cx + r*Math.cos(startRad), y1 = cy + r*Math.sin(startRad);
+      const x2 = cx + r*Math.cos(endRad),   y2 = cy + r*Math.sin(endRad);
+      const xi1= cx + inner*Math.cos(startRad), yi1 = cy + inner*Math.sin(startRad);
+      const xi2= cx + inner*Math.cos(endRad),   yi2 = cy + inner*Math.sin(endRad);
+      const large = angle > 180 ? 1 : 0;
+      const path = `M${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} L${xi2},${yi2} A${inner},${inner} 0 ${large},0 ${xi1},${yi1} Z`;
+      cumulativeAngle += angle;
+      return `<path d="${path}" fill="${colors[i]}" stroke="white" stroke-width="1.5"/>`;
+    }).join('');
+  })();
+
+  const costRows = costs.map((c,i) => {
+    const barW = Math.round((c.pct/maxPct)*200);
+    const tmX  = Math.round((c.target/maxPct)*200);
+    return `<div style="position:absolute;left:220px;top:${65+i*62}px;right:16px">
+      <div style="font-size:11px;font-weight:600;color:#1a1917">${c.name}</div>
+      <div style="font-size:9px;color:#9b9690;margin-top:1px">${pct(c.pct)} · target ${pct(c.target)} · ${kr(c.val)}</div>
+      <div style="position:relative;margin-top:5px;height:10px;background:#e2e8f0;border-radius:3px">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${barW}px;background:${c.over?'#E24B4A':hex(T.bg)};border-radius:3px"></div>
+        <div style="position:absolute;left:${tmX}px;top:-2px;width:2px;height:14px;background:#555;border-radius:1px"></div>
+      </div>
+      ${c.over ? `<div style="font-size:9px;color:#E24B4A;font-weight:600;margin-top:2px">⚠ Above target</div>` : ''}
+    </div>`;
+  }).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Cost Breakdown</div>
+    </div>
+    <svg style="position:absolute;left:10px;top:58px;width:190px;height:200px" viewBox="0 0 190 200">
+      ${donutSlices}
+      <text x="95" y="86" text-anchor="middle" font-size="14" font-weight="700" fill="#1a1917">${pct(Math.round(FIN.totalCosts/FIN.revenue*100*10)/10)}</text>
+      <text x="95" y="100" text-anchor="middle" font-size="8" fill="#9b9690">OF REVENUE</text>
+    </svg>
+    ${costRows}
+  </div>`;
+}
+
+function renderPL(t, stage) {
+  const T = THEMES[t];
+  const rows = [
+    {label:"Nettoomsättning",    val:kr(FIN.revenue),     pct:"100%",  header:false, total:false, income:true},
+    {label:"(-) Personalkostnad",val:kr(-FIN.staff),      pct:pct(-FIN.staffPct), header:false,total:false,income:false},
+    {label:"(-) Råvaror & dryck",val:kr(-FIN.food),       pct:pct(-FIN.foodPct),  header:false,total:false,income:false},
+    {label:"(-) Lokal",          val:kr(-FIN.rent),       pct:pct(-FIN.rentPct),  header:false,total:false,income:false},
+    {label:"(-) Övrigt",         val:kr(-FIN.other),      pct:pct(-FIN.otherPct), header:false,total:false,income:false},
+    {label:"Rörelseresultat",     val:kr(FIN.profit),     pct:pct(FIN.margin),    header:false,total:true, income:true},
+  ];
+  const rowH = 38;
+  const rowsHtml = rows.map((r,i) => {
+    const y = 62 + i*rowH;
+    const bg = r.total ? '#EAF3DE' : i%2===0 ? 'white' : '#FAFAFA';
+    const textColor = r.total ? '#3B6D11' : '#1a1917';
+    const bold = r.total ? 'font-weight:700' : '';
+    return `<div style="position:absolute;left:16px;right:16px;top:${y}px;height:${rowH-2}px;background:${bg};border-radius:4px;overflow:hidden">
+      <div style="position:absolute;left:10px;top:8px;font-size:11px;${bold};color:${textColor}">${r.label}</div>
+      <div style="position:absolute;right:80px;top:8px;font-size:11px;${bold};color:${textColor};font-variant-numeric:tabular-nums">${r.val}</div>
+      <div style="position:absolute;right:10px;top:8px;font-size:11px;color:#9b9690;font-variant-numeric:tabular-nums">${r.pct}</div>
+    </div>`;
+  }).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Profit & Loss Statement</div>
+      <div style="position:absolute;right:16px;top:16px;font-size:11px;color:${hex(T.accent)}">${FIN.period}</div>
+    </div>
+    <div style="position:absolute;left:16px;right:16px;top:62px;height:28px;background:${hex(T.bg)};border-radius:4px">
+      <div style="position:absolute;left:10px;top:6px;font-size:10px;font-weight:700;color:white">Post</div>
+      <div style="position:absolute;right:80px;top:6px;font-size:10px;font-weight:700;color:white">Belopp</div>
+      <div style="position:absolute;right:10px;top:6px;font-size:10px;font-weight:700;color:white">%</div>
+    </div>
+    ${rowsHtml}
+  </div>`;
+}
+
+function renderTrend(t, stage) {
+  const T = THEMES[t];
+  const max = Math.max(...FIN.monthlyRevenue);
+  const W2 = 340, H2 = 180, PAD = 30;
+  const pts = FIN.monthlyRevenue.map((v,i) => {
+    const x = PAD + (i/(FIN.monthlyRevenue.length-1))*(W2-PAD*2);
+    const y = H2 - PAD - ((v/max)*(H2-PAD*2));
+    return `${x},${y}`;
+  }).join(' ');
+  const profitPts = FIN.monthlyProfit.map((v,i) => {
+    const x = PAD + (i/(FIN.monthlyProfit.length-1))*(W2-PAD*2);
+    const y = H2 - PAD - ((v/max)*(H2-PAD*2));
+    return `${x},${y}`;
+  }).join(' ');
+  const labels = FIN.monthlyLabels.map((l,i) => {
+    const x = PAD + (i/(FIN.monthlyLabels.length-1))*(W2-PAD*2);
+    return `<text x="${x}" y="${H2-5}" text-anchor="middle" font-size="10" fill="#9b9690">${l}</text>`;
+  }).join('');
+
+  const q1Cards = [
+    {lbl:"Q1 Revenue", val:kr(FIN.q1Revenue),  sub:`Budget: ${kr(FIN.q1Budget)}`},
+    {lbl:"Q1 Profit",  val:kr(199500),           sub:"Target: 94 500 kr"},
+    {lbl:"Avg Margin", val:"14.7%",              sub:"Target: 7.0%"},
+  ];
+  const q1Html = q1Cards.map((c,i) => `
+    <div style="position:absolute;left:376px;top:${65+i*90}px;width:248px;height:78px;background:white;border-radius:5px;overflow:hidden">
+      <div style="position:absolute;left:0;top:0;width:4px;height:100%;background:${hex(T.bg)}"></div>
+      <div style="position:absolute;left:12px;top:8px;font-size:10px;font-weight:600;color:#9b9690;text-transform:uppercase;letter-spacing:.06em">${c.lbl}</div>
+      <div style="position:absolute;left:12px;top:28px;font-size:18px;font-weight:700;color:${hex(T.bg)}">${c.val}</div>
+      <div style="position:absolute;left:12px;bottom:8px;font-size:10px;color:#9b9690">${c.sub}</div>
+    </div>`).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Profit Trend & Q1 Performance</div>
+    </div>
+    <div style="position:absolute;left:16px;top:66px;width:350px;height:250px;background:white;border-radius:6px;padding:10px">
+      <div style="font-size:10px;font-weight:600;color:#9b9690;text-transform:uppercase;margin-bottom:4px">Monthly Revenue & Profit</div>
+      <svg viewBox="0 0 ${W2} ${H2}" style="width:100%;height:190px">
+        <polyline points="${pts}" fill="none" stroke="${hex(T.bg)}" stroke-width="2.5" stroke-linejoin="round"/>
+        <polyline points="${profitPts}" fill="none" stroke="#52C374" stroke-width="2" stroke-dasharray="4 3" stroke-linejoin="round"/>
+        ${labels}
+        ${FIN.monthlyRevenue.map((v,i) => {
+          const x = PAD + (i/(FIN.monthlyRevenue.length-1))*(W2-PAD*2);
+          const y = H2 - PAD - ((v/max)*(H2-PAD*2));
+          return `<circle cx="${x}" cy="${y}" r="4" fill="${hex(T.bg)}" stroke="white" stroke-width="1.5"/>`;
+        }).join('')}
+      </svg>
+    </div>
+    ${q1Html}
+  </div>`;
+}
+
+function renderStaff(t, stage) {
+  const T = THEMES[t];
+  const cats = [
+    {name:"Kök",      val:130000},
+    {name:"Servering",val:58000},
+    {name:"Disk",     val:13000},
+    {name:"Övertid",  val:23978},
+  ];
+  const maxVal = Math.max(...cats.map(c=>c.val));
+  const barsH = cats.map((c,i) => {
+    const w = Math.round((c.val/maxVal)*200);
+    const isOvertime = c.name === "Övertid";
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="min-width:65px;font-size:10px;color:#1a1917;font-weight:500">${c.name}</div>
+        <div style="position:relative;height:20px;background:#e2e8f0;border-radius:3px;flex:1">
+          <div style="height:100%;width:${w}px;background:${isOvertime?'#E24B4A':hex(T.bg)};border-radius:3px"></div>
+        </div>
+        <div style="min-width:65px;font-size:10px;color:#9b9690;text-align:right">${kr(c.val)}</div>
+      </div>`;
+  }).join('');
+
+  const actions = [
+    {timing:"Immediate", text:"Review overtime billing weeks 11–12", color:"#E24B4A"},
+    {timing:"This month", text:"Rebuild schedule — target: ≤40% of revenue", color:"#FFC040"},
+    {timing:"Q2",         text:"Recruit permanent kock — save ~28k/month",    color:hex(T.bg)},
+  ];
+  const actHtml = actions.map((a,i) => `
+    <div style="position:absolute;left:375px;top:${65+i*96}px;width:250px;height:84px;background:white;border-radius:5px;overflow:hidden">
+      <div style="position:absolute;left:0;top:0;width:5px;height:100%;background:${a.color}"></div>
+      <div style="position:absolute;left:12px;top:8px;font-size:9px;font-weight:700;letter-spacing:.06em;color:${a.color};text-transform:uppercase">${a.timing}</div>
+      <div style="position:absolute;left:12px;top:28px;right:8px;font-size:11px;color:#1a1917;line-height:1.4">${a.text}</div>
+    </div>`).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Staff Cost Analysis</div>
+      <div style="position:absolute;right:16px;top:15px;font-size:11px;font-weight:700;color:#FFC040">⚠ Requires action</div>
+    </div>
+    <div style="position:absolute;left:16px;top:66px;width:345px;background:white;border-radius:6px;padding:14px">
+      <div style="font-size:10px;font-weight:600;color:#9b9690;text-transform:uppercase;margin-bottom:10px">Cost by role — March 2026</div>
+      ${barsH}
+      <div style="font-size:10px;color:#E24B4A;margin-top:4px;font-weight:600">Overtime 24k kr above budget → sick leave cover</div>
+    </div>
+    ${actHtml}
+  </div>`;
+}
+
+function renderRecs(t, stage) {
+  const T = THEMES[t];
+  const recs = [
+    {p:"HIGH",   col:"#E24B4A", title:"Renegotiate Menigo",      text:"+8% March price increase. Request Q2 price freeze. Saving: 5–8k kr/month."},
+    {p:"HIGH",   col:"#E24B4A", title:"Staffing schedule review", text:"Overtime 24k kr excess. Cross-train staff. Target: ≤40% of revenue."},
+    {p:"MEDIUM", col:"#FFC040", title:"Revise Q2 budget",         text:"Food +8%, staff +5% based on March actuals."},
+    {p:"MEDIUM", col:"#FFC040", title:"Cash flow buffer",          text:"Maintain ≥150k kr minimum working capital around payroll date."},
+    {p:"LOW",    col:"#52C374", title:"POS data quality",          text:"3 uncategorised Ancon→Fortnox transactions. Clean before Q2."},
+  ];
+  const recsHtml = recs.map((r,i) => `
+    <div style="position:absolute;left:16px;right:16px;top:${62+i*56}px;height:52px;background:white;border-radius:4px;overflow:hidden;display:flex;align-items:center">
+      <div style="width:52px;height:100%;background:${r.col};display:flex;align-items:center;justify-content:center">
+        <div style="color:white;font-size:8px;font-weight:700;letter-spacing:.05em;transform:rotate(-90deg);white-space:nowrap">${r.p}</div>
+      </div>
+      <div style="padding:4px 12px;flex:1;min-width:0">
+        <div style="font-size:11px;font-weight:600;color:#1a1917">${r.title}</div>
+        <div style="font-size:10px;color:#9b9690;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.text}</div>
+      </div>
+    </div>`).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Recommendations & Actions</div>
+    </div>
+    ${recsHtml}
+  </div>`;
+}
+
+function renderNextSteps(t, stage) {
+  const T = THEMES[t];
+  const steps = [
+    {when:"Week 1",   action:"Contact Menigo for pricing meeting",   owner:"Owner"},
+    {when:"Week 1",   action:"Pull overtime data — weeks 11–12",     owner:"Chef"},
+    {when:"Week 2",   action:"Rebuild staffing schedule model",       owner:"Owner+Chef"},
+    {when:"Week 2",   action:"Revise Q2 budget figures",             owner:"Owner"},
+    {when:"Month end","action":"Verify Ancon–Fortnox sync",          owner:"Admin"},
+    {when:"Q2",       action:"Launch permanent kock recruitment",    owner:"Owner"},
+  ];
+  const rowsHtml = steps.map((s,i) => `
+    <div style="position:absolute;left:16px;right:16px;top:${62+i*42}px;height:39px;background:${i%2===0?'white':'#FAFAFA'};border-radius:3px;display:flex;align-items:center;gap:8px;padding:0 10px">
+      <div style="min-width:70px;background:${hex(T.bg)};border-radius:3px;padding:3px 7px;text-align:center">
+        <span style="font-size:9px;font-weight:700;color:white">${s.when}</span>
+      </div>
+      <div style="flex:1;font-size:11px;color:#1a1917">${s.action}</div>
+      <div style="min-width:80px;text-align:right;font-size:10px;color:#9b9690">${s.owner}</div>
+    </div>`).join('');
+
+  return `<div style="position:absolute;inset:0;background:#F8F8FA">
+    <div style="position:absolute;top:0;left:0;right:0;height:58px;background:${hex(T.bg)}">
+      <div style="position:absolute;left:32px;top:11px;font-size:16px;font-weight:700;color:white">Next Steps</div>
+    </div>
+    <div style="position:absolute;left:16px;right:16px;top:62px;height:28px;background:${hex(T.bg)};border-radius:3px;display:flex;align-items:center;padding:0 10px;gap:8px">
+      <span style="min-width:70px;font-size:9px;font-weight:700;color:${hex(T.accent)}">WHEN</span>
+      <span style="flex:1;font-size:9px;font-weight:700;color:${hex(T.accent)}">ACTION</span>
+      <span style="min-width:80px;text-align:right;font-size:9px;font-weight:700;color:${hex(T.accent)}">OWNER</span>
+    </div>
+    ${rowsHtml}
+  </div>`;
+}
+
+function renderClosing(t, stage) {
+  const T = THEMES[t];
+  const bg = hex(T.bg);
+  return `<div style="position:absolute;inset:0;background:${hex(T.bg)}">
+    <div style="position:absolute;top:0;left:0;right:0;height:5px;background:${hex(T.accent)}"></div>
+    <div style="position:absolute;bottom:0;left:0;right:0;height:5px;background:${hex(T.accent)}"></div>
+    <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
+      <div style="font-size:42px;font-weight:700;color:white;font-family:'Instrument Sans',sans-serif">Thank you</div>
+      <div style="font-size:16px;color:${hex(T.accent)};font-style:italic;font-family:'Instrument Serif',Georgia,serif">Questions & Discussion</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.4);margin-top:10px">${FIN.company} · ${FIN.period} · Confidential</div>
+    </div>
+  </div>`;
+}
+
+// ── RENDER ENGINE ─────────────────────────────────────────────────
+function renderCurrentSlide() {
+  if (!STATE.slides.length) return;
+  const slide = STATE.slides[STATE.currentIdx];
+  const canvas = document.getElementById('slide-canvas');
+
+  const stageW = Math.round(640 * STATE.zoom);
+  const stageH = Math.round(360 * STATE.zoom);
+
+  canvas.innerHTML = `
+    <div class="slide-stage" id="slide-stage" style="width:${stageW}px;height:${stageH}px">
+      <div class="slide-inner" style="transform:scale(${STATE.zoom});transform-origin:top left;width:640px;height:360px">
+        ${slide.render(STATE.theme, {})}
+      </div>
+    </div>`;
+
+  document.getElementById('slide-title-display').textContent = slide.label;
+  document.getElementById('notes-text').textContent = slide.notes;
+  document.getElementById('slide-counter').textContent = `${STATE.currentIdx+1} / ${STATE.slides.length}`;
+  highlightThumb(STATE.currentIdx);
+  updateStatus();
+}
+
+function rerenderCurrentSlide() {
+  if (STATE.slides.length) renderCurrentSlide();
+}
+
+// ── SLIDE STRIP ────────────────────────────────────────────────────
+function renderSlideStrip() {
+  const strip = document.getElementById('slide-strip');
+  strip.innerHTML = STATE.slides.map((slide, i) => `
+    <div class="slide-thumb ${i===STATE.currentIdx?'active':''}"
+         id="thumb-${i}" draggable="true"
+         onclick="goToSlide(${i})"
+         ondragstart="dragStart(${i})"
+         ondragover="dragOver(event,${i})"
+         ondrop="dropSlide(event,${i})"
+         ondragleave="dragLeave(${i})">
+      <div class="thumb-inner">
+        <div class="thumb-num">${i+1}</div>
+        <div style="transform:scale(0.21);transform-origin:top left;width:640px;height:360px;pointer-events:none">
+          ${slide.render(STATE.theme, {})}
+        </div>
+      </div>
+      <div class="thumb-label">
+        <span>${slide.label}</span>
+        <button class="thumb-del" onclick="event.stopPropagation();deleteSlide(${i})">×</button>
+      </div>
+    </div>`
+  ).join('') + `<button class="add-slide-btn" onclick="addSlide()">+ Add slide</button>`;
+
+  document.getElementById('slide-count-badge').textContent = STATE.slides.length + ' slides';
+}
+
+// ── DRAG AND DROP REORDERING ──────────────────────────────────────
+let dragIdx = null;
+function dragStart(i) { dragIdx = i; }
+function dragOver(e, i) { e.preventDefault(); document.getElementById('thumb-'+i)?.classList.add('drag-over'); }
+function dragLeave(i) { document.getElementById('thumb-'+i)?.classList.remove('drag-over'); }
+function dropSlide(e, targetIdx) {
+  e.preventDefault();
+  if (dragIdx === null || dragIdx === targetIdx) return;
+  const moved = STATE.slides.splice(dragIdx, 1)[0];
+  STATE.slides.splice(targetIdx, 0, moved);
+  STATE.currentIdx = targetIdx;
+  dragIdx = null;
+  renderSlideStrip();
+  renderCurrentSlide();
+}
+
+function deleteSlide(i) {
+  if (STATE.slides.length <= 1) return;
+  STATE.slides.splice(i, 1);
+  STATE.currentIdx = Math.min(STATE.currentIdx, STATE.slides.length-1);
+  renderSlideStrip();
+  renderCurrentSlide();
+}
+
+function addSlide() {
+  // Add an executive summary slide as a generic new slide
+  const newSlide = buildSlideDefinitions('board').find(s => s.id==='exec') ||
+                   STATE.slides[STATE.slides.length-1];
+  STATE.slides.push({...newSlide, id:'extra_'+Date.now(), label:'New Slide'});
+  STATE.currentIdx = STATE.slides.length-1;
+  renderSlideStrip();
+  renderCurrentSlide();
+}
+
+// ── DATA REFRESH ──────────────────────────────────────────────────
+function refreshData() {
+  document.getElementById('refresh-banner').style.display = 'flex';
+  document.getElementById('refresh-msg').textContent = `Data updated ${new Date().toLocaleTimeString('sv-SE')} — click to refresh slides`;
+  STATE.dataTimestamp = Date.now();
+}
+
+function refreshSlides() {
+  document.getElementById('refresh-banner').style.display = 'none';
+  renderSlideStrip();
+  renderCurrentSlide();
+}
+
+// ── EXPORT ────────────────────────────────────────────────────────
+function downloadPptx() {
+  // Download the pre-generated PPTX from the server
+  // In production: this triggers the Python generator via an API call
+  const a = document.createElement('a');
+  a.href = 'board_meeting.pptx';   // Points to the generated file
+  a.download = `${STATE.deckType}_${FIN.period.replace(' ','_')}.pptx`;
+  a.click();
+  document.getElementById('export-meta').innerHTML +=
+    `<br><span style="color:var(--green);font-weight:600">✓ Downloaded ${a.download}</span>`;
+}
+
+function downloadPdf() {
+  // Build a printable HTML page from current slides and open print dialog
+  const slidesHtml = STATE.slides.map((s,i) => `
+    <div style="width:640px;height:360px;margin:0 auto 20px;page-break-after:always;position:relative;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.1)">
+      ${s.render(STATE.theme, {})}
+    </div>`).join('');
+
+  const win = window.open('','_blank');
+  win.document.write(`<html><head><meta charset="utf-8">
+    <style>
+      @page{size:landscape;margin:0}
+      body{margin:20px;background:#e8e8e8;font-family:'Instrument Sans',sans-serif}
+      @media print{body{margin:0;background:white}.slide-wrap{page-break-after:always;margin:0}}
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    </head><body>${slidesHtml}</body></html>`);
+  win.document.close();
+  setTimeout(()=>win.print(), 800);
+}
+
+function copyHtml() {
+  const html = STATE.slides.map(s => s.render(STATE.theme, {})).join('\n\n');
+  navigator.clipboard.writeText(html);
+  alert('HTML for all slides copied to clipboard.');
+}
+
+// ── AI GENERATOR ──────────────────────────────────────────────────
+async function aiGenerate() {
+  const prompt = document.getElementById('ai-prompt').value.trim();
+  if (!prompt) return;
+
+  // Detect deck type from prompt
+  if (/board|monthly|performance/i.test(prompt))   selectDeck('board', document.getElementById('dt-board'));
+  else if (/investor|pitch|growth/i.test(prompt))  selectDeck('investor', document.getElementById('dt-investor'));
+  else if (/budget|forecast|q2/i.test(prompt))     selectDeck('budget', document.getElementById('dt-budget'));
+
+  await generateDeck();
+
+  // If API key available, refine with Claude
+  const apiKey = STATE.apiKey || localStorage.getItem('bj_api_key');
+  if (apiKey) {
+    // Could call Claude API to customize slide content further
+    // For now: just generate the deck
+  }
+}
+
+function setPrompt(text) { document.getElementById('ai-prompt').value = text; }
+
+// ── SETTINGS ──────────────────────────────────────────────────────
+function saveKey() {
+  const val = document.getElementById('api-key').value.trim();
+  if (val && !val.startsWith('•')) {
+    STATE.apiKey = val;
+    localStorage.setItem('bj_api_key', val);
+    document.getElementById('api-key').value = '••••••••';
+  }
+}
+
+// ── PROCESSING OVERLAY ────────────────────────────────────────────
+function showProc(step, sub) {
+  document.getElementById('proc-step').textContent = step;
+  document.getElementById('proc-sub').textContent  = sub;
+  document.getElementById('proc-overlay').style.display = 'flex';
+  document.getElementById('gen-btn').disabled = true;
+}
+async function procStep(step, sub) {
+  document.getElementById('proc-step').textContent = step;
+  document.getElementById('proc-sub').textContent  = sub;
+}
+function hideProc() {
+  document.getElementById('proc-overlay').style.display = 'none';
+  document.getElementById('gen-btn').disabled = false;
+}
+
+// ── KEYBOARD ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') navSlide(1);
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   navSlide(-1);
+});
+
+// ── UTILITIES ─────────────────────────────────────────────────────
+function delay(ms) { return new Promise(r=>setTimeout(r,ms)); }
+
+// ── INIT ──────────────────────────────────────────────────────────
+renderThemeGrid();
+
+// Auto-generate board deck on load
+setTimeout(async () => {
+  await generateDeck();
+}, 300);
+</script>
+</body>
+</html>

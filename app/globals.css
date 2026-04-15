@@ -1,0 +1,89 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+a { color: inherit; }
+input, button, select, textarea { font-family: inherit; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+/* Transitions */
+* { transition: background-color .15s, border-color .15s, color .15s; }
+
+/* ── RESPONSIVE GRID HELPERS ─────────────────────────────────── */
+.grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 10px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 12px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
+.grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 10px; }
+
+/* Chart + sidebar layout */
+.layout-chart-side  { display: grid; grid-template-columns: 1fr 280px; gap: 12px; }
+.layout-three-col   { display: grid; grid-template-columns: 1fr 1fr 300px; gap: 12px; }
+.layout-two-thirds  { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+
+/* Quick actions row */
+.quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+
+/* Page wrapper */
+.page-wrap { padding: 24px 28px; max-width: 1100px; width: 100%; }
+
+/* Table wrapper — horizontal scroll on mobile */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+@media (max-width: 900px) {
+  .grid-5         { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
+  .grid-4         { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .layout-chart-side  { grid-template-columns: 1fr !important; }
+  .layout-three-col   { grid-template-columns: 1fr 1fr !important; }
+  .layout-two-thirds  { grid-template-columns: 1fr !important; }
+  .quick-actions  { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+}
+
+@media (max-width: 600px) {
+  .page-wrap      { padding: 16px !important; }
+  .grid-5         { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .grid-4         { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .grid-3         { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  .grid-2         { grid-template-columns: 1fr !important; }
+  .layout-chart-side  { grid-template-columns: 1fr !important; }
+  .layout-three-col   { grid-template-columns: 1fr !important; }
+  .layout-two-thirds  { grid-template-columns: 1fr !important; }
+  .layout-two-thirds > *:last-child { display: none; }
+  .quick-actions  { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+  
+  /* Header flex wraps on small screens */
+  .page-header    { flex-wrap: wrap; gap: 12px; }
+  .page-header-controls { flex-wrap: wrap; }
+
+  /* Hide less important table columns */
+  .hide-mobile    { display: none !important; }
+  
+  /* Full width buttons on mobile */
+  .btn-mobile-full { width: 100% !important; }
+}
+
+/* ── AUTO TABLE SCROLL ───────────────────────────────────────── */
+/* Any table inside a page content area scrolls on mobile */
+@media (max-width: 768px) {
+  .page-wrap { padding: 16px !important; }
+  
+  /* Wrap all tables automatically */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+  
+  /* Tighten up table cells on mobile */
+  th, td { padding: 8px 10px !important; font-size: 12px !important; white-space: nowrap; }
+  
+  /* Header controls stack on mobile */
+  .page-header { flex-direction: column !important; align-items: stretch !important; }
+  .page-header > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+  .page-header select,
+  .page-header input[type="date"],
+  .page-header button { flex: 1; min-width: 100px; }
+  
+  /* Stack panels */
+  .layout-three-col > *:last-child,
+  .layout-chart-side > *:last-child { margin-top: 12px; }
+}

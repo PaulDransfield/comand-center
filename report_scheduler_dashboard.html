@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Report Scheduler — Björken</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f4f1;--panel:#fff;--panel-2:#faf8f4;
+  --border:#e2e0db;--border-d:#c8c3bb;
+  --text:#1a1917;--muted:#6b6860;--hint:#9b9690;--charcoal:#3d3b38;
+  --blue:#185FA5;--blue-lt:#E6F1FB;--blue-dk:#0C447C;
+  --green:#3B6D11;--green-lt:#EAF3DE;
+  --red:#A32D2D;--red-lt:#FCEBEB;
+  --amber:#854F0B;--amber-lt:#FAEEDA;
+  --navy:#1E2761;
+  --r:8px;--rl:14px;
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);font-size:14px;background:var(--bg);color:var(--text);display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:2px}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:46px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;gap:12px}
+.brand{display:flex;align-items:center;gap:9px}
+.brand-icon{width:28px;height:28px;border-radius:7px;background:var(--navy);display:flex;align-items:center;justify-content:center}
+.brand-icon svg{width:14px;height:14px;fill:white}
+.brand-name{font-size:14px;font-weight:600}
+.brand-sub{font-size:12px;color:var(--muted)}
+
+.shell{display:grid;grid-template-columns:320px 1fr 280px;height:calc(100vh - 46px);overflow:hidden}
+.panel{display:flex;flex-direction:column;overflow:hidden}
+.panel-l{border-right:1px solid var(--border);background:var(--panel-2)}
+.panel-c{background:var(--bg)}
+.panel-r{border-left:1px solid var(--border);background:var(--panel)}
+.ph{padding:11px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--panel)}
+.ph h2{font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em}
+.ps{flex:1;overflow-y:auto}
+
+/* SCHEDULE CARDS */
+.sched-card{margin:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;transition:border-color .15s}
+.sched-card:hover{border-color:var(--border-d)}
+.sched-header{padding:12px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.sched-icon{width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.si-daily{background:#E6F1FB}
+.si-weekly{background:#EAF3DE}
+.si-monthly{background:#FAEEDA}
+.si-quarterly{background:#EEEDFE}
+.sched-info{flex:1}
+.sched-name{font-size:13px;font-weight:600}
+.sched-time{font-size:11px;color:var(--muted);margin-top:2px}
+.sched-toggle{display:flex;align-items:center}
+.toggle-pill{width:32px;height:17px;border-radius:9px;background:var(--border-d);position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+.toggle-pill.on{background:var(--blue)}
+.toggle-pill::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:white;transition:left .2s}
+.toggle-pill.on::after{left:17px}
+.sched-body{padding:12px 14px}
+.sched-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:12px}
+.sched-row:last-child{margin-bottom:0}
+.sched-label{min-width:90px;color:var(--muted);font-weight:500}
+.sched-val{flex:1;font-family:var(--mono);font-size:11px}
+input[type=text],input[type=time],input[type=number],select{font-size:12px;font-family:var(--font);padding:5px 8px;border-radius:var(--r);border:1px solid var(--border-d);color:var(--text);background:var(--panel);width:100%}
+input:focus,select:focus{outline:none;border-color:var(--blue)}
+
+/* GENERATE BUTTONS */
+.gen-row{display:flex;gap:6px;padding:12px 14px 0}
+.gen-btn-r{flex:1;padding:8px;border-radius:var(--r);border:1px solid var(--border-d);background:var(--panel);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .12s}
+.gen-btn-r:hover{border-color:var(--blue);background:var(--blue-lt);color:var(--blue)}
+.gen-btn-r.primary{background:var(--blue);color:white;border-color:var(--blue)}
+.gen-btn-r.primary:hover{background:var(--blue-dk)}
+
+/* REPORT HISTORY */
+.hist-item{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;cursor:pointer;transition:background .1s}
+.hist-item:hover{background:var(--bg)}
+.hist-icon{font-size:18px;flex-shrink:0}
+.hist-info{flex:1;min-width:0}
+.hist-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hist-meta{font-size:10px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+.hist-dl{background:none;border:1px solid var(--border-d);border-radius:var(--r);padding:3px 8px;font-size:11px;cursor:pointer;font-family:var(--font);color:var(--blue);transition:all .1s}
+.hist-dl:hover{background:var(--blue-lt)}
+
+/* PREVIEW PANE */
+.preview-header{padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.preview-canvas{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+
+/* EMAIL CONFIG */
+.email-section{padding:12px 16px;border-bottom:1px solid var(--border)}
+.email-label{font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.email-row{display:flex;flex-direction:column;gap:4px;margin-bottom:8px;font-size:12px}
+.email-key{font-weight:500;color:var(--charcoal);margin-bottom:2px}
+
+/* REPORT PREVIEW CARDS */
+.report-preview{background:white;border:1px solid var(--border);border-radius:var(--rl);overflow:hidden}
+.rp-header{padding:14px 16px;background:var(--navy);color:white;display:flex;align-items:flex-start;justify-content:space-between}
+.rp-title{font-size:16px;font-weight:600}
+.rp-sub{font-size:10px;opacity:.7;margin-top:2px}
+.rp-type{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:rgba(255,255,255,.15);letter-spacing:.05em}
+.rp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--border)}
+.rp-kpi{padding:10px 12px;text-align:center;border-right:1px solid var(--border)}
+.rp-kpi:last-child{border-right:none}
+.rp-kpi-val{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--navy)}
+.rp-kpi-lbl{font-size:9px;color:var(--hint);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+.rp-section{padding:10px 14px;border-bottom:1px solid var(--border)}
+.rp-section-title{font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.07em;margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid var(--blue-lt)}
+.rp-body{font-size:11px;color:var(--muted);line-height:1.65}
+.rp-body strong{color:var(--text)}
+.rp-insight-box{background:var(--amber-lt);border:1px solid rgba(133,79,11,.2);border-radius:var(--r);padding:8px 12px;font-size:11px;color:var(--charcoal);line-height:1.6}
+.rp-insight-title{font-size:9px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+.rp-table{width:100%;border-collapse:collapse;font-size:11px}
+.rp-table th{background:var(--blue);color:white;padding:5px 8px;text-align:left;font-weight:600;font-size:10px}
+.rp-table td{padding:5px 8px;border-bottom:1px solid var(--border)}
+.rp-table tr:nth-child(even)td{background:var(--bg)}
+.pages-badge{font-size:9px;padding:2px 7px;border-radius:10px;font-weight:700}
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap}
+.b-blue{background:var(--blue-lt);color:var(--blue)}
+.b-green{background:var(--green-lt);color:var(--green)}
+.b-amber{background:var(--amber-lt);color:var(--amber)}
+.b-gray{background:var(--bg);color:var(--hint);border:1px solid var(--border)}
+.b-navy{background:#E8EAF6;color:var(--navy)}
+.btn{font-family:var(--font);font-size:12px;font-weight:500;padding:5px 11px;border-radius:var(--r);border:1px solid var(--border-d);background:none;cursor:pointer;color:var(--charcoal);transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:var(--bg)}
+.btn-primary{background:var(--blue);color:white;border-color:var(--blue)}
+.btn-primary:hover{background:var(--blue-dk)}
+.btn-sm{font-size:11px;padding:3px 8px}
+
+/* LOG */
+.log-item{padding:5px 16px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono);color:var(--muted);display:flex;gap:8px}
+.log-time{color:var(--hint);flex-shrink:0}
+.log-ok{color:var(--green)}.log-err{color:var(--red)}.log-warn{color:var(--amber)}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.fade-in{animation:fadeIn .2s ease}
+
+/* SPINNER */
+.spinner{width:14px;height:14px;border:2px solid var(--border-d);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-icon"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></div>
+    <span class="brand-name">Report Scheduler</span>
+    <span class="brand-sub">Restaurang Björken</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span class="badge b-gray" id="next-run-badge">Computing next run…</span>
+    <button class="btn btn-sm btn-primary" onclick="generateAll()">Generate all now</button>
+  </div>
+</div>
+
+<div class="shell">
+
+<!-- ── LEFT: SCHEDULES ── -->
+<div class="panel panel-l">
+  <div class="ph"><h2>Schedules</h2><button class="btn btn-sm" onclick="saveConfig()">Save changes</button></div>
+  <div class="ps" id="schedule-list"></div>
+</div>
+
+<!-- ── CENTRE: PREVIEW ── -->
+<div class="panel panel-c">
+  <div class="preview-header">
+    <h2 style="font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em">Report Previews</h2>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm" onclick="previewType('daily')">Daily</button>
+      <button class="btn btn-sm" onclick="previewType('weekly')">Weekly</button>
+      <button class="btn btn-sm" onclick="previewType('monthly')">Monthly</button>
+      <button class="btn btn-sm" onclick="previewType('quarterly')">Quarterly</button>
+    </div>
+  </div>
+  <div class="preview-canvas" id="preview-canvas">
+    <!-- previews rendered here -->
+  </div>
+</div>
+
+<!-- ── RIGHT: HISTORY + EMAIL ── -->
+<div class="panel panel-r">
+  <div class="ph"><h2>Generated Reports</h2><span class="badge b-gray" id="report-count">0</span></div>
+
+  <div class="ps">
+    <!-- Email config -->
+    <div class="email-section">
+      <div class="email-label">Email Distribution</div>
+      <div class="email-row">
+        <div class="email-key">SMTP / Gmail</div>
+        <input type="text" id="smtp-user" placeholder="your@gmail.com">
+      </div>
+      <div class="email-row">
+        <div class="email-key">App password</div>
+        <input type="password" id="smtp-pass" placeholder="xxxx xxxx xxxx xxxx">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:11px;color:var(--muted)">
+        <div class="toggle-pill" id="email-toggle" onclick="this.classList.toggle('on')"></div>
+        Enable email sending
+      </div>
+      <div style="font-size:10px;color:var(--hint);margin-top:5px;line-height:1.5">
+        Use a Gmail App Password (not your main password).<br>
+        Settings → Security → App passwords
+      </div>
+    </div>
+
+    <!-- Anthropic API key -->
+    <div class="email-section">
+      <div class="email-label">AI Insights</div>
+      <div class="email-row">
+        <div class="email-key">Anthropic API key</div>
+        <input type="password" id="api-key-input" placeholder="sk-ant-…">
+      </div>
+      <div style="font-size:10px;color:var(--hint);margin-top:4px">
+        Optional — enables AI-generated insights in reports
+      </div>
+      <button class="btn btn-sm btn-primary" style="margin-top:6px;width:100%;justify-content:center" onclick="saveApiKey()">Save API key</button>
+    </div>
+
+    <!-- Report history -->
+    <div style="padding:10px 16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em">Generated Reports</div>
+    </div>
+    <div id="history-list"></div>
+
+    <!-- Log -->
+    <div style="padding:8px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em">Activity Log</div>
+    </div>
+    <div id="log-list" style="max-height:180px;overflow-y:auto"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+  // ── AUTO-LOAD API KEY FROM COMMAND CENTER ──────────────────
+  (function() {
+    const key = localStorage.getItem('bj_api_key');
+    if (!key) return;
+    // Apply to all known key storage locations
+    localStorage.setItem('rag_api_key', key);
+    localStorage.setItem('bj_api_key', key);
+    // Set on window so any inline references pick it up
+    window._CC_API_KEY = key;
+  })();
+  // ────────────────────────────────────────────────────────────
+
+// ── FINANCIAL DATA ────────────────────────────────────────────────
+const FIN = {
+  company:"Restaurang Björken AB", period:"Mars 2026",
+  revenue:505900, staff:224978, food:149300, rent:64500, other:28422,
+  prevRevenue:461800,
+  monthly_revenue:[389200,461800,505900],
+  monthly_profit:[12100,38700,38700],
+  monthly_labels:["Jan 2026","Feb 2026","Mars 2026"],
+};
+FIN.total_costs = FIN.staff+FIN.food+FIN.rent+FIN.other;
+FIN.profit      = FIN.revenue-FIN.total_costs;
+FIN.margin      = (FIN.profit/FIN.revenue*100).toFixed(2);
+FIN.staff_pct   = (FIN.staff/FIN.revenue*100).toFixed(1);
+FIN.food_pct    = (FIN.food/FIN.revenue*100).toFixed(1);
+FIN.rent_pct    = (FIN.rent/FIN.revenue*100).toFixed(1);
+FIN.rev_delta   = ((FIN.revenue-FIN.prevRevenue)/FIN.prevRevenue*100).toFixed(1);
+
+const kr  = n => Math.round(Math.abs(n)).toLocaleString('sv-SE')+' kr';
+const pct = (n,sign=false) => (sign&&n>0?'+':'')+Number(n).toFixed(1)+'%';
+
+// ── SCHEDULE CONFIG ───────────────────────────────────────────────
+const SCHEDULES = {
+  daily: {
+    name:"Daily Summary", icon:"📊", iconCls:"si-daily",
+    enabled:true, time:"07:00", days:"Mon–Sun",
+    format:"PDF", recipients:"owner@bjorken.se",
+    description:"1-page numbers-focused brief. Revenue, costs, top expenses, alerts.",
+    pages:"1 page", badge:"b-blue", color:"var(--blue)"
+  },
+  weekly: {
+    name:"Weekly Report", icon:"📈", iconCls:"si-weekly",
+    enabled:true, time:"Mon 08:00", days:"Every Monday",
+    format:"PDF", recipients:"owner@bjorken.se, chef@bjorken.se",
+    description:"2–3 pages. Trends, cost analysis, supplier summary, insights.",
+    pages:"2–3 pages", badge:"b-green", color:"var(--green)"
+  },
+  monthly: {
+    name:"Monthly Board Package", icon:"📋", iconCls:"si-monthly",
+    enabled:true, time:"3rd of month 09:00", days:"Monthly",
+    format:"PDF", recipients:"owner@bjorken.se",
+    description:"5–7 pages. Full P&L, charts, budget comparison, recommendations.",
+    pages:"5–7 pages", badge:"b-amber", color:"var(--amber)"
+  },
+  quarterly: {
+    name:"Quarterly Strategic Review", icon:"🎯", iconCls:"si-quarterly",
+    enabled:true, time:"Q start +5 days 09:00", days:"Quarterly",
+    format:"PDF", recipients:"owner@bjorken.se",
+    description:"Strategic review, Q2 forecast, initiatives, AI analysis.",
+    pages:"6–8 pages", badge:"b-navy", color:"var(--navy)"
+  },
+};
+
+// Generated report history (demo)
+const HISTORY = [
+  {type:"quarterly", name:"quarterly_Q1_2026.pdf",      date:"2026-03-18 07:55", pages:7},
+  {type:"monthly",   name:"monthly_202603.pdf",           date:"2026-03-18 07:55", pages:6},
+  {type:"weekly",    name:"weekly_w12_2026.pdf",           date:"2026-03-18 07:55", pages:3},
+  {type:"daily",     name:"daily_20260318.pdf",            date:"2026-03-18 07:55", pages:1},
+  {type:"daily",     name:"daily_20260317.pdf",            date:"2026-03-17 07:00", pages:1},
+  {type:"daily",     name:"daily_20260316.pdf",            date:"2026-03-16 07:00", pages:1},
+];
+
+const logEntries = [];
+
+// ── RENDER SCHEDULE CARDS ─────────────────────────────────────────
+function renderSchedules() {
+  const list = document.getElementById('schedule-list');
+  list.innerHTML = Object.entries(SCHEDULES).map(([key, s]) => `
+    <div class="sched-card" id="scard-${key}">
+      <div class="sched-header">
+        <div class="sched-icon ${s.iconCls}">${s.icon}</div>
+        <div class="sched-info">
+          <div class="sched-name">${s.name}</div>
+          <div class="sched-time">${s.time} · ${s.pages}</div>
+        </div>
+        <div class="sched-toggle">
+          <div class="toggle-pill ${s.enabled?'on':''}" id="toggle-${key}"
+               onclick="toggleSchedule('${key}')"></div>
+        </div>
+      </div>
+      <div class="sched-body">
+        <div class="sched-row">
+          <span class="sched-label">Time</span>
+          <input type="time" value="${s.time.includes(':')?s.time.slice(-5):'07:00'}"
+                 id="time-${key}" style="width:100px">
+        </div>
+        <div class="sched-row">
+          <span class="sched-label">Recipients</span>
+          <input type="text" value="${s.recipients}" id="rcpt-${key}">
+        </div>
+        <div class="sched-row">
+          <span class="sched-label">Format</span>
+          <select id="fmt-${key}" style="width:90px">
+            <option ${s.format==='pdf'?'selected':''}>pdf</option>
+            <option ${s.format==='docx'?'selected':''}>docx</option>
+          </select>
+        </div>
+        <div style="font-size:11px;color:var(--hint);margin-top:5px;line-height:1.5">${s.description}</div>
+      </div>
+      <div class="gen-row" style="padding-bottom:12px">
+        <button class="gen-btn-r" onclick="generateNow('${key}')">
+          <span id="gen-icon-${key}">⚡</span> Generate now
+        </button>
+        <button class="gen-btn-r" onclick="previewType('${key}')">👁 Preview</button>
+      </div>
+    </div>`
+  ).join('');
+}
+
+function toggleSchedule(key) {
+  SCHEDULES[key].enabled = !SCHEDULES[key].enabled;
+  const pill = document.getElementById('toggle-'+key);
+  if (pill) pill.classList.toggle('on', SCHEDULES[key].enabled);
+  addLog(`${key} schedule ${SCHEDULES[key].enabled?'enabled':'disabled'}`, 'ok');
+}
+
+function saveConfig() {
+  Object.keys(SCHEDULES).forEach(key => {
+    const t = document.getElementById('time-'+key)?.value;
+    const r = document.getElementById('rcpt-'+key)?.value;
+    if (t) SCHEDULES[key].time = t;
+    if (r) SCHEDULES[key].recipients = r;
+  });
+  addLog('Schedule configuration saved', 'ok');
+  updateNextRun();
+}
+
+// ── GENERATE ──────────────────────────────────────────────────────
+async function generateNow(type) {
+  const icon = document.getElementById('gen-icon-'+type);
+  if (icon) icon.outerHTML = `<div class="spinner" id="gen-icon-${type}"></div>`;
+  addLog(`Generating ${type} report…`, 'info');
+
+  // Try real engine first
+  try {
+    const res = await fetch(`http://localhost:8766/api/generate/${type}`, {method:'POST'});
+    if (res.ok) {
+      const data = await res.json();
+      addToHistory(type, data.filename || `${type}_${Date.now()}.pdf`);
+      addLog(`✓ ${type} report generated: ${data.filename}`, 'ok');
+      return;
+    }
+  } catch(e) { /* engine not running — use demo */ }
+
+  // Demo mode: simulate generation time
+  await new Promise(r => setTimeout(r, 800+Math.random()*600));
+  const now = new Date();
+  const filename = {
+    daily:     `daily_${now.toISOString().slice(0,10).replace(/-/g,'')}.pdf`,
+    weekly:    `weekly_w${getWeek(now)}_${now.getFullYear()}.pdf`,
+    monthly:   `monthly_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}.pdf`,
+    quarterly: `quarterly_Q${Math.ceil((now.getMonth()+1)/3)}_${now.getFullYear()}.pdf`,
+  }[type] || `${type}_${Date.now()}.pdf`;
+
+  addToHistory(type, filename);
+  addLog(`✓ ${type} report generated (demo): ${filename}`, 'ok');
+
+  // Restore icon
+  const spinner = document.getElementById('gen-icon-'+type);
+  if (spinner) spinner.outerHTML = `<span id="gen-icon-${type}">⚡</span>`;
+}
+
+async function generateAll() {
+  for (const type of ['daily','weekly','monthly','quarterly']) {
+    await generateNow(type);
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+function addToHistory(type, filename) {
+  const now = new Date().toLocaleString('sv-SE',{hour:'2-digit',minute:'2-digit',year:'numeric',month:'2-digit',day:'2-digit'});
+  HISTORY.unshift({type, name:filename, date:now, pages:{daily:1,weekly:3,monthly:6,quarterly:8}[type]||1});
+  renderHistory();
+}
+
+// ── REPORT PREVIEWS ───────────────────────────────────────────────
+const PREVIEWS = {
+  daily: () => `
+    <div class="report-preview fade-in">
+      <div class="rp-header">
+        <div>
+          <div class="rp-title">Daglig Sammanfattning</div>
+          <div class="rp-sub">${new Date().toLocaleDateString('sv-SE',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</div>
+        </div>
+        <span class="pages-badge" style="background:rgba(255,255,255,.15);color:white">1 page</span>
+      </div>
+      <div class="rp-kpis">
+        <div class="rp-kpi"><div class="rp-kpi-val">${kr(FIN.revenue)}</div><div class="rp-kpi-lbl">Revenue</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val">${kr(FIN.total_costs)}</div><div class="rp-kpi-lbl">Total Costs</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val" style="color:var(--green)">${kr(FIN.profit)}</div><div class="rp-kpi-lbl">Net Profit</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val">${pct(FIN.food_pct)}</div><div class="rp-kpi-lbl">Food %</div></div>
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Top Expenses Today</div>
+        <table class="rp-table"><thead><tr><th>Leverantör</th><th>Kategori</th><th>Belopp</th></tr></thead><tbody>
+          <tr><td>Menigo Foodservice AB</td><td>Food</td><td style="text-align:right">62 000 kr</td></tr>
+          <tr><td>Intern lönekörning</td><td>Staff</td><td style="text-align:right">224 978 kr</td></tr>
+          <tr><td>Björkens Fastigheter</td><td>Rent</td><td style="text-align:right">65 000 kr</td></tr>
+        </tbody></table>
+      </div>
+      <div class="rp-section">
+        <div class="rp-insight-title">✦ Key Observations</div>
+        <div class="rp-insight-box">
+          <div style="margin-bottom:4px">1. Revenue grew ${pct(FIN.rev_delta)} to ${kr(FIN.revenue)} — strong vs prior period.</div>
+          <div>2. Food & Bev at ${pct(FIN.food_pct)} — within the 31% target. Supplier pricing stable.</div>
+        </div>
+      </div>
+    </div>`,
+
+  weekly: () => `
+    <div class="report-preview fade-in">
+      <div class="rp-header">
+        <div>
+          <div class="rp-title">Veckorapport</div>
+          <div class="rp-sub">Vecka ${getWeek(new Date())}, ${new Date().getFullYear()}</div>
+        </div>
+        <span class="pages-badge" style="background:rgba(255,255,255,.15);color:white">2–3 pages</span>
+      </div>
+      <div class="rp-kpis">
+        <div class="rp-kpi"><div class="rp-kpi-val">${kr(FIN.revenue)}</div><div class="rp-kpi-lbl">Revenue ▲${pct(FIN.rev_delta)}</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val">${pct(FIN.food_pct)}</div><div class="rp-kpi-lbl">Food & Bev</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val">${pct(FIN.staff_pct)}</div><div class="rp-kpi-lbl">Staff</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val" style="color:var(--green)">${pct(FIN.margin)}</div><div class="rp-kpi-lbl">Margin</div></div>
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Revenue Trend (3 months)</div>
+        ${miniBarChart(FIN.monthly_labels, FIN.monthly_revenue)}
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Cost Analysis</div>
+        <table class="rp-table"><thead><tr><th>Category</th><th>Amount</th><th>% Revenue</th></tr></thead><tbody>
+          <tr><td>Personal</td><td style="text-align:right">${kr(FIN.staff)}</td><td style="text-align:right">${pct(FIN.staff_pct)}</td></tr>
+          <tr><td>Råvaror & dryck</td><td style="text-align:right">${kr(FIN.food)}</td><td style="text-align:right">${pct(FIN.food_pct)}</td></tr>
+          <tr><td>Lokal</td><td style="text-align:right">${kr(FIN.rent)}</td><td style="text-align:right">${pct(FIN.rent_pct)}</td></tr>
+        </tbody></table>
+      </div>
+      <div class="rp-section">
+        <div class="rp-insight-title">✦ Weekly Insights</div>
+        <div class="rp-insight-box">
+          <div style="margin-bottom:4px">1. Revenue grew ${pct(FIN.rev_delta)} to ${kr(FIN.revenue)} — above prior period.</div>
+          <div style="margin-bottom:4px">2. Food & Bev at ${pct(FIN.food_pct)} — within 31% target. Supplier pricing stable.</div>
+          <div>3. Staff costs ${pct(FIN.staff_pct)} — review scheduling to maintain below 40% target.</div>
+        </div>
+      </div>
+    </div>`,
+
+  monthly: () => `
+    <div class="report-preview fade-in">
+      <div class="rp-header">
+        <div>
+          <div class="rp-title">Månadsrapport</div>
+          <div class="rp-sub">${FIN.period} · ${FIN.company} · Konfidentiellt</div>
+        </div>
+        <span class="pages-badge" style="background:rgba(255,255,255,.15);color:white">5–7 pages</span>
+      </div>
+      <div class="rp-kpis">
+        <div class="rp-kpi"><div class="rp-kpi-val">${kr(FIN.revenue)}</div><div class="rp-kpi-lbl">Omsättning</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val">${kr(FIN.total_costs)}</div><div class="rp-kpi-lbl">Kostnader</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val" style="color:var(--green)">${kr(FIN.profit)}</div><div class="rp-kpi-lbl">Rörelseresultat</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val" style="color:var(--green)">${pct(FIN.margin)}</div><div class="rp-kpi-lbl">Marginal</div></div>
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Verkställande Sammanfattning</div>
+        <div class="rp-body">Restaurang Björken redovisar en omsättning om <strong>${kr(FIN.revenue)}</strong> för ${FIN.period}, en förändring om ${pct(FIN.rev_delta,true)} jämfört med föregående period. Rörelsemarginalen uppgick till <strong>${pct(FIN.margin)}</strong> (${kr(FIN.profit)}).</div>
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Resultaträkning</div>
+        <table class="rp-table"><thead><tr><th>Post</th><th>${FIN.period}</th><th>% av oms.</th></tr></thead><tbody>
+          <tr><td>Nettoomsättning</td><td style="text-align:right">${kr(FIN.revenue)}</td><td style="text-align:right">100%</td></tr>
+          <tr><td>(-) Personalkostnad</td><td style="text-align:right">${kr(FIN.staff)}</td><td style="text-align:right">${pct(FIN.staff_pct)}</td></tr>
+          <tr><td>(-) Råvaror & dryck</td><td style="text-align:right">${kr(FIN.food)}</td><td style="text-align:right">${pct(FIN.food_pct)}</td></tr>
+          <tr><td>(-) Lokal</td><td style="text-align:right">${kr(FIN.rent)}</td><td style="text-align:right">${pct(FIN.rent_pct)}</td></tr>
+          <tr style="font-weight:600;background:var(--green-lt)"><td>Rörelseresultat</td><td style="text-align:right">${kr(FIN.profit)}</td><td style="text-align:right">${pct(FIN.margin)}</td></tr>
+        </tbody></table>
+      </div>
+      <div class="rp-section">
+        <div class="rp-insight-title">✦ Analys & Rekommendationer</div>
+        <div class="rp-insight-box">
+          <div style="margin-bottom:4px">1. Revenue ${pct(FIN.rev_delta,true)} vs prior — top-line growth is strong.</div>
+          <div style="margin-bottom:4px">2. Food & Bev ${pct(FIN.food_pct)} — within target. Menigo price increase absorbed.</div>
+          <div style="margin-bottom:4px">3. Staff ${pct(FIN.staff_pct)} — slightly above 40% benchmark. Sick leave overtime elevated.</div>
+          <div>4. Renegotiate Menigo contract and review staffing schedule to improve Q2 margin.</div>
+        </div>
+      </div>
+    </div>`,
+
+  quarterly: () => `
+    <div class="report-preview fade-in">
+      <div class="rp-header">
+        <div>
+          <div class="rp-title">Kvartalsöversikt — Q1 2026</div>
+          <div class="rp-sub">${FIN.company} · Strategisk genomgång · Konfidentiellt</div>
+        </div>
+        <span class="pages-badge" style="background:rgba(255,255,255,.15);color:white">6–8 pages</span>
+      </div>
+      <div class="rp-kpis">
+        <div class="rp-kpi"><div class="rp-kpi-val">${kr(FIN.monthly_revenue.reduce((a,b)=>a+b,0))}</div><div class="rp-kpi-lbl">Q1 Revenue</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val" style="color:var(--green)">${kr(FIN.monthly_profit.reduce((a,b)=>a+b,0))}</div><div class="rp-kpi-lbl">Q1 Profit</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val">${pct(FIN.margin)}</div><div class="rp-kpi-lbl">Mar Margin</div></div>
+        <div class="rp-kpi"><div class="rp-kpi-val" style="color:var(--green)">+0.5%</div><div class="rp-kpi-lbl">vs Budget</div></div>
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Q1 Revenue Trend</div>
+        ${miniBarChart(FIN.monthly_labels, FIN.monthly_revenue)}
+      </div>
+      <div class="rp-section">
+        <div class="rp-section-title">Q2 Forecast Scenarios</div>
+        <table class="rp-table"><thead><tr><th>Scenario</th><th>Revenue</th><th>Margin</th></tr></thead><tbody>
+          <tr><td>Conservative +5%</td><td style="text-align:right">${kr(Math.round(FIN.monthly_revenue.reduce((a,b)=>a+b,0)*1.05))}</td><td style="text-align:right">7.0%</td></tr>
+          <tr style="background:var(--blue-lt);font-weight:600"><td>Base case +8%</td><td style="text-align:right">${kr(Math.round(FIN.monthly_revenue.reduce((a,b)=>a+b,0)*1.08))}</td><td style="text-align:right">8.5%</td></tr>
+          <tr><td>Optimistic +12%</td><td style="text-align:right">${kr(Math.round(FIN.monthly_revenue.reduce((a,b)=>a+b,0)*1.12))}</td><td style="text-align:right">10.0%</td></tr>
+        </tbody></table>
+      </div>
+      <div class="rp-section">
+        <div class="rp-insight-title">✦ Strategisk Analys</div>
+        <div class="rp-insight-box">
+          <div style="margin-bottom:4px">1. Q1 total revenue ${kr(FIN.monthly_revenue.reduce((a,b)=>a+b,0))} — slightly above budget.</div>
+          <div style="margin-bottom:4px">2. Margin pressure from supplier price increases and overtime. Renegotiate Menigo.</div>
+          <div style="margin-bottom:4px">3. Catering revenue (3.6%) growth opportunity — target 8% by Q3.</div>
+          <div>4. Cost discipline in Q2 critical: staff ≤40%, food ≤31% to reach 10% margin target.</div>
+        </div>
+      </div>
+    </div>`,
+};
+
+// Mini SVG bar chart for previews
+function miniBarChart(labels, values) {
+  const max = Math.max(...values);
+  const bars = values.map((v,i) => {
+    const h = Math.round((v/max)*60);
+    const x = 10 + i*70;
+    return `<rect x="${x}" y="${70-h}" width="40" height="${h}" fill="var(--blue)" rx="2"/>
+            <text x="${x+20}" y="82" text-anchor="middle" font-size="8" fill="var(--hint)">${labels[i].split(' ')[0]}</text>
+            <text x="${x+20}" y="${66-h}" text-anchor="middle" font-size="7" fill="var(--blue)">${Math.round(v/1000)}k</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 230 90" style="width:100%;height:80px">${bars}</svg>`;
+}
+
+// ── RENDER HISTORY ────────────────────────────────────────────────
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  document.getElementById('report-count').textContent = HISTORY.length;
+  const icons = {daily:'📊',weekly:'📈',monthly:'📋',quarterly:'🎯'};
+  list.innerHTML = HISTORY.slice(0,10).map(h => `
+    <div class="hist-item fade-in">
+      <div class="hist-icon">${icons[h.type]||'📄'}</div>
+      <div class="hist-info">
+        <div class="hist-name">${h.name}</div>
+        <div class="hist-meta">${h.date} · ${h.pages} page${h.pages!==1?'s':''}</div>
+      </div>
+      <button class="hist-dl" onclick="downloadReport('${h.name}')">↓</button>
+    </div>`
+  ).join('');
+}
+
+function downloadReport(name) {
+  addLog(`Download requested: ${name}`, 'ok');
+  // In production: fetch from output folder via engine API
+  alert(`In the full deployment, this downloads:\n${name}\n\nRun "python3 report_scheduler.py --now ${name.split('_')[0]}" to generate the real PDF.`);
+}
+
+// ── LOG ───────────────────────────────────────────────────────────
+function addLog(msg, type='info') {
+  const time = new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  logEntries.unshift({time,msg,type});
+  const list = document.getElementById('log-list');
+  if (list) {
+    list.innerHTML = logEntries.slice(0,20).map(e =>
+      `<div class="log-item"><span class="log-time">${e.time}</span><span class="log-msg log-${e.type}">${e.msg}</span></div>`
+    ).join('');
+  }
+}
+
+// ── NEXT RUN ──────────────────────────────────────────────────────
+function updateNextRun() {
+  const now   = new Date();
+  const daily = new Date(now); daily.setHours(7,0,0,0);
+  if (daily <= now) daily.setDate(daily.getDate()+1);
+  const diff  = Math.round((daily-now)/60000);
+  const badge = document.getElementById('next-run-badge');
+  badge.textContent = `Next: Daily in ${diff>60?Math.round(diff/60)+'h':diff+'m'}`;
+  badge.className   = 'badge b-blue';
+}
+
+// ── PREVIEW ───────────────────────────────────────────────────────
+function previewType(type) {
+  const canvas = document.getElementById('preview-canvas');
+  const html = PREVIEWS[type] ? PREVIEWS[type]() : '<div style="padding:20px;color:var(--hint)">No preview available</div>';
+  canvas.innerHTML = html;
+  addLog(`Preview: ${type} report`, 'info');
+}
+
+// ── SETTINGS ──────────────────────────────────────────────────────
+function saveApiKey() {
+  const key = document.getElementById('api-key-input').value.trim();
+  if (key) {
+    localStorage.setItem('bj_api_key', key);
+    document.getElementById('api-key-input').value = '••••••••';
+    addLog('API key saved — AI insights enabled in reports', 'ok');
+  }
+}
+
+// ── UTIL ──────────────────────────────────────────────────────────
+function getWeek(d) {
+  const date = new Date(d); date.setHours(0,0,0,0);
+  date.setDate(date.getDate()+3-(date.getDay()+6)%7);
+  const week1 = new Date(date.getFullYear(),0,4);
+  return 1+Math.round(((date-week1)/86400000-(3-(week1.getDay()+6)%7))/7);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+function init() {
+  renderSchedules();
+  renderHistory();
+  updateNextRun();
+  setInterval(updateNextRun, 60000);
+
+  // Load saved API key
+  const key = localStorage.getItem('bj_api_key');
+  if (key) document.getElementById('api-key-input').value = '••••••••';
+
+  // Show monthly preview by default
+  previewType('monthly');
+
+  addLog('Report Scheduler dashboard loaded', 'ok');
+  addLog('4 report types configured: daily, weekly, monthly, quarterly', 'info');
+  addLog('Run: python3 report_scheduler.py --now all  to generate immediately', 'info');
+}
+
+init();
+</script>
+</body>
+</html>

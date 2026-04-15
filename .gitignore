@@ -1,0 +1,25 @@
+# Build output
+.next/
+out/
+
+# Vercel
+.vercel
+
+# Dependencies
+node_modules/
+
+# Claude Code
+.claude/
+
+# Environment variables
+.env.local
+.env.*.local
+*.env.local.txt
+nextjs/.env*
+
+# Debug
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

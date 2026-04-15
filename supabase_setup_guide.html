@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Supabase Setup Guide — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F2EDE8;--surface:#FAFAF8;--white:#FFF;
+  --border:#E0DAD2;--border-d:#C8C1B8;
+  --ink:#1C1714;--ink-2:#3A3733;--ink-3:#6A6560;--ink-4:#A8A49C;
+  --navy:#1E2761;--blue:#185FA5;--blue-lt:#EEF4FF;
+  --green:#2D6A35;--green-lt:#EAF2E8;
+  --amber:#7A4800;--amber-lt:#FFF5E5;
+  --font:'DM Sans',system-ui,sans-serif;
+  --display:'Fraunces',Georgia,serif;
+  --mono:'DM Mono',monospace;
+}
+html,body{-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:14px;color:var(--ink);background:var(--bg);min-height:100vh}
+
+/* LAYOUT */
+.shell{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+.sidebar{background:var(--navy);padding:24px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.main{padding:32px 40px 80px}
+
+/* SIDEBAR */
+.s-brand{font-family:var(--display);font-size:16px;color:white;padding:0 20px 20px;border-bottom:1px solid rgba(255,255,255,.1);margin-bottom:12px}
+.s-brand strong{font-weight:600;color:rgba(255,255,255,.9)}
+.s-section-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.3);padding:12px 20px 4px}
+.s-item{
+  display:flex;align-items:center;gap:10px;padding:8px 20px;cursor:pointer;
+  transition:all .1s;color:rgba(255,255,255,.6);font-size:13px;font-weight:500;
+  border-left:2px solid transparent;
+}
+.s-item:hover{color:white;background:rgba(255,255,255,.05)}
+.s-item.active{color:white;background:rgba(255,255,255,.1);border-left-color:white}
+.s-item.done{color:rgba(255,255,255,.4)}
+.s-item.done .s-num{background:var(--green);border-color:var(--green);color:white}
+.s-num{
+  width:22px;height:22px;border-radius:50%;border:1.5px solid rgba(255,255,255,.3);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  flex-shrink:0;transition:all .15s;
+}
+.s-item.active .s-num{background:white;color:var(--navy);border-color:white}
+
+/* PROGRESS BAR */
+.s-progress{padding:16px 20px;margin-top:auto;border-top:1px solid rgba(255,255,255,.1)}
+.sp-label{font-size:11px;color:rgba(255,255,255,.4);margin-bottom:5px;display:flex;justify-content:space-between}
+.sp-track{height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
+.sp-fill{height:100%;background:var(--green);border-radius:2px;transition:width .4s}
+
+/* MAIN */
+.page-header{margin-bottom:32px}
+.page-title{font-family:var(--display);font-size:34px;font-weight:300;font-style:italic;color:var(--navy);line-height:1.15}
+.page-title strong{font-style:normal;font-weight:600}
+.page-sub{font-size:14px;color:var(--ink-3);margin-top:6px;line-height:1.6}
+
+/* STEPS */
+.step{background:var(--white);border:1px solid var(--border);border-radius:16px;margin-bottom:20px;overflow:hidden;scroll-margin-top:20px}
+.step.done{border-color:var(--green);opacity:.75}
+.step.done:hover{opacity:1}
+.step-header{
+  padding:18px 22px;display:flex;align-items:center;gap:14px;cursor:pointer;
+  transition:background .1s;
+}
+.step-header:hover{background:#fafaf7}
+.step-num{
+  width:34px;height:34px;border-radius:50%;background:var(--navy);color:white;
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;
+  flex-shrink:0;font-family:var(--display);
+}
+.step.done .step-num{background:var(--green)}
+.step-info{flex:1}
+.step-title{font-size:16px;font-weight:600;color:var(--ink)}
+.step-sub{font-size:12px;color:var(--ink-4);margin-top:2px}
+.step-time{font-size:11px;color:var(--ink-4);font-family:var(--mono);background:var(--bg);padding:3px 9px;border-radius:8px;border:1px solid var(--border)}
+.step-check{
+  width:28px;height:28px;border-radius:50%;border:2px solid var(--border-d);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  transition:all .15s;font-size:14px;color:transparent;
+}
+.step-check:hover{border-color:var(--green);background:var(--green-lt);color:var(--green)}
+.step.done .step-check{border-color:var(--green);background:var(--green);color:white}
+
+.step-body{padding:20px 22px;border-top:1px solid var(--border);display:none}
+.step.open .step-body{display:block}
+
+/* STEP CONTENT */
+.step-desc{font-size:13px;color:var(--ink-3);line-height:1.7;margin-bottom:16px}
+.step-desc a{color:var(--blue);text-decoration:none}
+.step-desc a:hover{text-decoration:underline}
+
+/* CALLOUT BOXES */
+.callout{border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.6;display:flex;gap:10px}
+.callout-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.callout.info {background:var(--blue-lt);border:1px solid rgba(24,95,165,.2);color:var(--ink-2)}
+.callout.warn {background:var(--amber-lt);border:1px solid rgba(122,72,0,.2);color:var(--amber)}
+.callout.tip  {background:var(--green-lt);border:1px solid rgba(45,106,53,.2);color:var(--green)}
+
+/* CODE BLOCKS */
+.code-block{position:relative;margin-bottom:14px}
+.code-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-4);margin-bottom:4px;display:flex;align-items:center;justify-content:space-between}
+.copy-btn{
+  font-family:var(--font);font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;
+  border:1px solid var(--border-d);background:none;cursor:pointer;color:var(--ink-4);
+  transition:all .1s;display:flex;align-items:center;gap:4px;
+}
+.copy-btn:hover{background:var(--bg);color:var(--ink);border-color:var(--ink-4)}
+.copy-btn.copied{border-color:var(--green);color:var(--green);background:var(--green-lt)}
+pre{
+  background:#1C1B18;color:#F2EDE8;border-radius:9px;padding:14px 16px;
+  font-family:var(--mono);font-size:12px;line-height:1.65;overflow-x:auto;
+  white-space:pre;
+}
+code{font-family:var(--mono);font-size:12px}
+.token-green{color:#7FBA6A}
+.token-blue{color:#79B8FF}
+.token-orange{color:#FFAB70}
+.token-comment{color:#6A737D;font-style:italic}
+.token-string{color:#9ECBFF}
+
+/* INLINE CODE */
+.ic{background:rgba(28,27,24,.07);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:12px}
+
+/* ACTION LINKS */
+.action-link{
+  display:inline-flex;align-items:center;gap:6px;padding:8px 16px;
+  border-radius:9px;font-size:13px;font-weight:600;text-decoration:none;
+  border:1.5px solid transparent;transition:all .12s;
+}
+.al-primary{background:var(--navy);color:white}
+.al-primary:hover{background:var(--blue)}
+.al-secondary{border-color:var(--border-d);color:var(--ink-3)}
+.al-secondary:hover{background:var(--bg);color:var(--ink);border-color:var(--ink-4)}
+.action-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px}
+
+/* ENV VAR TABLE */
+.env-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px}
+.env-table th{background:var(--navy);color:white;padding:7px 12px;text-align:left;font-weight:600;font-size:11px}
+.env-table td{padding:7px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+.env-table tr:last-child td{border-bottom:none}
+.env-table tr:nth-child(even) td{background:var(--bg)}
+.env-key{font-family:var(--mono);color:var(--navy)}
+.env-desc{color:var(--ink-3);line-height:1.5}
+.env-req{font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;text-transform:uppercase}
+.req-now{background:rgba(162,45,45,.1);color:#8B1A1A}
+.req-later{background:var(--bg);color:var(--ink-4);border:1px solid var(--border)}
+
+/* COMPLETION BANNER */
+.completion-banner{
+  background:linear-gradient(135deg,var(--navy),#2E4B9A);border-radius:16px;
+  padding:28px 32px;color:white;text-align:center;margin-bottom:24px;display:none;
+}
+.completion-banner.visible{display:block}
+.cb-title{font-family:var(--display);font-size:26px;font-weight:400;font-style:italic;margin-bottom:8px}
+.cb-sub{font-size:14px;opacity:.7;margin-bottom:18px}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="s-brand">Command<strong>Center</strong><br><span style="font-size:12px;opacity:.5;font-family:var(--font)">Supabase Setup</span></div>
+
+    <div class="s-section-label">Setup Steps</div>
+
+    <div id="nav-items">
+      <!-- Populated by JS -->
+    </div>
+
+    <div class="s-progress" style="margin-top:20px">
+      <div class="sp-label"><span>Progress</span><span id="progress-pct">0%</span></div>
+      <div class="sp-track"><div class="sp-fill" id="sp-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <div class="page-header">
+      <div class="page-title">Supabase <strong>Setup Guide</strong></div>
+      <div class="page-sub">Complete step-by-step instructions to go from zero to a running multi-tenant SaaS backend. Estimated total time: <strong>45–60 minutes</strong>.</div>
+    </div>
+
+    <div class="completion-banner" id="completion-banner">
+      <div class="cb-title">Setup Complete!</div>
+      <div class="cb-sub">Your Supabase backend is configured and ready. Time to connect your frontend.</div>
+      <a href="#" class="action-link al-primary" style="display:inline-flex;margin:0 auto">Open your Supabase dashboard →</a>
+    </div>
+
+    <div id="steps-container">
+      <!-- Steps rendered by JS -->
+    </div>
+
+  </div>
+</div>
+
+<script>
+const STEPS = [
+  {
+    id: 'create-project',
+    title: 'Create Supabase Project',
+    sub: 'Sign up and create your project',
+    time: '5 min',
+    content: `
+      <div class="step-desc">Go to <a href="https://supabase.com" target="_blank">supabase.com</a> and create a free account if you don't have one. Then create a new project.</div>
+
+      <div class="callout info"><div class="callout-icon">ℹ️</div><div><strong>Free tier includes:</strong> 2 projects, 500MB database, 1GB file storage, 50MB uploads, 50,000 monthly active users. This is plenty to launch with 1–10 customers.</div></div>
+
+      <div class="code-label">Steps in Supabase dashboard</div>
+      <pre>1. Click "New Project"
+2. Organisation: select or create (e.g. "Vero Italiano")
+3. Project name: command-center (or your app name)
+4. Database password: generate a strong one and SAVE IT
+5. Region: Europe West (Ireland) — closest to your Swedish users
+6. Pricing plan: Free (upgrade when you need it)
+7. Click "Create new project" — takes ~2 minutes</pre>
+
+      <div class="action-row">
+        <a href="https://supabase.com/dashboard" target="_blank" class="action-link al-primary">Open Supabase Dashboard ↗</a>
+      </div>`
+  },
+  {
+    id: 'get-keys',
+    title: 'Copy Your API Keys',
+    sub: 'Get the credentials your app needs',
+    time: '2 min',
+    content: `
+      <div class="step-desc">Once your project is created, get the credentials from <strong>Settings → API</strong>. You need three values.</div>
+
+      <div class="callout warn"><div class="callout-icon">⚠️</div><div>The <strong>service_role key</strong> bypasses all Row Level Security. Never expose it to the browser or commit it to git. Only use it in server-side code.</div></div>
+
+      <table class="env-table">
+        <thead><tr><th>What to copy</th><th>Where to find it</th><th>Goes into</th></tr></thead>
+        <tbody>
+          <tr><td class="env-key">Project URL</td><td>Settings → API → Project URL</td><td><code class="ic">NEXT_PUBLIC_SUPABASE_URL</code></td></tr>
+          <tr><td class="env-key">anon public key</td><td>Settings → API → Project API keys → anon</td><td><code class="ic">NEXT_PUBLIC_SUPABASE_ANON_KEY</code></td></tr>
+          <tr><td class="env-key">service_role key</td><td>Settings → API → Project API keys → service_role</td><td><code class="ic">SUPABASE_SERVICE_ROLE_KEY</code></td></tr>
+        </tbody>
+      </table>
+
+      <div class="code-label">Create <code>.env.local</code> in your project root
+        <button class="copy-btn" onclick="copyCode(this, 'env-code')">Copy</button>
+      </div>
+      <pre id="env-code">NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...YOUR_ANON_KEY...
+SUPABASE_SERVICE_ROLE_KEY=eyJ...YOUR_SERVICE_ROLE_KEY...
+
+ANTHROPIC_API_KEY=sk-ant-api03-...
+
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_STARTER=price_...
+STRIPE_PRICE_PRO=price_...
+
+RESEND_API_KEY=re_...
+
+# Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+CREDENTIAL_ENCRYPTION_KEY=64_char_hex_here
+PERSONNUMMER_HMAC_SECRET=another_64_char_hex_here
+CRON_SECRET=any_random_string
+
+NEXT_PUBLIC_APP_URL=http://localhost:3000</pre>
+
+      <div class="action-row">
+        <a href="https://supabase.com/dashboard" target="_blank" class="action-link al-secondary">Supabase Dashboard ↗</a>
+      </div>`
+  },
+  {
+    id: 'run-schema',
+    title: 'Run the Database Schema',
+    sub: 'Create all tables, indexes, and RLS policies',
+    time: '5 min',
+    content: `
+      <div class="step-desc">In your Supabase dashboard, go to <strong>SQL Editor → New query</strong>. Paste and run the complete schema file. It creates every table your app needs in one shot.</div>
+
+      <div class="callout info"><div class="callout-icon">📋</div><div>The schema file is <strong>01_schema.sql</strong> from the files provided in this session. It includes all tables, RLS policies, helper functions, and pg_cron jobs.</div></div>
+
+      <div class="callout warn"><div class="callout-icon">⚠️</div><div>Run the schema on a <strong>fresh project only</strong>. If you run it twice some commands will fail (table already exists). That's OK — just note any errors and skip those.</div></div>
+
+      <div class="code-label">Key things the schema creates</div>
+      <pre><span class="token-comment">-- Core tenant tables</span>
+organisations, users, organisation_members
+
+<span class="token-comment">-- Business data</span>
+businesses, integrations, tracker_data
+
+<span class="token-comment">-- Document intelligence</span>
+notebooks, notebook_documents, document_chunks (with pgvector)
+
+<span class="token-comment">-- AI & chat</span>
+conversations, messages, pinned_answers, audio_overviews, ai_usage
+
+<span class="token-comment">-- SaaS operations</span>
+billing_events, email_log, export_schedules, onboarding_progress
+
+<span class="token-comment">-- Auth</span>
+bankid_sessions, auth_events, gdpr_consents
+
+<span class="token-comment">-- RLS policies on every table + helper functions</span>
+current_org_id(), is_org_admin(), increment_ai_usage()
+
+<span class="token-comment">-- pg_cron jobs (auto-cleanup)</span>
+clean-bankid-sessions, clean-ai-logs, clean-auth-events</pre>
+
+      <div class="action-row">
+        <a href="https://supabase.com/dashboard/project/_/sql" target="_blank" class="action-link al-primary">Open SQL Editor ↗</a>
+      </div>`
+  },
+  {
+    id: 'enable-pgvector',
+    title: 'Enable pgvector Extension',
+    sub: 'For semantic document search',
+    time: '1 min',
+    content: `
+      <div class="step-desc">pgvector enables storing and searching document embeddings — the engine behind your RAG system. It's already in the schema's <code class="ic">CREATE EXTENSION</code> command, but you should verify it worked.</div>
+
+      <div class="code-label">Verify in SQL Editor
+        <button class="copy-btn" onclick="copyCode(this,'pgvector-check')">Copy</button>
+      </div>
+      <pre id="pgvector-check">-- Check vector extension is enabled
+SELECT * FROM pg_extension WHERE extname = 'vector';
+-- Should return one row
+
+-- Test vector operations work
+SELECT '[1,2,3]'::vector <-> '[1,2,4]'::vector AS distance;
+-- Should return 1</pre>
+
+      <div class="callout tip"><div class="callout-icon">💡</div><div>Your RAG system currently uses TF-IDF (fast, free, no API needed). pgvector is ready for when you want to upgrade to true semantic embeddings using Anthropic or OpenAI's embedding API.</div></div>`
+  },
+  {
+    id: 'configure-auth',
+    title: 'Configure Auth Settings',
+    sub: 'Set up email templates and redirect URLs',
+    time: '5 min',
+    content: `
+      <div class="step-desc">Configure Supabase Auth to work with your app's URLs and send branded emails.</div>
+
+      <div class="code-label">Settings to change in Authentication → URL Configuration</div>
+      <pre><span class="token-comment">Site URL:</span>
+http://localhost:3000              <span class="token-comment">(development)</span>
+https://commandcenter.se           <span class="token-comment">(production — add when you deploy)</span>
+
+<span class="token-comment">Redirect URLs (add all of these):</span>
+http://localhost:3000/api/auth/callback
+https://commandcenter.se/api/auth/callback</pre>
+
+      <div class="code-label">Email templates to customise: Authentication → Email Templates</div>
+      <pre><span class="token-comment">Confirm signup subject:</span>  Welcome to Command Center — confirm your email
+<span class="token-comment">Reset password subject:</span>  Command Center — reset your password
+<span class="token-comment">Magic link subject:</span>      Command Center — your login link
+
+<span class="token-comment">In each template body, the key variable is:</span>
+{{ .ConfirmationURL }}    <span class="token-comment">-- this is the link the user clicks</span></pre>
+
+      <div class="callout info"><div class="callout-icon">ℹ️</div><div>Supabase sends emails via their SMTP by default (limited to 4/hour on free plan). For production, connect your own SMTP in <strong>Settings → Auth → SMTP Settings</strong> using Resend or similar.</div></div>
+
+      <div class="action-row">
+        <a href="https://supabase.com/dashboard/project/_/auth/url-configuration" target="_blank" class="action-link al-primary">Auth URL Settings ↗</a>
+        <a href="https://supabase.com/dashboard/project/_/auth/templates" target="_blank" class="action-link al-secondary">Email Templates ↗</a>
+      </div>`
+  },
+  {
+    id: 'storage-buckets',
+    title: 'Create Storage Buckets',
+    sub: 'For document uploads (PDFs, images)',
+    time: '3 min',
+    content: `
+      <div class="step-desc">Supabase Storage holds your uploaded documents. Create two buckets — one for tenant documents (private) and one for generated reports (also private).</div>
+
+      <div class="code-label">Run in SQL Editor
+        <button class="copy-btn" onclick="copyCode(this,'storage-sql')">Copy</button>
+      </div>
+      <pre id="storage-sql"><span class="token-comment">-- Create storage buckets</span>
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES
+  ('documents', 'documents', false, 52428800,  <span class="token-comment">-- 50MB limit</span>
+   ARRAY['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+         'text/csv','text/plain','image/jpeg','image/png','image/webp']),
+  ('reports',   'reports',   false, 10485760,  <span class="token-comment">-- 10MB limit</span>
+   ARRAY['application/pdf','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+
+<span class="token-comment">-- RLS: users can only access files in their org's folder</span>
+CREATE POLICY "org_documents_access" ON storage.objects
+  FOR ALL USING (
+    bucket_id = 'documents'
+    AND (storage.foldername(name))[1] = current_org_id()::text
+  );
+
+CREATE POLICY "org_reports_access" ON storage.objects
+  FOR ALL USING (
+    bucket_id = 'reports'
+    AND (storage.foldername(name))[1] = current_org_id()::text
+  );</pre>
+
+      <div class="callout tip"><div class="callout-icon">💡</div><div>Files are stored at <code class="ic">documents/{org_id}/{notebook_id}/{filename}</code>. The RLS policy ensures each tenant can only see their own folder.</div></div>`
+  },
+  {
+    id: 'nextjs-setup',
+    title: 'Set Up Next.js Project',
+    sub: 'Create the app and install dependencies',
+    time: '10 min',
+    content: `
+      <div class="step-desc">Create a fresh Next.js project and install all required packages.</div>
+
+      <div class="code-label">Terminal commands
+        <button class="copy-btn" onclick="copyCode(this,'nextjs-cmds')">Copy</button>
+      </div>
+      <pre id="nextjs-cmds"><span class="token-comment"># Create Next.js app</span>
+npx create-next-app@14 command-center --typescript --tailwind --app --no-src-dir
+cd command-center
+
+<span class="token-comment"># Install Supabase</span>
+npm install @supabase/supabase-js @supabase/ssr
+
+<span class="token-comment"># Install Anthropic SDK</span>
+npm install @anthropic-ai/sdk
+
+<span class="token-comment"># Install document generation</span>
+npm install docx xlsx
+
+<span class="token-comment"># Install SaaS utilities</span>
+npm install stripe resend micro gpt-tokenizer
+
+<span class="token-comment"># Copy your .env.local file into the project root</span>
+<span class="token-comment"># (the file you created in Step 2)</span></pre>
+
+      <div class="code-label">Create lib/supabase/client.ts
+        <button class="copy-btn" onclick="copyCode(this,'sc-code')">Copy</button>
+      </div>
+      <pre id="sc-code"><span class="token-green">import</span> { createBrowserClient } <span class="token-green">from</span> <span class="token-string">'@supabase/ssr'</span>
+
+<span class="token-green">export function</span> <span class="token-blue">createClient</span>() {
+  <span class="token-green">return</span> createBrowserClient(
+    process.env.<span class="token-orange">NEXT_PUBLIC_SUPABASE_URL</span>!,
+    process.env.<span class="token-orange">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>!
+  )
+}</pre>
+
+      <div class="code-label">Create lib/supabase/server.ts
+        <button class="copy-btn" onclick="copyCode(this,'ss-code')">Copy</button>
+      </div>
+      <pre id="ss-code"><span class="token-green">import</span> { createServerClient } <span class="token-green">from</span> <span class="token-string">'@supabase/ssr'</span>
+<span class="token-green">import</span> { cookies } <span class="token-green">from</span> <span class="token-string">'next/headers'</span>
+
+<span class="token-green">export function</span> <span class="token-blue">createClient</span>() {
+  <span class="token-green">const</span> cookieStore = <span class="token-blue">cookies</span>()
+  <span class="token-green">return</span> createServerClient(
+    process.env.<span class="token-orange">NEXT_PUBLIC_SUPABASE_URL</span>!,
+    process.env.<span class="token-orange">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>!,
+    { cookies: {
+      getAll: () => cookieStore.<span class="token-blue">getAll</span>(),
+      setAll: (cs) => { <span class="token-green">try</span> { cs.forEach(({name,value,options}) => cookieStore.<span class="token-blue">set</span>(name,value,options)) } <span class="token-green">catch</span> {} }
+    }}
+  )
+}
+
+<span class="token-comment">// Admin client — bypasses RLS. Server-only. Never expose.</span>
+<span class="token-green">export function</span> <span class="token-blue">createAdminClient</span>() {
+  <span class="token-green">return</span> createServerClient(
+    process.env.<span class="token-orange">NEXT_PUBLIC_SUPABASE_URL</span>!,
+    process.env.<span class="token-orange">SUPABASE_SERVICE_ROLE_KEY</span>!,
+    { cookies: { getAll: () => [], setAll: () => {} } }
+  )
+}</pre>`
+  },
+  {
+    id: 'test-connection',
+    title: 'Test the Connection',
+    sub: 'Verify everything is wired up',
+    time: '3 min',
+    content: `
+      <div class="step-desc">Before building anything else, verify that Next.js can talk to Supabase.</div>
+
+      <div class="code-label">Create app/api/health/route.ts
+        <button class="copy-btn" onclick="copyCode(this,'health-code')">Copy</button>
+      </div>
+      <pre id="health-code"><span class="token-green">import</span> { NextResponse } <span class="token-green">from</span> <span class="token-string">'next/server'</span>
+<span class="token-green">import</span> { createAdminClient } <span class="token-green">from</span> <span class="token-string">'@/lib/supabase/server'</span>
+
+<span class="token-green">export async function</span> <span class="token-blue">GET</span>() {
+  <span class="token-green">const</span> supabase = <span class="token-blue">createAdminClient</span>()
+
+  <span class="token-comment">// Test DB connection</span>
+  <span class="token-green">const</span> { data, error } = <span class="token-green">await</span> supabase
+    .from(<span class="token-string">'organisations'</span>)
+    .select(<span class="token-string">'count'</span>, { count: <span class="token-string">'exact'</span>, head: <span class="token-green">true</span> })
+
+  <span class="token-green">if</span> (error) {
+    <span class="token-green">return</span> NextResponse.json({ status: <span class="token-string">'error'</span>, error: error.message }, { status: <span class="token-orange">500</span> })
+  }
+
+  <span class="token-green">return</span> NextResponse.json({
+    status:   <span class="token-string">'ok'</span>,
+    database: <span class="token-string">'connected'</span>,
+    orgs:     data,
+    time:     <span class="token-green">new</span> Date().<span class="token-blue">toISOString</span>(),
+  })
+}</pre>
+
+      <div class="code-label">Terminal</div>
+      <pre>npm run dev
+
+<span class="token-comment"># In another terminal or browser:</span>
+curl http://localhost:3000/api/health
+
+<span class="token-comment"># Expected response:</span>
+<span class="token-string">{
+  "status": "ok",
+  "database": "connected",
+  "orgs": null,
+  "time": "2026-03-26T..."
+}</span></pre>
+
+      <div class="callout tip"><div class="callout-icon">✅</div><div>If you see <code class="ic">status: "ok"</code> — your Next.js app is talking to Supabase. You're ready to build auth and the dashboard.</div></div>`
+  },
+  {
+    id: 'deploy-vercel',
+    title: 'Deploy to Vercel',
+    sub: 'Push to production with environment variables',
+    time: '10 min',
+    content: `
+      <div class="step-desc">Deploy your Next.js app to Vercel and connect it to your existing GitHub repo.</div>
+
+      <div class="code-label">Terminal — push to GitHub
+        <button class="copy-btn" onclick="copyCode(this,'git-cmds')">Copy</button>
+      </div>
+      <pre id="git-cmds"><span class="token-comment"># In your Next.js project directory</span>
+git init
+git add .
+git commit -m "Initial Next.js + Supabase setup"
+
+<span class="token-comment"># Push to a new GitHub repo</span>
+<span class="token-comment"># (Create the repo first at github.com/new)</span>
+git remote add origin https://github.com/PaulDransfield/command-center-nextjs.git
+git push -u origin main</pre>
+
+      <div class="code-label">Vercel environment variables to add</div>
+      <table class="env-table">
+        <thead><tr><th>Variable</th><th>Value</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td class="env-key">NEXT_PUBLIC_SUPABASE_URL</td><td class="env-desc">From Supabase Settings → API</td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">NEXT_PUBLIC_SUPABASE_ANON_KEY</td><td class="env-desc">From Supabase Settings → API</td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">SUPABASE_SERVICE_ROLE_KEY</td><td class="env-desc">From Supabase Settings → API</td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">ANTHROPIC_API_KEY</td><td class="env-desc">From console.anthropic.com</td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">CREDENTIAL_ENCRYPTION_KEY</td><td class="env-desc">Generate: <code class="ic">node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"</code></td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">PERSONNUMMER_HMAC_SECRET</td><td class="env-desc">Same generation command</td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">NEXT_PUBLIC_APP_URL</td><td class="env-desc">https://yourapp.vercel.app</td><td><span class="env-req req-now">Now</span></td></tr>
+          <tr><td class="env-key">STRIPE_SECRET_KEY</td><td class="env-desc">From stripe.com dashboard</td><td><span class="env-req req-later">Phase 2</span></td></tr>
+          <tr><td class="env-key">RESEND_API_KEY</td><td class="env-desc">From resend.com</td><td><span class="env-req req-later">Phase 2</span></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout info"><div class="callout-icon">ℹ️</div><div>After adding env vars in Vercel, go to <strong>Deployments → Redeploy</strong> to pick them up. You can also update <code class="ic">NEXT_PUBLIC_APP_URL</code> to your production URL at this point.</div></div>`
+  },
+  {
+    id: 'verify-rls',
+    title: 'Verify Data Isolation',
+    sub: 'Test that RLS is working correctly',
+    time: '5 min',
+    content: `
+      <div class="step-desc">This is the most important test. Row Level Security must be working before you onboard any real users. Run these checks in the SQL Editor.</div>
+
+      <div class="code-label">Test RLS in SQL Editor
+        <button class="copy-btn" onclick="copyCode(this,'rls-test')">Copy</button>
+      </div>
+      <pre id="rls-test"><span class="token-comment">-- 1. Insert a test org (as service role — bypasses RLS)</span>
+INSERT INTO organisations (name, slug, plan, trial_end, is_active)
+VALUES ('Test Org A', 'test-org-a', 'trial', now() + interval '30 days', true)
+RETURNING id;  <span class="token-comment">-- copy this UUID</span>
+
+<span class="token-comment">-- 2. Try to read it as an anonymous user (should return 0 rows)</span>
+SET ROLE anon;
+SELECT count(*) FROM organisations;  <span class="token-comment">-- should be 0</span>
+RESET ROLE;
+
+<span class="token-comment">-- 3. Verify pgvector works</span>
+SELECT '[1,2,3]'::vector <-> '[1,2,4]'::vector;  <span class="token-comment">-- should return 1</span>
+
+<span class="token-comment">-- 4. Check all extensions are enabled</span>
+SELECT extname FROM pg_extension
+WHERE extname IN ('vector', 'pgcrypto', 'uuid-ossp', 'pg_cron');
+<span class="token-comment">-- should return 4 rows</span>
+
+<span class="token-comment">-- 5. Check cron jobs are scheduled</span>
+SELECT jobname, schedule, active FROM cron.job;
+<span class="token-comment">-- should show 3 cleanup jobs</span></pre>
+
+      <div class="callout tip"><div class="callout-icon">✅</div><div>If step 2 returns 0 rows, RLS is working. Tenant isolation is confirmed. You're ready to build the signup flow.</div></div>`
+  },
+];
+
+// ── STATE ──────────────────────────────────────────────────────
+const done = JSON.parse(localStorage.getItem('setup_done') || '[]');
+let currentStep = STEPS[0].id;
+
+// ── RENDER ─────────────────────────────────────────────────────
+function render() {
+  renderNav();
+  renderSteps();
+  updateProgress();
+}
+
+function renderNav() {
+  const nav = document.getElementById('nav-items');
+  nav.innerHTML = STEPS.map((s, i) => `
+    <div class="s-item ${done.includes(s.id)?'done':''} ${s.id===currentStep?'active':''}"
+         onclick="goToStep('${s.id}')">
+      <div class="s-num">${done.includes(s.id) ? '✓' : i+1}</div>
+      ${s.title}
+    </div>`).join('');
+}
+
+function renderSteps() {
+  const container = document.getElementById('steps-container');
+  container.innerHTML = STEPS.map((s, i) => `
+    <div class="step ${done.includes(s.id)?'done':''} ${s.id===currentStep?'open':''}" id="step-${s.id}">
+      <div class="step-header" onclick="toggleStep('${s.id}')">
+        <div class="step-num">${done.includes(s.id) ? '✓' : i+1}</div>
+        <div class="step-info">
+          <div class="step-title">${s.title}</div>
+          <div class="step-sub">${s.sub}</div>
+        </div>
+        <span class="step-time">${s.time}</span>
+        <div class="step-check" onclick="toggleDone('${s.id}', event)" title="Mark as done">
+          ${done.includes(s.id) ? '✓' : ''}
+        </div>
+      </div>
+      <div class="step-body">${s.content}</div>
+    </div>`).join('');
+}
+
+function updateProgress() {
+  const pct = Math.round(done.length / STEPS.length * 100);
+  document.getElementById('sp-fill').style.width = pct + '%';
+  document.getElementById('progress-pct').textContent = pct + '%';
+  const banner = document.getElementById('completion-banner');
+  banner.classList.toggle('visible', done.length === STEPS.length);
+}
+
+function toggleStep(id) {
+  currentStep = currentStep === id ? null : id;
+  render();
+  if (currentStep) {
+    setTimeout(() => {
+      document.getElementById('step-' + id)?.scrollIntoView({ behavior:'smooth', block:'start' });
+    }, 50);
+  }
+}
+
+function goToStep(id) {
+  currentStep = id;
+  render();
+  setTimeout(() => {
+    document.getElementById('step-' + id)?.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 50);
+}
+
+function toggleDone(id, e) {
+  e.stopPropagation();
+  const idx = done.indexOf(id);
+  if (idx >= 0) done.splice(idx, 1);
+  else done.push(id);
+  localStorage.setItem('setup_done', JSON.stringify(done));
+  // Auto-advance to next step
+  if (idx < 0) {
+    const stepIdx = STEPS.findIndex(s => s.id === id);
+    if (stepIdx < STEPS.length - 1) currentStep = STEPS[stepIdx + 1].id;
+  }
+  render();
+  setTimeout(() => {
+    if (currentStep) document.getElementById('step-' + currentStep)?.scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 50);
+}
+
+function copyCode(btn, id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard?.writeText(el.innerText).then(() => {
+    btn.textContent = '✓ Copied';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+render();
+</script>
+</body>
+</html>

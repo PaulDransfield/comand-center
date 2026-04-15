@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Björken Test Report — 2026-03-18</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#f5f4f1;--panel:#fff;--border:#e2e0db;--text:#1a1917;--muted:#6b6860;
+       --blue:#185FA5;--blue-lt:#E6F1FB;--green:#3B6D11;--green-lt:#EAF3DE;
+       --red:#A32D2D;--red-lt:#FCEBEB;--amber:#854F0B;--amber-lt:#FAEEDA;
+       --navy:#1E2761;--font:'Instrument Sans',sans-serif;--mono:'JetBrains Mono',monospace}
+body{font-family:var(--font);background:var(--bg);color:var(--text);padding:24px;font-size:14px}
+.header{background:var(--navy);color:white;padding:24px 28px;border-radius:14px;margin-bottom:20px}
+.header h1{font-size:22px;margin-bottom:4px}
+.header p{font-size:12px;opacity:.7}
+.verdict{font-size:28px;font-weight:700;margin:8px 0}
+.verdict.pass{color:#7EE8A2}.verdict.fail{color:#FF9A8B}
+.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat-box{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+.stat-val{font-size:28px;font-weight:600;line-height:1}
+.stat-lbl{font-size:11px;color:var(--muted);margin-top:5px;text-transform:uppercase;letter-spacing:.06em}
+.suite-card{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:14px}
+.suite-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--navy);color:white}
+.suite-name{font-size:13px;font-weight:600;letter-spacing:.08em}
+.suite-score{font-size:12px;font-weight:600;padding:3px 10px;border-radius:20px}
+.all-pass{background:rgba(126,232,162,.25);color:#7EE8A2}.has-fail{background:rgba(255,154,139,.25);color:#FF9A8B}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--bg);padding:8px 12px;text-align:left;font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border)}
+td{padding:8px 12px;border-bottom:1px solid var(--border)}
+tr.pass td{background:white}.tr.fail td{background:var(--red-lt)}
+.status-pass{background:var(--green-lt);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
+.status-fail{background:var(--red-lt);color:var(--red);font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px}
+.mono{font-family:var(--mono);color:var(--muted)}
+.detail{color:var(--red);font-size:11px;font-family:var(--mono);max-width:300px}
+</style></head><body>
+<div class="header">
+  <h1>Björken System Test Report</h1>
+  <p>Generated: 2026-03-18 08:14:55 · Restaurang Björken AB</p>
+  <div class="verdict pass">
+    ✅ ALL TESTS PASSED
+  </div>
+</div>
+<div class="summary-row">
+  <div class="stat-box"><div class="stat-val" style="color:var(--blue)">47</div><div class="stat-lbl">Total Tests</div></div>
+  <div class="stat-box"><div class="stat-val" style="color:var(--green)">47</div><div class="stat-lbl">Passed</div></div>
+  <div class="stat-box"><div class="stat-val" style="color:var(--red)">0</div><div class="stat-lbl">Failed</div></div>
+  <div class="stat-box"><div class="stat-val" style="color:var(--amber)">0.6</div><div class="stat-lbl">Avg ms</div></div>
+</div>
+
+        <div class="suite-card">
+            <div class="suite-header">
+                <span class="suite-name">DATA</span>
+                <span class="suite-score all-pass">13/13</span>
+            </div>
+            <table><thead><tr><th>Status</th><th>Test</th><th>Time</th><th>Details</th></tr></thead>
+            <tbody><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 1.1 — Single food invoice updates food total</td>
+                <td class="mono">0.1ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 1.2 — Staff invoice updates staff bucket (not food)</td>
+                <td class="mono">0.1ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 1.3 — Invoice count increments correctly</td>
+                <td class="mono">0.1ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.1 — Multiple invoices: food total is sum of parts</td>
+                <td class="mono">0.1ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.2 — Mixed period invoices do not bleed across periods</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.3 — Duplicate invoice (same hash) not double-counted</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.1 — Percentages calculated correctly from totals</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.2 — Percentages sum to ≤ 100%</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.3 — Profit = Revenue − Total Costs (exact arithmetic)</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 4.1 — Deleting invoice reverts tracker total</td>
+                <td class="mono">0.1ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 4.2 — Deleting non-existent invoice is safe (no error)</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 4.3 — VAT calculation accuracy (25%, 12%, 6%)</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 4.4 — Invoice extraction: Swedish amount parsing</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr></tbody></table>
+        </div>
+        <div class="suite-card">
+            <div class="suite-header">
+                <span class="suite-name">FORTNOX</span>
+                <span class="suite-score all-pass">12/12</span>
+            </div>
+            <table><thead><tr><th>Status</th><th>Test</th><th>Time</th><th>Details</th></tr></thead>
+            <tbody><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.1 — OAuth2 token exchange: valid code → access token</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.2 — OAuth2 token exchange: invalid code → proper error</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.3 — Token expiry detection (3600s window)</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.4 — Refresh token rotation (new tokens on each refresh)</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.5 — Invoice list retrieval: count and structure</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.6 — BAS account mapping: 3xxx→revenue, 4xxx→food, 7xxx→staff</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.7 — Voucher parsing: debit/credit extraction</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.8 — Outstanding invoices: balance detection</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.9 — Connection timeout: handled gracefully</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.10 — Invalid credentials: 401 handled correctly</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.11 — Rate limiting: 429 handled with back-off</td>
+                <td class="mono">21.9ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 2.12 — Missing required fields in API response: safe fallback</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr></tbody></table>
+        </div>
+        <div class="suite-card">
+            <div class="suite-header">
+                <span class="suite-name">CHAT</span>
+                <span class="suite-score all-pass">14/14</span>
+            </div>
+            <table><thead><tr><th>Status</th><th>Test</th><th>Time</th><th>Details</th></tr></thead>
+            <tbody><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.1 — Revenue question retrieves P&L document</td>
+                <td class="mono">0.5ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.2 — Menigo question retrieves invoice document</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.3 — Budget question retrieves budget document</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.4 — Revenue answer contains the correct figure</td>
+                <td class="mono">0.2ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.5 — Profit answer contains correct figure and margin</td>
+                <td class="mono">0.1ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.6 — Percentage calculation: food costs</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.7 — Calculation: revenue vs budget variance</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.8 — Calculation: Q1 total revenue</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.9 — Multi-document query retrieves multiple docs</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.10 — Out-of-scope question: dinosaurs → I don't know</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.11 — Out-of-scope question: football → I don't know</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.12 — Future prediction asks should be qualified</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.13 — Citation sources listed in response</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Test 3.14 — Relevance ranking: most relevant doc ranks first</td>
+                <td class="mono">0.0ms</td>
+                <td class="detail"></td>
+            </tr></tbody></table>
+        </div>
+        <div class="suite-card">
+            <div class="suite-header">
+                <span class="suite-name">PERF</span>
+                <span class="suite-score all-pass">8/8</span>
+            </div>
+            <table><thead><tr><th>Status</th><th>Test</th><th>Time</th><th>Details</th></tr></thead>
+            <tbody><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.1 — Single invoice process < 50ms</td>
+                <td class="mono">0.7ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.2 — 100 invoices bulk process < 5000ms</td>
+                <td class="mono">0.3ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.3 — TF-IDF index 100 documents < 500ms</td>
+                <td class="mono">0.8ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.4 — Single TF-IDF search query < 20ms</td>
+                <td class="mono">1.4ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.5 — Dashboard calc with 12 months data < 200ms</td>
+                <td class="mono">0.2ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.6 — Percentage recalculation < 5ms</td>
+                <td class="mono">1.2ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.7 — DB insert 1000 rows < 1000ms</td>
+                <td class="mono">1.4ms</td>
+                <td class="detail"></td>
+            </tr><tr class="pass">
+                <td><span class="status-pass">PASS</span></td>
+                <td>Perf 4.8 — Memory: 100 documents indexing < 50MB</td>
+                <td class="mono">0.6ms</td>
+                <td class="detail"></td>
+            </tr></tbody></table>
+        </div>
+</body></html>

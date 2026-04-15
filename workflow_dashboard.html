@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Invoice Workflow — Björken</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f4f1;--panel:#fff;--panel-2:#faf8f4;
+  --border:#e2e0db;--border-d:#c8c3bb;
+  --text:#1a1917;--muted:#6b6860;--hint:#9b9690;--charcoal:#3d3b38;
+  --blue:#185FA5;--blue-lt:#E6F1FB;
+  --green:#3B6D11;--green-lt:#EAF3DE;
+  --red:#A32D2D;--red-lt:#FCEBEB;
+  --amber:#854F0B;--amber-lt:#FAEEDA;
+  --purple:#534AB7;--purple-lt:#EEEDFE;
+  --r:8px;--rl:14px;
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);font-size:14px;background:var(--bg);color:var(--text);display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:2px}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:46px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;gap:12px}
+.brand{display:flex;align-items:center;gap:9px}
+.brand-dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}
+.brand-dot.live{background:#52c374;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(82,195,116,.4)}50%{box-shadow:0 0 0 5px rgba(82,195,116,0)}}
+.brand-name{font-size:14px;font-weight:600}
+.brand-sub{font-size:12px;color:var(--muted);margin-left:4px}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.engine-badge{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);padding:4px 10px;border-radius:var(--r);border:1px solid var(--border)}
+.engine-badge.connected{color:var(--green);border-color:rgba(59,109,17,.3);background:var(--green-lt)}
+.engine-badge.disconnected{color:var(--red)}
+
+/* SHELL: 3 columns */
+.shell{display:grid;grid-template-columns:260px 1fr 300px;height:calc(100vh - 46px);overflow:hidden}
+
+/* PANELS */
+.panel{display:flex;flex-direction:column;overflow:hidden}
+.panel-l{border-right:1px solid var(--border);background:var(--panel)}
+.panel-c{background:var(--bg)}
+.panel-r{border-left:1px solid var(--border);background:var(--panel)}
+.ph{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--panel)}
+.ph h2{font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em}
+.ps{flex:1;overflow-y:auto}
+
+/* KPI STRIP */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);padding:13px;transition:border-color .15s}
+.kpi:hover{border-color:var(--border-d)}
+.kpi.alert-over{border-color:var(--red)}
+.kpi.alert-warn{border-color:var(--amber)}
+.kpi-label{font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.kpi-value{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;margin-bottom:4px}
+.kpi-sub{font-size:11px;color:var(--muted)}
+.kpi-bar{height:3px;border-radius:2px;background:var(--bg);margin-top:7px;overflow:hidden}
+.kpi-bar-fill{height:100%;border-radius:2px;transition:width .6s ease}
+.kv-rev{color:var(--blue)}
+.kv-profit-good{color:var(--green)}
+.kv-profit-warn{color:var(--amber)}
+.kv-profit-bad{color:var(--red)}
+.alert-badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:5px}
+.ab-over{background:var(--red-lt);color:var(--red)}
+.ab-warn{background:var(--amber-lt);color:var(--amber)}
+
+/* PIPELINE VISUALISER */
+.pipeline-card{margin:0 14px 12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden}
+.pipeline-header{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.pipeline-header h3{font-size:12px;font-weight:600;color:var(--charcoal)}
+.step-list{padding:8px 0}
+.step-row{display:flex;align-items:flex-start;gap:10px;padding:7px 14px;border-bottom:1px solid var(--border);transition:background .1s}
+.step-row:last-child{border-bottom:none}
+.step-row.running{background:var(--blue-lt)}
+.step-row.done{background:none}
+.step-row.error{background:var(--red-lt)}
+.step-icon{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:1px}
+.si-wait{background:var(--bg);color:var(--hint);border:1px solid var(--border)}
+.si-run{background:var(--blue-lt);color:var(--blue);animation:spinSlow 1.5s linear infinite}
+@keyframes spinSlow{to{transform:rotate(360deg)}}
+.si-done{background:var(--green-lt);color:var(--green)}
+.si-error{background:var(--red-lt);color:var(--red)}
+.step-info{flex:1;min-width:0}
+.step-label{font-size:12px;font-weight:500}
+.step-detail{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* INVOICE LIST */
+.inv-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.inv-item:hover{background:var(--bg)}
+.inv-item.selected{background:var(--blue-lt)}
+.inv-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.inv-vendor{font-size:13px;font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inv-amount{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0}
+.inv-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.inv-date{font-size:11px;color:var(--muted);font-family:var(--mono)}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;white-space:nowrap;text-transform:uppercase;letter-spacing:.04em}
+.b-food{background:var(--green-lt);color:var(--green)}
+.b-staff{background:var(--blue-lt);color:var(--blue)}
+.b-rent{background:var(--amber-lt);color:var(--amber)}
+.b-other{background:var(--bg);color:var(--hint);border:1px solid var(--border)}
+.b-green{background:var(--green-lt);color:var(--green)}
+.b-red{background:var(--red-lt);color:var(--red)}
+.b-amber{background:var(--amber-lt);color:var(--amber)}
+.b-blue{background:var(--blue-lt);color:var(--blue)}
+.b-gray{background:var(--bg);color:var(--hint)}
+.b-purple{background:var(--purple-lt);color:var(--purple)}
+
+/* STATUS badges */
+.status-pending{background:var(--amber-lt);color:var(--amber)}
+.status-paid{background:var(--green-lt);color:var(--green)}
+.status-overdue{background:var(--red-lt);color:var(--red)}
+
+/* NOTIFICATION ITEMS */
+.notif-item{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;transition:background .1s}
+.notif-item.unread{background:var(--panel-2)}
+.notif-item:hover{background:var(--bg)}
+.notif-icon{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;margin-top:1px}
+.ni-info{background:var(--blue-lt)}
+.ni-warn{background:var(--amber-lt)}
+.ni-alert{background:var(--red-lt)}
+.ni-critical{background:var(--red);animation:flashRed 1s infinite}
+@keyframes flashRed{0%,100%{opacity:1}50%{opacity:.6}}
+.notif-text .nt-title{font-size:12px;font-weight:500;color:var(--text);margin-bottom:2px}
+.notif-text .nt-detail{font-size:11px;color:var(--muted);line-height:1.5}
+.notif-text .nt-time{font-size:10px;color:var(--hint);margin-top:3px;font-family:var(--mono)}
+.notif-ack{background:none;border:none;cursor:pointer;color:var(--hint);font-size:16px;margin-left:auto;padding:0 4px;flex-shrink:0}
+.notif-ack:hover{color:var(--muted)}
+
+/* UPLOAD & SIMULATE */
+.drop-zone{margin:12px;border:1.5px dashed var(--border-d);border-radius:var(--rl);padding:16px;text-align:center;cursor:pointer;transition:all .15s;position:relative;background:var(--panel)}
+.drop-zone:hover{border-color:var(--blue);background:var(--blue-lt)}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.drop-zone p{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.5}
+
+.sim-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 12px 12px}
+.sim-btn{padding:8px;border-radius:var(--r);border:1px solid var(--border-d);background:var(--panel);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .12s}
+.sim-btn:hover{border-color:var(--blue);background:var(--blue-lt);color:var(--blue)}
+
+/* CONFIG EDITOR */
+.config-section{padding:12px 14px;border-bottom:1px solid var(--border)}
+.cfg-label{font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+.cfg-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px;font-size:12px}
+.cfg-key{color:var(--charcoal);font-weight:500;flex:1}
+.cfg-val{width:70px;font-size:12px;font-family:var(--mono);padding:4px 7px;border-radius:var(--r);border:1px solid var(--border-d);text-align:right}
+.cfg-val:focus{outline:none;border-color:var(--blue)}
+.cfg-unit{color:var(--muted);min-width:24px}
+
+/* RECONCILIATION */
+.recon-item{padding:9px 14px;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:8px}
+.recon-item .ri-vendor{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recon-item .ri-amount{font-family:var(--mono);font-weight:500;flex-shrink:0}
+.days-chip{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;flex-shrink:0}
+.days-ok{background:var(--green-lt);color:var(--green)}
+.days-soon{background:var(--amber-lt);color:var(--amber)}
+.days-overdue{background:var(--red-lt);color:var(--red)}
+
+/* BOTTOM BUTTONS */
+.btn{font-family:var(--font);font-size:12px;font-weight:500;padding:5px 11px;border-radius:var(--r);border:1px solid var(--border-d);background:none;cursor:pointer;color:var(--charcoal);transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:var(--bg)}
+.btn-primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn-primary:hover{background:#0C447C}
+.btn-sm{font-size:11px;padding:3px 8px}
+.btn-full{width:100%;justify-content:center;margin:8px 0}
+
+/* SUMMARY CARD */
+.summary-card{margin:0 14px 10px;padding:12px;background:var(--panel);border:1px solid var(--border);border-radius:var(--rl);font-size:12px;line-height:1.7}
+.summary-card h4{font-size:12px;font-weight:600;color:var(--charcoal);margin-bottom:6px}
+.summary-row{display:flex;justify-content:space-between;align-items:center;padding:2px 0}
+.summary-row .sr-key{color:var(--muted)}
+.summary-row .sr-val{font-weight:500;font-family:var(--mono)}
+
+/* LOG */
+.log-item{padding:6px 14px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono);color:var(--muted);display:flex;gap:8px}
+.log-time{color:var(--hint);flex-shrink:0}
+.log-msg{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-ok{color:var(--green)}
+.log-err{color:var(--red)}
+.log-warn{color:var(--amber)}
+
+/* TABS */
+.tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--panel)}
+.tab{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:9px 12px;cursor:pointer;color:var(--hint);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .1s;background:none;border-top:none;border-left:none;border-right:none;font-family:var(--font)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab:hover:not(.active){color:var(--charcoal)}
+
+@keyframes fadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.fade-in{animation:fadeIn .2s ease}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-dot" id="status-dot"></div>
+    <span class="brand-name">Invoice Workflow Engine</span>
+    <span class="brand-sub">Restaurang Björken</span>
+  </div>
+  <div class="topbar-right">
+    <div class="engine-badge" id="engine-badge">● Demo mode</div>
+    <span id="last-sync" style="font-size:11px;color:var(--hint)"></span>
+    <button class="btn btn-sm btn-primary" onclick="triggerDailySummary()">Daily summary</button>
+    <button class="btn btn-sm" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+</div>
+
+<div class="shell">
+
+<!-- ── LEFT: UPLOAD + CONTROLS ── -->
+<div class="panel panel-l">
+  <div class="ph"><h2>Inbox</h2><span class="badge b-gray" id="inbox-count">0 pending</span></div>
+  <div class="ps">
+
+    <!-- Drop zone -->
+    <label class="drop-zone">
+      <input type="file" id="invoice-upload" multiple accept=".txt,.csv,.pdf,.xlsx"
+             onchange="handleUpload(this)">
+      <div style="font-size:20px;margin-bottom:6px">📥</div>
+      <strong style="font-size:13px">Drop invoice here</strong>
+      <p>PDF, Excel, CSV, TXT<br>Auto-processed immediately</p>
+    </label>
+
+    <!-- Simulate buttons -->
+    <div style="padding:0 12px 8px">
+      <div style="font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px">Simulate invoice</div>
+    </div>
+    <div class="sim-btns">
+      <button class="sim-btn" onclick="simulate('food')">🥩 Food supplier</button>
+      <button class="sim-btn" onclick="simulate('staff')">👥 Staff payroll</button>
+      <button class="sim-btn" onclick="simulate('rent')">🏢 Rent invoice</button>
+      <button class="sim-btn" onclick="simulate('large')">⚠ Large/unknown</button>
+    </div>
+
+    <!-- Config editor -->
+    <div style="border-top:1px solid var(--border);padding-top:10px">
+      <div class="config-section">
+        <div class="cfg-label">Alert thresholds</div>
+        <div class="cfg-row"><span class="cfg-key">Food costs warn</span><input class="cfg-val" id="cfg-food-warn" type="number" step="0.5"><span class="cfg-unit">%</span></div>
+        <div class="cfg-row"><span class="cfg-key">Food costs over</span><input class="cfg-val" id="cfg-food-over" type="number" step="0.5"><span class="cfg-unit">%</span></div>
+        <div class="cfg-row"><span class="cfg-key">Staff costs warn</span><input class="cfg-val" id="cfg-staff-warn" type="number" step="0.5"><span class="cfg-unit">%</span></div>
+        <div class="cfg-row"><span class="cfg-key">Staff costs over</span><input class="cfg-val" id="cfg-staff-over" type="number" step="0.5"><span class="cfg-unit">%</span></div>
+        <div class="cfg-row"><span class="cfg-key">Profit margin warn</span><input class="cfg-val" id="cfg-margin-warn" type="number" step="0.5"><span class="cfg-unit">%</span></div>
+        <div class="cfg-row"><span class="cfg-key">Large invoice flag</span><input class="cfg-val" id="cfg-large-inv" type="number" step="1000"><span class="cfg-unit">kr</span></div>
+        <button class="btn btn-primary btn-full" onclick="saveConfig()">Save thresholds</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── CENTRE: MAIN DASHBOARD ── -->
+<div class="panel panel-c">
+
+  <!-- KPI strip -->
+  <div class="kpi-strip" id="kpi-strip"></div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('pipeline',this)">Pipeline</button>
+    <button class="tab" onclick="switchTab('invoices',this)">Invoices</button>
+    <button class="tab" onclick="switchTab('reconcile',this)">Reconcile</button>
+    <button class="tab" onclick="switchTab('log',this)">Log</button>
+  </div>
+
+  <!-- TAB: Pipeline -->
+  <div id="tab-pipeline" class="ps">
+    <div id="pipeline-status" style="padding:32px;text-align:center;color:var(--hint)">
+      <div style="font-size:32px;margin-bottom:10px">⚡</div>
+      <div style="font-size:13px;font-weight:500;color:var(--charcoal)">Ready — drop an invoice or click Simulate</div>
+      <div style="font-size:12px;margin-top:4px">All 8 pipeline steps will run automatically</div>
+    </div>
+  </div>
+
+  <!-- TAB: Invoices (hidden) -->
+  <div id="tab-invoices" class="ps" style="display:none">
+    <div id="invoice-list"></div>
+  </div>
+
+  <!-- TAB: Reconcile (hidden) -->
+  <div id="tab-reconcile" class="ps" style="display:none">
+    <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:500;margin-bottom:8px">Import Handelsbanken CSV</div>
+      <textarea id="bank-csv" placeholder="Paste CSV content here (Datum;Text;Belopp;Saldo format)…"
+                style="width:100%;height:80px;font-size:11px;font-family:var(--mono);padding:8px;border:1px solid var(--border-d);border-radius:var(--r);resize:none;background:var(--bg)"></textarea>
+      <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="importBank()">Import & match</button>
+    </div>
+    <div id="unpaid-list"></div>
+  </div>
+
+  <!-- TAB: Log (hidden) -->
+  <div id="tab-log" class="ps" style="display:none">
+    <div id="log-list"></div>
+  </div>
+
+</div>
+
+<!-- ── RIGHT: NOTIFICATIONS ── -->
+<div class="panel panel-r">
+  <div class="ph">
+    <h2>Notifications</h2>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span class="badge b-red" id="unread-count" style="display:none"></span>
+      <button class="btn btn-sm" onclick="acknowledgeAll()">Clear all</button>
+    </div>
+  </div>
+
+  <!-- Daily summary card -->
+  <div id="summary-card"></div>
+
+  <div class="ps" id="notif-list"></div>
+</div>
+
+</div><!-- /shell -->
+
+<script>
+  // ── AUTO-LOAD API KEY FROM COMMAND CENTER ──────────────────
+  (function() {
+    const key = localStorage.getItem('bj_api_key');
+    if (!key) return;
+    // Apply to all known key storage locations
+    localStorage.setItem('rag_api_key', key);
+    localStorage.setItem('bj_api_key', key);
+    // Set on window so any inline references pick it up
+    window._CC_API_KEY = key;
+  })();
+  // ────────────────────────────────────────────────────────────
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  Workflow Dashboard — connects to workflow_engine.py API     ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+const API = 'http://localhost:8765';   // workflow_engine.py port
+let engineConnected = false;
+let logEntries = [];
+let currentTab = 'pipeline';
+
+// ── FINANCIAL DATA (demo fallback when engine offline) ───────────
+const DEMO_TOTALS = {
+  revenue:505900, staff:224978, food:149300, rent:64500, other:28422,
+  total_costs:467200, profit:38700, profit_pct:7.65,
+  staff_pct:44.5, food_pct:29.5, rent_pct:12.7, other_pct:5.6
+};
+
+const DEMO_NOTIFICATIONS = [
+  {id:1,level:"warn",   category:"food",    title:"Menigo price increase +8% detected",
+   detail:"Invoice FAK-8842901: food costs now 29.5% of revenue (warn: 31%)", created_at:"2026-03-18 09:14",acknowledged:0},
+  {id:2,level:"info",   category:"staff",   title:"Payroll processed: 224 978 kr",
+   detail:"All 10 employees. Staff now 44.5% of revenue.", created_at:"2026-03-18 09:10",acknowledged:0},
+  {id:3,level:"info",   category:"system",  title:"Fortnox sync complete",
+   detail:"14 invoices pulled. 3 categorised automatically.", created_at:"2026-03-18 08:52",acknowledged:1},
+  {id:4,level:"alert",  category:"payment", title:"Payment due in 3 days: Sysco Sverige AB",
+   detail:"Invoice SY-881234 · 35 214 kr due 2026-03-29", created_at:"2026-03-18 08:00",acknowledged:0},
+];
+
+const DEMO_INVOICES = [
+  {id:1,vendor:"Menigo Foodservice AB",    invoice_date:"2026-03-12",due_date:"2026-04-11",amount_ex_vat:31307,total_inc_vat:35064,category:"food", status:"pending"},
+  {id:2,vendor:"Sysco Sverige AB",         invoice_date:"2026-03-15",due_date:"2026-03-29",amount_ex_vat:34899,total_inc_vat:43624,category:"food", status:"pending"},
+  {id:3,vendor:"Björkens Fastigheter KB",  invoice_date:"2026-03-01",due_date:"2026-03-01",amount_ex_vat:52000,total_inc_vat:65000,category:"rent", status:"paid"},
+  {id:4,vendor:"Intern lönekörning",       invoice_date:"2026-03-25",due_date:"2026-03-25",amount_ex_vat:224978,total_inc_vat:224978,category:"staff",status:"paid"},
+  {id:5,vendor:"Vattenfall Eldistribution",invoice_date:"2026-03-01",due_date:"2026-03-25",amount_ex_vat:8400, total_inc_vat:10500,category:"rent", status:"pending"},
+  {id:6,vendor:"Fortnox AB",               invoice_date:"2026-03-05",due_date:"2026-04-05",amount_ex_vat:799,  total_inc_vat:999,  category:"other",status:"paid"},
+];
+
+// ── API HELPERS ──────────────────────────────────────────────────
+async function api(path, method='GET', body=null) {
+  try {
+    const opts = { method, headers:{'Content-Type':'application/json'} };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(API + path, opts);
+    return await res.json();
+  } catch(e) {
+    return null;
+  }
+}
+
+async function checkEngine() {
+  const status = await api('/api/status');
+  engineConnected = !!status?.status;
+  const badge = document.getElementById('engine-badge');
+  const dot   = document.getElementById('status-dot');
+  if (engineConnected) {
+    badge.textContent = '● Engine connected';
+    badge.className   = 'engine-badge connected';
+    dot.className     = 'brand-dot live';
+  } else {
+    badge.textContent = '● Demo mode (start workflow_engine.py)';
+    badge.className   = 'engine-badge disconnected';
+    dot.className     = 'brand-dot';
+  }
+  return engineConnected;
+}
+
+// ── PIPELINE VISUALISER ──────────────────────────────────────────
+function renderPipeline(result) {
+  const container = document.getElementById('pipeline-status');
+  if (!result) return;
+
+  const statusIcon = {
+    done:    '<span style="color:var(--green)">✓</span>',
+    running: '<span style="color:var(--blue);animation:spinSlow 1s linear infinite;display:inline-block">⟳</span>',
+    error:   '<span style="color:var(--red)">✗</span>',
+    wait:    '<span style="color:var(--hint)">○</span>',
+  };
+
+  const vendor   = result.invoice?.vendor || '—';
+  const amount   = result.invoice?.total_inc_vat || 0;
+  const category = result.category || '—';
+  const success  = result.success;
+
+  container.innerHTML = `
+    <div class="pipeline-card fade-in" style="margin:12px 14px">
+      <div class="pipeline-header">
+        <h3>${vendor}</h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge b-${category}">${category}</span>
+          <span style="font-size:12px;font-weight:600;font-variant-numeric:tabular-nums">${kr(amount)}</span>
+          ${success ? '<span class="badge b-green">✓ Complete</span>' : '<span class="badge b-red">Error</span>'}
+        </div>
+      </div>
+      <div class="step-list">
+        ${(result.steps||[]).map(s => `
+          <div class="step-row ${s.status}">
+            <div class="step-icon si-${s.status}">${statusIcon[s.status]||'○'}</div>
+            <div class="step-info">
+              <div class="step-label">Step ${s.step}: ${s.label}</div>
+              <div class="step-detail">${s.detail||''}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+    ${(result.alerts||[]).length ? `
+      <div style="margin:0 14px 12px">
+        ${result.alerts.map(a => `
+          <div style="display:flex;gap:10px;align-items:flex-start;padding:9px 12px;background:${a.level==='critical'||a.level==='alert'?'var(--red-lt)':'var(--amber-lt)'};border-radius:var(--r);margin-bottom:6px">
+            <span>${a.level==='critical'||a.level==='alert'?'🔴':'🟡'}</span>
+            <div>
+              <div style="font-size:12px;font-weight:600">${a.title}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px">${a.detail}</div>
+            </div>
+          </div>`).join('')}
+      </div>` : ''}`;
+}
+
+// ── KPI STRIP ─────────────────────────────────────────────────────
+function renderKPIs(totals) {
+  const t   = totals || DEMO_TOTALS;
+  const cfg_t = CONFIG_CACHE?.thresholds || {};
+
+  const kpis = [
+    {
+      label:'Revenue', value:kr(t.revenue), sub:'This period',
+      barFill:null, barColor:'var(--blue)', cls:'kv-rev', alert:null
+    },
+    {
+      label:'Food & Bev', value:kr(t.food),
+      sub:`${t.food_pct}% of revenue`,
+      barFill: t.food_pct, barMax: cfg_t.food_pct_over||35,
+      barColor: t.food_pct > (cfg_t.food_pct_over||35) ? 'var(--red)' :
+                t.food_pct > (cfg_t.food_pct_warn||31) ? 'var(--amber)' : 'var(--green)',
+      alert: t.food_pct > (cfg_t.food_pct_over||35) ? 'over' :
+             t.food_pct > (cfg_t.food_pct_warn||31) ? 'warn' : null
+    },
+    {
+      label:'Staff', value:kr(t.staff),
+      sub:`${t.staff_pct}% of revenue`,
+      barFill: t.staff_pct, barMax: cfg_t.staff_pct_over||50,
+      barColor: t.staff_pct > (cfg_t.staff_pct_over||50) ? 'var(--red)' :
+                t.staff_pct > (cfg_t.staff_pct_warn||40) ? 'var(--amber)' : 'var(--green)',
+      alert: t.staff_pct > (cfg_t.staff_pct_over||50) ? 'over' :
+             t.staff_pct > (cfg_t.staff_pct_warn||40) ? 'warn' : null
+    },
+    {
+      label:'Net Profit', value:kr(t.profit),
+      sub:`${t.profit_pct}% margin`,
+      barFill: Math.max(0, t.profit_pct), barMax: 25,
+      barColor: t.profit_pct >= (cfg_t.profit_margin_warn||12) ? 'var(--green)' :
+                t.profit_pct >= (cfg_t.profit_margin_critical||7) ? 'var(--amber)' : 'var(--red)',
+      cls: t.profit_pct >= (cfg_t.profit_margin_warn||12) ? 'kv-profit-good' :
+           t.profit_pct >= (cfg_t.profit_margin_critical||7) ? 'kv-profit-warn' : 'kv-profit-bad',
+      alert: t.profit_pct < (cfg_t.profit_margin_critical||7) ? 'over' :
+             t.profit_pct < (cfg_t.profit_margin_warn||12) ? 'warn' : null
+    },
+  ];
+
+  document.getElementById('kpi-strip').innerHTML = kpis.map(k => `
+    <div class="kpi ${k.alert==='over'?'alert-over':k.alert==='warn'?'alert-warn':''}">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value ${k.cls||''}">${k.value}${k.alert?`<span class="alert-badge ab-${k.alert}">${k.alert.toUpperCase()}</span>`:''}</div>
+      <div class="kpi-sub">${k.sub}</div>
+      ${k.barFill!=null?`<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(100,k.barFill/k.barMax*100).toFixed(1)}%;background:${k.barColor}"></div></div>`:''}
+    </div>`).join('');
+}
+
+// ── INVOICE LIST ──────────────────────────────────────────────────
+function renderInvoices(invoices) {
+  const list = document.getElementById('invoice-list');
+  const items = invoices || DEMO_INVOICES;
+  if (!items.length) {
+    list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--hint);font-size:12px">No invoices yet — drop a file or simulate</div>';
+    return;
+  }
+  list.innerHTML = items.map(inv => `
+    <div class="inv-item fade-in">
+      <div class="inv-header">
+        <div class="inv-vendor">${inv.vendor}</div>
+        <div class="inv-amount">${kr(inv.total_inc_vat)}</div>
+      </div>
+      <div class="inv-meta">
+        <span class="inv-date">${inv.invoice_date||'—'}</span>
+        <span class="badge b-${inv.category}">${inv.category}</span>
+        <span class="badge status-${inv.status}">${inv.status}</span>
+        ${inv.due_date?`<span class="inv-date">Due: ${inv.due_date}</span>`:''}
+      </div>
+    </div>`).join('');
+}
+
+// ── NOTIFICATIONS ─────────────────────────────────────────────────
+function renderNotifications(notifs) {
+  const list = document.getElementById('notif-list');
+  const items = notifs || DEMO_NOTIFICATIONS;
+  const unread = items.filter(n => !n.acknowledged).length;
+
+  const badge = document.getElementById('unread-count');
+  if (unread > 0) {
+    badge.textContent = unread + ' new';
+    badge.style.display = 'inline-flex';
+  } else {
+    badge.style.display = 'none';
+  }
+
+  if (!items.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--hint);font-size:12px">🟢 No notifications</div>';
+    return;
+  }
+
+  const iconMap = {info:'ℹ',warn:'⚠',alert:'🔴',critical:'🚨'};
+  const clsMap  = {info:'ni-info',warn:'ni-warn',alert:'ni-alert',critical:'ni-critical'};
+
+  list.innerHTML = items.map(n => `
+    <div class="notif-item ${n.acknowledged?'':'unread'} fade-in">
+      <div class="notif-icon ${clsMap[n.level]||'ni-info'}">${iconMap[n.level]||'ℹ'}</div>
+      <div class="notif-text">
+        <div class="nt-title">${n.title}</div>
+        <div class="nt-detail">${n.detail}</div>
+        <div class="nt-time">${n.created_at}</div>
+      </div>
+      ${!n.acknowledged?`<button class="notif-ack" onclick="acknowledge(${n.id})" title="Dismiss">×</button>`:''}
+    </div>`).join('');
+}
+
+// ── RECONCILIATION ────────────────────────────────────────────────
+function renderUnpaid(unpaid) {
+  const list   = document.getElementById('unpaid-list');
+  const items  = unpaid || DEMO_INVOICES.filter(i => i.status==='pending').map(i => ({
+    ...i, days_until_due: i.due_date ?
+      Math.round((new Date(i.due_date)-new Date())/86400000) : null
+  }));
+
+  if (!items.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--hint);font-size:12px">✓ No outstanding invoices</div>';
+    return;
+  }
+
+  const totalUnpaid = items.reduce((s,i) => s + (i.amount_ex_vat||i.amount||0), 0);
+  list.innerHTML = `
+    <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between">
+      <span style="font-weight:500">Outstanding: ${items.length} invoices</span>
+      <span style="font-weight:600;font-variant-numeric:tabular-nums">${kr(totalUnpaid)}</span>
+    </div>` +
+  items.map(i => {
+    const days = i.days_until_due;
+    const chipCls = days == null ? '' : days < 0 ? 'days-overdue' : days <= 5 ? 'days-soon' : 'days-ok';
+    const chipTxt = days == null ? 'No due date' : days < 0 ? `${Math.abs(days)}d overdue` : `${days}d left`;
+    return `<div class="recon-item fade-in">
+      <div class="ri-vendor">${i.vendor}</div>
+      <div class="ri-amount">${kr(i.amount_ex_vat||i.amount||0)}</div>
+      <div class="days-chip ${chipCls}">${chipTxt}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── DAILY SUMMARY ─────────────────────────────────────────────────
+function renderSummary(summary) {
+  const s = summary || {
+    date: new Date().toISOString().split('T')[0],
+    invoices_processed: 3, total_amount: 214406,
+    by_category: {food:68206,staff:224978,rent:65000},
+    alerts: 2, critical_alerts: 0,
+    unpaid_count: 3, unpaid_total: 165399,
+  };
+  document.getElementById('summary-card').innerHTML = `
+    <div class="summary-card">
+      <h4>Today · ${s.date}</h4>
+      <div class="summary-row"><span class="sr-key">Invoices processed</span><span class="sr-val">${s.invoices_processed}</span></div>
+      <div class="summary-row"><span class="sr-key">Total amount</span><span class="sr-val">${kr(s.total_amount)}</span></div>
+      <div class="summary-row"><span class="sr-key">Active alerts</span><span class="sr-val" style="color:${s.critical_alerts>0?'var(--red)':s.alerts>0?'var(--amber)':'var(--green)'}">${s.alerts}${s.critical_alerts>0?` (${s.critical_alerts} critical)`:''}</span></div>
+      <div class="summary-row"><span class="sr-key">Unpaid invoices</span><span class="sr-val">${s.unpaid_count} · ${kr(s.unpaid_total)}</span></div>
+    </div>`;
+}
+
+// ── CONFIG ────────────────────────────────────────────────────────
+let CONFIG_CACHE = null;
+
+function loadConfig(cfg) {
+  CONFIG_CACHE = cfg;
+  if (!cfg?.thresholds) return;
+  const t = cfg.thresholds;
+  const setVal = (id, v) => { const el=document.getElementById(id); if(el) el.value=v; };
+  setVal('cfg-food-warn',   t.food_pct_warn  || 31);
+  setVal('cfg-food-over',   t.food_pct_over  || 35);
+  setVal('cfg-staff-warn',  t.staff_pct_warn || 40);
+  setVal('cfg-staff-over',  t.staff_pct_over || 50);
+  setVal('cfg-margin-warn', t.profit_margin_warn || 12);
+  setVal('cfg-large-inv',   t.single_invoice_warn_amount || 40000);
+}
+
+async function saveConfig() {
+  const getVal = id => parseFloat(document.getElementById(id).value) || 0;
+  if (!CONFIG_CACHE) CONFIG_CACHE = {};
+  if (!CONFIG_CACHE.thresholds) CONFIG_CACHE.thresholds = {};
+  Object.assign(CONFIG_CACHE.thresholds, {
+    food_pct_warn:  getVal('cfg-food-warn'),
+    food_pct_over:  getVal('cfg-food-over'),
+    staff_pct_warn: getVal('cfg-staff-warn'),
+    staff_pct_over: getVal('cfg-staff-over'),
+    profit_margin_warn: getVal('cfg-margin-warn'),
+    single_invoice_warn_amount: getVal('cfg-large-inv'),
+  });
+  const ok = await api('/api/save_config', 'POST', CONFIG_CACHE);
+  if (ok) {
+    addLog('Config saved — thresholds updated', 'ok');
+    renderKPIs(null);
+  } else {
+    addLog('Config saved locally (engine offline)', 'warn');
+  }
+}
+
+// ── SIMULATE ──────────────────────────────────────────────────────
+async function simulate(type) {
+  addLog(`Simulating ${type} invoice…`, 'info');
+  renderPipelineRunning();
+  switchTab('pipeline', document.querySelector('.tab'));
+
+  const result = await api(`/api/simulate?type=${type}`);
+  if (result) {
+    renderPipeline(result);
+    addLog(`✓ Pipeline complete: ${result.invoice?.vendor} → ${result.category}`, 'ok');
+    if (result.alerts?.length) {
+      addLog(`${result.alerts.length} alert(s) generated`, 'warn');
+    }
+    await refreshAll();
+  } else {
+    // Demo mode: show simulated pipeline
+    renderPipelinDemo(type);
+    addLog('Demo mode: showing simulated pipeline', 'warn');
+  }
+}
+
+function renderPipelineRunning() {
+  const container = document.getElementById('pipeline-status');
+  container.innerHTML = `<div style="padding:24px;text-align:center">
+    <div style="width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spinSlow 0.8s linear infinite;margin:0 auto 12px"></div>
+    <div style="font-size:13px;font-weight:500;color:var(--charcoal)">Processing invoice…</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px">Running 8-step pipeline</div>
+  </div>`;
+}
+
+function renderPipelinDemo(type) {
+  const demos = {
+    food: {vendor:"Menigo Foodservice AB", amount:31360, category:"food", alerts:[]},
+    staff:{vendor:"Intern lönekörning",    amount:224978,category:"staff",alerts:[]},
+    rent: {vendor:"Björkens Fastigheter",  amount:65000, category:"rent", alerts:[]},
+    large:{vendor:"Okänd Leverantör AB",   amount:68750, category:"other",
+           alerts:[{level:"warn",title:"New supplier detected",detail:"Add to known suppliers in config"},
+                   {level:"warn",title:"Large invoice: 55 000 kr",detail:"Exceeds 40 000 kr threshold"}]},
+  };
+  const d = demos[type] || demos.food;
+  const steps = [
+    {step:1,label:"Read file",status:"done",detail:`Read file · hash computed`},
+    {step:2,label:"Extract invoice data",status:"done",detail:`Vendor: ${d.vendor} | Amount: ${kr(d.amount)} | Date: 2026-04-02`},
+    {step:3,label:"Categorise",status:"done",detail:`→ ${d.category.toUpperCase()} (confidence ${d.category!=='other'?'97':'55'}%)`},
+    {step:4,label:"Update tracker totals",status:"done",detail:`Added ${kr(type==='large'?55000:d.amount)} to ${d.category} bucket`},
+    {step:5,label:"Recalculate percentages",status:"done",detail:`Staff 44.5% | Food 29.5% | Profit 7.65%`},
+    {step:6,label:"Check for anomalies",status:"done",detail:d.alerts.length?`${d.alerts.length} alert(s) generated`:"No anomalies detected ✓"},
+    {step:7,label:"Save & index for chat",status:"done",detail:`Saved to DB · Added to RAG context`},
+    {step:8,label:"Reconcile with bank",status:"done",detail:`No bank match yet — invoice remains pending`},
+  ];
+  setTimeout(() => {
+    renderPipeline({invoice:{vendor:d.vendor,total_inc_vat:d.amount},
+                    category:d.category, steps, success:true, alerts:d.alerts});
+    // Add to demo notifications
+    d.alerts.forEach(a => {
+      DEMO_NOTIFICATIONS.unshift({...a, id:Date.now(), created_at:new Date().toLocaleString('sv-SE',{hour:'2-digit',minute:'2-digit'}), acknowledged:0});
+    });
+    renderNotifications(null);
+  }, 800);
+}
+
+// ── UPLOAD HANDLER ────────────────────────────────────────────────
+async function handleUpload(input) {
+  const files = [...input.files];
+  for (const file of files) {
+    addLog(`Uploading: ${file.name}`, 'info');
+    const text = await file.text().catch(() => '');
+    // In production: POST to /api/process endpoint
+    // For now: add to demo + simulate
+    addLog(`Processing: ${file.name}`, 'info');
+    await simulate('food');  // treat as food for demo
+  }
+  input.value = '';
+}
+
+// ── BANK IMPORT ───────────────────────────────────────────────────
+async function importBank() {
+  const csv = document.getElementById('bank-csv').value.trim();
+  if (!csv) { alert('Paste CSV content first'); return; }
+  const result = await api('/api/import_bank', 'POST', {csv});
+  if (result) {
+    addLog(`Bank import: ${result.imported} rows, ${result.matched} matched`, 'ok');
+    renderUnpaid(null);
+  } else {
+    addLog('Bank import demo — real matching requires engine', 'warn');
+  }
+  document.getElementById('bank-csv').value = '';
+}
+
+// ── ACKNOWLEDGE ───────────────────────────────────────────────────
+async function acknowledge(id) {
+  await api('/api/acknowledge', 'POST', {id});
+  const n = DEMO_NOTIFICATIONS.find(n => n.id === id);
+  if (n) n.acknowledged = 1;
+  renderNotifications(null);
+}
+
+async function acknowledgeAll() {
+  DEMO_NOTIFICATIONS.forEach(n => n.acknowledged = 1);
+  renderNotifications(null);
+}
+
+// ── LOG ───────────────────────────────────────────────────────────
+function addLog(msg, type='info') {
+  const time = new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  logEntries.unshift({time, msg, type});
+  logEntries = logEntries.slice(0, 100);
+  const list = document.getElementById('log-list');
+  if (list) {
+    list.innerHTML = logEntries.map(e =>
+      `<div class="log-item"><span class="log-time">${e.time}</span><span class="log-msg log-${e.type}">${e.msg}</span></div>`
+    ).join('');
+  }
+}
+
+// ── TABS ──────────────────────────────────────────────────────────
+function switchTab(tab, el) {
+  currentTab = tab;
+  ['pipeline','invoices','reconcile','log'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t===tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (tab === 'invoices')   renderInvoices(null);
+  if (tab === 'reconcile')  renderUnpaid(null);
+}
+
+// ── REFRESH ALL ───────────────────────────────────────────────────
+async function refreshAll() {
+  const [totals, notifs, invoices, unpaid, summary, cfg] = await Promise.all([
+    api('/api/totals'),
+    api('/api/notifications'),
+    api('/api/invoices'),
+    api('/api/unpaid'),
+    api('/api/summary'),
+    api('/api/config'),
+  ]);
+
+  renderKPIs(totals);
+  renderNotifications(notifs);
+  if (currentTab === 'invoices')  renderInvoices(invoices);
+  if (currentTab === 'reconcile') renderUnpaid(unpaid);
+  renderSummary(summary);
+  if (cfg) loadConfig(cfg);
+
+  document.getElementById('last-sync').textContent =
+    'Updated ' + new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
+}
+
+async function triggerDailySummary() {
+  const summary = await api('/api/summary') || null;
+  renderSummary(summary);
+  addLog('Daily summary generated', 'ok');
+  switchTab('pipeline', document.querySelector('.tab'));
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+async function init() {
+  addLog('Workflow dashboard initialised', 'ok');
+  addLog('Checking engine connection…', 'info');
+
+  await checkEngine();
+
+  // Load config defaults
+  const cfg = await api('/api/config');
+  loadConfig(cfg || {thresholds:{food_pct_warn:31,food_pct_over:35,
+    staff_pct_warn:40,staff_pct_over:50,profit_margin_warn:12,
+    single_invoice_warn_amount:40000}});
+
+  // Render with live data or demo fallback
+  await refreshAll();
+
+  if (!engineConnected) {
+    renderKPIs(DEMO_TOTALS);
+    renderNotifications(DEMO_NOTIFICATIONS);
+    renderSummary(null);
+    addLog('Engine offline — showing demo data. Run: python3 workflow_engine.py', 'warn');
+    addLog('Click "Simulate invoice" to see the full pipeline', 'info');
+  }
+
+  // Auto-refresh every 15 seconds when engine is running
+  setInterval(async () => {
+    if (await checkEngine()) await refreshAll();
+  }, 15000);
+}
+
+const kr = n => Math.round(Math.abs(n)).toLocaleString('sv-SE') + ' kr';
+init();
+</script>
+</body>
+</html>

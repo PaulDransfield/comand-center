@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  /* Palette — warm editorial */
+  --soil:#1C1714;--coal:#2E2B27;--bark:#4A4540;
+  --stone:#7A7470;--pebble:#AEA9A3;--dust:#D4CFC8;
+  --cream:#F2EDE6;--milk:#FAF8F5;--white:#FFFFFF;
+  --border:#E0DAD2;--border-d:#C8C1B8;
+
+  /* Accents */
+  --moss:#2D5A27;--moss-lt:#EAF2E8;--moss-mid:#B8D8B5;
+  --rust:#8B3A0F;--rust-lt:#FCF0E8;--rust-mid:#F0C4A0;
+  --slate:#1A3F6B;--slate-lt:#EBF2FC;--slate-mid:#B8D0F0;
+  --gold:#7A5E0A;--gold-lt:#FBF5E0;--gold-mid:#F0DCA0;
+  --scarlet:#8B1A1A;--scarlet-lt:#FBF0F0;
+
+  --font:'DM Sans',system-ui,sans-serif;
+  --display:'Fraunces',Georgia,serif;
+  --mono:'DM Mono',monospace;
+
+  --nav-h:52px;
+  --sidebar-w:64px;
+}
+
+html,body{height:100%;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:14px;color:var(--soil);background:var(--cream)}
+
+/* ═══════════════════════════════════════════════
+   CORE LAYOUT
+═══════════════════════════════════════════════ */
+.app{display:grid;grid-template-rows:var(--nav-h) 1fr;height:100vh;overflow:hidden}
+.nav{background:var(--soil);display:flex;align-items:center;padding:0 20px;gap:12px;position:relative;z-index:100}
+.body{display:flex;overflow:hidden}
+.sidebar{width:var(--sidebar-w);background:var(--coal);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+
+/* ═══════════════════════════════════════════════
+   NAV BAR
+═══════════════════════════════════════════════ */
+.nav-brand{font-family:var(--display);font-size:17px;font-weight:300;color:var(--white);letter-spacing:.02em;white-space:nowrap}
+.nav-brand span{font-weight:600;color:var(--dust)}
+
+/* ── BUSINESS SWITCHER ── */
+.biz-switcher{
+  position:relative;margin-left:8px;
+}
+.biz-trigger{
+  display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:8px;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);
+  cursor:pointer;transition:all .15s;max-width:280px;
+}
+.biz-trigger:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.2)}
+.biz-trigger.open{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.25)}
+.bt-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .2s}
+.bt-name{font-size:13px;font-weight:500;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.bt-arrow{color:rgba(255,255,255,.4);font-size:10px;flex-shrink:0;transition:transform .15s}
+.biz-trigger.open .bt-arrow{transform:rotate(180deg)}
+
+/* DROPDOWN */
+.biz-dropdown{
+  position:absolute;top:calc(100% + 6px);left:0;min-width:320px;max-width:380px;
+  background:var(--white);border:1px solid var(--border-d);border-radius:12px;
+  box-shadow:0 16px 48px rgba(0,0,0,.18);z-index:500;overflow:hidden;
+  opacity:0;transform:translateY(-8px);pointer-events:none;
+  transition:opacity .15s,transform .15s;
+}
+.biz-dropdown.open{opacity:1;transform:none;pointer-events:all}
+
+.dd-search-row{padding:10px 12px;border-bottom:1px solid var(--border)}
+.dd-search{
+  width:100%;border:1px solid var(--border);border-radius:7px;padding:7px 10px;
+  font-size:13px;font-family:var(--font);color:var(--soil);background:var(--cream);
+  outline:none;transition:border-color .12s;
+}
+.dd-search:focus{border-color:var(--slate)}
+.dd-search::placeholder{color:var(--pebble)}
+
+.dd-section{padding:6px 0}
+.dd-section-label{font-size:10px;font-weight:700;color:var(--pebble);text-transform:uppercase;letter-spacing:.1em;padding:4px 14px}
+
+.dd-item{
+  display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;
+  transition:background .08s;position:relative;
+}
+.dd-item:hover{background:var(--cream)}
+.dd-item.active{background:var(--slate-lt)}
+.dd-item.active .di-name{color:var(--slate);font-weight:600}
+
+.di-avatar{
+  width:30px;height:30px;border-radius:8px;display:flex;align-items:center;
+  justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;
+  font-family:var(--display);color:white;
+}
+.di-info{flex:1;min-width:0}
+.di-name{font-size:13px;font-weight:500;color:var(--soil);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.di-meta{font-size:10px;color:var(--pebble);margin-top:1px;font-family:var(--mono)}
+.di-check{color:var(--slate);font-size:14px;opacity:0}
+.dd-item.active .di-check{opacity:1}
+
+/* Aggregate row */
+.dd-item.aggregate{background:var(--soil);margin:6px 8px;border-radius:8px}
+.dd-item.aggregate:hover{background:var(--coal)}
+.dd-item.aggregate.active{background:var(--coal)}
+.dd-item.aggregate .di-name{color:white}
+.dd-item.aggregate .di-meta{color:rgba(255,255,255,.4)}
+.dd-item.aggregate .di-check{color:var(--gold-mid)}
+
+.dd-divider{height:1px;background:var(--border);margin:4px 0}
+
+.dd-add-btn{
+  display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;
+  color:var(--slate);font-size:13px;font-weight:500;border-top:1px solid var(--border);
+  transition:background .08s;
+}
+.dd-add-btn:hover{background:var(--slate-lt)}
+
+/* Keyboard shortcut hint */
+.dd-kbd{font-size:10px;font-family:var(--mono);background:var(--cream);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--stone);margin-left:auto}
+
+/* ── NAV RIGHT ── */
+.nav-right{display:flex;align-items:center;gap:8px;margin-left:auto}
+.nav-badge{
+  display:flex;align-items:center;gap:5px;font-size:11px;color:rgba(255,255,255,.5);
+  padding:4px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.1);
+  cursor:pointer;transition:all .12s;
+}
+.nav-badge:hover{color:rgba(255,255,255,.8);border-color:rgba(255,255,255,.2)}
+.nav-avatar{
+  width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.15);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+  color:white;cursor:pointer;font-family:var(--display);
+}
+
+/* ═══════════════════════════════════════════════
+   SIDEBAR ICONS
+═══════════════════════════════════════════════ */
+.sb-btn{
+  width:44px;height:44px;border-radius:10px;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;transition:all .12s;color:rgba(255,255,255,.4);
+  font-size:18px;position:relative;
+}
+.sb-btn:hover{background:rgba(255,255,255,.08);color:rgba(255,255,255,.75)}
+.sb-btn.active{background:rgba(255,255,255,.12);color:white}
+.sb-btn .tooltip{
+  position:absolute;left:calc(100% + 8px);background:var(--soil);color:white;
+  font-size:11px;font-weight:500;padding:4px 9px;border-radius:6px;white-space:nowrap;
+  opacity:0;pointer-events:none;transition:opacity .12s;z-index:50;
+}
+.sb-btn:hover .tooltip{opacity:1}
+.sb-divider{width:32px;height:1px;background:rgba(255,255,255,.08);margin:4px 0}
+
+/* ═══════════════════════════════════════════════
+   MAIN CONTENT AREA
+═══════════════════════════════════════════════ */
+.content{flex:1;overflow-y:auto;padding:24px}
+.page-header{margin-bottom:24px;display:flex;align-items:flex-end;justify-content:space-between}
+.page-title{font-family:var(--display);font-size:28px;font-weight:300;color:var(--soil);line-height:1.15;font-style:italic}
+.page-title strong{font-style:normal;font-weight:600}
+.page-subtitle{font-size:13px;color:var(--stone);margin-top:4px}
+.page-actions{display:flex;gap:8px}
+
+/* ── AGGREGATE TOGGLE ── */
+.agg-toggle{
+  display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:8px;
+  border:1.5px solid var(--border-d);background:none;font-family:var(--font);
+  font-size:12px;font-weight:600;color:var(--stone);cursor:pointer;transition:all .15s;
+}
+.agg-toggle.active{background:var(--soil);color:white;border-color:var(--soil)}
+.agg-toggle:hover:not(.active){background:var(--cream);border-color:var(--bark);color:var(--bark)}
+.toggle-pill{
+  width:28px;height:16px;border-radius:8px;background:rgba(255,255,255,.2);
+  position:relative;transition:background .15s;flex-shrink:0;
+}
+.agg-toggle.active .toggle-pill{background:rgba(255,255,255,.35)}
+.toggle-dot{
+  width:12px;height:12px;border-radius:50%;background:white;
+  position:absolute;top:2px;left:2px;transition:transform .15s;
+}
+.agg-toggle.active .toggle-dot{transform:translateX(12px)}
+
+/* ═══════════════════════════════════════════════
+   KPI STRIP
+═══════════════════════════════════════════════ */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.kpi-card{
+  background:var(--white);border:1px solid var(--border);border-radius:14px;
+  padding:18px 20px;position:relative;overflow:hidden;transition:box-shadow .15s;
+}
+.kpi-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06)}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:14px 14px 0 0}
+.kpi-rev::before{background:linear-gradient(90deg,var(--moss),var(--moss-mid))}
+.kpi-cost::before{background:linear-gradient(90deg,var(--rust),var(--rust-mid))}
+.kpi-profit::before{background:linear-gradient(90deg,var(--slate),var(--slate-mid))}
+.kpi-margin::before{background:linear-gradient(90deg,var(--gold),var(--gold-mid))}
+
+.kpi-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--pebble);margin-bottom:6px}
+.kpi-value{font-family:var(--display);font-size:26px;font-weight:600;line-height:1;color:var(--soil);font-variant-numeric:tabular-nums}
+.kpi-sub{font-size:11px;color:var(--pebble);margin-top:5px;display:flex;align-items:center;gap:4px;font-family:var(--mono)}
+.kpi-delta{font-size:10px;font-weight:600;padding:1px 6px;border-radius:5px}
+.kd-up{background:var(--moss-lt);color:var(--moss)}
+.kd-dn{background:var(--scarlet-lt);color:var(--scarlet)}
+.kd-flat{background:var(--cream);color:var(--stone)}
+
+/* ═══════════════════════════════════════════════
+   GRID — 2 COLUMNS
+═══════════════════════════════════════════════ */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.col-span-2{grid-column:1/-1}
+
+/* CARD */
+.card{
+  background:var(--white);border:1px solid var(--border);border-radius:14px;
+  overflow:hidden;
+}
+.card-header{
+  padding:14px 18px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.card-title{font-size:13px;font-weight:600;color:var(--soil)}
+.card-meta{font-size:11px;color:var(--pebble)}
+.card-body{padding:16px 18px}
+
+/* ═══════════════════════════════════════════════
+   AGGREGATE: BUSINESS BREAKDOWN TABLE
+═══════════════════════════════════════════════ */
+.breakdown-table{width:100%;border-collapse:collapse}
+.bt-th{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--pebble);padding:6px 10px;border-bottom:1px solid var(--border);text-align:left;
+}
+.bt-th.r{text-align:right}
+.bt-td{
+  padding:10px 10px;border-bottom:1px solid var(--border);font-size:13px;
+  color:var(--bark);vertical-align:middle;transition:background .08s;
+}
+.bt-td.name{color:var(--soil);font-weight:500;display:flex;align-items:center;gap:8px}
+.bt-td.mono{font-family:var(--mono);font-size:12px;text-align:right}
+.bt-td.margin-cell{text-align:right}
+tr:hover .bt-td{background:#fafaf7}
+tr:last-child .bt-td{border-bottom:none}
+
+/* Contribution bar */
+.contrib-bar{display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--cream);width:80px}
+.cb-fill{height:100%;transition:width .4s ease}
+
+/* Margin pill */
+.margin-pill{display:inline-flex;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;font-family:var(--mono)}
+.mp-good{background:var(--moss-lt);color:var(--moss)}
+.mp-warn{background:var(--gold-lt);color:var(--gold)}
+.mp-bad{background:var(--scarlet-lt);color:var(--scarlet)}
+
+/* Status dot */
+.status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sd-good{background:var(--moss)}
+.sd-warn{background:#D97706}
+.sd-bad{background:var(--scarlet)}
+
+/* ═══════════════════════════════════════════════
+   CHART CANVAS
+═══════════════════════════════════════════════ */
+.chart-wrap{padding:16px 18px;height:220px;position:relative}
+.chart-legend{
+  display:flex;flex-wrap:wrap;gap:10px;padding:0 18px 14px;font-size:11px;
+}
+.cl-item{display:flex;align-items:center;gap:5px;color:var(--bark)}
+.cl-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+
+/* ═══════════════════════════════════════════════
+   SINGLE BUSINESS — LAUNCH PANEL
+═══════════════════════════════════════════════ */
+.launch-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.launch-btn{
+  background:var(--white);border:1.5px solid var(--border);border-radius:12px;
+  padding:20px 16px;cursor:pointer;text-align:left;transition:all .15s;
+  font-family:var(--font);display:flex;flex-direction:column;gap:8px;
+}
+.launch-btn:hover{border-color:var(--slate);background:var(--slate-lt);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.07)}
+.lb-icon{
+  width:36px;height:36px;border-radius:9px;display:flex;align-items:center;
+  justify-content:center;font-size:16px;background:var(--cream);
+}
+.lb-name{font-size:13px;font-weight:600;color:var(--soil)}
+.lb-desc{font-size:11px;color:var(--stone);line-height:1.4}
+.lb-status{font-size:10px;font-weight:600;padding:2px 7px;border-radius:8px;width:fit-content}
+.lbs-ok{background:var(--moss-lt);color:var(--moss)}
+.lbs-warn{background:var(--gold-lt);color:var(--gold)}
+
+/* ═══════════════════════════════════════════════
+   INTEGRATION STATUS STRIP
+═══════════════════════════════════════════════ */
+.int-strip{display:flex;gap:8px;padding:12px 18px;flex-wrap:wrap}
+.int-chip{
+  display:flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;
+  border:1px solid var(--border);font-size:11px;font-weight:600;color:var(--stone);
+  background:none;transition:all .12s;cursor:pointer;
+}
+.int-chip:hover{border-color:var(--border-d);background:var(--cream)}
+.int-chip.connected{border-color:var(--moss-mid);color:var(--moss);background:var(--moss-lt)}
+.int-chip.error{border-color:var(--rust-mid);color:var(--rust);background:var(--rust-lt)}
+.ic-dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+
+/* ═══════════════════════════════════════════════
+   RECENT BUSINESSES LIST
+═══════════════════════════════════════════════ */
+.recent-list{display:flex;gap:8px;flex-wrap:wrap;padding:12px 18px}
+.recent-chip{
+  display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:8px;
+  border:1px solid var(--border);background:none;font-family:var(--font);
+  font-size:12px;font-weight:500;color:var(--bark);cursor:pointer;transition:all .12s;
+}
+.recent-chip:hover{border-color:var(--slate-mid);background:var(--slate-lt);color:var(--slate)}
+.rc-avatar{width:18px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:white}
+
+/* ═══════════════════════════════════════════════
+   CMD-K PALETTE
+═══════════════════════════════════════════════ */
+.palette-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;
+  display:flex;align-items:flex-start;justify-content:center;
+  padding-top:15vh;opacity:0;pointer-events:none;transition:opacity .15s;
+  backdrop-filter:blur(2px);
+}
+.palette-overlay.open{opacity:1;pointer-events:all}
+.palette{
+  background:var(--white);border-radius:14px;width:560px;max-width:90vw;
+  box-shadow:0 32px 80px rgba(0,0,0,.25);overflow:hidden;
+  transform:translateY(-10px) scale(.97);transition:transform .15s;
+}
+.palette-overlay.open .palette{transform:none}
+.palette-search-row{
+  display:flex;align-items:center;gap:10px;padding:14px 16px;
+  border-bottom:1px solid var(--border);
+}
+.palette-search-row svg{width:16px;height:16px;color:var(--pebble);flex-shrink:0}
+.palette-input{
+  flex:1;border:none;outline:none;font-family:var(--font);font-size:15px;
+  color:var(--soil);background:none;
+}
+.palette-input::placeholder{color:var(--dust)}
+.palette-esc{font-size:10px;font-family:var(--mono);background:var(--cream);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--pebble)}
+.palette-list{max-height:380px;overflow-y:auto}
+.pl-section{padding:4px 0}
+.pl-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--pebble);padding:8px 16px 4px}
+.pl-item{
+  display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;
+  transition:background .08s;
+}
+.pl-item:hover,.pl-item.focused{background:var(--cream)}
+.pl-item.focused .pl-name{color:var(--slate)}
+.pl-avatar{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;flex-shrink:0}
+.pl-name{font-size:13px;font-weight:500;color:var(--soil)}
+.pl-sub{font-size:11px;color:var(--pebble);margin-left:auto;font-family:var(--mono)}
+.pl-tag{font-size:9px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--slate-lt);color:var(--slate);margin-left:8px}
+.palette-footer{
+  padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:14px;
+  font-size:11px;color:var(--pebble);font-family:var(--mono);
+}
+.pf-key{background:var(--cream);border:1px solid var(--border);border-radius:4px;padding:1px 6px}
+
+/* ═══════════════════════════════════════════════
+   ADD BUSINESS MODAL
+═══════════════════════════════════════════════ */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .15s;
+}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{
+  background:var(--white);border-radius:16px;width:520px;max-width:90vw;
+  max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.2);
+  transform:translateY(12px) scale(.98);transition:transform .15s;
+}
+.modal-overlay.open .modal{transform:none}
+.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-family:var(--display);font-size:20px;font-weight:400;font-style:italic}
+.modal-close{background:none;border:none;cursor:pointer;font-size:20px;color:var(--pebble);padding:0;line-height:1}
+.modal-body{padding:20px 24px}
+.modal-footer{padding:14px 24px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+
+/* FORM */
+.field{margin-bottom:14px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.field label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--pebble);margin-bottom:5px}
+.field input,.field select,.field textarea{
+  width:100%;padding:9px 11px;border:1.5px solid var(--border-d);border-radius:8px;
+  font-size:13px;font-family:var(--font);color:var(--soil);background:var(--cream);
+  transition:border-color .12s;outline:none;
+}
+.field input:focus,.field select:focus{border-color:var(--slate);background:var(--white)}
+.field .hint{font-size:11px;color:var(--pebble);margin-top:3px;line-height:1.5}
+.field .optional{font-weight:400;color:var(--dust);text-transform:none;letter-spacing:0;font-size:10px;margin-left:4px}
+.progress-bar{height:4px;background:var(--cream);border-radius:2px;margin-bottom:18px;overflow:hidden}
+.pb-fill{height:100%;border-radius:2px;background:var(--moss);transition:width .3s}
+.pb-label{font-size:11px;color:var(--pebble);margin-bottom:6px;display:flex;justify-content:space-between}
+
+/* ═══════════════════════════════════════════════
+   BUTTONS
+═══════════════════════════════════════════════ */
+.btn{
+  font-family:var(--font);font-size:13px;font-weight:500;padding:8px 16px;
+  border-radius:8px;border:1.5px solid var(--border-d);background:none;
+  color:var(--bark);cursor:pointer;transition:all .12s;display:inline-flex;
+  align-items:center;gap:6px;
+}
+.btn:hover{background:var(--cream);border-color:var(--bark)}
+.btn-primary{background:var(--soil);color:white;border-color:var(--soil)}
+.btn-primary:hover{background:var(--coal)}
+.btn-sm{font-size:12px;padding:6px 12px;border-radius:7px}
+
+/* ═══════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════ */
+.toast{
+  position:fixed;bottom:20px;right:20px;background:var(--soil);color:white;
+  padding:11px 18px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;
+  transform:translateY(60px);opacity:0;transition:all .25s;display:flex;align-items:center;gap:8px;
+}
+.toast.show{transform:none;opacity:1}
+.toast.ok{background:var(--moss)}
+.toast.err{background:var(--scarlet)}
+
+/* ═══════════════════════════════════════════════
+   ANIMATIONS
+═══════════════════════════════════════════════ */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.fade-up{animation:fadeUp .2s ease forwards}
+.fade-up-1{animation-delay:.04s}
+.fade-up-2{animation-delay:.08s}
+.fade-up-3{animation-delay:.12s}
+.fade-up-4{animation-delay:.16s}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--dust);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ═══════════════════════════════════════
+       NAVIGATION BAR
+  ═══════════════════════════════════════ -->
+  <nav class="nav">
+    <div class="nav-brand">Command<span>Center</span></div>
+
+    <!-- Business Switcher -->
+    <div class="biz-switcher" id="biz-switcher">
+      <div class="biz-trigger" id="biz-trigger" onclick="toggleDropdown()">
+        <div class="bt-dot" id="bt-dot"></div>
+        <div class="bt-name" id="bt-name">Loading…</div>
+        <div class="bt-arrow">▼</div>
+      </div>
+
+      <div class="biz-dropdown" id="biz-dropdown">
+        <div class="dd-search-row">
+          <input class="dd-search" id="dd-search" placeholder="Search businesses…"
+                 oninput="filterDropdown(this.value)" autocomplete="off">
+          <span class="dd-kbd">⌘K</span>
+        </div>
+
+        <div class="dd-section">
+          <!-- Aggregate option -->
+          <div class="dd-item aggregate" id="dd-aggregate" onclick="selectAggregate()">
+            <div class="di-avatar" style="background:rgba(255,255,255,.15);font-size:16px">⊞</div>
+            <div class="di-info">
+              <div class="di-name">All Businesses</div>
+              <div class="di-meta">Group view — combined data</div>
+            </div>
+            <div class="di-check">✓</div>
+          </div>
+
+          <div class="dd-divider"></div>
+          <div class="dd-section-label">Your businesses</div>
+          <div id="dd-biz-list"></div>
+        </div>
+
+        <div class="dd-add-btn" onclick="openAddModal()">
+          <span style="font-size:16px;color:var(--slate)">+</span>
+          Add new business
+        </div>
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <div class="nav-badge" onclick="openPalette()">
+        <span>⌘K</span> Quick switch
+      </div>
+      <div class="nav-avatar" id="nav-avatar" title="Account">P</div>
+    </div>
+  </nav>
+
+  <div class="body">
+    <!-- ═══════════════════════════════════════
+         SIDEBAR
+    ═══════════════════════════════════════ -->
+    <div class="sidebar">
+      <div class="sb-btn active" onclick="setPage('dashboard',this)" title="Dashboard">
+        ⊞<span class="tooltip">Dashboard</span>
+      </div>
+      <div class="sb-btn" onclick="setPage('chat',this)" title="AI Chat">
+        ◈<span class="tooltip">AI Chat</span>
+      </div>
+      <div class="sb-btn" onclick="setPage('documents',this)" title="Documents">
+        ◫<span class="tooltip">Documents</span>
+      </div>
+      <div class="sb-btn" onclick="setPage('tracker',this)" title="Cost Tracker">
+        ◉<span class="tooltip">Tracker</span>
+      </div>
+      <div class="sb-btn" onclick="setPage('invoices',this)" title="Invoices">
+        ◪<span class="tooltip">Invoices</span>
+      </div>
+      <div class="sb-divider"></div>
+      <div class="sb-btn" onclick="setPage('integrations',this)" title="Integrations">
+        ◎<span class="tooltip">Integrations</span>
+      </div>
+      <div class="sb-btn" onclick="openAddModal()" title="Add Business">
+        ⊕<span class="tooltip">Add Business</span>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         MAIN CONTENT
+    ═══════════════════════════════════════ -->
+    <div class="main">
+      <div class="content" id="content">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     CMD-K PALETTE
+═══════════════════════════════════════ -->
+<div class="palette-overlay" id="palette-overlay" onclick="closePaletteIfBg(event)">
+  <div class="palette">
+    <div class="palette-search-row">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input class="palette-input" id="palette-input" placeholder="Search businesses or open a tool…"
+             oninput="filterPalette(this.value)" onkeydown="palettKey(event)">
+      <span class="palette-esc">ESC</span>
+    </div>
+    <div class="palette-list" id="palette-list"></div>
+    <div class="palette-footer">
+      <span><span class="pf-key">↑↓</span> navigate</span>
+      <span><span class="pf-key">↵</span> select</span>
+      <span><span class="pf-key">ESC</span> close</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════
+     ADD / EDIT BUSINESS MODAL
+═══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBg(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Add new business</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="pb-label">
+        <span>Setup progress</span>
+        <span id="modal-pct">0%</span>
+      </div>
+      <div class="progress-bar"><div class="pb-fill" id="modal-pb" style="width:0%"></div></div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Business Name <span style="color:var(--scarlet)">*</span></label>
+          <input type="text" id="f-name" placeholder="Restaurang Björken AB" oninput="updateModalProgress()">
+        </div>
+        <div class="field">
+          <label>Type</label>
+          <select id="f-type" onchange="updateModalProgress()">
+            <option value="">Select…</option>
+            <option>Restaurant</option><option>Café</option><option>Bar</option>
+            <option>Pizzeria</option><option>Fine Dining</option><option>Fast Food</option>
+            <option>Sushi</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Org Number <span class="optional">optional</span></label>
+          <input type="text" id="f-org" placeholder="559059-3025" oninput="updateModalProgress()">
+        </div>
+        <div class="field">
+          <label>City</label>
+          <input type="text" id="f-city" placeholder="Stockholm" oninput="updateModalProgress()">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Fortnox Client ID <span class="optional">optional — add later</span></label>
+        <input type="text" id="f-fortnox" placeholder="From Fortnox developer portal" oninput="updateModalProgress()">
+        <div class="hint">Settings → Integrations → API in Fortnox</div>
+      </div>
+
+      <div class="field">
+        <label>Anthropic API Key <span class="optional">optional — uses shared key if blank</span></label>
+        <input type="password" id="f-apikey" placeholder="sk-ant-…" oninput="updateModalProgress()">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Staff cost target %</label>
+          <input type="number" id="f-target-staff" placeholder="40" min="0" max="100" oninput="updateModalProgress()">
+        </div>
+        <div class="field">
+          <label>Food cost target %</label>
+          <input type="number" id="f-target-food" placeholder="31" min="0" max="100" oninput="updateModalProgress()">
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label>Rent target %</label>
+          <input type="number" id="f-target-rent" placeholder="13" min="0" max="100">
+        </div>
+        <div class="field">
+          <label>Profit margin target %</label>
+          <input type="number" id="f-target-margin" placeholder="12" min="0" max="100">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-sm" id="modal-delete-btn" style="display:none;color:var(--scarlet);border-color:var(--rust-mid)" onclick="deleteBusiness()">Delete</button>
+      <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="saveBusiness()">Save business</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  BUSINESS CONTEXT PROVIDER                                   ║
+// ║  Central state manager for all business switching/aggregation ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+const BizContext = (() => {
+  // ── Persistent state ──────────────────────────────────────────
+  const STORAGE_KEY        = 'cc_businesses_v2';
+  const CURRENT_KEY        = 'cc_current_biz';
+  const RECENT_KEY         = 'cc_recent_bizzes';
+  const IS_AGGREGATE_KEY   = 'cc_is_aggregate';
+
+  // ── Colour palette for business avatars ───────────────────────
+  const COLOURS = [
+    '#2D5A27','#1A3F6B','#7A3B1E','#4A237A','#1A5F5F',
+    '#6B4C1A','#3A1A5A','#1A4A3A','#5A1A2A','#2A4A6B',
+  ];
+
+  // ── Internal state ────────────────────────────────────────────
+  let _businesses  = [];
+  let _currentId   = null;
+  let _isAggregate = false;
+  let _listeners   = [];
+
+  // ── Subscriptions ─────────────────────────────────────────────
+  function subscribe(fn)   { _listeners.push(fn); }
+  function _emit()         { _listeners.forEach(fn => fn(snapshot())); }
+
+  // ── Snapshot (read-only view) ─────────────────────────────────
+  function snapshot() {
+    return {
+      businesses:   [..._businesses],
+      current:      _currentId ? _businesses.find(b => b.id === _currentId) || null : null,
+      isAggregate:  _isAggregate,
+      canAggregate: _businesses.length >= 2,
+      aggregate:    computeAggregate(),
+      recentIds:    getRecent(),
+    };
+  }
+
+  // ── Load / save ───────────────────────────────────────────────
+  function load() {
+    try {
+      _businesses  = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      _currentId   = localStorage.getItem(CURRENT_KEY) || (_businesses[0]?.id ?? null);
+      _isAggregate = localStorage.getItem(IS_AGGREGATE_KEY) === '1';
+    } catch { _businesses = []; }
+  }
+
+  function persist() {
+    localStorage.setItem(STORAGE_KEY,        JSON.stringify(_businesses));
+    localStorage.setItem(CURRENT_KEY,        _currentId || '');
+    localStorage.setItem(IS_AGGREGATE_KEY,   _isAggregate ? '1' : '0');
+  }
+
+  // ── CRUD ──────────────────────────────────────────────────────
+  function add(data) {
+    const biz = {
+      id:           'biz_' + Date.now(),
+      name:         data.name,
+      type:         data.type  || '',
+      org:          data.org   || '',
+      city:         data.city  || '',
+      fortnoxId:    data.fortnoxId || '',
+      apiKey:       data.apiKey    || localStorage.getItem('bj_api_key') || '',
+      targetStaff:  parseFloat(data.targetStaff)  || 40,
+      targetFood:   parseFloat(data.targetFood)   || 31,
+      targetRent:   parseFloat(data.targetRent)   || 13,
+      targetMargin: parseFloat(data.targetMargin) || 12,
+      colour:       COLOURS[_businesses.length % COLOURS.length],
+      createdAt:    new Date().toISOString(),
+      // Demo financials (replace with real Fortnox data)
+      revenue:      Math.round(300000 + Math.random() * 400000),
+      staffPct:     35 + Math.random() * 15,
+      foodPct:      25 + Math.random() * 12,
+      rentPct:      10 + Math.random() * 6,
+    };
+    biz.profit    = Math.round(biz.revenue * (1 - biz.staffPct/100 - biz.foodPct/100 - biz.rentPct/100 - 0.05));
+    biz.margin    = Math.round(biz.profit / biz.revenue * 1000) / 10;
+    _businesses.push(biz);
+    _currentId    = biz.id;
+    _isAggregate  = false;
+    addToRecent(biz.id);
+    persist();
+    _emit();
+    return biz;
+  }
+
+  function update(id, data) {
+    const idx = _businesses.findIndex(b => b.id === id);
+    if (idx < 0) return;
+    _businesses[idx] = { ..._businesses[idx], ...data, id };
+    persist(); _emit();
+  }
+
+  function remove(id) {
+    _businesses = _businesses.filter(b => b.id !== id);
+    if (_currentId === id) _currentId = _businesses[0]?.id || null;
+    persist(); _emit();
+  }
+
+  // ── Selection ─────────────────────────────────────────────────
+  function select(id) {
+    _currentId   = id;
+    _isAggregate = false;
+    addToRecent(id);
+    persist(); _emit();
+  }
+
+  function setAggregate(on) {
+    _isAggregate = on;
+    if (on) _currentId = null;
+    persist(); _emit();
+  }
+
+  // ── Recent businesses ─────────────────────────────────────────
+  function getRecent() {
+    try {
+      const ids = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+      return ids.filter(id => _businesses.find(b => b.id === id));
+    } catch { return []; }
+  }
+
+  function addToRecent(id) {
+    let recent = getRecent().filter(r => r !== id);
+    recent.unshift(id);
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent.slice(0, 5)));
+  }
+
+  // ── Aggregate computation ──────────────────────────────────────
+  function computeAggregate() {
+    if (!_businesses.length) return null;
+    const total    = _businesses.reduce((a, b) => a + (b.revenue || 0), 0);
+    const profit   = _businesses.reduce((a, b) => a + (b.profit  || 0), 0);
+    const avgMargin = total > 0 ? Math.round(profit / total * 1000) / 10 : 0;
+    const staffCost = _businesses.reduce((a,b) => a + (b.revenue||0)*(b.staffPct||0)/100, 0);
+    const foodCost  = _businesses.reduce((a,b) => a + (b.revenue||0)*(b.foodPct||0)/100, 0);
+    const rentCost  = _businesses.reduce((a,b) => a + (b.revenue||0)*(b.rentPct||0)/100, 0);
+    return {
+      revenue:  total,
+      profit,
+      margin:   avgMargin,
+      staffPct: total > 0 ? Math.round(staffCost / total * 100) : 0,
+      foodPct:  total > 0 ? Math.round(foodCost  / total * 100) : 0,
+      rentPct:  total > 0 ? Math.round(rentCost  / total * 100) : 0,
+      count:    _businesses.length,
+      contributions: _businesses.map(b => ({
+        id:     b.id,
+        name:   b.name,
+        colour: b.colour,
+        pct:    total > 0 ? Math.round((b.revenue||0) / total * 100) : 0,
+        revenue:b.revenue || 0,
+        profit: b.profit  || 0,
+        margin: b.margin  || 0,
+      })),
+    };
+  }
+
+  // ── Permission check ──────────────────────────────────────────
+  function canAccess(bizId) {
+    // In production: check user role from JWT
+    // Owner: all; Admin: assigned; Viewer: assigned
+    return true;  // demo: owner sees all
+  }
+
+  // ── Init ──────────────────────────────────────────────────────
+  function init() {
+    load();
+    // Seed demo data if empty
+    if (!_businesses.length) {
+      const demos = [
+        { name:'Vero Italiano — Hornsgatan', type:'Restaurant', city:'Stockholm', org:'559059-3025',
+          revenue:505900, staffPct:44.5, foodPct:29.5, rentPct:12.7, profit:38700, margin:7.65 },
+        { name:'Vero Italiano — Södermalm',  type:'Restaurant', city:'Stockholm',
+          revenue:421300, staffPct:43,   foodPct:30,   rentPct:13,   profit:33700, margin:8.0  },
+        { name:'Pizzeria Roma — Vasastan',    type:'Pizzeria',   city:'Stockholm',
+          revenue:298400, staffPct:38,   foodPct:33,   rentPct:14,   profit:22400, margin:7.5  },
+        { name:'Café Verdi — Östermalm',      type:'Café',       city:'Stockholm',
+          revenue:187600, staffPct:41,   foodPct:28,   rentPct:15,   profit:15200, margin:8.1  },
+      ];
+      demos.forEach((d, i) => {
+        const biz = {
+          id:      'biz_demo_' + i,
+          colour:  COLOURS[i % COLOURS.length],
+          createdAt: new Date().toISOString(),
+          targetStaff:40, targetFood:31, targetRent:13, targetMargin:12,
+          fortnoxId:'', apiKey:'', org: d.org||'',
+          ...d,
+        };
+        _businesses.push(biz);
+      });
+      _currentId = _businesses[0].id;
+      _isAggregate = false;
+      persist();
+    }
+  }
+
+  return { init, subscribe, snapshot, add, update, remove, select, setAggregate, canAccess };
+})();
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  UI STATE                                                    ║
+// ╚══════════════════════════════════════════════════════════════╝
+let   currentPage = 'dashboard';
+let   editingBizId = null;
+let   paletteIdx   = -1;
+let   paletteItems = [];
+let   chartInstances = {};
+const APP_PAGES = {
+  chat:         'chat_interface.html',
+  documents:    'rag_system.html',
+  tracker:      'cost_tracker_dashboard.html',
+  invoices:     'workflow_dashboard.html',
+  integrations: 'integrations-dashboard.html',
+};
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  RENDER ENGINE                                               ║
+// ╚══════════════════════════════════════════════════════════════╝
+function render(state) {
+  updateNav(state);
+  if (currentPage === 'dashboard') {
+    renderDashboard(state);
+  }
+}
+
+function updateNav(state) {
+  const { current, isAggregate, businesses } = state;
+  const dot  = document.getElementById('bt-dot');
+  const name = document.getElementById('bt-name');
+
+  if (isAggregate) {
+    dot.style.background  = 'rgba(255,255,255,0.5)';
+    name.textContent      = `All Businesses (${businesses.length})`;
+    document.getElementById('dd-aggregate').classList.add('active');
+  } else if (current) {
+    dot.style.background  = current.colour;
+    name.textContent      = current.name;
+    document.getElementById('dd-aggregate').classList.remove('active');
+  }
+
+  // Populate dropdown
+  const list     = document.getElementById('dd-biz-list');
+  const query    = document.getElementById('dd-search').value.toLowerCase();
+  const filtered = businesses.filter(b => !query || b.name.toLowerCase().includes(query));
+
+  list.innerHTML = filtered.map(biz => `
+    <div class="dd-item ${!isAggregate && current?.id === biz.id ? 'active' : ''}"
+         onclick="BizContext.select('${biz.id}')">
+      <div class="di-avatar" style="background:${biz.colour}">${biz.name[0]}</div>
+      <div class="di-info">
+        <div class="di-name">${biz.name}</div>
+        <div class="di-meta">${biz.type || 'Business'} · ${biz.city || ''}</div>
+      </div>
+      <div class="di-check">✓</div>
+    </div>`).join('') +
+    (filtered.length === 0 ? '<div style="padding:12px 16px;font-size:12px;color:var(--pebble)">No businesses found</div>' : '');
+}
+
+// ─── DASHBOARD ─────────────────────────────────────────────────
+function renderDashboard(state) {
+  const content = document.getElementById('content');
+  if (state.isAggregate) {
+    content.innerHTML = renderAggregateDashboard(state);
+    requestAnimationFrame(() => drawCharts(state));
+  } else if (state.current) {
+    content.innerHTML = renderSingleDashboard(state.current, state.businesses);
+    requestAnimationFrame(() => drawSingleCharts(state.current));
+  } else {
+    content.innerHTML = renderEmpty();
+  }
+}
+
+// ─── AGGREGATE DASHBOARD ──────────────────────────────────────
+function renderAggregateDashboard(state) {
+  const a = state.aggregate;
+  const month = 'March 2026';
+  return `
+  <div class="page-header fade-up">
+    <div>
+      <div class="page-title">Group <strong>Overview</strong></div>
+      <div class="page-subtitle">${a.count} businesses · ${month}</div>
+    </div>
+    <div class="page-actions">
+      <button class="agg-toggle active" onclick="BizContext.setAggregate(false)">
+        <div class="toggle-pill"><div class="toggle-dot"></div></div>
+        All businesses
+      </button>
+    </div>
+  </div>
+
+  <div class="kpi-strip fade-up fade-up-1">
+    <div class="kpi-card kpi-rev">
+      <div class="kpi-label">Total Revenue</div>
+      <div class="kpi-value">${krShort(a.revenue)}</div>
+      <div class="kpi-sub"><span class="kpi-delta kd-up">+11.2%</span> vs Feb</div>
+    </div>
+    <div class="kpi-card kpi-cost">
+      <div class="kpi-label">Total Costs</div>
+      <div class="kpi-value">${krShort(a.revenue - a.profit)}</div>
+      <div class="kpi-sub">${Math.round((a.revenue-a.profit)/a.revenue*100)}% of revenue</div>
+    </div>
+    <div class="kpi-card kpi-profit">
+      <div class="kpi-label">Total Profit</div>
+      <div class="kpi-value">${krShort(a.profit)}</div>
+      <div class="kpi-sub"><span class="kpi-delta kd-flat">${a.margin}% avg margin</span></div>
+    </div>
+    <div class="kpi-card kpi-margin">
+      <div class="kpi-label">Businesses</div>
+      <div class="kpi-value">${a.count}</div>
+      <div class="kpi-sub">${a.contributions.filter(c=>c.margin>=c.margin).length} profitable</div>
+    </div>
+  </div>
+
+  <div class="grid-2 fade-up fade-up-2">
+    <!-- Revenue breakdown table -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Revenue by Business</div>
+        <div class="card-meta">${month}</div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th class="bt-th">Business</th>
+              <th class="bt-th r">Revenue</th>
+              <th class="bt-th r">Profit</th>
+              <th class="bt-th r">Margin</th>
+              <th class="bt-th r">Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${a.contributions.sort((x,y)=>y.revenue-x.revenue).map(c => {
+              const mCls = c.margin >= 10 ? 'mp-good' : c.margin >= 6 ? 'mp-warn' : 'mp-bad';
+              const sCls = c.margin >= 10 ? 'sd-good' : c.margin >= 6 ? 'sd-warn' : 'sd-bad';
+              return `<tr onclick="BizContext.select('${c.id}')" style="cursor:pointer">
+                <td class="bt-td name">
+                  <div class="status-dot ${sCls}"></div>
+                  ${c.name.split('—')[0].trim()}
+                </td>
+                <td class="bt-td mono">${kr(c.revenue)}</td>
+                <td class="bt-td mono" style="color:${c.profit>0?'var(--moss)':'var(--scarlet)'}">${kr(c.profit)}</td>
+                <td class="bt-td margin-cell"><span class="margin-pill ${mCls}">${c.margin}%</span></td>
+                <td class="bt-td" style="text-align:right">
+                  <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
+                    <div class="contrib-bar">
+                      <div class="cb-fill" style="width:${c.pct}%;background:${c.colour}"></div>
+                    </div>
+                    <span style="font-size:11px;font-family:var(--mono);color:var(--stone);min-width:28px;text-align:right">${c.pct}%</span>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Donut + bar charts -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Revenue Distribution</div>
+        <div class="card-meta">Contribution by location</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="donut-chart"></canvas>
+      </div>
+      <div class="chart-legend" id="donut-legend"></div>
+    </div>
+  </div>
+
+  <div class="grid-2 fade-up fade-up-3">
+    <!-- Cost comparison -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Cost Structure Comparison</div>
+        <div class="card-meta">Staff · Food · Rent %</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="cost-bar-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Profit trend -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Monthly Profit Trend</div>
+        <div class="card-meta">Group total · 2026</div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="trend-chart"></canvas>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─── SINGLE BUSINESS DASHBOARD ────────────────────────────────
+function renderSingleDashboard(biz, allBiz) {
+  const fortnoxOk = !!biz.fortnoxId;
+  const margin    = biz.margin || 0;
+  const mCls      = margin >= 10 ? 'mp-good' : margin >= 6 ? 'mp-warn' : 'mp-bad';
+  const staffOver = biz.staffPct > biz.targetStaff;
+
+  // Recent businesses (excluding current)
+  const recentIds = JSON.parse(localStorage.getItem('cc_recent_bizzes') || '[]')
+    .filter(id => id !== biz.id)
+    .slice(0, 4);
+  const recentBizzes = recentIds.map(id => allBiz.find(b => b.id === id)).filter(Boolean);
+
+  return `
+  <div class="page-header fade-up">
+    <div>
+      <div class="page-title"><strong>${biz.name.split('—')[0].trim()}</strong>${biz.name.includes('—') ? `<br><span style="font-style:normal;font-size:18px;color:var(--stone)">${biz.name.split('—')[1].trim()}</span>` : ''}</div>
+      <div class="page-subtitle">${biz.type || 'Business'}${biz.city ? ' · '+biz.city : ''}${biz.org ? ' · '+biz.org : ''}</div>
+    </div>
+    <div class="page-actions">
+      ${allBiz.length >= 2 ? `<button class="agg-toggle" onclick="BizContext.setAggregate(true)">
+        <div class="toggle-pill"><div class="toggle-dot"></div></div>
+        View all businesses
+      </button>` : ''}
+      <button class="btn btn-sm" onclick="openEditModal('${biz.id}')">Edit</button>
+    </div>
+  </div>
+
+  ${recentBizzes.length ? `
+  <div style="margin-bottom:18px" class="fade-up">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--pebble);margin-bottom:8px">Recent</div>
+    <div class="recent-list" style="padding:0">
+      ${recentBizzes.map(b => `
+        <button class="recent-chip" onclick="BizContext.select('${b.id}')">
+          <div class="rc-avatar" style="background:${b.colour}">${b.name[0]}</div>
+          ${b.name.split('—')[0].trim()}
+        </button>`).join('')}
+    </div>
+  </div>` : ''}
+
+  <div class="kpi-strip fade-up fade-up-1">
+    <div class="kpi-card kpi-rev">
+      <div class="kpi-label">Revenue</div>
+      <div class="kpi-value">${kr(biz.revenue)}</div>
+      <div class="kpi-sub"><span class="kpi-delta kd-up">+9.6%</span> vs Feb</div>
+    </div>
+    <div class="kpi-card kpi-cost">
+      <div class="kpi-label">Staff Cost</div>
+      <div class="kpi-value">${biz.staffPct.toFixed(1)}%</div>
+      <div class="kpi-sub">
+        Target ${biz.targetStaff}%&nbsp;
+        <span class="kpi-delta ${staffOver ? 'kd-dn' : 'kd-up'}">${staffOver ? '▲ over' : '▼ ok'}</span>
+      </div>
+    </div>
+    <div class="kpi-card kpi-profit">
+      <div class="kpi-label">Net Profit</div>
+      <div class="kpi-value">${kr(biz.profit)}</div>
+      <div class="kpi-sub"><span class="margin-pill ${mCls}">${margin}% margin</span></div>
+    </div>
+    <div class="kpi-card kpi-margin">
+      <div class="kpi-label">Food Cost</div>
+      <div class="kpi-value">${biz.foodPct.toFixed(1)}%</div>
+      <div class="kpi-sub">Target ${biz.targetFood}%&nbsp;
+        <span class="kpi-delta ${biz.foodPct>biz.targetFood?'kd-dn':'kd-up'}">${biz.foodPct>biz.targetFood?'▲ over':'▼ ok'}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2 fade-up fade-up-2">
+    <!-- Cost breakdown chart -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Cost Breakdown</div>
+        <div class="card-meta">vs targets</div>
+      </div>
+      <div class="chart-wrap" style="height:200px">
+        <canvas id="single-bar-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Integrations status -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Integrations</div>
+        <button class="btn btn-sm" onclick="openPage('integrations')">Manage</button>
+      </div>
+      <div class="int-strip">
+        <div class="int-chip ${fortnoxOk ? 'connected' : ''}">
+          <div class="ic-dot"></div>Fortnox${fortnoxOk ? '' : ' — not connected'}
+        </div>
+        <div class="int-chip">
+          <div class="ic-dot"></div>POS — not set up
+        </div>
+        <div class="int-chip">
+          <div class="ic-dot"></div>Caspeco — not set up
+        </div>
+        <div class="int-chip connected">
+          <div class="ic-dot"></div>Bank CSV imported
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card fade-up fade-up-3">
+    <div class="card-header">
+      <div class="card-title">Quick Launch</div>
+      <div class="card-meta">Open in new tab</div>
+    </div>
+    <div class="card-body">
+      <div class="launch-grid">
+        ${[
+          {icon:'◈', name:'AI Chat', desc:'Ask anything about your financials', page:'chat', status:'ok'},
+          {icon:'◫', name:'Documents', desc:'Upload and query PDFs, invoices, reports', page:'documents', status:'ok'},
+          {icon:'◉', name:'Cost Tracker', desc:'Live financial KPI dashboard', page:'tracker', status:'ok'},
+          {icon:'◪', name:'Invoices', desc:'Automated invoice workflow', page:'invoices', status:'ok'},
+          {icon:'◎', name:'Integrations', desc:'Fortnox, POS, scheduling connections', page:'integrations', status:fortnoxOk?'ok':'warn'},
+          {icon:'⊕', name:'Add Business', desc:'Set up another restaurant or café', page:null, action:'openAddModal()'},
+        ].map(b => `
+          <button class="launch-btn" onclick="${b.action || `openPage('${b.page}')`}">
+            <div class="lb-icon">${b.icon}</div>
+            <div class="lb-name">${b.name}</div>
+            <div class="lb-desc">${b.desc}</div>
+            ${b.status ? `<div class="lb-status ${b.status==='ok'?'lbs-ok':'lbs-warn'}">${b.status==='ok'?'Ready':'Needs setup'}</div>` : ''}
+          </button>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function renderEmpty() {
+  return `
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;text-align:center;gap:12px">
+    <div style="font-size:48px;opacity:.2">⊞</div>
+    <div class="page-title">No business selected</div>
+    <div style="font-size:13px;color:var(--stone);max-width:280px;line-height:1.6">Add your first restaurant to get started with financial intelligence.</div>
+    <button class="btn btn-primary" onclick="openAddModal()">Add first business</button>
+  </div>`;
+}
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  CHARTS                                                      ║
+// ╚══════════════════════════════════════════════════════════════╝
+function destroyChart(id) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+}
+
+function drawCharts(state) {
+  const a = state.aggregate;
+  if (!a) return;
+
+  // ── Donut: revenue distribution ──
+  destroyChart('donut');
+  const donutEl = document.getElementById('donut-chart');
+  if (donutEl) {
+    chartInstances['donut'] = new Chart(donutEl, {
+      type: 'doughnut',
+      data: {
+        labels:   a.contributions.map(c => c.name.split('—')[0].trim()),
+        datasets: [{ data: a.contributions.map(c => c.revenue), backgroundColor: a.contributions.map(c => c.colour), borderWidth:2, borderColor:'white', hoverOffset:6 }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false, cutout:'62%',
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: ctx => ` ${kr(ctx.raw)} (${a.contributions[ctx.dataIndex].pct}%)` }}}
+      }
+    });
+    // Manual legend
+    const leg = document.getElementById('donut-legend');
+    if (leg) leg.innerHTML = a.contributions.map(c => `
+      <div class="cl-item" style="cursor:pointer" onclick="BizContext.select('${c.id}')">
+        <div class="cl-dot" style="background:${c.colour}"></div>
+        ${c.name.split('—')[0].trim()} <span style="font-family:var(--mono);margin-left:4px">${c.pct}%</span>
+      </div>`).join('');
+  }
+
+  // ── Bar: cost comparison ──
+  destroyChart('cost-bar');
+  const barEl = document.getElementById('cost-bar-chart');
+  if (barEl) {
+    const labels = a.contributions.map(c => c.name.split('—')[0].trim().replace('Vero Italiano','VI').replace('Pizzeria','Piz.').replace('Café','Cf.'));
+    const bizMap = {};
+    state.businesses.forEach(b => { bizMap[b.id] = b; });
+    chartInstances['cost-bar'] = new Chart(barEl, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label:'Staff',  data: a.contributions.map(c => (bizMap[c.id]?.staffPct||0).toFixed(1)), backgroundColor:'rgba(139,58,15,.7)',  borderRadius:3 },
+          { label:'Food',   data: a.contributions.map(c => (bizMap[c.id]?.foodPct||0).toFixed(1)),  backgroundColor:'rgba(45,90,39,.7)',   borderRadius:3 },
+          { label:'Rent',   data: a.contributions.map(c => (bizMap[c.id]?.rentPct||0).toFixed(1)),  backgroundColor:'rgba(26,63,107,.7)',  borderRadius:3 },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, font:{size:11} }}},
+        scales:{ y:{ beginAtZero:true, max:60, ticks:{ callback: v => v+'%', font:{size:10} }, grid:{color:'rgba(0,0,0,.04)'} }, x:{ grid:{display:false}, ticks:{font:{size:10}} }},
+      }
+    });
+  }
+
+  // ── Line: trend ──
+  destroyChart('trend');
+  const trendEl = document.getElementById('trend-chart');
+  if (trendEl) {
+    const months = ['Oct','Nov','Dec','Jan','Feb','Mar'];
+    const profits = [95000, 88000, 112000, 78000, 98000, a.profit];
+    chartInstances['trend'] = new Chart(trendEl, {
+      type:'line',
+      data:{ labels:months, datasets:[{
+        label:'Group Profit', data:profits,
+        borderColor:'var(--moss)', backgroundColor:'rgba(45,90,39,.08)',
+        tension:.35, fill:true, pointRadius:4, pointBackgroundColor:'var(--moss)',
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false} },
+        scales:{ y:{ ticks:{ callback: v => krShort(v), font:{size:10} }, grid:{color:'rgba(0,0,0,.04)'} }, x:{ grid:{display:false}, ticks:{font:{size:10}} }},
+      }
+    });
+  }
+}
+
+function drawSingleCharts(biz) {
+  destroyChart('single-bar');
+  const el = document.getElementById('single-bar-chart');
+  if (!el) return;
+  const categories = ['Staff','Food','Rent','Other'];
+  const actual  = [biz.staffPct, biz.foodPct, biz.rentPct, 5];
+  const targets = [biz.targetStaff, biz.targetFood, biz.targetRent, 10];
+  const colours = actual.map((v, i) => v > targets[i] ? 'rgba(139,58,15,.75)' : 'rgba(45,90,39,.75)');
+  chartInstances['single-bar'] = new Chart(el, {
+    type:'bar',
+    data:{
+      labels: categories,
+      datasets:[
+        { label:'Actual %', data:actual, backgroundColor:colours, borderRadius:4 },
+        { label:'Target %', data:targets, backgroundColor:'rgba(0,0,0,0)', borderColor:'rgba(0,0,0,.2)', borderWidth:1.5, borderDash:[4,3], type:'bar', borderRadius:4 },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false, indexAxis:'y',
+      plugins:{ legend:{ position:'bottom', labels:{ boxWidth:10, font:{size:11} }}},
+      scales:{ x:{ beginAtZero:true, max:55, ticks:{ callback:v=>v+'%', font:{size:10} }, grid:{color:'rgba(0,0,0,.04)'} }, y:{ grid:{display:false}, ticks:{font:{size:11}} }},
+    }
+  });
+}
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  CMD-K PALETTE                                               ║
+// ╚══════════════════════════════════════════════════════════════╝
+function openPalette() {
+  document.getElementById('palette-overlay').classList.add('open');
+  document.getElementById('palette-input').value = '';
+  document.getElementById('palette-input').focus();
+  paletteIdx = -1;
+  renderPalette('');
+}
+
+function closePalette() {
+  document.getElementById('palette-overlay').classList.remove('open');
+}
+
+function closePaletteIfBg(e) {
+  if (e.target.id === 'palette-overlay') closePalette();
+}
+
+function filterPalette(q) { paletteIdx = -1; renderPalette(q); }
+
+function renderPalette(q) {
+  const state  = BizContext.snapshot();
+  const ql     = q.toLowerCase();
+  const list   = document.getElementById('palette-list');
+
+  const bizItems = state.businesses
+    .filter(b => !ql || b.name.toLowerCase().includes(ql) || (b.city||'').toLowerCase().includes(ql))
+    .map(b => ({ type:'biz', id:b.id, name:b.name, sub:b.type + (b.city?' · '+b.city:''), colour:b.colour }));
+
+  const toolItems = [
+    { type:'tool', id:'aggregate', name:'View all businesses', sub:'Group overview', colour:'var(--soil)' },
+    { type:'tool', id:'chat',      name:'AI Chat',             sub:'Ask about your finances',  colour:'var(--slate)' },
+    { type:'tool', id:'documents', name:'Documents',           sub:'Upload and query files',   colour:'var(--moss)'  },
+    { type:'tool', id:'tracker',   name:'Cost Tracker',        sub:'Live KPI dashboard',        colour:'var(--rust)'  },
+    { type:'tool', id:'add',       name:'Add new business',    sub:'Set up a new location',     colour:'var(--gold)'  },
+  ].filter(t => !ql || t.name.toLowerCase().includes(ql));
+
+  paletteItems = [...bizItems, ...toolItems];
+
+  let html = '';
+  if (bizItems.length) {
+    html += `<div class="pl-section"><div class="pl-label">Businesses</div>`;
+    html += bizItems.map((item, i) => `
+      <div class="pl-item ${paletteIdx === i ? 'focused' : ''}" onclick="paletteSelect(${i})" data-idx="${i}">
+        <div class="pl-avatar" style="background:${item.colour}">${item.name[0]}</div>
+        <div><div class="pl-name">${item.name}</div><div style="font-size:11px;color:var(--pebble)">${item.sub}</div></div>
+        ${state.current?.id === item.id ? '<span class="pl-tag">current</span>' : ''}
+      </div>`).join('');
+    html += '</div>';
+  }
+  if (toolItems.length) {
+    html += `<div class="pl-section"><div class="pl-label">Actions</div>`;
+    html += toolItems.map((item, i) => {
+      const idx = bizItems.length + i;
+      return `
+      <div class="pl-item ${paletteIdx === idx ? 'focused' : ''}" onclick="paletteSelect(${idx})" data-idx="${idx}">
+        <div class="pl-avatar" style="background:${item.colour};font-size:14px">⊞</div>
+        <div><div class="pl-name">${item.name}</div><div style="font-size:11px;color:var(--pebble)">${item.sub}</div></div>
+      </div>`;
+    }).join('');
+    html += '</div>';
+  }
+
+  list.innerHTML = html || `<div style="padding:20px;text-align:center;color:var(--pebble);font-size:13px">No results for "${q}"</div>`;
+}
+
+function paletteKey(e) {
+  if (e.key === 'Escape') { closePalette(); return; }
+  if (e.key === 'ArrowDown') { paletteIdx = Math.min(paletteIdx + 1, paletteItems.length - 1); renderPalette(document.getElementById('palette-input').value); }
+  if (e.key === 'ArrowUp')   { paletteIdx = Math.max(paletteIdx - 1, 0);                        renderPalette(document.getElementById('palette-input').value); }
+  if (e.key === 'Enter' && paletteIdx >= 0) paletteSelect(paletteIdx);
+}
+
+function paletteSelect(idx) {
+  const item = paletteItems[idx];
+  if (!item) return;
+  closePalette();
+  if (item.type === 'biz')  { BizContext.select(item.id); return; }
+  if (item.id === 'aggregate') { BizContext.setAggregate(true); return; }
+  if (item.id === 'add')       { openAddModal(); return; }
+  openPage(item.id);
+}
+
+// Keyboard shortcut
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    document.getElementById('palette-overlay').classList.contains('open') ? closePalette() : openPalette();
+  }
+  if (e.key === 'Escape') {
+    closePalette();
+    closeModal();
+    closeDropdown();
+  }
+});
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  DROPDOWN                                                    ║
+// ╚══════════════════════════════════════════════════════════════╝
+function toggleDropdown() {
+  const dd  = document.getElementById('biz-dropdown');
+  const btn = document.getElementById('biz-trigger');
+  const open = dd.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  if (open) document.getElementById('dd-search').focus();
+}
+
+function closeDropdown() {
+  document.getElementById('biz-dropdown').classList.remove('open');
+  document.getElementById('biz-trigger').classList.remove('open');
+}
+
+function filterDropdown(q) {
+  const state = BizContext.snapshot();
+  updateNav(state);
+}
+
+function selectAggregate() {
+  BizContext.setAggregate(true);
+  closeDropdown();
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#biz-switcher')) closeDropdown();
+});
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  ADD / EDIT MODAL                                            ║
+// ╚══════════════════════════════════════════════════════════════╝
+function openAddModal() {
+  editingBizId = null;
+  document.getElementById('modal-title').textContent = 'Add new business';
+  document.getElementById('modal-delete-btn').style.display = 'none';
+  clearForm();
+  // Pre-fill API key
+  const saved = localStorage.getItem('bj_api_key');
+  if (saved) document.getElementById('f-apikey').value = saved;
+  updateModalProgress();
+  document.getElementById('modal-overlay').classList.add('open');
+  document.getElementById('f-name').focus();
+}
+
+function openEditModal(id) {
+  const biz = BizContext.snapshot().businesses.find(b => b.id === id);
+  if (!biz) return;
+  editingBizId = id;
+  document.getElementById('modal-title').textContent = 'Edit — ' + biz.name;
+  document.getElementById('modal-delete-btn').style.display = 'flex';
+  document.getElementById('f-name').value         = biz.name        || '';
+  document.getElementById('f-type').value         = biz.type        || '';
+  document.getElementById('f-org').value          = biz.org         || '';
+  document.getElementById('f-city').value         = biz.city        || '';
+  document.getElementById('f-fortnox').value      = biz.fortnoxId   || '';
+  document.getElementById('f-apikey').value       = biz.apiKey      || '';
+  document.getElementById('f-target-staff').value = biz.targetStaff || '';
+  document.getElementById('f-target-food').value  = biz.targetFood  || '';
+  document.getElementById('f-target-rent').value  = biz.targetRent  || '';
+  document.getElementById('f-target-margin').value= biz.targetMargin|| '';
+  updateModalProgress();
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  editingBizId = null;
+}
+
+function closeModalIfBg(e) {
+  if (e.target.id === 'modal-overlay') closeModal();
+}
+
+function clearForm() {
+  ['f-name','f-type','f-org','f-city','f-fortnox','f-apikey',
+   'f-target-staff','f-target-food','f-target-rent','f-target-margin']
+  .forEach(id => { const el=document.getElementById(id); if(el)el.value=''; });
+}
+
+function updateModalProgress() {
+  const fields = ['f-name','f-org','f-fortnox','f-apikey','f-target-staff','f-target-food','f-target-rent','f-target-margin'];
+  const filled = fields.filter(id => document.getElementById(id)?.value?.trim()).length;
+  const pct    = Math.round(filled / fields.length * 100);
+  document.getElementById('modal-pb').style.width  = pct + '%';
+  document.getElementById('modal-pct').textContent = pct + '% complete';
+}
+
+function saveBusiness() {
+  const name = document.getElementById('f-name').value.trim();
+  if (!name) { toast('Business name is required', 'err'); return; }
+  const data = {
+    name, type: document.getElementById('f-type').value,
+    org:  document.getElementById('f-org').value.trim(),
+    city: document.getElementById('f-city').value.trim(),
+    fortnoxId:    document.getElementById('f-fortnox').value.trim(),
+    apiKey:       document.getElementById('f-apikey').value.trim(),
+    targetStaff:  document.getElementById('f-target-staff').value,
+    targetFood:   document.getElementById('f-target-food').value,
+    targetRent:   document.getElementById('f-target-rent').value,
+    targetMargin: document.getElementById('f-target-margin').value,
+  };
+  if (editingBizId) {
+    BizContext.update(editingBizId, data);
+    toast('Business updated', 'ok');
+  } else {
+    BizContext.add(data);
+    toast('Business added', 'ok');
+  }
+  closeModal();
+}
+
+function deleteBusiness() {
+  if (!editingBizId) return;
+  const biz = BizContext.snapshot().businesses.find(b => b.id === editingBizId);
+  if (!confirm(`Delete "${biz?.name}"? This cannot be undone.`)) return;
+  BizContext.remove(editingBizId);
+  toast('Business deleted');
+  closeModal();
+}
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  NAVIGATION                                                  ║
+// ╚══════════════════════════════════════════════════════════════╝
+function setPage(page, btn) {
+  currentPage = page;
+  document.querySelectorAll('.sb-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderDashboard(BizContext.snapshot());
+}
+
+function openPage(page) {
+  const file = APP_PAGES[page];
+  if (file) window.open('dashboard/' + file, '_blank');
+}
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  UTILITIES                                                   ║
+// ╚══════════════════════════════════════════════════════════════╝
+function kr(n) {
+  return Math.round(n||0).toLocaleString('sv-SE') + ' kr';
+}
+function krShort(n) {
+  n = Math.round(n||0);
+  if (Math.abs(n) >= 1000000) return (n/1000000).toFixed(1) + 'M kr';
+  if (Math.abs(n) >= 1000)    return (n/1000).toFixed(0)    + 'k kr';
+  return n + ' kr';
+}
+
+let toastTimer;
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  BOOT                                                        ║
+// ╚══════════════════════════════════════════════════════════════╝
+BizContext.init();
+BizContext.subscribe(render);
+render(BizContext.snapshot());
+</script>
+</body>
+</html>

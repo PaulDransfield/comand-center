@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plans & Billing — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F2EDE8;--surface:#FAFAF8;--white:#FFF;
+  --border:#E0DAD2;--border-d:#C8C1B8;
+  --ink:#1C1714;--ink-2:#3A3733;--ink-3:#6A6560;--ink-4:#A8A49C;
+  --navy:#1E2761;--blue:#185FA5;--blue-lt:#EEF4FF;
+  --green:#2D6A35;--green-lt:#EAF2E8;--green-mid:#9FCDA8;
+  --amber:#7A4800;--amber-lt:#FFF5E5;
+  --red:#8B1A1A;--red-lt:#FBF0F0;--red-mid:#F0A0A0;
+  --font:'DM Sans',system-ui,sans-serif;
+  --display:'Fraunces',Georgia,serif;
+  --mono:'DM Mono',monospace;
+}
+html,body{-webkit-font-smoothing:antialiased;background:var(--bg)}
+body{font-family:var(--font);font-size:14px;color:var(--ink)}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:2px}
+
+/* TOPBAR */
+.topbar{background:var(--navy);height:52px;display:flex;align-items:center;padding:0 24px;justify-content:space-between}
+.tb-brand{font-family:var(--display);font-size:16px;color:white;font-weight:300}
+.tb-brand strong{font-weight:600}
+.tb-plan-chip{font-size:11px;font-weight:600;padding:3px 10px;border-radius:8px;background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.15)}
+.tb-right{display:flex;align-items:center;gap:10px}
+.back-btn{font-size:12px;color:rgba(255,255,255,.5);cursor:pointer;transition:color .12s;text-decoration:none}
+.back-btn:hover{color:white}
+
+/* BANNERS */
+.banner{padding:13px 24px;display:flex;align-items:center;gap:12px;font-size:13px;font-weight:500}
+.banner-trial{background:#1E2761;color:white}
+.bt-days{font-family:var(--mono);font-size:20px;font-weight:700;min-width:28px;text-align:center;color:#90CAF9}
+.bt-msg{flex:1;line-height:1.4}
+.bt-msg .dim{opacity:.65;font-weight:400;font-size:12px}
+.banner-expired{background:var(--red);color:white}
+.banner-past-due{background:var(--amber);color:white}
+.banner-success{background:var(--green);color:white}
+.banner-btn{padding:7px 16px;border-radius:8px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);color:white;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;white-space:nowrap}
+.banner-btn:hover{background:rgba(255,255,255,.22)}
+.banner-btn.solid{background:white;color:var(--navy);border-color:white}
+.banner-btn.solid:hover{background:rgba(255,255,255,.9)}
+
+/* PAGE */
+.page{max-width:1040px;margin:0 auto;padding:32px 24px 80px}
+.page-header{text-align:center;margin-bottom:36px}
+.page-title{font-family:var(--display);font-size:38px;font-weight:300;font-style:italic;color:var(--navy);line-height:1.1}
+.page-title strong{font-style:normal;font-weight:600}
+.page-sub{font-size:15px;color:var(--ink-3);margin-top:8px}
+
+/* BILLING TOGGLE */
+.billing-toggle{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:36px}
+.bt-option{font-size:13px;font-weight:500;color:var(--ink-3);cursor:pointer;transition:color .1s}
+.bt-option.active{color:var(--ink)}
+.toggle-switch{width:44px;height:24px;border-radius:12px;background:var(--navy);cursor:pointer;position:relative;transition:background .15s}
+.ts-dot{width:20px;height:20px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:transform .15s;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.toggle-switch.monthly .ts-dot{transform:none}
+.toggle-switch.annual .ts-dot{transform:translateX(20px)}
+.bt-save{font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;background:var(--green-lt);color:var(--green);border:1px solid var(--green-mid)}
+
+/* PLAN CARDS */
+.plans-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:40px}
+.plan-card{
+  background:var(--white);border:2px solid var(--border);border-radius:16px;
+  padding:24px 22px;display:flex;flex-direction:column;position:relative;transition:all .15s;
+}
+.plan-card:hover{border-color:var(--border-d);box-shadow:0 6px 24px rgba(0,0,0,.07)}
+.plan-card.popular{border-color:var(--navy);box-shadow:0 0 0 3px rgba(30,39,97,.08)}
+.plan-card.current{border-color:var(--green);background:var(--green-lt)}
+.plan-card.past-due{border-color:var(--red);background:var(--red-lt)}
+
+.pc-badge{
+  position:absolute;top:-11px;left:50%;transform:translateX(-50%);
+  font-size:10px;font-weight:700;padding:3px 12px;border-radius:12px;white-space:nowrap;
+}
+.pcb-popular{background:var(--navy);color:white}
+.pcb-current{background:var(--green);color:white}
+.pcb-trial  {background:var(--amber);color:white}
+.pcb-pastdue{background:var(--red);color:white}
+
+.pc-name{font-size:13px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.pc-price{display:flex;align-items:baseline;gap:3px;margin-bottom:4px}
+.pc-amount{font-family:var(--display);font-size:42px;font-weight:600;color:var(--ink);line-height:1}
+.pc-currency{font-size:18px;color:var(--ink-3);margin-bottom:4px}
+.pc-per{font-size:12px;color:var(--ink-4)}
+.pc-original{font-size:12px;color:var(--ink-4);text-decoration:line-through;margin-left:4px}
+.pc-desc{font-size:12px;color:var(--ink-4);line-height:1.5;margin-bottom:18px;min-height:36px}
+
+.pc-features{flex:1;margin-bottom:20px}
+.pc-feature{display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--ink-2);margin-bottom:7px;line-height:1.4}
+.pf-check{color:var(--green);font-size:13px;flex-shrink:0;margin-top:0px}
+.pf-check.no{color:var(--ink-4)}
+
+.pc-btn{
+  width:100%;padding:11px;border-radius:9px;font-family:var(--font);font-size:13px;font-weight:600;
+  cursor:pointer;transition:all .15s;border:1.5px solid transparent;
+}
+.pcb-upgrade{background:var(--navy);color:white;border-color:var(--navy)}
+.pcb-upgrade:hover{background:var(--blue)}
+.pcb-current-btn{background:none;color:var(--green);border-color:var(--green-mid)}
+.pcb-enterprise{background:none;color:var(--navy);border-color:var(--border-d)}
+.pcb-enterprise:hover{background:var(--bg)}
+.pcb-downgrade{background:none;color:var(--ink-4);border-color:var(--border)}
+
+/* USAGE METERS */
+.usage-section{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:24px}
+.us-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.us-title{font-family:var(--display);font-size:18px;font-weight:400;font-style:italic;color:var(--ink)}
+.us-plan{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+.us-plan-badge{font-weight:700;padding:2px 9px;border-radius:8px;background:var(--navy);color:white;font-size:11px}
+.us-cost{font-size:12px;color:var(--ink-4);font-family:var(--mono)}
+
+.meters-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.meter{background:var(--bg);border-radius:10px;padding:14px}
+.meter.warn{background:var(--amber-lt);border:1px solid rgba(122,72,0,.15)}
+.meter.crit{background:var(--red-lt);border:1px solid rgba(139,26,26,.15)}
+.m-label{font-size:11px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+.m-values{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.m-used{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--ink)}
+.m-limit{font-size:11px;color:var(--ink-4);font-family:var(--mono)}
+.m-track{height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.m-fill{height:100%;border-radius:3px;transition:width .6s ease}
+.mf-ok  {background:var(--green)}
+.mf-warn{background:var(--amber)}
+.mf-crit{background:var(--red)}
+.m-pct{font-size:10px;margin-top:4px;font-family:var(--mono);color:var(--ink-4)}
+.m-upgrade-hint{font-size:10px;color:var(--amber);margin-top:3px;font-weight:500}
+
+/* BILLING INFO */
+.billing-section{background:var(--white);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:24px}
+.bs-title{font-size:15px;font-weight:600;color:var(--ink);margin-bottom:16px}
+.billing-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.billing-row:last-child{border-bottom:none}
+.br-label{font-size:13px;color:var(--ink-3)}
+.br-value{font-size:13px;font-weight:500;color:var(--ink);font-family:var(--mono)}
+.br-status{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600}
+.brs-active{color:var(--green)}
+.brs-trial {color:var(--amber)}
+.brs-pastdue{color:var(--red)}
+.brs-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* BUTTONS */
+.btn{font-family:var(--font);font-size:13px;font-weight:500;padding:8px 18px;border-radius:8px;border:1.5px solid var(--border-d);background:none;cursor:pointer;color:var(--ink-3);transition:all .12s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bg);border-color:var(--ink-3);color:var(--ink)}
+.btn-primary{background:var(--navy);color:white;border-color:var(--navy)}
+.btn-primary:hover{background:var(--blue)}
+.btn-danger{color:var(--red);border-color:var(--red-mid)}
+.btn-danger:hover{background:var(--red-lt)}
+.spin{animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--navy);color:white;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;transform:translateY(60px);opacity:0;transition:all .25s;display:flex;align-items:center;gap:8px}
+.toast.show{transform:none;opacity:1}
+.toast.ok{background:var(--green)}
+.toast.err{background:var(--red)}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.fade-up{animation:fadeUp .2s ease forwards}
+
+@media(max-width:900px){
+  .plans-grid{grid-template-columns:repeat(2,1fr)}
+  .meters-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:600px){
+  .plans-grid{grid-template-columns:1fr}
+  .meters-grid{grid-template-columns:1fr}
+  .page{padding:20px 16px 60px}
+}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="tb-brand">Command<strong>Center</strong></div>
+  <div class="tb-right">
+    <span class="tb-plan-chip" id="tb-plan-chip">Trial — 14 days left</span>
+    <a href="/dashboard" class="back-btn">← Dashboard</a>
+  </div>
+</div>
+
+<!-- DYNAMIC BANNER (trial / expired / past_due / success) -->
+<div id="banner-area"></div>
+
+<div class="page">
+
+  <div class="page-header fade-up">
+    <div class="page-title">Choose your <strong>Plan</strong></div>
+    <div class="page-sub">All plans include a 30-day free trial. No card required to start.</div>
+  </div>
+
+  <!-- BILLING TOGGLE -->
+  <div class="billing-toggle fade-up">
+    <span class="bt-option active" id="monthly-lbl" onclick="setBilling('monthly')">Monthly</span>
+    <div class="toggle-switch monthly" id="billing-toggle" onclick="toggleBilling()">
+      <div class="ts-dot"></div>
+    </div>
+    <span class="bt-option" id="annual-lbl" onclick="setBilling('annual')">
+      Annual <span class="bt-save">Save 20%</span>
+    </span>
+  </div>
+
+  <!-- PLAN CARDS -->
+  <div class="plans-grid fade-up" id="plans-grid">
+    <!-- Rendered by JS -->
+  </div>
+
+  <!-- USAGE METERS -->
+  <div class="usage-section fade-up" id="usage-section">
+    <div class="us-header">
+      <div class="us-title">Current Usage</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="us-cost" id="cost-display"></span>
+        <span class="us-plan"><span class="us-plan-badge" id="plan-badge">Trial</span></span>
+      </div>
+    </div>
+    <div class="meters-grid" id="meters-grid">
+      <!-- Rendered by JS -->
+    </div>
+  </div>
+
+  <!-- BILLING INFO (shown to paying customers) -->
+  <div class="billing-section fade-up" id="billing-section" style="display:none">
+    <div class="bs-title">Billing & Subscription</div>
+    <div id="billing-rows"></div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="openPortal()">Manage billing ↗</button>
+      <button class="btn" onclick="openPortal()">Download invoices</button>
+      <button class="btn" onclick="openPortal()">Update payment method</button>
+      <button class="btn btn-danger" id="cancel-btn" onclick="cancelSubscription()">Cancel subscription</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// DEMO STATE — replace with real /api/stripe/usage fetch
+// ══════════════════════════════════════════════════════════════════
+
+// Simulate different account states — change STATE_MODE to test each
+// Options: 'trial' | 'active_starter' | 'active_pro' | 'trial_expired' | 'past_due' | 'upgrade_success'
+const STATE_MODE = new URLSearchParams(location.search).get('state') || 'trial';
+
+const DEMO_STATES = {
+  trial: {
+    plan:'trial', trialDaysLeft:14, hasSubscription:false,
+    costUsdThisMonth:0,
+    meters:{ businesses:{used:1,limit:2,pct:50,nearLimit:false,atLimit:false}, documents:{used:23,limit:50,pct:46,nearLimit:false,atLimit:false}, monthly_tokens:{used:142000,limit:500000,pct:28,nearLimit:false,atLimit:false}, monthly_requests:{used:56,limit:200,pct:28,nearLimit:false,atLimit:false}, team_members:{used:1,limit:1,pct:100,nearLimit:true,atLimit:true}, audio_overviews:{used:2,limit:3,pct:67,nearLimit:false,atLimit:false}, export_schedules:{used:0,limit:1,pct:0,nearLimit:false,atLimit:false} },
+    subscriptionStatus:null,
+  },
+  active_starter: {
+    plan:'starter', trialDaysLeft:null, hasSubscription:true,
+    costUsdThisMonth:0.38,
+    meters:{ businesses:{used:3,limit:5,pct:60,nearLimit:false,atLimit:false}, documents:{used:412,limit:500,pct:82,nearLimit:true,atLimit:false}, monthly_tokens:{used:1650000,limit:2000000,pct:83,nearLimit:true,atLimit:false}, monthly_requests:{used:820,limit:1000,pct:82,nearLimit:true,atLimit:false}, team_members:{used:2,limit:3,pct:67,nearLimit:false,atLimit:false}, audio_overviews:{used:18,limit:20,pct:90,nearLimit:true,atLimit:false}, export_schedules:{used:3,limit:5,pct:60,nearLimit:false,atLimit:false} },
+    subscriptionStatus:{ status:'active', currentPeriodEnd:'2026-04-26', plan:'starter', cancelAtPeriodEnd:false },
+  },
+  active_pro: {
+    plan:'pro', trialDaysLeft:null, hasSubscription:true, costUsdThisMonth:1.84,
+    meters:{ businesses:{used:6,limit:20,pct:30,nearLimit:false,atLimit:false}, documents:{used:1240,limit:5000,pct:25,nearLimit:false,atLimit:false}, monthly_tokens:{used:3200000,limit:10000000,pct:32,nearLimit:false,atLimit:false}, monthly_requests:{used:1600,limit:5000,pct:32,nearLimit:false,atLimit:false}, team_members:{used:4,limit:10,pct:40,nearLimit:false,atLimit:false}, audio_overviews:{used:42,limit:100,pct:42,nearLimit:false,atLimit:false}, export_schedules:{used:8,limit:20,pct:40,nearLimit:false,atLimit:false} },
+    subscriptionStatus:{ status:'active', currentPeriodEnd:'2026-04-26', plan:'pro', cancelAtPeriodEnd:false },
+  },
+  trial_expired: {
+    plan:'trial', trialDaysLeft:0, hasSubscription:false, costUsdThisMonth:0,
+    meters:{ businesses:{used:2,limit:2,pct:100,nearLimit:true,atLimit:true}, documents:{used:50,limit:50,pct:100,nearLimit:true,atLimit:true}, monthly_tokens:{used:500000,limit:500000,pct:100,nearLimit:true,atLimit:true}, monthly_requests:{used:200,limit:200,pct:100,nearLimit:true,atLimit:true}, team_members:{used:1,limit:1,pct:100,nearLimit:true,atLimit:true}, audio_overviews:{used:3,limit:3,pct:100,nearLimit:true,atLimit:true}, export_schedules:{used:1,limit:1,pct:100,nearLimit:true,atLimit:true} },
+    subscriptionStatus:null,
+  },
+  past_due: {
+    plan:'past_due', trialDaysLeft:null, hasSubscription:true, costUsdThisMonth:0,
+    meters:{ businesses:{used:3,limit:5,pct:60}, documents:{used:280,limit:500,pct:56}, monthly_tokens:{used:900000,limit:2000000,pct:45}, monthly_requests:{used:450,limit:1000,pct:45}, team_members:{used:2,limit:3,pct:67}, audio_overviews:{used:10,limit:20,pct:50}, export_schedules:{used:2,limit:5,pct:40} },
+    subscriptionStatus:{ status:'past_due', currentPeriodEnd:'2026-03-26', plan:'starter', cancelAtPeriodEnd:false },
+  },
+};
+
+const STATE = DEMO_STATES[STATE_MODE] || DEMO_STATES.trial;
+
+const PLANS = {
+  trial:   { name:'Free Trial',  price:0,   price_annual:0 },
+  starter: { name:'Starter',     price:29,  price_annual:23, features:['5 restaurant locations','500 documents','2M AI tokens/month','Fortnox integration','Scheduled reports','Team access (3 users)'] },
+  pro:     { name:'Pro',         price:79,  price_annual:63, features:['20 restaurant locations','5,000 documents','10M AI tokens/month','All integrations','Priority support','BankID auth','Team access (10 users)'] },
+  enterprise:{ name:'Enterprise',price:null,price_annual:null, features:['Unlimited locations','Unlimited documents','Unlimited AI usage','Dedicated support','Custom integrations','SLA guarantee'] },
+};
+
+const METER_LABELS = {
+  businesses:'Businesses',      documents:'Documents',
+  monthly_tokens:'AI Tokens',   monthly_requests:'AI Requests',
+  team_members:'Team Members',  audio_overviews:'Audio Overviews',
+  export_schedules:'Schedules',
+};
+
+let billing = 'monthly';
+
+// ── INIT ──────────────────────────────────────────────────────────
+function init() {
+  renderBanner();
+  renderPlans();
+  renderMeters();
+  renderBillingSection();
+  updateTopbarChip();
+}
+
+// ── BANNER ────────────────────────────────────────────────────────
+function renderBanner() {
+  const el = document.getElementById('banner-area');
+
+  // Check URL for success param
+  if (location.search.includes('upgrade=success')) {
+    const plan = new URLSearchParams(location.search).get('plan') || '';
+    el.innerHTML = `<div class="banner banner-success">
+      <span style="font-size:20px">🎉</span>
+      <div class="bt-msg">You're now on the <strong>${PLANS[plan]?.name || plan}</strong> plan. All features are unlocked.</div>
+      <button class="banner-btn solid" onclick="this.closest('.banner').remove()">Dismiss</button>
+    </div>`;
+    return;
+  }
+
+  if (STATE.plan === 'past_due') {
+    el.innerHTML = `<div class="banner banner-past-due">
+      <span style="font-size:20px">⚠️</span>
+      <div class="bt-msg"><strong>Payment failed.</strong> Your account has limited access. Please update your payment method to restore full access.<br><span class="dim">Your data is safe — we'll retry the payment in 3 days.</span></div>
+      <button class="banner-btn solid" onclick="openPortal()">Update payment method</button>
+    </div>`;
+    return;
+  }
+
+  if (STATE.plan === 'trial' && STATE.trialDaysLeft === 0) {
+    el.innerHTML = `<div class="banner banner-expired">
+      <span style="font-size:20px">⏰</span>
+      <div class="bt-msg"><strong>Your free trial has ended.</strong> Upgrade to continue using Command Center. Your data is saved and waiting.<br><span class="dim">Choose a plan below to restore access immediately.</span></div>
+      <button class="banner-btn solid" onclick="scrollToPlans()">Choose a plan</button>
+    </div>`;
+    return;
+  }
+
+  if (STATE.plan === 'trial' && STATE.trialDaysLeft !== null && STATE.trialDaysLeft <= 7) {
+    el.innerHTML = `<div class="banner banner-trial">
+      <div class="bt-days">${STATE.trialDaysLeft}</div>
+      <div class="bt-msg">
+        <strong>${STATE.trialDaysLeft === 1 ? 'Last day' : `${STATE.trialDaysLeft} days`} left on your free trial.</strong><br>
+        <span class="dim">Upgrade now to keep your ${STATE.meters.businesses.used} ${STATE.meters.businesses.used===1?'business':'businesses'} and ${STATE.meters.documents.used} indexed documents.</span>
+      </div>
+      <button class="banner-btn" onclick="scrollToPlans()">View plans</button>
+      <button class="banner-btn solid" onclick="upgrade('starter')">Upgrade to Starter — $29/mo</button>
+    </div>`;
+    return;
+  }
+}
+
+function updateTopbarChip() {
+  const chip = document.getElementById('tb-plan-chip');
+  const statusMap = { trial:`Trial — ${STATE.trialDaysLeft??''}d left`, starter:'Starter', pro:'Pro', enterprise:'Enterprise', past_due:'⚠️ Payment failed' };
+  chip.textContent = statusMap[STATE.plan] || STATE.plan;
+  if (STATE.plan === 'past_due') chip.style.background = 'rgba(139,26,26,.4)';
+}
+
+function scrollToPlans() {
+  document.getElementById('plans-grid').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// ── PLANS ─────────────────────────────────────────────────────────
+function renderPlans() {
+  const grid = document.getElementById('plans-grid');
+  const isCurrent = (p) => STATE.plan === p || (p === 'starter' && STATE.plan === 'past_due');
+
+  grid.innerHTML = Object.entries(PLANS).map(([key, plan]) => {
+    const current  = isCurrent(key);
+    const isPopular= key === 'pro';
+    const isPastDue= STATE.plan === 'past_due' && key === 'starter';
+
+    let badge = '';
+    if (current && !isPastDue) badge = `<div class="pc-badge pcb-current">Current plan</div>`;
+    else if (isPastDue)         badge = `<div class="pc-badge pcb-pastdue">Payment failed</div>`;
+    else if (key === 'trial' && STATE.plan === 'trial') badge = `<div class="pc-badge pcb-trial">Your trial</div>`;
+    else if (isPopular)         badge = `<div class="pc-badge pcb-popular">Most Popular</div>`;
+
+    const price    = billing === 'annual' && plan.price_annual ? plan.price_annual : plan.price;
+    const origPrice= billing === 'annual' && plan.price_annual ? plan.price : null;
+
+    const priceHtml = plan.price === null
+      ? `<div class="pc-price"><span class="pc-amount" style="font-size:28px">Custom</span></div>`
+      : plan.price === 0
+      ? `<div class="pc-price"><span class="pc-amount">Free</span></div>`
+      : `<div class="pc-price">
+           <span class="pc-currency">$</span>
+           <span class="pc-amount">${price}</span>
+           <span class="pc-per">/mo${billing==='annual'?' (billed annually)':''}</span>
+           ${origPrice ? `<span class="pc-original">$${origPrice}</span>` : ''}
+         </div>`;
+
+    const features = plan.features || (key==='trial'
+      ? ['2 restaurant locations','50 documents','500k AI tokens/month','PDF & Excel exports']
+      : []);
+
+    let btnHtml;
+    if (current && !isPastDue && key !== 'trial') {
+      btnHtml = `<button class="pc-btn pcb-current-btn" onclick="openPortal()">✓ Current plan — Manage billing</button>`;
+    } else if (isPastDue) {
+      btnHtml = `<button class="pc-btn pcb-upgrade" style="background:var(--red);border-color:var(--red)" onclick="openPortal()">Fix payment to restore access</button>`;
+    } else if (key === 'enterprise') {
+      btnHtml = `<button class="pc-btn pcb-enterprise" onclick="contactEnterprise()">Contact sales →</button>`;
+    } else if (key === 'trial') {
+      btnHtml = `<button class="pc-btn pcb-downgrade" disabled>Free trial</button>`;
+    } else {
+      const isUpgrade = ['trial','starter'].includes(STATE.plan) && key === 'pro'
+        || STATE.plan === 'trial' && key === 'starter';
+      const label = isUpgrade
+        ? (STATE.trialDaysLeft > 0 ? 'Upgrade now' : 'Choose this plan')
+        : (STATE.plan === 'pro' && key === 'starter' ? 'Downgrade' : 'Upgrade now');
+      btnHtml = `<button class="pc-btn pcb-upgrade" onclick="upgrade('${key}')">${label}</button>`;
+    }
+
+    return `
+    <div class="plan-card ${current&&!isPastDue?'current':''} ${isPopular&&!current?'popular':''} ${isPastDue?'past-due':''}">
+      ${badge}
+      <div class="pc-name">${plan.name}</div>
+      ${priceHtml}
+      <div class="pc-desc">${key==='trial'?'30 days to explore all features':key==='enterprise'?'For restaurant groups with 20+ locations':'Perfect for growing restaurant businesses'}</div>
+      <div class="pc-features">
+        ${features.map(f=>`<div class="pc-feature"><span class="pf-check">✓</span>${f}</div>`).join('')}
+      </div>
+      ${btnHtml}
+    </div>`;
+  }).join('');
+}
+
+// ── USAGE METERS ──────────────────────────────────────────────────
+function renderMeters() {
+  const grid  = document.getElementById('meters-grid');
+  const badge = document.getElementById('plan-badge');
+  const cost  = document.getElementById('cost-display');
+  badge.textContent = PLANS[STATE.plan]?.name || STATE.plan;
+  cost.textContent  = STATE.costUsdThisMonth > 0 ? `AI cost this month: $${STATE.costUsdThisMonth.toFixed(2)}` : '';
+
+  grid.innerHTML = Object.entries(STATE.meters).map(([key, m]) => {
+    const label   = METER_LABELS[key] || key;
+    const cls     = m.atLimit||m.pct>=100 ? 'crit' : m.nearLimit||m.pct>=80 ? 'warn' : '';
+    const fillCls = m.atLimit||m.pct>=100 ? 'mf-crit' : m.nearLimit||m.pct>=80 ? 'mf-warn' : 'mf-ok';
+    const usedFmt = formatMetric(key, m.used);
+    const limFmt  = m.limit === Infinity ? '∞' : formatMetric(key, m.limit);
+
+    const hint = (m.nearLimit && !m.atLimit) ? `<div class="m-upgrade-hint">Approaching limit — consider upgrading</div>` :
+                 m.atLimit ? `<div class="m-upgrade-hint" style="color:var(--red)">Limit reached — upgrade to continue</div>` : '';
+
+    return `<div class="meter ${cls}">
+      <div class="m-label">${label}</div>
+      <div class="m-values">
+        <span class="m-used">${usedFmt}</span>
+        <span class="m-limit">/ ${limFmt}</span>
+      </div>
+      <div class="m-track"><div class="m-fill ${fillCls}" style="width:${Math.min(100,m.pct)}%"></div></div>
+      <div class="m-pct">${m.limit===Infinity?'Unlimited':m.pct+'% used'}</div>
+      ${hint}
+    </div>`;
+  }).join('');
+}
+
+function formatMetric(key, val) {
+  if (val === Infinity) return '∞';
+  if (key === 'monthly_tokens') return val >= 1000000 ? (val/1000000).toFixed(1)+'M' : (val/1000).toFixed(0)+'k';
+  return val.toLocaleString();
+}
+
+// ── BILLING SECTION ───────────────────────────────────────────────
+function renderBillingSection() {
+  const section = document.getElementById('billing-section');
+  const rows    = document.getElementById('billing-rows');
+  if (!STATE.hasSubscription && STATE.plan !== 'past_due') return;
+
+  section.style.display = 'block';
+  const sub = STATE.subscriptionStatus;
+  const statusMap = { active:'Active', trialing:'Trial', past_due:'Payment failed', canceled:'Cancelled' };
+  const statusCls = { active:'brs-active', trialing:'brs-trial', past_due:'brs-pastdue' };
+
+  rows.innerHTML = `
+    <div class="billing-row">
+      <span class="br-label">Plan</span>
+      <span class="br-value">${PLANS[sub?.plan||STATE.plan]?.name || STATE.plan}</span>
+    </div>
+    <div class="billing-row">
+      <span class="br-label">Status</span>
+      <span class="br-status ${statusCls[sub?.status]||'brs-active'}">
+        <div class="brs-dot"></div>
+        ${statusMap[sub?.status] || sub?.status || 'Active'}
+        ${sub?.cancelAtPeriodEnd ? ' (cancels at period end)' : ''}
+      </span>
+    </div>
+    ${sub?.currentPeriodEnd ? `
+    <div class="billing-row">
+      <span class="br-label">Next billing date</span>
+      <span class="br-value">${new Date(sub.currentPeriodEnd).toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'})}</span>
+    </div>` : ''}
+    <div class="billing-row">
+      <span class="br-label">AI cost this month</span>
+      <span class="br-value">$${STATE.costUsdThisMonth.toFixed(4)}</span>
+    </div>`;
+
+  // Show cancel button only if not already cancelling
+  const cancelBtn = document.getElementById('cancel-btn');
+  if (sub?.cancelAtPeriodEnd) {
+    cancelBtn.textContent = 'Cancellation scheduled';
+    cancelBtn.disabled    = true;
+  }
+}
+
+// ── BILLING TOGGLE ────────────────────────────────────────────────
+function toggleBilling() {
+  setBilling(billing === 'monthly' ? 'annual' : 'monthly');
+}
+
+function setBilling(mode) {
+  billing = mode;
+  const toggle = document.getElementById('billing-toggle');
+  toggle.className = 'toggle-switch ' + mode;
+  document.getElementById('monthly-lbl').classList.toggle('active', mode === 'monthly');
+  document.getElementById('annual-lbl').classList.toggle('active', mode === 'annual');
+  renderPlans();
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────────
+async function upgrade(plan) {
+  const btn = event?.target;
+  if (btn) { btn.innerHTML = '<span class="spin">⟳</span> Loading…'; btn.disabled = true; }
+
+  // In production:
+  // const res = await fetch('/api/stripe/checkout', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${getToken()}` },
+  //   body: JSON.stringify({ plan, annual: billing === 'annual' })
+  // });
+  // const { url } = await res.json();
+  // window.location.href = url;
+
+  await delay(800);
+  toast(`Redirecting to Stripe Checkout for ${PLANS[plan]?.name}…`);
+  setTimeout(() => {
+    if (btn) { btn.textContent = 'Upgrade now'; btn.disabled = false; }
+    // Simulate success redirect for demo
+    // window.location.href = `?state=active_${plan}&upgrade=success&plan=${plan}`;
+  }, 1200);
+}
+
+async function openPortal() {
+  toast('Opening billing portal…');
+  await delay(600);
+  // In production:
+  // const res = await fetch('/api/stripe/portal', { method:'POST', headers:{...} });
+  // const { url } = await res.json();
+  // window.open(url, '_blank');
+  toast('Stripe portal would open here in production', 'ok');
+}
+
+async function cancelSubscription() {
+  if (!confirm('Cancel your subscription? You\'ll keep access until the end of the current billing period.')) return;
+  toast('Opening billing portal to confirm cancellation…');
+  await delay(500);
+  openPortal();
+}
+
+function contactEnterprise() {
+  window.location.href = 'mailto:sales@commandcenter.se?subject=Enterprise%20Enquiry';
+}
+
+// ── UTILS ─────────────────────────────────────────────────────────
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+let toastTimer;
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────
+init();
+
+// Add state switcher for demo
+const states = ['trial','trial_expired','active_starter','active_pro','past_due'];
+const demoBar = document.createElement('div');
+demoBar.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.8);border-radius:20px;padding:5px 12px;display:flex;gap:6px;z-index:100;backdrop-filter:blur(4px)';
+demoBar.innerHTML = '<span style="font-size:10px;color:rgba(255,255,255,.4);padding:3px 2px;font-family:monospace">Demo state:</span>' +
+  states.map(s=>`<button onclick="location.search='?state=${s}'" style="font-size:10px;padding:3px 8px;border-radius:8px;border:1px solid rgba(255,255,255,.2);background:${STATE_MODE===s?'rgba(255,255,255,.2)':'none'};color:${STATE_MODE===s?'white':'rgba(255,255,255,.5)'};cursor:pointer;font-family:monospace">${s}</button>`).join('');
+document.body.appendChild(demoBar);
+</script>
+</body>
+</html>

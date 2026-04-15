@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logga in — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1E2761;--blue:#185FA5;--blue-lt:#E6F1FB;
+  --green:#3B6D11;--green-lt:#EAF3DE;
+  --red:#A32D2D;--red-lt:#FCEBEB;
+  --amber:#854F0B;--amber-lt:#FAEEDA;
+  --ink:#1A1917;--charcoal:#3d3b38;--muted:#6b6860;--hint:#9b9690;
+  --cream:#faf8f4;--border:#e2e0db;--border-d:#c8c3bb;
+  --bankid:#235971;--bankid-lt:#E8F3F7;
+  --freja:#00796B;--freja-lt:#E0F2F1;
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --serif:'Instrument Serif',Georgia,serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;-webkit-font-smoothing:antialiased}
+body{
+  font-family:var(--font);font-size:14px;color:var(--ink);
+  background:var(--navy);display:flex;align-items:center;justify-content:center;
+  min-height:100vh;padding:20px;
+}
+
+/* Background pattern */
+body::before{
+  content:'';position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse at 20% 50%, rgba(255,255,255,.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(255,255,255,.04) 0%, transparent 40%);
+  pointer-events:none;
+}
+
+/* LOGIN CARD */
+.login-card{
+  background:white;border-radius:20px;width:100%;max-width:420px;
+  box-shadow:0 32px 80px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.05);
+  overflow:hidden;position:relative;z-index:1;
+}
+
+/* CARD HEADER */
+.card-header{
+  background:var(--navy);padding:28px 32px 24px;
+  display:flex;flex-direction:column;align-items:flex-start;
+}
+.logo-row{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.logo-mark{
+  width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.15);
+  display:flex;align-items:center;justify-content:center;
+}
+.logo-mark svg{width:16px;height:16px;stroke:white;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.logo-name{font-family:var(--serif);font-size:16px;color:white;font-weight:400}
+.card-title{font-family:var(--serif);font-size:26px;color:white;font-weight:400;line-height:1.2;margin-bottom:4px}
+.card-sub{font-size:13px;color:rgba(255,255,255,.55)}
+
+/* CARD BODY */
+.card-body{padding:24px 32px 28px}
+
+/* AUTH METHOD TABS */
+.auth-tabs{display:flex;background:var(--cream);border-radius:10px;padding:3px;margin-bottom:20px}
+.auth-tab{
+  flex:1;padding:7px 8px;border-radius:7px;border:none;background:none;
+  font-family:var(--font);font-size:12px;font-weight:600;color:var(--muted);
+  cursor:pointer;transition:all .15s;text-align:center;
+}
+.auth-tab.active{background:white;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.auth-tab:hover:not(.active){color:var(--charcoal)}
+
+/* AUTH PANELS */
+.auth-panel{display:none}
+.auth-panel.active{display:block}
+
+/* ── BANKID PANEL ── */
+.bankid-hero{
+  background:var(--bankid-lt);border:1.5px solid rgba(35,89,113,.15);
+  border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;
+}
+.bankid-logo{margin-bottom:12px}
+.bankid-logo svg{width:80px;height:auto}
+.bankid-title{font-size:15px;font-weight:600;color:var(--bankid);margin-bottom:4px}
+.bankid-sub{font-size:12px;color:var(--muted);line-height:1.5}
+
+.qr-container{
+  background:white;border:1.5px solid var(--border);border-radius:10px;
+  padding:16px;text-align:center;margin:14px 0;display:none;
+}
+.qr-canvas{width:160px;height:160px;margin:0 auto;background:var(--cream);border-radius:6px;display:flex;align-items:center;justify-content:center}
+.qr-canvas canvas{display:block}
+.qr-hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+
+.bankid-status{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  border-radius:8px;background:var(--cream);margin:12px 0;
+  font-size:13px;color:var(--charcoal);display:none;
+}
+.bankid-status .status-spinner{
+  width:16px;height:16px;border:2px solid var(--border);
+  border-top-color:var(--bankid);border-radius:50%;
+  animation:spin .7s linear infinite;flex-shrink:0;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.pnr-field{margin-bottom:12px}
+.pnr-field label{font-size:12px;font-weight:600;color:var(--charcoal);display:block;margin-bottom:4px}
+.pnr-field input{
+  width:100%;padding:10px 12px;border:1.5px solid var(--border-d);border-radius:8px;
+  font-size:14px;font-family:var(--mono);color:var(--ink);letter-spacing:.05em;
+  transition:border-color .15s;
+}
+.pnr-field input:focus{outline:none;border-color:var(--bankid)}
+.pnr-field .pnr-hint{font-size:11px;color:var(--hint);margin-top:4px}
+
+/* ── FREJA PANEL ── */
+.freja-hero{
+  background:var(--freja-lt);border:1.5px solid rgba(0,121,107,.15);
+  border-radius:12px;padding:20px;margin-bottom:16px;text-align:center;
+}
+.freja-title{font-size:15px;font-weight:600;color:var(--freja);margin-bottom:4px}
+.freja-sub{font-size:12px;color:var(--muted);line-height:1.5}
+
+/* ── EMAIL PANEL ── */
+.form-group{margin-bottom:14px}
+.form-group label{font-size:12px;font-weight:600;color:var(--charcoal);display:block;margin-bottom:4px}
+.form-group input{
+  width:100%;padding:10px 12px;border:1.5px solid var(--border-d);border-radius:8px;
+  font-size:14px;font-family:var(--font);color:var(--ink);transition:border-color .15s;
+}
+.form-group input:focus{outline:none;border-color:var(--blue)}
+.form-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.forgot-link{font-size:12px;color:var(--blue);text-decoration:none}
+.forgot-link:hover{text-decoration:underline}
+
+/* BUTTONS */
+.auth-btn{
+  display:block;width:100%;padding:12px;border-radius:10px;border:none;
+  font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer;
+  transition:all .15s;text-align:center;letter-spacing:.01em;
+}
+.btn-bankid{background:var(--bankid);color:white}
+.btn-bankid:hover{background:#1a4a5e;transform:translateY(-1px);box-shadow:0 4px 12px rgba(35,89,113,.3)}
+.btn-freja{background:var(--freja);color:white}
+.btn-freja:hover{background:#00695C;transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,121,107,.3)}
+.btn-email{background:var(--navy);color:white}
+.btn-email:hover{background:var(--blue);transform:translateY(-1px)}
+.btn-cancel{background:none;border:1.5px solid var(--border-d);color:var(--muted);margin-top:8px}
+.btn-cancel:hover{background:var(--cream);color:var(--charcoal)}
+
+/* DIVIDER */
+.divider{display:flex;align-items:center;gap:10px;margin:16px 0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.divider span{font-size:11px;color:var(--hint);white-space:nowrap}
+
+/* ERROR */
+.error-msg{
+  background:var(--red-lt);border:1px solid rgba(162,45,45,.2);border-radius:8px;
+  padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:12px;display:none;
+}
+
+/* FOOTER */
+.card-footer{
+  padding:14px 32px 20px;border-top:1px solid var(--border);
+  text-align:center;
+}
+.footer-text{font-size:11px;color:var(--hint);line-height:1.7}
+.footer-text a{color:var(--hint);text-decoration:none;border-bottom:1px solid var(--border)}
+.footer-text a:hover{color:var(--muted)}
+
+/* GDPR NOTE */
+.gdpr-note{
+  font-size:11px;color:var(--hint);text-align:center;line-height:1.6;
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--border);
+}
+.gdpr-note a{color:var(--hint);text-decoration:underline}
+
+/* SUCCESS STATE */
+.success-panel{display:none;text-align:center;padding:20px 0}
+.success-icon{
+  width:56px;height:56px;border-radius:50%;background:var(--green-lt);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 14px;
+  font-size:24px;
+}
+.success-title{font-size:17px;font-weight:600;color:var(--charcoal);margin-bottom:4px}
+.success-sub{font-size:13px;color:var(--muted);line-height:1.5}
+</style>
+</head>
+<body>
+
+<div class="login-card">
+
+  <!-- HEADER -->
+  <div class="card-header">
+    <div class="logo-row">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+      </div>
+      <span class="logo-name">Command Center</span>
+    </div>
+    <div class="card-title">Välkommen tillbaka</div>
+    <div class="card-sub">Logga in på ditt konto</div>
+  </div>
+
+  <!-- BODY -->
+  <div class="card-body">
+
+    <!-- Error message -->
+    <div class="error-msg" id="error-msg"></div>
+
+    <!-- AUTH METHOD TABS -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('bankid',this)">BankID</button>
+      <button class="auth-tab" onclick="switchTab('freja',this)">Freja eID</button>
+      <button class="auth-tab" onclick="switchTab('email',this)">E-post</button>
+    </div>
+
+    <!-- ── BANKID PANEL ─────────────────────────────────────── -->
+    <div class="auth-panel active" id="panel-bankid">
+
+      <div class="bankid-hero">
+        <!-- BankID official logo SVG (simplified) -->
+        <div class="bankid-logo">
+          <svg viewBox="0 0 180 60" xmlns="http://www.w3.org/2000/svg">
+            <rect width="180" height="60" rx="8" fill="#235971"/>
+            <text x="90" y="38" font-family="Arial, sans-serif" font-size="22" font-weight="bold"
+                  fill="white" text-anchor="middle">BankID</text>
+          </svg>
+        </div>
+        <div class="bankid-title">Logga in med BankID</div>
+        <div class="bankid-sub">Säker inloggning med ditt svenska BankID.<br>Du behöver BankID-appen installerad.</div>
+      </div>
+
+      <!-- Optional personnummer field -->
+      <div class="pnr-field" id="pnr-field">
+        <label>Personnummer <span style="font-weight:400;color:var(--hint)">(valfritt)</span></label>
+        <input type="text" id="pnr-input" placeholder="ÅÅÅÅMMDD-NNNN"
+               maxlength="13" oninput="formatPNR(this)">
+        <div class="pnr-hint">Ange ditt personnummer för snabbare inloggning, eller lämna tomt för QR-kod.</div>
+      </div>
+
+      <!-- QR Code (shown after starting auth) -->
+      <div class="qr-container" id="qr-container">
+        <div class="qr-canvas" id="qr-canvas">
+          <div style="text-align:center;color:var(--hint);font-size:12px">
+            Genererar QR-kod...
+          </div>
+        </div>
+        <div class="qr-hint">Öppna BankID-appen och skanna QR-koden.<br>QR-koden uppdateras automatiskt.</div>
+      </div>
+
+      <!-- Status message -->
+      <div class="bankid-status" id="bankid-status">
+        <div class="status-spinner"></div>
+        <span id="bankid-status-text">Väntar på BankID...</span>
+      </div>
+
+      <!-- Buttons -->
+      <div id="bankid-start-btns">
+        <button class="auth-btn btn-bankid" onclick="startBankID('qr')">
+          Öppna BankID på annan enhet
+        </button>
+        <div class="divider"><span>eller</span></div>
+        <button class="auth-btn btn-bankid" style="background:#1a4a5e" onclick="startBankID('same')">
+          Öppna BankID på denna enhet
+        </button>
+      </div>
+
+      <div id="bankid-cancel-btn" style="display:none">
+        <button class="auth-btn btn-cancel" onclick="cancelBankID()">Avbryt</button>
+      </div>
+
+      <!-- Success -->
+      <div class="success-panel" id="bankid-success">
+        <div class="success-icon">✓</div>
+        <div class="success-title">Identitet verifierad</div>
+        <div class="success-sub">Loggar in...</div>
+      </div>
+
+      <div class="gdpr-note">
+        Ditt personnummer hanteras i enlighet med vår
+        <a href="/privacy" target="_blank">integritetspolicy</a>.
+        Vi lagrar aldrig ditt personnummer i klartext.
+      </div>
+    </div>
+
+    <!-- ── FREJA PANEL ──────────────────────────────────────── -->
+    <div class="auth-panel" id="panel-freja">
+
+      <div class="freja-hero">
+        <div style="font-size:32px;margin-bottom:8px">🆔</div>
+        <div class="freja-title">Logga in med Freja eID</div>
+        <div class="freja-sub">Alternativ till BankID. Kräver Freja eID-appen.<br>Tillgänglig för användare utan BankID.</div>
+      </div>
+
+      <button class="auth-btn btn-freja" onclick="startFreja()">
+        Öppna Freja eID
+      </button>
+
+      <div class="bankid-status" id="freja-status" style="margin-top:12px">
+        <div class="status-spinner" style="border-top-color:var(--freja)"></div>
+        <span id="freja-status-text">Väntar på Freja...</span>
+      </div>
+
+      <div class="gdpr-note" style="margin-top:16px">
+        Freja eID är utfärdad av Verisec AB. Se
+        <a href="https://frejaeid.com/integritetspolicy" target="_blank">Frejas integritetspolicy</a>.
+      </div>
+    </div>
+
+    <!-- ── EMAIL PANEL ──────────────────────────────────────── -->
+    <div class="auth-panel" id="panel-email">
+
+      <div class="form-group">
+        <label>E-postadress</label>
+        <input type="email" id="email-input" placeholder="namn@foretag.se"
+               autocomplete="email" onkeydown="if(event.key==='Enter')doEmailLogin()">
+      </div>
+
+      <div class="form-row">
+        <label style="font-size:12px;font-weight:600;color:var(--charcoal)">Lösenord</label>
+        <a class="forgot-link" href="/forgot-password">Glömt lösenord?</a>
+      </div>
+      <div class="form-group" style="margin-top:-10px">
+        <input type="password" id="password-input" placeholder="••••••••"
+               autocomplete="current-password" onkeydown="if(event.key==='Enter')doEmailLogin()">
+      </div>
+
+      <button class="auth-btn btn-email" onclick="doEmailLogin()">Logga in</button>
+
+      <div class="divider"><span>Nytt konto?</span></div>
+
+      <button class="auth-btn" style="border:1.5px solid var(--border-d);color:var(--charcoal)"
+              onclick="window.location.href='/signup'">
+        Skapa konto — 30 dagars gratis provperiod
+      </button>
+    </div>
+
+  </div>
+
+  <!-- FOOTER -->
+  <div class="card-footer">
+    <div class="footer-text">
+      Genom att logga in godkänner du våra
+      <a href="/terms" target="_blank">användarvillkor</a> och
+      <a href="/privacy" target="_blank">integritetspolicy</a>.
+      <br>
+      Command Center följer GDPR och svensk dataskyddslagstiftning.
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// LOGIN PAGE LOGIC
+// ══════════════════════════════════════════════════════════════
+
+let bankidOrderRef  = null;
+let collectInterval = null;
+let qrInterval      = null;
+let qrStartTime     = null;
+
+// ── TAB SWITCHING ─────────────────────────────────────────────
+function switchTab(tab, btn) {
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.auth-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('panel-'+tab).classList.add('active');
+  hideError();
+  if (bankidOrderRef) cancelBankID();
+}
+
+// ── BANKID FLOW ───────────────────────────────────────────────
+async function startBankID(mode) {
+  const pnr = document.getElementById('pnr-input').value.replace(/\D/g,'');
+  if (pnr && pnr.length !== 10 && pnr.length !== 12) {
+    showError('Ogiltigt personnummer. Ange formatet ÅÅMMDD-NNNN.');
+    return;
+  }
+
+  try {
+    const res  = await fetch('/api/auth/bankid/auth', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ personalNumber: pnr || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    bankidOrderRef = data.orderRef;
+    qrStartTime    = Date.now();
+
+    // Hide start buttons, show cancel
+    document.getElementById('bankid-start-btns').style.display = 'none';
+    document.getElementById('bankid-cancel-btn').style.display = 'block';
+    document.getElementById('pnr-field').style.display = 'none';
+
+    if (mode === 'same') {
+      // Deep link to open BankID app on this device
+      const deepLink = `bankid:///?autostarttoken=${data.autoStartToken}&redirect=null`;
+      window.location.href = deepLink;
+      // Show status message
+      showBankIDStatus('Öppnar BankID-appen...');
+    } else {
+      // Show QR code for scanning from another device
+      document.getElementById('qr-container').style.display = 'block';
+      showBankIDStatus('Skanna QR-koden med BankID-appen.');
+      startQRRefresh(data.qrStartToken, data.qrStartSecret);
+    }
+
+    // Start polling for completion
+    startCollecting();
+
+  } catch (err) {
+    showError('Kunde inte starta BankID: ' + err.message);
+  }
+}
+
+function startQRRefresh(qrStartToken, qrStartSecret) {
+  // Update QR code every second (BankID requirement)
+  qrInterval = setInterval(async () => {
+    const elapsed = Math.floor((Date.now() - qrStartTime) / 1000);
+
+    // Generate QR data (mirrors server-side generateQRCode function)
+    const qrData = await generateQRData(qrStartToken, qrStartSecret, elapsed);
+    renderQRCode(qrData);
+  }, 1000);
+}
+
+async function generateQRData(token, secret, elapsed) {
+  // Use SubtleCrypto to generate HMAC-SHA256 in the browser
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(String(elapsed)));
+  const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2,'0')).join('');
+  return `bankid.${token}.${elapsed}.${hex}`;
+}
+
+function renderQRCode(data) {
+  // Use a QR code library — add to your project:
+  // npm install qrcode
+  // Or use the CDN: <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js">
+  const canvas = document.getElementById('qr-canvas');
+  if (window.QRCode) {
+    canvas.innerHTML = '';
+    const c = document.createElement('canvas');
+    canvas.appendChild(c);
+    QRCode.toCanvas(c, data, { width: 160, margin: 1 }, () => {});
+  } else {
+    // Fallback: show the raw data (for testing)
+    canvas.innerHTML = `<div style="font-size:9px;font-family:monospace;word-break:break-all;padding:8px;color:var(--hint)">${data}</div>`;
+  }
+}
+
+function startCollecting() {
+  collectInterval = setInterval(collectBankID, 2000);  // poll every 2 seconds
+}
+
+async function collectBankID() {
+  if (!bankidOrderRef) return;
+
+  try {
+    const res  = await fetch('/api/auth/bankid/collect', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ orderRef: bankidOrderRef }),
+    });
+    const data = await res.json();
+
+    if (data.status === 'complete') {
+      stopPolling();
+      showBankIDSuccess();
+      // Store session and redirect
+      if (data.sessionToken) {
+        localStorage.setItem('cc_session_token', data.sessionToken);
+      }
+      setTimeout(() => {
+        window.location.href = data.user?.isNewUser ? '/onboarding' : '/dashboard';
+      }, 1000);
+    }
+    else if (data.status === 'failed') {
+      stopPolling();
+      resetBankIDUI();
+      showError(data.message || 'BankID-inloggning misslyckades. Försök igen.');
+    }
+    else {
+      // Update status message with hint
+      showBankIDStatus(data.message || 'Väntar på BankID...');
+    }
+
+  } catch (err) {
+    stopPolling();
+    resetBankIDUI();
+    showError('Anslutningsfel. Kontrollera din internetanslutning.');
+  }
+}
+
+async function cancelBankID() {
+  if (bankidOrderRef) {
+    await fetch('/api/auth/bankid/cancel', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ orderRef: bankidOrderRef }),
+    }).catch(() => {});
+  }
+  stopPolling();
+  resetBankIDUI();
+}
+
+function stopPolling() {
+  clearInterval(collectInterval);
+  clearInterval(qrInterval);
+  collectInterval = null;
+  qrInterval      = null;
+  bankidOrderRef  = null;
+}
+
+function resetBankIDUI() {
+  document.getElementById('bankid-start-btns').style.display = 'block';
+  document.getElementById('bankid-cancel-btn').style.display = 'none';
+  document.getElementById('qr-container').style.display      = 'none';
+  document.getElementById('bankid-status').style.display     = 'none';
+  document.getElementById('pnr-field').style.display         = 'block';
+}
+
+function showBankIDStatus(msg) {
+  const el = document.getElementById('bankid-status');
+  document.getElementById('bankid-status-text').textContent = msg;
+  el.style.display = 'flex';
+}
+
+function showBankIDSuccess() {
+  document.getElementById('bankid-status').style.display = 'none';
+  document.getElementById('bankid-success').style.display = 'block';
+  document.getElementById('bankid-cancel-btn').style.display = 'none';
+  document.getElementById('qr-container').style.display = 'none';
+}
+
+// ── PERSONNUMMER FORMATTING ───────────────────────────────────
+function formatPNR(input) {
+  let val = input.value.replace(/\D/g,'');
+  if (val.length === 8) val = val + '-';
+  if (val.length > 8) val = val.slice(0,8) + '-' + val.slice(8,12);
+  input.value = val;
+}
+
+// ── FREJA FLOW ────────────────────────────────────────────────
+async function startFreja() {
+  try {
+    const res  = await fetch('/api/auth/freja/start', { method: 'POST' });
+    const data = await res.json();
+
+    // Freja uses a redirect-based OAuth flow
+    if (data.authUrl) {
+      window.location.href = data.authUrl;
+    }
+
+    document.getElementById('freja-status').style.display = 'flex';
+  } catch (err) {
+    showError('Kunde inte starta Freja eID: ' + err.message);
+  }
+}
+
+// ── EMAIL LOGIN ────────────────────────────────────────────────
+async function doEmailLogin() {
+  const email    = document.getElementById('email-input').value.trim();
+  const password = document.getElementById('password-input').value;
+
+  if (!email || !password) {
+    showError('Ange e-postadress och lösenord.');
+    return;
+  }
+
+  try {
+    // Call your Supabase auth endpoint
+    const res  = await fetch('/api/auth/email/login', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      showError(data.error === 'invalid_credentials'
+        ? 'Fel e-postadress eller lösenord.'
+        : 'Inloggning misslyckades. Försök igen.');
+      return;
+    }
+
+    localStorage.setItem('cc_access_token',  data.access_token);
+    localStorage.setItem('cc_refresh_token', data.refresh_token);
+    window.location.href = '/dashboard';
+
+  } catch (err) {
+    showError('Anslutningsfel. Kontrollera din internetanslutning.');
+  }
+}
+
+// ── ERROR DISPLAY ─────────────────────────────────────────────
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideError() {
+  document.getElementById('error-msg').style.display = 'none';
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+// Check for redirect errors (e.g. from Signicat callback)
+const params = new URLSearchParams(window.location.search);
+if (params.get('error')) {
+  const errorMessages = {
+    auth_failed:  'Inloggning misslyckades. Försök igen.',
+    user_cancel:  'Du avbröt inloggningen.',
+    access_denied:'Åtkomst nekad.',
+  };
+  showError(errorMessages[params.get('error')] || 'Ett fel uppstod. Försök igen.');
+}
+</script>
+</body>
+</html>

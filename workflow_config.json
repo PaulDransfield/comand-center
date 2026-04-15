@@ -1,0 +1,95 @@
+{
+  "_comment": "Björken Invoice Workflow Engine — edit this file to change thresholds and rules",
+  "_version": "1.0",
+
+  "company": {
+    "name":     "Restaurang Björken AB",
+    "org_nr":   "556XXX-XXXX",
+    "currency": "SEK",
+    "fiscal_year_start": "01-01"
+  },
+
+  "watch": {
+    "inbox_folder":     "inbox",
+    "processed_folder": "processed",
+    "flagged_folder":   "flagged",
+    "poll_interval_sec": 10,
+    "supported_formats": [".txt", ".csv", ".pdf", ".xlsx", ".json"]
+  },
+
+  "thresholds": {
+    "_comment": "Percentages are % of total monthly revenue. Amounts are SEK.",
+    "food_pct_warn":   31.0,
+    "food_pct_over":   35.0,
+    "staff_pct_warn":  40.0,
+    "staff_pct_over":  50.0,
+    "rent_pct_warn":   13.0,
+    "rent_pct_over":   16.0,
+    "other_pct_warn":   8.0,
+    "other_pct_over":  12.0,
+    "profit_margin_warn":  12.0,
+    "profit_margin_critical": 7.0,
+
+    "single_invoice_warn_amount": 40000,
+    "price_increase_alert_pct":    5.0,
+    "new_supplier_alert":          true
+  },
+
+  "categories": {
+    "_comment": "Keywords in invoice text → cost category. Add your own vendors here.",
+    "food": [
+      "menigo", "sysco", "martin & servera", "livsmedel", "råvaror",
+      "dryck", "vin", "sprit", "öl", "mat", "restaurangdepå",
+      "coca-cola", "spendrups", "ica", "coop", "axfood"
+    ],
+    "staff": [
+      "lön", "löner", "personalkostnad", "arbetsgivaravgift", "payroll",
+      "quinyx", "personec", "skatteverket lön", "pension", "semesterersättning",
+      "bemanning", "personal"
+    ],
+    "rent": [
+      "hyra", "hyresavi", "lokal", "fastighet", "el ", "vattenfall",
+      "fortum", "eon", "vattenavgift", "fjärrvärme", "städ", "renhållning",
+      "avfall", "försäkring lokal"
+    ],
+    "other": [
+      "fortnox", "bokföring", "redovisning", "revisorn", "försäkring",
+      "telia", "comviq", "telenor", "internet", "swish", "klarna",
+      "postnord", "dhl", "marknadsföring", "reklam", "licens"
+    ]
+  },
+
+  "known_suppliers": {
+    "menigo foodservice ab":    {"category": "food",  "typical_range": [15000, 45000], "payment_days": 30},
+    "sysco sverige ab":         {"category": "food",  "typical_range": [10000, 40000], "payment_days": 14},
+    "martin & servera ab":      {"category": "food",  "typical_range": [8000,  30000], "payment_days": 30},
+    "björkens fastigheter kb":  {"category": "rent",  "typical_range": [60000, 70000], "payment_days": 1},
+    "vattenfall eldistribution":{"category": "rent",  "typical_range": [6000,  10000], "payment_days": 20},
+    "fortnox ab":               {"category": "other", "typical_range": [700,   900],   "payment_days": 30}
+  },
+
+  "notifications": {
+    "log_all":            true,
+    "alert_new_supplier": true,
+    "alert_price_change": true,
+    "daily_summary_hour": 17,
+    "summary_enabled":    true
+  },
+
+  "reconciliation": {
+    "match_tolerance_sek":    1.0,
+    "payment_warning_days":   5,
+    "overdue_flag_days":       1
+  },
+
+  "baseline": {
+    "_comment": "Current month baseline — updated automatically after each sync",
+    "revenue":     505900,
+    "staff":       224978,
+    "food":        149300,
+    "rent":         64500,
+    "other":        28422,
+    "period":      "Mars 2026",
+    "last_updated": "2026-03-31"
+  }
+}

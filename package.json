@@ -1,0 +1,38 @@
+{
+  "name": "command-center",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.24.0",
+    "@sentry/nextjs": "^10.48.0",
+    "@supabase/ssr": "^0.3.0",
+    "@supabase/supabase-js": "^2.43.0",
+    "docx": "^9.5.3",
+    "gpt-tokenizer": "^2.1.2",
+    "micro": "^10.0.1",
+    "next": "14.2.0",
+    "pdf-parse": "^2.4.5",
+    "posthog-js": "^1.364.7",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "resend": "^3.2.0",
+    "stripe": "^15.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "eslint": "^8.0.0",
+    "eslint-config-next": "14.2.0",
+    "typescript": "^5.0.0"
+  }
+}

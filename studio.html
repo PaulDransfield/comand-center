@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio — Restaurang Björken</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --cream: #faf8f4; --cream-2: #f4f1ec; --cream-3: #ede9e2;
+  --stone: #ddd9d2; --stone-2: #c8c3bb; --ash: #9b9690; --charcoal: #3d3b38; --ink: #1a1917;
+  --amber: #c8912a; --amber-lt: #fdf3e3; --amber-md: rgba(200,145,42,0.18);
+  --blue: #185FA5; --blue-lt: #E6F1FB; --blue-dk: #0C447C;
+  --green: #3B6D11; --green-lt: #EAF3DE;
+  --red: #A32D2D; --red-lt: #FCEBEB;
+  --teal: #0F6E56; --teal-lt: #E1F5EE;
+  --r: 8px; --rl: 14px;
+  --font: 'Instrument Sans', system-ui, sans-serif;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font); font-size: 14px; background: var(--cream-2); color: var(--ink); display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: var(--stone); border-radius: 2px; }
+
+/* TOPBAR */
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 20px; height: 46px; background: white; border-bottom: 1px solid var(--stone); flex-shrink: 0; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 28px; height: 28px; border-radius: 7px; background: var(--amber); display: flex; align-items: center; justify-content: center; }
+.brand-mark svg { width: 14px; height: 14px; fill: white; }
+.brand-name { font-family: var(--serif); font-size: 15px; }
+.brand-sep { color: var(--stone-2); margin: 0 4px; }
+.brand-studio { font-size: 13px; font-weight: 600; color: var(--blue); }
+.top-tabs { display: flex; gap: 2px; }
+.top-tab { font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: var(--r); cursor: pointer; color: var(--ash); border: none; background: none; font-family: var(--font); transition: all 0.12s; }
+.top-tab:hover { background: var(--cream-2); color: var(--charcoal); }
+.top-tab.active { background: var(--blue-lt); color: var(--blue); }
+.api-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--ash); }
+.api-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--stone-2); }
+.api-dot.live { background: #52c374; }
+
+/* SHELL */
+.shell { display: grid; grid-template-columns: 300px 1fr 360px; height: calc(100vh - 46px); overflow: hidden; }
+
+/* PANELS */
+.panel { display: flex; flex-direction: column; overflow: hidden; }
+.panel-border-r { border-right: 1px solid var(--stone); }
+.panel-border-l { border-left: 1px solid var(--stone); background: white; }
+.panel-header { padding: 12px 16px; border-bottom: 1px solid var(--stone); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: white; }
+.panel-header h2 { font-size: 11px; font-weight: 600; color: var(--ash); text-transform: uppercase; letter-spacing: 0.09em; }
+.panel-scroll { flex: 1; overflow-y: auto; }
+
+/* TEMPLATE GALLERY */
+.template-section { padding: 12px 14px; border-bottom: 1px solid var(--stone); }
+.section-lbl { font-size: 10px; font-weight: 600; color: var(--ash); text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 8px; }
+.template-card {
+  display: flex; align-items: flex-start; gap: 11px; padding: 10px 12px;
+  border: 1px solid var(--stone); border-radius: var(--rl); cursor: pointer;
+  transition: all 0.15s; background: white; margin-bottom: 7px;
+}
+.template-card:hover { border-color: var(--blue); background: var(--blue-lt); }
+.template-card.active { border-color: var(--amber); background: var(--amber-lt); }
+.tc-icon { width: 36px; height: 42px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+.tci-report  { background: var(--blue-lt); }
+.tci-invoice { background: var(--teal-lt); }
+.tci-agenda  { background: var(--amber-lt); }
+.tci-contract{ background: var(--red-lt); }
+.tci-offer   { background: var(--green-lt); }
+.tci-custom  { background: var(--cream-3); }
+.tc-info { flex: 1; min-width: 0; }
+.tc-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.tc-desc { font-size: 11px; color: var(--ash); line-height: 1.4; }
+.tc-tags { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; }
+.tc-tag { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 10px; background: var(--cream-2); color: var(--ash); border: 1px solid var(--stone); }
+
+/* CUSTOM TEMPLATE UPLOAD */
+.custom-upload {
+  margin: 12px 14px; border: 1.5px dashed var(--stone-2); border-radius: var(--rl);
+  padding: 14px; text-align: center; cursor: pointer; position: relative;
+  transition: all 0.15s; background: white;
+}
+.custom-upload:hover { border-color: var(--amber); background: var(--amber-lt); }
+.custom-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.custom-upload p { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* MAIN GENERATION AREA */
+.gen-area { background: var(--cream-2); display: flex; flex-direction: column; }
+.gen-header { padding: 16px 20px 12px; background: white; border-bottom: 1px solid var(--stone); flex-shrink: 0; }
+.gen-title { font-family: var(--serif); font-size: 20px; font-weight: 400; margin-bottom: 4px; }
+.gen-sub { font-size: 12px; color: var(--ash); }
+.gen-scroll { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+
+/* FORM SECTIONS */
+.form-card { background: white; border: 1px solid var(--stone); border-radius: var(--rl); overflow: hidden; }
+.form-card-header { padding: 11px 16px; border-bottom: 1px solid var(--stone); display: flex; align-items: center; justify-content: space-between; background: var(--cream-2); }
+.form-card-header h3 { font-size: 12px; font-weight: 600; color: var(--charcoal); }
+.form-card-body { padding: 14px 16px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-group { display: flex; flex-direction: column; gap: 4px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-label { font-size: 11px; font-weight: 500; color: var(--charcoal); }
+.form-hint { font-size: 10px; color: var(--ash); }
+input[type=text], input[type=date], input[type=number], input[type=email], select, textarea {
+  width: 100%; font-size: 13px; font-family: var(--font); padding: 7px 10px;
+  border-radius: var(--r); border: 1px solid var(--stone-2); color: var(--ink);
+  background: white; transition: border-color 0.12s;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); }
+textarea { resize: vertical; min-height: 64px; line-height: 1.6; }
+.line-item-row { display: grid; grid-template-columns: 1fr 80px 90px 100px 28px; gap: 6px; align-items: center; margin-bottom: 6px; }
+.li-del { background: none; border: none; cursor: pointer; color: var(--stone-2); font-size: 16px; display: flex; align-items: center; justify-content: center; }
+.li-del:hover { color: var(--red); }
+.add-row-btn { font-family: var(--font); font-size: 11px; color: var(--blue); background: none; border: 1px dashed var(--stone-2); border-radius: var(--r); padding: 5px 12px; cursor: pointer; transition: all 0.12s; }
+.add-row-btn:hover { background: var(--blue-lt); border-color: var(--blue); }
+
+/* DATA AUTO-FILL */
+.autofill-strip { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--amber-lt); border: 1px solid rgba(200,145,42,0.25); border-radius: var(--r); font-size: 12px; }
+.autofill-strip strong { color: var(--amber); }
+.autofill-btn { font-family: var(--font); font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: var(--r); background: var(--amber); color: white; border: none; cursor: pointer; margin-left: auto; white-space: nowrap; }
+
+/* AI COMPOSER */
+.ai-compose { background: white; border: 1px solid var(--stone); border-radius: var(--rl); overflow: hidden; }
+.ai-compose-header { padding: 11px 16px; background: var(--ink); display: flex; align-items: center; gap: 10px; }
+.ai-compose-header h3 { font-size: 12px; font-weight: 600; color: var(--cream-2); }
+.ai-compose-body { padding: 14px 16px; }
+.ai-textarea-wrap { display: flex; gap: 8px; align-items: flex-end; }
+.ai-textarea-wrap textarea { min-height: 48px; max-height: 120px; background: var(--cream-2); border-color: var(--stone); }
+.ai-send-btn { width: 36px; height: 36px; border-radius: var(--r); background: var(--amber); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ai-send-btn svg { width: 14px; height: 14px; fill: white; }
+.ai-chip-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.ai-chip { font-size: 11px; padding: 4px 10px; border-radius: 20px; border: 1px solid var(--stone-2); cursor: pointer; color: var(--charcoal); background: none; font-family: var(--font); transition: all 0.12s; white-space: nowrap; }
+.ai-chip:hover { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+
+/* GENERATE BUTTON */
+.generate-bar { padding: 14px 20px; background: white; border-top: 1px solid var(--stone); display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
+.gen-btn { font-family: var(--font); font-size: 14px; font-weight: 600; padding: 10px 24px; border-radius: var(--rl); border: none; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 8px; }
+.gen-btn-primary { background: var(--blue); color: white; }
+.gen-btn-primary:hover { background: var(--blue-dk); transform: translateY(-1px); }
+.gen-btn-primary:active { transform: none; }
+.gen-btn-secondary { background: var(--cream-2); color: var(--charcoal); border: 1px solid var(--stone-2); font-size: 13px; padding: 10px 16px; }
+.gen-btn-secondary:hover { background: var(--cream-3); }
+.gen-progress { flex: 1; display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ash); }
+.progress-bar { flex: 1; height: 4px; background: var(--stone); border-radius: 2px; overflow: hidden; max-width: 200px; }
+.progress-fill { height: 100%; background: var(--blue); border-radius: 2px; transition: width 0.3s ease; }
+
+/* RIGHT PANEL — PREVIEW + EXPORTS */
+.preview-header { padding: 12px 16px; border-bottom: 1px solid var(--stone); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.preview-tabs { display: flex; gap: 2px; background: var(--cream-2); border-radius: var(--r); padding: 2px; }
+.prev-tab { font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--ash); border: none; background: none; font-family: var(--font); transition: all 0.12s; }
+.prev-tab.active { background: white; color: var(--ink); font-weight: 500; }
+.preview-scroll { flex: 1; overflow-y: auto; }
+
+/* DOCUMENT PREVIEW */
+.doc-preview { padding: 20px; }
+.dp-page { background: white; border: 1px solid var(--stone); border-radius: 4px; padding: 28px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); min-height: 200px; font-size: 12px; line-height: 1.7; }
+.dp-letterhead { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid var(--blue); }
+.dp-company { font-family: var(--serif); font-size: 16px; color: var(--blue); font-weight: 400; }
+.dp-doc-type { font-size: 22px; font-weight: 600; color: var(--blue); font-family: var(--serif); }
+.dp-section { margin-bottom: 14px; }
+.dp-h1 { font-size: 13px; font-weight: 600; color: var(--blue); margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid var(--blue-lt); }
+.dp-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 8px; }
+.dp-table th { background: var(--blue); color: white; padding: 5px 8px; text-align: left; font-weight: 600; }
+.dp-table td { padding: 5px 8px; border-bottom: 1px solid var(--cream-3); }
+.dp-table tr:nth-child(even) td { background: var(--cream-2); }
+.dp-kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.dp-kpi { background: var(--blue-lt); padding: 8px; border-radius: var(--r); text-align: center; }
+.dp-kpi-val { font-size: 13px; font-weight: 600; color: var(--blue); }
+.dp-kpi-lbl { font-size: 9px; color: var(--ash); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+
+/* EXPORT OPTIONS */
+.export-section { padding: 14px 16px; border-bottom: 1px solid var(--stone); }
+.export-section h3 { font-size: 11px; font-weight: 600; color: var(--ash); text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 10px; }
+.export-btn {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border: 1px solid var(--stone); border-radius: var(--r);
+  background: white; cursor: pointer; transition: all 0.12s; margin-bottom: 7px;
+  font-family: var(--font);
+}
+.export-btn:hover { border-color: var(--blue); background: var(--blue-lt); }
+.export-btn .eb-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.eb-word  { background: #1B56A4; }
+.eb-pdf   { background: #D53B3B; }
+.eb-gdocs { background: #1A73E8; }
+.eb-html  { background: var(--green); }
+.export-btn .eb-info { text-align: left; }
+.export-btn .eb-name { font-size: 13px; font-weight: 500; color: var(--ink); }
+.export-btn .eb-sub  { font-size: 10px; color: var(--ash); margin-top: 1px; }
+.export-btn .eb-badge { margin-left: auto; font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 10px; }
+.ebb-ready { background: var(--green-lt); color: var(--green); }
+.ebb-ai    { background: var(--blue-lt); color: var(--blue); }
+
+/* HISTORY */
+.history-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--stone); cursor: pointer; transition: background 0.1s; }
+.history-item:hover { background: var(--cream-2); }
+.hi-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.hi-info .hi-name { font-size: 12px; font-weight: 500; }
+.hi-info .hi-meta { font-size: 10px; color: var(--ash); margin-top: 2px; }
+.hi-download { font-size: 11px; color: var(--blue); margin-left: auto; align-self: center; padding: 3px 8px; border-radius: var(--r); border: 1px solid var(--stone); background: none; cursor: pointer; font-family: var(--font); }
+.hi-download:hover { background: var(--blue-lt); }
+
+/* GENERAL UTILITIES */
+.btn { font-family: var(--font); font-size: 12px; font-weight: 500; padding: 6px 12px; border-radius: var(--r); border: 1px solid var(--stone-2); background: none; cursor: pointer; color: var(--charcoal); transition: all 0.12s; display: inline-flex; align-items: center; gap: 5px; }
+.btn:hover { background: var(--cream-2); }
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 20px; white-space: nowrap; }
+.b-blue  { background: var(--blue-lt); color: var(--blue); }
+.b-amber { background: var(--amber-lt); color: var(--amber); }
+.b-green { background: var(--green-lt); color: var(--green); }
+.b-gray  { background: var(--cream-3); color: var(--ash); }
+
+/* PROCESSING OVERLAY */
+.processing-overlay { position: fixed; inset: 0; background: rgba(250,248,244,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 100; }
+.po-spinner { width: 40px; height: 40px; border: 3px solid var(--stone); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.po-text { font-size: 14px; font-weight: 500; color: var(--charcoal); }
+.po-sub  { font-size: 12px; color: var(--ash); }
+
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:none} }
+.fade-up { animation: fadeUp 0.2s ease; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+    <div>
+      <span class="brand-name">Björken</span>
+      <span class="brand-sep">/</span>
+      <span class="brand-studio">Studio</span>
+    </div>
+  </div>
+  <div class="top-tabs">
+    <button class="top-tab active" onclick="switchView('generate',this)">Generate</button>
+    <button class="top-tab" onclick="switchView('templates',this)">Templates</button>
+    <button class="top-tab" onclick="switchView('history',this)">History</button>
+  </div>
+  <div class="api-status">
+    <div class="api-dot" id="api-dot"></div>
+    <span id="api-status">Demo mode</span>
+    <input type="password" id="api-key-input" placeholder="API key…" style="width:140px;font-size:11px;padding:4px 8px;border:1px solid var(--stone-2);border-radius:var(--r);font-family:var(--mono);margin-left:6px">
+    <button class="btn" style="font-size:11px;padding:4px 8px" onclick="saveApiKey()">Save</button>
+  </div>
+</div>
+
+<!-- MAIN SHELL -->
+<div class="shell" id="main-shell">
+
+<!-- LEFT: Template Gallery -->
+<div class="panel panel-border-r" style="background:var(--cream-2)">
+  <div class="panel-header" style="background:var(--cream-2)">
+    <h2>Templates</h2>
+    <span class="badge b-blue" id="template-count">6 ready</span>
+  </div>
+  <div class="panel-scroll">
+
+    <div class="template-section">
+      <div class="section-lbl">Financial</div>
+      <div class="template-card" id="tpl-report" onclick="selectTemplate('report')">
+        <div class="tc-icon tci-report">📊</div>
+        <div class="tc-info">
+          <div class="tc-name">Monthly Financial Report</div>
+          <div class="tc-desc">P&L, cost analysis, charts, recommendations</div>
+          <div class="tc-tags"><span class="tc-tag">Auto-fill</span><span class="tc-tag">AI-composed</span><span class="tc-tag">DOCX+PDF</span></div>
+        </div>
+      </div>
+      <div class="template-card" id="tpl-invoice" onclick="selectTemplate('invoice')">
+        <div class="tc-icon tci-invoice">🧾</div>
+        <div class="tc-info">
+          <div class="tc-name">Sales Invoice</div>
+          <div class="tc-desc">Customizable invoice with VAT, line items, payment terms</div>
+          <div class="tc-tags"><span class="tc-tag">Auto-number</span><span class="tc-tag">VAT-calc</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="template-section">
+      <div class="section-lbl">Operations</div>
+      <div class="template-card" id="tpl-agenda" onclick="selectTemplate('agenda')">
+        <div class="tc-icon tci-agenda">📋</div>
+        <div class="tc-info">
+          <div class="tc-name">Meeting Agenda</div>
+          <div class="tc-desc">Structured agenda with timing and action items</div>
+          <div class="tc-tags"><span class="tc-tag">Time-blocked</span><span class="tc-tag">Notes</span></div>
+        </div>
+      </div>
+      <div class="template-card" id="tpl-contract" onclick="selectTemplate('contract')">
+        <div class="tc-icon tci-contract">📝</div>
+        <div class="tc-info">
+          <div class="tc-name">Supplier Contract</div>
+          <div class="tc-desc">Delivery agreement with pricing and payment terms</div>
+          <div class="tc-tags"><span class="tc-tag">Legal</span><span class="tc-tag">Fortnox-linked</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="template-section">
+      <div class="section-lbl">HR</div>
+      <div class="template-card" id="tpl-offer" onclick="selectTemplate('offer')">
+        <div class="tc-icon tci-offer">👤</div>
+        <div class="tc-info">
+          <div class="tc-name">Employee Offer Letter</div>
+          <div class="tc-desc">Employment offer with role, salary, terms</div>
+          <div class="tc-tags"><span class="tc-tag">HRF</span><span class="tc-tag">Bilingual</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="template-section">
+      <div class="section-lbl">Custom Template</div>
+      <label class="custom-upload">
+        <input type="file" accept=".docx,.pdf,.txt" onchange="uploadCustomTemplate(this)">
+        <div style="font-size:22px;margin-bottom:6px">⬆</div>
+        <strong style="font-size:13px">Upload your own template</strong>
+        <p>AI identifies variable fields<br>and makes it reusable</p>
+      </label>
+      <div id="custom-templates"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MIDDLE: Generation Form -->
+<div class="panel gen-area" id="gen-area">
+  <div class="gen-header">
+    <div class="gen-title" id="gen-title">Select a template to begin</div>
+    <div class="gen-sub" id="gen-sub">Choose from the gallery on the left, or describe what you need below</div>
+  </div>
+
+  <div class="gen-scroll" id="gen-form">
+
+    <!-- AI COMPOSE (always visible) -->
+    <div class="ai-compose">
+      <div class="ai-compose-header">
+        <span style="font-size:14px">✦</span>
+        <h3>AI Composer — describe what you need</h3>
+        <span class="badge b-amber" style="margin-left:auto">Smart compose</span>
+      </div>
+      <div class="ai-compose-body">
+        <div class="ai-textarea-wrap">
+          <textarea id="ai-prompt" placeholder="e.g. 'Create a monthly financial report for March 2026 with cost analysis and recommendations' or 'Draft a supplier email to Menigo about their price increase'…" rows="2"></textarea>
+          <button class="ai-send-btn" onclick="aiCompose()">
+            <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2L15 22 11 13 2 9l20-7z"/></svg>
+          </button>
+        </div>
+        <div class="ai-chip-row">
+          <button class="ai-chip" onclick="setPrompt(this)">Monthly financial report</button>
+          <button class="ai-chip" onclick="setPrompt(this)">Invoice for catering event</button>
+          <button class="ai-chip" onclick="setPrompt(this)">Supplier email re: price increase</button>
+          <button class="ai-chip" onclick="setPrompt(this)">Board presentation deck</button>
+          <button class="ai-chip" onclick="setPrompt(this)">Q2 budget planning document</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FORM FIELDS (change per template) -->
+    <div id="template-form">
+      <div style="text-align:center;padding:32px;color:var(--ash)">
+        <div style="font-size:36px;margin-bottom:12px">📄</div>
+        <div style="font-size:14px;font-weight:500;color:var(--charcoal);margin-bottom:6px">No template selected</div>
+        <div style="font-size:12px">Click a template in the gallery, or use AI Composer above</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- GENERATE BAR -->
+  <div class="generate-bar">
+    <button class="gen-btn gen-btn-primary" id="gen-btn" onclick="generateDocument()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      Generate Document
+    </button>
+    <button class="gen-btn gen-btn-secondary" onclick="previewDocument()">Preview</button>
+    <div class="gen-progress" id="gen-progress" style="display:none">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+      <span id="progress-text">Generating…</span>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT: Preview + Exports -->
+<div class="panel panel-border-l">
+  <div class="preview-header">
+    <h2 style="font-size:11px;font-weight:600;color:var(--ash);text-transform:uppercase;letter-spacing:0.09em">Output</h2>
+    <div class="preview-tabs">
+      <button class="prev-tab active" onclick="switchPreview('preview',this)">Preview</button>
+      <button class="prev-tab" onclick="switchPreview('export',this)">Export</button>
+      <button class="prev-tab" onclick="switchPreview('history',this)">History</button>
+    </div>
+  </div>
+  <div class="preview-scroll">
+
+    <!-- PREVIEW TAB -->
+    <div id="prev-preview" class="doc-preview">
+      <div style="text-align:center;padding:40px 20px;color:var(--ash)">
+        <div style="font-size:40px;margin-bottom:10px">👁</div>
+        <div style="font-size:13px;font-weight:500;color:var(--charcoal)">Document preview</div>
+        <div style="font-size:12px;margin-top:4px">Generate a document to see the preview here</div>
+      </div>
+    </div>
+
+    <!-- EXPORT TAB -->
+    <div id="prev-export" style="display:none">
+      <div class="export-section">
+        <h3>Download Options</h3>
+        <button class="export-btn" onclick="downloadDoc('word')" id="export-word">
+          <div class="eb-icon eb-word" style="color:white;font-size:14px;font-weight:700">W</div>
+          <div class="eb-info"><div class="eb-name">Word Document (.docx)</div><div class="eb-sub">Editable in Microsoft Word & Google Docs</div></div>
+          <span class="eb-badge ebb-ready" id="badge-word">Ready</span>
+        </button>
+        <button class="export-btn" onclick="downloadDoc('pdf')" id="export-pdf">
+          <div class="eb-icon eb-pdf" style="color:white;font-size:12px;font-weight:700">PDF</div>
+          <div class="eb-info"><div class="eb-name">PDF Document</div><div class="eb-sub">Print-ready, universal format</div></div>
+          <span class="eb-badge ebb-ready" id="badge-pdf">Ready</span>
+        </button>
+        <button class="export-btn" onclick="openGoogleDocs()" id="export-gdocs">
+          <div class="eb-icon eb-gdocs" style="color:white;font-size:13px">G</div>
+          <div class="eb-info"><div class="eb-name">Open in Google Docs</div><div class="eb-sub">Upload DOCX and open in browser</div></div>
+          <span class="eb-badge ebb-ai">Phase 4</span>
+        </button>
+        <button class="export-btn" onclick="downloadDoc('html')">
+          <div class="eb-icon eb-html" style="color:white;font-size:11px;font-weight:700">HTML</div>
+          <div class="eb-info"><div class="eb-name">HTML (web-ready)</div><div class="eb-sub">Embed in website or email</div></div>
+          <span class="eb-badge ebb-ready">Ready</span>
+        </button>
+      </div>
+
+      <div class="export-section">
+        <h3>Document Details</h3>
+        <div id="export-details" style="font-size:12px;color:var(--ash);line-height:1.8">
+          Generate a document first to see details.
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY TAB -->
+    <div id="prev-history" style="display:none">
+      <div id="history-list">
+        <div style="padding:20px;text-align:center;font-size:12px;color:var(--ash)">Generated documents will appear here</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</div><!-- /shell -->
+
+<!-- PROCESSING OVERLAY (hidden) -->
+<div class="processing-overlay" id="processing-overlay" style="display:none">
+  <div class="po-spinner"></div>
+  <div class="po-text" id="po-text">Generating document…</div>
+  <div class="po-sub" id="po-sub">Pulling data from tracker and formatting…</div>
+</div>
+
+<script>
+  // ── AUTO-LOAD API KEY FROM COMMAND CENTER ──────────────────
+  (function() {
+    const key = localStorage.getItem('bj_api_key');
+    if (!key) return;
+    // Apply to all known key storage locations
+    localStorage.setItem('rag_api_key', key);
+    localStorage.setItem('bj_api_key', key);
+    // Set on window so any inline references pick it up
+    window._CC_API_KEY = key;
+  })();
+  // ────────────────────────────────────────────────────────────
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  STUDIO — Document Generation Engine                            ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+// ── FINANCIAL DATA (matches live tracker) ────────────────────────
+const FIN = {
+  company: "Restaurang Björken AB", orgNr: "556XXX-XXXX",
+  address: "Storgatan 14, 111 23 Stockholm",
+  period: "Mars 2026", date: "2026-03-31",
+  revenue: 505900, staff: 311319, food: 149300, rent: 64500, other: 28422,
+  prevRevenue: 461800, prevStaff: 279112, prevFood: 141200,
+};
+FIN.totalCosts = FIN.staff + FIN.food + FIN.rent + FIN.other;
+FIN.profit     = FIN.revenue - FIN.totalCosts;
+FIN.margin     = (FIN.profit / FIN.revenue * 100).toFixed(2);
+FIN.staffPct   = (FIN.staff / FIN.revenue * 100).toFixed(1);
+FIN.foodPct    = (FIN.food  / FIN.revenue * 100).toFixed(1);
+FIN.rentPct    = (FIN.rent  / FIN.revenue * 100).toFixed(1);
+
+const kr  = n => Math.round(Math.abs(n)).toLocaleString('sv-SE') + ' kr';
+const pct = n => Number(n).toFixed(1) + '%';
+
+// ── STATE ─────────────────────────────────────────────────────────
+const STATE = {
+  activeTemplate: null,
+  generated:      {},    // { word: blob, pdf: blob, html: string }
+  history:        JSON.parse(localStorage.getItem('studio_history') || '[]'),
+  apiKey:         localStorage.getItem('bj_api_key') || '',
+  customTemplates:[],
+};
+
+if (STATE.apiKey) {
+  document.getElementById('api-dot').className = 'api-dot live';
+  document.getElementById('api-status').textContent = 'Claude connected';
+  document.getElementById('api-key-input').value = '••••••••';
+}
+
+// ── TEMPLATE DEFINITIONS ──────────────────────────────────────────
+// Each template defines its form fields and how to build the document
+const TEMPLATES = {
+  report: {
+    name:    'Monthly Financial Report',
+    icon:    '📊',
+    form:    buildReportForm,
+    preview: buildReportPreview,
+    compose: buildReportHTML,
+  },
+  invoice: {
+    name:    'Sales Invoice',
+    icon:    '🧾',
+    form:    buildInvoiceForm,
+    preview: buildInvoicePreview,
+    compose: buildInvoiceHTML,
+  },
+  agenda: {
+    name:    'Meeting Agenda',
+    icon:    '📋',
+    form:    buildAgendaForm,
+    preview: buildAgendaPreview,
+    compose: buildAgendaHTML,
+  },
+  contract: {
+    name:    'Supplier Contract',
+    icon:    '📝',
+    form:    buildContractForm,
+    preview: buildContractPreview,
+    compose: buildContractHTML,
+  },
+  offer: {
+    name:    'Employee Offer Letter',
+    icon:    '👤',
+    form:    buildOfferForm,
+    preview: buildOfferPreview,
+    compose: buildOfferHTML,
+  },
+};
+
+// ── TEMPLATE SELECTION ────────────────────────────────────────────
+function selectTemplate(key) {
+  STATE.activeTemplate = key;
+  document.querySelectorAll('.template-card').forEach(c => c.classList.remove('active'));
+  document.getElementById('tpl-' + key)?.classList.add('active');
+  const tpl = TEMPLATES[key];
+  document.getElementById('gen-title').textContent = tpl.name;
+  document.getElementById('gen-sub').textContent   = 'Fill in the fields below — data auto-fills from your tracker';
+  document.getElementById('template-form').innerHTML = tpl.form();
+  // Auto-fill data strip
+  setTimeout(() => autoFillData(key), 100);
+}
+
+// ── AUTO-FILL FROM TRACKER ────────────────────────────────────────
+function autoFillData(key) {
+  // Auto-fill form fields with live financial data
+  const autoFills = {
+    report:   { period: FIN.period, company: FIN.company, date: FIN.date },
+    invoice:  { seller_company: FIN.company, seller_address: FIN.address,
+                inv_date: '2026-03-14', due_date: '2026-04-13' },
+    agenda:   { org: FIN.company, meeting_date: '2026-04-03', meeting_time: '09:00' },
+    contract: { buyer: FIN.company, buyer_address: FIN.address },
+    offer:    { employer: FIN.company, employer_address: FIN.address, offer_date: '2026-04-01' },
+  };
+  const fills = autoFills[key] || {};
+  Object.entries(fills).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = val;
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// FORM BUILDERS — each returns HTML for the form fields
+// ════════════════════════════════════════════════════════════════
+
+function buildReportForm() {
+  return `
+  <div class="autofill-strip">
+    ✦ <strong>Auto-fill available</strong> — pulling March 2026 data from your live tracker
+    <button class="autofill-btn" onclick="autofillReport()">Fill all fields</button>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Report Details</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group"><div class="form-label">Company Name</div><input type="text" id="company" value="${FIN.company}"></div>
+        <div class="form-group"><div class="form-label">Period</div><input type="text" id="period" value="${FIN.period}"></div>
+        <div class="form-group"><div class="form-label">Report Date</div><input type="date" id="date" value="${FIN.date}"></div>
+        <div class="form-group"><div class="form-label">Prepared By</div><input type="text" id="prepared_by" placeholder="Your name"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Financial Data — auto-filled from tracker</h3><span class="badge b-green">Live data</span></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group"><div class="form-label">Revenue (kr)</div><input type="number" id="revenue" value="${FIN.revenue}"></div>
+        <div class="form-group"><div class="form-label">Staff Costs (kr)</div><input type="number" id="staff_costs" value="${FIN.staff}"></div>
+        <div class="form-group"><div class="form-label">Food & Bev Costs (kr)</div><input type="number" id="food_costs" value="${FIN.food}"></div>
+        <div class="form-group"><div class="form-label">Rent & Property (kr)</div><input type="number" id="rent_costs" value="${FIN.rent}"></div>
+        <div class="form-group"><div class="form-label">Other Costs (kr)</div><input type="number" id="other_costs" value="${FIN.other}"></div>
+        <div class="form-group"><div class="form-label">Previous Period Revenue</div><input type="number" id="prev_revenue" value="${FIN.prevRevenue}"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Sections to Include</h3></div>
+    <div class="form-card-body">
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${['Executive Summary','Revenue Analysis','Cost Breakdown','P&L Statement','Recommendations','Cash Flow','Budget vs Actual'].map(s =>
+          `<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+            <input type="checkbox" checked> ${s}
+          </label>`
+        ).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildInvoiceForm() {
+  return `
+  <div class="form-card">
+    <div class="form-card-header"><h3>Invoice Header</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group"><div class="form-label">Invoice Number</div><input type="text" id="inv_number" value="FAK-2026-0090"></div>
+        <div class="form-group"><div class="form-label">Invoice Date</div><input type="date" id="inv_date" value="2026-03-20"></div>
+        <div class="form-group"><div class="form-label">Due Date</div><input type="date" id="due_date" value="2026-04-19"></div>
+        <div class="form-group"><div class="form-label">Payment Terms</div><select id="payment_terms"><option>30 dagar netto</option><option>14 dagar netto</option><option>Förskott</option><option>Vid leverans</option></select></div>
+        <div class="form-group full"><div class="form-label">Seller (Your Company)</div><input type="text" id="seller_company" value="${FIN.company}"></div>
+        <div class="form-group full"><div class="form-label">Seller Address</div><input type="text" id="seller_address" value="${FIN.address}"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Bill To</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group full"><div class="form-label">Customer Name</div><input type="text" id="buyer_name" placeholder="Kund AB"></div>
+        <div class="form-group full"><div class="form-label">Customer Address</div><input type="text" id="buyer_address" placeholder="Gatan 1, 111 11 Stockholm"></div>
+        <div class="form-group full"><div class="form-label">Reference / Description</div><input type="text" id="inv_ref" placeholder="e.g. Företagsmiddag 2026-03-20"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Line Items</h3></div>
+    <div class="form-card-body">
+      <div style="display:grid;grid-template-columns:1fr 80px 90px 100px 28px;gap:6px;margin-bottom:6px">
+        <span style="font-size:10px;font-weight:600;color:var(--ash)">Description</span>
+        <span style="font-size:10px;font-weight:600;color:var(--ash)">Qty</span>
+        <span style="font-size:10px;font-weight:600;color:var(--ash)">Unit price</span>
+        <span style="font-size:10px;font-weight:600;color:var(--ash)">Total</span>
+        <span></span>
+      </div>
+      <div id="line-items">
+        ${[['3-rättersmeny per person','12','1200'],['Dryckespaket per person','12','450'],['Serveringsavgift','1','1500']].map((r,i) => lineItemRow(i,r[0],r[1],r[2])).join('')}
+      </div>
+      <button class="add-row-btn" onclick="addLineItem()">+ Add line item</button>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--stone);display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:12px">
+        <div>Nettosumma: <strong id="inv-net">—</strong></div>
+        <div>Moms (25%): <strong id="inv-vat">—</strong></div>
+        <div style="font-size:14px;font-weight:600;color:var(--blue)">Att betala: <strong id="inv-total">—</strong></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function lineItemRow(i, desc='', qty='1', price='') {
+  const total = qty && price ? Math.round(parseFloat(qty)*parseFloat(price)) : '';
+  return `<div class="line-item-row" id="li-${i}">
+    <input type="text" placeholder="Description" value="${desc}" oninput="calcInvoice()">
+    <input type="number" placeholder="Qty" value="${qty}" oninput="calcInvoice()">
+    <input type="number" placeholder="Price" value="${price}" oninput="calcInvoice()">
+    <input type="number" placeholder="Total" value="${total}" id="li-total-${i}" readonly style="background:var(--cream-2);color:var(--ash)">
+    <button class="li-del" onclick="this.closest('.line-item-row').remove();calcInvoice()">×</button>
+  </div>`;
+}
+
+let lineCount = 3;
+function addLineItem() {
+  document.getElementById('line-items').insertAdjacentHTML('beforeend', lineItemRow(lineCount++));
+}
+
+function calcInvoice() {
+  let net = 0;
+  document.querySelectorAll('.line-item-row').forEach((row, i) => {
+    const inputs = row.querySelectorAll('input');
+    const qty = parseFloat(inputs[1].value) || 0;
+    const price = parseFloat(inputs[2].value) || 0;
+    const total = qty * price;
+    inputs[3].value = total || '';
+    net += total;
+  });
+  const vat = net * 0.25;
+  document.getElementById('inv-net').textContent   = kr(net);
+  document.getElementById('inv-vat').textContent   = kr(vat);
+  document.getElementById('inv-total').textContent = kr(net + vat);
+}
+
+function buildAgendaForm() {
+  return `
+  <div class="form-card">
+    <div class="form-card-header"><h3>Meeting Details</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group full"><div class="form-label">Meeting Title</div><input type="text" id="meeting_title" value="Månatligt ledningsgruppsmöte — Mars 2026"></div>
+        <div class="form-group"><div class="form-label">Organisation</div><input type="text" id="org" value="${FIN.company}"></div>
+        <div class="form-group"><div class="form-label">Date</div><input type="date" id="meeting_date" value="2026-04-03"></div>
+        <div class="form-group"><div class="form-label">Start Time</div><input type="text" id="meeting_time" value="09:00"></div>
+        <div class="form-group"><div class="form-label">Duration</div><input type="text" id="meeting_duration" value="90 minutes"></div>
+        <div class="form-group full"><div class="form-label">Location</div><input type="text" id="meeting_location" value="Björksalen, Restaurang Björken"></div>
+        <div class="form-group full"><div class="form-label">Attendees</div><input type="text" id="attendees" value="Ägare, Köksmästare, Ekonomiansvarig"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Agenda Items</h3></div>
+    <div class="form-card-body">
+      <div id="agenda-items">
+        ${[['09:00','5','Öppning & närvaro','Ägare'],['09:05','15','Genomgång mars P&L','Ekonomi'],['09:20','10','Personalkostnader — åtgärdsplan','Ägare'],['09:30','10','Leverantörsförhandlingar','Ägare'],['09:40','10','Q2 budget','Ekonomi'],['10:05','15','Övriga frågor','Alla'],['10:20','10','Beslut & actions','Sekreterare']].map((a,i) =>
+          `<div style="display:grid;grid-template-columns:60px 50px 1fr 100px 28px;gap:6px;margin-bottom:6px;align-items:center">
+            <input type="text" value="${a[0]}" placeholder="Time">
+            <input type="text" value="${a[1]}" placeholder="Min">
+            <input type="text" value="${a[2]}" placeholder="Topic">
+            <input type="text" value="${a[3]}" placeholder="Owner">
+            <button class="li-del" onclick="this.parentElement.remove()">×</button>
+          </div>`
+        ).join('')}
+      </div>
+      <button class="add-row-btn" onclick="addAgendaItem()">+ Add agenda item</button>
+    </div>
+  </div>`;
+}
+
+function addAgendaItem() {
+  document.getElementById('agenda-items').insertAdjacentHTML('beforeend',
+    `<div style="display:grid;grid-template-columns:60px 50px 1fr 100px 28px;gap:6px;margin-bottom:6px;align-items:center">
+      <input type="text" placeholder="Time">
+      <input type="text" placeholder="Min">
+      <input type="text" placeholder="Topic">
+      <input type="text" placeholder="Owner">
+      <button class="li-del" onclick="this.parentElement.remove()">×</button>
+    </div>`
+  );
+}
+
+function buildContractForm() {
+  return `
+  <div class="form-card">
+    <div class="form-card-header"><h3>Contract Parties</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group full"><div class="form-label">Supplier (Leverantör)</div><input type="text" id="supplier" value="Menigo Foodservice AB"></div>
+        <div class="form-group full"><div class="form-label">Buyer (Köpare)</div><input type="text" id="buyer" value="${FIN.company}"></div>
+        <div class="form-group full"><div class="form-label">Buyer Address</div><input type="text" id="buyer_address" value="${FIN.address}"></div>
+        <div class="form-group"><div class="form-label">Contract Start</div><input type="date" id="contract_start" value="2026-04-01"></div>
+        <div class="form-group"><div class="form-label">Contract End</div><input type="date" id="contract_end" value="2027-03-31"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Terms</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group"><div class="form-label">Payment Terms</div><select id="contract_payment"><option>30 dagar netto</option><option>14 dagar netto</option><option>Förskott</option></select></div>
+        <div class="form-group"><div class="form-label">Delivery Days</div><input type="text" id="delivery_days" value="Tisdag & Fredag 06:00–09:00"></div>
+        <div class="form-group"><div class="form-label">Min Order Value</div><input type="text" id="min_order" value="5 000 kr exkl. moms"></div>
+        <div class="form-group"><div class="form-label">Free Delivery From</div><input type="text" id="free_delivery" value="8 000 kr ordervärde"></div>
+        <div class="form-group full"><div class="form-label">Special Conditions</div><textarea id="special_conditions" placeholder="Any special pricing, volume discounts, etc."></textarea></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildOfferForm() {
+  return `
+  <div class="form-card">
+    <div class="form-card-header"><h3>Candidate Details</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group full"><div class="form-label">Candidate Full Name</div><input type="text" id="candidate_name" placeholder="Anna Johansson"></div>
+        <div class="form-group full"><div class="form-label">Candidate Address</div><input type="text" id="candidate_address" placeholder="Gatan 5, 111 11 Stockholm"></div>
+        <div class="form-group full"><div class="form-label">Employer</div><input type="text" id="employer" value="${FIN.company}"></div>
+        <div class="form-group full"><div class="form-label">Employer Address</div><input type="text" id="employer_address" value="${FIN.address}"></div>
+      </div>
+    </div>
+  </div>
+  <div class="form-card">
+    <div class="form-card-header"><h3>Position & Compensation</h3></div>
+    <div class="form-card-body">
+      <div class="form-grid">
+        <div class="form-group full"><div class="form-label">Job Title</div><input type="text" id="job_title" placeholder="Sous Chef"></div>
+        <div class="form-group"><div class="form-label">Monthly Salary (kr)</div><input type="number" id="salary" placeholder="34500"></div>
+        <div class="form-group"><div class="form-label">Start Date</div><input type="date" id="start_date" value="2026-05-01"></div>
+        <div class="form-group"><div class="form-label">Offer Expiry</div><input type="date" id="offer_expiry" value="2026-04-10"></div>
+        <div class="form-group"><div class="form-label">Employment Type</div><select id="emp_type"><option>Tillsvidareanställning</option><option>Vikariat</option><option>Projektanställning</option></select></div>
+        <div class="form-group"><div class="form-label">Probation Period</div><select id="probation"><option>6 månader</option><option>3 månader</option><option>Ingen provanställning</option></select></div>
+        <div class="form-group full"><div class="form-label">Additional Benefits</div><textarea id="benefits" placeholder="e.g. Personalmat, friskvårdsbidrag 3 000 kr/år">Personalmat under arbetstid, friskvårdsbidrag 3 000 kr/år</textarea></div>
+        <div class="form-group"><div class="form-label">Offer Date</div><input type="date" id="offer_date" value="2026-04-01"></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// HTML DOCUMENT BUILDERS (for preview + export)
+// ════════════════════════════════════════════════════════════════
+
+function buildReportHTML() {
+  const rev    = parseInt(document.getElementById('revenue')?.value    || FIN.revenue);
+  const staff  = parseInt(document.getElementById('staff_costs')?.value || FIN.staff);
+  const food   = parseInt(document.getElementById('food_costs')?.value  || FIN.food);
+  const rent   = parseInt(document.getElementById('rent_costs')?.value  || FIN.rent);
+  const other  = parseInt(document.getElementById('other_costs')?.value || FIN.other);
+  const period = document.getElementById('period')?.value || FIN.period;
+  const company= document.getElementById('company')?.value || FIN.company;
+  const costs  = staff + food + rent + other;
+  const profit = rev - costs;
+  const margin = (profit/rev*100).toFixed(2);
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+body{font-family:Arial,sans-serif;font-size:11pt;color:#1a1917;margin:0;padding:0}
+.page{max-width:800px;margin:0 auto;padding:40px}
+h1{color:#185FA5;font-size:18pt;margin-bottom:4px}
+h2{color:#185FA5;font-size:13pt;margin:20px 0 6px;padding-bottom:4px;border-bottom:1px solid #E6F1FB}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.kpi{background:#E6F1FB;padding:12px;border-radius:6px;text-align:center}
+.kpi-val{font-size:16pt;font-weight:bold;color:#185FA5}
+.kpi-lbl{font-size:8pt;color:#9b9690;text-transform:uppercase;letter-spacing:0.06em;margin-top:3px}
+table{width:100%;border-collapse:collapse;font-size:10pt;margin:8px 0}
+th{background:#185FA5;color:white;padding:6px 8px;text-align:left;font-size:9pt}
+td{padding:6px 8px;border-bottom:1px solid #ede9e2}
+tr:nth-child(even)td{background:#faf8f4}
+.footer{margin-top:30px;padding-top:10px;border-top:1px solid #ddd;font-size:8pt;color:#9b9690;text-align:center}
+</style></head><body><div class="page">
+<h1>${company}</h1>
+<p style="color:#9b9690;margin-top:0">Månadsrapport — ${period} &nbsp;·&nbsp; Konfidentiellt</p>
+<div class="kpi-row">
+  <div class="kpi"><div class="kpi-val">${kr(rev)}</div><div class="kpi-lbl">Omsättning</div></div>
+  <div class="kpi"><div class="kpi-val">${kr(costs)}</div><div class="kpi-lbl">Kostnader</div></div>
+  <div class="kpi" style="background:#EAF3DE"><div class="kpi-val" style="color:#3B6D11">${kr(profit)}</div><div class="kpi-lbl">Rörelseresultat</div></div>
+  <div class="kpi" style="background:#EAF3DE"><div class="kpi-val" style="color:#3B6D11">${margin}%</div><div class="kpi-lbl">Marginal</div></div>
+</div>
+<h2>Kostnadsanalys</h2>
+<table>
+<thead><tr><th>Kategori</th><th>Belopp</th><th>% av omsättning</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Personal</td><td>${kr(staff)}</td><td>${(staff/rev*100).toFixed(1)}%</td><td style="color:${staff/rev>0.4?'#A32D2D':'#3B6D11'}">${staff/rev>0.4?'⚠ Över budget':'✓ OK'}</td></tr>
+<tr><td>Råvaror & dryck</td><td>${kr(food)}</td><td>${(food/rev*100).toFixed(1)}%</td><td style="color:#3B6D11">✓ OK</td></tr>
+<tr><td>Lokal & fastighet</td><td>${kr(rent)}</td><td>${(rent/rev*100).toFixed(1)}%</td><td style="color:#3B6D11">✓ OK</td></tr>
+<tr><td>Övrigt</td><td>${kr(other)}</td><td>${(other/rev*100).toFixed(1)}%</td><td style="color:#3B6D11">✓ OK</td></tr>
+<tr style="font-weight:bold;background:#E6F1FB"><td>TOTALT</td><td>${kr(costs)}</td><td>${(costs/rev*100).toFixed(1)}%</td><td></td></tr>
+</tbody></table>
+<h2>Rekommendationer</h2>
+<ol style="line-height:1.9;padding-left:18px">
+<li><b>Menigo-avtal:</b> Prisökning +8% mars är primär marginalpress. Begär Q2-prisfrysning.</li>
+<li><b>Personal:</b> ${(staff/rev*100).toFixed(1)}% av omsättning överstiger budgetmål 40%. Revidera schemaläggning.</li>
+<li><b>Kassaflöde:</b> Säkerställ 150 000 kr minimum i rörelsekapitalbuffert för lönemånader.</li>
+<li><b>Q2-budget:</b> Revidera baserat på nya kostnadsnivåer från leverantörer.</li>
+</ol>
+<div class="footer">Rapport genererad: ${new Date().toLocaleDateString('sv-SE')} &nbsp;·&nbsp; ${company}</div>
+</div></body></html>`;
+}
+
+function buildInvoiceHTML() {
+  const lines = [...document.querySelectorAll('.line-item-row')].map(row => {
+    const inp = row.querySelectorAll('input');
+    return { desc: inp[0].value, qty: inp[1].value, price: inp[2].value, total: inp[3].value };
+  }).filter(r => r.desc);
+  const net   = lines.reduce((s,r) => s + (parseFloat(r.total)||0), 0);
+  const vat   = net * 0.25;
+  const total = net + vat;
+  const invNo = document.getElementById('inv_number')?.value || 'FAK-2026-0090';
+  const buyer = document.getElementById('buyer_name')?.value || '[Kund]';
+  const ref   = document.getElementById('inv_ref')?.value    || '';
+  const terms = document.getElementById('payment_terms')?.value || '30 dagar netto';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+body{font-family:Arial,sans-serif;font-size:11pt;color:#1a1917;margin:0}
+.page{max-width:800px;margin:0 auto;padding:40px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:12px;border-bottom:3px solid #185FA5}
+.company-name{font-size:16pt;font-weight:bold;color:#185FA5}
+.inv-title{font-size:26pt;font-weight:bold;color:#185FA5;text-align:right}
+table{width:100%;border-collapse:collapse;font-size:10pt;margin:14px 0}
+th{background:#185FA5;color:white;padding:7px 10px;text-align:left}
+td{padding:7px 10px;border-bottom:1px solid #ede9e2}
+.total-row{background:#E6F1FB;font-weight:bold;font-size:13pt;color:#185FA5}
+.footer{margin-top:20px;font-size:9pt;color:#9b9690;border-top:1px solid #ddd;padding-top:10px}
+</style></head><body><div class="page">
+<div class="header">
+  <div><div class="company-name">${FIN.company}</div><div style="font-size:9pt;color:#9b9690;margin-top:4px">${FIN.address}</div></div>
+  <div><div class="inv-title">FAKTURA</div><div style="text-align:right;font-size:10pt;color:#9b9690;margin-top:4px">${invNo}</div></div>
+</div>
+<div style="margin-bottom:16px">
+  <strong>Faktureras till:</strong> ${buyer}<br>
+  <strong>Avser:</strong> ${ref}<br>
+  <strong>Betalningsvillkor:</strong> ${terms}
+</div>
+<table>
+<thead><tr><th>Beskrivning</th><th>Antal</th><th>À-pris</th><th>Belopp</th></tr></thead>
+<tbody>${lines.map(l => `<tr><td>${l.desc}</td><td>${l.qty}</td><td>${kr(parseFloat(l.price)||0)}</td><td>${kr(parseFloat(l.total)||0)}</td></tr>`).join('')}</tbody>
+</table>
+<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-size:11pt">
+  <div>Nettosumma: <strong>${kr(net)}</strong></div>
+  <div>Moms 25%: <strong>${kr(vat)}</strong></div>
+  <div style="font-size:14pt;color:#185FA5;font-weight:bold">ATT BETALA: ${kr(total)}</div>
+</div>
+<div class="footer">Bankgiro: 123-4567 &nbsp;·&nbsp; OCR: ${invNo.replace(/\D/g,'')} &nbsp;·&nbsp; ${FIN.company} &nbsp;·&nbsp; Org.nr: ${FIN.orgNr}</div>
+</div></body></html>`;
+}
+
+function buildAgendaHTML() {
+  const title = document.getElementById('meeting_title')?.value || 'Möte';
+  const dateVal= document.getElementById('meeting_date')?.value || '';
+  const time  = document.getElementById('meeting_time')?.value || '';
+  const loc   = document.getElementById('meeting_location')?.value || '';
+  const att   = document.getElementById('attendees')?.value || '';
+  const items = [...document.querySelectorAll('#agenda-items > div')].map(row => {
+    const inp = row.querySelectorAll('input');
+    return `<tr><td>${inp[0]?.value||''}</td><td>${inp[1]?.value||''} min</td><td>${inp[2]?.value||''}</td><td>${inp[3]?.value||''}</td></tr>`;
+  }).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{font-family:Arial,sans-serif;font-size:11pt;color:#1a1917;margin:0}.page{max-width:700px;margin:0 auto;padding:40px}
+h1{color:#185FA5;font-size:18pt}table{width:100%;border-collapse:collapse;margin:12px 0}
+th{background:#185FA5;color:white;padding:6px 10px;text-align:left;font-size:9pt}
+td{padding:7px 10px;border-bottom:1px solid #ede9e2}.meta{background:#faf8f4;padding:12px;border-radius:6px;margin:12px 0;font-size:10pt}
+</style></head><body><div class="page">
+<h1>Mötesagenda</h1><h2 style="color:#3d3b38;font-weight:400;margin-top:0">${title}</h2>
+<div class="meta"><strong>Datum:</strong> ${dateVal} kl. ${time} &nbsp;|&nbsp; <strong>Plats:</strong> ${loc}<br><strong>Deltagare:</strong> ${att}</div>
+<table><thead><tr><th>Tid</th><th>Längd</th><th>Punkt</th><th>Ansvarig</th></tr></thead><tbody>${items}</tbody></table>
+<h3 style="margin-top:20px;color:#185FA5">Noteringar</h3>${Array(8).fill('<hr style="border:none;border-top:1px solid #ddd;margin:10px 0">').join('')}
+</div></body></html>`;
+}
+
+function buildContractHTML() {
+  const supplier = document.getElementById('supplier')?.value || '[Leverantör]';
+  const buyer    = document.getElementById('buyer')?.value    || FIN.company;
+  const start    = document.getElementById('contract_start')?.value || '2026-04-01';
+  const end      = document.getElementById('contract_end')?.value   || '2027-03-31';
+  const payment  = document.getElementById('contract_payment')?.value || '30 dagar netto';
+  const delivery = document.getElementById('delivery_days')?.value || '';
+  const minOrder = document.getElementById('min_order')?.value || '';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{font-family:Arial,sans-serif;font-size:11pt;color:#1a1917;margin:0}.page{max-width:700px;margin:0 auto;padding:40px}
+h1{color:#185FA5;font-size:18pt;text-align:center}h2{color:#185FA5;font-size:12pt;margin:16px 0 4px}
+p{line-height:1.7;margin:6px 0}.sig-row{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:30px}
+</style></head><body><div class="page">
+<h1>LEVERANSAVTAL</h1>
+<p style="text-align:center;color:#9b9690">${buyer} &nbsp;·&nbsp; ${supplier}</p>
+<h2>1. Parter</h2>
+<p><strong>Leverantör:</strong> ${supplier}<br><strong>Köpare:</strong> ${buyer}</p>
+<h2>2. Avtalsperiod</h2><p>${start} — ${end}, med automatisk förlängning 12 månader vid utebliven uppsägning.</p>
+<h2>3. Leveransvillkor</h2><p><strong>Leveransdagar:</strong> ${delivery}<br><strong>Minsta ordervärde:</strong> ${minOrder}</p>
+<h2>4. Betalningsvillkor</h2><p>${payment}</p>
+<h2>5. Underskrifter</h2>
+<div class="sig-row">
+  <div>För ${buyer}:<br><br>____________________________<br>Namn, titel &nbsp;·&nbsp; Datum</div>
+  <div>För ${supplier}:<br><br>____________________________<br>Namn, titel &nbsp;·&nbsp; Datum</div>
+</div>
+</div></body></html>`;
+}
+
+function buildOfferHTML() {
+  const candidate= document.getElementById('candidate_name')?.value || '[Kandidatens namn]';
+  const employer = document.getElementById('employer')?.value || FIN.company;
+  const jobTitle = document.getElementById('job_title')?.value || '[Tjänst]';
+  const salary   = document.getElementById('salary')?.value || '—';
+  const startDate= document.getElementById('start_date')?.value || '2026-05-01';
+  const expiry   = document.getElementById('offer_expiry')?.value || '2026-04-10';
+  const empType  = document.getElementById('emp_type')?.value || 'Tillsvidareanställning';
+  const probation= document.getElementById('probation')?.value || '6 månader';
+  const benefits = document.getElementById('benefits')?.value || '';
+  const offerDate= document.getElementById('offer_date')?.value || '2026-04-01';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{font-family:Arial,sans-serif;font-size:11pt;color:#1a1917;margin:0}.page{max-width:680px;margin:0 auto;padding:50px}
+.lh{font-size:15pt;font-weight:bold;color:#185FA5}.sub{font-size:9pt;color:#9b9690}
+h2{font-size:15pt;color:#185FA5;margin:20px 0 4px}p{line-height:1.7;margin:8px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0}td{padding:6px 8px;border-bottom:1px solid #ede9e2}
+td:first-child{font-weight:bold;width:200px}.sig{margin-top:30px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
+</style></head><body><div class="page">
+<div class="lh">${employer}</div>
+<div class="sub">${FIN.address} &nbsp;·&nbsp; ${offerDate}</div>
+<h2>Erbjudande om anställning</h2>
+<p>Bäste/Bästa ${candidate},</p>
+<p>Det är med glädje vi erbjuder dig anställning som <strong>${jobTitle}</strong> vid ${employer}.</p>
+<table>
+<tr><td>Tjänstetitel</td><td>${jobTitle}</td></tr>
+<tr><td>Anställningsform</td><td>${empType} (${probation} provanställning)</td></tr>
+<tr><td>Startdatum</td><td>${startDate}</td></tr>
+<tr><td>Månadslön</td><td>${kr(parseInt(salary)||0)} brutto</td></tr>
+<tr><td>Förmåner</td><td>${benefits}</td></tr>
+<tr><td>Kollektivavtal</td><td>HRF (Hotell- och Restauranganställdas Förbund)</td></tr>
+</table>
+<p>Bekräfta ditt godkännande senast <strong>${expiry}</strong>.</p>
+<p>Vi ser fram emot att välkomna dig till ${employer}-familjen!</p>
+<div class="sig">
+  <div>Med vänliga hälsningar,<br><br><br>________________________<br>${employer}</div>
+  <div>Jag accepterar erbjudandet:<br><br><br>________________________<br>${candidate} &nbsp;·&nbsp; Datum</div>
+</div>
+</div></body></html>`;
+}
+
+// Placeholders for preview cards (right panel)
+function buildReportPreview()   { return buildReportHTML(); }
+function buildInvoicePreview()  { return buildInvoiceHTML(); }
+function buildAgendaPreview()   { return buildAgendaHTML(); }
+function buildContractPreview() { return buildContractHTML(); }
+function buildOfferPreview()    { return buildOfferHTML(); }
+
+// ════════════════════════════════════════════════════════════════
+// GENERATION ENGINE
+// ════════════════════════════════════════════════════════════════
+
+async function generateDocument() {
+  if (!STATE.activeTemplate && !document.getElementById('ai-prompt').value.trim()) {
+    alert('Please select a template or describe what you need in the AI Composer.');
+    return;
+  }
+
+  showProgress();
+
+  try {
+    // Step 1: Build HTML content (always works, no API needed)
+    setProgress(20, 'Building document structure…');
+    await delay(300);
+
+    let htmlContent;
+    if (STATE.activeTemplate) {
+      const tpl = TEMPLATES[STATE.activeTemplate];
+      htmlContent = tpl.compose();
+    } else {
+      htmlContent = await aiGenerateDocument();
+    }
+
+    setProgress(50, 'Applying formatting…');
+    await delay(400);
+
+    // Step 2: Store generated HTML (DOCX would come from server in production)
+    STATE.generated.html    = htmlContent;
+    STATE.generated.filename= getFilename();
+    STATE.generated.template= STATE.activeTemplate || 'custom';
+    STATE.generated.date    = new Date().toLocaleDateString('sv-SE');
+
+    setProgress(80, 'Preparing exports…');
+    await delay(300);
+
+    // Step 3: Update preview
+    renderPreview(htmlContent);
+    updateExportDetails();
+    addToHistory();
+    switchPreview('preview', document.querySelector('.prev-tab'));
+
+    setProgress(100, 'Complete!');
+    await delay(400);
+
+    hideProgress();
+
+  } catch(err) {
+    hideProgress();
+    alert('Generation error: ' + err.message);
+  }
+}
+
+async function aiGenerateDocument() {
+  const prompt = document.getElementById('ai-prompt').value.trim();
+  if (!STATE.apiKey) return buildFallbackHTML(prompt);
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 3000,
+      system: `You are a professional document generator for ${FIN.company}.
+Generate a complete, professional HTML document based on the user's request.
+Use this financial data: Revenue ${kr(FIN.revenue)}, Staff ${kr(FIN.staff)} (${FIN.staffPct}%), Food ${kr(FIN.food)} (${FIN.foodPct}%), Rent ${kr(FIN.rent)}, Profit ${kr(FIN.profit)} (${FIN.margin}%).
+Return ONLY the complete HTML document with embedded styles. Make it professional and print-ready.`,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  const data = await res.json();
+  return data.content?.[0]?.text || buildFallbackHTML(prompt);
+}
+
+function buildFallbackHTML(prompt) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{font-family:Arial,sans-serif;font-size:11pt;color:#1a1917;margin:0}
+.page{max-width:700px;margin:0 auto;padding:40px}
+h1{color:#185FA5}p{line-height:1.7}
+</style></head><body><div class="page">
+<h1>${FIN.company}</h1>
+<p><em>Document generated from prompt: "${prompt}"</em></p>
+<p>Add your Anthropic API key to enable AI-powered document generation with full formatting and content based on your specific request.</p>
+<p>Current financial snapshot: Revenue ${kr(FIN.revenue)} · Profit ${kr(FIN.profit)} (${FIN.margin}% margin) · Period: ${FIN.period}</p>
+</div></body></html>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// DOCUMENT DOWNLOADS
+// ════════════════════════════════════════════════════════════════
+
+function downloadDoc(format) {
+  if (!STATE.generated.html) { alert('Generate a document first.'); return; }
+
+  if (format === 'html') {
+    const blob = new Blob([STATE.generated.html], { type: 'text/html' });
+    triggerDownload(blob, STATE.generated.filename + '.html');
+    return;
+  }
+
+  if (format === 'word') {
+    // Create a simple Word-compatible HTML (opens in Word as .doc)
+    const wordHTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
+<head><meta charset="utf-8"><title>${STATE.generated.filename}</title></head>
+<body>${STATE.generated.html.replace(/<html[^>]*>|<\/html>|<head>[\s\S]*?<\/head>|<body>|<\/body>/gi,'')}</body></html>`;
+    const blob = new Blob([wordHTML], { type: 'application/msword' });
+    triggerDownload(blob, STATE.generated.filename + '.doc');
+    return;
+  }
+
+  if (format === 'pdf') {
+    // Open in new tab for browser PDF print
+    const win = window.open('', '_blank');
+    win.document.write(STATE.generated.html);
+    win.document.close();
+    setTimeout(() => { win.print(); }, 500);
+    return;
+  }
+}
+
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href    = url;
+  a.download= filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function getFilename() {
+  const names = { report:'monthly_report', invoice:'invoice', agenda:'meeting_agenda', contract:'supplier_contract', offer:'offer_letter' };
+  const base  = names[STATE.activeTemplate] || 'document';
+  return `${base}_${new Date().toISOString().split('T')[0]}`;
+}
+
+function openGoogleDocs() {
+  alert('In the full deployment, this will:\n1. Upload the DOCX to Google Drive\n2. Open it in Google Docs automatically\n\nThis requires a Google OAuth integration (Phase 4).');
+}
+
+// ════════════════════════════════════════════════════════════════
+// CUSTOM TEMPLATE UPLOAD + AI FIELD DETECTION
+// ════════════════════════════════════════════════════════════════
+
+async function uploadCustomTemplate(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const container = document.getElementById('custom-templates');
+  const card = document.createElement('div');
+  card.className = 'template-card fade-up';
+  card.style.borderColor = 'var(--amber)';
+  card.innerHTML = `<div class="tc-icon tci-custom">🔍</div>
+    <div class="tc-info">
+      <div class="tc-name">${file.name}</div>
+      <div class="tc-desc" id="custom-status">Analysing fields…</div>
+    </div>`;
+  container.appendChild(card);
+
+  // Read file text
+  const text = await file.text().catch(() => '');
+  const statusEl = card.querySelector('#custom-status');
+
+  if (STATE.apiKey && text) {
+    // Ask Claude to identify variable fields
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514', max_tokens: 400,
+          messages: [{ role: 'user', content: `Identify all variable/placeholder fields in this document template. List them as a short comma-separated list (e.g. "Client name, Invoice date, Amount"). Document: ${text.slice(0,1500)}` }]
+        })
+      });
+      const data = await res.json();
+      const fields = data.content?.[0]?.text || '';
+      statusEl.textContent = 'Fields: ' + fields.slice(0, 80);
+      card.querySelector('.tc-name').textContent = file.name;
+      card.innerHTML += `<div class="tc-tags" style="margin-top:5px"><span class="tc-tag">Custom</span><span class="tc-tag">AI-analysed</span></div>`;
+    } catch {
+      statusEl.textContent = 'Upload complete — edit manually';
+    }
+  } else {
+    statusEl.textContent = 'Template uploaded — add API key for field detection';
+  }
+
+  // Store the template text for future use
+  STATE.customTemplates.push({ name: file.name, text });
+  card.onclick = () => {
+    STATE.activeTemplate = null;
+    document.getElementById('gen-title').textContent = file.name;
+    document.getElementById('template-form').innerHTML = `
+      <div class="form-card"><div class="form-card-body">
+        <p style="font-size:13px;color:var(--ash);margin-bottom:10px">Custom template uploaded. Use the AI Composer above to fill and generate this document.</p>
+        <textarea style="width:100%;min-height:100px;font-size:12px;font-family:var(--mono)" readonly>${text.slice(0,400)}…</textarea>
+      </div></div>`;
+  };
+  input.value = '';
+}
+
+// ════════════════════════════════════════════════════════════════
+// PREVIEW & HISTORY
+// ════════════════════════════════════════════════════════════════
+
+function previewDocument() {
+  if (!STATE.activeTemplate) { alert('Select a template first.'); return; }
+  const html = TEMPLATES[STATE.activeTemplate].preview();
+  renderPreview(html);
+  switchPreview('preview', document.querySelector('.prev-tab'));
+}
+
+function renderPreview(html) {
+  const preview = document.getElementById('prev-preview');
+  preview.innerHTML = `<div class="dp-page"><iframe srcdoc="${html.replace(/"/g,'&quot;')}" style="width:100%;height:500px;border:none;border-radius:4px" title="Preview"></iframe></div>`;
+}
+
+function updateExportDetails() {
+  document.getElementById('export-details').innerHTML = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px">
+      <span style="font-weight:500">Template:</span><span>${TEMPLATES[STATE.activeTemplate]?.name || 'Custom'}</span>
+      <span style="font-weight:500">Generated:</span><span>${new Date().toLocaleString('sv-SE')}</span>
+      <span style="font-weight:500">Filename:</span><span>${STATE.generated.filename}</span>
+      <span style="font-weight:500">Data source:</span><span>Live tracker — ${FIN.period}</span>
+    </div>`;
+}
+
+function addToHistory() {
+  STATE.history.unshift({
+    name:     STATE.generated.filename,
+    template: TEMPLATES[STATE.activeTemplate]?.name || 'Custom',
+    icon:     TEMPLATES[STATE.activeTemplate]?.icon || '📄',
+    date:     new Date().toLocaleDateString('sv-SE'),
+    time:     new Date().toLocaleTimeString('sv-SE', { hour:'2-digit', minute:'2-digit' }),
+    html:     STATE.generated.html,
+  });
+  STATE.history = STATE.history.slice(0, 20);
+  localStorage.setItem('studio_history', JSON.stringify(STATE.history.map(h => ({ ...h, html:undefined }))));
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  if (!STATE.history.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;font-size:12px;color:var(--ash)">No documents yet</div>';
+    return;
+  }
+  list.innerHTML = STATE.history.map((h, i) => `
+    <div class="history-item" onclick="restoreHistory(${i})">
+      <div class="hi-icon">${h.icon}</div>
+      <div class="hi-info">
+        <div class="hi-name">${h.name}</div>
+        <div class="hi-meta">${h.template} · ${h.date} ${h.time}</div>
+      </div>
+      <button class="hi-download" onclick="event.stopPropagation();downloadHistory(${i})">↓</button>
+    </div>`
+  ).join('');
+}
+
+function restoreHistory(i) {
+  const h = STATE.history[i];
+  if (h?.html) {
+    STATE.generated.html = h.html;
+    renderPreview(h.html);
+    switchPreview('preview', document.querySelector('.prev-tab'));
+  }
+}
+
+function downloadHistory(i) {
+  const h = STATE.history[i];
+  if (!h?.html) return;
+  const blob = new Blob([h.html], { type: 'text/html' });
+  triggerDownload(blob, h.name + '.html');
+}
+
+// ════════════════════════════════════════════════════════════════
+// AI COMPOSER
+// ════════════════════════════════════════════════════════════════
+
+async function aiCompose() {
+  const prompt = document.getElementById('ai-prompt').value.trim();
+  if (!prompt) return;
+
+  // Detect template from prompt
+  if (/report|rapport|p&l|financial/i.test(prompt))  selectTemplate('report');
+  else if (/invoice|faktura/i.test(prompt))           selectTemplate('invoice');
+  else if (/agenda|meeting|möte/i.test(prompt))       selectTemplate('agenda');
+  else if (/contract|avtal/i.test(prompt))            selectTemplate('contract');
+  else if (/offer|letter|anställning/i.test(prompt))  selectTemplate('offer');
+
+  // Generate immediately
+  await generateDocument();
+}
+
+function setPrompt(btn) {
+  document.getElementById('ai-prompt').value = btn.textContent.trim();
+}
+
+// ════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ════════════════════════════════════════════════════════════════
+
+let progressInterval;
+function showProgress() {
+  document.getElementById('gen-btn').disabled = true;
+  document.getElementById('gen-progress').style.display = 'flex';
+}
+function hideProgress() {
+  document.getElementById('gen-btn').disabled = false;
+  document.getElementById('gen-progress').style.display = 'none';
+  setProgress(0, '');
+}
+function setProgress(pct, text) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  if (text) document.getElementById('progress-text').textContent = text;
+}
+
+function switchView(view, el) {
+  document.querySelectorAll('.top-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function switchPreview(tab, el) {
+  ['preview','export','history'].forEach(t => {
+    document.getElementById('prev-'+t).style.display = t === tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.prev-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  if (tab === 'history') renderHistory();
+}
+
+function autofillReport() {
+  const fields = { revenue:FIN.revenue, staff_costs:FIN.staff, food_costs:FIN.food, rent_costs:FIN.rent, other_costs:FIN.other, prev_revenue:FIN.prevRevenue };
+  Object.entries(fields).forEach(([id,val]) => { const el = document.getElementById(id); if(el) el.value = val; });
+}
+
+function saveApiKey() {
+  const val = document.getElementById('api-key-input').value.trim();
+  if (val && !val.startsWith('•')) {
+    STATE.apiKey = val;
+    localStorage.setItem('bj_api_key', val);
+    document.getElementById('api-key-input').value = '••••••••';
+    document.getElementById('api-dot').className = 'api-dot live';
+    document.getElementById('api-status').textContent = 'Claude connected';
+  }
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+
+// Default to report template
+selectTemplate('report');
+calcInvoice();
+renderHistory();
+</script>
+</body>
+</html>

@@ -1,0 +1,49 @@
+// @ts-nocheck
+import { NextRequest, NextResponse } from 'next/server'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 30
+
+export async function POST(req: NextRequest) {
+  try {
+    const { provider, api_key, org_id, business_id } = await req.json()
+    if (!provider || !api_key) return NextResponse.json({ error: 'provider and api_key required' }, { status: 400 })
+
+    if (provider === 'personalkollen') {
+      // Test connection
+      const BASE = 'https://personalkollen.se/api'
+      const headers = { Authorization: `Token ${api_key}`, Accept: 'application/json' }
+
+      // Get workplaces
+      const wpRes = await fetch(`${BASE}/workplaces/`, { headers })
+      if (!wpRes.ok) throw new Error(`Invalid API key (${wpRes.status})`)
+      const wpData = await wpRes.json()
+      const workplaces = wpData.results ?? []
+      if (!workplaces.length) throw new Error('No workplaces found for this API key')
+
+      const workplace = workplaces[0]
+
+      // Get earliest logged time to detect data range
+      const earliest = await fetch(`${BASE}/logged-times/?limit=1&ordering=start`, { headers })
+      const earliestData = await earliest.json()
+      const firstRecord = earliestData.results?.[0]
+      const earliestDate = firstRecord?.start ? firstRecord.start.slice(0, 10) : '2022-01-01'
+
+      // Get count estimate
+      const countRes = await fetch(`${BASE}/logged-times/?limit=1`, { headers })
+      const countData = await countRes.json()
+      const totalCount = countData.count ?? 0
+
+      return NextResponse.json({
+        ok:                true,
+        workplace_name:    workplace.description ?? `Workplace ${workplace.short_identifier}`,
+        workplace_id:      workplace.short_identifier,
+        earliest_date:     earliestDate,
+        estimated_records: totalCount,
+      })
+    }
+
+    return NextResponse.json({ error: `Provider ${provider} test not implemented` }, { status: 400 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}

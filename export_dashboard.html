@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Export Center — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F0EDE8;--surface:#FAFAF8;--white:#FFF;
+  --border:#E0DAD2;--border-d:#C8C1B8;
+  --ink:#1C1714;--ink-2:#3A3733;--ink-3:#6A6560;--ink-4:#A8A49C;
+  --navy:#1E2761;--blue:#185FA5;--blue-lt:#EEF4FF;
+  --green:#2D6A35;--green-lt:#EAF2E8;
+  --amber:#7A4800;--amber-lt:#FFF5E5;
+  --red:#8B1A1A;--red-lt:#FBF0F0;
+  --font:'DM Sans',system-ui,sans-serif;
+  --display:'Fraunces',Georgia,serif;
+  --mono:'DM Mono',monospace;
+}
+html,body{min-height:100vh;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:14px;color:var(--ink);background:var(--bg)}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:2px}
+
+/* TOPBAR */
+.topbar{background:var(--navy);padding:0 24px;height:52px;display:flex;align-items:center;justify-content:space-between}
+.tb-left{display:flex;align-items:center;gap:12px}
+.brand{font-family:var(--display);font-size:16px;color:white;font-weight:300}
+.brand strong{font-weight:600}
+.back-btn{font-size:12px;color:rgba(255,255,255,.6);text-decoration:none;display:flex;align-items:center;gap:4px;transition:color .12s}
+.back-btn:hover{color:white}
+.tb-right{font-size:12px;color:rgba(255,255,255,.5)}
+
+/* PAGE */
+.page{max-width:1100px;margin:0 auto;padding:28px 24px 60px}
+.page-header{margin-bottom:28px}
+.page-title{font-family:var(--display);font-size:30px;font-weight:300;font-style:italic;color:var(--navy)}
+.page-title strong{font-style:normal;font-weight:600}
+.page-sub{font-size:13px;color:var(--ink-3);margin-top:5px}
+
+/* GRID LAYOUT */
+.export-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px}
+.export-grid.wide{grid-template-columns:2fr 1fr}
+.full-width{grid-column:1/-1}
+
+/* CARD */
+.card{background:var(--white);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.card-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.card-title{font-size:14px;font-weight:600;color:var(--ink)}
+.card-sub{font-size:11px;color:var(--ink-4);margin-top:2px}
+.card-body{padding:18px 20px}
+.card-footer{padding:12px 20px;border-top:1px solid var(--border);background:var(--bg);display:flex;gap:8px;align-items:center}
+
+/* FORMAT CARDS */
+.fmt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fmt-card{
+  border:1.5px solid var(--border);border-radius:10px;padding:14px;cursor:pointer;
+  transition:all .15s;display:flex;flex-direction:column;gap:6px;
+}
+.fmt-card:hover{border-color:var(--blue);background:var(--blue-lt)}
+.fmt-card.selected{border-color:var(--navy);background:var(--blue-lt)}
+.fc-icon{font-size:24px}
+.fc-name{font-size:13px;font-weight:600;color:var(--ink)}
+.fc-ext{font-size:10px;font-family:var(--mono);color:var(--ink-4);background:var(--bg);padding:1px 6px;border-radius:5px;border:1px solid var(--border);width:fit-content}
+.fc-desc{font-size:11px;color:var(--ink-3);line-height:1.4}
+
+/* OPTION ROWS */
+.option-row{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)}
+.option-row:last-child{border-bottom:none}
+.or-left{flex:1}
+.or-label{font-size:13px;font-weight:500;color:var(--ink)}
+.or-sub{font-size:11px;color:var(--ink-4);margin-top:2px}
+.or-right{display:flex;align-items:center;gap:8px}
+
+/* TOGGLE */
+.toggle{width:36px;height:20px;border-radius:10px;background:var(--border-d);cursor:pointer;position:relative;transition:background .15s;flex-shrink:0;border:none;padding:0}
+.toggle.on{background:var(--navy)}
+.toggle::after{content:'';width:16px;height:16px;border-radius:50%;background:white;position:absolute;top:2px;left:2px;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle.on::after{transform:translateX(16px)}
+
+/* SELECT / INPUT */
+.select-sm{font-family:var(--font);font-size:12px;padding:5px 9px;border:1px solid var(--border-d);border-radius:6px;background:var(--bg);color:var(--ink);cursor:pointer;outline:none;transition:border-color .12s}
+.select-sm:focus{border-color:var(--blue)}
+.input-sm{font-family:var(--font);font-size:12px;padding:5px 9px;border:1px solid var(--border-d);border-radius:6px;background:var(--bg);color:var(--ink);outline:none;transition:border-color .12s}
+.input-sm:focus{border-color:var(--blue)}
+
+/* DATE RANGE */
+.date-row{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)}
+.date-input{font-family:var(--mono);font-size:11px;padding:5px 8px;border:1px solid var(--border-d);border-radius:6px;background:var(--bg);color:var(--ink);outline:none;transition:border-color .12s}
+.date-input:focus{border-color:var(--blue)}
+
+/* BUTTONS */
+.btn{font-family:var(--font);font-size:13px;font-weight:500;padding:8px 16px;border-radius:8px;border:1.5px solid var(--border-d);background:none;cursor:pointer;color:var(--ink-3);transition:all .12s;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--bg);border-color:var(--ink-3);color:var(--ink)}
+.btn-primary{background:var(--navy);color:white;border-color:var(--navy)}
+.btn-primary:hover{background:var(--blue)}
+.btn-lg{font-size:14px;padding:11px 22px;border-radius:10px}
+.btn-full{width:100%;justify-content:center}
+.btn-icon{width:32px;height:32px;padding:0;border-radius:7px;justify-content:center}
+
+/* PROGRESS */
+.progress-wrap{margin-top:12px;display:none}
+.progress-wrap.visible{display:block}
+.progress-track{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:6px}
+.progress-fill{height:100%;background:var(--navy);border-radius:3px;width:0%;transition:width .4s}
+.progress-label{font-size:11px;color:var(--ink-3);font-family:var(--mono)}
+
+/* HISTORY TABLE */
+.history-table{width:100%;border-collapse:collapse}
+.ht-th{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-4);padding:6px 10px;border-bottom:1px solid var(--border);text-align:left}
+.ht-td{padding:9px 10px;border-bottom:1px solid var(--border);font-size:12px;color:var(--ink-3);vertical-align:middle}
+.ht-td:last-child{border-bottom:none}
+tr:hover .ht-td{background:var(--bg)}
+.ht-name{font-weight:500;color:var(--ink);display:flex;align-items:center;gap:7px}
+.fmt-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:5px;font-family:var(--mono);text-transform:uppercase}
+.fb-pdf  {background:#FDEEEE;color:#B71C1C}
+.fb-xlsx {background:#ECFDF5;color:#065F46}
+.fb-docx {background:#EFF6FF;color:#1D4ED8}
+.fb-csv  {background:#F0FDF4;color:#166534}
+.fb-zip  {background:#F5F3FF;color:#5B21B6}
+
+/* SCHEDULE CARDS */
+.schedule-item{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--white)}
+.si-left{display:flex;align-items:center;gap:10px}
+.si-icon{font-size:20px}
+.si-name{font-size:13px;font-weight:500;color:var(--ink)}
+.si-detail{font-size:11px;color:var(--ink-4);margin-top:1px;font-family:var(--mono)}
+.si-right{display:flex;align-items:center;gap:8px}
+.si-status{font-size:11px;font-weight:600;padding:2px 8px;border-radius:8px}
+.ss-active{background:var(--green-lt);color:var(--green)}
+.ss-paused{background:var(--bg);color:var(--ink-4)}
+
+/* BULK SECTION */
+.bulk-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.bulk-item{
+  border:1.5px solid var(--border);border-radius:10px;padding:14px;
+  display:flex;flex-direction:column;gap:6px;transition:all .15s;cursor:pointer;
+}
+.bulk-item:hover{border-color:var(--blue);background:var(--blue-lt)}
+.bi-icon{font-size:22px}
+.bi-name{font-size:12px;font-weight:600;color:var(--ink)}
+.bi-count{font-size:11px;color:var(--ink-4)}
+.bi-size{font-size:10px;font-family:var(--mono);color:var(--ink-4)}
+
+/* TOAST */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--navy);color:white;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;transform:translateY(60px);opacity:0;transition:all .25s;display:flex;align-items:center;gap:8px}
+.toast.show{transform:none;opacity:1}
+.toast.ok{background:var(--green)}
+.toast.err{background:var(--red)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.fade-up{animation:fadeUp .2s ease forwards}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="tb-left">
+    <a class="back-btn" href="#">← Dashboard</a>
+    <span style="color:rgba(255,255,255,.2)">|</span>
+    <div class="brand">Command<strong>Center</strong> — Export</div>
+  </div>
+  <div class="tb-right">Restaurang Björken AB</div>
+</div>
+
+<div class="page">
+  <div class="page-header fade-up">
+    <div class="page-title">Export <strong>Center</strong></div>
+    <div class="page-sub">Generate reports, export data, and schedule automated deliveries</div>
+  </div>
+
+  <!-- ══ ROW 1: REPORT GENERATOR ══════════════════════════════ -->
+  <div class="export-grid wide fade-up" style="animation-delay:.04s">
+
+    <!-- Report generator -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Monthly Report Generator</div>
+          <div class="card-sub">AI-written executive summary + financial tables + charts</div>
+        </div>
+        <span style="font-size:22px">📊</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Format selection -->
+        <div style="margin-bottom:16px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-4);margin-bottom:8px">Output format</div>
+          <div class="fmt-grid">
+            <div class="fmt-card selected" onclick="selectFormat('pdf',this)" data-fmt="pdf">
+              <span class="fc-icon">📄</span>
+              <div class="fc-name">PDF Report</div>
+              <span class="fc-ext">.pdf</span>
+              <div class="fc-desc">Print-ready, headers, footers, page numbers</div>
+            </div>
+            <div class="fmt-card" onclick="selectFormat('docx',this)" data-fmt="docx">
+              <span class="fc-icon">📝</span>
+              <div class="fc-name">Word Document</div>
+              <span class="fc-ext">.docx</span>
+              <div class="fc-desc">Editable, add your own notes and branding</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Options -->
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-4);margin-bottom:8px">Report contents</div>
+        <div>
+          <div class="option-row">
+            <div class="or-left"><div class="or-label">Cover page</div><div class="or-sub">Business name, period, generated date</div></div>
+            <div class="or-right"><button class="toggle on" id="t-cover" onclick="toggleOpt(this)"></button></div>
+          </div>
+          <div class="option-row">
+            <div class="or-left"><div class="or-label">Executive summary</div><div class="or-sub">AI-written overview of key findings</div></div>
+            <div class="or-right"><button class="toggle on" id="t-exec" onclick="toggleOpt(this)"></button></div>
+          </div>
+          <div class="option-row">
+            <div class="or-left"><div class="or-label">Financial tables</div><div class="or-sub">P&L, expenses, cost breakdown</div></div>
+            <div class="or-right"><button class="toggle on" id="t-tables" onclick="toggleOpt(this)"></button></div>
+          </div>
+          <div class="option-row">
+            <div class="or-left"><div class="or-label">KPI dashboard</div><div class="or-sub">Targets vs actuals for all key metrics</div></div>
+            <div class="or-right"><button class="toggle on" id="t-kpi" onclick="toggleOpt(this)"></button></div>
+          </div>
+          <div class="option-row">
+            <div class="or-left"><div class="or-label">AI recommendations</div><div class="or-sub">Claude-generated action items</div></div>
+            <div class="or-right"><button class="toggle on" id="t-recs" onclick="toggleOpt(this)"></button></div>
+          </div>
+          <div class="option-row">
+            <div class="or-left"><div class="or-label">Include AI analysis</div><div class="or-sub">Uses ~2 000 tokens from your monthly allowance</div></div>
+            <div class="or-right"><button class="toggle on" id="t-ai" onclick="toggleOpt(this)"></button></div>
+          </div>
+        </div>
+
+        <!-- Period -->
+        <div style="margin-top:14px">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-4);margin-bottom:8px">Period</div>
+          <div class="date-row">
+            <input type="date" class="date-input" id="date-from" value="2026-03-01">
+            <span>to</span>
+            <input type="date" class="date-input" id="date-to"   value="2026-03-31">
+          </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-wrap" id="report-progress">
+          <div class="progress-track"><div class="progress-fill" id="report-fill"></div></div>
+          <div class="progress-label" id="report-label">Preparing…</div>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <button class="btn btn-primary btn-lg" id="gen-report-btn" onclick="generateReport()">
+          Generate report
+        </button>
+        <div style="font-size:11px;color:var(--ink-4);margin-left:4px">~15 seconds with AI analysis</div>
+      </div>
+    </div>
+
+    <!-- Quick exports panel -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- Current view export -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Export Current View</div>
+            <div class="card-sub">Export exactly what you see on screen</div>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px">
+          <div class="fmt-grid" style="grid-template-columns:1fr 1fr 1fr 1fr">
+            <button class="btn" style="flex-direction:column;gap:3px;height:60px;border-radius:9px" onclick="quickExport('xlsx')">
+              <span style="font-size:18px">📊</span>
+              <span style="font-size:10px;font-family:var(--mono)">.xlsx</span>
+            </button>
+            <button class="btn" style="flex-direction:column;gap:3px;height:60px;border-radius:9px" onclick="quickExport('pdf')">
+              <span style="font-size:18px">📄</span>
+              <span style="font-size:10px;font-family:var(--mono)">.pdf</span>
+            </button>
+            <button class="btn" style="flex-direction:column;gap:3px;height:60px;border-radius:9px" onclick="quickExport('csv')">
+              <span style="font-size:18px">📋</span>
+              <span style="font-size:10px;font-family:var(--mono)">.csv</span>
+            </button>
+            <button class="btn" style="flex-direction:column;gap:3px;height:60px;border-radius:9px" onclick="quickExport('docx')">
+              <span style="font-size:18px">📝</span>
+              <span style="font-size:10px;font-family:var(--mono)">.docx</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Date range export -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Custom Date Range</div>
+            <div class="card-sub">Export data for a specific period</div>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px">
+          <div class="option-row" style="border:none;padding-bottom:10px">
+            <div class="or-label">Period</div>
+            <select class="select-sm" id="period-select" onchange="updateDateRange(this.value)">
+              <option value="this_month">This month (March 2026)</option>
+              <option value="last_month">Last month (Feb 2026)</option>
+              <option value="q1">Q1 2026</option>
+              <option value="ytd">Year to date</option>
+              <option value="custom">Custom range…</option>
+            </select>
+          </div>
+          <div class="option-row" style="border:none;padding-top:0">
+            <div class="or-label">Format</div>
+            <select class="select-sm" id="range-format">
+              <option value="xlsx">Excel (.xlsx)</option>
+              <option value="csv">CSV</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-footer">
+          <button class="btn btn-primary btn-full" onclick="exportRange()">Export range</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ══ ROW 2: BULK + SCHEDULED ══════════════════════════════ -->
+  <div class="export-grid fade-up" style="animation-delay:.08s">
+
+    <!-- Bulk export -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Bulk Export</div>
+          <div class="card-sub">Export all data for backup or migration</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding:14px">
+        <div class="bulk-grid">
+          <div class="bulk-item" onclick="bulkExport('documents')">
+            <div class="bi-icon">📂</div>
+            <div class="bi-name">All Documents</div>
+            <div class="bi-count">23 files</div>
+            <div class="bi-size">~142 MB</div>
+          </div>
+          <div class="bulk-item" onclick="bulkExport('chat')">
+            <div class="bi-icon">💬</div>
+            <div class="bi-name">Chat History</div>
+            <div class="bi-count">847 messages</div>
+            <div class="bi-size">~2.1 MB</div>
+          </div>
+          <div class="bulk-item" onclick="bulkExport('financial')">
+            <div class="bi-icon">💰</div>
+            <div class="bi-name">Financial Data</div>
+            <div class="bi-count">6 months</div>
+            <div class="bi-size">~0.8 MB</div>
+          </div>
+          <div class="bulk-item" onclick="bulkExport('integrations')">
+            <div class="bi-icon">🔗</div>
+            <div class="bi-name">Integration Logs</div>
+            <div class="bi-count">Fortnox, POS</div>
+            <div class="bi-size">~0.3 MB</div>
+          </div>
+          <div class="bulk-item" onclick="bulkExport('settings')">
+            <div class="bi-icon">⚙️</div>
+            <div class="bi-name">Settings</div>
+            <div class="bi-count">Targets, config</div>
+            <div class="bi-size">~0.1 MB</div>
+          </div>
+          <div class="bulk-item" style="border-color:var(--navy);background:var(--blue-lt)" onclick="bulkExport('full')">
+            <div class="bi-icon">📦</div>
+            <div class="bi-name" style="color:var(--navy)">Full Backup</div>
+            <div class="bi-count" style="color:var(--blue)">Everything</div>
+            <div class="bi-size">~145 MB .zip</div>
+          </div>
+        </div>
+
+        <div class="progress-wrap" id="bulk-progress" style="margin-top:12px">
+          <div class="progress-track"><div class="progress-fill" id="bulk-fill"></div></div>
+          <div class="progress-label" id="bulk-label">Preparing archive…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scheduled exports -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Scheduled Reports</div>
+          <div class="card-sub">Auto-deliver reports on a schedule</div>
+        </div>
+        <button class="btn" style="font-size:12px;padding:5px 11px" onclick="openAddSchedule()">+ Add</button>
+      </div>
+      <div class="card-body" style="padding:14px">
+
+        <div class="schedule-item">
+          <div class="si-left">
+            <div class="si-icon">📅</div>
+            <div>
+              <div class="si-name">Weekly Summary</div>
+              <div class="si-detail">Every Monday 07:00 · PDF · Email</div>
+            </div>
+          </div>
+          <div class="si-right">
+            <span class="si-status ss-active">Active</span>
+            <button class="toggle on" onclick="toggleSchedule(this)"></button>
+          </div>
+        </div>
+
+        <div class="schedule-item">
+          <div class="si-left">
+            <div class="si-icon">📊</div>
+            <div>
+              <div class="si-name">Monthly Report</div>
+              <div class="si-detail">1st of each month · DOCX + PDF · Email</div>
+            </div>
+          </div>
+          <div class="si-right">
+            <span class="si-status ss-active">Active</span>
+            <button class="toggle on" onclick="toggleSchedule(this)"></button>
+          </div>
+        </div>
+
+        <div class="schedule-item">
+          <div class="si-left">
+            <div class="si-icon">📈</div>
+            <div>
+              <div class="si-name">Daily Snapshot</div>
+              <div class="si-detail">Every day 08:00 · CSV · Google Drive</div>
+            </div>
+          </div>
+          <div class="si-right">
+            <span class="si-status ss-paused">Paused</span>
+            <button class="toggle" onclick="toggleSchedule(this)"></button>
+          </div>
+        </div>
+
+        <div class="schedule-item">
+          <div class="si-left">
+            <div class="si-icon">🔔</div>
+            <div>
+              <div class="si-name">Quarterly Board Pack</div>
+              <div class="si-detail">Last Friday of quarter · PDF · Email + Dropbox</div>
+            </div>
+          </div>
+          <div class="si-right">
+            <span class="si-status ss-active">Active</span>
+            <button class="toggle on" onclick="toggleSchedule(this)"></button>
+          </div>
+        </div>
+
+      </div>
+      <div class="card-footer">
+        <div style="font-size:11px;color:var(--ink-4)">Next: Weekly Summary sends Monday 07:00</div>
+      </div>
+    </div>
+
+    <!-- Cloud destinations -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Delivery Destinations</div>
+          <div class="card-sub">Where to send scheduled exports</div>
+        </div>
+      </div>
+      <div class="card-body" style="padding:14px">
+
+        <div class="option-row">
+          <div class="or-left">
+            <div class="or-label" style="display:flex;align-items:center;gap:7px">
+              <span>✉️</span> Email
+            </div>
+            <div class="or-sub"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="1c6c7d69705c6a796e7375687d70757d7273326f79">[email&#160;protected]</a></div>
+          </div>
+          <div class="or-right">
+            <span style="font-size:10px;background:var(--green-lt);color:var(--green);font-weight:700;padding:2px 8px;border-radius:8px">Connected</span>
+          </div>
+        </div>
+
+        <div class="option-row">
+          <div class="or-left">
+            <div class="or-label" style="display:flex;align-items:center;gap:7px">
+              <span>🟢</span> Google Drive
+            </div>
+            <div class="or-sub">Exports → Command Center folder</div>
+          </div>
+          <div class="or-right">
+            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="connectDrive('google')">Connect</button>
+          </div>
+        </div>
+
+        <div class="option-row">
+          <div class="or-left">
+            <div class="or-label" style="display:flex;align-items:center;gap:7px">
+              <span>🔵</span> Dropbox
+            </div>
+            <div class="or-sub">Auto-sync to /Apps/CommandCenter</div>
+          </div>
+          <div class="or-right">
+            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="connectDrive('dropbox')">Connect</button>
+          </div>
+        </div>
+
+        <div class="option-row">
+          <div class="or-left">
+            <div class="or-label" style="display:flex;align-items:center;gap:7px">
+              <span>🟣</span> SharePoint
+            </div>
+            <div class="or-sub">Microsoft 365 integration</div>
+          </div>
+          <div class="or-right">
+            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="connectDrive('sharepoint')">Connect</button>
+          </div>
+        </div>
+
+        <div class="option-row" style="border:none">
+          <div class="or-left">
+            <div class="or-label" style="display:flex;align-items:center;gap:7px">
+              <span>🔗</span> Webhook URL
+            </div>
+            <div class="or-sub">POST export to your own endpoint</div>
+          </div>
+          <div class="or-right">
+            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="addWebhook()">Configure</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══ ROW 3: EXPORT HISTORY ════════════════════════════════ -->
+  <div class="card fade-up" style="animation-delay:.12s">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Export History</div>
+        <div class="card-sub">Recent exports — click to re-download</div>
+      </div>
+      <button class="btn" style="font-size:12px;padding:5px 11px" onclick="clearHistory()">Clear</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="history-table" id="history-table">
+        <thead>
+          <tr>
+            <th class="ht-th">File</th>
+            <th class="ht-th">Format</th>
+            <th class="ht-th">Period</th>
+            <th class="ht-th">Size</th>
+            <th class="ht-th">Generated</th>
+            <th class="ht-th">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<div class="toast" id="toast"></div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let selectedFormat  = 'pdf';
+let exportHistory   = JSON.parse(localStorage.getItem('cc_export_history') || '[]');
+
+// Pre-seed demo history if empty
+if (!exportHistory.length) {
+  exportHistory = [
+    { id:1, name:'Monthly_Report_Feb_2026', fmt:'pdf',  period:'February 2026', size:'186 KB', date:'2026-03-01 07:02', url:null },
+    { id:2, name:'Financial_Tracker_Feb',   fmt:'xlsx', period:'February 2026', size:'42 KB',  date:'2026-03-01 07:03', url:null },
+    { id:3, name:'Weekly_Summary_W12',      fmt:'pdf',  period:'Week 12, 2026', size:'94 KB',  date:'2026-03-23 07:00', url:null },
+    { id:4, name:'Chat_Export_March',       fmt:'csv',  period:'March 2026',    size:'18 KB',  date:'2026-03-20 14:12', url:null },
+    { id:5, name:'Full_Backup_2026Q1',      fmt:'zip',  period:'Q1 2026',       size:'142 MB', date:'2026-03-31 08:00', url:null },
+  ];
+}
+
+// ══════════════════════════════════════════════════════════════
+// FORMAT SELECTION
+// ══════════════════════════════════════════════════════════════
+function selectFormat(fmt, card) {
+  selectedFormat = fmt;
+  document.querySelectorAll('.fmt-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+
+// ══════════════════════════════════════════════════════════════
+// TOGGLE OPTIONS
+// ══════════════════════════════════════════════════════════════
+function toggleOpt(btn) {
+  btn.classList.toggle('on');
+}
+
+function toggleSchedule(btn) {
+  btn.classList.toggle('on');
+  const item   = btn.closest('.schedule-item');
+  const badge  = item.querySelector('.si-status');
+  const active = btn.classList.contains('on');
+  badge.textContent = active ? 'Active' : 'Paused';
+  badge.className   = 'si-status ' + (active ? 'ss-active' : 'ss-paused');
+  toast(active ? 'Schedule activated' : 'Schedule paused');
+}
+
+// ══════════════════════════════════════════════════════════════
+// REPORT GENERATOR
+// ══════════════════════════════════════════════════════════════
+async function generateReport() {
+  const btn  = document.getElementById('gen-report-btn');
+  const prog = document.getElementById('report-progress');
+  const fill = document.getElementById('report-fill');
+  const lbl  = document.getElementById('report-label');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating…';
+  prog.classList.add('visible');
+
+  const steps = [
+    { pct:  10, label: 'Fetching financial data…' },
+    { pct:  30, label: 'Generating AI analysis…' },
+    { pct:  55, label: 'Building financial tables…' },
+    { pct:  75, label: 'Composing document…' },
+    { pct:  90, label: 'Applying formatting…' },
+    { pct: 100, label: 'Complete!' },
+  ];
+
+  for (const step of steps) {
+    await delay(400 + Math.random() * 600);
+    fill.style.width = step.pct + '%';
+    lbl.textContent  = step.label;
+  }
+
+  await delay(300);
+
+  // In production: call /api/export/report
+  // const response = await fetch('/api/export/report', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${getToken()}` },
+  //   body: JSON.stringify({
+  //     format: selectedFormat,
+  //     period: { from: document.getElementById('date-from').value, to: document.getElementById('date-to').value },
+  //     options: { cover: isOn('t-cover'), exec: isOn('t-exec'), tables: isOn('t-tables'), kpi: isOn('t-kpi'), recs: isOn('t-recs'), ai: isOn('t-ai') }
+  //   })
+  // });
+  // const blob = await response.blob();
+  // downloadBlob(blob, `Monthly_Report_March_2026.${selectedFormat}`);
+
+  const fromDate = document.getElementById('date-from').value;
+  const toDate   = document.getElementById('date-to').value;
+  const fname    = `Monthly_Report_March_2026.${selectedFormat}`;
+
+  addToHistory({
+    name:   fname.replace('.' + selectedFormat, ''),
+    fmt:    selectedFormat,
+    period: 'March 2026',
+    size:   selectedFormat === 'pdf' ? '186 KB' : '94 KB',
+    date:   new Date().toLocaleString('sv-SE'),
+    url:    null, // would be real URL from server
+  });
+
+  // Simulate file download
+  simulateDownload(fname, selectedFormat);
+
+  btn.disabled = false;
+  btn.textContent = 'Generate report';
+  prog.classList.remove('visible');
+  fill.style.width = '0%';
+
+  toast(`${selectedFormat.toUpperCase()} report generated`, 'ok');
+}
+
+function isOn(id) {
+  return document.getElementById(id)?.classList.contains('on');
+}
+
+// ══════════════════════════════════════════════════════════════
+// QUICK EXPORT
+// ══════════════════════════════════════════════════════════════
+async function quickExport(fmt) {
+  toast(`Preparing ${fmt.toUpperCase()} export…`);
+  await delay(800);
+
+  const name = `Tracker_March_2026.${fmt}`;
+  addToHistory({ name: name.replace('.'+fmt,''), fmt, period:'March 2026', size:'34 KB', date:new Date().toLocaleString('sv-SE'), url:null });
+  simulateDownload(name, fmt);
+  toast(`${fmt.toUpperCase()} downloaded`, 'ok');
+}
+
+async function exportRange() {
+  const period = document.getElementById('period-select').value;
+  const fmt    = document.getElementById('range-format').value;
+  const labels = { this_month:'March 2026', last_month:'February 2026', q1:'Q1 2026', ytd:'YTD 2026', custom:'Custom Range' };
+  toast(`Exporting ${labels[period]} as ${fmt.toUpperCase()}…`);
+  await delay(1000);
+  const name = `Export_${labels[period].replace(' ','_')}.${fmt}`;
+  addToHistory({ name:name.replace('.'+fmt,''), fmt, period:labels[period], size:'28 KB', date:new Date().toLocaleString('sv-SE'), url:null });
+  simulateDownload(name, fmt);
+  toast(`${fmt.toUpperCase()} exported`, 'ok');
+}
+
+function updateDateRange(val) {
+  // Could show/hide custom date inputs
+}
+
+// ══════════════════════════════════════════════════════════════
+// BULK EXPORT
+// ══════════════════════════════════════════════════════════════
+async function bulkExport(type) {
+  const labels = {
+    documents:'All Documents', chat:'Chat History', financial:'Financial Data',
+    integrations:'Integration Logs', settings:'Settings', full:'Full Backup'
+  };
+  const sizes  = { documents:'142 MB', chat:'2.1 MB', financial:'0.8 MB', integrations:'0.3 MB', settings:'0.1 MB', full:'145 MB' };
+
+  const prog = document.getElementById('bulk-progress');
+  const fill = document.getElementById('bulk-fill');
+  const lbl  = document.getElementById('bulk-label');
+
+  prog.classList.add('visible');
+
+  for (let pct = 0; pct <= 100; pct += 20) {
+    await delay(300 + Math.random() * 400);
+    fill.style.width = pct + '%';
+    lbl.textContent  = pct < 100 ? `Archiving ${labels[type]}… ${pct}%` : 'Archive ready!';
+  }
+
+  await delay(300);
+  const fname = `${labels[type].replace(' ','_')}_${new Date().toISOString().slice(0,10)}.zip`;
+  addToHistory({ name:fname.replace('.zip',''), fmt:'zip', period:'All time', size:sizes[type], date:new Date().toLocaleString('sv-SE'), url:null });
+  simulateDownload(fname, 'zip');
+  prog.classList.remove('visible');
+  fill.style.width = '0%';
+  toast(`${labels[type]} exported`, 'ok');
+}
+
+// ══════════════════════════════════════════════════════════════
+// SCHEDULE MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+function openAddSchedule() {
+  toast('Schedule editor coming soon — configure via API');
+}
+
+function connectDrive(service) {
+  const names = { google:'Google Drive', dropbox:'Dropbox', sharepoint:'SharePoint' };
+  toast(`Connecting ${names[service]}… (OAuth flow in production)`);
+}
+
+function addWebhook() {
+  const url = prompt('Enter your webhook URL:');
+  if (url) toast(`Webhook configured: ${url.slice(0, 40)}…`, 'ok');
+}
+
+// ══════════════════════════════════════════════════════════════
+// HISTORY
+// ══════════════════════════════════════════════════════════════
+function addToHistory(item) {
+  item.id = Date.now();
+  exportHistory.unshift(item);
+  if (exportHistory.length > 20) exportHistory.pop();
+  localStorage.setItem('cc_export_history', JSON.stringify(exportHistory));
+  renderHistory();
+}
+
+function renderHistory() {
+  const tbody = document.getElementById('history-body');
+  if (!exportHistory.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="ht-td" style="text-align:center;color:var(--ink-4);padding:24px">No exports yet</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = exportHistory.slice(0, 10).map(item => `
+    <tr>
+      <td class="ht-td">
+        <div class="ht-name">
+          <span class="fmt-badge fb-${item.fmt}">${item.fmt}</span>
+          ${item.name}
+        </div>
+      </td>
+      <td class="ht-td">${item.fmt.toUpperCase()}</td>
+      <td class="ht-td" style="font-family:var(--mono);font-size:11px">${item.period}</td>
+      <td class="ht-td" style="font-family:var(--mono);font-size:11px;color:var(--ink-4)">${item.size}</td>
+      <td class="ht-td" style="font-family:var(--mono);font-size:11px;color:var(--ink-4)">${item.date}</td>
+      <td class="ht-td">
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" style="padding:4px 10px;font-size:11px" onclick="reDownload(${item.id})">↓ Download</button>
+          <button class="btn btn-sm" style="padding:4px 10px;font-size:11px" onclick="deleteHistory(${item.id})">✕</button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function reDownload(id) {
+  const item = exportHistory.find(h => h.id === id);
+  if (item) {
+    simulateDownload(item.name + '.' + item.fmt, item.fmt);
+    toast(`Re-downloading ${item.name}`);
+  }
+}
+
+function deleteHistory(id) {
+  exportHistory = exportHistory.filter(h => h.id !== id);
+  localStorage.setItem('cc_export_history', JSON.stringify(exportHistory));
+  renderHistory();
+}
+
+function clearHistory() {
+  exportHistory = [];
+  localStorage.removeItem('cc_export_history');
+  renderHistory();
+  toast('History cleared');
+}
+
+// ══════════════════════════════════════════════════════════════
+// DOWNLOAD SIMULATION
+// In production: replace with real blob downloads from server
+// ══════════════════════════════════════════════════════════════
+function simulateDownload(filename, fmt) {
+  // Create a minimal valid file for each type
+  let content, mimeType;
+
+  if (fmt === 'csv') {
+    content  = 'Period,Revenue,Staff Cost,Food Cost,Net Profit,Margin\n"March 2026","505900","224978","149300","38700","7.65%"\n';
+    mimeType = 'text/csv';
+  } else if (fmt === 'json') {
+    content  = JSON.stringify({ period:'March 2026', revenue:505900, profit:38700 }, null, 2);
+    mimeType = 'application/json';
+  } else {
+    // For binary formats (pdf, xlsx, docx, zip) in demo mode,
+    // download a text placeholder. In production these come from the server.
+    content  = `[${fmt.toUpperCase()} — generated by Command Center]\n${filename}\nGenerated: ${new Date().toLocaleString('sv-SE')}\n\nIn production, this would be a real ${fmt.toUpperCase()} file generated server-side.`;
+    mimeType = 'text/plain';
+    filename = filename.replace('.' + fmt, '.txt'); // rename for demo
+  }
+
+  const blob = new Blob([content], { type: mimeType });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ══════════════════════════════════════════════════════════════
+// UTILITIES
+// ══════════════════════════════════════════════════════════════
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 

@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment Guide — Restaurang Björken Business Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ── PRINT + SCREEN ────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --navy:  #1E2761; --blue:  #185FA5; --blue-lt: #E6F1FB;
+  --green: #3B6D11; --green-lt: #EAF3DE;
+  --red:   #A32D2D; --red-lt: #FCEBEB;
+  --amber: #854F0B; --amber-lt: #FAEEDA;
+  --ink:   #1A1917; --charcoal: #3d3b38; --muted: #6b6860; --hint: #9b9690;
+  --cream: #faf8f4; --cream-2: #f4f1ec; --stone: #ddd9d2; --border: #e2e0db;
+  --font:  'Instrument Sans', system-ui, sans-serif;
+  --serif: 'Instrument Serif', Georgia, serif;
+  --mono:  'JetBrains Mono', monospace;
+}
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font); font-size: 15px; line-height: 1.7;
+  color: var(--ink); background: var(--cream); -webkit-font-smoothing: antialiased;
+}
+
+/* ── LAYOUT ────────────────────────────────────────────────────── */
+.page-wrap { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+/* SIDEBAR NAV */
+.sidebar {
+  background: var(--navy); color: white; position: sticky; top: 0;
+  height: 100vh; overflow-y: auto; padding: 28px 0;
+  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.15) transparent;
+}
+.sidebar::-webkit-scrollbar { width: 3px; }
+.sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius:2px; }
+
+.sidebar-logo { padding: 0 20px 20px; border-bottom: 1px solid rgba(255,255,255,.1); margin-bottom: 16px; }
+.sidebar-logo .logo-mark { font-family: var(--serif); font-size: 18px; color: white; }
+.sidebar-logo .logo-sub  { font-size: 11px; opacity: .55; margin-top: 2px; }
+
+.nav-section { padding: 6px 0; }
+.nav-heading  {
+  font-size: 9px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255,255,255,.4); padding: 10px 20px 5px;
+}
+.nav-link {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 20px; font-size: 12.5px; color: rgba(255,255,255,.7);
+  text-decoration: none; transition: all .15s; border-left: 3px solid transparent;
+}
+.nav-link:hover { background: rgba(255,255,255,.07); color: white; }
+.nav-link.active { background: rgba(255,255,255,.1); color: white; border-left-color: #CADCFC; }
+.nav-icon { font-size: 13px; flex-shrink: 0; width: 16px; text-align: center; }
+
+/* MAIN CONTENT */
+.main { max-width: 860px; padding: 48px 56px; }
+
+/* ── TYPOGRAPHY ────────────────────────────────────────────────── */
+h1 { font-family: var(--serif); font-size: 36px; font-weight: 400; color: var(--navy); margin-bottom: 8px; }
+h2 { font-family: var(--serif); font-size: 26px; font-weight: 400; color: var(--navy); margin: 48px 0 14px; padding-top: 8px; border-top: 2px solid var(--navy); }
+h3 { font-size: 17px; font-weight: 600; color: var(--charcoal); margin: 28px 0 10px; }
+h4 { font-size: 14px; font-weight: 600; color: var(--charcoal); margin: 18px 0 7px; }
+p  { margin-bottom: 14px; color: var(--charcoal); }
+a  { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; color: var(--muted); }
+
+/* Hero banner */
+.hero {
+  background: linear-gradient(135deg, var(--navy), #2E4B9A);
+  border-radius: 16px; padding: 36px 40px; margin-bottom: 40px; color: white;
+}
+.hero h1 { color: white; margin-bottom: 10px; }
+.hero p  { color: rgba(255,255,255,.8); font-size: 16px; margin: 0; }
+.hero-meta { display: flex; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
+.hero-badge {
+  display: flex; align-items: center; gap: 7px; font-size: 12px;
+  background: rgba(255,255,255,.12); border-radius: 20px; padding: 5px 12px;
+}
+
+/* ── CALLOUT BOXES ─────────────────────────────────────────────── */
+.callout {
+  border-radius: 10px; padding: 16px 20px; margin: 20px 0; display: flex; gap: 14px;
+  border-left: 4px solid;
+}
+.callout .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+.callout .callout-body h4 { margin: 0 0 5px; font-size: 13px; }
+.callout .callout-body p  { margin: 0; font-size: 13px; line-height: 1.6; }
+
+.callout-tip    { background: var(--blue-lt);  border-color: var(--blue);  }
+.callout-tip  h4 { color: var(--blue); }
+.callout-warn   { background: var(--amber-lt); border-color: var(--amber); }
+.callout-warn h4 { color: var(--amber); }
+.callout-good   { background: var(--green-lt); border-color: var(--green); }
+.callout-good h4 { color: var(--green); }
+.callout-danger { background: var(--red-lt);   border-color: var(--red);   }
+.callout-danger h4 { color: var(--red); }
+
+/* ── CODE BLOCKS ───────────────────────────────────────────────── */
+code {
+  font-family: var(--mono); font-size: 12.5px; background: #f0eee9;
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+  color: var(--charcoal);
+}
+pre {
+  background: #1a1917; border-radius: 10px; padding: 18px 22px; margin: 16px 0;
+  overflow-x: auto; position: relative;
+}
+pre code {
+  background: none; border: none; padding: 0; font-size: 13px;
+  color: #d4d0c8; line-height: 1.7;
+}
+pre .comment { color: #6b6860; }
+pre .cmd     { color: #7EE8A2; }
+pre .string  { color: #CADCFC; }
+pre .key     { color: #FFC040; }
+
+.copy-btn {
+  position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2); border-radius: 5px; color: rgba(255,255,255,.6);
+  font-size: 11px; font-family: var(--font); padding: 3px 9px; cursor: pointer;
+  transition: all .12s;
+}
+.copy-btn:hover { background: rgba(255,255,255,.2); color: white; }
+
+/* ── TABLES ────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+thead th {
+  background: var(--navy); color: white; padding: 9px 14px;
+  text-align: left; font-weight: 600; font-size: 12px;
+}
+tbody tr:nth-child(even) td { background: var(--cream-2); }
+tbody td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--charcoal); }
+tbody tr:last-child td { border-bottom: none; }
+
+/* ── STEP LISTS ────────────────────────────────────────────────── */
+.steps { list-style: none; padding: 0; margin: 14px 0; }
+.steps li {
+  display: flex; gap: 14px; padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.steps li:last-child { border-bottom: none; }
+.step-num {
+  width: 28px; height: 28px; border-radius: 50%; background: var(--navy); color: white;
+  font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 2px;
+}
+.step-body h4 { margin: 0 0 4px; font-size: 14px; }
+.step-body p  { margin: 0; font-size: 13px; color: var(--muted); }
+.step-body code { font-size: 12px; }
+
+/* ── OPTION CARDS ──────────────────────────────────────────────── */
+.option-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+.option-card {
+  border: 2px solid var(--border); border-radius: 12px; padding: 20px;
+  position: relative; transition: border-color .15s;
+}
+.option-card.recommended { border-color: var(--green); }
+.rec-badge {
+  position: absolute; top: -10px; left: 16px;
+  background: var(--green); color: white; font-size: 10px; font-weight: 700;
+  padding: 2px 10px; border-radius: 10px; letter-spacing: .06em;
+}
+.option-card h3 { margin: 0 0 6px; font-size: 15px; }
+.option-card .oc-meta { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.pros h5, .cons h5 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
+.pros h5 { color: var(--green); }
+.cons h5 { color: var(--red); }
+.pros li, .cons li { font-size: 12px; list-style: none; padding-left: 14px; position: relative; margin-bottom: 3px; line-height: 1.5; }
+.pros li::before { content: '✓'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
+.cons li::before { content: '✗'; position: absolute; left: 0; color: var(--red); font-weight: 700; }
+
+/* ── CHECKLIST ─────────────────────────────────────────────────── */
+.checklist { list-style: none; padding: 0; margin: 14px 0; }
+.checklist li {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
+  border-bottom: 1px solid var(--border); font-size: 13.5px;
+}
+.checklist li:last-child { border-bottom: none; }
+.check-box {
+  width: 18px; height: 18px; border: 2px solid var(--border-d);
+  border-radius: 4px; flex-shrink: 0; margin-top: 2px; cursor: pointer;
+  transition: all .15s; display: flex; align-items: center; justify-content: center;
+}
+.check-box.checked { background: var(--green); border-color: var(--green); }
+.check-box.checked::after { content: '✓'; color: white; font-size: 11px; font-weight: 700; }
+.check-text { flex: 1; line-height: 1.5; }
+.check-text .check-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* ── FILE TREE ─────────────────────────────────────────────────── */
+.file-tree {
+  background: #1a1917; border-radius: 10px; padding: 18px 22px; margin: 16px 0;
+  font-family: var(--mono); font-size: 13px; line-height: 1.9; color: #d4d0c8;
+}
+.ft-dir    { color: #CADCFC; }
+.ft-file   { color: #d4d0c8; }
+.ft-py     { color: #7EE8A2; }
+.ft-html   { color: #FFC040; }
+.ft-json   { color: #FF9A8B; }
+.ft-pdf    { color: #FF7B7B; }
+.ft-note   { color: #6b6860; font-style: italic; }
+
+/* ── BADGES ────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.b-blue  { background: var(--blue-lt); color: var(--blue); }
+.b-green { background: var(--green-lt); color: var(--green); }
+.b-amber { background: var(--amber-lt); color: var(--amber); }
+.b-red   { background: var(--red-lt); color: var(--red); }
+.b-navy  { background: #E8EAF6; color: var(--navy); }
+
+/* ── SECTION DIVIDER ───────────────────────────────────────────── */
+.section-anchor { display: block; position: relative; top: -80px; }
+
+/* ── PRINT ─────────────────────────────────────────────────────── */
+@media print {
+  .sidebar { display: none; }
+  .page-wrap { grid-template-columns: 1fr; }
+  .main { padding: 20px; max-width: 100%; }
+  .hero { background: var(--navy); -webkit-print-color-adjust: exact; }
+  pre  { background: #f5f5f5; border: 1px solid #ccc; }
+  pre code { color: #333; }
+  .copy-btn { display: none; }
+  h2 { page-break-before: always; }
+  @page { margin: 2cm; }
+}
+
+/* ── MOBILE ────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .page-wrap { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .main { padding: 24px 20px; }
+  .option-cards { grid-template-columns: 1fr; }
+  .pros-cons { grid-template-columns: 1fr; }
+}
+
+/* Progress tracker */
+.progress-tracker {
+  background: var(--cream-2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 20px; margin: 20px 0;
+}
+.progress-tracker h4 { margin: 0 0 10px; }
+.progress-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 13px; }
+.progress-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.pd-done { background: var(--green); }
+.pd-next { background: var(--blue); }
+.pd-wait { background: var(--stone); }
+</style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SIDEBAR NAVIGATION
+     ═══════════════════════════════════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">Björken BCC</div>
+    <div class="logo-sub">Deployment Guide v1.0</div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-heading">Getting started</div>
+    <a class="nav-link" href="#overview">     <span class="nav-icon">📖</span>Overview</a>
+    <a class="nav-link" href="#hosting">      <span class="nav-icon">🖥</span>Hosting options</a>
+    <a class="nav-link" href="#recommendation"><span class="nav-icon">⭐</span>Recommendation</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-heading">Deployment</div>
+    <a class="nav-link" href="#prerequisites"><span class="nav-icon">📦</span>What to install</a>
+    <a class="nav-link" href="#file-structure"><span class="nav-icon">📁</span>File structure</a>
+    <a class="nav-link" href="#local-setup">  <span class="nav-icon">💻</span>Local setup</a>
+    <a class="nav-link" href="#vercel-setup"> <span class="nav-icon">☁️</span>Vercel setup</a>
+    <a class="nav-link" href="#config">       <span class="nav-icon">⚙️</span>Configuration</a>
+    <a class="nav-link" href="#first-run">    <span class="nav-icon">🚀</span>First run</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-heading">Operations</div>
+    <a class="nav-link" href="#maintenance">  <span class="nav-icon">🔧</span>Maintenance</a>
+    <a class="nav-link" href="#backups">      <span class="nav-icon">💾</span>Backups</a>
+    <a class="nav-link" href="#troubleshoot"> <span class="nav-icon">🩺</span>Troubleshooting</a>
+    <a class="nav-link" href="#logs">         <span class="nav-icon">📋</span>Log files</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-heading">User Manual</div>
+    <a class="nav-link" href="#upload-docs">  <span class="nav-icon">📄</span>Upload documents</a>
+    <a class="nav-link" href="#chat-guide">   <span class="nav-icon">💬</span>Using the chat</a>
+    <a class="nav-link" href="#reports-guide"><span class="nav-icon">📊</span>Generating reports</a>
+    <a class="nav-link" href="#tracker-guide"><span class="nav-icon">📈</span>Reading the tracker</a>
+    <a class="nav-link" href="#help">         <span class="nav-icon">🆘</span>When things break</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-heading">Security</div>
+    <a class="nav-link" href="#api-keys">     <span class="nav-icon">🔑</span>API keys</a>
+    <a class="nav-link" href="#privacy">      <span class="nav-icon">🔒</span>Data privacy</a>
+    <a class="nav-link" href="#access">       <span class="nav-icon">👥</span>Access control</a>
+    <a class="nav-link" href="#security-checklist"><span class="nav-icon">✅</span>Security checklist</a>
+  </div>
+
+  <div style="padding:20px;margin-top:10px;border-top:1px solid rgba(255,255,255,.1)">
+    <div style="font-size:11px;color:rgba(255,255,255,.4);line-height:1.7">
+      System: BCC v1.0<br>
+      Built: March 2026<br>
+      Status: Production ready
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MAIN CONTENT
+     ═══════════════════════════════════════════════════════════════ -->
+<main class="main">
+
+<!-- ── HERO ─────────────────────────────────────────────────────── -->
+<div class="hero">
+  <h1>Business Command Center</h1>
+  <p>Complete deployment guide for Restaurang Björken AB.<br>Follow this guide to get your system running — no technical experience required.</p>
+  <div class="hero-meta">
+    <div class="hero-badge">📖 ~45 minutes to deploy locally</div>
+    <div class="hero-badge">☁️ ~90 minutes to deploy to the cloud</div>
+    <div class="hero-badge">🇸🇪 Swedish + English throughout</div>
+  </div>
+</div>
+
+<!-- ── SECTION 1: OVERVIEW ─────────────────────────────────────── -->
+<span class="section-anchor" id="overview"></span>
+<h2>1. Overview — What You're Deploying</h2>
+
+<p>Your Business Command Center is a collection of tools that work together. Here is what each piece does in plain language:</p>
+
+<table>
+  <thead><tr><th>File</th><th>What it does</th><th>Needs Python?</th></tr></thead>
+  <tbody>
+    <tr><td><code>workflow_dashboard.html</code></td><td>Invoice automation — watches for new files, categorises them, alerts you</td><td>Yes (for live mode)</td></tr>
+    <tr><td><code>rag_system.html</code></td><td>Document Q&amp;A — ask questions about your uploaded files</td><td>No (runs in browser)</td></tr>
+    <tr><td><code>chat_interface.html</code></td><td>AI chat — your main interface for business questions</td><td>No (calls Claude API)</td></tr>
+    <tr><td><code>studio.html</code></td><td>Document generator — creates invoices, contracts, letters</td><td>Yes (for DOCX/PDF)</td></tr>
+    <tr><td><code>presentation_studio.html</code></td><td>Slide deck generator — board presentations, investor decks</td><td>Yes (for PPTX)</td></tr>
+    <tr><td><code>workflow_engine.py</code></td><td>Invoice automation engine — the "brain" running in the background</td><td>Yes</td></tr>
+    <tr><td><code>report_scheduler.py</code></td><td>Automatic report generation — daily summaries, monthly PDFs</td><td>Yes</td></tr>
+    <tr><td><code>test_suite.py</code></td><td>System tests — run these to verify everything works</td><td>Yes</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">💡</div>
+  <div class="callout-body">
+    <h4>You can start with just the HTML files</h4>
+    <p>All <code>.html</code> files open directly in your browser with no installation at all. They connect to the Claude API for AI features. The Python files add automation (watching for invoices, scheduled reports). You can add those later.</p>
+  </div>
+</div>
+
+<!-- ── SECTION 2: HOSTING OPTIONS ─────────────────────────────── -->
+<span class="section-anchor" id="hosting"></span>
+<h2>2. Hosting Options</h2>
+
+<p>Think of "hosting" as: where does the system live, and who can access it? There are three options, each with a different trade-off between simplicity, access, and cost.</p>
+
+<div class="option-cards">
+
+  <div class="option-card">
+    <h3>🖥 Option A — Your Computer Only</h3>
+    <div class="oc-meta">Cost: Free · Setup: 20 min · Access: This computer only</div>
+    <p style="font-size:13px;color:var(--muted)">Files live on your laptop or desktop. You open them in your browser. Nothing is on the internet. Your team can't access it unless they're sitting at your computer.</p>
+    <div class="pros-cons">
+      <div class="pros"><h5>Pros</h5><ul>
+        <li>Completely free</li>
+        <li>No internet needed</li>
+        <li>Most private</li>
+        <li>Easiest setup</li>
+      </ul></div>
+      <div class="cons"><h5>Cons</h5><ul>
+        <li>Only on your computer</li>
+        <li>Team can't use it</li>
+        <li>Lost if computer breaks</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="option-card recommended">
+    <div class="rec-badge">⭐ RECOMMENDED</div>
+    <h3>☁️ Option B — Free Cloud (Vercel)</h3>
+    <div class="oc-meta">Cost: Free · Setup: 60 min · Access: Any device, anywhere</div>
+    <p style="font-size:13px;color:var(--muted)">Files are hosted on Vercel (a free hosting service). You get a real web address like <code>bjorken.vercel.app</code>. You and your team can open it on any phone or computer.</p>
+    <div class="pros-cons">
+      <div class="pros"><h5>Pros</h5><ul>
+        <li>Free forever</li>
+        <li>Works on all devices</li>
+        <li>Team can access</li>
+        <li>Automatic backups</li>
+      </ul></div>
+      <div class="cons"><h5>Cons</h5><ul>
+        <li>Needs internet</li>
+        <li>60min setup</li>
+        <li>Needs GitHub account</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="option-card">
+    <h3>🏢 Option C — Your Own Server</h3>
+    <div class="oc-meta">Cost: 50–200 kr/month · Setup: 3–4 hours · Access: Anywhere</div>
+    <p style="font-size:13px;color:var(--muted)">A rented computer in a data centre (like Railway or Render) runs 24/7. The Python automation runs constantly — invoices are processed the moment they arrive.</p>
+    <div class="pros-cons">
+      <div class="pros"><h5>Pros</h5><ul>
+        <li>Always running</li>
+        <li>Full automation</li>
+        <li>Your own domain</li>
+      </ul></div>
+      <div class="cons"><h5>Cons</h5><ul>
+        <li>Monthly cost</li>
+        <li>More complex setup</li>
+        <li>Requires more tech</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="option-card">
+    <h3>🔒 Option D — Private Network (NAS)</h3>
+    <div class="oc-meta">Cost: Free (if you have a NAS) · Setup: 2 hours · Access: Home/office network</div>
+    <p style="font-size:13px;color:var(--muted)">If you have a Synology or QNAP NAS (network storage device), you can run the system on it. Accessible from anywhere via VPN.</p>
+    <div class="pros-cons">
+      <div class="pros"><h5>Pros</h5><ul>
+        <li>Very private</li>
+        <li>No ongoing cost</li>
+        <li>Full control</li>
+      </ul></div>
+      <div class="cons"><h5>Cons</h5><ul>
+        <li>Needs existing NAS</li>
+        <li>Complex networking</li>
+      </ul></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── RECOMMENDATION ──────────────────────────────────────────── -->
+<span class="section-anchor" id="recommendation"></span>
+<h3>My Recommendation for Restaurang Björken</h3>
+
+<div class="callout callout-good">
+  <div class="callout-icon">⭐</div>
+  <div class="callout-body">
+    <h4>Start local → move to Vercel when ready</h4>
+    <p><strong>Today:</strong> Open the HTML files on your computer. Takes 10 minutes. Use it for a week, get familiar.<br>
+    <strong>Next week:</strong> Deploy to Vercel (free). Your team gets access. Reports email automatically.<br>
+    <strong>If you grow:</strong> Move to Railway (~80 kr/month) when you need 24/7 automation.</p>
+  </div>
+</div>
+
+<!-- ── SECTION 3: WHAT TO INSTALL ─────────────────────────────── -->
+<span class="section-anchor" id="prerequisites"></span>
+<h2>3. What to Install</h2>
+
+<p>Before you can run the system, your computer needs a few programs. Here's exactly what to install and where to get it.</p>
+
+<h3>Required for HTML files only (basic use)</h3>
+<ul class="checklist" id="prereq-checklist-1">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">
+      <strong>A modern web browser</strong> — Chrome, Firefox, Safari, or Edge<br>
+      <span class="check-sub">You almost certainly have this already.</span>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">
+      <strong>An Anthropic API key</strong> — for AI features<br>
+      <span class="check-sub">Go to <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → Sign up → API Keys → Create key. Costs roughly 0–5 kr per day of normal use.</span>
+    </div>
+  </li>
+</ul>
+
+<h3>Required for full automation (Python tools)</h3>
+<ul class="checklist" id="prereq-checklist-2">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">
+      <strong>Python 3.10 or newer</strong><br>
+      <span class="check-sub">Download from <a href="https://python.org/downloads" target="_blank">python.org/downloads</a>. During installation, tick "Add Python to PATH". Verify by opening Terminal (Mac) or Command Prompt (Windows) and typing <code>python3 --version</code></span>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">
+      <strong>Python libraries</strong> — run this command after Python is installed<br>
+      <span class="check-sub">Open Terminal and paste:</span>
+      <pre style="margin-top:8px"><code><span class="cmd">pip3 install python-docx python-pptx reportlab watchdog</span></code></pre>
+    </div>
+  </li>
+</ul>
+
+<h3>Required for Vercel deployment (cloud)</h3>
+<ul class="checklist" id="prereq-checklist-3">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">
+      <strong>A GitHub account</strong> (free)<br>
+      <span class="check-sub">Sign up at <a href="https://github.com" target="_blank">github.com</a></span>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">
+      <strong>A Vercel account</strong> (free)<br>
+      <span class="check-sub">Sign up at <a href="https://vercel.com" target="_blank">vercel.com</a> — use your GitHub account to sign in</span>
+    </div>
+  </li>
+</ul>
+
+<!-- ── SECTION 4: FILE STRUCTURE ──────────────────────────────── -->
+<span class="section-anchor" id="file-structure"></span>
+<h2>4. File Structure</h2>
+
+<p>Create a folder called <code>bjorken-bcc</code> and arrange your files like this. The folder names matter — the Python scripts look for files in specific places.</p>
+
+<div class="file-tree">
+<span class="ft-dir">bjorken-bcc/</span>
+│
+├── <span class="ft-dir">dashboard/</span>              <span class="ft-note">← Open these in your browser</span>
+│   ├── <span class="ft-html">workflow_dashboard.html</span>
+│   ├── <span class="ft-html">rag_system.html</span>
+│   ├── <span class="ft-html">chat_interface.html</span>
+│   ├── <span class="ft-html">studio.html</span>
+│   ├── <span class="ft-html">presentation_studio.html</span>
+│   ├── <span class="ft-html">cost_tracker_dashboard.html</span>
+│   └── <span class="ft-html">test_runner.html</span>
+│
+├── <span class="ft-dir">automation/</span>             <span class="ft-note">← Python automation engines</span>
+│   ├── <span class="ft-py">workflow_engine.py</span>
+│   ├── <span class="ft-py">report_scheduler.py</span>
+│   ├── <span class="ft-py">generate_pptx.py</span>
+│   └── <span class="ft-py">test_suite.py</span>
+│
+├── <span class="ft-dir">config/</span>                 <span class="ft-note">← Settings files (edit these)</span>
+│   ├── <span class="ft-json">workflow_config.json</span>
+│   └── <span class="ft-json">report_config.json</span>
+│
+├── <span class="ft-dir">inbox/</span>                  <span class="ft-note">← Drop invoices here to auto-process</span>
+├── <span class="ft-dir">processed/</span>              <span class="ft-note">← Invoices after processing</span>
+├── <span class="ft-dir">flagged/</span>                <span class="ft-note">← Invoices that need your attention</span>
+├── <span class="ft-dir">reports/output/</span>         <span class="ft-note">← Generated PDFs saved here</span>
+├── <span class="ft-dir">db/</span>                     <span class="ft-note">← Database (created automatically)</span>
+└── <span class="ft-dir">logs/</span>                   <span class="ft-note">← Log files (created automatically)</span>
+</div>
+
+<!-- ── SECTION 5: LOCAL SETUP ──────────────────────────────────── -->
+<span class="section-anchor" id="local-setup"></span>
+<h2>5. Local Setup — Your Computer</h2>
+
+<h3>Step 1: Create the folder structure</h3>
+
+<p><strong>On Mac:</strong> Open Terminal (press ⌘+Space, type "Terminal").<br>
+<strong>On Windows:</strong> Open Command Prompt (press Win+R, type "cmd").</p>
+
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="cmd">mkdir bjorken-bcc
+cd bjorken-bcc
+mkdir dashboard automation config inbox processed flagged logs db reports
+mkdir reports/output</span></code></pre>
+
+<h3>Step 2: Copy all your files</h3>
+<p>Move the files from wherever they were downloaded into the folders above. All <code>.html</code> files go in <code>dashboard/</code>, all <code>.py</code> files go in <code>automation/</code>, and all <code>.json</code> files go in <code>config/</code>.</p>
+
+<h3>Step 3: Install Python libraries</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="cmd">pip3 install python-docx python-pptx reportlab watchdog</span></code></pre>
+
+<h3>Step 4: Verify everything works</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="comment"># Test Python libraries</span>
+<span class="cmd">python3 -c "from docx import Document; from pptx import Presentation; from reportlab.lib.pagesizes import A4; print('All libraries OK')"</span>
+
+<span class="comment"># Run the test suite</span>
+<span class="cmd">cd automation && python3 test_suite.py</span>
+<span class="comment"># You should see: ✅ ALL TESTS PASSED</span></code></pre>
+
+<h3>Step 5: Open the dashboard</h3>
+<p>Double-click any <code>.html</code> file in the <code>dashboard/</code> folder. It opens in your browser. Start with <code>chat_interface.html</code>.</p>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">🔑</div>
+  <div class="callout-body">
+    <h4>Add your API key</h4>
+    <p>The first time you open any dashboard, look for the API key field (usually in the top-right corner or sidebar). Paste your Anthropic API key there. It's saved in your browser — you only need to do this once per browser.</p>
+  </div>
+</div>
+
+<!-- ── SECTION 6: VERCEL SETUP ─────────────────────────────────── -->
+<span class="section-anchor" id="vercel-setup"></span>
+<h2>6. Vercel Setup — Free Cloud Hosting</h2>
+
+<p>Vercel is a free hosting service. Once set up, your system is accessible at a web address from any device. The HTML files work perfectly on Vercel. The Python automation needs to run on your computer or a server.</p>
+
+<ol class="steps">
+  <li>
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h4>Create a GitHub repository</h4>
+      <p>Go to <a href="https://github.com/new" target="_blank">github.com/new</a>. Name it <code>bjorken-bcc</code>. Set it to <strong>Private</strong>. Click "Create repository".</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h4>Upload your files to GitHub</h4>
+      <p>On the repository page, click "uploading an existing file". Drag your <code>dashboard/</code> folder contents in. Click "Commit changes".</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h4>Connect Vercel to GitHub</h4>
+      <p>Go to <a href="https://vercel.com/new" target="_blank">vercel.com/new</a>. Click "Import Git Repository". Select your <code>bjorken-bcc</code> repository. Click "Deploy".</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <h4>Get your URL</h4>
+      <p>Vercel gives you a URL like <code>bjorken-bcc.vercel.app</code>. Share this with your team. Bookmark it on your phone.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">5</div>
+    <div class="step-body">
+      <h4>Add environment variables (API key)</h4>
+      <p>In Vercel → your project → Settings → Environment Variables. Add <code>ANTHROPIC_API_KEY</code> with your key value. This keeps your key out of the files.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">6</div>
+    <div class="step-body">
+      <h4>Test the deployment</h4>
+      <p>Open your Vercel URL. The dashboards should load. Enter your API key in the interface. Try asking a question in the chat.</p>
+    </div>
+  </li>
+</ol>
+
+<div class="callout callout-warn">
+  <div class="callout-icon">⚠️</div>
+  <div class="callout-body">
+    <h4>Python automation on Vercel</h4>
+    <p>The HTML dashboards work on Vercel. The Python automation (workflow_engine.py, report_scheduler.py) needs to run somewhere with Python — your laptop, or a paid server. For now, run them manually on your computer when needed.</p>
+  </div>
+</div>
+
+<!-- ── SECTION 7: CONFIGURATION ───────────────────────────────── -->
+<span class="section-anchor" id="config"></span>
+<h2>7. Configuration Files</h2>
+
+<h3>workflow_config.json — Invoice processing rules</h3>
+<p>This is the main settings file. Open it in any text editor (Notepad on Windows, TextEdit on Mac).</p>
+
+<p><strong>The three things to change first:</strong></p>
+
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="key">"company"</span>: {
+  <span class="key">"name"</span>:    <span class="string">"Restaurang Björken AB"</span>,  <span class="comment">← your company name</span>
+  <span class="key">"org_nr"</span>:  <span class="string">"556XXX-XXXX"</span>           <span class="comment">← your org number</span>
+},
+
+<span class="key">"thresholds"</span>: {
+  <span class="key">"food_pct_warn"</span>:   31.0,   <span class="comment">← alert when food costs exceed 31%</span>
+  <span class="key">"staff_pct_warn"</span>:  40.0,   <span class="comment">← alert when staff costs exceed 40%</span>
+  <span class="key">"profit_margin_warn"</span>: 12.0  <span class="comment">← alert when margin falls below 12%</span>
+},
+
+<span class="key">"anthropic_api_key"</span>: <span class="string">"sk-ant-..."</span>  <span class="comment">← paste your API key here</span></code></pre>
+
+<h3>report_config.json — Report schedules and recipients</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="key">"schedules"</span>: {
+  <span class="key">"daily"</span>: {
+    <span class="key">"enabled"</span>:    true,
+    <span class="key">"time"</span>:       <span class="string">"07:00"</span>,           <span class="comment">← what time to send</span>
+    <span class="key">"recipients"</span>: [<span class="string">"<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="ef96809aaf8d85809d848a81c19c8a">[email&#160;protected]</a>"</span>]  <span class="comment">← who gets the report</span>
+  }
+},
+<span class="key">"email"</span>: {
+  <span class="key">"enabled"</span>:   true,
+  <span class="key">"username"</span>:  <span class="string">"<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="afd6c0daddefc8c2cec6c381ccc0c2">[email&#160;protected]</a>"</span>,    <span class="comment">← your Gmail address</span>
+  <span class="key">"password"</span>:  <span class="string">"xxxx xxxx xxxx xxxx"</span> <span class="comment">← Gmail App Password (not your main password)</span>
+}</code></pre>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">📧</div>
+  <div class="callout-body">
+    <h4>How to get a Gmail App Password</h4>
+    <p>Go to your Google account → Security → 2-Step Verification (must be on) → App passwords → Create. Choose "Mail" and "Other (custom name)" → name it "Björken Reports". Copy the 16-character password shown.</p>
+  </div>
+</div>
+
+<!-- ── SECTION 8: FIRST RUN ────────────────────────────────────── -->
+<span class="section-anchor" id="first-run"></span>
+<h2>8. First Run Setup</h2>
+
+<div class="progress-tracker">
+  <h4>First-run checklist</h4>
+  <div class="progress-row"><div class="progress-dot pd-next"></div> Open chat_interface.html in your browser</div>
+  <div class="progress-row"><div class="progress-dot pd-wait"></div> Enter your Anthropic API key in the sidebar</div>
+  <div class="progress-row"><div class="progress-dot pd-wait"></div> Upload your first invoice (any PDF or text file)</div>
+  <div class="progress-row"><div class="progress-dot pd-wait"></div> Ask a question about it in the chat</div>
+  <div class="progress-row"><div class="progress-dot pd-wait"></div> Generate a test daily report</div>
+  <div class="progress-row"><div class="progress-dot pd-wait"></div> Run the test suite to confirm all systems pass</div>
+</div>
+
+<h3>Start the workflow engine (invoice automation)</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="cmd">cd automation</span>
+
+<span class="comment"># Test with a simulated invoice first</span>
+<span class="cmd">python3 workflow_engine.py --simulate food</span>
+<span class="comment"># You should see 8 steps run and complete with ✓</span>
+
+<span class="comment"># Start watching the inbox folder (keep this terminal window open)</span>
+<span class="cmd">python3 workflow_engine.py</span>
+<span class="comment"># Now drop any invoice file into the inbox/ folder — it processes automatically</span></code></pre>
+
+<h3>Generate your first reports</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="cmd">cd automation</span>
+
+<span class="comment"># Generate all four report types at once</span>
+<span class="cmd">python3 report_scheduler.py --now all</span>
+<span class="comment"># Four PDF files appear in reports/output/</span>
+
+<span class="comment"># Start the automatic scheduler (runs daily at 07:00)</span>
+<span class="cmd">python3 report_scheduler.py --watch</span></code></pre>
+
+<h3>Run the tests to confirm everything is working</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="cmd">cd automation
+python3 test_suite.py</span>
+<span class="comment"># Expected output: ✅ ALL TESTS PASSED — System ready for production</span></code></pre>
+
+<!-- ── SECTION 9: MAINTENANCE ──────────────────────────────────── -->
+<span class="section-anchor" id="maintenance"></span>
+<h2>9. Maintenance Guide</h2>
+
+<h3>Daily tasks (5 minutes)</h3>
+<ul class="checklist">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Check the daily summary email (arrives at 07:00)
+      <div class="check-sub">Look for any RED alerts — these need action today</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Check the <code>flagged/</code> folder
+      <div class="check-sub">Any files here need manual review — unknown suppliers or unusual amounts</div>
+    </div>
+  </li>
+</ul>
+
+<h3>Weekly tasks (15 minutes)</h3>
+<ul class="checklist">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Review the weekly report (sent Monday 08:00)
+      <div class="check-sub">Particularly check cost percentages vs targets</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Check reconciliation — unpaid invoices tab
+      <div class="check-sub">Any invoices showing as overdue need to be paid or queried</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Import bank CSV (if not using automatic bank sync)
+      <div class="check-sub">Log in to Handelsbanken → download statement → drag into Reconcile tab</div>
+    </div>
+  </li>
+</ul>
+
+<span class="section-anchor" id="backups"></span>
+<h3>How to back up your data</h3>
+
+<p>All your important data lives in two places:</p>
+
+<table>
+  <thead><tr><th>What</th><th>Where</th><th>How to back up</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Invoice database</strong></td>
+      <td><code>db/workflow.db</code></td>
+      <td>Copy this file to Google Drive or Dropbox weekly</td>
+    </tr>
+    <tr>
+      <td><strong>Processed invoices</strong></td>
+      <td><code>processed/</code> folder</td>
+      <td>Copy folder to backup drive monthly</td>
+    </tr>
+    <tr>
+      <td><strong>Generated reports</strong></td>
+      <td><code>reports/output/</code></td>
+      <td>Already PDFs — copy to Google Drive monthly</td>
+    </tr>
+    <tr>
+      <td><strong>Configuration</strong></td>
+      <td><code>config/</code> folder</td>
+      <td>Copy after any changes to settings</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4>Automated backup (Mac/Linux)</h4>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="comment"># Add this to your crontab (run: crontab -e) for daily backup at midnight</span>
+<span class="cmd">0 0 * * * cp ~/bjorken-bcc/db/workflow.db ~/bjorken-bcc/db/backup_$(date +%Y%m%d).db</span></code></pre>
+
+<h4>Restore from backup</h4>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="comment"># Stop the workflow engine first, then restore</span>
+<span class="cmd">cp ~/bjorken-bcc/db/backup_20260301.db ~/bjorken-bcc/db/workflow.db</span>
+<span class="comment"># Restart the workflow engine</span></code></pre>
+
+<h3>How to update when you want new features</h3>
+<p>When new versions of the files are created (either by me building more features, or by you editing them), here's how to update safely:</p>
+
+<ol class="steps">
+  <li>
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h4>Back up first</h4>
+      <p>Copy the <code>db/</code> and <code>config/</code> folders to your desktop before changing anything.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h4>Replace only the files that changed</h4>
+      <p>Don't replace <code>workflow_config.json</code> or <code>report_config.json</code> — those have your personal settings. Only replace <code>.py</code> and <code>.html</code> files.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h4>Run the tests</h4>
+      <p><code>python3 test_suite.py</code> — if all pass, the update is good. If tests fail, restore from backup and report the issue.</p>
+    </div>
+  </li>
+</ol>
+
+<!-- ── SECTION 10: TROUBLESHOOTING ────────────────────────────── -->
+<span class="section-anchor" id="troubleshoot"></span>
+<h2>10. Troubleshooting</h2>
+
+<table>
+  <thead><tr><th>Problem</th><th>Most likely cause</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Chat says "Error" or won't respond</strong></td>
+      <td>API key issue</td>
+      <td>Check your API key is entered correctly. Check <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> for your usage/balance</td>
+    </tr>
+    <tr>
+      <td><strong>Invoice not processed after dropping in inbox/</strong></td>
+      <td>Workflow engine not running</td>
+      <td>Open Terminal → <code>cd automation && python3 workflow_engine.py</code>. The engine must be running to watch the folder</td>
+    </tr>
+    <tr>
+      <td><strong>Reports not arriving by email</strong></td>
+      <td>Email not configured</td>
+      <td>Check <code>report_config.json</code> — ensure <code>"enabled": true</code> in email section, and Gmail App Password is correct</td>
+    </tr>
+    <tr>
+      <td><strong>PDF/DOCX generation fails</strong></td>
+      <td>Missing Python library</td>
+      <td>Run: <code>pip3 install python-docx python-pptx reportlab</code></td>
+    </tr>
+    <tr>
+      <td><strong>Dashboard shows stale data</strong></td>
+      <td>Browser cache</td>
+      <td>Press Ctrl+Shift+R (Windows) or Cmd+Shift+R (Mac) to hard-refresh</td>
+    </tr>
+    <tr>
+      <td><strong>"Module not found" error</strong></td>
+      <td>Python path issue</td>
+      <td>Run from the <code>automation/</code> directory: <code>cd automation && python3 workflow_engine.py</code></td>
+    </tr>
+    <tr>
+      <td><strong>Invoice categorised as "Other" when it should be "Food"</strong></td>
+      <td>Supplier not in known_suppliers list</td>
+      <td>Add the supplier to <code>workflow_config.json</code> → <code>known_suppliers</code> section</td>
+    </tr>
+    <tr>
+      <td><strong>Numbers in tracker seem wrong</strong></td>
+      <td>Invoice processed twice</td>
+      <td>The hash system prevents this — but if suspicious, check <code>db/workflow.db</code> with DB Browser for SQLite (free download)</td>
+    </tr>
+  </tbody>
+</table>
+
+<span class="section-anchor" id="logs"></span>
+<h3>Where to find the logs</h3>
+
+<table>
+  <thead><tr><th>Log file</th><th>What it records</th></tr></thead>
+  <tbody>
+    <tr><td><code>logs/workflow.log</code></td><td>Every invoice processed, alerts triggered, errors</td></tr>
+    <tr><td><code>logs/scheduler.log</code></td><td>Every report generated, emails sent or failed</td></tr>
+    <tr><td><code>logs/scheduler.db</code></td><td>Database of all generated reports (open with SQLite browser)</td></tr>
+  </tbody>
+</table>
+
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="comment"># See last 50 lines of the workflow log</span>
+<span class="cmd">tail -50 logs/workflow.log</span>
+
+<span class="comment"># Search for errors in the log</span>
+<span class="cmd">grep "ERROR" logs/workflow.log</span>
+
+<span class="comment"># Watch log in real time as things happen</span>
+<span class="cmd">tail -f logs/workflow.log</span></code></pre>
+
+<!-- ══════════════════════════════════════════════════════════════
+     USER MANUAL
+     ══════════════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="upload-docs"></span>
+<h2>11. User Manual — Uploading Documents</h2>
+
+<p>The system can read invoices, P&L statements, bank statements, contracts, and any business document. Here's how to add them.</p>
+
+<h3>Method 1: Drag and drop into the browser (instant, for chat Q&amp;A)</h3>
+<ol class="steps">
+  <li>
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h4>Open rag_system.html or chat_interface.html</h4>
+      <p>Any of the HTML dashboards with a document panel on the left side.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h4>Click "Upload documents" or drag files in</h4>
+      <p>Supported formats: <strong>PDF</strong>, <strong>Excel (.xlsx)</strong>, <strong>CSV</strong>, <strong>text files (.txt)</strong>. You can upload multiple files at once.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h4>Wait for indexing</h4>
+      <p>A chunk count appears next to each document (e.g. "12 chunks indexed"). This takes 1–5 seconds. Once you see the green "Ready" badge, the document is searchable.</p>
+    </div>
+  </li>
+  <li>
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <h4>Ask a question</h4>
+      <p>Type any question about the document. The RAG Inspector panel (right side) shows exactly which parts of which documents were used to answer.</p>
+    </div>
+  </li>
+</ol>
+
+<h3>Method 2: Drop into inbox/ folder (for automatic processing)</h3>
+<p>When the workflow engine is running, any file dropped into the <code>inbox/</code> folder is automatically:</p>
+<ul style="margin:10px 0 14px 24px;color:var(--charcoal)">
+  <li>Read and data extracted (vendor, amount, date, line items)</li>
+  <li>Categorised (food / staff / rent / other)</li>
+  <li>Added to the financial tracker</li>
+  <li>Checked for anomalies</li>
+  <li>Moved to <code>processed/</code> (or <code>flagged/</code> if there's an alert)</li>
+</ul>
+
+<div class="callout callout-warn">
+  <div class="callout-icon">📝</div>
+  <div class="callout-body">
+    <h4>Best format for invoices</h4>
+    <p>The system reads text best. If you have a PDF that was scanned (a photo of paper), the text extraction may be imperfect. For best results, use PDFs exported from accounting software, or copy-paste the text into a <code>.txt</code> file.</p>
+  </div>
+</div>
+
+<!-- ── CHAT GUIDE ────────────────────────────────────────────────── -->
+<span class="section-anchor" id="chat-guide"></span>
+<h2>12. User Manual — Using the Chat Effectively</h2>
+
+<h3>Types of questions and how to ask them</h3>
+
+<table>
+  <thead><tr><th>Question type</th><th>Example</th><th>Tip</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="badge b-blue">Document</span></td>
+      <td>"What was our total Menigo spend in March?"</td>
+      <td>Be specific about the time period</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-green">Analysis</span></td>
+      <td>"Are our food costs higher than industry average?"</td>
+      <td>The system compares against built-in industry benchmarks</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-amber">Planning</span></td>
+      <td>"What should we budget for Q2 food costs?"</td>
+      <td>Based on actual March data and trends</td>
+    </tr>
+    <tr>
+      <td><span class="badge b-navy">Generate</span></td>
+      <td>"Draft an email to Menigo about their price increase"</td>
+      <td>The AI uses actual invoice data to personalise the email</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Good questions to ask regularly</h3>
+<ul style="margin:10px 0 14px 24px;color:var(--charcoal);line-height:2">
+  <li><em>"What were our top 5 expenses last month?"</em></li>
+  <li><em>"Are there any invoices due in the next 7 days?"</em></li>
+  <li><em>"Which of our cost categories is furthest over budget?"</em></li>
+  <li><em>"Summarise all documents uploaded this week"</em></li>
+  <li><em>"What is our profit margin trend over the last 3 months?"</em></li>
+  <li><em>"Create a monthly summary report for the board"</em></li>
+</ul>
+
+<h3>Understanding the citations</h3>
+<p>After each AI answer, you'll see blue chips showing which documents were used: <code>[1] PL_Mars_2026.txt</code>. Click any chip to highlight the relevant document in the library panel. This tells you exactly where the answer came from — you can verify the original document any time.</p>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">💡</div>
+  <div class="callout-body">
+    <h4>The AI only knows what you've uploaded</h4>
+    <p>If you ask about something and the AI says "I don't have information about that in your documents," it means the relevant document hasn't been uploaded yet. Upload it and ask again.</p>
+  </div>
+</div>
+
+<!-- ── REPORTS GUIDE ──────────────────────────────────────────────── -->
+<span class="section-anchor" id="reports-guide"></span>
+<h2>13. User Manual — Generating Reports</h2>
+
+<h3>Quick way — from the browser</h3>
+<ol class="steps">
+  <li><div class="step-num">1</div><div class="step-body"><h4>Open report_scheduler_dashboard.html</h4><p>Four schedule cards appear: Daily, Weekly, Monthly, Quarterly.</p></div></li>
+  <li><div class="step-num">2</div><div class="step-body"><h4>Click "Generate now" on any card</h4><p>The report generates in ~2 seconds. It appears in the "Generated Reports" list on the right.</p></div></li>
+  <li><div class="step-num">3</div><div class="step-body"><h4>Preview or download</h4><p>Click the preview button to see it in the browser. Click ↓ to download the PDF.</p></div></li>
+</ol>
+
+<h3>Command line — most reliable</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="cmd">cd automation</span>
+
+<span class="comment"># Single reports</span>
+<span class="cmd">python3 report_scheduler.py --now daily</span>
+<span class="cmd">python3 report_scheduler.py --now weekly</span>
+<span class="cmd">python3 report_scheduler.py --now monthly</span>
+<span class="cmd">python3 report_scheduler.py --now quarterly</span>
+
+<span class="comment"># All at once</span>
+<span class="cmd">python3 report_scheduler.py --now all</span>
+
+<span class="comment"># Reports save to: reports/output/</span></code></pre>
+
+<h3>Report types explained</h3>
+<table>
+  <thead><tr><th>Report</th><th>When</th><th>Best for</th><th>Length</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Daily</strong></td><td>Every morning 07:00</td><td>Quick numbers check, spot anomalies</td><td>1 page</td></tr>
+    <tr><td><strong>Weekly</strong></td><td>Monday 08:00</td><td>Weekly management meeting</td><td>2–3 pages</td></tr>
+    <tr><td><strong>Monthly</strong></td><td>3rd of month 09:00</td><td>Board presentation, investor update</td><td>5–7 pages</td></tr>
+    <tr><td><strong>Quarterly</strong></td><td>Start of each quarter</td><td>Strategic review, Q2/Q3/Q4 planning</td><td>6–8 pages</td></tr>
+  </tbody>
+</table>
+
+<!-- ── TRACKER GUIDE ──────────────────────────────────────────────── -->
+<span class="section-anchor" id="tracker-guide"></span>
+<h2>14. User Manual — Reading the Tracker</h2>
+
+<h3>The four KPI cards</h3>
+<p>At the top of most dashboards are four key numbers. Here's how to read them:</p>
+
+<table>
+  <thead><tr><th>Card</th><th>What it shows</th><th>Good range</th><th>Warning sign</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Revenue</strong></td>
+      <td>Total sales this period</td>
+      <td>↑ trending up</td>
+      <td>Down more than 10% vs last month</td>
+    </tr>
+    <tr>
+      <td><strong>Food & Bev %</strong></td>
+      <td>Supplier costs as % of revenue</td>
+      <td>Below 31%</td>
+      <td>Orange: above 31% · Red: above 35%</td>
+    </tr>
+    <tr>
+      <td><strong>Staff %</strong></td>
+      <td>All payroll as % of revenue</td>
+      <td>Below 40%</td>
+      <td>Orange: above 40% · Red: above 50%</td>
+    </tr>
+    <tr>
+      <td><strong>Net Profit %</strong></td>
+      <td>What's left after all costs</td>
+      <td>Above 12%</td>
+      <td>Orange: below 12% · Red: below 7%</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Colour coding everywhere</h3>
+<ul style="margin:10px 0 14px 24px;color:var(--charcoal);line-height:2">
+  <li><span style="color:var(--green);font-weight:600">🟢 Green</span> — Within target, all good</li>
+  <li><span style="color:var(--amber);font-weight:600">🟡 Amber</span> — Approaching limit, worth watching</li>
+  <li><span style="color:var(--red);font-weight:600">🔴 Red</span> — Over limit, action needed today</li>
+</ul>
+
+<h3>What to do when you see a red alert</h3>
+<ol class="steps">
+  <li><div class="step-num">1</div><div class="step-body"><h4>Read the alert detail</h4><p>Click or hover the red badge. It tells you exactly what the issue is: "Food costs at 33.2% — above 31% target".</p></div></li>
+  <li><div class="step-num">2</div><div class="step-body"><h4>Ask the chat why</h4><p>Type: <em>"Why are food costs above target this month?"</em> The AI looks at your invoices and explains.</p></div></li>
+  <li><div class="step-num">3</div><div class="step-body"><h4>Act on the recommendation</h4><p>The chat suggests specific actions (e.g. "Menigo invoice in March was 8% higher than usual — consider renegotiating contract").</p></div></li>
+</ol>
+
+<!-- ── HELP ──────────────────────────────────────────────────────── -->
+<span class="section-anchor" id="help"></span>
+<h2>15. When Things Don't Work</h2>
+
+<h3>Quick diagnostic checklist</h3>
+<ul class="checklist">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Is the browser showing any error message? Screenshot it.
+      <div class="check-sub">Press F12 → Console tab to see technical error details</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Is the workflow engine running in Terminal?
+      <div class="check-sub">You should see "[timestamp] Watching inbox/ for new invoices…" — if not, restart it</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Has the API key expired or run out of credit?
+      <div class="check-sub">Check console.anthropic.com → Usage dashboard</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Was a configuration file accidentally edited?
+      <div class="check-sub">Restore from your config/ backup</div>
+    </div>
+  </li>
+</ul>
+
+<h3>Emergency: complete system reset</h3>
+<p>If nothing works, this restores the system to a clean state without losing your invoice data:</p>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code><span class="comment"># 1. Back up your data first</span>
+<span class="cmd">cp -r db/ db_backup_$(date +%Y%m%d)</span>
+<span class="cmd">cp -r config/ config_backup_$(date +%Y%m%d)</span>
+
+<span class="comment"># 2. Reinstall Python libraries</span>
+<span class="cmd">pip3 install --upgrade python-docx python-pptx reportlab watchdog</span>
+
+<span class="comment"># 3. Run the test suite to identify what's broken</span>
+<span class="cmd">python3 test_suite.py</span>
+<span class="comment"># Look for ✗ marks — these tell you exactly which part failed</span></code></pre>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SECURITY
+     ══════════════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="api-keys"></span>
+<h2>16. Security — API Key Storage</h2>
+
+<p>Your Anthropic API key is like a credit card. Anyone who has it can use it and it charges to your account. Here's how to store it safely.</p>
+
+<h3>Do this</h3>
+<ul style="margin:10px 0 14px 24px;color:var(--charcoal);line-height:2">
+  <li>Store it in the browser (saved by the dashboard interface) — safe</li>
+  <li>Store it in <code>workflow_config.json</code> — acceptable for local use only</li>
+  <li>Use environment variables on Vercel/servers — best practice</li>
+  <li>Set a <strong>monthly spending limit</strong> at console.anthropic.com → Billing → Usage limits</li>
+</ul>
+
+<h3>Never do this</h3>
+<ul style="margin:10px 0 14px 24px;color:var(--charcoal);line-height:2">
+  <li>Send the API key in an email</li>
+  <li>Put it in a file you upload to GitHub (even a private repository)</li>
+  <li>Share it with anyone outside your business</li>
+  <li>Leave it in a public Google Doc</li>
+</ul>
+
+<div class="callout callout-danger">
+  <div class="callout-icon">🚨</div>
+  <div class="callout-body">
+    <h4>If your API key is compromised</h4>
+    <p>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com/settings/keys</a> immediately. Delete the compromised key. Create a new one. Update it in all your config files.</p>
+  </div>
+</div>
+
+<!-- ── PRIVACY ──────────────────────────────────────────────────── -->
+<span class="section-anchor" id="privacy"></span>
+<h2>17. Data Privacy</h2>
+
+<p>Your financial data is sensitive. Here's exactly what goes where:</p>
+
+<table>
+  <thead><tr><th>Data</th><th>Where it goes</th><th>Privacy level</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Invoice content (amounts, vendors)</td>
+      <td>Stays on your computer / your database</td>
+      <td>🟢 Private — never leaves your system</td>
+    </tr>
+    <tr>
+      <td>Questions you ask the AI</td>
+      <td>Sent to Anthropic Claude API (encrypted)</td>
+      <td>🟡 Anthropic's data policy applies</td>
+    </tr>
+    <tr>
+      <td>Document content for AI analysis</td>
+      <td>Sent to Claude API when you ask about documents</td>
+      <td>🟡 Don't include personal employee details</td>
+    </tr>
+    <tr>
+      <td>Fortnox connection data</td>
+      <td>Stays on your computer (OAuth tokens)</td>
+      <td>🟢 Private — never leaves your system</td>
+    </tr>
+    <tr>
+      <td>Generated reports (PDFs)</td>
+      <td>Saved locally in reports/output/</td>
+      <td>🟢 Private — on your computer only</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout callout-tip">
+  <div class="callout-icon">🇪🇺</div>
+  <div class="callout-body">
+    <h4>GDPR consideration</h4>
+    <p>If your documents contain personal data about employees (names, salaries, personal ID numbers), be cautious about what you send to the Claude API. The AI doesn't need to see employee names to answer financial questions — you can redact names from documents before uploading.</p>
+  </div>
+</div>
+
+<!-- ── ACCESS CONTROL ────────────────────────────────────────────── -->
+<span class="section-anchor" id="access"></span>
+<h2>18. Access Control</h2>
+
+<h3>Local setup: physical security</h3>
+<p>If the system only runs on your computer, access control is simple: lock your screen when you leave your desk. Use a computer login password. The data is as secure as your computer.</p>
+
+<h3>Vercel: password protection (free feature)</h3>
+<ol class="steps">
+  <li><div class="step-num">1</div><div class="step-body"><h4>In Vercel dashboard → your project → Settings</h4><p>Under "Deployment Protection" → enable "Vercel Authentication". This makes anyone who visits the URL log in with a Vercel account first.</p></div></li>
+  <li><div class="step-num">2</div><div class="step-body"><h4>Invite your team</h4><p>Vercel → team settings → invite team members by email. They get access only to the dashboard, not to your GitHub or billing.</p></div></li>
+</ol>
+
+<h3>Who should have access to what</h3>
+<table>
+  <thead><tr><th>Person</th><th>Should see</th><th>Should NOT see</th></tr></thead>
+  <tbody>
+    <tr><td>Owner</td><td>Everything</td><td>—</td></tr>
+    <tr><td>Head chef / kitchen manager</td><td>Food cost dashboard, weekly report</td><td>Staff salaries, full P&L</td></tr>
+    <tr><td>Bookkeeper / accountant</td><td>Invoice workflow, reconciliation, monthly report</td><td>Strategic planning deck</td></tr>
+    <tr><td>Floor staff</td><td>Nothing (no access needed)</td><td>All financial data</td></tr>
+  </tbody>
+</table>
+
+<!-- ── SECURITY CHECKLIST ─────────────────────────────────────────── -->
+<span class="section-anchor" id="security-checklist"></span>
+<h2>19. Security Checklist</h2>
+
+<p>Complete this checklist before going live. Click each item to mark it done.</p>
+
+<h3>API Keys &amp; Credentials</h3>
+<ul class="checklist" id="security-api">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Anthropic API key has a monthly spending limit set
+      <div class="check-sub">console.anthropic.com → Billing → Set limit to e.g. 100 kr/month</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">API key NOT stored in any file that could be shared publicly
+      <div class="check-sub">Check: is the key inside any .html or .py file that might be uploaded to GitHub?</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Gmail App Password stored only in config/report_config.json
+      <div class="check-sub">This file should never be committed to any public repository</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Fortnox OAuth tokens stored in the database (not in shared files)
+      <div class="check-sub">The workflow engine stores tokens in db/workflow.db automatically</div>
+    </div>
+  </li>
+</ul>
+
+<h3>Data Protection</h3>
+<ul class="checklist" id="security-data">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Database backed up at least weekly
+      <div class="check-sub">Copy db/workflow.db to Google Drive or an external drive</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Processed invoices backed up monthly
+      <div class="check-sub">Archive the processed/ folder to secure storage</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Generated reports saved in secure location
+      <div class="check-sub">Reports contain sensitive financial data — treat like accounting records</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Computer has a login password and auto-locks after inactivity
+      <div class="check-sub">Settings → Security → Require password after sleep (5 minutes)</div>
+    </div>
+  </li>
+</ul>
+
+<h3>Access Control</h3>
+<ul class="checklist" id="security-access">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Only authorised people know the Vercel URL (if using cloud)
+      <div class="check-sub">Don't post the URL on social media or public websites</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Vercel authentication enabled (if sharing with team)
+      <div class="check-sub">Vercel → Settings → Deployment Protection → Enable</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Team members only have access to what they need
+      <div class="check-sub">Review the access table in Section 18</div>
+    </div>
+  </li>
+</ul>
+
+<h3>Operations</h3>
+<ul class="checklist" id="security-ops">
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Test suite passes (all 47 tests green)
+      <div class="check-sub">Run: python3 test_suite.py</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Workflow engine tested with a simulated invoice
+      <div class="check-sub">Run: python3 workflow_engine.py --simulate food</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Report generation tested (daily PDF created successfully)
+      <div class="check-sub">Run: python3 report_scheduler.py --now daily</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">You know where the log files are and can read them
+      <div class="check-sub">Check: logs/workflow.log and logs/scheduler.log exist</div>
+    </div>
+  </li>
+  <li>
+    <div class="check-box" onclick="toggleCheck(this)"></div>
+    <div class="check-text">Emergency contacts noted: Anthropic support + your IT contact
+      <div class="check-sub">anthropic.com/support for API issues</div>
+    </div>
+  </li>
+</ul>
+
+<!-- SIGN OFF -->
+<div style="background:var(--navy);color:white;border-radius:16px;padding:32px;margin:48px 0;text-align:center">
+  <div style="font-family:var(--serif);font-size:28px;margin-bottom:10px">System Ready for Production</div>
+  <p style="color:rgba(255,255,255,.75);max-width:500px;margin:0 auto 20px">When all checklists above are complete and your test suite shows 47/47 passing, your Business Command Center is production-ready.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <div style="background:rgba(255,255,255,.1);border-radius:10px;padding:12px 20px;font-size:13px">
+      <div style="font-size:20px;margin-bottom:4px">📊</div>47 automated tests
+    </div>
+    <div style="background:rgba(255,255,255,.1);border-radius:10px;padding:12px 20px;font-size:13px">
+      <div style="font-size:20px;margin-bottom:4px">🔄</div>8-step invoice pipeline
+    </div>
+    <div style="background:rgba(255,255,255,.1);border-radius:10px;padding:12px 20px;font-size:13px">
+      <div style="font-size:20px;margin-bottom:4px">📋</div>4 report types
+    </div>
+    <div style="background:rgba(255,255,255,.1);border-radius:10px;padding:12px 20px;font-size:13px">
+      <div style="font-size:20px;margin-bottom:4px">🎞</div>4 presentation templates
+    </div>
+  </div>
+</div>
+
+<p style="text-align:center;color:var(--hint);font-size:13px">
+  Business Command Center v1.0 · Restaurang Björken AB · Built March 2026<br>
+  <em>Document generated automatically — print with Ctrl+P / Cmd+P for a physical copy</em>
+</p>
+
+</main>
+</div><!-- /page-wrap -->
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ── INTERACTIVE CHECKLIST ─────────────────────────────────────────
+function toggleCheck(box) {
+  box.classList.toggle('checked');
+  saveChecks();
+}
+
+function saveChecks() {
+  const state = {};
+  document.querySelectorAll('.check-box').forEach((box, i) => {
+    state[i] = box.classList.contains('checked');
+  });
+  try { localStorage.setItem('bjorken_deploy_checks', JSON.stringify(state)); } catch(e) {}
+}
+
+function loadChecks() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('bjorken_deploy_checks') || '{}');
+    document.querySelectorAll('.check-box').forEach((box, i) => {
+      if (saved[i]) box.classList.add('checked');
+    });
+  } catch(e) {}
+}
+
+// ── COPY CODE BUTTON ──────────────────────────────────────────────
+function copyCode(btn) {
+  const pre  = btn.parentElement;
+  const code = pre.querySelector('code').innerText;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+// ── ACTIVE NAV LINK ────────────────────────────────────────────────
+function updateActiveNav() {
+  const sections = document.querySelectorAll('.section-anchor');
+  const scrollY  = window.scrollY + 120;
+  let current    = '';
+  sections.forEach(s => { if (s.offsetTop <= scrollY) current = s.id; });
+  document.querySelectorAll('.nav-link').forEach(link => {
+    link.classList.toggle('active', link.getAttrib

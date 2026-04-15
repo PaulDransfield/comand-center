@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Integrations — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Anybody:ital,wdth,wght@0,75..125,100..900;1,75..125,100..900&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F2F0EC;--surface:#FAFAF8;--surface-2:#FFFFFF;
+  --border:#DEDAD3;--border-d:#C9C4BC;
+  --text:#1C1B18;--muted:#6A675F;--hint:#A8A49C;
+  --ink:#1C1B18;
+  --connected:#2D6A35;--connected-bg:#EAF5EB;--connected-border:#B8DFB9;
+  --warning:#7A4F00;--warning-bg:#FFF4E0;--warning-border:#F5D48B;
+  --error:#8B1F1F;--error-bg:#FDF0F0;--error-border:#EFBDBD;
+  --pending:#1A4A7A;--pending-bg:#EEF4FF;--pending-border:#B3CFF5;
+  --fortnox:#00546B;--fortnox-bg:#E5F4F7;
+  --ancon:#1A3A6B;--ancon-bg:#EEF2FB;
+  --zettle:#003087;--zettle-bg:#E8EFF8;
+  --caspeco:#2C5F2E;--caspeco-bg:#EAF2EB;
+  --personalkollen:#5B3427;--personalkollen-bg:#F5EDE9;
+  --bank:#3D3020;--bank-bg:#F5F0E8;
+  --font:'DM Sans',system-ui,sans-serif;
+  --display:'Anybody',system-ui,sans-serif;
+  --mono:'DM Mono',monospace;
+}
+html,body{height:100%;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:14px;color:var(--text);background:var(--bg)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:3px}
+
+/* LAYOUT */
+.shell{display:grid;grid-template-columns:1fr;min-height:100vh}
+.topbar{
+  background:var(--surface-2);border-bottom:1px solid var(--border);
+  padding:0 28px;height:54px;display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:50;
+}
+.topbar-left{display:flex;align-items:center;gap:14px}
+.back-link{font-size:12px;color:var(--muted);text-decoration:none;display:flex;align-items:center;gap:4px;transition:color .12s}
+.back-link:hover{color:var(--text)}
+.page-title{font-family:var(--display);font-size:17px;font-weight:700;letter-spacing:-.01em;color:var(--text)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+
+/* BUSINESS SWITCHER */
+.biz-switcher{
+  display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;
+  border:1px solid var(--border-d);background:var(--surface);cursor:pointer;
+  font-size:13px;font-weight:500;color:var(--text);transition:all .12s;
+  font-family:var(--font);
+}
+.biz-switcher:hover{border-color:var(--text);background:white}
+.biz-dot{width:8px;height:8px;border-radius:50%;background:var(--connected);flex-shrink:0}
+.biz-arrow{color:var(--hint);font-size:10px;margin-left:4px}
+
+/* DROPDOWN */
+.biz-dropdown{
+  position:absolute;top:100%;left:0;margin-top:4px;
+  background:white;border:1px solid var(--border-d);border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.1);min-width:220px;z-index:100;
+  overflow:hidden;display:none;
+}
+.biz-dropdown.open{display:block}
+.biz-dd-item{
+  padding:10px 14px;cursor:pointer;font-size:13px;font-weight:500;
+  display:flex;align-items:center;gap:10px;transition:background .1s;
+}
+.biz-dd-item:hover{background:var(--bg)}
+.biz-dd-item.active{background:var(--pending-bg);color:var(--pending)}
+.biz-dd-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.biz-dd-sep{height:1px;background:var(--border);margin:4px 0}
+.biz-dd-all{color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em}
+
+/* PAGE BODY */
+.page-body{max-width:1100px;margin:0 auto;padding:28px}
+
+/* AGGREGATE BANNER */
+.agg-banner{
+  background:linear-gradient(135deg,#1C1B18,#2D2B26);
+  border-radius:14px;padding:20px 24px;margin-bottom:24px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  color:white;display:none;
+}
+.agg-banner.visible{display:flex}
+.agg-title{font-family:var(--display);font-size:16px;font-weight:700;margin-bottom:2px}
+.agg-sub{font-size:12px;opacity:.6}
+.agg-stats{display:flex;gap:24px}
+.agg-stat{text-align:right}
+.agg-stat-val{font-family:var(--mono);font-size:20px;font-weight:500;line-height:1}
+.agg-stat-lbl{font-size:10px;opacity:.5;text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
+
+/* SECTION */
+.section{margin-bottom:32px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.section-title{font-family:var(--display);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.section-meta{font-size:12px;color:var(--hint)}
+
+/* INTEGRATION GRID */
+.int-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+
+/* INTEGRATION CARD */
+.int-card{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:14px;
+  overflow:hidden;transition:border-color .15s,box-shadow .15s;
+}
+.int-card:hover{border-color:var(--border-d);box-shadow:0 4px 16px rgba(0,0,0,.06)}
+
+.int-card-header{
+  padding:16px 18px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+}
+.int-provider{display:flex;align-items:center;gap:10px}
+.int-logo{
+  width:38px;height:38px;border-radius:9px;display:flex;align-items:center;
+  justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;
+  font-family:var(--display);letter-spacing:-.02em;
+}
+.int-name{font-size:14px;font-weight:600;line-height:1.2;margin-bottom:2px}
+.int-category{font-size:11px;color:var(--hint);text-transform:uppercase;letter-spacing:.07em}
+
+/* STATUS BADGE */
+.status-badge{
+  display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+  padding:4px 10px;border-radius:20px;white-space:nowrap;flex-shrink:0;
+  text-transform:uppercase;letter-spacing:.05em;
+}
+.sb-connected{background:var(--connected-bg);color:var(--connected);border:1px solid var(--connected-border)}
+.sb-warning  {background:var(--warning-bg);color:var(--warning);border:1px solid var(--warning-border)}
+.sb-error    {background:var(--error-bg);color:var(--error);border:1px solid var(--error-border)}
+.sb-pending  {background:var(--pending-bg);color:var(--pending);border:1px solid var(--pending-border)}
+.sb-dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.sb-dot.pulse{animation:dotPulse 1.5s ease infinite}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+.int-card-body{padding:0 18px 14px;font-size:12px;color:var(--muted);line-height:1.6}
+.int-last-sync{font-family:var(--mono);font-size:11px;color:var(--hint);margin-top:4px}
+.int-error-msg{
+  color:var(--error);background:var(--error-bg);border-radius:6px;
+  padding:7px 10px;margin-top:8px;font-size:11px;line-height:1.5;
+  border-left:3px solid var(--error-border);
+}
+
+.int-card-footer{
+  padding:12px 18px;border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  background:var(--surface);
+}
+.int-actions{display:flex;gap:6px}
+.int-btn{
+  font-family:var(--font);font-size:12px;font-weight:500;padding:5px 12px;
+  border-radius:6px;border:1px solid var(--border-d);background:none;cursor:pointer;
+  color:var(--muted);transition:all .12s;
+}
+.int-btn:hover{border-color:var(--text);color:var(--text);background:white}
+.int-btn.primary{background:var(--text);color:white;border-color:var(--text)}
+.int-btn.primary:hover{background:#333}
+.int-btn.danger{color:var(--error);border-color:var(--error-border)}
+.int-btn.danger:hover{background:var(--error-bg)}
+.test-spinner{
+  width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--text);
+  border-radius:50%;animation:spin .6s linear infinite;display:none;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* CONNECTION FORM (slide-down panel) */
+.conn-form{
+  border-top:1px solid var(--border);background:var(--bg);
+  padding:16px 18px;display:none;
+}
+.conn-form.open{display:block}
+.conn-form-title{font-size:12px;font-weight:700;color:var(--text);margin-bottom:12px;text-transform:uppercase;letter-spacing:.08em}
+.form-field{margin-bottom:10px}
+.form-field label{
+  display:flex;align-items:center;justify-content:space-between;
+  font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.07em;
+}
+.form-field input,.form-field select{
+  width:100%;padding:8px 10px;border:1px solid var(--border-d);border-radius:7px;
+  font-size:13px;font-family:var(--font);color:var(--text);background:white;transition:border-color .12s;
+}
+.form-field input:focus,.form-field select:focus{outline:none;border-color:var(--text)}
+.form-field .field-hint{font-size:11px;color:var(--hint);margin-top:3px;line-height:1.5}
+.form-btns{display:flex;gap:8px;margin-top:14px}
+
+/* TROUBLESHOOT SECTION */
+.troubleshoot{
+  background:var(--warning-bg);border:1px solid var(--warning-border);
+  border-radius:10px;padding:14px 16px;margin-top:10px;display:none;
+}
+.troubleshoot.open{display:block}
+.ts-title{font-size:12px;font-weight:700;color:var(--warning);margin-bottom:8px}
+.ts-step{font-size:12px;color:var(--warning);padding:4px 0;border-bottom:1px solid var(--warning-border);display:flex;gap:8px}
+.ts-step:last-child{border-bottom:none}
+.ts-num{width:18px;height:18px;border-radius:50%;background:var(--warning);color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+
+/* AGGREGATE SECTION */
+.agg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px}
+.agg-card{
+  background:var(--surface-2);border:1px solid var(--border);border-radius:12px;
+  padding:16px 18px;
+}
+.agg-card-label{font-size:10px;font-weight:700;color:var(--hint);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+.agg-card-val{font-family:var(--mono);font-size:22px;font-weight:500;color:var(--text);line-height:1;margin-bottom:4px}
+.agg-card-sub{font-size:11px;color:var(--hint)}
+
+.biz-breakdown{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.bb-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.bb-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.bb-row{
+  padding:12px 16px;border-bottom:1px solid var(--border);
+  display:grid;grid-template-columns:1fr auto auto auto auto;gap:12px;align-items:center;font-size:13px;
+}
+.bb-row:last-child{border-bottom:none}
+.bb-row:hover{background:var(--bg)}
+.bb-name{font-weight:500}
+.bb-val{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.bb-margin{
+  font-family:var(--mono);font-size:12px;font-weight:600;text-align:right;
+  padding:2px 7px;border-radius:5px;
+}
+.margin-good{background:var(--connected-bg);color:var(--connected)}
+.margin-warn{background:var(--warning-bg);color:var(--warning)}
+.margin-bad{background:var(--error-bg);color:var(--error)}
+
+/* TOAST */
+.toast{
+  position:fixed;bottom:20px;right:20px;background:var(--text);color:white;
+  padding:10px 16px;border-radius:9px;font-size:13px;font-weight:500;z-index:200;
+  transform:translateY(60px);opacity:0;transition:all .25s;max-width:320px;
+}
+.toast.show{transform:none;opacity:1}
+.toast.ok  {background:var(--connected)}
+.toast.err {background:var(--error)}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.fade-up{animation:fadeUp .2s ease forwards}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <div class="topbar">
+    <div class="topbar-left">
+      <a class="back-link" href="/dashboard">← Dashboard</a>
+      <span style="color:var(--border-d)">|</span>
+      <div class="page-title">Integrations</div>
+    </div>
+    <div class="topbar-right" style="position:relative">
+      <div class="biz-switcher" id="biz-switcher-btn" onclick="toggleBizDropdown()">
+        <div class="biz-dot" id="biz-dot"></div>
+        <span id="current-biz-name">Vero Italiano — Hornsgatan</span>
+        <span class="biz-arrow">▼</span>
+      </div>
+      <div class="biz-dropdown" id="biz-dropdown">
+        <div class="biz-dd-item biz-dd-all" onclick="showAggregate()">
+          <div class="biz-dd-dot" style="background:var(--text)"></div>
+          All businesses (group view)
+        </div>
+        <div class="biz-dd-sep"></div>
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <div class="page-body">
+
+    <!-- AGGREGATE BANNER (shown in group view) -->
+    <div class="agg-banner" id="agg-banner">
+      <div>
+        <div class="agg-title">Group Overview — All 6 Businesses</div>
+        <div class="agg-sub">Combined financials across your restaurant group</div>
+      </div>
+      <div class="agg-stats">
+        <div class="agg-stat">
+          <div class="agg-stat-val" id="agg-total-rev">—</div>
+          <div class="agg-stat-lbl">Total Revenue</div>
+        </div>
+        <div class="agg-stat">
+          <div class="agg-stat-val" id="agg-total-profit">—</div>
+          <div class="agg-stat-lbl">Total Profit</div>
+        </div>
+        <div class="agg-stat">
+          <div class="agg-stat-val" id="agg-avg-margin">—</div>
+          <div class="agg-stat-lbl">Avg Margin</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SINGLE BUSINESS INTEGRATIONS -->
+    <div id="single-biz-view">
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Accounting</div>
+          <div class="section-meta">Required for financial reports</div>
+        </div>
+        <div class="int-grid" id="grid-accounting"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Point of Sale</div>
+          <div class="section-meta">For real-time sales tracking</div>
+        </div>
+        <div class="int-grid" id="grid-pos"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Scheduling & Payroll</div>
+          <div class="section-meta">For staff cost tracking</div>
+        </div>
+        <div class="int-grid" id="grid-scheduling"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Banking</div>
+          <div class="section-meta">For reconciliation</div>
+        </div>
+        <div class="int-grid" id="grid-bank"></div>
+      </div>
+
+    </div>
+
+    <!-- GROUP / AGGREGATE VIEW -->
+    <div id="aggregate-view" style="display:none">
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Group Financials</div>
+          <div class="section-meta">Mars 2026 · All businesses</div>
+        </div>
+        <div class="agg-grid" id="agg-cards"></div>
+        <div class="biz-breakdown">
+          <div class="bb-header">
+            <div class="bb-title">Per-Business Breakdown</div>
+            <span style="font-size:11px;color:var(--hint)">Click any row to open that business</span>
+          </div>
+          <div id="biz-breakdown-rows"></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header">
+          <div class="section-title">Integration Status — All Businesses</div>
+        </div>
+        <div id="all-biz-integrations"></div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// DATA — replace with API calls to your Supabase backend
+// ══════════════════════════════════════════════════════════════
+
+const BUSINESSES = [
+  { id:'biz_1', name:'Vero Italiano — Hornsgatan',  type:'Restaurant', revenue:505900, costs:467200, profit:38700 },
+  { id:'biz_2', name:'Vero Italiano — Södermalm',   type:'Restaurant', revenue:421300, costs:389400, profit:31900 },
+  { id:'biz_3', name:'Vero Italiano — Kungsholmen', type:'Restaurant', revenue:388200, costs:362100, profit:26100 },
+  { id:'biz_4', name:'Pizzeria Roma — Vasastan',     type:'Pizzeria',   revenue:298400, costs:278900, profit:19500 },
+  { id:'biz_5', name:'Café Verdi — Östermalm',       type:'Café',       revenue:187600, costs:176200, profit:11400 },
+  { id:'biz_6', name:'Bar Milano — Gamla Stan',      type:'Bar',        revenue:241800, costs:228400, profit:13400 },
+];
+
+const INTEGRATIONS = {
+  biz_1: [
+    { id:'int_1', provider:'fortnox',       status:'connected', lastSync:'2026-03-18 07:00', config:{client_id:'FNX-001'}, errorMsg:null },
+    { id:'int_2', provider:'ancon',         status:'connected', lastSync:'2026-03-18 06:45', config:{location_id:'ANK-101'}, errorMsg:null },
+    { id:'int_3', provider:'caspeco',       status:'error',     lastSync:'2026-03-17 18:00', config:{company_id:'CSP-001'}, errorMsg:'API-nyckel ogiltig — 401 Unauthorized' },
+    { id:'int_4', provider:'handelsbanken', status:'connected', lastSync:'2026-03-16 12:00', config:{account_number:'SE45 6000 0000'}, errorMsg:null },
+  ],
+  biz_2: [
+    { id:'int_5', provider:'fortnox',       status:'connected', lastSync:'2026-03-18 07:00', config:{client_id:'FNX-002'}, errorMsg:null },
+    { id:'int_6', provider:'zettle',        status:'warning',   lastSync:'2026-03-15 10:00', config:{}, errorMsg:'Token löper ut om 2 dagar — klicka Återkoppla' },
+    { id:'int_7', provider:'personalkollen',status:'pending',   lastSync:null, config:{}, errorMsg:null },
+  ],
+};
+
+const INTEGRATION_DEFS = {
+  fortnox:        { name:'Fortnox',         category:'accounting',  color:'var(--fortnox)',        bg:'var(--fortnox-bg)',        abbr:'FNX',
+    fields:[{key:'client_id',label:'Client ID',type:'text',hint:'Inställningar → Integrationer → API'},{key:'client_secret',label:'Client Secret',type:'password',hint:'Skapas med Client ID'}] },
+  ancon:          { name:'Ancon',           category:'pos',         color:'var(--ancon)',           bg:'var(--ancon-bg)',           abbr:'ANC',
+    fields:[{key:'api_key',label:'API-nyckel',type:'password',hint:'Ancon-portalen → Inställningar → API'},{key:'location_id',label:'Plats-ID',type:'text',hint:'Valfritt'}] },
+  zettle:         { name:'Zettle',          category:'pos',         color:'var(--zettle)',          bg:'var(--zettle-bg)',          abbr:'ZTL',
+    fields:[{key:'client_id',label:'Client ID',type:'text',hint:'Zettle Developer Portal'},{key:'client_secret',label:'Client Secret',type:'password',hint:''}] },
+  caspeco:        { name:'Caspeco',         category:'scheduling',  color:'var(--caspeco)',         bg:'var(--caspeco-bg)',         abbr:'CSP',
+    fields:[{key:'api_key',label:'API-nyckel',type:'password',hint:'Caspeco: Administration → Integrationer → API-nycklar'},{key:'company_id',label:'Företags-ID',type:'text',hint:'Fråga Caspecos support'},{key:'unit_ids',label:'Enhets-ID:n',type:'text',hint:'Kommaseparerade, lämna tomt för alla'}] },
+  personalkollen: { name:'Personalkollen',  category:'scheduling',  color:'var(--personalkollen)',  bg:'var(--personalkollen-bg)',  abbr:'PK',
+    fields:[{key:'api_key',label:'API-nyckel',type:'password',hint:'Personalkollen: Inställningar → Integrationer → API-nyckel'},{key:'account_id',label:'Konto-ID',type:'text',hint:'Ditt konto-ID i Personalkollen'}] },
+  handelsbanken:  { name:'Handelsbanken',   category:'bank',        color:'var(--bank)',            bg:'var(--bank-bg)',            abbr:'HB',
+    fields:[{key:'account_number',label:'Kontonummer',type:'text',hint:'IBAN för kontoidentifiering (valfritt)'}] },
+};
+
+const TROUBLESHOOT = {
+  fortnox:        ['Logga in på app.fortnox.se', 'Gå till Inställningar → Integrationer → API', 'Kontrollera att din Client ID stämmer', 'Klicka "Anslut Fortnox" för att starta OAuth-flödet igen'],
+  ancon:          ['Logga in på Ancon-portalen', 'Gå till Inställningar → API-nycklar', 'Skapa en ny nyckel om den nuvarande är ogiltig', 'Klistra in den nya nyckeln och klicka Spara'],
+  zettle:         ['Gå till developer.zettle.com', 'Kontrollera att ditt OAuth-token inte löpt ut', 'Klicka Återkoppla för att starta OAuth igen', 'Godkänn behörigheter i Zettle-appen'],
+  caspeco:        ['Logga in på Caspeco som administratör', 'Gå till Administration → Integrationer → API-nycklar', 'Verifiera att nyckeln har läsbehörighet för Schema och Lön', 'Skapa en ny nyckel om nödvändigt'],
+  personalkollen: ['Logga in på Personalkollen', 'Gå till Inställningar → Integrationer → API', 'Kontrollera att Konto-ID stämmer', 'Generera en ny API-nyckel om den är ogiltig'],
+  handelsbanken:  ['Ladda ner kontoutdrag som CSV från din internetbank', 'Välj format "Semikolon-separerat"', 'Gå till Reconciliation-fliken och importera filen', 'Kontrollera att datumformat är ÅÅÅÅ-MM-DD'],
+};
+
+let currentBizId   = 'biz_1';
+let showingAggregate = false;
+
+// ── RENDER ─────────────────────────────────────────────────────
+function render() {
+  renderBizDropdown();
+  if (showingAggregate) {
+    renderAggregate();
+  } else {
+    renderIntegrations(currentBizId);
+  }
+}
+
+function renderBizDropdown() {
+  const dd = document.getElementById('biz-dropdown');
+  const existing = dd.querySelectorAll('.biz-dd-biz');
+  existing.forEach(e => e.remove());
+  const sep = dd.querySelector('.biz-dd-sep');
+
+  BUSINESSES.forEach(biz => {
+    const item = document.createElement('div');
+    item.className = 'biz-dd-item biz-dd-biz' + (biz.id === currentBizId && !showingAggregate ? ' active' : '');
+    const statusColor = getOverallStatus(INTEGRATIONS[biz.id] || []);
+    item.innerHTML = `<div class="biz-dd-dot" style="background:${statusColor}"></div>${biz.name}`;
+    item.onclick = () => switchBusiness(biz.id);
+    sep.after(item);
+  });
+}
+
+function getOverallStatus(integrations) {
+  if (!integrations?.length) return 'var(--hint)';
+  if (integrations.some(i => i.status === 'error'))     return 'var(--error)';
+  if (integrations.some(i => i.status === 'warning'))   return 'var(--warning)';
+  if (integrations.every(i => i.status === 'connected'))return 'var(--connected)';
+  return 'var(--pending)';
+}
+
+function renderIntegrations(bizId) {
+  const integrations = INTEGRATIONS[bizId] || [];
+  const categories   = { accounting:[], pos:[], scheduling:[], bank:[] };
+
+  // Add existing integrations
+  integrations.forEach(i => {
+    const def = INTEGRATION_DEFS[i.provider];
+    if (def) categories[def.category]?.push({ ...i, def });
+  });
+
+  // Add "add" cards for missing providers
+  const existingProviders = integrations.map(i => i.provider);
+  Object.entries(INTEGRATION_DEFS).forEach(([provider, def]) => {
+    if (!existingProviders.includes(provider)) {
+      categories[def.category]?.push({ provider, status:'not_connected', def, config:{} });
+    }
+  });
+
+  const catMap = { accounting:'grid-accounting', pos:'grid-pos', scheduling:'grid-scheduling', bank:'grid-bank' };
+  Object.entries(catMap).forEach(([cat, gridId]) => {
+    const grid = document.getElementById(gridId);
+    grid.innerHTML = categories[cat].map(int => renderIntCard(int, bizId)).join('');
+  });
+}
+
+function renderIntCard(int, bizId) {
+  const def     = int.def;
+  const isConn  = int.status === 'connected';
+  const isErr   = int.status === 'error';
+  const isWarn  = int.status === 'warning';
+  const notConn = int.status === 'not_connected' || int.status === 'pending';
+
+  const badgeCls = isConn ? 'sb-connected' : isErr ? 'sb-error' : isWarn ? 'sb-warning' : 'sb-pending';
+  const badgeTxt = isConn ? 'Connected' : isErr ? 'Error' : isWarn ? 'Warning' : notConn && int.status !== 'pending' ? 'Not connected' : 'Pending';
+  const dotCls   = notConn ? 'pulse' : '';
+
+  return `<div class="int-card fade-up" id="card-${int.provider}-${bizId}">
+    <div class="int-card-header">
+      <div class="int-provider">
+        <div class="int-logo" style="background:${def.bg};color:${def.color}">${def.abbr}</div>
+        <div>
+          <div class="int-name">${def.name}</div>
+          <div class="int-category">${def.category}</div>
+        </div>
+      </div>
+      <div class="status-badge ${badgeCls}">
+        <div class="sb-dot ${dotCls}"></div>${badgeTxt}
+      </div>
+    </div>
+    <div class="int-card-body">
+      ${int.config?.client_id || int.config?.account_number || int.config?.location_id || int.config?.company_id
+        ? `<div>ID: <span style="font-family:var(--mono);font-size:11px">${Object.values(int.config)[0] || '—'}</span></div>` : ''}
+      ${int.lastSync ? `<div class="int-last-sync">Synced: ${int.lastSync}</div>` : ''}
+      ${int.errorMsg ? `<div class="int-error-msg">${int.errorMsg}</div>` : ''}
+    </div>
+
+    <!-- Connection form (hidden by default) -->
+    <div class="conn-form" id="form-${int.provider}-${bizId}">
+      <div class="conn-form-title">${isConn || isWarn ? 'Update credentials' : 'Connect ' + def.name}</div>
+      ${def.fields.filter(f => f.type !== 'hidden').map(f => `
+        <div class="form-field">
+          <label>${f.label}</label>
+          <input type="${f.type === 'password' ? 'password' : 'text'}"
+                 id="field-${int.provider}-${f.key}-${bizId}"
+                 placeholder="${f.type === 'password' ? '••••••••••' : f.hint.split('→')[0].trim()}"
+                 value="${int.config?.[f.key] ? (f.type === 'password' ? '' : int.config[f.key]) : ''}">
+          <div class="field-hint">${f.hint}</div>
+        </div>`).join('')}
+      <div class="form-btns">
+        <button class="int-btn primary" onclick="saveIntegration('${int.provider}','${bizId}')">Save & Test</button>
+        <button class="int-btn" onclick="closeForm('${int.provider}','${bizId}')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Troubleshoot guide (hidden by default) -->
+    ${isErr || isWarn ? `
+    <div class="troubleshoot" id="ts-${int.provider}-${bizId}">
+      <div class="ts-title">Fix connection — step by step:</div>
+      ${(TROUBLESHOOT[int.provider] || []).map((step, i) => `
+        <div class="ts-step">
+          <div class="ts-num">${i+1}</div>
+          <div>${step}</div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <div class="int-card-footer">
+      <div class="int-actions">
+        ${isConn
+          ? `<button class="int-btn" onclick="testConnection('${int.provider}','${bizId}',this)">
+               <div class="test-spinner" id="spin-${int.provider}-${bizId}"></div>
+               Test
+             </button>
+             <button class="int-btn" onclick="toggleForm('${int.provider}','${bizId}')">Edit</button>
+             <button class="int-btn danger" onclick="disconnectIntegration('${int.provider}','${bizId}')">Disconnect</button>`
+          : isErr || isWarn
+            ? `<button class="int-btn primary" onclick="toggleForm('${int.provider}','${bizId}')">Reconnect</button>
+               <button class="int-btn" onclick="toggleTroubleshoot('${int.provider}','${bizId}')">Fix guide</button>`
+            : `<button class="int-btn primary" onclick="toggleForm('${int.provider}','${bizId}')">Connect</button>`
+        }
+      </div>
+      <span style="font-size:11px;color:var(--hint)">${def.category}</span>
+    </div>
+  </div>`;
+}
+
+// ── AGGREGATE VIEW ────────────────────────────────────────────
+function renderAggregate() {
+  document.getElementById('single-biz-view').style.display  = 'none';
+  document.getElementById('aggregate-view').style.display   = 'block';
+  document.getElementById('agg-banner').classList.add('visible');
+
+  const totalRev    = BUSINESSES.reduce((s,b) => s+b.revenue, 0);
+  const totalProfit = BUSINESSES.reduce((s,b) => s+b.profit,  0);
+  const avgMargin   = (totalProfit / totalRev * 100).toFixed(1);
+
+  document.getElementById('agg-total-rev').textContent    = kr(totalRev);
+  document.getElementById('agg-total-profit').textContent = kr(totalProfit);
+  document.getElementById('agg-avg-margin').textContent   = avgMargin + '%';
+
+  // Summary cards
+  const totalCosts = BUSINESSES.reduce((s,b) => s+b.costs, 0);
+  document.getElementById('agg-cards').innerHTML = [
+    { label:'Total Revenue',  val:kr(totalRev),    sub:'All 6 businesses — Mars 2026' },
+    { label:'Total Costs',    val:kr(totalCosts),  sub:(totalCosts/totalRev*100).toFixed(1)+'% of revenue' },
+    { label:'Total Profit',   val:kr(totalProfit), sub:avgMargin+'% average margin' },
+    { label:'Businesses',     val:'6',             sub:'4 restaurant · 1 café · 1 bar' },
+  ].map(c => `<div class="agg-card">
+    <div class="agg-card-label">${c.label}</div>
+    <div class="agg-card-val">${c.val}</div>
+    <div class="agg-card-sub">${c.sub}</div>
+  </div>`).join('');
+
+  // Per-business breakdown
+  document.getElementById('biz-breakdown-rows').innerHTML = BUSINESSES
+    .sort((a,b) => b.revenue - a.revenue)
+    .map(biz => {
+      const margin = (biz.profit / biz.revenue * 100).toFixed(1);
+      const mCls   = parseFloat(margin) >= 12 ? 'margin-good' : parseFloat(margin) >= 7 ? 'margin-warn' : 'margin-bad';
+      const intgs  = INTEGRATIONS[biz.id] || [];
+      const hasErr = intgs.some(i => i.status === 'error');
+      return `<div class="bb-row" onclick="switchBusiness('${biz.id}')">
+        <div class="bb-name">${biz.name}${hasErr ? ' <span style="color:var(--error);font-size:10px">● error</span>' : ''}</div>
+        <div class="bb-val">${kr(biz.revenue)}</div>
+        <div class="bb-val">${kr(biz.costs)}</div>
+        <div class="bb-val" style="color:var(--connected)">${kr(biz.profit)}</div>
+        <div class="bb-margin ${mCls}">${margin}%</div>
+      </div>`;
+    }).join('');
+
+  // Integration status across all businesses
+  document.getElementById('all-biz-integrations').innerHTML = BUSINESSES.map(biz => {
+    const intgs  = INTEGRATIONS[biz.id] || [];
+    const errors = intgs.filter(i => i.status === 'error' || i.status === 'warning');
+    return `<div style="background:white;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="switchBusiness('${biz.id}')">
+      <div>
+        <div style="font-size:13px;font-weight:600">${biz.name}</div>
+        <div style="font-size:11px;color:var(--hint);margin-top:2px">${intgs.length} integrations configured</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        ${errors.length ? `<span style="font-size:11px;background:var(--error-bg);color:var(--error);padding:3px 8px;border-radius:10px;font-weight:600">${errors.length} issue${errors.length>1?'s':''}</span>` : '<span style="font-size:11px;background:var(--connected-bg);color:var(--connected);padding:3px 8px;border-radius:10px;font-weight:600">All OK</span>'}
+        <span style="color:var(--hint);font-size:12px">→</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── ACTIONS ───────────────────────────────────────────────────
+function toggleForm(provider, bizId) {
+  const form = document.getElementById(`form-${provider}-${bizId}`);
+  form.classList.toggle('open');
+}
+
+function closeForm(provider, bizId) {
+  document.getElementById(`form-${provider}-${bizId}`)?.classList.remove('open');
+}
+
+function toggleTroubleshoot(provider, bizId) {
+  document.getElementById(`ts-${provider}-${bizId}`)?.classList.toggle('open');
+}
+
+async function saveIntegration(provider, bizId) {
+  const def    = INTEGRATION_DEFS[provider];
+  const fields = {};
+  def.fields.filter(f => f.type !== 'hidden').forEach(f => {
+    const el = document.getElementById(`field-${provider}-${f.key}-${bizId}`);
+    if (el) fields[f.key] = el.value;
+  });
+
+  showToast(`Saving ${def.name} credentials…`, '');
+
+  // In production: POST to /api/integrations/save
+  await delay(800);
+
+  // Update demo data
+  if (!INTEGRATIONS[bizId]) INTEGRATIONS[bizId] = [];
+  const existing = INTEGRATIONS[bizId].find(i => i.provider === provider);
+  if (existing) {
+    existing.config = { ...existing.config, ...fields };
+    existing.status = 'connected';
+    existing.lastSync = new Date().toLocaleString('sv-SE');
+    existing.errorMsg = null;
+  } else {
+    INTEGRATIONS[bizId].push({ provider, status:'connected', config:fields, lastSync:new Date().toLocaleString('sv-SE'), errorMsg:null, def });
+  }
+
+  showToast(`${def.name} saved and connected`, 'ok');
+  render();
+}
+
+async function testConnection(provider, bizId, btn) {
+  const spinner = document.getElementById(`spin-${provider}-${bizId}`);
+  if (spinner) spinner.style.display = 'block';
+
+  await delay(1200);
+
+  if (spinner) spinner.style.display = 'none';
+  showToast(`${INTEGRATION_DEFS[provider].name}: Connection OK`, 'ok');
+}
+
+function disconnectIntegration(provider, bizId) {
+  if (!confirm(`Disconnect ${INTEGRATION_DEFS[provider].name}? You can reconnect at any time.`)) return;
+  const intgs = INTEGRATIONS[bizId] || [];
+  const idx   = intgs.findIndex(i => i.provider === provider);
+  if (idx >= 0) INTEGRATIONS[bizId].splice(idx, 1);
+  showToast(`${INTEGRATION_DEFS[provider].name} disconnected`, '');
+  render();
+}
+
+function switchBusiness(bizId) {
+  currentBizId     = bizId;
+  showingAggregate = false;
+  document.getElementById('biz-dropdown').classList.remove('open');
+  document.getElementById('single-biz-view').style.display = 'block';
+  document.getElementById('aggregate-view').style.display  = 'none';
+  document.getElementById('agg-banner').classList.remove('visible');
+  const biz = BUSINESSES.find(b => b.id === bizId);
+  document.getElementById('current-biz-name').textContent = biz?.name || 'Business';
+  document.getElementById('biz-dot').style.background = getOverallStatus(INTEGRATIONS[bizId] || []);
+  render();
+}
+
+function showAggregate() {
+  showingAggregate = true;
+  document.getElementById('biz-dropdown').classList.remove('open');
+  document.getElementById('current-biz-name').textContent = 'All businesses';
+  document.getElementById('biz-dot').style.background = 'var(--text)';
+  render();
+}
+
+function toggleBizDropdown() {
+  document.getElementById('biz-dropdown').classList.toggle('open');
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('#biz-switcher-btn') && !e.target.closest('#biz-dropdown')) {
+    document.getElementById('biz-dropdown').classList.remove('open');
+  }
+});
+
+// ── UTILS ─────────────────────────────────────────────────────
+function kr(n) { return Math.round(n).toLocaleString('sv-SE') + ' kr'; }
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+let toastTimer;
+function showToast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>

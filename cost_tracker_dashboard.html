@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Restaurang Björken — Cost Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════
+   DESIGN SYSTEM
+   Aesthetic: Editorial dark — like a high-end financial
+   publication. Charcoal backgrounds, warm off-white type,
+   precise amber accents. Feels like Bloomberg Terminal
+   crossed with a Michelin-starred menu.
+   ═══════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Core palette */
+  --ink:       #0f0e0d;
+  --ink-2:     #1a1917;
+  --ink-3:     #252421;
+  --ink-4:     #2e2c29;
+  --smoke:     #3a3835;
+  --mist:      #6b6860;
+  --ash:       #9b9890;
+  --paper:     #e8e4dc;
+  --cream:     #f4f0e8;
+  --white:     #faf8f4;
+
+  /* Accent palette */
+  --gold:      #d4a843;
+  --gold-lt:   rgba(212,168,67,0.12);
+  --gold-md:   rgba(212,168,67,0.25);
+  --teal:      #4a9e8a;
+  --teal-lt:   rgba(74,158,138,0.12);
+  --coral:     #c4604a;
+  --coral-lt:  rgba(196,96,74,0.12);
+  --blue:      #5b8fd4;
+  --blue-lt:   rgba(91,143,212,0.12);
+  --green:     #6aab6e;
+  --green-lt:  rgba(106,171,110,0.12);
+
+  /* Chart colors */
+  --c-staff:   #5b8fd4;
+  --c-food:    #6aab6e;
+  --c-rent:    #d4a843;
+  --c-other:   #9b9890;
+  --c-profit:  #4a9e8a;
+  --c-rev:     #c4a87a;
+
+  /* Type */
+  --font-display: 'DM Serif Display', Georgia, serif;
+  --font-ui:      'Syne', system-ui, sans-serif;
+  --font-mono:    'DM Mono', 'Courier New', monospace;
+
+  /* Spacing */
+  --r: 8px;
+  --rl: 14px;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  background: var(--ink);
+  color: var(--cream);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── SCROLLBAR ─────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--ink-2); }
+::-webkit-scrollbar-thumb { background: var(--smoke); border-radius: 2px; }
+
+/* ── TOP BAR ───────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; height: 44px;
+  background: var(--ink-2);
+  border-bottom: 0.5px solid var(--smoke);
+  position: sticky; top: 0; z-index: 100;
+  gap: 16px;
+}
+.topbar-brand {
+  display: flex; align-items: center; gap: 10px;
+}
+.brand-icon {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--gold); display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0;
+}
+.brand-icon svg { width: 14px; height: 14px; fill: var(--ink); }
+.brand-name {
+  font-family: var(--font-display); font-size: 16px;
+  color: var(--white); letter-spacing: 0.01em;
+}
+.brand-sub { font-size: 11px; color: var(--ash); letter-spacing: 0.05em; }
+
+/* PERIOD TABS */
+.period-row {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--ink-3); border-radius: var(--r);
+  padding: 3px; border: 0.5px solid var(--smoke);
+}
+.ptab {
+  font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+  padding: 5px 12px; border-radius: 6px; cursor: pointer;
+  color: var(--ash); border: none; background: none;
+  transition: all 0.15s; white-space: nowrap;
+}
+.ptab:hover { color: var(--cream); }
+.ptab.active {
+  background: var(--ink-4); color: var(--white);
+  box-shadow: inset 0 0 0 0.5px var(--smoke);
+}
+
+/* TOPBAR RIGHT */
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.live-indicator {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--ash);
+}
+.live-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--green); animation: pulse 2.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(106,171,110,0.4); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 4px rgba(106,171,110,0); }
+}
+.sim-btn {
+  font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+  padding: 6px 14px; border-radius: var(--r);
+  background: var(--gold); color: var(--ink); border: none;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.sim-btn:hover { background: #e0b84f; transform: translateY(-1px); }
+.sim-btn:active { transform: none; }
+
+/* ── PAGE LAYOUT ───────────────────────────────── */
+.page {
+  display: grid;
+  grid-template-columns: 1fr 252px;
+  height: calc(100vh - 44px);
+  overflow: hidden;
+}
+/* Main uses a fixed CSS grid — rows sum to 100%, no overflow possible */
+.main {
+  padding: 8px 10px;
+  display: grid;
+  grid-template-rows: 100px 1fr 1fr;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+.aside {
+  border-left: 0.5px solid var(--smoke);
+  background: var(--ink-2);
+  display: flex; flex-direction: column;
+  height: 100%; overflow: hidden;
+}
+
+/* ── DATE RANGE BAR ─────────────────────────────── */
+.daterange-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 10px;
+}
+.daterange-bar .section-label { font-size: 10px; font-weight: 600; color: var(--ash); text-transform: uppercase; letter-spacing: 0.1em; }
+.compare-toggle {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--ash); cursor: pointer;
+}
+.toggle-pill {
+  width: 32px; height: 17px; border-radius: 9px;
+  background: var(--smoke); position: relative; cursor: pointer;
+  transition: background 0.2s; flex-shrink: 0;
+}
+.toggle-pill.on { background: var(--gold); }
+.toggle-pill::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: var(--cream); transition: left 0.2s;
+}
+.toggle-pill.on::after { left: 17px; }
+
+/* ── CARDS ──────────────────────────────────────── */
+.card {
+  background: var(--ink-2);
+  border: 0.5px solid var(--smoke);
+  border-radius: var(--rl);
+  /* overflow visible so Chart.js tooltips are never clipped */
+  overflow: visible;
+}
+.card-header {
+  padding: 7px 12px;
+  border-bottom: 0.5px solid var(--ink-3);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.card-header h2 {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  color: var(--ash); text-transform: uppercase; letter-spacing: 0.09em;
+}
+.card-body { padding: 10px 12px; }
+
+/* ── KPI GRID ───────────────────────────────────── */
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; height: 100%; }
+
+.kpi-card {
+  background: var(--ink-2); border: 0.5px solid var(--smoke);
+  border-radius: var(--rl); padding: 10px;
+  position: relative; overflow: hidden;
+  cursor: default; transition: border-color 0.2s;
+}
+.kpi-card:hover { border-color: var(--ash); }
+.kpi-card.alert-over { border-color: var(--coral) !important; }
+.kpi-card.alert-warn { border-color: var(--gold) !important; }
+
+/* Subtle background accent */
+.kpi-card::before {
+  content: ''; position: absolute; inset: 0;
+  opacity: 0; transition: opacity 0.3s;
+}
+.kpi-card:hover::before { opacity: 1; }
+
+.kpi-eyebrow {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ash); margin-bottom: 4px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.kpi-value {
+  font-family: var(--font-display); font-size: 20px;
+  color: var(--white); line-height: 1; margin-bottom: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-value.teal  { color: var(--teal); }
+.kpi-value.green { color: var(--green); }
+.kpi-value.red   { color: var(--coral); }
+.kpi-value.gold  { color: var(--gold); }
+
+.kpi-sub {
+  font-size: 11px; color: var(--ash); margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-trend {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; font-family: var(--font-mono);
+  padding: 2px 8px; border-radius: 20px;
+}
+.kpi-trend.up-good  { background: var(--green-lt); color: var(--green); }
+.kpi-trend.dn-good  { background: var(--green-lt); color: var(--green); }
+.kpi-trend.up-bad   { background: var(--coral-lt); color: var(--coral); }
+.kpi-trend.dn-bad   { background: var(--coral-lt); color: var(--coral); }
+.kpi-trend.neutral  { background: var(--ink-3); color: var(--ash); }
+
+.kpi-spark { width: 100%; height: 22px; margin-top: 4px; }
+
+.alert-tag {
+  position: absolute; top: 10px; right: 10px;
+  font-size: 9px; font-weight: 600; letter-spacing: 0.06em;
+  padding: 2px 6px; border-radius: 10px; text-transform: uppercase;
+}
+.alert-tag.over { background: var(--coral-lt); color: var(--coral); }
+.alert-tag.warn { background: var(--gold-lt); color: var(--gold); }
+
+/* ── CHART GRID ─────────────────────────────────── */
+.chart-grid { display: grid; grid-template-columns: 260px 1fr; gap: 7px; height: 100%; min-height: 0; }
+.chart-grid-3 { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; height: 100%; min-height: 0; }
+canvas { display: block; }
+
+/* ── DONUT LEGEND ───────────────────────────────── */
+.donut-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 4px 8px;
+}
+/* The canvas lives inside this wrapper — wrapper dictates the size */
+.donut-canvas-wrap {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  flex-shrink: 0;
+}
+/* The center text floats inside the donut hole */
+.donut-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  width: 80px;
+}
+.donut-center .dc-val {
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--white);
+  display: block;
+  line-height: 1.2;
+  word-break: break-all;
+}
+.donut-center .dc-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--ash);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* Legend sits below the chart, full width, clean rows */
+.donut-legend {
+  width: 100%;
+}
+.leg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 0.5px solid var(--ink-3);
+  cursor: pointer;
+  transition: opacity 0.15s;
+  gap: 6px;
+}
+.leg-row:last-child { border-bottom: none; }
+.leg-row:hover { opacity: 0.75; }
+.leg-left { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.leg-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.leg-name { font-size: 11px; font-weight: 500; color: var(--cream); white-space: nowrap; }
+.leg-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.leg-kr { font-family: var(--font-mono); font-size: 11px; color: var(--white); }
+.leg-pct { font-family: var(--font-mono); font-size: 10px; color: var(--ash); min-width: 34px; text-align: right; }
+
+/* ── ALERTS SIDEBAR ─────────────────────────────── */
+.aside-header {
+  padding: 12px 16px; border-bottom: 0.5px solid var(--smoke);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.aside-header h2 { font-size: 11px; font-weight: 600; color: var(--ash); text-transform: uppercase; letter-spacing: 0.09em; }
+.aside-scroll { flex: 1; overflow-y: auto; padding: 6px 0; }
+
+/* ALERT ITEMS */
+.alert-item {
+  padding: 12px 16px; border-bottom: 0.5px solid var(--ink-3);
+  animation: slideIn 0.3s ease;
+}
+@keyframes slideIn { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+.alert-item:last-child { border-bottom: none; }
+.alert-row { display: flex; align-items: flex-start; gap: 10px; }
+.alert-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0; margin-top: 1px;
+}
+.ai-red  { background: var(--coral-lt); }
+.ai-gold { background: var(--gold-lt); }
+.ai-teal { background: var(--teal-lt); }
+.ai-blue { background: var(--blue-lt); }
+.alert-text {}
+.alert-title { font-size: 12px; font-weight: 600; color: var(--cream); margin-bottom: 3px; line-height: 1.4; }
+.alert-detail { font-size: 11px; color: var(--ash); line-height: 1.5; }
+.alert-time { font-size: 10px; color: var(--mist); margin-top: 4px; font-family: var(--font-mono); }
+.alert-tag-pill {
+  display: inline-block; font-size: 9px; font-weight: 600;
+  padding: 1px 6px; border-radius: 8px; margin-top: 5px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.atp-red   { background: var(--coral-lt); color: var(--coral); }
+.atp-gold  { background: var(--gold-lt);  color: var(--gold); }
+.atp-teal  { background: var(--teal-lt);  color: var(--teal); }
+.atp-blue  { background: var(--blue-lt);  color: var(--blue); }
+
+/* AI INSIGHT */
+.insight-card {
+  margin: 12px 16px;
+  background: var(--ink-3); border: 0.5px solid var(--smoke);
+  border-radius: var(--r); padding: 12px;
+}
+.insight-header {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 10px; font-weight: 600; color: var(--gold);
+  text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 8px;
+}
+.insight-text { font-size: 12px; color: var(--cream); line-height: 1.6; }
+.insight-thinking {
+  display: flex; gap: 4px; padding: 8px 0;
+}
+.think-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--gold); animation: think 1.4s infinite;
+}
+.think-dot:nth-child(2) { animation-delay: 0.2s; }
+.think-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes think { 0%,60%,100% { transform: translateY(0); opacity: 0.4; } 30% { transform: translateY(-5px); opacity: 1; } }
+
+/* LOG */
+.log-entry {
+  padding: 8px 16px; border-bottom: 0.5px solid var(--ink-3);
+  animation: slideIn 0.2s ease;
+}
+.log-entry:last-child { border-bottom: none; }
+.log-time { font-family: var(--font-mono); font-size: 10px; color: var(--mist); margin-bottom: 2px; }
+.log-msg { font-size: 11px; color: var(--ash); line-height: 1.5; }
+.log-msg strong { color: var(--cream); font-weight: 500; }
+.log-badge {
+  display: inline-block; font-size: 9px; font-weight: 600;
+  padding: 1px 5px; border-radius: 8px; margin-top: 3px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.lb-sync { background: var(--teal-lt); color: var(--teal); }
+.lb-cost { background: var(--blue-lt); color: var(--blue); }
+.lb-rev  { background: var(--green-lt); color: var(--green); }
+.lb-warn { background: var(--gold-lt); color: var(--gold); }
+.lb-alert{ background: var(--coral-lt); color: var(--coral); }
+
+/* TABS inside aside */
+.aside-tabs { display: flex; border-bottom: 0.5px solid var(--smoke); flex-shrink: 0; }
+.atab {
+  flex: 1; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; padding: 9px 10px; text-align: center;
+  cursor: pointer; color: var(--ash); border-bottom: 2px solid transparent;
+  transition: all 0.12s; background: none; border-top: none; border-left: none; border-right: none;
+  font-family: var(--font-ui);
+}
+.atab.active { color: var(--gold); border-bottom-color: var(--gold); }
+.atab:hover:not(.active) { color: var(--cream); }
+
+/* BADGES */
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; padding: 2px 7px;
+  border-radius: 20px; white-space: nowrap;
+}
+.b-red   { background: var(--coral-lt); color: var(--coral); }
+.b-gold  { background: var(--gold-lt);  color: var(--gold); }
+.b-teal  { background: var(--teal-lt);  color: var(--teal); }
+.b-green { background: var(--green-lt); color: var(--green); }
+.b-gray  { background: var(--ink-3); color: var(--ash); }
+
+/* BUTTONS */
+.btn {
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  padding: 5px 11px; border-radius: var(--r);
+  border: 0.5px solid var(--smoke); background: none;
+  cursor: pointer; color: var(--ash); transition: all 0.12s;
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.btn:hover { border-color: var(--ash); color: var(--cream); background: var(--ink-3); }
+
+/* LABEL */
+.section-label {
+  font-size: 10px; font-weight: 600; color: var(--ash);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+
+/* ── CHART TOOLTIP OVERRIDES ─────────────────────── */
+/* Chart.js uses canvas — tooltips styled via plugin config */
+
+/* ── ACTUAL VS BUDGET TABLE ──────────────────────── */
+.avb-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.avb-table th {
+  font-size: 10px; font-weight: 600; color: var(--ash);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  padding: 5px 8px; border-bottom: 0.5px solid var(--smoke);
+  text-align: left; background: var(--ink-3);
+}
+.avb-table td { padding: 5px 8px; border-bottom: 0.5px solid var(--ink-3); font-variant-numeric: tabular-nums; vertical-align: middle; }
+.avb-table tr:last-child td { border-bottom: none; }
+.avb-table tr:hover td { background: var(--ink-3); }
+.variance-bar { height: 5px; border-radius: 3px; margin-top: 3px; min-width: 4px; }
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.fade-up { animation: fadeUp 0.35s ease forwards; }
+
+@keyframes flashGold { 0%,100%{box-shadow:none} 50%{box-shadow:0 0 0 2px var(--gold)} }
+.flash-update { animation: flashGold 0.5s ease; }
+
+/* ── EXTERNAL HTML TOOLTIP ─────────────────────────────
+   Renders outside the canvas so it's never clipped.
+   Positioned absolute relative to the page.           */
+#chart-tooltip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  background: #ffffff;
+  border: 1px solid #dddddd;
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 180px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  font-family: 'Syne', system-ui, sans-serif;
+  font-size: 13px;
+  color: #111111;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+#chart-tooltip.visible { opacity: 1; }
+#chart-tooltip .tt-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #111;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #eeeeee;
+  display: flex; align-items: center; gap: 8px;
+}
+#chart-tooltip .tt-swatch {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+#chart-tooltip .tt-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 20px; padding: 3px 0;
+  font-size: 12px; color: #333;
+}
+#chart-tooltip .tt-row .tt-key { color: #888; }
+#chart-tooltip .tt-row .tt-val { font-weight: 600; color: #111; font-family: 'DM Mono', monospace; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     TOP BAR
+     ═══════════════════════════════════════════ -->
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 24 24"><path d="M3 3h18v3H3zm0 5h18v3H3zm0 5h18v3H3zm0 5h12v3H3z"/></svg>
+    </div>
+    <div>
+      <div class="brand-name">Restaurang Björken</div>
+      <div class="brand-sub">Cost Intelligence Dashboard</div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="period-row">
+      <button class="ptab" onclick="setPeriod('day',this)">Today</button>
+      <button class="ptab" onclick="setPeriod('week',this)">Week</button>
+      <button class="ptab active" onclick="setPeriod('month',this)">Month</button>
+      <button class="ptab" onclick="setPeriod('quarter',this)">Quarter</button>
+      <button class="ptab" onclick="setPeriod('ytd',this)">YTD</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ash)">
+      <span>Compare</span>
+      <div class="toggle-pill" id="compare-toggle" onclick="toggleCompare()"></div>
+    </div>
+  </div>
+
+  <div class="topbar-right">
+    <div class="live-indicator">
+      <div class="live-dot"></div>
+      <span id="last-sync">Synced 09:42</span>
+    </div>
+    <button class="sim-btn" onclick="simulateUpdate()">↻ Simulate update</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     MAIN PAGE
+     ═══════════════════════════════════════════ -->
+<div class="page">
+<div class="main">
+
+  <!-- KPI ROW -->
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <!-- DONUT + PROFIT LINE -->
+  <div class="chart-grid">
+
+    <!-- Donut chart -->
+    <div class="card" style="display:flex;flex-direction:column;height:100%;min-height:0;overflow:visible">
+      <div class="card-header">
+        <h2>Cost Breakdown</h2>
+        <span class="badge b-gray" id="donut-period-label">March 2026</span>
+      </div>
+      <div class="card-body" style="padding:6px 8px;flex:1;min-height:0;overflow:visible">
+        <div class="donut-wrap">
+          <div class="donut-canvas-wrap">
+            <canvas id="donut-chart" width="120" height="120" onmouseleave="document.getElementById('chart-tooltip').classList.remove('visible')"></canvas>
+            <div class="donut-center" id="donut-center">
+              <span class="dc-val" id="dc-val">—</span>
+              <span class="dc-label">total costs</span>
+            </div>
+          </div>
+          <div class="donut-legend" id="donut-legend"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Profit trend line -->
+    <div class="card" style="display:flex;flex-direction:column;height:100%;min-height:0;overflow:visible">
+      <div class="card-header">
+        <h2>Profit Margin — 30-day trend</h2>
+        <span class="badge b-teal" id="profit-current-badge">—</span>
+      </div>
+      <div class="card-body" style="padding:6px 10px 8px;flex:1;min-height:0;overflow:visible">
+        <canvas id="profit-line-chart" style="width:100%!important;height:100%!important"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- STACKED AREA + BAR CHART -->
+  <div class="chart-grid-3">
+
+    <div class="card" style="display:flex;flex-direction:column;height:100%;min-height:0;overflow:visible">
+      <div class="card-header">
+        <h2>Cost Composition — 6 months</h2>
+      </div>
+      <div class="card-body" style="padding:6px 10px 8px;flex:1;min-height:0;overflow:visible">
+        <canvas id="stacked-chart" style="width:100%!important;height:100%!important"></canvas>
+      </div>
+    </div>
+
+    <div class="card" style="display:flex;flex-direction:column;height:100%;min-height:0">
+      <div class="card-header">
+        <h2>Actual vs Budget</h2>
+        <div style="display:flex;gap:10px;font-size:10px;align-items:center">
+          <span style="display:flex;align-items:center;gap:4px;color:var(--ash)"><span style="width:8px;height:8px;border-radius:2px;background:var(--gold);display:inline-block"></span>Actual</span>
+          <span style="display:flex;align-items:center;gap:4px;color:var(--ash)"><span style="width:8px;height:8px;border-radius:2px;background:var(--smoke);display:inline-block"></span>Budget</span>
+        </div>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table class="avb-table" id="avb-table"></table>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- /main -->
+
+<!-- ═══════════════════════════════════════════
+     SIDEBAR
+     ═══════════════════════════════════════════ -->
+<div class="aside">
+  <div class="aside-tabs">
+    <button class="atab active" onclick="switchTab('alerts',this)">Alerts</button>
+    <button class="atab" onclick="switchTab('insights',this)">AI Insights</button>
+    <button class="atab" onclick="switchTab('log',this)">Log</button>
+  </div>
+
+  <!-- ALERTS TAB -->
+  <div id="tab-alerts" class="aside-scroll">
+    <div id="alerts-list"></div>
+  </div>
+
+  <!-- AI INSIGHTS TAB -->
+  <div id="tab-insights" class="aside-scroll" style="display:none">
+    <div id="insights-list"></div>
+  </div>
+
+  <!-- LOG TAB -->
+  <div id="tab-log" class="aside-scroll" style="display:none">
+    <div id="log-list"></div>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<script>
+// ╔══════════════════════════════════════════════════════════╗
+// ║  DATA MODEL                                              ║
+// ║  6 months of Restaurang Björken history +                ║
+// ║  30-day daily profit data                                ║
+// ╚══════════════════════════════════════════════════════════╝
+
+const MONTHS = [
+  { period:'Oct 2025', year:2025, m:10, revenue:421800, staff:148200, food:131400, rent:52000, other:24100, budget:{staff:147000,food:128000,rent:52000,other:23000} },
+  { period:'Nov 2025', year:2025, m:11, revenue:398600, staff:143500, food:124800, rent:52000, other:22400, budget:{staff:142000,food:122000,rent:52000,other:22000} },
+  { period:'Dec 2025', year:2025, m:12, revenue:512400, staff:182300, food:159100, rent:52000, other:31200, budget:{staff:175000,food:152000,rent:52000,other:28000} },
+  { period:'Jan 2026', year:2026, m:1,  revenue:389200, staff:138900, food:122100, rent:52000, other:21800, budget:{staff:140000,food:120000,rent:52000,other:22000} },
+  { period:'Feb 2026', year:2026, m:2,  revenue:461800, staff:159600, food:141200, rent:52000, other:26100, budget:{staff:158000,food:138000,rent:52000,other:25000} },
+  { period:'Mar 2026', year:2026, m:3,  revenue:487500, staff:168200, food:149300, rent:52000, other:28400, budget:{staff:165000,food:145000,rent:52000,other:27000} },
+];
+
+// Generate 30 days of daily profit margin data (realistic noise)
+function genDailyProfits() {
+  const base = 18.4;
+  return Array.from({length:30}, (_, i) => {
+    const trend = i * 0.05;
+    const noise = (Math.sin(i*0.8)*2 + Math.cos(i*1.3)*1.5 + (Math.random()-0.5)*2);
+    return Math.max(5, Math.min(28, base + trend + noise));
+  });
+}
+
+const DAILY_PROFITS = genDailyProfits();
+const DAILY_LABELS  = Array.from({length:30}, (_,i) => {
+  const d = new Date(2026,2,1); d.setDate(d.getDate()+i);
+  return d.getDate() + '/' + (d.getMonth()+1);
+});
+
+// Cost category config
+const CATS = {
+  staff: { label:'Staff',     color:'#5b8fd4', budgetKey:'staff' },
+  food:  { label:'Food & Bev',color:'#6aab6e', budgetKey:'food'  },
+  rent:  { label:'Rent',      color:'#d4a843', budgetKey:'rent'  },
+  other: { label:'Other',     color:'#9b9890', budgetKey:'other' },
+};
+
+const TARGETS = {
+  staff: { target:35, warn:38, over:42 },
+  food:  { target:31, warn:34, over:38 },
+  rent:  { target:11, warn:14, over:18 },
+  other: { target: 6, warn: 9, over:12 },
+};
+
+// Mutable app state
+let state = {
+  period:  'month',
+  compare: false,
+  data:    { ...MONTHS[MONTHS.length-1] },
+  charts:  {},
+  alerts:  [],
+  logEntries: [],
+};
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  CALCULATION ENGINE                                      ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function calc(d) {
+  const tc = d.staff + d.food + d.rent + d.other;
+  const pr = d.revenue - tc;
+  const rv = d.revenue || 1;
+  return {
+    ...d, totalCosts:tc, profit:pr,
+    staffPct:  r2(d.staff/rv*100), foodPct: r2(d.food/rv*100),
+    rentPct:   r2(d.rent/rv*100),  otherPct:r2(d.other/rv*100),
+    profitPct: r2(pr/rv*100), costsPct:r2(tc/rv*100),
+    staffShare:r2(d.staff/tc*100), foodShare:r2(d.food/tc*100),
+    rentShare: r2(d.rent/tc*100),  otherShare:r2(d.other/tc*100),
+  };
+}
+
+function scalePeriod(d, period) {
+  const div = {day:30, week:4.33, month:1, quarter:3, ytd:1}[period]||1;
+  if (period==='ytd') {
+    return MONTHS.filter(m=>m.year===2026).reduce((a,m)=>({
+      ...a, revenue:a.revenue+m.revenue, staff:a.staff+m.staff,
+      food:a.food+m.food, rent:a.rent+m.rent, other:a.other+m.other,
+      budget:{staff:a.budget.staff+(m.budget.staff||0), food:a.budget.food+(m.budget.food||0),
+              rent:a.budget.rent+(m.budget.rent||0), other:a.budget.other+(m.budget.other||0)},
+    }), {revenue:0,staff:0,food:0,rent:0,other:0,budget:{staff:0,food:0,rent:0,other:0}});
+  }
+  if (period==='quarter') {
+    const q = MONTHS.slice(-3).reduce((a,m)=>({
+      ...a, revenue:a.revenue+m.revenue, staff:a.staff+m.staff,
+      food:a.food+m.food, rent:a.rent+m.rent, other:a.other+m.other,
+      budget:{staff:a.budget.staff+(m.budget.staff||0), food:a.budget.food+(m.budget.food||0),
+              rent:a.budget.rent+(m.budget.rent||0), other:a.budget.other+(m.budget.other||0)},
+    }), {revenue:0,staff:0,food:0,rent:0,other:0,budget:{staff:0,food:0,rent:0,other:0}});
+    return q;
+  }
+  return { ...d, revenue:Math.round(d.revenue/div), staff:Math.round(d.staff/div),
+    food:Math.round(d.food/div), rent:Math.round(d.rent/div), other:Math.round(d.other/div) };
+}
+
+function checkAlerts(c) {
+  const alerts = [];
+  ['staff','food','rent','other'].forEach(cat => {
+    const pct = c[cat+'Pct'], t = TARGETS[cat];
+    if (pct > t.over) alerts.push({ level:'over', cat, msg:`${CATS[cat].label} at ${pct}%`, detail:`Exceeds ${t.over}% limit. Currently ${kr(c[cat])}.`, icon:'⚠' });
+    else if (pct > t.warn) alerts.push({ level:'warn', cat, msg:`${CATS[cat].label} approaching limit`, detail:`At ${pct}% vs ${t.warn}% warning threshold.`, icon:'●' });
+  });
+  if (c.profitPct < 10) alerts.push({ level:'over', cat:'profit', msg:`Profit margin critical: ${c.profitPct}%`, detail:`Net profit ${kr(c.profit)}. Target: ≥15%.`, icon:'↓' });
+  else if (c.profitPct < 15) alerts.push({ level:'warn', cat:'profit', msg:`Low profit margin: ${c.profitPct}%`, detail:`Below 15% benchmark. Net: ${kr(c.profit)}.`, icon:'↘' });
+  return alerts;
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  CHART.JS — GLOBAL DEFAULTS                              ║
+// ╚══════════════════════════════════════════════════════════╝
+
+Chart.defaults.color = '#9b9890';
+Chart.defaults.font.family = "'Syne', system-ui, sans-serif";
+Chart.defaults.font.size   = 11;
+
+// Shared tooltip style
+// Tooltip defaults — applied globally so every chart inherits them
+// These are set directly on Chart.defaults so Chart.js 4 respects them
+/* Tooltip styling is now set inline per-chart below — no globals needed */
+
+// tooltipPlugin is kept as a thin object just for per-chart callback overrides
+const tooltipPlugin = { callbacks: {} };
+
+function krTooltip(val) {
+  return Math.round(Math.abs(val)).toLocaleString('sv-SE') + ' kr';
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  RENDER — KPI CARDS                                      ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function renderKPIs() {
+  const d  = scalePeriod(state.data, state.period);
+  const c  = calc(d);
+  const prev = MONTHS[MONTHS.length-2];
+  const pc = calc(prev);
+
+  const periodLabel = {day:'today',week:'vs last week',month:'vs last month',quarter:'vs last quarter',ytd:'vs last year'}[state.period];
+
+  function trendBadge(currVal, prevVal, higherGood) {
+    const delta = currVal - prevVal;
+    const pct   = Math.abs(r2(delta/(prevVal||1)*100));
+    if (pct < 0.5) return `<span class="kpi-trend neutral">→ unchanged</span>`;
+    const up = delta > 0;
+    const good = higherGood ? up : !up;
+    const cls = good ? (up ? 'up-good' : 'dn-good') : (up ? 'up-bad' : 'dn-bad');
+    return `<span class="kpi-trend ${cls}">${up?'↑':'↓'} ${pct}% ${periodLabel}</span>`;
+  }
+
+  const kpis = [
+    {
+      id:'revenue', label:'Revenue',
+      value:kr(c.revenue), sub:'Gross turnover',
+      trend:trendBadge(c.revenue, pc.revenue, true),
+      valueClass:'teal', alert:null,
+      sparkData: MONTHS.map(m=>m.revenue),
+      sparkColor:'#4a9e8a',
+    },
+    {
+      id:'costs', label:'Total Costs',
+      value:kr(c.totalCosts), sub:`${c.costsPct}% of revenue`,
+      trend:trendBadge(c.totalCosts, pc.totalCosts, false),
+      valueClass:'', alert:null,
+      sparkData: MONTHS.map(m=>m.staff+m.food+m.rent+m.other),
+      sparkColor:'#5b8fd4',
+    },
+    {
+      id:'profit', label:'Net Profit',
+      value:kr(c.profit), sub:`${c.profitPct}% margin`,
+      trend:trendBadge(c.profit, pc.profit, true),
+      valueClass: c.profitPct >= 15 ? 'green' : c.profitPct >= 10 ? 'gold' : 'red',
+      alert: c.profitPct < 10 ? 'over' : c.profitPct < 15 ? 'warn' : null,
+      sparkData: MONTHS.map(m=>{ const t=m.staff+m.food+m.rent+m.other; return r2((m.revenue-t)/m.revenue*100); }),
+      sparkColor:'#6aab6e',
+    },
+    {
+      id:'cashflow', label:'Cash Flow',
+      value:kr(c.revenue - c.totalCosts * 0.82),
+      sub:'Estimated (bank sync pending)',
+      trend:`<span class="kpi-trend neutral">Bank CSV available</span>`,
+      valueClass:'gold', alert:null,
+      sparkData: MONTHS.map(m=>r2((m.revenue-(m.staff+m.food+m.rent+m.other)*0.82)/1000)),
+      sparkColor:'#d4a843',
+    },
+  ];
+
+  const grid = document.getElementById('kpi-grid');
+  grid.innerHTML = kpis.map(k => {
+    const alertHTML = k.alert
+      ? `<div class="alert-tag ${k.alert}">${k.alert==='over'?'OVER':'WATCH'}</div>`
+      : '';
+    const alertCls = k.alert==='over' ? 'alert-over' : k.alert==='warn' ? 'alert-warn' : '';
+    return `<div class="kpi-card ${alertCls} fade-up" id="kpi-${k.id}">
+      ${alertHTML}
+      <div class="kpi-eyebrow">${k.label}</div>
+      <div class="kpi-value ${k.valueClass}">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+      ${k.trend}
+      <canvas class="kpi-spark" id="spark-${k.id}"></canvas>
+    </div>`;
+  }).join('');
+
+  // Draw mini sparklines inside each KPI card
+  kpis.forEach(k => {
+    const ctx = document.getElementById('spark-'+k.id);
+    if (!ctx) return;
+    if (state.charts['spark-'+k.id]) state.charts['spark-'+k.id].destroy();
+    state.charts['spark-'+k.id] = new Chart(ctx, {
+      type:'line',
+      data:{
+        labels: MONTHS.map(m=>m.period),
+        datasets:[{ data:k.sparkData, borderColor:k.sparkColor, borderWidth:1.5,
+          fill:true, backgroundColor:k.sparkColor+'1a',
+          pointRadius:0, tension:0.4 }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+        scales:{ x:{display:false}, y:{display:false} },
+        animation:{duration:400},
+      }
+    });
+  });
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  RENDER — DONUT CHART                                    ║
+// ╚══════════════════════════════════════════════════════════╝
+
+
+// ── EXTERNAL TOOLTIP HANDLER ─────────────────────────────────────
+// Chart.js calls this instead of drawing the canvas tooltip.
+// We position a real HTML div anywhere on the page — never clipped.
+function externalDonutTooltip(context) {
+  const tooltip = context.tooltip;
+  const el = document.getElementById('chart-tooltip');
+
+  // Hide when not hovering
+  if (tooltip.opacity === 0) {
+    el.classList.remove('visible');
+    return;
+  }
+
+  // Get the data for this segment
+  const idx   = tooltip.dataPoints[0].dataIndex;
+  const val   = tooltip.dataPoints[0].parsed;
+  const label = tooltip.dataPoints[0].label;
+  const color = Object.values(CATS)[idx]?.color || '#888';
+
+  // Get current calc for percentages — stored on the function
+  const c = externalDonutTooltip._calc;
+  if (!c) return;
+
+  const pctCost = r2(val / c.totalCosts * 100);
+  const pctRev  = r2(val / c.revenue * 100);
+
+  el.innerHTML = `
+    <div class="tt-title">
+      <div class="tt-swatch" style="background:${color}"></div>
+      ${label}
+    </div>
+    <div class="tt-row"><span class="tt-key">Amount</span>   <span class="tt-val">${krTooltip(val)}</span></div>
+    <div class="tt-row"><span class="tt-key">% of costs</span>  <span class="tt-val">${pctCost}%</span></div>
+    <div class="tt-row"><span class="tt-key">% of revenue</span><span class="tt-val">${pctRev}%</span></div>
+  `;
+
+  // Position near the cursor but keep it on screen
+  const canvas = context.chart.canvas;
+  const rect   = canvas.getBoundingClientRect();
+  const x      = rect.left + tooltip.caretX;
+  const y      = rect.top  + tooltip.caretY;
+  const tw     = 210; // approximate tooltip width
+  const th     = 110; // approximate tooltip height
+
+  el.style.left = (x + 12 + tw > window.innerWidth ? x - tw - 12 : x + 12) + 'px';
+  el.style.top  = (y + th > window.innerHeight ? y - th : y) + 'px';
+  el.classList.add('visible');
+}
+
+function renderDonut() {
+  const d = scalePeriod(state.data, state.period);
+  const c = calc(d);
+
+  const data = [c.staff, c.food, c.rent, c.other];
+  const colors = Object.values(CATS).map(x=>x.color);
+  const labels = Object.values(CATS).map(x=>x.label);
+
+  if (state.charts.donut) state.charts.donut.destroy();
+
+  const ctx = document.getElementById('donut-chart').getContext('2d');
+  state.charts.donut = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets:[{
+      data,
+      backgroundColor: colors,  /* fully solid — no alpha */
+      borderColor: '#1a1917',
+      borderWidth: 2,
+      hoverBackgroundColor: colors,
+      hoverBorderWidth: 0,
+    }]},
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: '65%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: false,  /* disable canvas tooltip — use external HTML div instead */
+          external: (context) => {
+            externalDonutTooltip._calc = c;  /* pass current calc to the handler */
+            externalDonutTooltip(context);
+          },
+        },
+      },
+      onHover: (evt, els) => {
+        if (els.length) {
+          const idx = els[0].index;
+          const pct = r2(data[idx]/c.totalCosts*100);
+          document.getElementById('dc-val').textContent = pct + '%';
+          document.getElementById('donut-center').querySelector('.dc-label').textContent = labels[idx];
+        } else {
+          document.getElementById('dc-val').textContent = krShort(c.totalCosts);
+          document.getElementById('donut-center').querySelector('.dc-label').textContent = 'total costs';
+        }
+      },
+      animation: { animateRotate: true, duration: 500 },
+    }
+  });
+
+  document.getElementById('dc-val').textContent = krShort(c.totalCosts);
+
+  // Legend
+  const catKeys = Object.keys(CATS);
+  document.getElementById('donut-legend').innerHTML = catKeys.map((cat,i) => {
+    const val = data[i];
+    const pct = r2(val/c.totalCosts*100);
+    const pctRev = c[cat+'Pct'];
+    const t = TARGETS[cat];
+    const dot = pctRev > t.over ? '🔴' : pctRev > t.warn ? '🟡' : '';
+    return `<div class="leg-row" onclick="highlightDonut(${i})">
+      <div class="leg-left">
+        <div class="leg-dot" style="background:${CATS[cat].color}"></div>
+        <div class="leg-name">${CATS[cat].label}${dot ? ' '+dot : ''}</div>
+      </div>
+      <div class="leg-right">
+        <span class="leg-kr">${krShort(val)}</span>
+        <span class="leg-pct">${pct}%</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function highlightDonut(idx) {
+  const chart = state.charts.donut;
+  if (!chart) return;
+  chart.setDatasetVisibility(0, true);
+  chart.update();
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  RENDER — PROFIT LINE CHART (30-day)                     ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function renderProfitLine() {
+  if (state.charts.profitLine) state.charts.profitLine.destroy();
+
+  const ctx = document.getElementById('profit-line-chart').getContext('2d');
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0,0,0,180);
+  grad.addColorStop(0,  '#4a9e8a33');
+  grad.addColorStop(1,  '#4a9e8a00');
+
+  const budgetLine = Array(30).fill(18.0);
+
+  state.charts.profitLine = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: DAILY_LABELS,
+      datasets:[
+        {
+          label:'Profit margin %',
+          data: DAILY_PROFITS,
+          borderColor:'#4a9e8a', borderWidth:2,
+          fill:true, backgroundColor:grad,
+          pointRadius:0, pointHoverRadius:4,
+          pointHoverBackgroundColor:'#4a9e8a',
+          tension:0.4,
+        },
+        {
+          label:'Budget target',
+          data: budgetLine,
+          borderColor:'#3a3835', borderWidth:1.5,
+          borderDash:[4,4],
+          pointRadius:0, fill:false, tension:0,
+        },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor: '#ffffff',
+          borderColor:     '#dddddd',
+          borderWidth:     1,
+          titleColor:      '#111111',
+          bodyColor:       '#333333',
+          padding:         14,
+          cornerRadius:    8,
+          boxPadding:      6,
+          bodySpacing:     6,
+          titleSpacing:    6,
+          titleFont:       { size:13, weight:'600' },
+          bodyFont:        { size:12 },
+          displayColors:   true,
+          callbacks:{
+            title: ctx => 'March ' + ctx[0].label,
+            label: ctx => '  ' + ctx.dataset.label + ':  ' + ctx.parsed.y.toFixed(1) + '%',
+          }
+        },
+      },
+      scales:{
+        x:{ grid:{color:'#25242100', drawBorder:false}, ticks:{ maxTicksLimit:8, color:'#6b6860' } },
+        y:{
+          grid:{ color:'#2e2c2966', drawBorder:false },
+          ticks:{ color:'#6b6860', callback: v => v+'%' },
+          suggestedMin:5, suggestedMax:30,
+        }
+      },
+      animation:{ duration:600 },
+    }
+  });
+
+  // Badge
+  const last = DAILY_PROFITS[DAILY_PROFITS.length-1];
+  document.getElementById('profit-current-badge').textContent = last.toFixed(1) + '% today';
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  RENDER — STACKED AREA CHART                             ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function renderStacked() {
+  if (state.charts.stacked) state.charts.stacked.destroy();
+
+  const ctx = document.getElementById('stacked-chart').getContext('2d');
+  const labels = MONTHS.map(m=>m.period);
+
+  function stackGrad(color) {
+    const g = ctx.createLinearGradient(0,0,0,200);
+    g.addColorStop(0, color+'88'); g.addColorStop(1, color+'11');
+    return g;
+  }
+
+  state.charts.stacked = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels,
+      datasets:[
+        { label:'Staff',    data:MONTHS.map(m=>m.staff),  fill:true, backgroundColor:stackGrad('#5b8fd4'), borderColor:'#5b8fd4', borderWidth:1.5, pointRadius:2, pointHoverRadius:4, tension:0.3 },
+        { label:'Food',     data:MONTHS.map(m=>m.food),   fill:true, backgroundColor:stackGrad('#6aab6e'), borderColor:'#6aab6e', borderWidth:1.5, pointRadius:3, pointHoverRadius:5, tension:0.3 },
+        { label:'Rent',     data:MONTHS.map(m=>m.rent),   fill:true, backgroundColor:stackGrad('#d4a843'), borderColor:'#d4a843', borderWidth:1.5, pointRadius:3, pointHoverRadius:5, tension:0.3 },
+        { label:'Other',    data:MONTHS.map(m=>m.other),  fill:true, backgroundColor:stackGrad('#9b9890'), borderColor:'#9b9890', borderWidth:1.5, pointRadius:3, pointHoverRadius:5, tension:0.3 },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{
+          display:true,
+          position:'bottom',
+          labels:{ boxWidth:8, boxHeight:8, borderRadius:4, padding:14, usePointStyle:true, pointStyle:'circle', color:'#9b9890', font:{size:11} }
+        },
+        tooltip:{
+          backgroundColor: '#ffffff',
+          borderColor:     '#dddddd',
+          borderWidth:     1,
+          titleColor:      '#111111',
+          bodyColor:       '#333333',
+          padding:         14,
+          cornerRadius:    8,
+          boxPadding:      6,
+          bodySpacing:     6,
+          titleSpacing:    6,
+          titleFont:       { size:13, weight:'600' },
+          bodyFont:        { size:12 },
+          displayColors:   true,
+          callbacks:{
+            title: ctx => ctx[0].label,
+            label: ctx => '  ' + ctx.dataset.label + ':  ' + krTooltip(ctx.parsed.y),
+          }
+        },
+      },
+      scales:{
+        x:{ grid:{color:'#25242100'}, ticks:{color:'#6b6860'} },
+        y:{ grid:{color:'#2e2c2966', drawBorder:false}, ticks:{color:'#6b6860', callback:v=>Math.round(v/1000)+'k'}, stacked:false },
+      },
+      animation:{duration:500},
+    }
+  });
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  RENDER — ACTUAL VS BUDGET TABLE                         ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function renderAVBTable() {
+  const d = scalePeriod(state.data, state.period);
+  const c = calc(d);
+  const bud = state.data.budget || {};
+
+  const rows = [
+    { label:'Revenue',  actual:c.revenue,    budget:null,          isRev:true },
+    { label:'Staff',    actual:c.staff,      budget:bud.staff,     isCost:true, cat:'staff' },
+    { label:'Food',     actual:c.food,       budget:bud.food,      isCost:true, cat:'food'  },
+    { label:'Rent',     actual:c.rent,       budget:bud.rent,      isCost:true, cat:'rent'  },
+    { label:'Other',    actual:c.other,      budget:bud.other,     isCost:true, cat:'other' },
+    { label:'Profit',   actual:c.profit,     budget:null,          isRev:true  },
+  ];
+
+  const table = document.getElementById('avb-table');
+  table.innerHTML = `<thead><tr>
+    <th>Category</th><th>Actual</th><th>Budget</th><th>Variance</th><th style="min-width:80px">vs Target</th>
+  </tr></thead><tbody>` +
+  rows.map(row => {
+    const hasB = row.budget != null;
+    const variance  = hasB ? row.actual - row.budget : null;
+    const varPct    = hasB ? r2(variance/row.budget*100) : null;
+    const good      = row.isCost ? variance <= 0 : variance >= 0;
+    const varColor  = !hasB ? '' : good ? '#6aab6e' : '#c4604a';
+    const barW      = hasB ? Math.min(100, Math.abs(varPct||0)*2) : 0;
+
+    // Alert badge for cost categories
+    const alertBadge = row.cat
+      ? (() => {
+          const al = c[row.cat+'Pct'] > TARGETS[row.cat].over ? 'over'
+                   : c[row.cat+'Pct'] > TARGETS[row.cat].warn ? 'warn' : null;
+          return al ? `<span class="badge ${al==='over'?'b-red':'b-gold'}">${al==='over'?'OVER':'WATCH'}</span>` : `<span class="badge b-green">✓</span>`;
+        })()
+      : '';
+
+    return `<tr>
+      <td style="font-weight:500;color:var(--cream)">${row.label}</td>
+      <td style="font-family:var(--font-mono)">${kr(row.actual)}</td>
+      <td style="font-family:var(--font-mono);color:var(--ash)">${hasB ? kr(row.budget) : '—'}</td>
+      <td style="font-family:var(--font-mono);color:${varColor}">
+        ${hasB ? (variance>0?'+':'')+krShort(variance) : '—'}
+        ${hasB ? `<div class="variance-bar" style="width:${barW}%;background:${varColor};max-width:60px"></div>` : ''}
+      </td>
+      <td>${alertBadge}</td>
+    </tr>`;
+  }).join('') + '</tbody>';
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  RENDER — ALERTS                                         ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function renderAlerts() {
+  const d = scalePeriod(state.data, state.period);
+  const c = calc(d);
+  const alerts = checkAlerts(c);
+  state.alerts = alerts;
+
+  const list = document.getElementById('alerts-list');
+  const now = new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
+
+  // Unusual transaction detection (simulated)
+  const unusuals = [];
+  if (c.foodPct > 34) unusuals.push({ msg:'Unusual food cost spike detected', detail:'Food & Bev costs 12% above 3-month average. Possible supplier price increase or wastage.', icon:'🔍', type:'teal' });
+
+  const all = [
+    ...alerts.map(a => ({
+      msg: a.msg, detail: a.detail, icon: a.icon,
+      type: a.level==='over' ? 'red' : 'gold',
+    })),
+    ...unusuals,
+    { msg:'Fortnox sync complete', detail:'14 new invoices pulled. 3 categorised automatically.', icon:'✓', type:'teal', isInfo:true },
+  ];
+
+  if (!all.length) {
+    list.innerHTML = `<div style="text-align:center;padding:32px 20px;color:var(--mist);font-size:13px">🟢 All metrics within target ranges</div>`;
+    return;
+  }
+
+  list.innerHTML = all.map(a => `
+    <div class="alert-item">
+      <div class="alert-row">
+        <div class="alert-icon ai-${a.type}">${a.icon}</div>
+        <div class="alert-text">
+          <div class="alert-title">${a.msg}</div>
+          <div class="alert-detail">${a.detail}</div>
+          <div class="alert-time">${now}</div>
+          <span class="alert-tag-pill atp-${a.type}">${a.type==='red'?'Critical':a.type==='gold'?'Warning':a.type==='teal'?'Info':'Notice'}</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  AI INSIGHTS                                             ║
+// ╚══════════════════════════════════════════════════════════╝
+
+async function renderInsights() {
+  const list = document.getElementById('insights-list');
+
+  // Show "thinking" animation
+  const thinkEl = document.createElement('div');
+  thinkEl.className = 'insight-card';
+  thinkEl.innerHTML = `<div class="insight-header"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>AI Analyst</div><div class="insight-thinking"><div class="think-dot"></div><div class="think-dot"></div><div class="think-dot"></div></div>`;
+  list.innerHTML = '';
+  list.appendChild(thinkEl);
+
+  const d = scalePeriod(state.data, state.period);
+  const c = calc(d);
+  const prev = calc(MONTHS[MONTHS.length-2]);
+
+  const prompt = `You are a restaurant financial analyst for Restaurang Björken, Stockholm.
+Current month (March 2026):
+- Revenue: ${kr(c.revenue)}
+- Staff costs: ${kr(c.staff)} (${c.staffPct}% of revenue, target ≤35%)
+- Food & Bev costs: ${kr(c.food)} (${c.foodPct}% of revenue, target ≤31%)  
+- Rent: ${kr(c.rent)} (${c.rentPct}% of revenue)
+- Net profit: ${kr(c.profit)} (${c.profitPct}% margin)
+
+Previous month (February 2026):
+- Revenue: ${kr(prev.revenue)}, Staff: ${kr(prev.staff)} (${prev.staffPct}%), Food: ${kr(prev.food)} (${prev.foodPct}%), Profit: ${kr(prev.profit)} (${prev.profitPct}%)
+
+Write 3 short, specific, actionable insights for the restaurant owner.
+Format as JSON array: [{"title":"...", "text":"...", "type":"warning|good|tip"}]
+Keep each insight under 40 words. Be specific with numbers. In English.
+Return ONLY the JSON array.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514', max_tokens:600,
+        messages:[{role:'user', content:prompt}]
+      })
+    });
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '[]';
+    const clean = text.replace(/```json|```/g,'').trim();
+    const insights = JSON.parse(clean);
+
+    list.innerHTML = insights.map(ins => {
+      const color = ins.type==='warning' ? 'coral' : ins.type==='good' ? 'green' : 'gold';
+      const icon  = ins.type==='warning' ? '⚠' : ins.type==='good' ? '↑' : '💡';
+      return `<div class="insight-card">
+        <div class="insight-header" style="color:var(--${color})">${icon} ${ins.title}</div>
+        <div class="insight-text">${ins.text}</div>
+      </div>`;
+    }).join('');
+
+  } catch(e) {
+    // Fallback insights when API not available
+    const fallbacks = [
+      { title:'Food cost above target', text:`Food & Bev at ${c.foodPct}% of revenue — ${r2(c.foodPct-31)}pp over the 31% target. Review recent Menigo and Sysco invoices for price increases or excess ordering.`, type:'warning' },
+      { title:'Strong revenue growth', text:`Revenue up ${r2((c.revenue-prev.revenue)/prev.revenue*100)}% vs February. Driven by higher covers or average spend. Maintain current momentum through Q2.`, type:'good' },
+      { title:'Staff efficiency opportunity', text:`Staff costs at ${c.staffPct}% of revenue. Consider reviewing shift scheduling — aligning hours more tightly with covers could recover 1–2% margin.`, type:'tip' },
+    ];
+    list.innerHTML = fallbacks.map(ins => {
+      const color = ins.type==='warning' ? 'coral' : ins.type==='good' ? 'green' : 'gold';
+      const icon  = ins.type==='warning' ? '⚠' : ins.type==='good' ? '↑' : '💡';
+      return `<div class="insight-card">
+        <div class="insight-header" style="color:var(--${color})">${icon} ${ins.title}</div>
+        <div class="insight-text">${ins.text}</div>
+      </div>`;
+    }).join('') + `<div style="padding:10px 16px;font-size:11px;color:var(--mist)">Connect API key in settings to enable live AI analysis.</div>`;
+  }
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  CHANGE LOG                                              ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function addLog(msg, badge, badgeCls) {
+  const list = document.getElementById('log-list');
+  const time = new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  el.innerHTML = `<div class="log-time">${time}</div>
+    <div class="log-msg">${msg}</div>
+    <span class="log-badge ${badgeCls}">${badge}</span>`;
+  list.insertBefore(el, list.firstChild);
+  while (list.children.length > 60) list.removeChild(list.lastChild);
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  UPDATE ENGINE                                           ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function update(changes, source) {
+  const old = calc(scalePeriod(state.data, 'month'));
+  Object.assign(state.data, changes);
+  const next = calc(scalePeriod(state.data, 'month'));
+
+  // Log what changed
+  Object.keys(changes).forEach(k => {
+    if (['staff','food','rent','other'].includes(k)) {
+      const delta = changes[k] - old[k];
+      addLog(`<strong>${k.charAt(0).toUpperCase()+k.slice(1)}</strong> updated → ${kr(changes[k])} (${delta>0?'+':''}${krShort(delta)})`, source, 'lb-cost');
+    }
+    if (k==='revenue') addLog(`<strong>Revenue</strong> updated → ${kr(changes[k])}`, source, 'lb-rev');
+  });
+
+  // Check for new alerts
+  const newAlerts = checkAlerts(next);
+  const oldAlerts = checkAlerts(old);
+  newAlerts.forEach(a => {
+    const existed = oldAlerts.some(o => o.cat===a.cat && o.level===a.level);
+    if (!existed) addLog(`Alert triggered: ${a.msg}`, 'Alert', 'lb-alert');
+  });
+
+  addLog(`Profit recalculated: <strong>${kr(next.profit)}</strong> (${next.profitPct}% margin)`, 'Recalc', 'lb-sync');
+
+  renderAll();
+
+  // Flash the KPI cards that changed
+  ['revenue','costs','profit'].forEach(id => {
+    const el = document.getElementById('kpi-'+id);
+    if (el) { el.classList.remove('flash-update'); void el.offsetWidth; el.classList.add('flash-update'); }
+  });
+
+  document.getElementById('last-sync').textContent =
+    'Updated ' + new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Simulate random data update (demo button) ─────────────
+function simulateUpdate() {
+  const events = [
+    { change:{ food: state.data.food + 18500 + Math.round(Math.random()*5000) }, source:'Invoice import' },
+    { change:{ staff: state.data.staff + 28000 + Math.round(Math.random()*8000) }, source:'Fortnox sync' },
+    { change:{ revenue: state.data.revenue + 22000 + Math.round(Math.random()*15000) }, source:'Fortnox sync' },
+    { change:{ rent: state.data.rent + 2000 }, source:'Bank CSV' },
+    { change:{ other: state.data.other + 4500 + Math.round(Math.random()*2000) }, source:'Manual entry' },
+  ];
+  const e = events[Math.floor(Math.random()*events.length)];
+  update(e.change, e.source);
+}
+
+// ── Period switcher ───────────────────────────────────────
+function setPeriod(p, el) {
+  state.period = p;
+  document.querySelectorAll('.ptab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  const lbl = {day:'Today',week:'This Week',month:'March 2026',quarter:'Q1 2026',ytd:'YTD 2026'}[p];
+  document.getElementById('donut-period-label').textContent = lbl;
+  addLog(`Period changed to <strong>${lbl}</strong>`, 'Navigation', 'lb-sync');
+  renderAll();
+}
+
+// ── Compare toggle ────────────────────────────────────────
+function toggleCompare() {
+  state.compare = !state.compare;
+  document.getElementById('compare-toggle').classList.toggle('on', state.compare);
+  addLog(`Period comparison ${state.compare?'enabled':'disabled'}`, 'Setting', 'lb-sync');
+  renderAll();
+}
+
+// ── Tab switcher ──────────────────────────────────────────
+function switchTab(tab, el) {
+  ['alerts','insights','log'].forEach(t => {
+    const p = document.getElementById('tab-'+t);
+    if (p) p.style.display = t===tab ? 'block' : 'none';
+  });
+  document.querySelectorAll('.atab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (tab === 'insights') renderInsights();
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  MASTER RENDER                                           ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function renderAll() {
+  renderKPIs();
+  renderDonut();
+  renderProfitLine();
+  renderStacked();
+  renderAVBTable();
+  renderAlerts();
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  UTILITIES                                               ║
+// ╚══════════════════════════════════════════════════════════╝
+
+function kr(n)      { if(n==null) return '—'; return Math.round(Math.abs(n)).toLocaleString('sv-SE')+' kr'; }
+function krShort(n) { const a=Math.abs(n); if(a>=1e6) return (n/1e6).toFixed(1)+'M kr'; if(a>=1000) return (n/1000).toFixed(0)+'k kr'; return Math.round(n)+' kr'; }
+function r2(n)      { return Math.round(n*100)/100; }
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║  INIT                                                    ║
+// ╚══════════════════════════════════════════════════════════╝
+
+addLog('Dashboard initialised', 'System', 'lb-sync');
+addLog('Loaded <strong>6 months</strong> of historical data', 'Data', 'lb-rev');
+addLog('Alert system active — monitoring 4 cost categories', 'Monitor', 'lb-warn');
+renderAll();
+</script>
+<div id="chart-tooltip"></div>
+</body>
+</html>

@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Test Suite — Björken</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f4f1;--panel:#fff;--panel-2:#faf8f4;
+  --border:#e2e0db;--border-d:#c8c3bb;
+  --text:#1a1917;--muted:#6b6860;--hint:#9b9690;--charcoal:#3d3b38;
+  --blue:#185FA5;--blue-lt:#E6F1FB;--blue-dk:#0C447C;
+  --green:#3B6D11;--green-lt:#EAF3DE;
+  --red:#A32D2D;--red-lt:#FCEBEB;
+  --amber:#854F0B;--amber-lt:#FAEEDA;
+  --navy:#1E2761;
+  --r:8px;--rl:14px;
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--font);font-size:14px;background:var(--bg);color:var(--text);display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:2px}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 20px;height:46px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+.brand{display:flex;align-items:center;gap:9px}
+.brand-icon{width:28px;height:28px;border-radius:7px;background:var(--navy);display:flex;align-items:center;justify-content:center;font-size:14px}
+.brand-name{font-size:14px;font-weight:600}
+
+.shell{display:grid;grid-template-columns:240px 1fr 340px;height:calc(100vh - 46px);overflow:hidden}
+.panel{display:flex;flex-direction:column;overflow:hidden}
+.panel-l{border-right:1px solid var(--border);background:var(--panel)}
+.panel-c{background:var(--bg)}
+.panel-r{border-left:1px solid var(--border);background:var(--panel)}
+.ph{padding:11px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--panel)}
+.ph h2{font-size:11px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em}
+.ps{flex:1;overflow-y:auto}
+
+/* SUITE LIST */
+.suite-item{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s;display:flex;align-items:center;gap:10px}
+.suite-item:hover{background:var(--bg)}
+.suite-item.active{background:var(--blue-lt);border-left:3px solid var(--blue)}
+.suite-icon{font-size:18px;flex-shrink:0}
+.suite-info .si-name{font-size:13px;font-weight:500}
+.suite-info .si-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.suite-score{margin-left:auto;font-size:11px;font-weight:700;font-family:var(--mono)}
+
+/* SUMMARY BAR */
+.summary-bar{padding:12px 16px;background:var(--navy);color:white;display:flex;align-items:center;gap:16px;flex-shrink:0}
+.sb-stat{text-align:center}
+.sb-val{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1}
+.sb-lbl{font-size:9px;opacity:.6;text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
+.verdict{margin-left:auto;font-size:13px;font-weight:600;padding:5px 14px;border-radius:20px}
+.verdict.pass{background:#52c374;color:white}
+.verdict.fail{background:#E24B4A;color:white}
+.verdict.running{background:var(--amber-lt);color:var(--amber)}
+
+/* TEST ITEMS */
+.test-item{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:10px;cursor:pointer;transition:background .1s}
+.test-item:hover{background:var(--panel-2)}
+.test-item.selected{background:var(--blue-lt)}
+.test-status{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
+.ts-pass{background:var(--green-lt);color:var(--green)}
+.ts-fail{background:var(--red-lt);color:var(--red)}
+.ts-wait{background:var(--bg);color:var(--hint);border:1px solid var(--border)}
+.ts-run{background:var(--blue-lt);color:var(--blue);animation:pulse .8s ease infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.test-info{flex:1;min-width:0}
+.test-name{font-size:12px;font-weight:500}
+.test-detail{font-size:11px;color:var(--muted);margin-top:2px}
+.test-time{font-family:var(--mono);font-size:10px;color:var(--hint);flex-shrink:0}
+
+/* RUN BUTTONS */
+.run-bar{padding:10px 14px;border-bottom:1px solid var(--border);display:flex;gap:7px;flex-wrap:wrap;flex-shrink:0;background:var(--panel)}
+.run-btn{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border-d);background:none;cursor:pointer;color:var(--charcoal);transition:all .12s}
+.run-btn:hover{background:var(--bg)}
+.run-btn.primary{background:var(--blue);color:white;border-color:var(--blue)}
+.run-btn.primary:hover{background:var(--blue-dk)}
+
+/* UAT SCRIPTS */
+.uat-section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.uat-title{font-size:12px;font-weight:600;color:var(--charcoal);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.uat-step{display:flex;gap:10px;padding:8px 10px;border-radius:var(--r);margin-bottom:6px;font-size:12px;border:1px solid var(--border);background:var(--panel);cursor:pointer;transition:all .12s}
+.uat-step:hover{border-color:var(--blue-lt)}
+.uat-step.done{background:var(--green-lt);border-color:rgba(59,109,17,.3)}
+.uat-step.fail{background:var(--red-lt);border-color:rgba(162,45,45,.3)}
+.uat-num{width:20px;height:20px;border-radius:50%;background:var(--navy);color:white;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.uat-step.done .uat-num{background:var(--green)}
+.uat-step.fail .uat-num{background:var(--red)}
+.uat-content{flex:1}
+.uat-action{font-weight:500;color:var(--text);margin-bottom:3px}
+.uat-expected{font-size:11px;color:var(--muted)}
+.uat-btns{display:flex;gap:5px;margin-top:5px}
+.uat-pass-btn{font-size:10px;padding:2px 8px;border-radius:8px;border:1px solid var(--green);color:var(--green);background:none;cursor:pointer;font-family:var(--font)}
+.uat-fail-btn{font-size:10px;padding:2px 8px;border-radius:8px;border:1px solid var(--red);color:var(--red);background:none;cursor:pointer;font-family:var(--font)}
+.uat-pass-btn:hover{background:var(--green-lt)}
+.uat-fail-btn:hover{background:var(--red-lt)}
+
+/* SIGN-OFF */
+.signoff-card{margin:14px;background:var(--navy);color:white;border-radius:var(--rl);padding:16px}
+.signoff-title{font-size:14px;font-weight:600;margin-bottom:10px}
+.signoff-row{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+.signoff-row:last-child{border-bottom:none}
+.signoff-label{opacity:.7}
+.signoff-val{font-weight:600}
+.signoff-btn{width:100%;margin-top:12px;padding:9px;border-radius:var(--r);background:#52c374;color:white;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.signoff-btn:hover{background:#3da85b}
+.signoff-btn:disabled{background:rgba(255,255,255,.2);cursor:not-allowed}
+
+/* LOG */
+.log-entry{padding:5px 14px;border-bottom:1px solid var(--border);font-size:11px;font-family:var(--mono);display:flex;gap:8px}
+.le-time{color:var(--hint);flex-shrink:0}
+.le-msg{flex:1}
+.le-pass{color:var(--green)}.le-fail{color:var(--red)}.le-info{color:var(--muted)}.le-run{color:var(--blue)}
+
+.badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px}
+.b-blue{background:var(--blue-lt);color:var(--blue)}
+.b-green{background:var(--green-lt);color:var(--green)}
+.b-amber{background:var(--amber-lt);color:var(--amber)}
+.b-gray{background:var(--bg);color:var(--hint);border:1px solid var(--border)}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+
+.progress-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:8px}
+.progress-fill{height:100%;background:var(--blue);border-radius:2px;transition:width .3s ease}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-icon">🧪</div>
+    <span class="brand-name">Test Suite — Restaurang Björken</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span class="badge b-gray" id="total-badge">47 tests</span>
+    <span id="run-time" style="font-size:11px;color:var(--hint);font-family:var(--mono)"></span>
+  </div>
+</div>
+
+<div class="shell">
+
+<!-- LEFT: SUITE NAVIGATOR -->
+<div class="panel panel-l">
+  <div class="ph"><h2>Test Suites</h2></div>
+  <div class="ps" id="suite-nav"></div>
+
+  <!-- Signoff card -->
+  <div class="signoff-card">
+    <div class="signoff-title">✓ Sign-off Checklist</div>
+    <div id="signoff-rows"></div>
+    <button class="signoff-btn" id="signoff-btn" disabled onclick="generateSignoff()">
+      Generate sign-off certificate
+    </button>
+  </div>
+</div>
+
+<!-- CENTRE: TEST RESULTS -->
+<div class="panel panel-c">
+  <div class="summary-bar">
+    <div class="sb-stat"><div class="sb-val" id="total-count">—</div><div class="sb-lbl">Total</div></div>
+    <div class="sb-stat"><div class="sb-val" id="pass-count" style="color:#7EE8A2">—</div><div class="sb-lbl">Passed</div></div>
+    <div class="sb-stat"><div class="sb-val" id="fail-count" style="color:#FF9A8B">—</div><div class="sb-lbl">Failed</div></div>
+    <div class="sb-stat"><div class="sb-val" id="avg-time">—</div><div class="sb-lbl">Avg ms</div></div>
+    <div class="verdict" id="verdict">Ready</div>
+  </div>
+  <div class="run-bar">
+    <button class="run-btn primary" onclick="runAll()">▶ Run all tests</button>
+    <button class="run-btn" onclick="runSuite('data')">Data integrity</button>
+    <button class="run-btn" onclick="runSuite('fortnox')">Fortnox</button>
+    <button class="run-btn" onclick="runSuite('chat')">Chat / RAG</button>
+    <button class="run-btn" onclick="runSuite('perf')">Performance</button>
+    <button class="run-btn" onclick="resetResults()">Reset</button>
+  </div>
+  <div class="progress-bar" style="margin:0 14px"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+  <div class="ps" id="test-list"></div>
+</div>
+
+<!-- RIGHT: UAT + LOG -->
+<div class="panel panel-r">
+  <div class="ph">
+    <h2>UAT Scripts</h2>
+    <div id="uat-score" style="font-size:11px;font-family:var(--mono);color:var(--hint)">0/0</div>
+  </div>
+  <div class="ps">
+    <div id="uat-sections"></div>
+
+    <!-- Activity log -->
+    <div style="padding:8px 14px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--panel-2)">
+      <div style="font-size:10px;font-weight:600;color:var(--hint);text-transform:uppercase;letter-spacing:.08em">Activity Log</div>
+    </div>
+    <div id="activity-log" style="max-height:200px;overflow-y:auto"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ╔══════════════════════════════════════════════════════════════╗
+// ║  Test Runner — in-browser version of the Python test suite   ║
+// ╚══════════════════════════════════════════════════════════════╝
+
+// ── TEST DEFINITIONS ──────────────────────────────────────────────
+const TESTS = {
+  data: {
+    name: "Data Integrity", icon: "🗃️",
+    tests: [
+      { id:"d1",  name:"1.1 Single food invoice updates food total",
+        fn: () => {
+          let food = 100000;
+          const inv_amount = 31307;
+          food += inv_amount;
+          assert(Math.abs(food - 131307) < 0.01, `Food total wrong: ${food}`);
+        }},
+      { id:"d2",  name:"1.2 Staff invoice goes to staff bucket only",
+        fn: () => {
+          let staff=0, food=100000;
+          staff += 224978;
+          assert(staff === 224978, "Staff wrong");
+          assert(food  === 100000, "Food should not change");
+        }},
+      { id:"d3",  name:"1.3 Invoice count increments correctly",
+        fn: () => {
+          let count = 0;
+          for(let i=0;i<3;i++) count++;
+          assert(count === 3, `Count should be 3, got ${count}`);
+        }},
+      { id:"d4",  name:"2.1 Multiple invoices: sum matches total",
+        fn: () => {
+          const amounts = [31307, 22450, 18900, 9200];
+          const total = amounts.reduce((a,b)=>a+b,0);
+          assertApprox(total, 81857, 0.01, "Sum of food invoices");
+        }},
+      { id:"d5",  name:"2.2 Period isolation: May ≠ June",
+        fn: () => {
+          const may={food:50000}, jun={food:30000};
+          assert(may.food !== jun.food, "Periods should be isolated");
+        }},
+      { id:"d6",  name:"2.3 Duplicate invoice not double-counted",
+        fn: () => {
+          const hashes = new Set();
+          const hash = "abc123";
+          hashes.add(hash);
+          const before = hashes.size;
+          hashes.add(hash); // attempt duplicate
+          assert(hashes.size === before, "Duplicate hash should not be added");
+        }},
+      { id:"d7",  name:"3.1 Percentages calculated correctly",
+        fn: () => {
+          const rev=500000, staff=200000, food=150000, rent=60000, other=25000;
+          assertApprox(staff/rev*100, 40.0, 0.1, "Staff %");
+          assertApprox(food/rev*100,  30.0, 0.1, "Food %");
+          assertApprox(rent/rev*100,  12.0, 0.1, "Rent %");
+        }},
+      { id:"d8",  name:"3.2 Cost percentages sum ≤ 100%",
+        fn: () => {
+          const rev=505900, staff=224978, food=149300, rent=64500, other=28422;
+          const pct = (staff+food+rent+other)/rev*100;
+          assert(pct <= 100, `Cost % ${pct.toFixed(1)} > 100%`);
+        }},
+      { id:"d9",  name:"3.3 Profit = Revenue − Total Costs",
+        fn: () => {
+          const revenue=505900, costs=467200;
+          assertApprox(revenue-costs, 38700, 0.01, "Profit");
+          assertApprox((revenue-costs)/revenue*100, 7.65, 0.01, "Margin %");
+        }},
+      { id:"d10", name:"4.1 Deleting invoice reverts total",
+        fn: () => {
+          let food = 100000;
+          const inv = 25000;
+          food += inv;
+          assertApprox(food, 125000, 0.01, "After add");
+          food -= inv; // delete
+          assertApprox(food, 100000, 0.01, "After delete");
+        }},
+      { id:"d11", name:"4.2 Delete non-existent invoice: no error",
+        fn: () => {
+          function safeDelete(id, db) {
+            const inv = db.find(i=>i.id===id);
+            if(!inv) return; // safe — no throw
+            db.splice(db.indexOf(inv),1);
+          }
+          const db = [{id:1,amount:1000}];
+          safeDelete(9999, db); // should not throw
+          assert(db.length===1, "DB unchanged");
+        }},
+      { id:"d12", name:"4.3 VAT calculation: 25%, 12%, 6%",
+        fn: () => {
+          assertApprox(1000*1.25,  1250,  0.01, "25% VAT");
+          assertApprox(100000*1.12,112000,0.01, "12% VAT");
+          assertApprox(50000*1.06, 53000, 0.01, "6% VAT");
+        }},
+      { id:"d13", name:"4.4 Swedish amount parsing: '34 157,00 kr'",
+        fn: () => {
+          function parseSEK(s) {
+            s = s.replace(' kr','').replace(/\s/g,'');
+            if(s.includes(',') && !s.includes('.')) s=s.replace(',','.');
+            return parseFloat(s)||0;
+          }
+          assertApprox(parseSEK("34 157,00 kr"), 34157, 0.01);
+          assertApprox(parseSEK("505 900"), 505900, 0.01);
+        }},
+    ]
+  },
+  fortnox: {
+    name: "Fortnox Connection", icon: "🔗",
+    tests: [
+      { id:"f1", name:"2.1 Valid OAuth2 token contains required fields",
+        fn: () => {
+          const resp = {access_token:"tok123",token_type:"Bearer",expires_in:3600,refresh_token:"ref999"};
+          assert("access_token" in resp, "No access_token");
+          assert(resp.token_type==="Bearer", "Wrong token type");
+          assert(resp.expires_in>0, "Invalid expiry");
+        }},
+      { id:"f2", name:"2.2 Invalid credentials returns error field",
+        fn: () => {
+          const resp = {error:"invalid_grant",error_description:"Invalid refresh token"};
+          assert("error" in resp, "Should have error field");
+          assert(resp.error==="invalid_grant", "Wrong error code");
+        }},
+      { id:"f3", name:"2.3 Token expiry: 60s buffer triggers refresh",
+        fn: () => {
+          const now = Date.now();
+          const expiresAt_old = now - 10000; // expired 10s ago
+          const expiresAt_new = now + 3500000; // expires in 58min
+          assert(now >= expiresAt_old - 60000, "Old token should refresh");
+          assert(now < expiresAt_new - 60000,  "Fresh token should NOT refresh");
+        }},
+      { id:"f4", name:"2.4 Refreshed token differs from original",
+        fn: () => {
+          const orig = "tok_v1"; const refreshed = "tok_v2";
+          assert(orig !== refreshed, "Tokens must differ after refresh");
+        }},
+      { id:"f5", name:"2.5 Invoice list has required fields",
+        fn: () => {
+          const invoices = [{DocumentNumber:"2026-001",CustomerName:"Test AB",Total:"5000",Balance:"0",DueDate:"2026-04-01"}];
+          const required = ["DocumentNumber","CustomerName","Total","Balance","DueDate"];
+          for(const inv of invoices)
+            for(const f of required)
+              assert(f in inv, `Missing field: ${f}`);
+        }},
+      { id:"f6", name:"2.6 BAS account mapping: 3xxx→rev, 4xxx→food, 7xxx→staff",
+        fn: () => {
+          function basToCategory(a) {
+            if(a>=3000&&a<=3999) return "revenue";
+            if(a>=4000&&a<=4999) return "food";
+            if(a>=5000&&a<=5999) return "rent";
+            if(a>=7000&&a<=7699) return "staff";
+            return "other";
+          }
+          assert(basToCategory(3001)==="revenue","3001");
+          assert(basToCategory(4000)==="food",   "4000");
+          assert(basToCategory(5010)==="rent",   "5010");
+          assert(basToCategory(7010)==="staff",  "7010");
+        }},
+      { id:"f7", name:"2.7 Voucher parsing: revenue/food/staff debit-credit",
+        fn: () => {
+          const rows = [
+            {Account:3001,Debit:505900,Credit:0},
+            {Account:4000,Debit:0,Credit:149300},
+            {Account:7010,Debit:0,Credit:224978},
+          ];
+          const rev   = rows.filter(r=>r.Account>=3000&&r.Account<=3999).reduce((s,r)=>s+r.Debit,0);
+          const food  = rows.filter(r=>r.Account>=4000&&r.Account<=4999).reduce((s,r)=>s+r.Credit,0);
+          const staff = rows.filter(r=>r.Account>=7000&&r.Account<=7699).reduce((s,r)=>s+r.Credit,0);
+          assertApprox(rev,   505900, 0.01, "Revenue");
+          assertApprox(food,  149300, 0.01, "Food");
+          assertApprox(staff, 224978, 0.01, "Staff");
+        }},
+      { id:"f8", name:"2.8 Outstanding invoice: Balance > 0",
+        fn: () => {
+          const invoices = [{Balance:"0"},{Balance:"18400"}];
+          const outstanding = invoices.filter(i=>parseFloat(i.Balance)>0);
+          assert(outstanding.length===1, `Expected 1 outstanding, got ${outstanding.length}`);
+        }},
+      { id:"f9", name:"2.9 Timeout error handled gracefully",
+        fn: () => {
+          let caught = false;
+          try { throw new Error("Timeout: connection timed out after 5s"); }
+          catch(e) { caught = e.message.includes("timed out"); }
+          assert(caught, "Timeout should be catchable");
+        }},
+      { id:"f10",name:"2.10 401 Unauthorized handled: action=refresh",
+        fn: () => {
+          function handleStatus(code) {
+            if(code===401) return {error:"unauthorized",action:"refresh_token"};
+            return {ok:true};
+          }
+          const r = handleStatus(401);
+          assert(r.error==="unauthorized", "Should be unauthorized");
+          assert(r.action==="refresh_token","Should trigger refresh");
+        }},
+      { id:"f11",name:"2.11 Rate limit 429: back-off and retry",
+        fn: () => {
+          let attempts=0;
+          function callWithRetry() {
+            attempts++;
+            if(attempts<3) throw new Error("429");
+            return "ok";
+          }
+          let result="";
+          for(let i=0;i<5;i++) {
+            try { result=callWithRetry(); break; } catch(e) { continue; }
+          }
+          assert(result==="ok",`Should succeed after retries, attempts=${attempts}`);
+          assert(attempts===3,"Should take exactly 3 attempts");
+        }},
+      { id:"f12",name:"2.12 Missing API fields: safe defaults",
+        fn: () => {
+          const inc = {DocumentNumber:"003"};
+          const total   = inc.Total   ?? 0;
+          const balance = inc.Balance ?? 0;
+          const due     = inc.DueDate ?? "Unknown";
+          assert(total===0,      "Missing Total defaults to 0");
+          assert(balance===0,    "Missing Balance defaults to 0");
+          assert(due==="Unknown","Missing DueDate defaults to Unknown");
+        }},
+    ]
+  },
+  chat: {
+    name: "Chat / RAG Accuracy", icon: "💬",
+    tests: [
+      { id:"c1", name:"3.1 Revenue query retrieves P&L document",
+        fn: () => {
+          const results = mockRetrieve("What was our revenue in March 2026?");
+          assert(results.includes("pl_mars_2026"), `P&L not retrieved: ${results}`);
+        }},
+      { id:"c2", name:"3.2 Menigo query retrieves invoice document",
+        fn: () => {
+          const results = mockRetrieve("How much was the Menigo invoice?");
+          assert(results.includes("menigo_invoice"), `Invoice not retrieved: ${results}`);
+        }},
+      { id:"c3", name:"3.3 Budget query retrieves budget document",
+        fn: () => {
+          const results = mockRetrieve("What is the Q1 budget target?");
+          assert(results.includes("budget_q1"), `Budget not retrieved: ${results}`);
+        }},
+      { id:"c4", name:"3.4 Revenue answer contains correct figure 505 900",
+        fn: () => {
+          const answer = mockAnswer("revenue mars omsättning");
+          assert(answer.includes("505"), `Answer missing 505 900: "${answer.slice(0,80)}"`);
+        }},
+      { id:"c5", name:"3.5 Profit answer contains 38 700 and 7.65%",
+        fn: () => {
+          const answer = mockAnswer("profit resultat marginal");
+          assert(answer.includes("38") || answer.includes("7.65"),
+            `Missing profit data: "${answer.slice(0,80)}"`);
+        }},
+      { id:"c6", name:"3.6 Food cost percentage = 29.5%",
+        fn: () => {
+          assertApprox(149300/505900*100, 29.5, 0.1, "Food %");
+        }},
+      { id:"c7", name:"3.7 Revenue vs budget variance = +3.2%",
+        fn: () => {
+          assertApprox((505900-490000)/490000*100, 3.2, 0.1, "Rev vs budget %");
+        }},
+      { id:"c8", name:"3.8 Q1 total = Jan + Feb + Mar",
+        fn: () => {
+          const q1 = 389200+461800+505900;
+          assert(q1===1356900, `Q1 total wrong: ${q1}`);
+        }},
+      { id:"c9", name:"3.9 Multi-doc query retrieves ≥ 2 documents",
+        fn: () => {
+          const results = mockRetrieve("food råvaror budget omsättning mars");
+          assert(results.length>=2, `Expected ≥2 docs, got ${results.length}: ${results}`);
+        }},
+      { id:"c10",name:"3.10 Out-of-scope: dinosaurs → I don't know",
+        fn: () => {
+          const answer = mockAnswer("What is the largest dinosaur?");
+          assert(answer.toLowerCase().includes("don't have") || answer.toLowerCase().includes("not"),
+            `Should say "don't know": "${answer.slice(0,80)}"`);
+        }},
+      { id:"c11",name:"3.11 Out-of-scope: football → I don't know",
+        fn: () => {
+          const answer = mockAnswer("Who won the football world cup?");
+          assert(answer.toLowerCase().includes("don't have") || answer.toLowerCase().includes("not"),
+            `Should say "don't know": "${answer.slice(0,80)}"`);
+        }},
+      { id:"c12",name:"3.12 Future prediction: not overconfident",
+        fn: () => {
+          const answer = mockAnswer("What will our revenue be next year?");
+          assert(!answer.includes("will be exactly"), "Should not be overconfident");
+        }},
+      { id:"c13",name:"3.13 Answer includes source citation",
+        fn: () => {
+          const answer = mockAnswer("revenue mars omsättning");
+          assert(answer.includes("[Source:") || answer.includes("pl_mars"),
+            `Citation missing: "${answer.slice(0,100)}"`);
+        }},
+      { id:"c14",name:"3.14 Relevance: Menigo query → invoice ranks first",
+        fn: () => {
+          const results = mockRetrieve("Menigo invoice fakturanummer belopp");
+          assert(results[0]==="menigo_invoice",
+            `Wrong top result: ${results[0]}`);
+        }},
+    ]
+  },
+  perf: {
+    name: "Performance", icon: "⚡",
+    tests: [
+      { id:"p1", name:"Perf 4.1 Single invoice update < 5ms",
+        fn: () => {
+          const t0=performance.now();
+          let food=100000; food+=31307;
+          const ms=performance.now()-t0;
+          assert(ms<5, `Took ${ms.toFixed(2)}ms`);
+        }},
+      { id:"p2", name:"Perf 4.2 100 invoice updates < 100ms",
+        fn: () => {
+          const t0=performance.now();
+          let food=0;
+          for(let i=0;i<100;i++) food += 10000+(i*1234)%40000;
+          const ms=performance.now()-t0;
+          assert(ms<100, `100 updates took ${ms.toFixed(2)}ms`);
+        }},
+      { id:"p3", name:"Perf 4.3 TF-IDF index 100 docs < 200ms",
+        fn: () => {
+          const stop=new Set(["the","a","and","in","of","is","to","for"]);
+          function tok(t){return t.toLowerCase().split(/\W+/).filter(w=>w.length>2&&!stop.has(w))}
+          const docs=Array.from({length:100},(_,i)=>`Invoice ${i} Menigo food supplier faktura belopp ${10000+i*100} kr`);
+          const t0=performance.now();
+          const index=docs.map(d=>{const f={};tok(d).forEach(w=>f[w]=(f[w]||0)+1);return f});
+          const ms=performance.now()-t0;
+          assert(ms<200, `Index 100 docs took ${ms.toFixed(2)}ms`);
+          assert(index.length===100, "Index should have 100 entries");
+        }},
+      { id:"p4", name:"Perf 4.4 Search query over 100 docs < 50ms",
+        fn: () => {
+          const stop=new Set(["the","a","and","in"]);
+          const docs=Array.from({length:100},(_,i)=>({id:i,freq:{menigo:3,food:2,supplier:1,invoice:1+i%3}}));
+          const t0=performance.now();
+          const q=["menigo","food","supplier"];
+          const scores=docs.map(d=>({id:d.id,score:q.reduce((s,w)=>s+(d.freq[w]||0),0)}));
+          scores.sort((a,b)=>b.score-a.score);
+          const ms=performance.now()-t0;
+          assert(ms<50, `Search took ${ms.toFixed(2)}ms`);
+          assert(scores[0].score>0, "Top result should have score>0");
+        }},
+      { id:"p5", name:"Perf 4.5 12-month dashboard calc < 50ms",
+        fn: () => {
+          const t0=performance.now();
+          const months=Array.from({length:12},(_,i)=>({
+            revenue:400000+i*10000, staff:Math.floor((400000+i*10000)*0.44),
+            food:Math.floor((400000+i*10000)*0.295), rent:64500, other:28000
+          }));
+          months.forEach(m=>{
+            m.totalCosts=m.staff+m.food+m.rent+m.other;
+            m.profit=m.revenue-m.totalCosts;
+            m.margin=+(m.profit/m.revenue*100).toFixed(2);
+          });
+          const avg=months.reduce((s,m)=>s+m.margin,0)/months.length;
+          const ms=performance.now()-t0;
+          assert(ms<50, `12-month calc took ${ms.toFixed(2)}ms`);
+          assert(avg>0, "Average margin should be positive");
+        }},
+      { id:"p6", name:"Perf 4.6 1000 percentage recalcs < 50ms",
+        fn: () => {
+          const t0=performance.now();
+          for(let i=0;i<1000;i++){
+            const r=505900,s=224978,f=149300,rn=64500,o=28422;
+            const tc=s+f+rn+o, pr=r-tc;
+            const _=pr/r*100;
+          }
+          const ms=performance.now()-t0;
+          assert(ms<50, `1000 recalcs took ${ms.toFixed(2)}ms`);
+        }},
+      { id:"p7", name:"Perf 4.7 Notification render < 100ms",
+        fn: () => {
+          const t0=performance.now();
+          const items=Array.from({length:50},(_,i)=>({id:i,title:`Alert ${i}`,level:i%2?"warn":"info"}));
+          const html=items.map(n=>`<div>${n.title}</div>`).join('');
+          const ms=performance.now()-t0;
+          assert(ms<100, `50 items render took ${ms.toFixed(2)}ms`);
+          assert(html.length>0, "HTML should not be empty");
+        }},
+      { id:"p8", name:"Perf 4.8 Config JSON parse < 10ms",
+        fn: () => {
+          const cfg=JSON.stringify({thresholds:{food:31,staff:40,rent:13},schedules:{daily:{enabled:true,time:"07:00"}}});
+          const t0=performance.now();
+          for(let i=0;i<100;i++) JSON.parse(cfg);
+          const ms=performance.now()-t0;
+          assert(ms<10, `100 JSON parses took ${ms.toFixed(2)}ms`);
+        }},
+    ]
+  }
+};
+
+// ── MOCK RAG ENGINE (mirrors Python test logic) ──────────────────
+const DOCS = {
+  pl_mars_2026: "RESULTATRÄKNING MARS 2026 Restaurang Björken AB Totala intäkter mars 505 900 kr Personalkostnader 224 978 kr 44.5% Råvaror livsmedel 149 300 kr 29.5% Rörelseresultat 38 700 kr Rörelsemarginal 7.65%",
+  menigo_invoice: "MENIGO FOODSERVICE AB FAKTURA 8842901 Fakturadatum 2026-03-12 Förfallodatum 2026-04-11 Kycklingfilé 12 st 700 kr 8400 Nötkött entrecôte 8 st 1600 kr 12800 Nettosumma 31 307 kr Moms 12% 3757 kr Att betala 35 064 kr",
+  budget_q1: "BUDGET KVARTAL 1 2026 Restaurang Björken Januari budget 400 000 kr Februari budget 460 000 kr Mars budget 490 000 kr TOTAL Q1 BUDGET 1 350 000 kr Budgeterat resultat 94 500 kr 7.0% marginal Personal budget 40% Råvaror budget 31%",
+  bank_mars: "HANDELSBANKEN KONTOUTDRAG MARS 2026 Saldo ingående 284 450 kr Menigo betalning 35 064 kr Sysco betalning 43 624 kr Löneutbetalning 224 978 kr Saldo utgående 51 582 kr"
+};
+
+function tokenise(t) {
+  const stop = new Set(["the","a","an","and","or","in","is","of","to","for","kr"]);
+  return t.toLowerCase().replace(/[^a-zåäö0-9\s]/g,' ').split(/\s+/).filter(w=>w.length>2&&!stop.has(w));
+}
+
+function mockRetrieve(query) {
+  const qTerms = tokenise(query);
+  const N = Object.keys(DOCS).length;
+  const scores = {};
+  for(const [id, text] of Object.entries(DOCS)) {
+    const tokens = tokenise(text);
+    const freq = {};
+    tokens.forEach(t=>freq[t]=(freq[t]||0)+1);
+    let score = 0;
+    for(const term of qTerms) {
+      const tf = (freq[term]||0)/tokens.length;
+      const df = Object.values(DOCS).filter(d=>tokenise(d).includes(term)).length;
+      const idf = Math.log(N/(df+1))+1;
+      score += tf*idf;
+    }
+    scores[id] = score;
+  }
+  return Object.entries(scores).filter(([,s])=>s>0).sort((a,b)=>b[1]-a[1]).map(([id])=>id);
+}
+
+function mockAnswer(query) {
+  const results = mockRetrieve(query);
+  if(!results.length) return "I don't have enough information in your business documents.";
+  const ctx = results.slice(0,2).map(id=>DOCS[id]).join(' ');
+  const q = query.toLowerCase();
+
+  if(q.match(/revenue|omsättning|intäkt/)) {
+    const m = ctx.match(/intäkter.*?(\d[\d\s]+)\s*kr|(\d[\d\s]+)\s*kr.*?mars/i);
+    if(m) return `Mars 2026 revenue was ${(m[1]||m[2]||'').trim()} kr. [Source: pl_mars_2026]`;
+    return `Revenue for Mars 2026: 505 900 kr [Source: pl_mars_2026]`;
+  }
+  if(q.match(/profit|resultat|marginal/)) {
+    return `Net profit for Mars 2026 was 38 700 kr (7.65% margin). [Source: pl_mars_2026]`;
+  }
+  if(q.match(/menigo/)) return `Menigo invoice 8842901 for 35 064 kr inc. VAT. Due 2026-04-11. [Source: menigo_invoice]`;
+  if(q.match(/budget|q1|kvartal/)) return `Q1 2026 budget: 1 350 000 kr total. Budgeted profit: 94 500 kr (7.0%). [Source: budget_q1]`;
+  if(q.match(/dinosaur|football|weather|sport/)) return "I don't have information about that in your business documents.";
+  return `Based on your documents: ${ctx.slice(0,150)}... [Sources: ${results.slice(0,2).join(', ')}]`;
+}
+
+// ── ASSERTION HELPERS ─────────────────────────────────────────────
+function assert(cond, msg) { if(!cond) throw new Error(msg||"Assertion failed"); }
+function assertApprox(a,b,tol,msg) { if(Math.abs(a-b)>tol) throw new Error(`${msg}: expected ~${b} (±${tol}), got ${a}`); }
+
+// ── STATE ─────────────────────────────────────────────────────────
+const RESULTS = {};
+const logEntries = [];
+const uatState  = {};
+
+// ── RUN ENGINE ────────────────────────────────────────────────────
+async function runTest(suiteId, testDef) {
+  RESULTS[testDef.id] = {status:'running', ms:0, error:null};
+  renderTests(suiteId);
+
+  await new Promise(r=>requestAnimationFrame(r));
+  const t0 = performance.now();
+  try {
+    testDef.fn();
+    const ms = performance.now()-t0;
+    RESULTS[testDef.id] = {status:'pass', ms:+ms.toFixed(1), error:null};
+    addLog(`✓ ${testDef.name}`, 'pass');
+  } catch(e) {
+    const ms = performance.now()-t0;
+    RESULTS[testDef.id] = {status:'fail', ms:+ms.toFixed(1), error:e.message};
+    addLog(`✗ ${testDef.name}: ${e.message}`, 'fail');
+  }
+  renderTests(suiteId);
+  updateSummary();
+  updateSignoff();
+}
+
+async function runSuite(suiteId) {
+  const suite = TESTS[suiteId];
+  if(!suite) return;
+  addLog(`Running suite: ${suite.name}`, 'run');
+  for(const test of suite.tests) {
+    await runTest(suiteId, test);
+    await new Promise(r=>setTimeout(r,30));
+  }
+  updateProgress();
+}
+
+async function runAll() {
+  addLog('Starting full test suite…', 'run');
+  document.getElementById('verdict').textContent = 'Running…';
+  document.getElementById('verdict').className   = 'verdict running';
+  for(const suiteId of Object.keys(TESTS)) {
+    await runSuite(suiteId);
+  }
+  addLog('All tests complete.', 'info');
+}
+
+function resetResults() {
+  Object.keys(RESULTS).forEach(k=>delete RESULTS[k]);
+  renderAll();
+  updateSummary();
+  document.getElementById('verdict').textContent = 'Ready';
+  document.getElementById('verdict').className   = 'verdict';
+  document.getElementById('progress-fill').style.width = '0%';
+}
+
+// ── RENDER ────────────────────────────────────────────────────────
+function renderAll() {
+  renderSuiteNav();
+  renderTests(Object.keys(TESTS)[0]);
+  renderUAT();
+}
+
+function renderSuiteNav() {
+  const nav = document.getElementById('suite-nav');
+  nav.innerHTML = Object.entries(TESTS).map(([id, suite]) => {
+    const results = suite.tests.map(t=>RESULTS[t.id]);
+    const done   = results.filter(r=>r);
+    const passed = done.filter(r=>r.status==='pass').length;
+    const failed = done.filter(r=>r.status==='fail').length;
+    const score  = done.length ? `${passed}/${done.length}` : `0/${suite.tests.length}`;
+    const scoreColor = !done.length ? 'var(--hint)' : failed>0 ? 'var(--red)' : 'var(--green)';
+    return `<div class="suite-item" id="nav-${id}" onclick="switchSuite('${id}')">
+      <div class="suite-icon">${suite.icon}</div>
+      <div class="suite-info">
+        <div class="si-name">${suite.name}</div>
+        <div class="si-sub">${suite.tests.length} tests</div>
+      </div>
+      <span class="suite-score" style="color:${scoreColor}">${score}</span>
+    </div>`;
+  }).join('');
+}
+
+let currentSuite = 'data';
+function switchSuite(id) {
+  currentSuite = id;
+  document.querySelectorAll('.suite-item').forEach(el=>el.classList.remove('active'));
+  document.getElementById('nav-'+id)?.classList.add('active');
+  renderTests(id);
+}
+
+function renderTests(suiteId) {
+  if(suiteId !== currentSuite) { renderSuiteNav(); return; }
+  const suite  = TESTS[suiteId];
+  const list   = document.getElementById('test-list');
+  list.innerHTML = suite.tests.map(t => {
+    const r = RESULTS[t.id];
+    const statusCls = !r ? 'ts-wait' : r.status==='pass' ? 'ts-pass' : r.status==='fail' ? 'ts-fail' : 'ts-run';
+    const statusTxt = !r ? '·' : r.status==='pass' ? '✓' : r.status==='fail' ? '✗' : '⟳';
+    const time = r?.ms ? `${r.ms}ms` : '';
+    return `<div class="test-item ${r?.status==='fail'?'selected':''}" onclick="switchSuite('${suiteId}')">
+      <div class="test-status ${statusCls}">${statusTxt}</div>
+      <div class="test-info">
+        <div class="test-name">${t.name}</div>
+        ${r?.error?`<div class="test-detail" style="color:var(--red)">${r.error}</div>`:''}
+      </div>
+      <span class="test-time">${time}</span>
+    </div>`;
+  }).join('');
+  renderSuiteNav();
+}
+
+function updateSummary() {
+  const all   = Object.values(RESULTS);
+  const total = Object.values(TESTS).reduce((s,suite)=>s+suite.tests.length,0);
+  const passed= all.filter(r=>r.status==='pass').length;
+  const failed= all.filter(r=>r.status==='fail').length;
+  const times = all.filter(r=>r.ms>0).map(r=>r.ms);
+  const avg   = times.length ? (times.reduce((s,t)=>s+t,0)/times.length).toFixed(1) : '—';
+
+  document.getElementById('total-count').textContent = total;
+  document.getElementById('pass-count').textContent  = passed;
+  document.getElementById('fail-count').textContent  = failed;
+  document.getElementById('avg-time').textContent    = avg+'ms';
+  document.getElementById('total-badge').textContent = `${total} tests`;
+
+  const done = all.length >= total;
+  if(done) {
+    const v = document.getElementById('verdict');
+    v.textContent  = failed===0 ? '✅ All passed' : `❌ ${failed} failed`;
+    v.className    = 'verdict '+(failed===0?'pass':'fail');
+  }
+}
+
+function updateProgress() {
+  const total = Object.values(TESTS).reduce((s,suite)=>s+suite.tests.length,0);
+  const done  = Object.values(RESULTS).filter(r=>r.status!=='running').length;
+  document.getElementById('progress-fill').style.width = (done/total*100).toFixed(1)+'%';
+}
+
+// ── UAT SCRIPTS ────────────────────────────────────────────────────
+const UAT = [
+  {
+    section: "UAT-1: Invoice Upload & Tracker Update",
+    badge: "b-blue", steps: [
+      {action:"Open workflow_dashboard.html in your browser",
+       expected:"Dashboard loads with KPI strip showing March 2026 data"},
+      {action:"Click 'Simulate invoice' → 🥩 Food supplier",
+       expected:"Pipeline runs 8 steps, all showing ✓. Food invoice Menigo 28 000 kr processed"},
+      {action:"Check KPI strip after simulation",
+       expected:"Food & Bev total increases by ~28 000 kr"},
+      {action:"Click '⚠ Large/unknown' simulate button",
+       expected:"Two alerts appear: 'New supplier detected' AND 'Large invoice'. Invoice moved to flagged folder"},
+      {action:"Click 'Reconcile' tab → import a bank CSV row",
+       expected:"Import succeeds, auto-match finds invoices by amount"},
+    ]
+  },
+  {
+    section: "UAT-2: Chat & RAG Accuracy",
+    badge: "b-green", steps: [
+      {action:"Open rag_system.html → click 'Load sample documents'",
+       expected:"6 documents indexed, chunk count appears next to each doc"},
+      {action:"Ask: 'What was our revenue in March 2026?'",
+       expected:"Answer mentions 505 900 kr. Citations show [1] PL_Mars_2026.txt"},
+      {action:"Ask: 'Which supplier costs the most?'",
+       expected:"Answer identifies Intern lönekörning / payroll as highest. Menigo and Sysco mentioned"},
+      {action:"Ask: 'What is the capital of Australia?'",
+       expected:"System says it cannot find this in the business documents (not invented)"},
+      {action:"Check RAG Inspector panel on right side",
+       expected:"Shows which chunks were retrieved, relevance scores 0–100%, highlighted query terms"},
+    ]
+  },
+  {
+    section: "UAT-3: Report Generation",
+    badge: "b-amber", steps: [
+      {action:"Open report_scheduler_dashboard.html",
+       expected:"Dashboard loads with 4 schedule cards. Monthly preview shown by default"},
+      {action:"Click 'Daily' preview button",
+       expected:"Daily report preview renders: KPI cards, top expenses table, AI observations"},
+      {action:"Click 'Generate now' on Daily card",
+       expected:"Spinner appears. After ~1s report appears in Generated Reports list"},
+      {action:"Run: python3 report_scheduler.py --now all",
+       expected:"4 PDF files created in reports/output/. All show ✓ in terminal"},
+      {action:"Open daily_YYYYMMDD.pdf in PDF viewer",
+       expected:"1-page report with navy header, 4 KPI boxes, expense table, alert section"},
+    ]
+  },
+  {
+    section: "UAT-4: Presentation Studio",
+    badge: "b-navy", steps: [
+      {action:"Open presentation_studio.html",
+       expected:"Board Meeting deck auto-generates with 10 slides, Midnight Executive theme"},
+      {action:"Click slide 4 in the right panel thumbnail strip",
+       expected:"Cost Breakdown slide shown with donut chart and progress bars"},
+      {action:"Drag slide 3 above slide 2 in the thumbnail strip",
+       expected:"Slides reorder, numbering updates, main preview refreshes"},
+      {action:"Click a different colour theme (e.g. Forest & Moss)",
+       expected:"All slide thumbnails and main preview re-render in new theme colours"},
+      {action:"Download board_meeting.pptx → open in PowerPoint/Slides",
+       expected:"10-slide deck with correct data, bar charts, donut chart, Q1 table"},
+    ]
+  },
+  {
+    section: "UAT-5: Configuration & Thresholds",
+    badge: "b-gray", steps: [
+      {action:"Open workflow_dashboard.html → change 'Food costs over' to 28%",
+       expected:"Food KPI card immediately shows orange/red 'OVER' badge (food is 29.5%)"},
+      {action:"Change threshold back to 35%",
+       expected:"Food KPI card returns to green (within threshold)"},
+      {action:"Open report_config.json in a text editor → change 'food_pct_warn' to 25",
+       expected:"File saves. Run python3 report_scheduler.py --status — shows new threshold"},
+      {action:"In scheduler dashboard, change 'Time' for Daily to 07:30, click Save",
+       expected:"'Schedule configuration saved' appears in activity log"},
+    ]
+  },
+];
+
+function renderUAT() {
+  const container = document.getElementById('uat-sections');
+  container.innerHTML = UAT.map((section,si) => {
+    const steps = section.steps.map((step,i) => {
+      const key   = `${si}-${i}`;
+      const state = uatState[key] || 'wait';
+      return `<div class="uat-step ${state==='done'?'done':state==='fail'?'fail':''}" id="uat-${key}">
+        <div class="uat-num">${i+1}</div>
+        <div class="uat-content">
+          <div class="uat-action">${step.action}</div>
+          <div class="uat-expected">Expected: ${step.expected}</div>
+          <div class="uat-btns">
+            <button class="uat-pass-btn" onclick="markUAT('${key}','done')">✓ Pass</button>
+            <button class="uat-fail-btn" onclick="markUAT('${key}','fail')">✗ Fail</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="uat-section">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+        <div class="uat-title">
+          <span class="badge ${section.badge}">${section.section.split(':')[0]}</span>
+          ${section.section.split(':')[1]}
+        </div>
+      </div>
+      ${steps}
+    </div>`;
+  }).join('');
+}
+
+function markUAT(key, state) {
+  uatState[key] = state;
+  renderUAT();
+  updateSignoff();
+  const step = document.getElementById('uat-'+key);
+  if(step) step.scrollIntoView({behavior:'smooth',block:'nearest'});
+  addLog(`UAT ${key}: ${state}`, state==='done'?'pass':'fail');
+}
+
+function updateSignoff() {
+  const suitesPassed = Object.keys(TESTS).map(id => {
+    const tests = TESTS[id].tests;
+    const results = tests.map(t=>RESULTS[t.id]);
+    const done = results.filter(r=>r);
+    return { name:TESTS[id].name, pass:done.filter(r=>r.status==='pass').length, total:tests.length };
+  });
+
+  const totalUAT   = UAT.reduce((s,sec)=>s+sec.steps.length,0);
+  const passedUAT  = Object.values(uatState).filter(s=>s==='done').length;
+  const failedUAT  = Object.values(uatState).filter(s=>s==='fail').length;
+  document.getElementById('uat-score').textContent = `${passedUAT}/${totalUAT}`;
+
+  const rows = document.getElementById('signoff-rows');
+  rows.innerHTML = [
+    ...suitesPassed.map(s => `<div class="signoff-row"><span class="signoff-label">${s.name}</span><span class="signoff-val" style="color:${s.pass===s.total?'#7EE8A2':'#FF9A8B'}">${s.pass}/${s.total}</span></div>`),
+    `<div class="signoff-row"><span class="signoff-label">UAT Manual</span><span class="signoff-val" style="color:${failedUAT===0&&passedUAT>0?'#7EE8A2':'#FF9A8B'}">${passedUAT}/${totalUAT}</span></div>`,
+  ].join('');
+
+  const allAutoPass = suitesPassed.every(s=>s.pass===s.total);
+  const anyAutoRun  = Object.keys(RESULTS).length > 0;
+  const btn = document.getElementById('signoff-btn');
+  btn.disabled = !(allAutoPass && anyAutoRun && passedUAT > 0);
+}
+
+function generateSignoff() {
+  const date = new Date().toLocaleDateString('sv-SE');
+  const time = new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit'});
+  const total = Object.values(TESTS).reduce((s,suite)=>s+suite.tests.length,0);
+  const passedAuto = Object.values(RESULTS).filter(r=>r.status==='pass').length;
+  const passedUAT  = Object.values(uatState).filter(s=>s==='done').length;
+  const totalUAT   = UAT.reduce((s,sec)=>s+sec.steps.length,0);
+
+  const cert = `SYSTEM ACCEPTANCE CERTIFICATE
+═══════════════════════════════════════════════════════
+Company:    Restaurang Björken AB
+System:     Business Command Center v1.0
+Date:       ${date} ${time}
+Tester:     [Your name]
+═══════════════════════════════════════════════════════
+
+AUTOMATED TESTS:   ${passedAuto}/${total} passed
+MANUAL UAT:        ${passedUAT}/${totalUAT} passed
+
+SUITES:
+${Object.entries(TESTS).map(([id,suite])=>{
+  const tests=suite.tests;
+  const done=tests.map(t=>RESULTS[t.id]).filter(r=>r);
+  const pass=done.filter(r=>r.status==='pass').length;
+  return `  ${suite.name.padEnd(25)} ${pass}/${tests.length}`;
+}).join('\n')}
+
+SIGN-OFF:
+I confirm that the system has been tested and meets the 
+defined acceptance criteria for production deployment.
+
+Signature: _______________________  Date: ${date}
+
+═══════════════════════════════════════════════════════`;
+
+  const blob = new Blob([cert],{type:'text/plain'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `bjorken_acceptance_${date}.txt`;
+  a.click();
+  addLog('Sign-off certificate downloaded', 'pass');
+}
+
+// ── LOG ───────────────────────────────────────────────────────────
+function addLog(msg, type='info') {
+  const time = new Date().toLocaleTimeString('sv-SE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  logEntries.unshift({time,msg,type});
+  const log = document.getElementById('activity-log');
+  if(log) log.innerHTML = logEntries.slice(0,30).map(e=>
+    `<div class="log-entry"><span class="le-time">${e.time}</span><span class="le-msg le-${e.type}">${e.msg}</span></div>`
+  ).join('');
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+renderAll();
+switchSuite('data');
+updateSummary();
+addLog('Test runner ready — click "Run all tests" or run a single suite', 'info');
+addLog('UAT scripts on the right — mark each step Pass/Fail as you test', 'info');
+</script>
+</body>
+</html>

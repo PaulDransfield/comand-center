@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG System — Restaurang Björken</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   DESIGN SYSTEM — clean light interface, dark accents
+   ═══════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #f5f4f1;
+  --panel:    #ffffff;
+  --border:   #e2e0db;
+  --border-d: #c8c5bf;
+  --text:     #1a1917;
+  --muted:    #6b6860;
+  --hint:     #9b9890;
+  --blue:     #185FA5;  --blue-lt: #E6F1FB;
+  --green:    #3B6D11;  --green-lt:#EAF3DE;
+  --red:      #A32D2D;  --red-lt:  #FCEBEB;
+  --amber:    #854F0B;  --amber-lt:#FAEEDA;
+  --teal:     #0F6E56;  --teal-lt: #E1F5EE;
+  --gold:     #d4a843;
+  --r:  8px;
+  --rl: 14px;
+  --font: 'Syne', system-ui, sans-serif;
+  --mono: 'DM Mono', 'Courier New', monospace;
+}
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-d); border-radius: 2px; }
+
+/* ── TOPBAR ──────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 46px; background: var(--panel);
+  border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 12px;
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); }
+.brand-name { font-size: 14px; font-weight: 600; }
+.brand-sub { font-size: 11px; color: var(--muted); }
+.topbar-right { display: flex; align-items: center; gap: 8px; }
+
+/* ── MAIN LAYOUT ─────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 280px 1fr 320px;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── PANELS ──────────────────────────────────── */
+.panel {
+  display: flex; flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.panel:last-child { border-right: none; border-left: 1px solid var(--border); }
+.panel-header {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0; gap: 8px;
+}
+.panel-header h2 {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.panel-scroll { flex: 1; overflow-y: auto; }
+
+/* ── CARDS ───────────────────────────────────── */
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--rl); overflow: hidden;
+}
+.card-h { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.card-h h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+.card-b { padding: 12px 14px; }
+
+/* ── BUTTONS ─────────────────────────────────── */
+.btn {
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  padding: 6px 12px; border-radius: var(--r);
+  border: 1px solid var(--border-d); background: none;
+  cursor: pointer; color: var(--text); transition: all 0.12s;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+}
+.btn:hover { background: var(--bg); }
+.btn-primary { background: var(--blue); color: white; border-color: var(--blue); }
+.btn-primary:hover { background: #0C447C; }
+.btn-sm { font-size: 11px; padding: 4px 9px; }
+.btn-gold { background: var(--gold); color: #1a1917; border-color: var(--gold); font-weight: 600; }
+.btn-gold:hover { background: #c49a38; }
+
+/* ── BADGES ──────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; padding: 2px 7px;
+  border-radius: 20px; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.b-blue   { background: var(--blue-lt);  color: var(--blue); }
+.b-green  { background: var(--green-lt); color: var(--green); }
+.b-amber  { background: var(--amber-lt); color: var(--amber); }
+.b-red    { background: var(--red-lt);   color: var(--red); }
+.b-teal   { background: var(--teal-lt);  color: var(--teal); }
+.b-gray   { background: var(--bg);       color: var(--muted); border: 1px solid var(--border); }
+
+/* ── LABEL ───────────────────────────────────── */
+.lbl { font-size: 10px; font-weight: 600; color: var(--hint); text-transform: uppercase; letter-spacing: 0.08em; }
+
+/* ═══════════════════════════════════════════════
+   LEFT PANEL — DOCUMENT LIBRARY
+   ═══════════════════════════════════════════════ */
+.upload-zone {
+  margin: 12px; border: 1.5px dashed var(--border-d); border-radius: var(--rl);
+  padding: 14px 12px; text-align: center; cursor: pointer; transition: all 0.15s;
+  position: relative;
+}
+.upload-zone:hover { background: var(--blue-lt); border-color: var(--blue); }
+.upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.upload-zone p { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+
+.doc-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  cursor: pointer; transition: background 0.1s;
+}
+.doc-item:hover { background: var(--bg); }
+.doc-item.active { background: var(--blue-lt); }
+.doc-icon {
+  width: 34px; height: 40px; border-radius: 5px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700; letter-spacing: 0.03em;
+}
+.di-pdf  { background: var(--red-lt);  color: var(--red); }
+.di-xlsx { background: var(--green-lt);color: var(--green); }
+.di-csv  { background: var(--blue-lt); color: var(--blue); }
+.di-txt  { background: var(--bg);      color: var(--muted); border: 1px solid var(--border); }
+.doc-meta { flex: 1; min-width: 0; }
+.doc-name { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-info { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.doc-chunks { font-size: 10px; color: var(--hint); margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+.chunk-count { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: var(--blue-lt); color: var(--blue); font-size: 9px; font-weight: 700; }
+.indexed-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+
+/* ═══════════════════════════════════════════════
+   MIDDLE PANEL — CHAT
+   ═══════════════════════════════════════════════ */
+.chat-area { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.msg { display: flex; gap: 10px; }
+.msg.user { flex-direction: row-reverse; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+  display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
+}
+.av-ai   { background: var(--blue-lt); color: var(--blue); }
+.av-user { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+
+.bubble-wrap { max-width: 85%; display: flex; flex-direction: column; gap: 4px; }
+.msg.user .bubble-wrap { align-items: flex-end; }
+
+.bubble {
+  padding: 10px 14px; border-radius: 14px;
+  font-size: 13px; line-height: 1.6;
+}
+.bubble-ai   { background: var(--bg); border-radius: 4px 14px 14px 14px; }
+.bubble-user { background: var(--blue); color: white; border-radius: 14px 4px 14px 14px; }
+
+/* Citations row below AI bubbles */
+.citations { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 2px; }
+.cite-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; padding: 3px 8px; border-radius: 20px;
+  background: var(--teal-lt); color: var(--teal);
+  cursor: pointer; border: 1px solid rgba(15,110,86,0.2);
+  transition: all 0.1s; font-weight: 500;
+}
+.cite-chip:hover { background: var(--teal); color: white; }
+.cite-num { font-weight: 700; }
+
+.msg-time { font-size: 10px; color: var(--hint); padding: 0 4px; }
+
+/* Query type badge on user messages */
+.query-type-badge { margin-bottom: 3px; }
+
+/* Typing indicator */
+.typing { display: flex; gap: 4px; padding: 12px 14px; background: var(--bg); border-radius: 4px 14px 14px 14px; width: fit-content; }
+.typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%,60%,100%{opacity:0.3} 30%{opacity:1} }
+
+/* Suggested questions */
+.suggestions { padding: 8px 16px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; flex-shrink: 0; }
+.sug-chip {
+  font-size: 11px; padding: 5px 10px; border-radius: 20px;
+  border: 1px solid var(--border-d); cursor: pointer; color: var(--muted);
+  transition: all 0.1s; background: none;
+  font-family: var(--font);
+}
+.sug-chip:hover { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); }
+
+/* Input bar */
+.input-bar { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; }
+.input-bar textarea {
+  flex: 1; resize: none; font-size: 13px; font-family: var(--font);
+  padding: 8px 12px; border-radius: var(--r); border: 1px solid var(--border-d);
+  min-height: 38px; max-height: 120px; line-height: 1.5; background: var(--bg);
+  color: var(--text);
+}
+.input-bar textarea:focus { outline: none; border-color: var(--blue); background: white; }
+.send-btn {
+  width: 38px; height: 38px; border-radius: var(--r);
+  background: var(--blue); color: white; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  transition: background 0.12s;
+}
+.send-btn:hover { background: #0C447C; }
+
+/* ═══════════════════════════════════════════════
+   RIGHT PANEL — RAG DEBUGGER
+   ═══════════════════════════════════════════════ */
+.debug-toggle {
+  display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); cursor: pointer;
+}
+.toggle-pill {
+  width: 28px; height: 15px; border-radius: 8px; background: var(--border-d);
+  position: relative; transition: background 0.2s; flex-shrink: 0;
+}
+.toggle-pill.on { background: var(--blue); }
+.toggle-pill::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 11px; height: 11px; border-radius: 50%; background: white; transition: left 0.2s;
+}
+.toggle-pill.on::after { left: 15px; }
+
+/* Retrieval results */
+.ret-query {
+  margin: 10px 12px; padding: 8px 10px;
+  background: var(--bg); border-radius: var(--r); border: 1px solid var(--border);
+  font-size: 12px; color: var(--text); line-height: 1.5;
+}
+.ret-query .lbl { margin-bottom: 4px; display: block; }
+
+.chunk-result {
+  margin: 6px 12px; border: 1px solid var(--border); border-radius: var(--r);
+  overflow: hidden; transition: border-color 0.15s;
+}
+.chunk-result:hover { border-color: var(--blue); }
+.chunk-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px; background: var(--bg); border-bottom: 1px solid var(--border);
+  gap: 6px; cursor: pointer;
+}
+.chunk-source { font-size: 11px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score-bar-wrap { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.score-bar { width: 50px; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.score-fill { height: 100%; border-radius: 3px; background: var(--blue); }
+.score-num { font-family: var(--mono); font-size: 10px; color: var(--muted); min-width: 28px; text-align: right; }
+.chunk-text {
+  padding: 8px 10px; font-size: 11px; line-height: 1.6; color: var(--muted);
+  max-height: 80px; overflow: hidden; position: relative;
+}
+.chunk-text.expanded { max-height: none; }
+.chunk-text::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+  height: 24px; background: linear-gradient(transparent, white);
+}
+.chunk-text.expanded::after { display: none; }
+.chunk-keywords { padding: 6px 10px; display: flex; flex-wrap: wrap; gap: 4px; border-top: 1px solid var(--border); }
+.kw-tag { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: var(--blue-lt); color: var(--blue); font-weight: 500; }
+
+/* Query type detector */
+.qtype-row { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.qtype-icon { font-size: 16px; }
+.qtype-info { flex: 1; }
+.qtype-name { font-size: 12px; font-weight: 600; }
+.qtype-desc { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+/* Stats row */
+.stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.stat-box { background: var(--bg); border-radius: var(--r); padding: 8px; text-align: center; }
+.stat-val { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-lbl { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* API key input */
+.api-key-bar {
+  display: flex; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); background: var(--amber-lt);
+}
+.api-key-bar input {
+  flex: 1; font-size: 12px; padding: 5px 9px; border-radius: var(--r);
+  border: 1px solid var(--border-d); font-family: var(--mono);
+  background: white; color: var(--text);
+}
+.api-key-bar input:focus { outline: none; border-color: var(--blue); }
+
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+.fade-in { animation: fadeIn 0.2s ease; }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-dot"></div>
+    <div>
+      <div class="brand-name">Business Command Center — RAG System</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="badge b-gray" id="index-status">0 docs indexed</span>
+    <span class="badge b-gray" id="chunk-status">0 chunks</span>
+    <button class="btn btn-sm btn-primary" onclick="loadSampleDocs()">Load sample documents</button>
+  </div>
+</div>
+
+<div class="shell">
+
+<!-- ═══════════════════════════════════════════════════════
+     LEFT PANEL — DOCUMENT LIBRARY
+     ═══════════════════════════════════════════════════════ -->
+<div class="panel">
+  <div class="panel-header">
+    <h2>Document Library</h2>
+    <span class="badge b-blue" id="doc-count">0 docs</span>
+  </div>
+  <div class="panel-scroll" id="doc-list">
+
+    <label class="upload-zone">
+      <input type="file" id="file-input" multiple accept=".txt,.csv,.pdf,.xlsx,.md">
+      <div style="font-size:20px;margin-bottom:6px">📄</div>
+      <strong style="font-size:13px">Upload documents</strong>
+      <p>PDF, Excel, CSV, TXT<br>or click to browse</p>
+    </label>
+
+    <div style="padding:0" id="doc-items"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     MIDDLE PANEL — CHAT INTERFACE
+     ═══════════════════════════════════════════════════════ -->
+<div class="panel" style="border-right:none">
+  <div class="panel-header">
+    <h2>AI Chat</h2>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="badge b-gray" id="model-badge">Claude Sonnet</span>
+      <button class="btn btn-sm" onclick="clearChat()">Clear</button>
+    </div>
+  </div>
+
+  <div class="chat-area" id="chat-area">
+    <!-- Welcome message -->
+    <div class="msg fade-in">
+      <div class="avatar av-ai">AI</div>
+      <div class="bubble-wrap">
+        <div class="bubble bubble-ai">
+          <strong>Hello.</strong> I'm your RAG-powered business assistant for Restaurang Björken.<br><br>
+          Upload documents or load the sample set, then ask me anything about your business. I'll show you exactly which parts of which documents I used to answer — full transparency on my reasoning.
+        </div>
+        <div class="msg-time">Ready</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Suggested questions -->
+  <div class="suggestions" id="suggestions">
+    <button class="sug-chip" onclick="askSuggestion(this)">What was our revenue last month?</button>
+    <button class="sug-chip" onclick="askSuggestion(this)">Are food costs above industry average?</button>
+    <button class="sug-chip" onclick="askSuggestion(this)">What should we budget next quarter?</button>
+    <button class="sug-chip" onclick="askSuggestion(this)">Summarise all uploaded documents</button>
+    <button class="sug-chip" onclick="askSuggestion(this)">Which supplier costs the most?</button>
+    <button class="sug-chip" onclick="askSuggestion(this)">Create an invoice summary report</button>
+  </div>
+
+  <!-- Input -->
+  <div class="input-bar">
+    <textarea id="chat-input" placeholder="Ask anything about your documents…" rows="1"
+      onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    <button class="send-btn" onclick="sendMessage()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="22" y1="2" x2="11" y2="13"/>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     RIGHT PANEL — RAG DEBUGGER
+     ═══════════════════════════════════════════════════════ -->
+<div class="panel">
+  <div class="panel-header">
+    <h2>RAG Inspector</h2>
+    <div class="debug-toggle" onclick="toggleDebug()">
+      <span>Test mode</span>
+      <div class="toggle-pill on" id="debug-pill"></div>
+    </div>
+  </div>
+
+  <!-- API Key -->
+  <div class="api-key-bar">
+    <input type="password" id="api-key" placeholder="Paste Anthropic API key (sk-ant-…) to enable live AI">
+    <button class="btn btn-sm btn-primary" onclick="saveKey()">Save</button>
+  </div>
+
+  <div class="panel-scroll" id="debug-panel">
+    <div style="padding:20px;text-align:center;color:var(--hint);font-size:12px">
+      Ask a question to see the retrieval process here.<br>
+      Every chunk retrieved will be shown with its relevance score.
+    </div>
+  </div>
+</div>
+
+</div><!-- /shell -->
+
+<script>
+  // ── AUTO-LOAD API KEY FROM COMMAND CENTER ──────────────────
+  (function() {
+    const key = localStorage.getItem('bj_api_key');
+    if (!key) return;
+    // Apply to all known key storage locations
+    localStorage.setItem('rag_api_key', key);
+    localStorage.setItem('bj_api_key', key);
+    // Set on window so any inline references pick it up
+    window._CC_API_KEY = key;
+  })();
+  // ────────────────────────────────────────────────────────────
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  RAG SYSTEM — Complete Implementation                            ║
+// ║                                                                  ║
+// ║  LAYER 1: Document Processing & Chunking                         ║
+// ║  LAYER 2: TF-IDF Indexing & Retrieval Engine                     ║
+// ║  LAYER 3: Query Classification                                   ║
+// ║  LAYER 4: Context Assembly & Prompt Building                     ║
+// ║  LAYER 5: Claude API Integration                                 ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYER 1 — DOCUMENT PROCESSING & CHUNKING
+//
+// A "chunk" is a small piece of a document — typically 200-400 words.
+// We split documents into chunks because:
+//   1. AI models have a limited context window (can't read whole docs)
+//   2. We want to find the SPECIFIC part that answers the question
+//   3. Smaller pieces = more precise retrieval
+// ═══════════════════════════════════════════════════════════════════
+
+// The central document store — all docs and their chunks live here
+// In production this would be IndexedDB; here it's in-memory
+const INDEX = {
+  documents: [],  // { id, name, type, date, rawText, chunks[] }
+  chunks:    [],  // flat array of all chunks for fast search
+};
+
+// Configuration for chunking
+const CHUNK_CONFIG = {
+  maxWords:    200,   // max words per chunk
+  overlapWords: 30,   // words of overlap between chunks (for context continuity)
+  minWords:     20,   // minimum chunk size (discard tiny fragments)
+};
+
+// ── DOCUMENT INGESTION ────────────────────────────────────────────
+// Entry point: takes a file or text, runs the full pipeline
+function ingestDocument(name, type, rawText, date) {
+  const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+
+  // Step 1: Clean the text
+  const cleanText = cleanRawText(rawText);
+
+  // Step 2: Split into chunks
+  const chunks = chunkDocument(cleanText, id, name, type, date);
+
+  // Step 3: Index each chunk (build TF-IDF term frequencies)
+  chunks.forEach(chunk => indexChunk(chunk));
+
+  // Step 4: Store the document
+  const doc = { id, name, type, date: date || today(), rawText, cleanText, chunks };
+  INDEX.documents.push(doc);
+  INDEX.chunks.push(...chunks);
+
+  log(`Indexed "${name}" → ${chunks.length} chunks, ${countWords(cleanText)} words`);
+  return doc;
+}
+
+// Clean raw text: normalise whitespace, remove junk characters
+function cleanRawText(text) {
+  return text
+    .replace(/\r\n/g, '\n')          // normalise line endings
+    .replace(/\t/g, ' ')             // tabs to spaces
+    .replace(/ {2,}/g, ' ')          // collapse multiple spaces
+    .replace(/\n{3,}/g, '\n\n')      // max 2 consecutive newlines
+    .trim();
+}
+
+// Split a document into overlapping chunks
+// Overlap means consecutive chunks share ~30 words — this prevents
+// answers from being split across chunk boundaries
+function chunkDocument(text, docId, docName, docType, docDate) {
+  const words     = text.split(/\s+/);
+  const chunks    = [];
+  const step      = CHUNK_CONFIG.maxWords - CHUNK_CONFIG.overlapWords;
+  let   chunkIdx  = 0;
+
+  for (let start = 0; start < words.length; start += step) {
+    const end       = Math.min(start + CHUNK_CONFIG.maxWords, words.length);
+    const chunkWords = words.slice(start, end);
+
+    // Skip chunks that are too small to be useful
+    if (chunkWords.length < CHUNK_CONFIG.minWords) continue;
+
+    const chunkText = chunkWords.join(' ');
+
+    chunks.push({
+      id:       `${docId}_c${chunkIdx}`,
+      docId,
+      docName,
+      docType,
+      docDate:  docDate || today(),
+      text:     chunkText,
+      wordCount:chunkWords.length,
+      position: chunkIdx,   // chunk number within document
+      // TF-IDF fields — populated by indexChunk()
+      termFreq: {},
+      keywords: [],
+    });
+
+    chunkIdx++;
+    if (end >= words.length) break;
+  }
+
+  return chunks;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYER 2 — TF-IDF INDEXING & RETRIEVAL ENGINE
+//
+// TF-IDF stands for Term Frequency – Inverse Document Frequency.
+// It's a way of measuring how important a word is in a document.
+//
+// TF  = how often a word appears in THIS chunk
+//       (words that appear a lot are probably important TO THIS chunk)
+//
+// IDF = how rare a word is ACROSS ALL chunks
+//       (words that appear in every chunk — like "the", "and" — are useless)
+//
+// TF-IDF score = TF × IDF
+// High score = word appears a lot in this chunk but rarely elsewhere
+//
+// Example:
+//   "Menigo" appears 8× in an invoice chunk but rarely elsewhere → HIGH score
+//   "the" appears in every chunk → LOW score despite being frequent
+// ═══════════════════════════════════════════════════════════════════
+
+// Global IDF index — tracks how many chunks contain each term
+const IDF_INDEX = {};    // { term: documentFrequency }
+
+// Stop words — common words that carry no meaning for search
+const STOP_WORDS = new Set([
+  'the','a','an','and','or','but','in','on','at','to','for','of','with',
+  'is','are','was','were','be','been','being','have','has','had','do','does',
+  'did','will','would','could','should','may','might','shall','can',
+  'this','that','these','those','i','you','he','she','it','we','they',
+  'what','which','who','when','where','how','all','some','any','each',
+  'from','by','as','not','no','so','if','its','our','your','their',
+  'also','more','than','up','out','about','into','over','after','then',
+  'den','det','en','ett','och','i','av','på','är','för','med','som',
+  'att','de','vi','han','hon','inte','men','om','sig','var','till',
+]);
+
+// Tokenise text into clean terms
+function tokenise(text) {
+  return text
+    .toLowerCase()
+    .replace(/[^a-zåäöÅÄÖ0-9\s]/g, ' ')  // keep Swedish chars
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !STOP_WORDS.has(w));
+}
+
+// Index a single chunk — compute term frequencies and update IDF
+function indexChunk(chunk) {
+  const terms    = tokenise(chunk.text);
+  const termCount = {};
+
+  // Count how many times each term appears in this chunk (TF)
+  terms.forEach(term => { termCount[term] = (termCount[term] || 0) + 1; });
+
+  // Normalise TF (divide by chunk length so longer chunks aren't favoured)
+  const maxFreq = Math.max(...Object.values(termCount), 1);
+  Object.keys(termCount).forEach(term => {
+    chunk.termFreq[term] = termCount[term] / maxFreq;
+    // Update document frequency for IDF calculation
+    IDF_INDEX[term] = (IDF_INDEX[term] || 0) + 1;
+  });
+
+  // Store top keywords for display in the debugger
+  chunk.keywords = Object.entries(termCount)
+    .sort((a,b) => b[1]-a[1])
+    .slice(0, 8)
+    .map(([term]) => term);
+}
+
+// Compute TF-IDF score for a single term in a chunk
+function tfidf(chunk, term) {
+  const tf  = chunk.termFreq[term] || 0;
+  if (tf === 0) return 0;
+  const df  = IDF_INDEX[term] || 1;
+  const N   = INDEX.chunks.length || 1;
+  const idf = Math.log(N / df) + 1;   // +1 smoothing prevents zero
+  return tf * idf;
+}
+
+// Score a chunk against a query — sum TF-IDF for all query terms
+function scoreChunk(chunk, queryTerms) {
+  let score = 0;
+  queryTerms.forEach(term => { score += tfidf(chunk, term); });
+  // Boost score slightly for more recent documents
+  const daysSince = (new Date() - new Date(chunk.docDate)) / 86400000;
+  const recencyBoost = Math.max(0, 1 - daysSince / 365) * 0.1;
+  return score + recencyBoost;
+}
+
+// ── RETRIEVER ─────────────────────────────────────────────────────
+// Main retrieval function: query → top-k relevant chunks
+function retrieve(query, topK = 5) {
+  if (INDEX.chunks.length === 0) return [];
+
+  const queryTerms = tokenise(query);
+  if (queryTerms.length === 0) return [];
+
+  // Score every chunk against the query
+  const scored = INDEX.chunks.map(chunk => ({
+    chunk,
+    score: scoreChunk(chunk, queryTerms),
+  }));
+
+  // Sort by score descending, take top-K, filter zero scores
+  return scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(s => ({
+      ...s.chunk,
+      score:      s.score,
+      scoreNorm:  0,   // filled in below
+      queryTerms: queryTerms,
+    }));
+}
+
+// Normalise scores to 0–1 range for display
+function normaliseScores(results) {
+  if (!results.length) return results;
+  const maxScore = results[0].score;
+  return results.map(r => ({ ...r, scoreNorm: maxScore > 0 ? r.score / maxScore : 0 }));
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYER 3 — QUERY CLASSIFICATION
+//
+// We detect what TYPE of question the user is asking so we can:
+//   1. Show the right badge in the UI
+//   2. Tune how many chunks to retrieve (planning needs more context)
+//   3. Add special instructions to the AI prompt
+// ═══════════════════════════════════════════════════════════════════
+
+const QUERY_TYPES = {
+  document: {
+    label: 'Document Question',
+    icon: '📄',
+    desc: 'Specific fact from a document',
+    color: 'b-blue',
+    topK: 4,
+    patterns: [/what (was|is|were)/i, /how much/i, /show me/i, /tell me/i, /find/i, /which/i, /when/i, /who/i],
+  },
+  analysis: {
+    label: 'Analysis',
+    icon: '📊',
+    desc: 'Compare, trend, or evaluate data',
+    color: 'b-teal',
+    topK: 6,
+    patterns: [/compar/i, /analys/i, /higher|lower|more|less/i, /trend/i, /average/i, /percent/i, /versus|vs\b/i, /above|below/i],
+  },
+  planning: {
+    label: 'Planning',
+    icon: '🎯',
+    desc: 'Forward-looking or strategic',
+    color: 'b-amber',
+    topK: 7,
+    patterns: [/should|could|would/i, /budget/i, /next|future|forecast/i, /plan/i, /recommend/i, /improve/i, /strategy/i],
+  },
+  generation: {
+    label: 'Generation',
+    icon: '✍️',
+    desc: 'Create a document or report',
+    color: 'b-green',
+    topK: 6,
+    patterns: [/creat|generat|write|draft|make/i, /invoice/i, /report/i, /summar/i, /template/i],
+  },
+};
+
+function classifyQuery(query) {
+  for (const [type, config] of Object.entries(QUERY_TYPES)) {
+    if (config.patterns.some(p => p.test(query))) return { type, ...config };
+  }
+  return { type: 'document', ...QUERY_TYPES.document };
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYER 4 — CONTEXT ASSEMBLY & PROMPT BUILDING
+//
+// This is what gets sent to Claude:
+//   1. System prompt (who Claude is, what restaurant, what rules)
+//   2. Retrieved document chunks (the "retrieval" part of RAG)
+//   3. Conversation history (for follow-up questions)
+//   4. The user's question
+//
+// The prompt is carefully structured so Claude knows:
+//   - Which document each chunk came from
+//   - To cite its sources
+//   - How to handle the query type
+// ═══════════════════════════════════════════════════════════════════
+
+function buildSystemPrompt(queryClass) {
+  const typeInstructions = {
+    document:   'Answer directly and specifically. Quote exact figures when available.',
+    analysis:   'Compare figures across documents. Highlight trends. Flag if data is missing or incomplete.',
+    planning:   'Base recommendations on actual data from the documents. Be specific with numbers.',
+    generation: 'Generate structured, professional output. Use actual figures from the documents.',
+  };
+
+  return `You are the AI business assistant for Restaurang Björken, a restaurant in Stockholm, Sweden.
+You answer questions based ONLY on the documents provided in the context below.
+${typeInstructions[queryClass.type] || ''}
+
+CITATION RULES (VERY IMPORTANT):
+- After each fact or figure, add [Doc: DocName] to show where it came from
+- If a question cannot be answered from the documents, say so clearly
+- Never invent numbers — only use figures from the documents
+- Respond in the same language as the user (Swedish or English)
+
+FORMAT:
+- Be concise but complete
+- Use bullet points for lists of facts
+- Bold important numbers with **amount**`;
+}
+
+function assembleContext(chunks) {
+  // Format retrieved chunks as clearly labelled context blocks
+  return chunks.map((chunk, i) =>
+    `[DOCUMENT ${i+1}: "${chunk.docName}" | Type: ${chunk.docType} | Date: ${chunk.docDate}]\n${chunk.text}`
+  ).join('\n\n---\n\n');
+}
+
+function buildMessages(query, chunks, history) {
+  // Take last 6 messages of history (3 turns) to stay within context limits
+  const recentHistory = history.slice(-6).map(m => ({
+    role:    m.role === 'ai' ? 'assistant' : 'user',
+    content: m.text,
+  }));
+
+  // The current user message includes the retrieved context
+  const userMessage = chunks.length > 0
+    ? `DOCUMENT CONTEXT:\n\n${assembleContext(chunks)}\n\n---\n\nQUESTION: ${query}`
+    : `QUESTION (no documents available): ${query}`;
+
+  return [...recentHistory, { role: 'user', content: userMessage }];
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// LAYER 5 — CLAUDE API INTEGRATION
+// ═══════════════════════════════════════════════════════════════════
+
+// Conversation history
+const HISTORY = [];
+let isThinking = false;
+let debugMode  = true;
+let apiKey     = localStorage.getItem('bj_api_key') || '';
+
+if (apiKey) document.getElementById('api-key').value = '••••••••••••••••';
+
+function saveKey() {
+  const val = document.getElementById('api-key').value.trim();
+  if (val && !val.startsWith('•')) {
+    apiKey = val;
+    localStorage.setItem('bj_api_key', val);
+    document.getElementById('api-key').value = '••••••••••••••••';
+    document.getElementById('model-badge').textContent = 'Claude Sonnet — Live';
+    document.getElementById('model-badge').className = 'badge b-green';
+    addChatMsg('ai', 'API key saved. I\'m now connected to Claude and will use your actual documents to answer questions.');
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const query = input.value.trim();
+  if (!query || isThinking) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  isThinking = true;
+
+  // 1. Classify the query
+  const queryClass = classifyQuery(query);
+
+  // 2. Add user message to chat
+  addChatMsg('user', query, queryClass);
+  HISTORY.push({ role: 'user', text: query });
+
+  // 3. Retrieve relevant chunks
+  const rawResults  = retrieve(query, queryClass.topK);
+  const results     = normaliseScores(rawResults);
+
+  // 4. Update debugger with retrieval results
+  if (debugMode) updateDebugPanel(query, queryClass, results);
+
+  // 5. Show typing indicator
+  const typingId = showTyping();
+
+  try {
+    let answer;
+
+    if (apiKey && !apiKey.startsWith('•')) {
+      // ── LIVE MODE: Call Claude API ─────────────────────────────
+      const systemPrompt = buildSystemPrompt(queryClass);
+      const messages     = buildMessages(query, results, HISTORY.slice(0,-1));
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model:      'claude-sonnet-4-20250514',
+          max_tokens: 1500,
+          system:     systemPrompt,
+          messages,
+        }),
+      });
+
+      const data = await response.json();
+      answer = data.content?.[0]?.text || 'No response received.';
+
+    } else {
+      // ── DEMO MODE: Simulate response from document content ─────
+      answer = buildDemoAnswer(query, results, queryClass);
+    }
+
+    // 6. Remove typing indicator and show answer
+    removeTyping(typingId);
+    addChatMsg('ai', answer, null, results);
+    HISTORY.push({ role: 'ai', text: answer });
+
+  } catch (err) {
+    removeTyping(typingId);
+    addChatMsg('ai', `Connection error: ${err.message}. Check your API key and try again.`);
+  }
+
+  isThinking = false;
+}
+
+// ── DEMO ANSWER BUILDER ───────────────────────────────────────────
+// When no API key is set, synthesise an answer from retrieved chunks
+// This shows the RAG pipeline working even without Claude
+function buildDemoAnswer(query, results, queryClass) {
+  if (!results.length) {
+    return 'No documents have been indexed yet. Please upload documents or click "Load sample documents" to get started.';
+  }
+
+  const topChunk  = results[0];
+  const allSources = [...new Set(results.map(r => r.docName))];
+  const sourceList = allSources.map(s => `[Doc: ${s}]`).join(', ');
+
+  // For demo, return a summary of what was found
+  const preview = topChunk.text.slice(0, 280).trim();
+  const more    = results.length > 1
+    ? `\n\nAdditionally, ${results.length - 1} more relevant section${results.length > 2 ? 's were' : ' was'} found across: ${allSources.slice(1).join(', ')}.`
+    : '';
+
+  return `Based on your documents, here is the most relevant information I found ${sourceList}:\n\n"${preview}…"${more}\n\n*Connect your Anthropic API key (top right) for full AI-powered answers with analysis and synthesis.*`;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// CHAT UI
+// ═══════════════════════════════════════════════════════════════════
+
+function addChatMsg(role, text, queryClass, citations) {
+  const area = document.getElementById('chat-area');
+  const el   = document.createElement('div');
+  el.className = `msg ${role} fade-in`;
+
+  const time = new Date().toLocaleTimeString('sv-SE', { hour:'2-digit', minute:'2-digit' });
+
+  // Build citation chips
+  let citeHTML = '';
+  if (citations && citations.length) {
+    const uniqueDocs = [...new Map(citations.map(c => [c.docName, c])).values()];
+    citeHTML = `<div class="citations">${uniqueDocs.map((c,i) =>
+      `<div class="cite-chip" onclick="highlightChunk('${c.id}')">
+        <span class="cite-num">[${i+1}]</span> ${c.docName}
+      </div>`
+    ).join('')}</div>`;
+  }
+
+  // Query type badge for user messages
+  let qtBadge = '';
+  if (role === 'user' && queryClass) {
+    qtBadge = `<div class="query-type-badge"><span class="badge ${queryClass.color}">${queryClass.icon} ${queryClass.label}</span></div>`;
+  }
+
+  el.innerHTML = `
+    <div class="avatar av-${role}">${role === 'ai' ? 'AI' : 'You'}</div>
+    <div class="bubble-wrap">
+      ${qtBadge}
+      <div class="bubble bubble-${role}">${formatText(text)}</div>
+      ${citeHTML}
+      <div class="msg-time">${time}</div>
+    </div>`;
+
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+}
+
+// Convert markdown-like formatting to HTML
+function formatText(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+
+function showTyping() {
+  const area = document.getElementById('chat-area');
+  const id   = 'typing_' + Date.now();
+  const el   = document.createElement('div');
+  el.className = 'msg fade-in';
+  el.id = id;
+  el.innerHTML = `<div class="avatar av-ai">AI</div><div class="bubble-wrap"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  area.appendChild(el);
+  area.scrollTop = area.scrollHeight;
+  return id;
+}
+
+function removeTyping(id) {
+  document.getElementById(id)?.remove();
+}
+
+function clearChat() {
+  HISTORY.length = 0;
+  document.getElementById('chat-area').innerHTML = '';
+  document.getElementById('debug-panel').innerHTML = '<div style="padding:20px;text-align:center;color:var(--hint);font-size:12px">Ask a question to see retrieval results here.</div>';
+}
+
+function askSuggestion(btn) {
+  document.getElementById('chat-input').value = btn.textContent;
+  sendMessage();
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// RAG DEBUGGER — RIGHT PANEL
+// Shows exactly what the retrieval engine found for each query
+// ═══════════════════════════════════════════════════════════════════
+
+function updateDebugPanel(query, queryClass, results) {
+  const panel = document.getElementById('debug-panel');
+
+  // Stats
+  const statsHTML = `
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-val" style="color:var(--blue)">${results.length}</div>
+        <div class="stat-lbl">Chunks retrieved</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" style="color:var(--teal)">${[...new Set(results.map(r=>r.docId))].length}</div>
+        <div class="stat-lbl">Docs searched</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" style="color:var(--amber)">${INDEX.chunks.length}</div>
+        <div class="stat-lbl">Total chunks</div>
+      </div>
+    </div>`;
+
+  // Query type
+  const qtHTML = `
+    <div class="qtype-row">
+      <div class="qtype-icon">${queryClass.icon}</div>
+      <div class="qtype-info">
+        <div class="qtype-name">${queryClass.label}</div>
+        <div class="qtype-desc">${queryClass.desc} · top-${queryClass.topK} retrieval</div>
+      </div>
+      <span class="badge ${queryClass.color}">${queryClass.type}</span>
+    </div>`;
+
+  // Query terms
+  const terms = tokenise(query);
+  const queryHTML = `
+    <div class="ret-query">
+      <span class="lbl">Query terms used for retrieval</span>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+        ${terms.map(t => `<span class="badge b-blue">${t}</span>`).join('')}
+      </div>
+    </div>`;
+
+  // Retrieved chunks
+  const chunksHTML = results.length ? results.map((r, i) =>
+    `<div class="chunk-result" id="cr_${r.id}">
+      <div class="chunk-header" onclick="toggleChunk('ct_${r.id}','ca_${r.id}')">
+        <div>
+          <div class="chunk-source">[${i+1}] ${r.docName}</div>
+          <div style="font-size:10px;color:var(--hint);margin-top:2px">Chunk ${r.position+1} · ${r.wordCount} words · ${r.docDate}</div>
+        </div>
+        <div class="score-bar-wrap">
+          <div class="score-bar"><div class="score-fill" style="width:${Math.round(r.scoreNorm*100)}%"></div></div>
+          <div class="score-num">${(r.scoreNorm*100).toFixed(0)}%</div>
+        </div>
+      </div>
+      <div class="chunk-text" id="ct_${r.id}">${highlightTerms(r.text.slice(0,300)+'…', terms)}</div>
+      <div class="chunk-keywords" id="ca_${r.id}">
+        ${r.keywords.map(k => `<span class="kw-tag">${k}</span>`).join('')}
+      </div>
+    </div>`
+  ).join('') : `<div style="padding:16px 12px;font-size:12px;color:var(--hint)">No relevant chunks found. Try uploading more documents or rephrasing your question.</div>`;
+
+  panel.innerHTML = statsHTML + qtHTML + queryHTML + chunksHTML;
+}
+
+// Highlight query terms in chunk text preview
+function highlightTerms(text, terms) {
+  let out = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  terms.forEach(term => {
+    const re = new RegExp(`\\b(${term})\\b`, 'gi');
+    out = out.replace(re, '<mark style="background:var(--amber-lt);color:var(--amber);border-radius:2px;padding:0 2px">$1</mark>');
+  });
+  return out;
+}
+
+function toggleChunk(textId, kwId) {
+  document.getElementById(textId)?.classList.toggle('expanded');
+}
+
+function highlightChunk(chunkId) {
+  document.querySelectorAll('.chunk-result').forEach(el => el.style.borderColor = '');
+  const el = document.getElementById('cr_' + chunkId);
+  if (el) {
+    el.style.borderColor = 'var(--blue)';
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function toggleDebug() {
+  debugMode = !debugMode;
+  document.getElementById('debug-pill').classList.toggle('on', debugMode);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// DOCUMENT LIBRARY UI
+// ═══════════════════════════════════════════════════════════════════
+
+function renderDocList() {
+  const list = document.getElementById('doc-items');
+  const count = INDEX.documents.length;
+
+  document.getElementById('doc-count').textContent = count + ' doc' + (count !== 1 ? 's' : '');
+  document.getElementById('index-status').textContent = count + ' docs indexed';
+  document.getElementById('chunk-status').textContent = INDEX.chunks.length + ' chunks';
+
+  list.innerHTML = INDEX.documents.map(doc => {
+    const iconClass = { pdf:'di-pdf', xlsx:'di-xlsx', csv:'di-csv', txt:'di-txt' }[doc.type] || 'di-txt';
+    return `<div class="doc-item" onclick="selectDoc('${doc.id}')">
+      <div class="doc-icon ${iconClass}">${doc.type.toUpperCase()}</div>
+      <div class="doc-meta">
+        <div class="doc-name">${doc.name}</div>
+        <div class="doc-info">${doc.date} · ${countWords(doc.cleanText).toLocaleString()} words</div>
+        <div class="doc-chunks">
+          <span class="chunk-count">${doc.chunks.length}</span>
+          <span>chunks indexed</span>
+          <span class="badge b-green" style="margin-left:4px">✓ Ready</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('') || '<div style="padding:16px;font-size:12px;color:var(--hint)">No documents yet. Upload files or load sample data.</div>';
+}
+
+function selectDoc(id) {
+  document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// FILE UPLOAD HANDLER
+// ═══════════════════════════════════════════════════════════════════
+
+document.getElementById('file-input').addEventListener('change', function() {
+  [...this.files].forEach(file => {
+    const reader = new FileReader();
+    const ext    = file.name.split('.').pop().toLowerCase();
+    reader.onload = e => {
+      ingestDocument(file.name, ext, e.target.result, today());
+      renderDocList();
+    };
+    reader.readAsText(file, 'UTF-8');
+  });
+  this.value = '';
+});
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SAMPLE DOCUMENTS
+// Realistic restaurant business documents for Restaurang Björken
+// ═══════════════════════════════════════════════════════════════════
+
+function loadSampleDocs() {
+  const SAMPLES = [
+    {
+      name: 'PL_Mars_2026.txt', type: 'txt', date: '2026-03-31',
+      text: `RESULTATRÄKNING MARS 2026 — Restaurang Björken AB
+Org.nr: 556XXX-XXXX
+
+INTÄKTER
+Matintäkter mars 2026: 312 500 kr
+Dryckesintäkter mars 2026: 175 000 kr
+Cateringintäkter mars 2026: 18 400 kr
+Övriga intäkter: 0 kr
+TOTALA INTÄKTER MARS: 505 900 kr
+
+INTÄKTER FEBRUARI 2026 (jämförelse):
+Totala intäkter februari: 461 800 kr
+Förändring mars vs februari: +9.6%
+
+RÖRELSEKOSTNADER
+Råvaror och livsmedel: 149 300 kr (29.5% av omsättning)
+Dryckeskostnader ingår i råvaror
+Personalkostnader lön: 168 200 kr (33.2% av omsättning)
+Arbetsgivaravgifter 33.74%: 56 778 kr
+Total personalkostnad: 224 978 kr (44.5% av omsättning)
+Lokalhyra Storgatan 14: 52 000 kr
+El och uppvärmning: 7 200 kr
+Vatten och avlopp: 2 100 kr
+Städtjänster: 3 200 kr
+Total lokal och fastighet: 64 500 kr (12.7% av omsättning)
+Marknadsföring och annonsering: 8 400 kr
+Förbrukningsinventarier kök: 4 200 kr
+Bokföring och redovisning: 3 500 kr
+Försäkringar: 2 800 kr
+Bankavgifter och kortavgifter: 1 900 kr
+IT och systemkostnader (Fortnox, Ancon): 1 599 kr
+Övriga rörelsekostnader: 6 023 kr
+Total övriga kostnader: 28 422 kr (5.6% av omsättning)
+
+SUMMA KOSTNADER: 467 200 kr (92.3% av omsättning)
+RÖRELSERESULTAT (EBIT): 38 700 kr
+Rörelsemarginal: 7.65%
+
+NOT: Marginalen mars är lägre än normalt pga ökade råvarukostnader.
+Menigo höjde sina priser med ca 8% i mars. Sysco höjde dryckespriserna 6%.
+Rekommendation: Förhandla om avtal med Menigo eller byt delvolym till Martin & Servera.`
+    },
+    {
+      name: 'Menigo_Faktura_2026-03-12.txt', type: 'txt', date: '2026-03-12',
+      text: `MENIGO FOODSERVICE AB — LEVERANTÖRSFAKTURA
+Fakturanummer: 8842901
+Fakturadatum: 2026-03-12
+Förfallodatum: 2026-04-11
+Betalningsvillkor: 30 dagar netto
+Kundnummer: 44821
+Levereras till: Restaurang Björken, Storgatan 14, 111 23 Stockholm
+
+ORDERRADER:
+Kycklingfilé fryst 5kg art.10482: 12 st à 700 kr = 8 400 kr
+Nötkött entrecôte 3kg art.20193: 8 st à 1 600 kr = 12 800 kr
+Grönsaksmix 10kg art.30421: 20 st à 210 kr = 4 200 kr
+Mjölk 3% 1L art.40022: 48 st à 14.50 kr = 696 kr
+Grädde 40% 1L art.40084: 24 st à 28 kr = 672 kr
+Smör 500g art.40101: 36 st à 34 kr = 1 224 kr
+Olivolja extra virgin 5L art.50211: 6 st à 195 kr = 1 170 kr
+Tomater krossade 6kg art.30882: 15 st à 89 kr = 1 335 kr
+Lök gul 10kg art.30001: 8 st à 45 kr = 360 kr
+Potatis 10kg art.30100: 10 st à 65 kr = 650 kr
+
+NETTOSUMMA: 31 307 kr
+MOMS 12%: 3 757 kr
+ATT BETALA: 35 064 kr
+
+OBS: Prisjustering genomförd 2026-03-01. Kycklingfilé +7.1%, Nötkött +9.2% pga marknadsprisökningar.
+Nästa leverans: 2026-03-26. Kontakt: kundservice@menigo.se, 020-88 00 00`
+    },
+    {
+      name: 'Sysco_Dryck_2026-03-15.txt', type: 'txt', date: '2026-03-15',
+      text: `SYSCO SVERIGE AB
+Fakturanummer: SY-881234
+Fakturadatum: 2026-03-15
+Förfallodatum: 2026-03-29
+Betalningsvillkor: 14 dagar
+Kundnummer: 98821
+
+Restaurang Björken — Dryckesleverans mars 2
+
+VIN OCH SPRIT:
+Champagne Billecart-Salmon Brut 6-pack: 4 st à 2 890 kr = 11 560 kr
+Bourgogne Pinot Noir Jadot 6-pack: 6 st à 1 240 kr = 7 440 kr
+Prosecco Mionetto 6-pack: 4 st à 590 kr = 2 360 kr
+Gin Hendricks 1L: 3 st à 389 kr = 1 167 kr
+Vodka Absolut Blue 1L: 6 st à 198 kr = 1 188 kr
+Whisky Glenfiddich 12yr 0.7L: 2 st à 458 kr = 916 kr
+
+ÖLET OCH ALKOHOLFRITT:
+Fatöl Kronenbourg 1664 30L: 8 st à 549 kr = 4 392 kr
+Fatöl IPA lokal 30L: 4 st à 620 kr = 2 480 kr
+Mineralvatten San Pellegrino 24-pack: 10 st à 189 kr = 1 890 kr
+Coca-Cola zero 33cl 24-pack: 6 st à 165 kr = 990 kr
+Apelsinjuice 1L 12-pack: 4 st à 129 kr = 516 kr
+
+NETTOSUMMA: 34 899 kr
+MOMS 25%: 8 725 kr
+ATT BETALA: 43 624 kr
+
+Notering: Champagnepriset ökat 6% sedan januari pga valutaeffekter (EUR/SEK).`
+    },
+    {
+      name: 'Personalschema_Mars_2026.txt', type: 'txt', date: '2026-03-10',
+      text: `PERSONALÖVERSIKT MARS 2026 — Restaurang Björken AB
+
+FAST PERSONAL:
+Erik Svensson — Köksmästare, heltid 176h — Lön: 42 000 kr — Arb.avg: 14 177 kr — Totalt: 56 177 kr
+Maria Lindqvist — Sous chef, heltid 176h — Lön: 34 500 kr — Arb.avg: 11 644 kr — Totalt: 46 144 kr
+Ahmed Hassan — Kock, heltid 176h — Lön: 28 500 kr — Arb.avg: 9 622 kr — Totalt: 38 122 kr
+Sara Nilsson — Kock, 75% 132h — Lön: 21 500 kr — Arb.avg: 7 259 kr — Totalt: 28 759 kr
+Jonas Berg — Servitör/sommelier, heltid — Lön: 26 000 kr — Arb.avg: 8 778 kr — Totalt: 34 778 kr
+Lena Pettersson — Servitör, heltid — Lön: 22 500 kr — Arb.avg: 7 598 kr — Totalt: 30 098 kr
+
+TIMANSTÄLLDA MARS:
+Kim Thorén — Servitör 89h à 185 kr = 16 465 kr + arb.avg 5 558 kr = 22 023 kr
+Fatima Al-Rashid — Servitör 72h à 175 kr = 12 600 kr + arb.avg 4 254 kr = 16 854 kr
+Björn Eriksson — Kock extra 48h à 210 kr = 10 080 kr + arb.avg 3 403 kr = 13 483 kr
+Oscar Malmgren — Diskare 120h à 155 kr = 18 600 kr + arb.avg 6 281 kr = 24 881 kr
+
+SUMMERING MARS 2026:
+Antal anställda: 10 (6 fasta, 4 timmar)
+Totalt antal timmar: 1 289h
+Totala bruttolöner: 232 745 kr
+Totala arbetsgivaravgifter: 78 574 kr
+TOTAL PERSONALKOSTNAD MARS: 311 319 kr
+
+Personalkostnader som % av omsättning (505 900 kr): 61.5%
+VARNING: Personalkostnadsprocenten är för hög. Branschsnitt: 35-40%.
+Orsak: Hög sjukfrånvaro vecka 11-12 krävde övertid och extra timanställningar.`
+    },
+    {
+      name: 'Budget_Kvartal1_2026.txt', type: 'txt', date: '2026-01-01',
+      text: `BUDGET KVARTAL 1 2026 — Restaurang Björken AB
+Upprättad: 2025-12-15
+Godkänd av: ägare
+
+INTÄKTSBUDGET Q1 2026:
+Januari budget: 400 000 kr (lågsäsong)
+Februari budget: 460 000 kr
+Mars budget: 490 000 kr
+TOTAL Q1 BUDGET: 1 350 000 kr
+
+UTFALLSPROGNOS Q1 (baserat på jan-feb utfall + mars prognos):
+Januari utfall: 389 200 kr (underskott -10 800 kr, -2.7%)
+Februari utfall: 461 800 kr (överskott +1 800 kr, +0.4%)
+Mars prognos: 505 900 kr (om mars håller, överskott +15 900 kr)
+PROGNOS Q1 TOTAL: 1 356 900 kr (överskott +6 900 kr vs budget)
+
+KOSTNADSBUDGET Q1 2026:
+Råvaror och livsmedel: budget 31% av omsättning = 418 500 kr
+Personalkostnader ink arb.avg: budget 40% = 540 000 kr
+Lokal och fastighet: 192 000 kr (64 000 kr/mån, fast)
+Marknadsföring: 30 000 kr
+Övriga rörelsekostnader: 75 000 kr
+TOTAL KOSTNADSBUDGET Q1: 1 255 500 kr
+
+BUDGETERAT RESULTAT Q1: 94 500 kr (7.0% marginal)
+
+NYCKELTAL MÅL:
+Rörelsemarginal: ≥7%
+Råvarukostnad: ≤31% av omsättning
+Personalkostnad ink arb.avg: ≤40% av omsättning
+Lokal: ≤13% av omsättning
+
+RISKER Q1:
+- Leverantörsprishöjningar (Menigo varslade om 5-10% höjning från mars)
+- Personalrekrytering kock position öppen sedan december
+- Energiprishöjning varslad av Vattenfall Q1 (+12%)`
+    },
+    {
+      name: 'Handelsbanken_Mars_2026.txt', type: 'txt', date: '2026-03-31',
+      text: `HANDELSBANKEN KONTOUTDRAG MARS 2026
+Konto: SE45 6000 0000 0003 XXXX XX
+Kontonamn: Restaurang Björken AB Rörelse
+Saldo ingående 2026-03-01: 284 450 kr
+
+TRANSAKTIONER MARS 2026:
+2026-03-01 BJÖRKENS FASTIGHETER HYRA MARS -65 000 kr Saldo: 219 450 kr
+2026-03-01 VATTENFALL ELDISTRIBUTION -8 402 kr Saldo: 211 048 kr
+2026-03-03 ANCON POS DAGSKASSA 2026-03-02 +18 240 kr Saldo: 229 288 kr
+2026-03-05 FORTNOX AB ABONNEMANG -799 kr Saldo: 228 489 kr
+2026-03-08 ANCON POS DAGSKASSA 2026-03-07 +22 180 kr Saldo: 250 669 kr
+2026-03-10 INBETALNING FAKTURA 2026-0087 +34 200 kr Saldo: 284 869 kr
+2026-03-12 MENIGO FOODSERVICE AB -35 064 kr Saldo: 249 805 kr
+2026-03-15 ANCON POS DAGSKASSA 2026-03-14 +26 350 kr Saldo: 276 155 kr
+2026-03-15 SYSCO SVERIGE AB -43 624 kr Saldo: 232 531 kr
+2026-03-18 ANCON POS DAGSKASSA 2026-03-17 +19 870 kr Saldo: 252 401 kr
+2026-03-22 MENIGO FOODSERVICE AB -28 740 kr Saldo: 223 661 kr
+2026-03-22 ANCON POS DAGSKASSA 2026-03-21 +24 100 kr Saldo: 247 761 kr
+2026-03-25 PERSONALKÖRNING MARS 2026 -232 745 kr Saldo: 15 016 kr
+2026-03-25 SKATTEVERKET ARBETSGIVARAVG -78 574 kr Saldo: -63 558 kr
+2026-03-26 INBETALNING FAKTURA 2026-0088 +55 000 kr Saldo: -8 558 kr
+2026-03-28 ANCON POS DAGSKASSA 2026-03-27 +31 240 kr Saldo: 22 682 kr
+2026-03-31 ANCON POS DAGSKASSA 2026-03-30 +28 900 kr Saldo: 51 582 kr
+
+SALDO UTGÅENDE 2026-03-31: 51 582 kr
+KASSAFLÖDE MARS: -232 868 kr (negativt pga lönekörning slutet av månaden)
+NOTERING: Negativt kassaflöde beror på timing — löner betalas 25:e men intäkter kommer löpande. Saldo normaliseras i april.`
+    },
+  ];
+
+  SAMPLES.forEach(s => {
+    if (!INDEX.documents.find(d => d.name === s.name)) {
+      ingestDocument(s.name, s.type, s.text, s.date);
+    }
+  });
+
+  renderDocList();
+  addChatMsg('ai', `6 documents loaded and indexed — **${INDEX.chunks.length} searchable chunks** ready.\n\nDocuments include:\n- P&L report March 2026\n- Menigo supplier invoice\n- Sysco beverage invoice\n- Staff schedule & payroll\n- Q1 budget\n- Handelsbanken bank statement\n\nTry asking: *"What was our profit margin in March?"* or *"Which supplier is most expensive?"*`);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════════
+
+function countWords(text) { return text.split(/\s+/).filter(Boolean).length; }
+function today() { return new Date().toISOString().split('T')[0]; }
+function log(msg) { console.log(`[RAG] ${msg}`); }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+
+renderDocList();
+</script>
+</body>
+</html>

@@ -1,0 +1,290 @@
+/* app/mobile.css
+ *
+ * MOBILE RESPONSIVE STYLES for CommandCenter
+ * Import this in app/layout.tsx alongside globals.css
+ *
+ * Strategy:
+ *   - Desktop (>768px):  Three-panel layout, icon sidebar, top nav
+ *   - Tablet (600-768px): Two-panel, collapsed sidebar
+ *   - Mobile (<600px):   Single panel, bottom navigation, full-width UI
+ *
+ * Key decisions:
+ *   - Touch targets are minimum 44×44px (Apple HIG standard)
+ *   - Bottom nav replaces the sidebar on mobile
+ *   - The three-panel notebook collapses to a tab-switched single view
+ *   - Modals become full-screen sheets on mobile
+ *   - No horizontal scrolling on any screen
+ */
+
+/* ── TABLET (600px – 768px) ───────────────────────────────────── */
+@media (max-width: 768px) {
+
+  /* Shrink the sidebar to icons only */
+  :root { --sidebar-w: 52px; }
+
+  /* Topbar: hide brand text, show just logo */
+  .tb-brand-name   { display: none; }
+  .tb-switcher-label { max-width: 140px; }
+
+  /* Plan cards: 2 columns instead of 4 */
+  .plans-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Usage meters: 2 columns */
+  .meters-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* KPI grid: 2 columns */
+  .kpi-grid { grid-template-columns: repeat(2, 1fr) !important; }
+
+  /* Notebook: hide studio panel — accessible via tab */
+  .notebook-studio { display: none !important; }
+  .notebook-shell  { grid-template-columns: 240px 1fr !important; }
+}
+
+/* ── MOBILE (<600px) ──────────────────────────────────────────── */
+@media (max-width: 599px) {
+
+  /* ── Layout overrides ─────────────────────────────────────────── */
+
+  /* Kill the sidebar — replaced by bottom nav */
+  .dashboard-sidebar { display: none !important; }
+
+  /* Dashboard body: single column */
+  .dashboard-body {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Notebook: single panel, controlled by JS tab state */
+  .notebook-shell {
+    grid-template-columns: 1fr !important;
+  }
+  .notebook-sources { display: none; }
+  .notebook-studio  { display: none; }
+
+  /* Show/hide panels based on active tab (controlled by data-tab attribute) */
+  .notebook-shell[data-tab="sources"] .notebook-sources { display: flex !important; }
+  .notebook-shell[data-tab="chat"]    .notebook-chat    { display: flex !important; }
+  .notebook-shell[data-tab="studio"]  .notebook-studio  { display: flex !important; }
+
+  /* ── Bottom navigation ────────────────────────────────────────── */
+  /* The bottom nav is rendered by <MobileBottomNav> component on mobile screens */
+
+  .mobile-bottom-nav {
+    position:    fixed;
+    bottom:      0;
+    left:        0;
+    right:       0;
+    height:      64px;               /* tall enough for thumbs */
+    background:  var(--white);
+    border-top:  1px solid var(--border);
+    display:     flex;
+    align-items: stretch;
+    z-index:     100;
+    box-shadow:  0 -2px 12px rgba(0,0,0,.08);
+    /* Push content up so it's not hidden behind the nav */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Each nav tab */
+  .mobile-nav-item {
+    flex:            1;
+    display:         flex;
+    flex-direction:  column;
+    align-items:     center;
+    justify-content: center;
+    gap:             3px;
+    cursor:          pointer;
+    color:           var(--ink-4);
+    font-size:       10px;
+    font-weight:     600;
+    text-transform:  uppercase;
+    letter-spacing:  .04em;
+    text-decoration: none;
+    /* Minimum 44px touch target */
+    min-height:      44px;
+    padding:         0 4px;
+    transition:      color .1s;
+  }
+
+  .mobile-nav-item.active { color: var(--blue); }
+  .mobile-nav-item .nav-icon { font-size: 20px; line-height: 1; }
+
+  /* Add bottom padding to the main content area so it doesn't go under the nav */
+  .dashboard-main,
+  .notebook-chat,
+  .notebook-sources {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  .page-title    { font-size: 22px !important; }
+  .kpi-value     { font-size: 20px !important; }
+  .section-title { font-size: 18px !important; }
+
+  /* ── Touch targets ────────────────────────────────────────────── */
+  /* All buttons and interactive elements must be at least 44×44px */
+  .btn,
+  button,
+  [role="button"],
+  select,
+  input[type="checkbox"],
+  input[type="radio"] {
+    min-height: 44px;
+    min-width:  44px;
+  }
+
+  /* Exception: very small badges and chips — they're not primary actions */
+  .badge, .cite-chip, .sugg-pill { min-height: unset; min-width: unset; }
+
+  /* ── Topbar mobile ────────────────────────────────────────────── */
+  .dashboard-topbar {
+    padding: 0 12px !important;
+  }
+
+  /* Hide month label — saves space */
+  .tb-month-label { display: none; }
+
+  /* Full-width switcher */
+  .biz-switcher {
+    flex: 1;
+    max-width: unset !important;
+    justify-content: space-between;
+  }
+
+  /* ── Cards ────────────────────────────────────────────────────── */
+  .card { border-radius: 12px !important; }
+
+  /* ── Dashboard ────────────────────────────────────────────────── */
+  .dashboard-page { padding: 16px !important; }
+
+  /* KPI grid: 2 columns on mobile, same information density */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Alert strip: vertical on mobile */
+  .alert-strip {
+    flex-direction: column !important;
+    align-items:    flex-start !important;
+    gap:            8px !important;
+  }
+  .alert-strip .btn { width: 100%; justify-content: center; }
+
+  /* Quick links: 2×2 grid */
+  .quick-links {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .quick-link { text-align: center !important; }
+
+  /* Revenue contribution table: hide bar chart */
+  .contrib-bar { display: none; }
+
+  /* ── Notebook ─────────────────────────────────────────────────── */
+
+  /* Chat bubbles: full width on mobile */
+  .user-bubble  { max-width: 90% !important; }
+  .ai-bubble    { font-size: 14px !important; }
+
+  /* Input area: always visible, larger */
+  .chat-input-area { padding: 10px 12px !important; }
+  .chat-ta { font-size: 16px !important; } /* prevents iOS zoom on focus */
+
+  /* Citations row: scroll horizontally */
+  .citations-row {
+    flex-wrap:    nowrap !important;
+    overflow-x:   auto;
+    padding-bottom: 4px;
+  }
+  .cite-chip { flex-shrink: 0; }
+
+  /* Source items: full width */
+  .src-item { padding: 10px 14px !important; }
+
+  /* ── Forms ────────────────────────────────────────────────────── */
+  .field-row {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .input {
+    font-size: 16px !important; /* prevent iOS zoom */
+    padding: 11px 14px !important;
+  }
+
+  /* ── Modals → full-screen sheets ─────────────────────────────── */
+  .modal-overlay {
+    align-items: flex-end !important;
+    padding:     0 !important;
+  }
+
+  .modal {
+    width:         100% !important;
+    max-width:     100% !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height:    90vh !important;
+  }
+
+  /* ── Upgrade / pricing ────────────────────────────────────────── */
+  .plans-grid {
+    grid-template-columns: 1fr !important;  /* one card per row on mobile */
+    gap: 14px !important;
+  }
+
+  /* Show only current plan and next plan up by default */
+  /* (Users can scroll to see all) */
+
+  .meters-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* ── Beta page ────────────────────────────────────────────────── */
+  .beta-benefits-row {
+    flex-direction: column !important;
+  }
+
+  /* ── Tables ────────────────────────────────────────────────────── */
+  /* Tables scroll horizontally on mobile */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table { min-width: 500px; }
+  th, td { padding: 8px 10px !important; font-size: 12px !important; }
+
+  /* ── Changelog ────────────────────────────────────────────────── */
+  .changelog-entry { gap: 12px !important; }
+  .changelog-timeline { display: none !important; } /* hide timeline on mobile */
+}
+
+/* ── SAFE AREA (iPhone notch / Dynamic Island) ────────────────── */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .dashboard-topbar {
+    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(var(--nav-h) + env(safe-area-inset-top, 0px));
+  }
+}
+
+/* ── FOCUS STYLES (keyboard nav + accessibility) ─────────────── */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* Remove outline from mouse clicks */
+:focus:not(:focus-visible) { outline: none; }
+
+/* ── PRINT ────────────────────────────────────────────────────── */
+@media print {
+  .dashboard-sidebar,
+  .dashboard-topbar,
+  .mobile-bottom-nav,
+  .chat-input-area,
+  .support-widget-launcher {
+    display: none !important;
+  }
+
+  .dashboard-body { grid-template-columns: 1fr !important; }
+  .kpi-grid       { grid-template-columns: repeat(3, 1fr) !important; }
+}

@@ -1,0 +1,170 @@
+/* app/globals.css
+ *
+ * Global styles and design tokens for CommandCenter.
+ * These CSS variables are the same ones used in all the HTML prototypes,
+ * so the visual design is preserved exactly when converting to React.
+ *
+ * All colour names use plain English: --navy, --green, --dust etc.
+ * No utility class framework (no Tailwind) — we write CSS components.
+ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* ── Neutral palette ─────────────────────────────────────── */
+  --parchment:  #F2EDE8;
+  --off-white:  #FAFAF8;
+  --white:      #FFFFFF;
+  --border:     #E0DAD2;
+  --border-d:   #C8C1B8;
+  --ink:        #1C1714;
+  --ink-2:      #3A3733;
+  --ink-3:      #6A6560;
+  --ink-4:      #A8A49C;
+
+  /* ── Brand colours ───────────────────────────────────────── */
+  --navy:       #1E2761;
+  --blue:       #185FA5;
+  --blue-lt:    #EEF4FF;
+  --blue-mid:   #BDD1F8;
+
+  /* ── Semantic colours ────────────────────────────────────── */
+  --green:      #2D6A35;
+  --green-lt:   #EAF2E8;
+  --green-mid:  #9FCDA8;
+  --amber:      #7A4800;
+  --amber-lt:   #FFF5E5;
+  --red:        #8B1A1A;
+  --red-lt:     #FBF0F0;
+  --red-mid:    #F0A0A0;
+
+  /* ── Typography ──────────────────────────────────────────── */
+  --font:       'DM Sans', system-ui, sans-serif;
+  --display:    'Fraunces', Georgia, serif;
+  --mono:       'DM Mono', monospace;
+
+  /* ── Layout ──────────────────────────────────────────────── */
+  --nav-h:      52px;
+  --sidebar-w:  64px;
+  --radius:     12px;
+  --radius-sm:  8px;
+}
+
+html, body {
+  height: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--parchment);
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: var(--border-d); border-radius: 2px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ── Typography utilities ─────────────────────────────────── */
+.display { font-family: var(--display); }
+.mono    { font-family: var(--mono); }
+
+/* ── Common badge styles ──────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.badge-green  { background: var(--green-lt);  color: var(--green); }
+.badge-blue   { background: var(--blue-lt);   color: var(--blue);  }
+.badge-amber  { background: var(--amber-lt);  color: var(--amber); }
+.badge-red    { background: var(--red-lt);    color: var(--red);   }
+.badge-muted  { background: var(--parchment); color: var(--ink-4); border: 1px solid var(--border); }
+
+/* ── Button base ──────────────────────────────────────────── */
+.btn {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-d);
+  background: none;
+  cursor: pointer;
+  color: var(--ink-3);
+  transition: all .12s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn:hover          { background: var(--parchment); border-color: var(--ink-3); color: var(--ink); }
+.btn-primary        { background: var(--navy); color: white; border-color: var(--navy); }
+.btn-primary:hover  { background: var(--blue); }
+.btn-sm             { font-size: 12px; padding: 6px 12px; border-radius: 7px; }
+.btn-full           { width: 100%; justify-content: center; }
+
+/* ── Form elements ────────────────────────────────────────── */
+.input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border-d);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--parchment);
+  outline: none;
+  transition: border-color .12s;
+}
+
+.input:focus { border-color: var(--blue); background: var(--white); }
+.input::placeholder { color: var(--ink-4); }
+
+/* ── Card ─────────────────────────────────────────────────── */
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.card-body  { padding: 16px 18px; }
+
+/* ── Animations ───────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fade-up { animation: fadeUp .2s ease forwards; }
+.spin    { animation: spin .7s linear infinite; display: inline-block; }

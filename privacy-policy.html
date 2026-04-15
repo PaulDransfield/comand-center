@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Integritetspolicy — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1E2761;--blue:#185FA5;--ink:#1A1917;--charcoal:#3d3b38;
+  --muted:#6b6860;--hint:#9b9690;--cream:#faf8f4;--border:#e2e0db;
+  --font:'Instrument Sans',system-ui,sans-serif;
+  --serif:'Instrument Serif',Georgia,serif;
+}
+body{font-family:var(--font);font-size:15px;color:var(--ink);background:var(--cream);line-height:1.7;-webkit-font-smoothing:antialiased}
+.page{max-width:720px;margin:0 auto;padding:48px 24px 80px}
+.back{display:inline-block;font-size:13px;color:var(--blue);text-decoration:none;margin-bottom:32px}
+.back:hover{text-decoration:underline}
+h1{font-family:var(--serif);font-size:38px;font-weight:400;color:var(--navy);margin-bottom:8px}
+.meta{font-size:13px;color:var(--hint);margin-bottom:40px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+h2{font-size:20px;font-weight:600;color:var(--navy);margin:36px 0 12px;padding-top:8px;border-top:1.5px solid var(--border)}
+h3{font-size:16px;font-weight:600;color:var(--charcoal);margin:20px 0 8px}
+p{color:var(--charcoal);margin-bottom:12px}
+ul{padding-left:20px;margin-bottom:12px;color:var(--charcoal)}
+li{margin-bottom:6px}
+.highlight{background:#E8F3F7;border-left:3px solid #235971;border-radius:0 8px 8px 0;padding:14px 18px;margin:16px 0;font-size:14px}
+.warning{background:#FAEEDA;border-left:3px solid #854F0B;border-radius:0 8px 8px 0;padding:14px 18px;margin:16px 0;font-size:14px}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:13px}
+th{background:var(--navy);color:white;padding:9px 14px;text-align:left;font-weight:600;font-size:12px}
+td{padding:9px 14px;border-bottom:1px solid var(--border);color:var(--charcoal)}
+tr:nth-child(even) td{background:white}
+a{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<a class="back" href="/">← Tillbaka</a>
+
+<h1>Integritetspolicy</h1>
+<div class="meta">
+  Version 1.0 · Uppdaterad: mars 2026 · Command Center AB<br>
+  Denna policy gäller för tjänsten Command Center (commandcenter.se)
+</div>
+
+<p>Command Center AB ("vi", "oss", "vår") värnar om din integritet och behandlar dina personuppgifter i enlighet med EU:s dataskyddsförordning (GDPR) och den svenska dataskyddslagen (2018:218).</p>
+
+<h2>1. Personuppgiftsansvarig</h2>
+<p>
+  <strong>Command Center AB</strong><br>
+  Organisationsnummer: [Ditt org.nr]<br>
+  Adress: [Din adress]<br>
+  E-post: <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="c7b7b5aeb1a6a4be87a4a8aaaaa6a9a3a4a2a9b3a2b5e9b4a2">[email&#160;protected]</a><br>
+  Telefon: [Ditt telefonnummer]
+</p>
+<p>För frågor om dataskydd, kontakta vårt dataskyddsombud på: <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="d6b2a6b996b5b9bbbbb7b8b2b5b3b8a2b3a4f8a5b3">[email&#160;protected]</a></p>
+
+<h2>2. Vilka uppgifter vi samlar in</h2>
+
+<h3>2.1 Kontouppgifter (e-post/lösenord)</h3>
+<ul>
+  <li>E-postadress</li>
+  <li>Lösenord (lagras som bcrypt-hashvärde — aldrig i klartext)</li>
+  <li>Namn (valfritt)</li>
+</ul>
+
+<h3>2.2 BankID-autentisering</h3>
+
+<div class="highlight">
+  <strong>Hantering av personnummer via BankID</strong><br>
+  När du loggar in med BankID verifieras din identitet av BankID-systemet. Vi tar emot ditt personnummer som del av identitetsverifieringen.
+  <br><br>
+  <strong>Vi lagrar ALDRIG ditt personnummer i klartext.</strong>
+  Personnumret omvandlas omedelbart till ett kryptografiskt hashvärde (HMAC-SHA256) som inte går att återskapa till det ursprungliga personnumret. Endast detta hashvärde lagras, uteslutande för att identifiera din användare vid framtida inloggningar.
+</div>
+
+<p><strong>Rättslig grund:</strong> Behandlingen av personnummer via BankID baseras på ditt samtycke (artikel 6.1.a GDPR) som du ger när du väljer att logga in med BankID, samt på fullgörande av avtal (artikel 6.1.b GDPR) eftersom inloggning är nödvändig för att använda tjänsten.</p>
+
+<p><strong>Krav på samtycke:</strong> Personnummer utgör en särskild kategori av personuppgifter enligt svensk lag (dataskyddslagen 3 kap. 10 §). Vi behandlar personnummer enbart:</p>
+<ul>
+  <li>När du aktivt väljer att logga in med BankID</li>
+  <li>För identitetsverifiering och kontolänkning</li>
+  <li>I anonymiserad (hashad) form för sökning i vår databas</li>
+</ul>
+
+<p>Du kan när som helst ta bort kopplingen till BankID under Kontoinställningar, varpå hashvärdet raderas från vår databas.</p>
+
+<h3>2.3 Affärsdata</h3>
+<ul>
+  <li>Finansiell data (omsättning, kostnader, resultat) som du laddar upp</li>
+  <li>Fakturor och affärsdokument</li>
+  <li>Chatthistorik med AI-assistenten</li>
+  <li>Fortnox-kontodata (via OAuth-koppling)</li>
+</ul>
+
+<h3>2.4 Tekniska uppgifter</h3>
+<ul>
+  <li>IP-adress (krävs för BankID-autentisering)</li>
+  <li>Webbläsartyp och operativsystem</li>
+  <li>Inloggningstidpunkter (för säkerhets- och revisionslogg)</li>
+  <li>Cookies för sessionhantering</li>
+</ul>
+
+<h2>3. Ändamål och rättslig grund</h2>
+
+<table>
+  <thead><tr><th>Ändamål</th><th>Uppgifter</th><th>Rättslig grund</th></tr></thead>
+  <tbody>
+    <tr><td>Tillhandahålla tjänsten och hantera konto</td><td>Kontouppgifter, affärsdata</td><td>Fullgörande av avtal (art. 6.1.b)</td></tr>
+    <tr><td>BankID-autentisering</td><td>Personnummer (hash), IP-adress</td><td>Samtycke (art. 6.1.a) + Avtal (art. 6.1.b)</td></tr>
+    <tr><td>Fakturering och betalning</td><td>Kontaktuppgifter, betalningshistorik</td><td>Fullgörande av avtal (art. 6.1.b)</td></tr>
+    <tr><td>Säkerhet och bedrägeriförebyggande</td><td>IP-adress, inloggningslogg</td><td>Berättigat intresse (art. 6.1.f)</td></tr>
+    <tr><td>Rättslig förpliktelse (bokföring 7 år)</td><td>Fakturauppgifter</td><td>Rättslig förpliktelse (art. 6.1.c)</td></tr>
+    <tr><td>Kundservice och support</td><td>Kontouppgifter, ärendedata</td><td>Fullgörande av avtal (art. 6.1.b)</td></tr>
+  </tbody>
+</table>
+
+<h2>4. Lagring och säkerhet</h2>
+
+<h3>4.1 Var lagras data</h3>
+<p>All data lagras inom EU/EES av Supabase Ireland Limited (PostgreSQL-databas) och Vercel Inc. (med EU-region aktiverad). Vi överför inte personuppgifter till länder utanför EU/EES utan adekvat skydd.</p>
+
+<h3>4.2 Lagringstider</h3>
+<table>
+  <thead><tr><th>Typ av uppgift</th><th>Lagringstid</th></tr></thead>
+  <tbody>
+    <tr><td>Kontouppgifter</td><td>Tills kontot raderas, sedan 30 dagar</td></tr>
+    <tr><td>Personnummer (hash)</td><td>Tills BankID-koppling tas bort eller kontot raderas</td></tr>
+    <tr><td>Affärsdata och dokument</td><td>Tills kontot raderas (+ 90 dagars grace period)</td></tr>
+    <tr><td>Fakturaunderlag</td><td>7 år (bokföringslagen)</td></tr>
+    <tr><td>Säkerhetsloggar</td><td>12 månader</td></tr>
+    <tr><td>BankID-sessioner</td><td>3 minuter (automatisk radering)</td></tr>
+  </tbody>
+</table>
+
+<h3>4.3 Säkerhetsåtgärder</h3>
+<ul>
+  <li>All kommunikation krypteras med TLS 1.3</li>
+  <li>Lösenord lagras med bcrypt (kostnadsfaktor 12)</li>
+  <li>Personnummer lagras uteslutande som HMAC-SHA256-hash</li>
+  <li>Databas med Row Level Security — varje kund ser bara sin egen data</li>
+  <li>Regelbundna säkerhetskopieringar med kryptering</li>
+</ul>
+
+<h2>5. Dina rättigheter</h2>
+<p>Under GDPR har du följande rättigheter:</p>
+<ul>
+  <li><strong>Rätt till tillgång</strong> — Begär en kopia av alla personuppgifter vi har om dig</li>
+  <li><strong>Rätt till rättelse</strong> — Korrigera felaktiga uppgifter</li>
+  <li><strong>Rätt till radering</strong> — "Rätten att bli bortglömd" (med lagstadgade undantag)</li>
+  <li><strong>Rätt till begränsning</strong> — Begränsa behandlingen i vissa fall</li>
+  <li><strong>Rätt till dataportabilitet</strong> — Få ut din data i maskinläsbart format</li>
+  <li><strong>Rätt att invända</strong> — Mot behandling baserad på berättigat intresse</li>
+  <li><strong>Rätt att återkalla samtycke</strong> — Gäller behandling baserad på samtycke (inkl. BankID)</li>
+</ul>
+
+<p>För att utöva dina rättigheter, kontakta oss på <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="f686849f8097958fb695999b9b979892959398829384d88593">[email&#160;protected]</a>. Vi svarar inom 30 dagar. Du kan också lämna klagomål till <a href="https://www.imy.se" target="_blank">Integritetsskyddsmyndigheten (IMY)</a>.</p>
+
+<h2>6. Personuppgiftsbiträden (tredjepartsleverantörer)</h2>
+<table>
+  <thead><tr><th>Leverantör</th><th>Syfte</th><th>Plats</th><th>Avtal</th></tr></thead>
+  <tbody>
+    <tr><td>Supabase Ireland Limited</td><td>Databas, autentisering</td><td>EU (Irland)</td><td>DPA via Supabase</td></tr>
+    <tr><td>Vercel Inc.</td><td>Webbhosting</td><td>EU-region</td><td>DPA via Vercel</td></tr>
+    <tr><td>Stripe Inc.</td><td>Betalningar</td><td>EU</td><td>DPA via Stripe</td></tr>
+    <tr><td>Resend Inc.</td><td>E-postutskick</td><td>EU-region</td><td>DPA via Resend</td></tr>
+    <tr><td>Finansiell ID-Teknik BID AB</td><td>BankID-verifiering</td><td>Sverige</td><td>Relying Party-avtal</td></tr>
+    <tr><td>Anthropic PBC</td><td>AI-funktioner</td><td>USA (SCCs)</td><td>DPA via Anthropic</td></tr>
+  </tbody>
+</table>
+
+<div class="warning">
+  <strong>OBS: Anthropic (Claude AI) och USA-överföringar</strong><br>
+  AI-funktioner använder Anthropic PBC, ett amerikanskt företag. Data som skickas till AI-chatten kan innehålla affärsinformation. Överföringen skyddas av EU:s standardavtalsklausuler (SCCs). Undvik att inkludera personuppgifter (t.ex. anställdas namn) i AI-chattens frågor.
+</div>
+
+<h2>7. Cookies</h2>
+<p>Vi använder nödvändiga cookies för sessionshantering (inloggningsstatus). Vi använder inga spårningscookies eller reklam-cookies.</p>
+
+<h2>8. Kontakt</h2>
+<p>
+  Dataskyddsombud: <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="6a0e1a052a090507070b040e090f041e0f1844190f">[email&#160;protected]</a><br>
+  Al

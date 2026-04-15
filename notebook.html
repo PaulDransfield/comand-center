@@ -1,0 +1,1989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Notebook — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   DESIGN TOKENS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  /* surfaces */
+  --parchment:#F6F3EE; --off-white:#FAFAF8; --white:#FFFFFF;
+  --ink-deep:#1A1714; --ink:#2D2B28; --ink-2:#4A4844;
+  --muted:#7A7570; --hint:#ACA9A3; --dust:#D8D4CD;
+  --border:#E3DED7; --border-d:#C9C4BC;
+
+  /* brand */
+  --navy:#1C2B5E; --blue:#1A56C4; --blue-lt:#EEF4FF; --blue-mid:#BDD1F8;
+  --teal:#0F6E70; --teal-lt:#E6F5F5; --teal-mid:#90D4D4;
+  --sage:#2E5E3A;  --sage-lt:#EAF3EC;  --sage-mid:#9FCDA8;
+  --amber:#7A4D0A; --amber-lt:#FEF5E7; --amber-mid:#F5C97A;
+  --rust:#8B2D0A;  --rust-lt:#FEF0EB;  --rust-mid:#F5A07A;
+  --violet:#4A1D96;--violet-lt:#F3EEFF;--violet-mid:#C4A9F5;
+  --gold:#7A5A0A;  --gold-lt:#FFFBE6;
+
+  /* layout */
+  --sources-w:280px; --studio-w:288px;
+  --font:'DM Sans',system-ui,sans-serif;
+  --serif:'Lora',Georgia,serif;
+  --mono:'DM Mono',monospace;
+}
+
+html,body{height:100%;overflow:hidden;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{font-family:var(--font);font-size:14px;color:var(--ink);background:var(--parchment)}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:2px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   APP SHELL — 3 panel layout
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.app{display:grid;grid-template-rows:48px 1fr;height:100vh;overflow:hidden}
+
+/* Top navigation */
+.topbar{
+  background:var(--navy);display:flex;align-items:center;
+  padding:0 16px;gap:0;z-index:100;
+}
+.tb-brand{font-family:var(--serif);font-size:14px;font-weight:500;color:rgba(255,255,255,.9);
+  padding:0 12px;border-right:1px solid rgba(255,255,255,.1);margin-right:4px}
+.tb-notebook-picker{
+  display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;
+  cursor:pointer;color:rgba(255,255,255,.8);font-size:13px;transition:all .12s;
+  border:1px solid transparent;
+}
+.tb-notebook-picker:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.1)}
+.tb-notebook-name{font-weight:500;max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-chevron{font-size:10px;opacity:.6;transition:transform .15s}
+.tb-notebook-picker.open .tb-chevron{transform:rotate(180deg)}
+.tb-sep{flex:1}
+.tb-search-btn{
+  display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:7px;
+  cursor:pointer;color:rgba(255,255,255,.5);font-size:12px;font-family:var(--mono);
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);
+  transition:all .12s;margin-right:8px;
+}
+.tb-search-btn:hover{color:rgba(255,255,255,.8);background:rgba(255,255,255,.12)}
+
+/* Body = 3 panels */
+.panels{display:grid;grid-template-columns:var(--sources-w) 1fr var(--studio-w);overflow:hidden;height:100%}
+.panel{display:flex;flex-direction:column;overflow:hidden;background:var(--off-white)}
+.panel-sources{border-right:1px solid var(--border)}
+.panel-studio {border-left:1px solid var(--border)}
+
+/* Panel header */
+.ph{height:44px;border-bottom:1px solid var(--border);display:flex;align-items:center;
+  padding:0 14px;gap:8px;flex-shrink:0;background:var(--white)}
+.ph-title{font-size:12px;font-weight:600;color:var(--ink-2);letter-spacing:.01em}
+.ph-count{font-size:10px;color:var(--hint);font-family:var(--mono)}
+.ph-flex{flex:1}
+.ph-btn{
+  padding:4px 9px;border-radius:6px;border:1px solid var(--border-d);background:none;
+  font-family:var(--font);font-size:11px;font-weight:500;color:var(--muted);
+  cursor:pointer;transition:all .1s;display:flex;align-items:center;gap:4px;
+}
+.ph-btn:hover{background:var(--parchment);color:var(--ink);border-color:var(--border-d)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   NOTEBOOK DROPDOWN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.nb-dropdown{
+  position:absolute;top:52px;left:0;width:300px;
+  background:var(--white);border:1px solid var(--border-d);border-radius:11px;
+  box-shadow:0 16px 48px rgba(0,0,0,.18),0 4px 12px rgba(0,0,0,.08);z-index:300;
+  overflow:hidden;opacity:0;transform:translateY(-6px);pointer-events:none;
+  transition:opacity .14s,transform .14s;
+}
+.nb-dropdown.open{opacity:1;transform:none;pointer-events:all}
+.nb-search{padding:10px;border-bottom:1px solid var(--border)}
+.nb-search input{
+  width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:7px;
+  font-size:12px;font-family:var(--font);color:var(--ink);background:var(--parchment);outline:none;
+}
+.nb-search input:focus{border-color:var(--blue)}
+.nb-list{max-height:280px;overflow-y:auto;padding:5px 0}
+.nb-item{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;transition:background .08s;
+}
+.nb-item:hover{background:var(--parchment)}
+.nb-item.active{background:var(--blue-lt)}
+.nb-icon{width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+.nb-info{flex:1;min-width:0}
+.nb-name{font-size:12px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-meta{font-size:10px;color:var(--hint);margin-top:1px;font-family:var(--mono)}
+.nb-check{color:var(--blue);font-size:13px;opacity:0}
+.nb-item.active .nb-check{opacity:1}
+.nb-add{
+  display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;
+  color:var(--blue);font-size:12px;font-weight:500;border-top:1px solid var(--border);
+  transition:background .08s;
+}
+.nb-add:hover{background:var(--blue-lt)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   SOURCES PANEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.src-list{flex:1;overflow-y:auto;padding:6px 0}
+
+.upload-zone{
+  margin:10px;border:1.5px dashed var(--border-d);border-radius:9px;
+  padding:12px;text-align:center;cursor:pointer;transition:all .14s;position:relative;
+}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--blue);background:var(--blue-lt)}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.uz-label{font-size:12px;font-weight:500;color:var(--muted);margin-top:4px}
+.uz-types{font-size:10px;color:var(--hint);margin-top:2px;font-family:var(--mono)}
+
+/* Source item */
+.src-item{
+  padding:8px 12px;cursor:pointer;transition:all .1s;
+  display:flex;align-items:flex-start;gap:8px;border-left:2.5px solid transparent;
+  position:relative;
+}
+.src-item:hover{background:rgba(0,0,0,.025)}
+.src-item.selected{background:var(--blue-lt);border-left-color:var(--blue)}
+.src-item.pinned .src-icon::after{
+  content:'📌';font-size:9px;position:absolute;bottom:-2px;right:-3px;
+}
+.src-icon{
+  width:28px;height:28px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;
+  position:relative;font-family:var(--mono);
+}
+/* type colours */
+.si-pdf {background:#FDEEEE;color:#B71C1C}
+.si-xlsx{background:#E8F5E9;color:#1B5E20}
+.si-docx{background:#E3F2FD;color:#0D47A1}
+.si-csv {background:#E0F2F1;color:#00695C}
+.si-txt {background:#F3E5F5;color:#4A148C}
+.si-img {background:#FFF3E0;color:#E65100}
+
+.src-body{flex:1;min-width:0}
+.src-name{font-size:12px;font-weight:500;color:var(--ink);line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.src-meta{font-size:10px;color:var(--hint);margin-top:2px;display:flex;gap:6px;font-family:var(--mono)}
+.src-note{font-size:10px;color:var(--teal);margin-top:3px;font-style:italic;line-height:1.4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.src-type-badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;width:fit-content;text-transform:uppercase;letter-spacing:.05em}
+.stb-invoice  {background:#FEF3C7;color:#92400E}
+.stb-p_and_l  {background:#ECFDF5;color:#065F46}
+.stb-bank     {background:#EEF4FF;color:#1D4ED8}
+.stb-budget   {background:#F5F3FF;color:#5B21B6}
+.stb-other    {background:#F9FAFB;color:#6B7280}
+
+/* Source hover actions */
+.src-actions{position:absolute;right:8px;top:8px;display:none;gap:3px}
+.src-item:hover .src-actions{display:flex}
+.sa-btn{
+  width:22px;height:22px;border-radius:5px;border:none;background:none;
+  cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;
+  color:var(--hint);transition:all .1s;
+}
+.sa-btn:hover{background:var(--border);color:var(--ink)}
+
+/* Source note editor */
+.src-note-editor{
+  margin:0 12px 8px;display:none;
+}
+.src-note-editor.open{display:block}
+.sne-input{
+  width:100%;border:1px solid var(--teal-mid);border-radius:7px;padding:6px 9px;
+  font-size:11px;font-family:var(--font);color:var(--ink);resize:none;outline:none;
+  background:var(--teal-lt);line-height:1.5;min-height:54px;
+  transition:border-color .12s;
+}
+.sne-input:focus{border-color:var(--teal)}
+.sne-footer{display:flex;justify-content:flex-end;gap:5px;margin-top:4px}
+
+/* Usage strip */
+.usage-strip{
+  padding:9px 12px;border-top:1px solid var(--border);flex-shrink:0;
+  background:var(--parchment);font-size:11px;color:var(--hint);
+}
+.usage-bar{height:3px;background:var(--border);border-radius:2px;margin:4px 0;overflow:hidden}
+.ub-fill{height:100%;border-radius:2px;background:var(--blue);transition:width .4s}
+.ub-fill.warn{background:var(--amber)}
+.ub-fill.crit{background:var(--rust)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CHAT PANEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.chat-panel{background:var(--parchment);display:flex;flex-direction:column}
+.chat-header{
+  background:var(--white);border-bottom:1px solid var(--border);
+  padding:10px 16px;flex-shrink:0;
+}
+.ch-row1{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+.ch-title{font-family:var(--serif);font-size:16px;font-weight:500;color:var(--navy)}
+.ch-mode-toggle{
+  display:flex;background:var(--parchment);border-radius:7px;padding:2px;gap:1px;
+  border:1px solid var(--border);
+}
+.cmt-btn{
+  padding:4px 10px;border-radius:5px;border:none;background:none;
+  font-family:var(--font);font-size:11px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .1s;
+}
+.cmt-btn.active{background:var(--white);color:var(--navy);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.ch-row2{font-size:11px;color:var(--hint);display:flex;align-items:center;gap:8px}
+.grounding-badge{
+  display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;
+  padding:2px 7px;border-radius:8px;background:var(--sage-lt);color:var(--sage);
+  border:1px solid var(--sage-mid);
+}
+
+/* Messages */
+.chat-msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.chat-empty{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:32px;gap:8px;
+}
+.ce-icon{font-size:40px;opacity:.25;margin-bottom:6px}
+.ce-title{font-family:var(--serif);font-size:18px;font-weight:400;font-style:italic;color:var(--ink-2)}
+.ce-sub{font-size:12px;color:var(--muted);max-width:300px;line-height:1.6}
+
+/* Suggestion pills */
+.suggestions{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:14px}
+.sugg-pill{
+  padding:6px 12px;border:1px solid var(--border-d);border-radius:16px;
+  background:var(--white);font-size:11px;font-weight:500;color:var(--ink-2);
+  cursor:pointer;transition:all .1s;
+}
+.sugg-pill:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-lt)}
+
+/* Message bubbles */
+.msg{animation:fadeUp .18s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+.msg-user{display:flex;justify-content:flex-end}
+.msg-user .bubble{
+  background:var(--navy);color:white;border-radius:16px 16px 3px 16px;
+  padding:9px 14px;max-width:75%;font-size:13px;line-height:1.6;
+}
+.msg-user .bubble.synthesis{background:var(--teal)}
+.msg-user .bubble.compare   {background:var(--violet)}
+
+.msg-ai{display:flex;gap:9px}
+.ai-avatar{
+  width:26px;height:26px;border-radius:50%;background:var(--navy);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--serif);font-size:12px;font-weight:600;color:white;
+  flex-shrink:0;margin-top:2px;
+}
+.ai-body{flex:1;min-width:0}
+.ai-bubble{
+  background:var(--white);border:1px solid var(--border);border-radius:3px 14px 14px 14px;
+  padding:11px 14px;font-size:13px;line-height:1.7;color:var(--ink);
+}
+.ai-bubble p{margin-bottom:7px}
+.ai-bubble p:last-child{margin-bottom:0}
+.ai-bubble strong{font-weight:600;color:var(--ink-deep)}
+.ai-bubble em{color:var(--muted);font-style:italic}
+.ai-bubble ul,ol{padding-left:18px;margin:4px 0}
+.ai-bubble li{margin-bottom:3px}
+.ai-bubble h3{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:5px;margin-top:10px}
+.ai-bubble hr{border:none;border-top:1px solid var(--border);margin:10px 0}
+.ai-bubble table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}
+.ai-bubble th{background:var(--parchment);padding:5px 8px;border:1px solid var(--border);font-weight:600;text-align:left}
+.ai-bubble td{padding:4px 8px;border:1px solid var(--border)}
+
+/* Confidence bar */
+.confidence-row{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)}
+.conf-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--hint)}
+.conf-track{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.conf-fill{height:100%;border-radius:2px;transition:width .6s ease}
+.cf-high{background:var(--sage)}
+.cf-med {background:var(--amber)}
+.cf-low {background:var(--rust)}
+.conf-pct{font-size:10px;font-family:var(--mono);font-weight:500}
+
+/* Citations row */
+.citations-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.cite-chip{
+  display:inline-flex;align-items:center;gap:4px;
+  background:var(--blue-lt);border:1px solid var(--blue-mid);
+  color:var(--blue);font-size:10px;font-weight:600;
+  padding:3px 8px;border-radius:10px;cursor:pointer;transition:all .1s;
+}
+.cite-chip:hover{background:var(--blue-mid);color:var(--navy)}
+.cite-num{
+  width:13px;height:13px;background:var(--blue);color:white;
+  border-radius:50%;font-size:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+
+/* AI meta row */
+.ai-meta{display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.ai-meta-btn{
+  font-size:10px;color:var(--hint);cursor:pointer;background:none;border:none;
+  font-family:var(--font);padding:2px 6px;border-radius:5px;transition:all .1s;
+  display:flex;align-items:center;gap:3px;
+}
+.ai-meta-btn:hover{background:var(--border);color:var(--ink)}
+.ai-meta-btn.pinned{color:var(--amber);background:var(--amber-lt)}
+.ai-meta-btn.playing{color:var(--teal);background:var(--teal-lt)}
+
+/* Not enough info state */
+.msg-noeinfo .ai-bubble{background:var(--parchment);border-style:dashed;color:var(--muted)}
+
+/* Stream cursor */
+.stream-cur{
+  display:inline-block;width:2px;height:13px;background:var(--blue);
+  margin-left:1px;vertical-align:middle;animation:blink .7s step-end infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* Thinking indicator */
+.thinking{display:flex;gap:4px;padding:8px 12px}
+.t-dot{width:7px;height:7px;border-radius:50%;background:var(--hint);animation:bounce 1.2s ease infinite}
+.t-dot:nth-child(2){animation-delay:.2s}
+.t-dot:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+/* Chat input */
+.chat-input-area{
+  padding:10px 14px;border-top:1px solid var(--border);flex-shrink:0;background:var(--white);
+}
+.mode-bar{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.mode-chip{
+  padding:3px 9px;border:1px solid var(--border);border-radius:12px;
+  font-size:11px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .1s;background:none;
+  font-family:var(--font);
+}
+.mode-chip:hover{border-color:var(--blue);color:var(--blue)}
+.mode-chip.active{background:var(--navy);color:white;border-color:var(--navy)}
+.input-wrap{
+  display:flex;align-items:flex-end;gap:8px;border:1.5px solid var(--border-d);
+  border-radius:11px;padding:8px 10px;background:var(--parchment);transition:border-color .14s;
+}
+.input-wrap:focus-within{border-color:var(--blue)}
+.chat-ta{
+  flex:1;border:none;background:none;font-family:var(--font);font-size:13px;
+  color:var(--ink);resize:none;outline:none;max-height:120px;min-height:21px;line-height:1.5;
+}
+.chat-ta::placeholder{color:var(--hint)}
+.send-btn{
+  width:32px;height:32px;border-radius:8px;background:var(--navy);border:none;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:15px;color:white;flex-shrink:0;transition:background .12s;
+}
+.send-btn:hover{background:var(--blue)}
+.send-btn:disabled{background:var(--border-d);cursor:not-allowed}
+.input-meta{font-size:10px;color:var(--hint);margin-top:5px;display:flex;align-items:center;gap:8px}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   STUDIO PANEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.studio-scroll{flex:1;overflow-y:auto;padding:10px}
+
+/* Studio section */
+.studio-sec{
+  border:1px solid var(--border);border-radius:11px;overflow:hidden;margin-bottom:10px;
+  background:var(--white);
+}
+.ss-header{
+  padding:11px 14px;display:flex;align-items:center;justify-content:space-between;
+  cursor:pointer;transition:background .1s;gap:8px;
+}
+.ss-header:hover{background:var(--parchment)}
+.ss-icon{font-size:16px}
+.ss-title{font-size:12px;font-weight:600;color:var(--ink);flex:1}
+.ss-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.06em}
+.ssb-new{background:var(--sage-lt);color:var(--sage)}
+.ssb-limit{background:var(--amber-lt);color:var(--amber)}
+.ss-chevron{font-size:10px;color:var(--hint);transition:transform .15s}
+.ss-header.open .ss-chevron{transform:rotate(180deg)}
+.ss-body{padding:12px 14px;border-top:1px solid var(--border);display:none}
+.ss-body.open{display:block}
+
+/* Audio player */
+.audio-gen-options{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.ao-btn{
+  padding:4px 10px;border:1.5px solid var(--border);border-radius:8px;
+  font-family:var(--font);font-size:11px;font-weight:500;color:var(--muted);
+  cursor:pointer;transition:all .1s;background:none;
+}
+.ao-btn.selected{border-color:var(--teal);background:var(--teal-lt);color:var(--teal)}
+
+.audio-player{
+  background:var(--ink-deep);border-radius:10px;padding:12px 14px;
+  color:white;margin-top:8px;display:none;
+}
+.audio-player.visible{display:block;animation:fadeUp .2s ease}
+.ap-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;opacity:.5;margin-bottom:10px}
+.ap-main{display:flex;align-items:center;gap:10px}
+.ap-play{
+  width:34px;height:34px;border-radius:50%;background:white;color:var(--ink-deep);
+  border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  font-size:13px;flex-shrink:0;transition:transform .1s;
+}
+.ap-play:hover{transform:scale(1.05)}
+.ap-waveform{
+  flex:1;height:28px;background:rgba(255,255,255,.08);border-radius:5px;
+  cursor:pointer;position:relative;overflow:hidden;
+}
+.ap-progress{height:100%;background:rgba(255,255,255,.2);border-radius:5px;transition:width .15s}
+.ap-waveform::after{
+  content:'';position:absolute;top:50%;left:0;right:0;height:2px;
+  background:rgba(255,255,255,.15);transform:translateY(-50%);
+}
+.ap-time{font-size:10px;opacity:.4;font-family:var(--mono);white-space:nowrap}
+.ap-actions{display:flex;gap:5px;margin-top:10px}
+.ap-action-btn{
+  flex:1;padding:5px 8px;background:rgba(255,255,255,.1);border:none;border-radius:6px;
+  color:rgba(255,255,255,.7);font-size:11px;font-family:var(--font);cursor:pointer;
+  transition:background .1s;
+}
+.ap-action-btn:hover{background:rgba(255,255,255,.2);color:white}
+
+/* Pinned answers */
+.pinned-list{display:flex;flex-direction:column;gap:7px}
+.pinned-item{
+  background:var(--parchment);border:1px solid var(--border);border-radius:8px;
+  padding:9px 11px;font-size:11px;line-height:1.6;color:var(--ink-2);position:relative;
+}
+.pinned-item .pi-q{font-weight:600;color:var(--navy);margin-bottom:4px;font-size:11px}
+.pinned-item .pi-a{color:var(--muted)}
+.pinned-item .pi-del{
+  position:absolute;top:6px;right:7px;background:none;border:none;cursor:pointer;
+  color:var(--hint);font-size:13px;opacity:0;transition:opacity .1s;
+}
+.pinned-item:hover .pi-del{opacity:1}
+
+/* Notes editor */
+.notes-area{
+  width:100%;min-height:80px;border:1px solid var(--border);border-radius:8px;
+  padding:9px 11px;font-family:var(--serif);font-size:12px;color:var(--ink);
+  line-height:1.7;resize:none;outline:none;background:var(--parchment);
+  transition:border-color .12s;
+}
+.notes-area:focus{border-color:var(--blue)}
+
+/* Study guide */
+.study-guide-out{
+  background:var(--parchment);border:1px solid var(--border);border-radius:8px;
+  padding:11px 12px;font-size:11px;line-height:1.7;color:var(--ink-2);
+  white-space:pre-wrap;display:none;max-height:300px;overflow-y:auto;margin-top:8px;
+}
+.study-guide-out.visible{display:block}
+
+/* Suggested questions */
+.sq-list{display:flex;flex-direction:column;gap:5px}
+.sq-item{
+  background:var(--parchment);border:1px solid var(--border);border-radius:8px;
+  padding:8px 11px;font-size:11px;color:var(--ink-2);cursor:pointer;
+  transition:all .1s;display:flex;align-items:center;gap:7px;
+}
+.sq-item:hover{border-color:var(--blue);background:var(--blue-lt);color:var(--blue)}
+.sq-arrow{color:var(--hint);font-size:13px;margin-left:auto;flex-shrink:0}
+
+/* Buttons */
+.btn{
+  font-family:var(--font);font-size:12px;font-weight:500;padding:6px 13px;
+  border-radius:7px;border:1.5px solid var(--border-d);background:none;cursor:pointer;
+  color:var(--muted);transition:all .1s;display:inline-flex;align-items:center;gap:5px;
+}
+.btn:hover{background:var(--parchment);color:var(--ink)}
+.btn-primary{background:var(--navy);color:white;border-color:var(--navy)}
+.btn-primary:hover{background:var(--blue)}
+.btn-teal{background:var(--teal);color:white;border-color:var(--teal)}
+.btn-teal:hover{background:#0a5557}
+.btn-full{width:100%;justify-content:center}
+.btn-sm{font-size:11px;padding:4px 10px;border-radius:6px}
+.spin{animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   CITATION SIDEBAR
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.cite-sidebar{
+  position:fixed;right:var(--studio-w);top:48px;bottom:0;width:320px;
+  background:var(--white);border-left:1px solid var(--border-d);
+  box-shadow:-6px 0 24px rgba(0,0,0,.08);z-index:200;
+  display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);
+}
+.cite-sidebar.open{transform:translateX(0)}
+.cs-header{
+  padding:12px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+}
+.cs-title{font-family:var(--serif);font-size:14px;font-weight:500;flex:1;color:var(--navy)}
+.cs-close{background:none;border:none;cursor:pointer;font-size:18px;color:var(--hint);padding:2px}
+.cs-body{flex:1;overflow-y:auto;padding:14px}
+.cs-location{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;
+  color:var(--hint);margin-bottom:8px;font-family:var(--mono);
+}
+.cs-excerpt{
+  font-size:13px;line-height:1.75;color:var(--ink);
+  background:var(--parchment);border-radius:8px;padding:11px 13px;
+  border-left:3px solid var(--blue);font-style:italic;
+}
+.cs-excerpt mark{background:rgba(26,86,196,.12);color:var(--blue);border-radius:2px;padding:0 2px;font-style:normal}
+.cs-score{font-size:10px;color:var(--hint);margin-top:7px;font-family:var(--mono)}
+.cs-full-btn{margin-top:10px}
+.cs-annot{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.cs-annot-label{font-size:11px;font-weight:600;color:var(--muted);margin-bottom:5px}
+.cs-annot-input{
+  width:100%;border:1px solid var(--border);border-radius:7px;
+  padding:7px 10px;font-size:12px;font-family:var(--font);color:var(--ink);
+  resize:none;outline:none;background:var(--parchment);min-height:60px;
+  transition:border-color .12s;
+}
+.cs-annot-input:focus{border-color:var(--teal)}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GLOBAL SEARCH OVERLAY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.search-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;
+  display:flex;align-items:flex-start;justify-content:center;padding-top:14vh;
+  opacity:0;pointer-events:none;transition:opacity .15s;backdrop-filter:blur(2px);
+}
+.search-overlay.open{opacity:1;pointer-events:all}
+.search-box{
+  background:var(--white);border-radius:13px;width:580px;max-width:92vw;
+  box-shadow:0 32px 80px rgba(0,0,0,.25);overflow:hidden;
+  transform:translateY(-10px) scale(.97);transition:transform .15s;
+}
+.search-overlay.open .search-box{transform:none}
+.search-row{
+  display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border);
+}
+.search-input{
+  flex:1;border:none;outline:none;font-family:var(--font);font-size:15px;color:var(--ink);background:none;
+}
+.search-input::placeholder{color:var(--dust)}
+.search-results{max-height:380px;overflow-y:auto}
+.sr-section{padding:5px 0}
+.sr-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--hint);padding:7px 16px 3px}
+.sr-item{
+  display:flex;align-items:flex-start;gap:10px;padding:9px 16px;cursor:pointer;transition:background .08s;
+}
+.sr-item:hover{background:var(--parchment)}
+.sr-nb-tag{font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;background:var(--parchment);color:var(--hint);border:1px solid var(--border);white-space:nowrap}
+.sr-name{font-size:13px;font-weight:500;color:var(--ink)}
+.sr-ctx{font-size:11px;color:var(--muted);margin-top:1px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.search-empty{padding:24px;text-align:center;color:var(--hint);font-size:13px}
+.search-footer{padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:14px;font-size:10px;color:var(--hint);font-family:var(--mono)}
+.sf-key{background:var(--parchment);border:1px solid var(--border);border-radius:3px;padding:1px 5px}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   TOAST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+.toast{
+  position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(60px);
+  background:var(--ink-deep);color:white;padding:9px 16px;border-radius:9px;
+  font-size:12px;font-weight:500;z-index:999;transition:all .25s;opacity:0;white-space:nowrap;
+}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+.toast.ok{background:var(--sage)}
+.toast.err{background:var(--rust)}
+</style>
+</head>
+<body>
+
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     APP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="tb-brand">Notebook</div>
+    <div class="tb-notebook-picker" id="nb-trigger" onclick="toggleNbDropdown()">
+      <span id="nb-icon-display">📊</span>
+      <span class="tb-notebook-name" id="nb-name-display">Q1 2026 — Financials</span>
+      <span class="tb-chevron">▼</span>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-search-btn" onclick="openSearch()">
+      <span>⌘K</span> Search all notebooks
+    </div>
+  </div>
+
+  <!-- NOTEBOOK DROPDOWN -->
+  <div class="nb-dropdown" id="nb-dropdown" style="position:absolute;top:48px;left:85px">
+    <div class="nb-search"><input type="text" placeholder="Search notebooks…" id="nb-search-input" oninput="filterNotebooks(this.value)"></div>
+    <div class="nb-list" id="nb-list"></div>
+    <div class="nb-add" onclick="createNotebook()">
+      <span style="font-size:16px">+</span> New notebook
+    </div>
+  </div>
+
+  <!-- 3 PANELS -->
+  <div class="panels">
+
+    <!-- ━━ PANEL 1: SOURCES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+    <div class="panel panel-sources">
+      <div class="ph">
+        <div class="ph-title">Sources</div>
+        <div class="ph-count" id="src-count">0 docs</div>
+        <div class="ph-flex"></div>
+        <button class="ph-btn" onclick="pinAllSources()">Pin all</button>
+      </div>
+
+      <label class="upload-zone" id="upload-zone">
+        <input type="file" id="file-input" multiple accept=".pdf,.docx,.xlsx,.csv,.txt,.md,.jpg,.png" onchange="handleUpload(this.files)">
+        <div style="font-size:22px;margin-bottom:3px">+</div>
+        <div class="uz-label">Add sources</div>
+        <div class="uz-types">PDF · DOCX · XLSX · CSV · TXT · images</div>
+      </label>
+
+      <div class="src-list" id="src-list"></div>
+
+      <div class="usage-strip" id="usage-strip">
+        <div style="display:flex;justify-content:space-between">
+          <span>AI usage this month</span>
+          <span id="usage-pct-label">—</span>
+        </div>
+        <div class="usage-bar"><div class="ub-fill" id="ub-fill" style="width:0%"></div></div>
+        <div style="display:flex;justify-content:space-between">
+          <span id="usage-detail">Loading…</span>
+          <a href="/upgrade" style="color:var(--blue);font-size:10px;text-decoration:none" id="upgrade-link" hidden>Upgrade ↗</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ━━ PANEL 2: CHAT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+    <div class="panel chat-panel">
+      <div class="chat-header">
+        <div class="ch-row1">
+          <div class="ch-title" id="chat-nb-title">Q1 2026 — Financials</div>
+          <div style="flex:1"></div>
+          <div class="ch-mode-toggle">
+            <button class="cmt-btn active" onclick="setChatMode('source',this)">Source-grounded</button>
+            <button class="cmt-btn"        onclick="setChatMode('free',this)">Free mode</button>
+          </div>
+        </div>
+        <div class="ch-row2">
+          <span class="grounding-badge">🔒 Answers from your sources only</span>
+          <span id="chat-src-count" style="font-family:var(--mono)">0 sources</span>
+        </div>
+      </div>
+
+      <div class="chat-msgs" id="chat-msgs">
+        <div class="chat-empty" id="chat-empty">
+          <div class="ce-icon">📚</div>
+          <div class="ce-title">Ask about your sources</div>
+          <div class="ce-sub">Upload documents on the left. Every answer is grounded in your sources with citations and confidence scores.</div>
+          <div class="suggestions" id="suggestions"></div>
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <div class="mode-bar">
+          <button class="mode-chip active" data-mode="ask"     onclick="setInputMode('ask',this)">Ask</button>
+          <button class="mode-chip"        data-mode="compare" onclick="setInputMode('compare',this)">Compare docs</button>
+          <button class="mode-chip"        data-mode="contra"  onclick="setInputMode('contra',this)">Find contradictions</button>
+          <button class="mode-chip"        data-mode="synth"   onclick="setInputMode('synth',this)">Synthesise</button>
+        </div>
+        <div class="input-wrap">
+          <textarea class="chat-ta" id="chat-ta" rows="1"
+                    placeholder="Ask anything about your sources…"
+                    onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()">→</button>
+        </div>
+        <div class="input-meta">
+          <span id="grounding-note">Answers use source documents only · <span id="src-count-note">0</span> sources loaded</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ━━ PANEL 3: STUDIO ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+    <div class="panel panel-studio">
+      <div class="ph">
+        <div class="ph-title">Studio</div>
+        <div class="ph-flex"></div>
+      </div>
+      <div class="studio-scroll">
+
+        <!-- AUDIO OVERVIEW -->
+        <div class="studio-sec">
+          <div class="ss-header" onclick="toggleStudio(this)">
+            <span class="ss-icon">🎧</span>
+            <span class="ss-title">Audio Overview</span>
+            <span class="ss-badge ssb-limit" id="audio-badge">3 left</span>
+            <span class="ss-chevron">▼</span>
+          </div>
+          <div class="ss-body">
+            <div class="audio-gen-options">
+              <button class="ao-btn selected" data-fmt="deep_dive" onclick="selectAudioFmt(this)">Deep dive</button>
+              <button class="ao-btn" data-fmt="brief"    onclick="selectAudioFmt(this)">Brief</button>
+              <button class="ao-btn" data-fmt="debate"   onclick="selectAudioFmt(this)">Debate</button>
+              <button class="ao-btn" data-fmt="critique" onclick="selectAudioFmt(this)">Critique</button>
+            </div>
+            <textarea id="audio-focus" class="notes-area" style="min-height:44px;font-family:var(--font);font-size:11px"
+                      placeholder="Optional: focus on a specific topic (e.g. 'staff costs')…"></textarea>
+            <div style="margin-top:8px">
+              <button class="btn btn-teal btn-full" id="audio-gen-btn" onclick="generateAudio()">Generate audio overview</button>
+            </div>
+            <div class="audio-player" id="audio-player">
+              <div class="ap-title" id="ap-title">Deep Dive · Generating…</div>
+              <div class="ap-main">
+                <button class="ap-play" id="ap-play-btn" onclick="toggleAudio()">▶</button>
+                <div class="ap-waveform" onclick="seekAudio(event)">
+                  <div class="ap-progress" id="ap-prog" style="width:0%"></div>
+                </div>
+                <span class="ap-time" id="ap-time">0:00</span>
+              </div>
+              <div class="ap-actions">
+                <button class="ap-action-btn" onclick="downloadScript()">↓ Script</button>
+                <button class="ap-action-btn" id="tts-btn" onclick="toggleTTS()">🔊 Read aloud</button>
+                <button class="ap-action-btn" onclick="copyScript()">Copy text</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PINNED ANSWERS -->
+        <div class="studio-sec">
+          <div class="ss-header" onclick="toggleStudio(this)">
+            <span class="ss-icon">📌</span>
+            <span class="ss-title">Pinned Answers</span>
+            <span class="ss-badge" id="pin-count-badge" style="background:var(--parchment);color:var(--hint);border:1px solid var(--border)">0</span>
+            <span class="ss-chevron">▼</span>
+          </div>
+          <div class="ss-body">
+            <div class="pinned-list" id="pinned-list">
+              <div style="font-size:11px;color:var(--hint);font-style:italic">No pinned answers yet. Click 📌 on any answer to pin it.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NOTES -->
+        <div class="studio-sec">
+          <div class="ss-header open" onclick="toggleStudio(this)">
+            <span class="ss-icon">✏️</span>
+            <span class="ss-title">Notes & Annotations</span>
+            <span class="ss-chevron" style="transform:rotate(180deg)">▼</span>
+          </div>
+          <div class="ss-body open">
+            <textarea class="notes-area" id="notes-area" placeholder="Your notes, annotations, and observations about these sources…" oninput="saveNotes()"></textarea>
+            <div style="display:flex;gap:5px;margin-top:6px">
+              <button class="btn btn-sm btn-full" onclick="generateStudyGuide()">Generate study guide</button>
+            </div>
+            <div class="study-guide-out" id="study-guide-out"></div>
+          </div>
+        </div>
+
+        <!-- SUGGESTED QUESTIONS -->
+        <div class="studio-sec">
+          <div class="ss-header open" onclick="toggleStudio(this)">
+            <span class="ss-icon">💡</span>
+            <span class="ss-title">Suggested Questions</span>
+            <span class="ss-chevron" style="transform:rotate(180deg)">▼</span>
+          </div>
+          <div class="ss-body open">
+            <div class="sq-list" id="sq-list">
+              <div style="font-size:11px;color:var(--hint);font-style:italic">Upload sources to see suggested questions.</div>
+            </div>
+            <button class="btn btn-sm btn-full" style="margin-top:8px" onclick="refreshSuggestions()">Refresh suggestions</button>
+          </div>
+        </div>
+
+        <!-- QUIZ -->
+        <div class="studio-sec">
+          <div class="ss-header" onclick="toggleStudio(this)">
+            <span class="ss-icon">❓</span>
+            <span class="ss-title">Quiz</span>
+            <span class="ss-badge ssb-new">New</span>
+            <span class="ss-chevron">▼</span>
+          </div>
+          <div class="ss-body">
+            <button class="btn btn-primary btn-full" onclick="generateQuiz()">Generate quiz from sources</button>
+            <div id="quiz-out" style="margin-top:10px"></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CITATION SIDEBAR -->
+<div class="cite-sidebar" id="cite-sidebar">
+  <div class="cs-header">
+    <div class="cs-title" id="cs-title">Source</div>
+    <button class="cs-close" onclick="closeCiteSidebar()">×</button>
+  </div>
+  <div class="cs-body">
+    <div class="cs-location" id="cs-location"></div>
+    <div class="cs-excerpt" id="cs-excerpt"></div>
+    <div class="cs-score" id="cs-score"></div>
+    <button class="btn btn-sm cs-full-btn" onclick="openFullDoc()">Open full document →</button>
+    <div class="cs-annot">
+      <div class="cs-annot-label">Your annotation on this source</div>
+      <textarea class="cs-annot-input" id="cs-annot-input" placeholder="Add a note about this excerpt…" oninput="saveAnnotation()"></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- GLOBAL SEARCH -->
+<div class="search-overlay" id="search-overlay" onclick="closeSearchIfBg(event)">
+  <div class="search-box">
+    <div class="search-row">
+      <span style="font-size:16px;color:var(--hint)">🔍</span>
+      <input class="search-input" id="search-input" placeholder="Search all notebooks and sources…"
+             oninput="runSearch(this.value)" onkeydown="searchKey(event)">
+      <span style="font-size:10px;font-family:var(--mono);color:var(--hint);padding:2px 6px;background:var(--parchment);border:1px solid var(--border);border-radius:3px">ESC</span>
+    </div>
+    <div class="search-results" id="search-results">
+      <div class="search-empty">Start typing to search across all notebooks and sources</div>
+    </div>
+    <div class="search-footer">
+      <span><span class="sf-key">↑↓</span> navigate</span>
+      <span><span class="sf-key">↵</span> open</span>
+      <span><span class="sf-key">ESC</span> close</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+const S = {
+  notebooks: [],
+  currentNbId: null,
+  sources: [],        // per notebook, keyed by nbId
+  messages: [],       // conversation history
+  pinnedAnswers: [],
+  notes: {},          // nbId → text
+  annotations: {},    // srcId → text
+  suggestions: [],
+  currentCitation: null,
+  chatMode: 'source', // source | free
+  inputMode: 'ask',
+  audioScript: null,
+  audioFmt: 'deep_dive',
+  audioPlaying: false,
+  audioPct: 0,
+  audioTimer: null,
+  ttsUtterance: null,
+  usage: { tokens: 142000, limit: 500000 },
+};
+
+// ── DEMO NOTEBOOKS ─────────────────────────────────────────────
+const DEMO_NOTEBOOKS = [
+  { id:'nb1', name:'Q1 2026 — Financials',   icon:'📊', color:'#1C2B5E', srcCount:4, desc:'P&L reports, invoices, bank statements' },
+  { id:'nb2', name:'Supplier Contracts',      icon:'📋', color:'#0F6E70', srcCount:2, desc:'Menigo, Sysco agreements' },
+  { id:'nb3', name:'Q4 2025 — Archive',       icon:'📁', color:'#2E5E3A', srcCount:7, desc:'Archived quarterly data' },
+  { id:'nb4', name:'Staff & HR',              icon:'👥', color:'#4A1D96', srcCount:1, desc:'Employment agreements, schedules' },
+];
+
+const DEMO_SOURCES = {
+  nb1: [
+    { id:'s1', name:'Resultatrapport_Mars_2026.pdf', ext:'pdf', size:148000, chunks:22,
+      pinned:true, docType:'p_and_l',
+      summary:'P&L report March 2026. Revenue 505 900 kr, net profit 38 700 kr (7.65% margin). Staff costs at 44.5% above 40% target.',
+      pages: [
+        { page:1, text:'Resultaträkning Mars 2026\nNettoomsättning: 505 900 kr\nPersonalkostnader: 224 978 kr (44.5%)\nMatkostnader: 149 300 kr (29.5%)\nLokalhyra: 64 500 kr (12.7%)\nRörelseresultat: 38 700 kr (7.65%)' },
+        { page:2, text:'Detaljerad kostnadsnedbrytning:\nSysco Sverige: 43 624 kr\nMenigo Foodservice: 35 064 kr\nCaspeco AB: 2 490 kr\nÖvriga driftskostnader: 28 422 kr' },
+      ]},
+    { id:'s2', name:'Resultatrapport_Feb_2026.pdf',  ext:'pdf', size:144000, chunks:20,
+      pinned:false, docType:'p_and_l',
+      summary:'P&L Feb 2026. Revenue 461 800 kr, profit 29 300 kr (6.3% margin). Lower covers due to public holiday.',
+      pages: [
+        { page:1, text:'Resultaträkning Februari 2026\nNettoomsättning: 461 800 kr\nPersonalkostnader: 199 536 kr (43.2%)\nMatkostnader: 140 850 kr (30.5%)\nLokalhyra: 61 000 kr (13.2%)\nRörelseresultat: 29 300 kr (6.3%)' },
+      ]},
+    { id:'s3', name:'Menigo_Faktura_8842901.pdf',    ext:'pdf', size:42000, chunks:8,
+      pinned:false, docType:'invoice',
+      summary:'Menigo invoice March 2026. Total 35 064 kr (inc VAT), due 2026-04-11. Chicken fillet and beef entrecôte are main line items.',
+      pages: [{ page:1, text:'Faktura 8842901\nMenigo Foodservice AB\nFakturadatum: 2026-03-12\nFörfallodatum: 2026-04-11\nNetto: 31 307 kr\nMoms 12%: 3 757 kr\nAtt betala: 35 064 kr' }]},
+    { id:'s4', name:'Handelsbanken_Mars_2026.csv',   ext:'csv', size:12000, chunks:11,
+      pinned:false, docType:'bank_statement',
+      summary:'Bank statement March 2026. Closing balance 124 780 kr. 14 transactions.',
+      pages: [{ page:1, text:'Kontoutdrag Mars 2026\nKontonummer: SE45 6000...\nDatum;Beskrivning;Belopp\n2026-03-03;Menigo;-35064\n2026-03-15;Lokalhyra;-64500\n2026-03-18;Löner;-224978\nSlutbalans: 124 780 kr' }]},
+  ],
+  nb2: [
+    { id:'s5', name:'Menigo_Avtal_2025.pdf',   ext:'pdf', size:98000, chunks:15, pinned:false, docType:'contract',
+      summary:'Menigo supply contract 2025. 3-year agreement, 2% annual increase, 30 day payment terms.', pages:[] },
+    { id:'s6', name:'Sysco_Avtal_2025.pdf',    ext:'pdf', size:88000, chunks:12, pinned:false, docType:'contract',
+      summary:'Sysco contract 2025. Monthly minimum 40 000 kr, expires June 2026.', pages:[] },
+  ],
+};
+
+// ── SUGGESTED QUESTIONS per doc type ──────────────────────────
+const SUGGESTED_QUESTIONS = {
+  p_and_l: [
+    'What is our current profit margin?',
+    'Which cost category is furthest from target?',
+    'How does this month compare to last month?',
+    'What are our top 3 largest costs?',
+    'What should we prioritise to improve margin?',
+  ],
+  invoice: [
+    'When is this invoice due?',
+    'What are the line items on this invoice?',
+    'Which supplier sent this invoice?',
+    'Is this invoice amount within budget?',
+  ],
+  bank_statement: [
+    'What is the closing balance?',
+    'What were the largest outgoing payments?',
+    'Are there any unexpected transactions?',
+    'How does cash flow compare to the P&L?',
+  ],
+  contract: [
+    'When does this contract expire?',
+    'What are the payment terms?',
+    'Is there a penalty for early termination?',
+    'What price increases are specified?',
+  ],
+};
+
+const ALL_SUGGESTIONS = [
+  'Summarise all uploaded sources',
+  'What are my top 5 costs this month?',
+  'Compare revenue to last month',
+  'What should I prioritise this week?',
+  'Are there any invoices due soon?',
+  'What is my staff cost vs target?',
+];
+
+// ── DEMO AI ANSWERS (source-grounded) ─────────────────────────
+function getDemoAnswer(query, mode) {
+  const q   = query.toLowerCase();
+  const srcs = getCurrentSources();
+
+  // Source grounding check
+  if (!srcs.length && S.chatMode === 'source') {
+    return {
+      text: "I don't have enough information to answer this question. No sources have been uploaded to this notebook yet. Please upload relevant documents first.",
+      confidence: 0,
+      noInfo: true,
+      citations: [],
+    };
+  }
+
+  if (mode === 'compare' || q.includes('compar') || q.includes('vs') || q.includes('difference')) {
+    return {
+      text: `**Comparing March vs February 2026**\n\n| Metric | February | March | Change |\n|---|---|---|---|\n| Revenue | 461 800 kr | 505 900 kr | **+9.6%** |\n| Staff cost % | 43.2% | 44.5% | **+1.3pp** |\n| Food cost % | 30.5% | 29.5% | **-1.0pp** |\n| Net profit | 29 300 kr | 38 700 kr | **+32.1%** |\n| Margin | 6.3% | 7.65% | **+1.35pp** |\n\nMarch shows strong improvement across all metrics. Revenue grew 44 100 kr driven by increased weekend covers. Staff cost remains the challenge — rising slightly despite higher revenue. Food cost improved, likely due to the Menigo contract re-negotiation.`,
+      confidence: 92,
+      citations: [
+        { id:'c1', docId:'s1', docName:'Resultatrapport_Mars_2026.pdf', page:1, text:'Nettoomsättning: 505 900 kr\nPersonalkostnader: 224 978 kr (44.5%)', score:98 },
+        { id:'c2', docId:'s2', docName:'Resultatrapport_Feb_2026.pdf',  page:1, text:'Nettoomsättning: 461 800 kr\nPersonalkostnader: 199 536 kr (43.2%)', score:96 },
+      ],
+    };
+  }
+
+  if (mode === 'contra' || q.includes('contradict') || q.includes('conflict') || q.includes('discrepanc')) {
+    return {
+      text: `**Potential contradictions identified across your sources:**\n\n**1. Menigo costs**\nThe P&L shows Menigo costs of 35 064 kr, which matches the invoice exactly ✓\n\n**2. Staff costs — possible discrepancy**\nThe P&L shows total staff costs of 224 978 kr. Your bank statement shows a salary payment of 224 978 kr on March 18. These match ✓\n\n**3. Revenue recognition**\nBank statement shows cash inflows of ~223 600 kr, while P&L reports 505 900 kr revenue. This is expected — credit card settlements may arrive in April. ⚠️ *Consider reviewing timing differences if month-end reconciliation is needed.*\n\nNo significant contradictions found. Data appears internally consistent.`,
+      confidence: 81,
+      citations: [
+        { id:'c1', docId:'s1', docName:'Resultatrapport_Mars_2026.pdf',  page:2, text:'Menigo Foodservice: 35 064 kr', score:95 },
+        { id:'c2', docId:'s3', docName:'Menigo_Faktura_8842901.pdf',     page:1, text:'Att betala: 35 064 kr', score:99 },
+        { id:'c3', docId:'s4', docName:'Handelsbanken_Mars_2026.csv',    page:1, text:'2026-03-03;Menigo;-35064', score:91 },
+      ],
+    };
+  }
+
+  if (mode === 'synth' || q.includes('synthes') || q.includes('summar') || q.includes('overview') || q.includes('all')) {
+    return {
+      text: `**Synthesis across all ${srcs.length} sources**\n\n**Financial Health**\nMarch 2026 shows the business is profitable but operating below its 12% margin target. Revenue of 505 900 kr is growing (+9.6%) but margin of 7.65% leaves room for improvement.\n\n**Cost Structure**\nStaff costs (44.5%) are the primary concern — 4.5pp above the 40% target. Food costs (29.5%) are well-managed, partially due to the Menigo contract. Bank reconciliation confirms all major expenses align with the P&L.\n\n**Upcoming Obligations**\nMenigo invoice of 35 064 kr is due April 11 — well within the 124 780 kr cash balance.\n\n**Key Action Required**\nAddress staff cost overrun before end of Q2 or full-year margin will fall short of target.`,
+      confidence: 89,
+      citations: [
+        { id:'c1', docId:'s1', docName:'Resultatrapport_Mars_2026.pdf', page:1, text:'Nettoomsättning: 505 900 kr. Rörelseresultat: 38 700 kr (7.65%)', score:97 },
+        { id:'c2', docId:'s3', docName:'Menigo_Faktura_8842901.pdf',    page:1, text:'Förfallodatum: 2026-04-11. Att betala: 35 064 kr', score:94 },
+        { id:'c3', docId:'s4', docName:'Handelsbanken_Mars_2026.csv',   page:1, text:'Slutbalans: 124 780 kr', score:88 },
+      ],
+    };
+  }
+
+  if (q.includes('margin') || q.includes('profit')) {
+    return {
+      text: `Based on your uploaded P&L report for March 2026, the **net profit margin is 7.65%**.\n\n- Revenue: 505 900 kr\n- Total costs: 467 200 kr\n- Net profit: **38 700 kr**\n\nThis is below the 12% target. The main driver of the gap is staff costs at 44.5% of revenue, which are 4.5 percentage points above the 40% target.`,
+      confidence: 97,
+      citations: [
+        { id:'c1', docId:'s1', docName:'Resultatrapport_Mars_2026.pdf', page:1, text:'Rörelseresultat: 38 700 kr (7.65% av omsättning)', score:99 },
+      ],
+    };
+  }
+
+  if (q.includes('staff') || q.includes('personal')) {
+    return {
+      text: `**Staff costs in March 2026: 224 978 kr (44.5% of revenue)**\n\nThis is 4.5 percentage points above the 40% target. To reach the target on current revenue, staff costs would need to reduce by approximately 22 700 kr per month.\n\nFor comparison, February staff costs were 43.2% — so the situation worsened slightly month-over-month.`,
+      confidence: 95,
+      citations: [
+        { id:'c1', docId:'s1', docName:'Resultatrapport_Mars_2026.pdf', page:1, text:'Personalkostnader: 224 978 kr (44.5% av omsättning)', score:98 },
+        { id:'c2', docId:'s2', docName:'Resultatrapport_Feb_2026.pdf',  page:1, text:'Personalkostnader: 199 536 kr (43.2% av omsättning)', score:92 },
+      ],
+    };
+  }
+
+  if (q.includes('menigo') || q.includes('invoice') || q.includes('due')) {
+    return {
+      text: `**Menigo Foodservice invoice (March 2026):**\n\n- Invoice number: FAK-8842901\n- Date: 2026-03-12\n- **Due: 2026-04-11**\n- Net amount: 31 307 kr\n- VAT (12%): 3 757 kr\n- **Total to pay: 35 064 kr**\n\nYour bank balance as of end of March is 124 780 kr, so you have more than sufficient funds to cover this payment.`,
+      confidence: 99,
+      citations: [
+        { id:'c1', docId:'s3', docName:'Menigo_Faktura_8842901.pdf',  page:1, text:'Fakturanummer: FAK-8842901\nFörfallodatum: 2026-04-11\nAtt betala: 35 064 kr', score:99 },
+        { id:'c2', docId:'s4', docName:'Handelsbanken_Mars_2026.csv', page:1, text:'Slutbalans: 124 780 kr', score:85 },
+      ],
+    };
+  }
+
+  // Generic fallback with source check
+  if (S.chatMode === 'source') {
+    return {
+      text: `Based on your uploaded sources, I can see financial data for March and February 2026, one Menigo invoice, and your bank statement.\n\nCould you be more specific about what you'd like to know? I can answer questions about costs, revenue, specific invoices, or compare data across your documents.`,
+      confidence: 62,
+      citations: [
+        { id:'c1', docId:'s1', docName:'Resultatrapport_Mars_2026.pdf', page:1, text:'Period: 2026-03-01 to 2026-03-31', score:70 },
+      ],
+    };
+  }
+
+  return {
+    text: `Here's my response based on general knowledge (not grounded in your specific sources since you're in free mode): ${query}\n\nSwitch to **Source-grounded** mode to get answers backed by your uploaded documents.`,
+    confidence: 40,
+    citations: [],
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+// NOTEBOOK MANAGEMENT
+// ════════════════════════════════════════════════════════════════
+function initNotebooks() {
+  S.notebooks  = JSON.parse(localStorage.getItem('cc_notebooks') || 'null') || DEMO_NOTEBOOKS;
+  S.currentNbId = localStorage.getItem('cc_current_nb') || S.notebooks[0]?.id;
+  const savedSources = JSON.parse(localStorage.getItem('cc_sources') || 'null');
+  S.sources    = savedSources || DEMO_SOURCES;
+  S.notes      = JSON.parse(localStorage.getItem('cc_notes') || '{}');
+  S.annotations= JSON.parse(localStorage.getItem('cc_annotations') || '{}');
+  S.pinnedAnswers = JSON.parse(localStorage.getItem('cc_pins') || '[]');
+}
+
+function currentNb() { return S.notebooks.find(n => n.id === S.currentNbId); }
+function getCurrentSources() { return (S.sources[S.currentNbId] || []); }
+
+function switchNotebook(id) {
+  S.currentNbId = id;
+  localStorage.setItem('cc_current_nb', id);
+  S.messages = [];
+  renderAll();
+  closeNbDropdown();
+  toast('Switched to ' + currentNb()?.name);
+}
+
+function createNotebook() {
+  const name = prompt('Notebook name:');
+  if (!name) return;
+  const nb = {
+    id:    'nb_' + Date.now(),
+    name,
+    icon:  '📓',
+    color: '#4A4844',
+    srcCount: 0,
+    desc: '',
+  };
+  S.notebooks.push(nb);
+  S.sources[nb.id] = [];
+  saveNotebooks();
+  switchNotebook(nb.id);
+}
+
+function saveNotebooks() {
+  localStorage.setItem('cc_notebooks', JSON.stringify(S.notebooks));
+}
+
+function toggleNbDropdown() {
+  const dd  = document.getElementById('nb-dropdown');
+  const btn = document.getElementById('nb-trigger');
+  const open = dd.classList.toggle('open');
+  btn.classList.toggle('open', open);
+  if (open) { renderNbList(''); document.getElementById('nb-search-input').value = ''; document.getElementById('nb-search-input').focus(); }
+}
+
+function closeNbDropdown() {
+  document.getElementById('nb-dropdown').classList.remove('open');
+  document.getElementById('nb-trigger').classList.remove('open');
+}
+
+function filterNotebooks(q) { renderNbList(q); }
+
+function renderNbList(q = '') {
+  const list = document.getElementById('nb-list');
+  const filtered = S.notebooks.filter(n => !q || n.name.toLowerCase().includes(q.toLowerCase()));
+  list.innerHTML = filtered.map(nb => `
+    <div class="nb-item ${nb.id === S.currentNbId ? 'active' : ''}" onclick="switchNotebook('${nb.id}')">
+      <div class="nb-icon" style="background:${nb.color}20;color:${nb.color}">${nb.icon}</div>
+      <div class="nb-info">
+        <div class="nb-name">${nb.name}</div>
+        <div class="nb-meta">${(S.sources[nb.id]||[]).length} sources</div>
+      </div>
+      <span class="nb-check">✓</span>
+    </div>`).join('');
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('#nb-trigger') && !e.target.closest('#nb-dropdown')) closeNbDropdown();
+});
+
+// ════════════════════════════════════════════════════════════════
+// SOURCES
+// ════════════════════════════════════════════════════════════════
+const EXT_CLS  = {pdf:'si-pdf',xlsx:'si-xlsx',xls:'si-xlsx',docx:'si-docx',doc:'si-docx',csv:'si-csv',txt:'si-txt',md:'si-txt',jpg:'si-img',jpeg:'si-img',png:'si-img'};
+const TYPE_LBL = {p_and_l:'P&L',invoice:'Invoice',bank_statement:'Bank',budget:'Budget',contract:'Contract',other:'Doc'};
+const TYPE_CLS = {p_and_l:'stb-p_and_l',invoice:'stb-invoice',bank_statement:'stb-bank',budget:'stb-budget',contract:'stb-other',other:'stb-other'};
+
+function renderSources() {
+  const srcs = getCurrentSources();
+  const list = document.getElementById('src-list');
+  document.getElementById('src-count').textContent = `${srcs.length} doc${srcs.length !== 1 ? 's' : ''}`;
+  document.getElementById('src-count-note').textContent = srcs.length;
+  document.getElementById('chat-src-count').textContent = `${srcs.length} source${srcs.length !== 1 ? 's' : ''}`;
+
+  if (!srcs.length) {
+    list.innerHTML = `<div style="padding:16px 12px;font-size:11px;color:var(--hint);text-align:center">No sources yet.<br>Upload documents above.</div>`;
+    renderSuggestions([]);
+    return;
+  }
+
+  list.innerHTML = srcs.map(src => {
+    const ext    = src.ext || src.name.split('.').pop().toLowerCase();
+    const cls    = EXT_CLS[ext] || 'si-txt';
+    const tCls   = TYPE_CLS[src.docType] || 'stb-other';
+    const tLbl   = TYPE_LBL[src.docType] || 'Doc';
+    const note   = S.annotations[src.id] || '';
+    return `
+    <div class="src-item ${src.pinned ? 'pinned' : ''}" id="src-${src.id}" onclick="selectSource('${src.id}')">
+      <div class="src-icon ${cls}">${ext.toUpperCase().slice(0,3)}</div>
+      <div class="src-body">
+        <div class="src-name" title="${src.name}">${src.name}</div>
+        <div class="src-meta">
+          <span>${src.chunks} chunks</span>
+          <span>${Math.round(src.size/1024)}KB</span>
+        </div>
+        <span class="src-type-badge ${tCls}">${tLbl}</span>
+        ${note ? `<div class="src-note">${note}</div>` : ''}
+      </div>
+      <div class="src-actions">
+        <button class="sa-btn" onclick="togglePin('${src.id}',event)" title="${src.pinned?'Unpin':'Pin'}">📌</button>
+        <button class="sa-btn" onclick="openNoteEditor('${src.id}',event)" title="Add note">✎</button>
+        <button class="sa-btn" onclick="removeSource('${src.id}',event)" title="Remove">×</button>
+      </div>
+    </div>
+    <div class="src-note-editor" id="sne-${src.id}">
+      <textarea class="sne-input" id="sne-input-${src.id}" placeholder="Add a note about this source…">${note}</textarea>
+      <div class="sne-footer">
+        <button class="btn btn-sm" onclick="saveSourceNote('${src.id}')">Save</button>
+        <button class="btn btn-sm" onclick="closeNoteEditor('${src.id}')">Cancel</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  renderSuggestions(srcs);
+  updateUsageBar();
+}
+
+function togglePin(id, e) {
+  e.stopPropagation();
+  const srcs = getCurrentSources();
+  const s    = srcs.find(x => x.id === id);
+  if (s) { s.pinned = !s.pinned; saveSources(); renderSources(); }
+}
+
+function pinAllSources() {
+  getCurrentSources().forEach(s => s.pinned = true);
+  saveSources(); renderSources();
+}
+
+function removeSource(id, e) {
+  e.stopPropagation();
+  S.sources[S.currentNbId] = getCurrentSources().filter(s => s.id !== id);
+  saveSources(); renderSources();
+  toast('Source removed');
+}
+
+function selectSource(id) {
+  document.querySelectorAll('.src-item').forEach(el => el.classList.remove('selected'));
+  document.getElementById('src-'+id)?.classList.add('selected');
+}
+
+function openNoteEditor(id, e) {
+  e.stopPropagation();
+  document.querySelectorAll('.src-note-editor').forEach(el => el.classList.remove('open'));
+  const ed = document.getElementById('sne-'+id);
+  if (ed) ed.classList.add('open');
+}
+
+function closeNoteEditor(id) {
+  document.getElementById('sne-'+id)?.classList.remove('open');
+}
+
+function saveSourceNote(id) {
+  const val = document.getElementById('sne-input-'+id)?.value || '';
+  S.annotations[id] = val;
+  localStorage.setItem('cc_annotations', JSON.stringify(S.annotations));
+  closeNoteEditor(id);
+  renderSources();
+  toast('Note saved');
+}
+
+async function handleUpload(files) {
+  for (const file of files) {
+    const ext   = file.name.split('.').pop().toLowerCase();
+    const docType = guessDocType(file.name);
+    const src   = {
+      id:      's_' + Date.now() + Math.random().toString(36).slice(2,6),
+      name:    file.name,
+      ext,
+      size:    file.size,
+      chunks:  Math.max(4, Math.floor(file.size / 2200)),
+      pinned:  false,
+      docType,
+      summary: `Uploaded ${new Date().toLocaleDateString('sv-SE')}`,
+      pages:   [],
+    };
+    if (!S.sources[S.currentNbId]) S.sources[S.currentNbId] = [];
+    S.sources[S.currentNbId].push(src);
+    toast(`Indexing: ${file.name}…`);
+    await delay(600);
+    saveSources();
+    renderSources();
+    refreshSuggestions();
+  }
+  document.getElementById('file-input').value = '';
+  toast(`Sources indexed`, 'ok');
+}
+
+function guessDocType(name) {
+  const n = name.toLowerCase();
+  if (/resultat|p.l|income/.test(n))   return 'p_and_l';
+  if (/faktura|invoice/.test(n))        return 'invoice';
+  if (/bank|kontoutdrag/.test(n))       return 'bank_statement';
+  if (/budget|prognos/.test(n))         return 'budget';
+  if (/avtal|kontrakt|contract/.test(n))return 'contract';
+  return 'other';
+}
+
+function saveSources() {
+  localStorage.setItem('cc_sources', JSON.stringify(S.sources));
+}
+
+// Drag & drop
+const uz = document.getElementById('upload-zone');
+['dragover','dragenter'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); uz.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); uz.classList.remove('drag'); }));
+uz.addEventListener('drop', e => handleUpload(e.dataTransfer.files));
+
+// ════════════════════════════════════════════════════════════════
+// CHAT
+// ════════════════════════════════════════════════════════════════
+let isStreaming = false;
+
+function setChatMode(mode, btn) {
+  S.chatMode = mode;
+  document.querySelectorAll('.cmt-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const badge = document.querySelector('.grounding-badge');
+  const note  = document.getElementById('grounding-note');
+  if (mode === 'source') {
+    badge.textContent = '🔒 Answers from your sources only';
+    badge.style.background='var(--sage-lt)'; badge.style.color='var(--sage)'; badge.style.border='1px solid var(--sage-mid)';
+    note.innerHTML = `Answers use source documents only · <span id="src-count-note">${getCurrentSources().length}</span> sources loaded`;
+  } else {
+    badge.textContent = '🌐 Free mode — uses general knowledge';
+    badge.style.background='var(--amber-lt)'; badge.style.color='var(--amber)'; badge.style.border='1px solid var(--amber-mid)';
+    note.innerHTML = 'Free mode — AI may answer beyond uploaded sources';
+  }
+}
+
+function setInputMode(mode, btn) {
+  S.inputMode = mode;
+  document.querySelectorAll('.mode-chip').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const ta = document.getElementById('chat-ta');
+  const placeholders = {
+    ask:     'Ask anything about your sources…',
+    compare: 'Compare documents, e.g. "Compare this month's P&L to last month"…',
+    contra:  'Find contradictions across your sources…',
+    synth:   'Synthesise information across all sources…',
+  };
+  ta.placeholder = placeholders[mode];
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function askSuggestion(text) {
+  document.getElementById('chat-ta').value = text;
+  sendMessage();
+}
+
+async function sendMessage() {
+  const ta   = document.getElementById('chat-ta');
+  const text = ta.value.trim();
+  if (!text || isStreaming) return;
+
+  ta.value = '';
+  ta.style.height = 'auto';
+  document.getElementById('chat-empty').style.display = 'none';
+
+  appendUserMsg(text);
+  S.messages.push({ role:'user', content:text });
+
+  isStreaming = true;
+  document.getElementById('send-btn').disabled = true;
+
+  // Thinking indicator
+  const thinkId  = 'think_' + Date.now();
+  const thinkEl  = document.createElement('div');
+  thinkEl.id     = thinkId;
+  thinkEl.className = 'msg msg-ai';
+  thinkEl.innerHTML = `<div class="ai-avatar">N</div><div class="ai-body"><div class="ai-bubble"><div class="thinking"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div></div></div>`;
+  document.getElementById('chat-msgs').appendChild(thinkEl);
+  scrollBottom();
+
+  // Simulate API call delay
+  await delay(600 + Math.random() * 800);
+  thinkEl.remove();
+
+  const answer   = getDemoAnswer(text, S.inputMode);
+  const msgId    = 'msg_' + Date.now();
+  const msgEl    = appendAIMsg(answer, msgId);
+
+  S.messages.push({ role:'assistant', content:answer.text, citations:answer.citations });
+  isStreaming = false;
+  document.getElementById('send-btn').disabled = false;
+  scrollBottom();
+
+  // Update usage simulation
+  S.usage.tokens += 1200 + Math.floor(Math.random() * 800);
+  updateUsageBar();
+}
+
+function appendUserMsg(text) {
+  const wrap = document.getElementById('chat-msgs');
+  const div  = document.createElement('div');
+  div.className = `msg msg-user`;
+  const modeColor = {ask:'',compare:'synthesis',contra:'',synth:'synthesis'};
+  const modeClass = modeColor[S.inputMode] ? ' ' + modeColor[S.inputMode] : '';
+  div.innerHTML   = `<div class="bubble${modeClass}">${escHtml(text)}</div>`;
+  wrap.appendChild(div);
+  scrollBottom();
+  return div;
+}
+
+function appendAIMsg(answer, id) {
+  const wrap = document.getElementById('chat-msgs');
+  const div  = document.createElement('div');
+  div.id     = id;
+  div.className = 'msg msg-ai' + (answer.noInfo ? ' msg-noeinfo' : '');
+
+  // Format markdown
+  const html = formatMd(answer.text);
+
+  // Confidence bar
+  const confPct = answer.confidence || 0;
+  const confCls = confPct >= 80 ? 'cf-high' : confPct >= 50 ? 'cf-med' : 'cf-low';
+  const confBar = answer.noInfo ? '' : `
+    <div class="confidence-row">
+      <span class="conf-label">Confidence</span>
+      <div class="conf-track"><div class="conf-fill ${confCls}" style="width:${confPct}%"></div></div>
+      <span class="conf-pct" style="color:${confPct>=80?'var(--sage)':confPct>=50?'var(--amber)':'var(--rust)'}">${confPct}%</span>
+    </div>`;
+
+  // Citations
+  const citeHtml = (answer.citations||[]).length ? `
+    <div class="citations-row">${answer.citations.map((c,i) => `
+      <button class="cite-chip" onclick="openCitation(${JSON.stringify(c).replace(/"/g,'&quot;')})">
+        <span class="cite-num">${i+1}</span>${c.docName.split('.')[0].slice(0,22)}${c.docName.length>26?'…':''}, p.${c.page}
+      </button>`).join('')}
+    </div>` : '';
+
+  // Actions
+  const actHtml = answer.noInfo ? '' : `
+    <div class="ai-meta">
+      <button class="ai-meta-btn" id="pin-btn-${id}" onclick="pinAnswer('${id}')">📌 Pin</button>
+      <button class="ai-meta-btn" onclick="readAloud('${id}')">🔊 Read</button>
+      <button class="ai-meta-btn" onclick="copyAnswer('${id}')">⎘ Copy</button>
+      <button class="ai-meta-btn" onclick="addToNotes('${id}')">✎ Add to notes</button>
+    </div>`;
+
+  div.innerHTML = `
+    <div class="ai-avatar">N</div>
+    <div class="ai-body">
+      <div class="ai-bubble" id="bubble-${id}">${html}</div>
+      ${confBar}${citeHtml}${actHtml}
+    </div>`;
+
+  wrap.appendChild(div);
+  scrollBottom();
+  return div;
+}
+
+function scrollBottom() {
+  const msgs = document.getElementById('chat-msgs');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ════════════════════════════════════════════════════════════════
+// CITATIONS
+// ════════════════════════════════════════════════════════════════
+function openCitation(c) {
+  S.currentCitation = c;
+  document.getElementById('cs-title').textContent   = c.docName;
+  document.getElementById('cs-location').textContent = `${c.docName}  ·  Page ${c.page}`;
+  // Highlight matching terms in the excerpt
+  const query = S.messages.filter(m=>m.role==='user').slice(-1)[0]?.content || '';
+  const highlighted = c.text.replace(/\n/g, '<br>');
+  document.getElementById('cs-excerpt').innerHTML   = highlighted;
+  document.getElementById('cs-score').textContent   = `Relevance: ${c.score}% match`;
+  // Load existing annotation
+  const ann = S.annotations['cite_' + c.id] || '';
+  document.getElementById('cs-annot-input').value = ann;
+  document.getElementById('cite-sidebar').classList.add('open');
+}
+
+function closeCiteSidebar() {
+  document.getElementById('cite-sidebar').classList.remove('open');
+}
+
+function saveAnnotation() {
+  if (!S.currentCitation) return;
+  const val = document.getElementById('cs-annot-input').value;
+  S.annotations['cite_' + S.currentCitation.id] = val;
+  localStorage.setItem('cc_annotations', JSON.stringify(S.annotations));
+}
+
+function openFullDoc() {
+  if (!S.currentCitation) return;
+  toast('Opening document preview… (connect to document_preview.html in production)');
+}
+
+// ════════════════════════════════════════════════════════════════
+// PIN ANSWERS
+// ════════════════════════════════════════════════════════════════
+function pinAnswer(msgId) {
+  const bubble = document.getElementById('bubble-' + msgId);
+  const btn    = document.getElementById('pin-btn-' + msgId);
+  if (!bubble) return;
+
+  const text    = bubble.innerText.slice(0, 200);
+  const lastQ   = S.messages.filter(m => m.role === 'user').slice(-1)[0]?.content || '?';
+  const already = S.pinnedAnswers.find(p => p.msgId === msgId);
+  if (already) {
+    S.pinnedAnswers = S.pinnedAnswers.filter(p => p.msgId !== msgId);
+    btn?.classList.remove('pinned');
+    toast('Unpinned');
+  } else {
+    S.pinnedAnswers.push({ msgId, question: lastQ, answer: text, date: new Date().toLocaleString('sv-SE') });
+    btn?.classList.add('pinned');
+    toast('Pinned ✓', 'ok');
+  }
+  localStorage.setItem('cc_pins', JSON.stringify(S.pinnedAnswers));
+  renderPinned();
+}
+
+function renderPinned() {
+  const list = document.getElementById('pinned-list');
+  const badge= document.getElementById('pin-count-badge');
+  badge.textContent = S.pinnedAnswers.length;
+  if (!S.pinnedAnswers.length) {
+    list.innerHTML = `<div style="font-size:11px;color:var(--hint);font-style:italic">No pinned answers yet. Click 📌 on any answer to pin it.</div>`;
+    return;
+  }
+  list.innerHTML = S.pinnedAnswers.map((p,i) => `
+    <div class="pinned-item">
+      <div class="pi-q">${escHtml(p.question.slice(0,60))}${p.question.length>60?'…':''}</div>
+      <div class="pi-a">${escHtml(p.answer)}${p.answer.length>=200?'…':''}</div>
+      <button class="pi-del" onclick="removePin(${i})">×</button>
+    </div>`).join('');
+}
+
+function removePin(idx) {
+  S.pinnedAnswers.splice(idx, 1);
+  localStorage.setItem('cc_pins', JSON.stringify(S.pinnedAnswers));
+  renderPinned();
+}
+
+// ════════════════════════════════════════════════════════════════
+// AUDIO OVERVIEW
+// ════════════════════════════════════════════════════════════════
+const AUDIO_SCRIPTS = {
+  deep_dive: (srcs) => `ALEX: Welcome back. Today we're doing a deep dive into the financials for ${currentNb()?.name}.
+
+SAM: So what's the headline this month?
+
+ALEX: March 2026 was actually a strong month. Revenue came in at 505,900 kronor — that's up nearly 10% on February.
+
+SAM: And the profit picture?
+
+ALEX: Net profit was 38,700 kronor, so a margin of about 7.65%. Below the 12% target, but meaningfully better than February's 6.3%.
+
+SAM: What's dragging the margin down then?
+
+ALEX: Staff costs. They're sitting at 44.5% of revenue when the target is 40%. That's a 4.5 percentage point gap — roughly 23,000 kronor in excess spend each month.
+
+SAM: What about food costs?
+
+ALEX: Food costs are actually the good news story. They're at 29.5%, which is below the 31% target. The Menigo contract renegotiation in Q4 last year appears to be working.
+
+SAM: Any cash concerns?
+
+ALEX: None. Bank balance is 124,780 kronor at month end. The Menigo invoice for 35,000 is due April 11th, well within capacity.
+
+SAM: What should the owner prioritise?
+
+ALEX: One thing: scheduling. That staff cost overrun is the single biggest lever. If they can get back to 40%, the margin jumps to around 12% — right at target.`,
+
+  brief: (srcs) => `March 2026 at a glance: Revenue 505,900 kronor, up 9.6%. Net profit 38,700 kronor at a 7.65% margin. Staff costs remain the challenge at 44.5% versus 40% target. Food costs are well-controlled. Bank balance healthy at 124,780 kronor. One action item: address scheduling to close the staff cost gap.`,
+
+  debate: (srcs) => `ALEX: I think the March numbers are fundamentally healthy. Revenue growth of nearly 10% is strong.
+
+SAM: But a 7.65% margin when the target is 12%? That's 4 percentage points short. The business is growing but it's not profitable enough.
+
+ALEX: The margin will follow the revenue trajectory. Once you scale revenue, the fixed costs become a smaller percentage.
+
+SAM: Rent is fixed but staff is largely variable. And it's the variable cost that's the problem — 44.5% staff is the issue, not scale.
+
+ALEX: Fair point. But compare to February at 6.3%. The trend is clearly positive.
+
+SAM: I'll give you the trend. But the question is whether management can operationally close that gap before the end of Q2.`,
+
+  critique: (srcs) => `Let me be direct about these numbers. A 7.65% net margin sounds reasonable until you compare it to the 12% target — that's a 36% miss. The staff cost overrun of 4.5 percentage points represents about 23,000 kronor per month, or 276,000 kronor annualised.
+
+The food cost improvement is real but modest. The revenue growth is genuine but doesn't compensate for the structural cost problem.
+
+The key question this data doesn't answer is why staff costs are elevated. Is it overtime? Sick leave cover? Under-forecasting? Until that's diagnosed, the 40% target remains aspirational rather than achievable.`,
+};
+
+let audioFmt = 'deep_dive';
+
+function selectAudioFmt(btn) {
+  audioFmt = btn.dataset.fmt;
+  document.querySelectorAll('.ao-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+async function generateAudio() {
+  const btn   = document.getElementById('audio-gen-btn');
+  const srcs  = getCurrentSources();
+  if (!srcs.length) { toast('Upload sources first', 'err'); return; }
+
+  btn.innerHTML = '<span class="spin">⟳</span> Generating…';
+  btn.disabled  = true;
+  await delay(1500 + Math.random() * 1000);
+
+  S.audioScript = AUDIO_SCRIPTS[audioFmt]?.(srcs) || AUDIO_SCRIPTS.deep_dive(srcs);
+  const player  = document.getElementById('audio-player');
+  document.getElementById('ap-title').textContent = { deep_dive:'Deep Dive', brief:'Brief (90s)', debate:'Debate', critique:'Critique' }[audioFmt] + ' · Ready';
+  player.classList.add('visible');
+  S.audioPct     = 0;
+  S.audioPlaying = false;
+  document.getElementById('ap-play-btn').textContent = '▶';
+  document.getElementById('ap-prog').style.width = '0%';
+
+  btn.innerHTML = 'Regenerate';
+  btn.disabled  = false;
+  toast('Audio overview ready!', 'ok');
+
+  // Update badge count
+  const badge = document.getElementById('audio-badge');
+  const cur   = parseInt(badge.textContent) || 3;
+  if (cur > 0) badge.textContent = (cur - 1) + ' left';
+}
+
+function toggleAudio() {
+  S.audioPlaying = !S.audioPlaying;
+  document.getElementById('ap-play-btn').textContent = S.audioPlaying ? '⏸' : '▶';
+  if (S.audioPlaying) tickAudio();
+  else { clearTimeout(S.audioTimer); }
+}
+
+function tickAudio() {
+  if (!S.audioPlaying) return;
+  S.audioPct = Math.min(100, S.audioPct + 0.25);
+  document.getElementById('ap-prog').style.width = S.audioPct + '%';
+  const totalSec = audioFmt === 'brief' ? 90 : 480;
+  const elapsed  = Math.floor(S.audioPct / 100 * totalSec);
+  document.getElementById('ap-time').textContent = `${Math.floor(elapsed/60)}:${String(elapsed%60).padStart(2,'0')}`;
+  if (S.audioPct >= 100) { S.audioPlaying = false; document.getElementById('ap-play-btn').textContent = '▶'; return; }
+  S.audioTimer = setTimeout(tickAudio, 200);
+}
+
+function seekAudio(e) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  S.audioPct = Math.round((e.clientX - rect.left) / rect.width * 100);
+  document.getElementById('ap-prog').style.width = S.audioPct + '%';
+}
+
+function toggleTTS() {
+  const btn = document.getElementById('tts-btn');
+  if (!S.audioScript) return;
+  if (window.speechSynthesis?.speaking) {
+    speechSynthesis.cancel();
+    btn.textContent = '🔊 Read aloud';
+    btn.classList.remove('playing');
+    return;
+  }
+  const utt = new SpeechSynthesisUtterance(S.audioScript.replace(/[A-Z]+:/g,''));
+  utt.lang  = 'en-GB';
+  utt.rate  = 0.95;
+  utt.onend = () => { btn.textContent = '🔊 Read aloud'; btn.classList.remove('playing'); };
+  speechSynthesis.speak(utt);
+  btn.textContent = '⏸ Stop';
+  btn.classList.add('playing');
+  toast('Reading aloud via browser TTS');
+}
+
+function downloadScript() {
+  if (!S.audioScript) return;
+  const blob = new Blob([S.audioScript], { type: 'text/plain' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `audio_overview_${audioFmt}.txt`;
+  a.click();
+  toast('Script downloaded');
+}
+
+function copyScript() {
+  if (!S.audioScript) return;
+  navigator.clipboard?.writeText(S.audioScript).then(() => toast('Copied to clipboard', 'ok'));
+}
+
+function readAloud(msgId) {
+  const bubble = document.getElementById('bubble-' + msgId);
+  if (!bubble) return;
+  const text = bubble.innerText;
+  if (window.speechSynthesis?.speaking) { speechSynthesis.cancel(); toast('Stopped reading'); return; }
+  const utt  = new SpeechSynthesisUtterance(text);
+  utt.lang   = 'en-GB'; utt.rate = 0.95;
+  speechSynthesis.speak(utt);
+  toast('Reading aloud…');
+}
+
+// ════════════════════════════════════════════════════════════════
+// NOTES & STUDY GUIDE
+// ════════════════════════════════════════════════════════════════
+function saveNotes() {
+  S.notes[S.currentNbId] = document.getElementById('notes-area').value;
+  localStorage.setItem('cc_notes', JSON.stringify(S.notes));
+}
+
+async function generateStudyGuide() {
+  const out  = document.getElementById('study-guide-out');
+  const srcs = getCurrentSources();
+  out.textContent = '⟳ Generating study guide…';
+  out.classList.add('visible');
+  await delay(1200);
+
+  const guide = `# Study Guide — ${currentNb()?.name}
+Generated ${new Date().toLocaleDateString('sv-SE')} from ${srcs.length} sources
+
+## Key Themes
+${srcs.map(s => `• ${s.name}: ${s.summary?.slice(0,80)||'...'}`).join('\n')}
+
+## Critical Numbers
+• Revenue (Mar): 505 900 kr (+9.6% vs Feb)
+• Net Profit: 38 700 kr (7.65% margin)
+• Staff Cost: 44.5% (target: 40%) ⚠️
+• Food Cost: 29.5% (target: 31%) ✓
+• Bank Balance: 124 780 kr
+• Menigo Invoice Due: 35 064 kr by Apr 11
+
+## Key Questions to Explore
+• Why are staff costs above target?
+• How does March compare to Q1 budget?
+• What contracts are expiring soon?
+
+## Personal Notes
+${document.getElementById('notes-area').value || '(no notes yet)'}`;
+
+  out.textContent = guide;
+  toast('Study guide generated', 'ok');
+}
+
+function addToNotes(msgId) {
+  const bubble = document.getElementById('bubble-' + msgId);
+  if (!bubble) return;
+  const existing = document.getElementById('notes-area').value;
+  const addition = `\n\n[From chat — ${new Date().toLocaleDateString('sv-SE')}]\n${bubble.innerText.slice(0,300)}`;
+  document.getElementById('notes-area').value = existing + addition;
+  saveNotes();
+  toast('Added to notes', 'ok');
+}
+
+function copyAnswer(msgId) {
+  const bubble = document.getElementById('bubble-' + msgId);
+  if (!bubble) return;
+  navigator.clipboard?.writeText(bubble.innerText).then(() => toast('Copied to clipboard', 'ok'));
+}
+
+// ════════════════════════════════════════════════════════════════
+// SUGGESTED QUESTIONS
+// ════════════════════════════════════════════════════════════════
+function renderSuggestions(srcs) {
+  const list = document.getElementById('sq-list');
+  const chat = document.getElementById('suggestions');
+
+  if (!srcs.length) {
+    list.innerHTML = `<div style="font-size:11px;color:var(--hint);font-style:italic">Upload sources to see suggested questions.</div>`;
+    chat.innerHTML = ALL_SUGGESTIONS.map(q => `<button class="sugg-pill" onclick="askSuggestion('${q}')">${q}</button>`).join('');
+    return;
+  }
+
+  // Build suggestions based on source types
+  const types   = [...new Set(srcs.map(s => s.docType))];
+  const typeQs  = types.flatMap(t => (SUGGESTED_QUESTIONS[t] || []).slice(0,2));
+  const allQs   = [...new Set([...typeQs, ...ALL_SUGGESTIONS])].slice(0,8);
+  S.suggestions = allQs;
+
+  list.innerHTML = allQs.slice(0,6).map(q => `
+    <div class="sq-item" onclick="askSuggestion('${q.replace(/'/g,'&apos;')}')">
+      ${q}
+      <span class="sq-arrow">→</span>
+    </div>`).join('');
+
+  chat.innerHTML = allQs.slice(0,5).map(q => `
+    <button class="sugg-pill" onclick="askSuggestion('${q.replace(/'/g,'&apos;')}')">${q}</button>`).join('');
+}
+
+function refreshSuggestions() {
+  const srcs = getCurrentSources();
+  renderSuggestions(srcs);
+  toast('Suggestions refreshed');
+}
+
+// ════════════════════════════════════════════════════════════════
+// QUIZ
+// ════════════════════════════════════════════════════════════════
+async function generateQuiz() {
+  const out  = document.getElementById('quiz-out');
+  const srcs = getCurrentSources();
+  if (!srcs.length) { toast('Upload sources first', 'err'); return; }
+  out.innerHTML = '<div style="font-size:11px;color:var(--hint)">⟳ Generating quiz…</div>';
+  await delay(1000);
+
+  const questions = [
+    { q:'What was the net profit margin in March 2026?', opts:['5.2%','7.65%','10.3%','12%'], ans:1 },
+    { q:'Which cost category is furthest from target?', opts:['Food costs','Rent','Staff costs','Other'], ans:2 },
+    { q:'When is the Menigo invoice due?', opts:['March 31','April 11','April 30','May 1'], ans:1 },
+    { q:'What is the closing bank balance for March?', opts:['38 700 kr','124 780 kr','505 900 kr','224 978 kr'], ans:1 },
+  ];
+
+  out.innerHTML = questions.map((q,qi) => `
+    <div style="margin-bottom:12px;background:var(--parchment);border-radius:8px;padding:10px 12px;border:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600;color:var(--ink);margin-bottom:7px">${qi+1}. ${q.q}</div>
+      ${q.opts.map((o,oi) => `
+        <button onclick="checkQuiz(this,${oi === q.ans})"
+          style="display:block;width:100%;text-align:left;padding:5px 9px;margin-bottom:4px;border:1px solid var(--border);border-radius:6px;background:var(--white);font-size:11px;cursor:pointer;font-family:var(--font);transition:all .1s"
+          onmouseover="this.style.background='var(--blue-lt)'" onmouseout="if(!this.dataset.answered)this.style.background='var(--white)'">
+          ${o}
+        </button>`).join('')}
+    </div>`).join('');
+}
+
+function checkQuiz(btn, correct) {
+  const container = btn.closest('div');
+  [...container.querySelectorAll('button')].forEach(b => {
+    b.disabled = true;
+    b.dataset.answered = '1';
+  });
+  btn.style.background = correct ? 'var(--sage-lt)' : 'var(--rust-lt)';
+  btn.style.color      = correct ? 'var(--sage)' : 'var(--rust)';
+  btn.style.fontWeight = '600';
+}
+
+// ════════════════════════════════════════════════════════════════
+// GLOBAL SEARCH
+// ════════════════════════════════════════════════════════════════
+function openSearch() {
+  document.getElementById('search-overlay').classList.add('open');
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-input').focus();
+  renderSearchResults('');
+}
+
+function closeSearch() { document.getElementById('search-overlay').classList.remove('open'); }
+function closeSearchIfBg(e) { if (e.target.id === 'search-overlay') closeSearch(); }
+function searchKey(e) { if (e.key === 'Escape') closeSearch(); }
+
+function runSearch(q) {
+  renderSearchResults(q);
+}
+
+function renderSearchResults(q) {
+  const out = document.getElementById('search-results');
+  if (!q || q.length < 2) {
+    out.innerHTML = '<div class="search-empty">Start typing to search across all notebooks and sources</div>';
+    return;
+  }
+
+  const ql = q.toLowerCase();
+  const hits = [];
+  S.notebooks.forEach(nb => {
+    const srcs = S.sources[nb.id] || [];
+    srcs.forEach(src => {
+      const nameMatch = src.name.toLowerCase().includes(ql);
+      const summMatch = (src.summary||'').toLowerCase().includes(ql);
+      if (nameMatch || summMatch) {
+        hits.push({ type:'source', nb, src,
+          ctx: src.summary || src.name,
+          relevance: nameMatch ? 10 : 5 });
+      }
+      // Search page text
+      (src.pages||[]).forEach(p => {
+        if (p.text.toLowerCase().includes(ql)) {
+          hits.push({ type:'page', nb, src, page:p.page,
+            ctx: p.text.slice(Math.max(0, p.text.toLowerCase().indexOf(ql)-40), p.text.toLowerCase().indexOf(ql)+100),
+            relevance: 8 });
+        }
+      });
+    });
+  });
+
+  hits.sort((a,b) => b.relevance - a.relevance);
+
+  if (!hits.length) {
+    out.innerHTML = `<div class="search-empty">No results for "<strong>${escHtml(q)}</strong>"</div>`;
+    return;
+  }
+
+  out.innerHTML = `
+    <div class="sr-section">
+      <div class="sr-label">${hits.length} result${hits.length!==1?'s':''} across ${[...new Set(hits.map(h=>h.nb.id))].length} notebooks</div>
+      ${hits.slice(0,10).map(h => `
+        <div class="sr-item" onclick="openSearchResult('${h.nb.id}','${h.src.id}')">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+              <span class="sr-nb-tag">${h.nb.icon} ${h.nb.name}</span>
+              <span class="sr-name">${h.src.name}</span>
+              ${h.page ? `<span style="font-size:10px;color:var(--hint);font-family:var(--mono)">p.${h.page}</span>` : ''}
+            </div>
+            <div class="sr-ctx">${highlightMatch(h.ctx, ql)}</div>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function openSearchResult(nbId, srcId) {
+  closeSearch();
+  if (nbId !== S.currentNbId) switchNotebook(nbId);
+  setTimeout(() => {
+    const el = document.getElementById('src-' + srcId);
+    if (el) { el.scrollIntoView({behavior:'smooth'}); el.click(); }
+  }, 200);
+}
+
+function highlightMatch(text, q) {
+  const safe = escHtml(text);
+  const re   = new RegExp('(' + q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')', 'gi');
+  return safe.replace(re, '<mark style="background:rgba(26,86,196,.15);color:var(--blue);padding:0 1px;border-radius:2px">$1</mark>');
+}
+
+// ════════════════════════════════════════════════════════════════
+// STUDIO TOGGLES
+// ════════════════════════════════════════════════════════════════
+function toggleStudio(headerEl) {
+  const isOpen = headerEl.classList.toggle('open');
+  const body   = headerEl.nextElementSibling;
+  body.classList.toggle('open', isOpen);
+}
+
+// ════════════════════════════════════════════════════════════════
+// USAGE BAR
+// ════════════════════════════════════════════════════════════════
+function updateUsageBar() {
+  const pct  = Math.round(S.usage.tokens / S.usage.limit * 100);
+  const fill = document.getElementById('ub-fill');
+  fill.style.width = pct + '%';
+  fill.className   = 'ub-fill' + (pct > 90 ? ' crit' : pct > 75 ? ' warn' : '');
+  document.getElementById('usage-pct-label').textContent = pct + '%';
+  document.getElementById('usage-detail').textContent    = `${Math.round(S.usage.tokens/1000)}k / ${Math.round(S.usage.limit/1000)}k tokens`;
+  document.getElementById('upgrade-link').hidden = pct < 80;
+}
+
+// ════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openSearch(); }
+  if (e.key === 'Escape') { closeSearch(); closeCiteSidebar(); closeNbDropdown(); }
+});
+
+// ════════════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════════════
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatMd(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm,  '<h3>$1</h3>')
+    .replace(/^# (.+)$/gm,   '<h3>$1</h3>')
+    .replace(/^\| (.+) \|$/gm, (m, row) => {
+      const cells = row.split(' | ').map(c => `<td>${c}</td>`).join('');
+      return `<tr>${cells}</tr>`;
+    })
+    .replace(/(<tr>.*<\/tr>\n?)+/g, m => `<table>${m}</table>`)
+    .replace(/<table><tr>(<th>[-:]+<\/th>)+<\/tr>/g, '<table>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/^(?!<)(.+)$/gm, '<p>$1</p>')
+    .replace(/<p><\/p>/g, '')
+    .replace(/<p>(<h3|<ul|<table)/g, '$1')
+    .replace(/(<\/h3>|<\/ul>|<\/table>)<\/p>/g, '$1');
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `toast show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ════════════════════════════════════════════════════════════════
+// RENDER ALL
+// ════════════════════════════════════════════════════════════════
+function renderAll() {
+  const nb = currentNb();
+  if (nb) {
+    document.getElementById('nb-icon-display').textContent = nb.icon;
+    document.getElementById('nb-name-display').textContent = nb.name;
+    document.getElementById('chat-nb-title').textContent   = nb.name;
+  }
+  renderSources();
+  renderPinned();
+  document.getElementById('notes-area').value = S.notes[S.currentNbId] || '';
+  document.getElementById('chat-msgs').innerHTML = '';
+  const empty = document.createElement('div');
+  empty.id = 'chat-empty';
+  empty.className = 'chat-empty';
+  empty.innerHTML = `<div class="ce-icon">📚</div><div class="ce-title">Ask about your sources</div><div class="ce-sub">Every answer is grounded in your uploaded sources with citations and confidence scores.</div><div class="suggestions" id="suggestions"></div>`;
+  document.getElementById('chat-msgs').appendChild(empty);
+  renderSuggestions(getCurrentSources());
+  updateUsageBar();
+}
+
+// ════════════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════════════
+initNotebooks();
+renderAll();
+</script>
+</body>
+</html>

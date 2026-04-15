@@ -1,0 +1,102 @@
+{
+  "_comment": "Björken Report Scheduler — edit this file to change schedules and recipients",
+  "_version": "1.0",
+
+  "company": {
+    "name":     "Restaurang Björken AB",
+    "org_nr":   "556XXX-XXXX",
+    "address":  "Storgatan 14, 111 23 Stockholm"
+  },
+
+  "schedules": {
+    "daily": {
+      "enabled":     true,
+      "time":        "07:00",
+      "days":        ["mon","tue","wed","thu","fri","sat","sun"],
+      "format":      "pdf",
+      "subject":     "Daglig sammanfattning — {date}",
+      "recipients":  ["owner@bjorken.se"],
+      "review_before_send": false,
+      "auto_attach_to_chat": true
+    },
+    "weekly": {
+      "enabled":     true,
+      "day":         "monday",
+      "time":        "08:00",
+      "format":      "pdf",
+      "subject":     "Veckorapport — vecka {week}, {year}",
+      "recipients":  ["owner@bjorken.se", "chef@bjorken.se"],
+      "review_before_send": true,
+      "auto_attach_to_chat": true
+    },
+    "monthly": {
+      "enabled":     true,
+      "day_of_month": 3,
+      "time":        "09:00",
+      "format":      "pdf",
+      "subject":     "Månadsrapport — {month} {year}",
+      "recipients":  ["owner@bjorken.se"],
+      "review_before_send": true,
+      "auto_attach_to_chat": true
+    },
+    "quarterly": {
+      "enabled":     true,
+      "months":      [1, 4, 7, 10],
+      "day_of_month": 5,
+      "time":        "09:00",
+      "format":      "pdf",
+      "subject":     "Kvartalsöversikt — Q{quarter} {year}",
+      "recipients":  ["owner@bjorken.se"],
+      "review_before_send": true,
+      "auto_attach_to_chat": true
+    }
+  },
+
+  "email": {
+    "enabled":   false,
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username":  "your-email@gmail.com",
+    "password":  "your-app-password",
+    "from_name": "Björken Reporting",
+    "_note":     "Use an app password, not your main password. See: myaccount.google.com/apppasswords"
+  },
+
+  "thresholds": {
+    "food_pct_warn":    31.0,
+    "staff_pct_warn":   40.0,
+    "rent_pct_warn":    13.0,
+    "profit_margin_warn": 12.0,
+    "significant_change_pct": 10.0
+  },
+
+  "anthropic_api_key": "",
+  "_api_note": "Optional — add your Anthropic API key for AI-generated insights in reports",
+
+  "data": {
+    "current_period":   "Mars 2026",
+    "revenue":          505900,
+    "staff":            224978,
+    "food":             149300,
+    "rent":             64500,
+    "other":            28422,
+    "prev_revenue":     461800,
+    "prev_staff":       198842,
+    "prev_food":        141200,
+    "prev_rent":        64500,
+    "prev_other":       26100,
+    "budget_revenue":   490000,
+    "budget_staff":     196000,
+    "budget_food":      151900,
+    "monthly_revenue":  [389200, 461800, 505900],
+    "monthly_profit":   [12100,  38700,  38700],
+    "monthly_labels":   ["Jan 2026", "Feb 2026", "Mars 2026"],
+    "top_suppliers":    [
+      {"name": "Menigo Foodservice AB",    "amount": 62000, "category": "food"},
+      {"name": "Intern lönekörning",       "amount": 224978,"category": "staff"},
+      {"name": "Björkens Fastigheter KB",  "amount": 65000, "category": "rent"},
+      {"name": "Sysco Sverige AB",         "amount": 43624, "category": "food"},
+      {"name": "Vattenfall Eldistribution","amount": 10500, "category": "rent"}
+    ]
+  }
+}

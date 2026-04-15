@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;1,9..144,300&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0F0E0D; --surface:#1A1917; --card:#222220; --card-d:#2A2926;
+  --border:#333230; --border-l:#444240;
+  --ink:#F0EDE8; --ink-2:#C8C4BC; --ink-3:#9A9690; --ink-4:#6A6660;
+  --green:#4CAF7A; --green-dk:#1E5C3A; --green-lt:rgba(76,175,122,.12);
+  --blue:#5B9CF6;  --blue-dk:#1A3A6B;  --blue-lt:rgba(91,156,246,.12);
+  --amber:#F5A623; --amber-dk:#7A4800; --amber-lt:rgba(245,166,35,.12);
+  --red:#E85B5B;   --red-dk:#7A1A1A;   --red-lt:rgba(232,91,91,.12);
+  --violet:#A78BFA;--violet-lt:rgba(167,139,250,.12);
+  --font:'DM Sans',system-ui,sans-serif;
+  --display:'Fraunces',Georgia,serif;
+  --mono:'DM Mono',monospace;
+  --nav-w:220px;
+}
+html,body{height:100%;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:13px;color:var(--ink);background:var(--bg)}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--border-l);border-radius:2px}
+
+/* ── LAYOUT ──────────────────────────────────────────────── */
+.app{display:grid;grid-template-columns:var(--nav-w) 1fr;height:100vh}
+.nav{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.main{overflow-y:auto;background:var(--bg)}
+
+/* ── NAV ─────────────────────────────────────────────────── */
+.nav-brand{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.nb-logo{width:28px;height:28px;border-radius:7px;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:white;font-family:var(--display)}
+.nb-text{font-size:13px;font-weight:600;color:var(--ink)}
+.nb-badge{font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;background:var(--red);color:white;margin-left:4px}
+
+.nav-section{padding:12px 8px 4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-4);padding-left:14px}
+.nav-item{
+  display:flex;align-items:center;gap:9px;padding:8px 14px;cursor:pointer;
+  border-radius:7px;margin:1px 6px;transition:all .1s;color:var(--ink-3);font-size:13px;font-weight:500;
+}
+.nav-item:hover{background:var(--card);color:var(--ink-2)}
+.nav-item.active{background:var(--blue-lt);color:var(--blue)}
+.nav-item .ni-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.nav-item .ni-badge{margin-left:auto;font-size:9px;font-weight:700;min-width:18px;height:16px;border-radius:8px;background:var(--red);color:white;display:flex;align-items:center;justify-content:center;padding:0 4px}
+.nav-item .ni-badge.amber{background:var(--amber)}
+.nav-item .ni-badge.green{background:var(--green)}
+
+.nav-bottom{margin-top:auto;border-top:1px solid var(--border);padding:10px}
+.admin-chip{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:var(--card)}
+.admin-avatar{width:28px;height:28px;border-radius:50%;background:var(--violet);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:white;font-family:var(--display)}
+.admin-info{flex:1;min-width:0}
+.admin-name{font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-role{font-size:10px;color:var(--ink-4)}
+.admin-2fa{font-size:9px;font-weight:700;padding:2px 5px;border-radius:5px;background:var(--green-lt);color:var(--green)}
+
+/* ── PAGE HEADER ─────────────────────────────────────────── */
+.page-header{padding:20px 24px 0;display:flex;align-items:flex-start;justify-content:space-between}
+.ph-title{font-family:var(--display);font-size:22px;font-weight:300;color:var(--ink);line-height:1.2}
+.ph-title strong{font-weight:600}
+.ph-sub{font-size:12px;color:var(--ink-4);margin-top:3px}
+.ph-actions{display:flex;gap:8px;align-items:center}
+
+.content{padding:20px 24px 40px}
+
+/* ── STAT CARDS ──────────────────────────────────────────── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+.sc-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-4);margin-bottom:6px}
+.sc-value{font-family:var(--display);font-size:28px;font-weight:600;color:var(--ink);line-height:1}
+.sc-sub{font-size:11px;color:var(--ink-4);margin-top:4px;font-family:var(--mono)}
+.sc-delta{display:inline-flex;font-size:10px;font-weight:700;padding:1px 5px;border-radius:5px}
+.sd-up{background:var(--green-lt);color:var(--green)}
+.sd-dn{background:var(--red-lt);color:var(--red)}
+.sd-fl{background:var(--card-d);color:var(--ink-4)}
+
+/* ── TABLES ──────────────────────────────────────────────── */
+.table-card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.tc-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.tc-title{font-size:13px;font-weight:600;color:var(--ink)}
+.tc-actions{display:flex;gap:6px;align-items:center}
+.search-input{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:5px 10px;font-size:12px;font-family:var(--font);color:var(--ink);outline:none;width:200px;transition:border-color .12s}
+.search-input:focus{border-color:var(--blue)}
+.search-input::placeholder{color:var(--ink-4)}
+
+table{width:100%;border-collapse:collapse}
+th{background:var(--surface);border-bottom:1px solid var(--border);padding:8px 14px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-4);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--ink-2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+/* STATUS BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.bdot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
+.b-active {background:var(--green-lt);color:var(--green)}
+.b-trial  {background:var(--amber-lt);color:var(--amber)}
+.b-expired{background:var(--red-lt);color:var(--red)}
+.b-pastdue{background:var(--red-lt);color:var(--red)}
+.b-suspended{background:var(--card-d);color:var(--ink-4)}
+.b-ok     {background:var(--green-lt);color:var(--green)}
+.b-warn   {background:var(--amber-lt);color:var(--amber)}
+.b-error  {background:var(--red-lt);color:var(--red)}
+.b-open   {background:var(--blue-lt);color:var(--blue)}
+.b-info   {background:var(--blue-lt);color:var(--blue)}
+.b-critical{background:var(--red-lt);color:var(--red);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* BUTTONS */
+.btn{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 13px;border-radius:7px;border:1px solid var(--border-l);background:none;cursor:pointer;color:var(--ink-3);transition:all .1s;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:var(--card-d);color:var(--ink)}
+.btn-primary{background:var(--blue);color:white;border-color:var(--blue)}
+.btn-primary:hover{background:#4a8ae0}
+.btn-red{background:var(--red-lt);color:var(--red);border-color:var(--red-dk)}
+.btn-red:hover{background:var(--red-dk)}
+.btn-green{background:var(--green-lt);color:var(--green);border-color:var(--green-dk)}
+.btn-sm{font-size:11px;padding:4px 9px;border-radius:6px}
+.btn-icon{width:28px;height:28px;padding:0;border-radius:6px;justify-content:center;font-size:14px}
+
+/* ── TABS ────────────────────────────────────────────────── */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:16px;padding:0 24px}
+.tab{padding:10px 14px;font-size:12px;font-weight:500;color:var(--ink-4);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .12s}
+.tab:hover{color:var(--ink-2)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+
+/* ── AUDIT LOG ───────────────────────────────────────────── */
+.audit-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.audit-item:last-child{border-bottom:none}
+.ai-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.ai-body{flex:1;min-width:0}
+.ai-action{font-size:12px;font-weight:500;color:var(--ink)}
+.ai-detail{font-size:11px;color:var(--ink-4);margin-top:2px;font-family:var(--mono)}
+.ai-time{font-size:10px;color:var(--ink-4);white-space:nowrap;font-family:var(--mono)}
+
+/* ── HEALTH CHECKS ───────────────────────────────────────── */
+.health-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.hc-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px}
+.hc-card.error{border-color:var(--red-dk);background:var(--red-lt)}
+.hc-card.warn {border-color:var(--amber-dk);background:var(--amber-lt)}
+.hc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.hc-name{font-size:12px;font-weight:600;color:var(--ink)}
+.hc-stat{font-size:10px;color:var(--ink-4);font-family:var(--mono)}
+.hc-meter{height:4px;background:var(--surface);border-radius:2px;overflow:hidden;margin-top:6px}
+.hcm-fill{height:100%;border-radius:2px;background:var(--green);transition:width .4s}
+
+/* ── MODAL ───────────────────────────────────────────────── */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .15s;backdrop-filter:blur(3px);
+}
+.modal-overlay.open{opacity:1;pointer-events:all}
+.modal{background:var(--surface);border:1px solid var(--border-l);border-radius:14px;width:520px;max-width:94vw;max-height:88vh;overflow-y:auto;box-shadow:0 32px 80px rgba(0,0,0,.6);transform:translateY(10px) scale(.98);transition:transform .15s}
+.modal-overlay.open .modal{transform:none}
+.modal-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-family:var(--display);font-size:17px;font-weight:400;font-style:italic;color:var(--ink)}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--ink-4);font-size:20px;padding:2px;line-height:1}
+.modal-body{padding:20px 22px}
+.modal-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end}
+
+/* FORM */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-4);margin-bottom:5px}
+.field input,.field select,.field textarea{
+  width:100%;padding:8px 11px;border:1px solid var(--border-l);border-radius:7px;
+  font-size:12px;font-family:var(--font);color:var(--ink);background:var(--card);outline:none;
+  transition:border-color .12s;
+}
+.field input:focus,.field select:focus{border-color:var(--blue)}
+.field .hint{font-size:10px;color:var(--ink-4);margin-top:3px}
+
+/* 2FA SCREEN */
+.lock-screen{
+  position:fixed;inset:0;background:var(--bg);z-index:500;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;
+}
+.ls-card{background:var(--surface);border:1px solid var(--border-l);border-radius:16px;padding:36px;width:380px;max-width:94vw}
+.ls-title{font-family:var(--display);font-size:24px;font-weight:300;font-style:italic;color:var(--ink);text-align:center;margin-bottom:6px}
+.ls-sub{font-size:12px;color:var(--ink-4);text-align:center;margin-bottom:24px;line-height:1.5}
+.ls-code-row{display:flex;gap:6px;justify-content:center;margin-bottom:20px}
+.ls-digit{
+  width:46px;height:56px;border:1.5px solid var(--border-l);border-radius:9px;
+  background:var(--card);font-size:22px;font-family:var(--mono);font-weight:700;color:var(--ink);
+  text-align:center;outline:none;transition:border-color .12s;
+}
+.ls-digit:focus{border-color:var(--blue)}
+.ls-error{font-size:12px;color:var(--red);text-align:center;min-height:16px}
+.ls-ip{font-size:10px;color:var(--ink-4);text-align:center;margin-top:12px;font-family:var(--mono)}
+
+/* CONSENT BANNER */
+.consent-banner{
+  background:var(--amber-lt);border:1px solid var(--amber-dk);border-radius:10px;
+  padding:14px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px;
+}
+.cb-icon{font-size:18px;flex-shrink:0}
+.cb-text{font-size:12px;color:var(--ink);line-height:1.6}
+.cb-text strong{color:var(--amber)}
+
+/* TOAST */
+.toast{position:fixed;bottom:16px;right:16px;background:var(--surface);border:1px solid var(--border-l);color:var(--ink);padding:10px 16px;border-radius:9px;font-size:12px;font-weight:500;z-index:999;transform:translateY(60px);opacity:0;transition:all .2s;display:flex;align-items:center;gap:8px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.toast.show{transform:none;opacity:1}
+.toast.ok {border-color:var(--green-dk);color:var(--green)}
+.toast.err{border-color:var(--red-dk);color:var(--red)}
+
+.spin{animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- 2FA LOCK SCREEN -->
+<div class="lock-screen" id="lock-screen">
+  <div class="ls-card">
+    <div style="text-align:center;font-size:32px;margin-bottom:16px">🔐</div>
+    <div class="ls-title">Admin Access</div>
+    <div class="ls-sub">Enter your 6-digit authenticator code to access the admin panel.</div>
+    <div class="ls-code-row" id="code-row">
+      <input class="ls-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]" onkeyup="digitInput(this,0)" id="d0">
+      <input class="ls-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]" onkeyup="digitInput(this,1)" id="d1">
+      <input class="ls-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]" onkeyup="digitInput(this,2)" id="d2">
+      <input class="ls-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]" onkeyup="digitInput(this,3)" id="d3">
+      <input class="ls-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]" onkeyup="digitInput(this,4)" id="d4">
+      <input class="ls-digit" maxlength="1" type="text" inputmode="numeric" pattern="[0-9]" onkeyup="digitInput(this,5)" id="d5">
+    </div>
+    <div class="ls-error" id="ls-error"></div>
+    <div class="ls-ip" id="ls-ip">Connecting from: checking…</div>
+  </div>
+</div>
+
+<!-- MAIN APP (hidden until 2FA) -->
+<div class="app" id="app" style="display:none">
+  <div class="nav">
+    <div class="nav-brand">
+      <div class="nb-logo">CC</div>
+      <span class="nb-text">Admin</span>
+    </div>
+
+    <div class="nav-section">Overview</div>
+    <div class="nav-item active" onclick="nav('overview',this)"><span class="ni-icon">⊞</span>Overview</div>
+    <div class="nav-item" onclick="nav('activity',this)"><span class="ni-icon">◈</span>Live Activity</div>
+
+    <div class="nav-section">Customers</div>
+    <div class="nav-item" onclick="nav('users',this)"><span class="ni-icon">◎</span>Users & Orgs<span class="ni-badge" id="nav-badge-users">0</span></div>
+    <div class="nav-item" onclick="nav('tickets',this)"><span class="ni-icon">◫</span>Support Tickets<span class="ni-badge amber" id="nav-badge-tickets">0</span></div>
+
+    <div class="nav-section">Monitoring</div>
+    <div class="nav-item" onclick="nav('health',this)"><span class="ni-icon">◉</span>Integration Health<span class="ni-badge" id="nav-badge-health" style="display:none">!</span></div>
+    <div class="nav-item" onclick="nav('alerts',this)"><span class="ni-icon">🔔</span>Alerts<span class="ni-badge" id="nav-badge-alerts">0</span></div>
+    <div class="nav-item" onclick="nav('jobs',this)"><span class="ni-icon">⟳</span>Background Jobs</div>
+
+    <div class="nav-section">System</div>
+    <div class="nav-item" onclick="nav('audit',this)"><span class="ni-icon">◪</span>Audit Log</div>
+    <div class="nav-item" onclick="nav('maintenance',this)"><span class="ni-icon">⚙</span>Maintenance</div>
+    <div class="nav-item" onclick="nav('kb',this)"><span class="ni-icon">📚</span>Knowledge Base</div>
+
+    <div class="nav-bottom">
+      <div class="admin-chip">
+        <div class="admin-avatar">P</div>
+        <div class="admin-info">
+          <div class="admin-name"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="92e2f3e7fed2f1fdfffff3fcf6f1f7fce6f7e0bce1f7">[email&#160;protected]</a></div>
+          <div class="admin-role">Super Admin</div>
+        </div>
+        <span class="admin-2fa">2FA ✓</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="main" id="main-content">
+    <!-- Content rendered by JS -->
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBg(event)">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title">Modal</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
+// ════════════════════════════════════════════════════════════════
+// 2FA FLOW
+// ════════════════════════════════════════════════════════════════
+let adminAuthenticated = false;
+
+// Show IP to admin so they can detect anomalies
+fetch('https://api.ipify.org?format=json').then(r=>r.json()).then(d=>{
+  document.getElementById('ls-ip').textContent = 'Connecting from: ' + d.ip;
+}).catch(()=>{
+  document.getElementById('ls-ip').textContent = 'IP check unavailable';
+});
+
+function digitInput(input, idx) {
+  // Auto-advance to next digit
+  if (input.value.length === 1 && idx < 5) {
+    document.getElementById('d' + (idx+1)).focus();
+  }
+  // Check on last digit
+  if (idx === 5) checkTOTP();
+  // Allow backspace to go back
+  if (input.value === '' && idx > 0 && event.key === 'Backspace') {
+    document.getElementById('d' + (idx-1)).focus();
+  }
+}
+
+function checkTOTP() {
+  const code = Array.from({length:6}, (_,i) => document.getElementById('d'+i).value).join('');
+  if (code.length < 6) return;
+
+  const errEl = document.getElementById('ls-error');
+
+  // DEMO: accept '123456' or any 6-digit code
+  // Production: POST to /api/admin/verify-totp with timing-safe comparison
+  if (code === '123456' || code.length === 6) {
+    errEl.textContent = '';
+    // Log successful admin login to audit log
+    auditLog('admin_login', 'system', null, null, null, { totp_verified: true });
+    adminAuthenticated = true;
+    document.getElementById('lock-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'grid';
+    renderPage('overview');
+  } else {
+    errEl.textContent = 'Invalid code. Attempt logged.';
+    auditLog('admin_login_failed', 'system', null, null, null, { code_attempt: true });
+    // Reset inputs
+    Array.from({length:6}, (_,i) => { document.getElementById('d'+i).value = ''; });
+    document.getElementById('d0').focus();
+  }
+}
+
+// Auto-focus first digit
+setTimeout(() => document.getElementById('d0').focus(), 100);
+
+// ════════════════════════════════════════════════════════════════
+// DEMO DATA
+// ════════════════════════════════════════════════════════════════
+const DEMO_ORGS = [
+  { id:'o1', name:'Vero Italiano AB', plan:'pro', status:'active', businesses:6, docs:412, ai_tokens:3200000, trial_end:null, email:'paul@veroitaliano.se', integrations:{fortnox:'ok', caspeco:'ok', ancon:'warn'}, last_active:'2 hours ago', mrr:7900 },
+  { id:'o2', name:'Björk & Co AB',     plan:'starter', status:'active', businesses:3, docs:89, ai_tokens:450000, trial_end:null, email:'info@bjorkco.se', integrations:{fortnox:'ok', caspeco:'error', ancon:'ok'}, last_active:'1 day ago', mrr:2900 },
+  { id:'o3', name:'Sushi Palace AB',  plan:'trial', status:'trial', businesses:1, docs:12, ai_tokens:42000, trial_end:'2026-04-05', email:'admin@sushipalace.se', integrations:{fortnox:'warn', caspeco:'ok', ancon:'ok'}, last_active:'3 hours ago', mrr:0 },
+  { id:'o4', name:'Pizza Roma AB',    plan:'starter', status:'past_due', businesses:2, docs:56, ai_tokens:900000, trial_end:null, email:'info@pizzaroma.se', integrations:{fortnox:'ok', caspeco:'ok', ancon:'ok'}, last_active:'5 days ago', mrr:0 },
+  { id:'o5', name:'Café Grön AB',     plan:'trial', status:'trial', businesses:1, docs:8, ai_tokens:18000, trial_end:'2026-04-18', email:'chef@cafegron.se', integrations:{fortnox:'ok', caspeco:'ok', ancon:'ok'}, last_active:'just now', mrr:0 },
+  { id:'o6', name:'Mamma Mia AB',     plan:'starter', status:'suspended', businesses:2, docs:34, ai_tokens:220000, trial_end:null, email:'info@mammamia.se', integrations:{fortnox:'error', caspeco:'ok', ancon:'ok'}, last_active:'12 days ago', mrr:0 },
+];
+
+const DEMO_TICKETS = [
+  { id:'t1', org:'Björk & Co AB', subject:'Caspeco not syncing since yesterday', status:'open', priority:'high', category:'integration', created:'1 hour ago' },
+  { id:'t2', org:'Sushi Palace AB', subject:'Cannot upload PDF — getting 500 error', status:'waiting_support', priority:'normal', category:'bug', created:'3 hours ago' },
+  { id:'t3', org:'Vero Italiano AB', subject:'How do I add a second restaurant?', status:'waiting_user', priority:'low', category:'general', created:'1 day ago' },
+  { id:'t4', org:'Pizza Roma AB', subject:'Billing invoice question', status:'open', priority:'urgent', category:'billing', created:'2 hours ago' },
+  { id:'t5', org:'Café Grön AB', subject:'Fortnox OAuth error after token refresh', status:'resolved', priority:'normal', category:'integration', created:'2 days ago' },
+];
+
+const DEMO_AUDIT = [
+  { action:'extend_trial', actor:'paul@admin.se', target:'Sushi Palace AB', detail:'+7 days', time:'2 min ago', color:'green' },
+  { action:'change_plan', actor:'paul@admin.se', target:'Björk & Co AB', detail:'trial → starter', time:'1 hour ago', color:'blue' },
+  { action:'admin_login', actor:'paul@admin.se', target:'system', detail:'TOTP verified, IP 194.x.x.x', time:'2 hours ago', color:'violet' },
+  { action:'impersonation_requested', actor:'paul@admin.se', target:'Vero Italiano AB', detail:'Consent sent to user', time:'3 hours ago', color:'amber' },
+  { action:'ticket_resolved', actor:'paul@admin.se', target:'Café Grön AB #5', detail:'Fortnox token refresh fix', time:'2 days ago', color:'green' },
+  { action:'suspend_account', actor:'paul@admin.se', target:'Mamma Mia AB', detail:'Non-payment 30+ days', time:'5 days ago', color:'red' },
+];
+
+const DEMO_ALERTS = [
+  { id:'a1', level:'critical', title:'Ancon API down — 3 orgs affected', category:'integration', provider:'ancon', orgs:3, since:'45 min ago', status:'open' },
+  { id:'a2', level:'warning', title:'Fortnox token expiring in 24h', category:'integration', provider:'fortnox', orgs:2, since:'2 hours ago', status:'open' },
+  { id:'a3', level:'info', title:'Stripe webhook delayed by 8 min', category:'payment', provider:'stripe', orgs:0, since:'3 hours ago', status:'acknowledged' },
+  { id:'a4', level:'error', title:'Caspeco 500 errors — 1 org affected', category:'integration', provider:'caspeco', orgs:1, since:'1 hour ago', status:'open' },
+];
+
+const DEMO_JOBS = [
+  { name:'fortnox-token-refresh', status:'ok', last_run:'5 min ago', next_run:'55 min', duration_ms:2340, runs_today:11 },
+  { name:'integration-health-check', status:'ok', last_run:'2 min ago', next_run:'58 min', duration_ms:1840, runs_today:24 },
+  { name:'trial-emails', status:'ok', last_run:'3 hours ago', next_run:'21 hours', duration_ms:420, runs_today:1 },
+  { name:'scheduled-exports', status:'error', last_run:'1 hour ago', next_run:'−', duration_ms:null, runs_today:0, error:'Resend API rate limit' },
+  { name:'ai-usage-reset', status:'ok', last_run:'26 days ago', next_run:'4 days', duration_ms:88, runs_today:0 },
+  { name:'clean-ai-logs', status:'ok', last_run:'2 hours ago', next_run:'22 hours', duration_ms:1240, runs_today:1 },
+];
+
+// ════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════════════════
+function nav(page, el) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+  el?.classList.add('active');
+  renderPage(page);
+}
+
+function renderPage(page) {
+  const pages = { overview, users, tickets, health, alerts, jobs, audit, maintenance, kb };
+  const fn = pages[page];
+  if (fn) document.getElementById('main-content').innerHTML = fn();
+  // Update nav badges
+  document.getElementById('nav-badge-users').textContent = DEMO_ORGS.filter(o=>o.status==='trial'||o.status==='past_due').length;
+  document.getElementById('nav-badge-tickets').textContent = DEMO_TICKETS.filter(t=>t.status==='open'||t.status==='waiting_support').length;
+  document.getElementById('nav-badge-alerts').textContent = DEMO_ALERTS.filter(a=>a.status==='open').length;
+  const healthErrors = DEMO_ORGS.some(o=>Object.values(o.integrations).includes('error'));
+  const hb = document.getElementById('nav-badge-health');
+  hb.style.display = healthErrors ? '' : 'none';
+}
+
+// ════════════════════════════════════════════════════════════════
+// OVERVIEW PAGE
+// ════════════════════════════════════════════════════════════════
+function overview() {
+  const total_mrr = DEMO_ORGS.reduce((s,o)=>s+o.mrr,0);
+  const active    = DEMO_ORGS.filter(o=>o.status==='active').length;
+  const trials    = DEMO_ORGS.filter(o=>o.status==='trial').length;
+  const open_tickets = DEMO_TICKETS.filter(t=>t.status==='open').length;
+  const open_alerts  = DEMO_ALERTS.filter(a=>a.status==='open').length;
+
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Overview</strong></div><div class="ph-sub">System status and KPIs — ${new Date().toLocaleString('sv-SE')}</div></div>
+    <div class="ph-actions">
+      ${open_alerts ? `<span class="badge b-critical">⚠ ${open_alerts} active alert${open_alerts>1?'s':''}</span>` : '<span class="badge b-ok">✓ All systems normal</span>'}
+      <button class="btn btn-primary btn-sm" onclick="nav('maintenance', null)">⚙ Maintenance</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="stats-row">
+      <div class="stat-card"><div class="sc-label">Monthly Recurring Revenue</div><div class="sc-value">${(total_mrr/100).toFixed(0)} kr</div><div class="sc-sub"><span class="sc-delta sd-up">+12%</span> vs last month</div></div>
+      <div class="stat-card"><div class="sc-label">Active Organisations</div><div class="sc-value">${DEMO_ORGS.length}</div><div class="sc-sub">${active} paid · ${trials} trial · 1 suspended</div></div>
+      <div class="stat-card"><div class="sc-label">Open Tickets</div><div class="sc-value">${open_tickets}</div><div class="sc-sub">${DEMO_TICKETS.filter(t=>t.priority==='high'||t.priority==='urgent').length} high priority</div></div>
+      <div class="stat-card"><div class="sc-label">Integration Errors</div><div class="sc-value" style="color:var(--${open_alerts>0?'red':'green'})">${DEMO_ALERTS.filter(a=>a.status==='open'&&a.level!=='info').length}</div><div class="sc-sub">${DEMO_ALERTS.filter(a=>a.status==='open').reduce((s,a)=>s+a.orgs,0)} orgs affected</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="table-card">
+        <div class="tc-header"><div class="tc-title">Active Alerts</div><button class="btn btn-sm" onclick="nav('alerts',null)">View all</button></div>
+        <div style="padding:0 4px">
+          ${DEMO_ALERTS.filter(a=>a.status==='open').map(a=>`
+            <div class="audit-item" style="padding:10px 14px">
+              <div class="ai-dot" style="background:var(--${a.level==='critical'?'red':a.level==='error'?'red':a.level==='warning'?'amber':'blue'})"></div>
+              <div class="ai-body">
+                <div class="ai-action">${a.title}</div>
+                <div class="ai-detail">${a.orgs} org${a.orgs!==1?'s':''} · ${a.since}</div>
+              </div>
+              <button class="btn btn-sm" onclick="acknowledgeAlert('${a.id}')">ACK</button>
+            </div>`).join('') || '<div style="padding:16px;text-align:center;color:var(--ink-4);font-size:12px">No open alerts</div>'}
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="tc-header"><div class="tc-title">Recent Audit Log</div><button class="btn btn-sm" onclick="nav('audit',null)">View all</button></div>
+        <div style="padding:0 14px">
+          ${DEMO_AUDIT.slice(0,4).map(a=>`
+            <div class="audit-item">
+              <div class="ai-dot" style="background:var(--${a.color})"></div>
+              <div class="ai-body">
+                <div class="ai-action">${a.action}</div>
+                <div class="ai-detail">${a.actor} → ${a.target} · ${a.detail}</div>
+              </div>
+              <div class="ai-time">${a.time}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// USERS PAGE
+// ════════════════════════════════════════════════════════════════
+function users() {
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Users</strong> & Organisations</div><div class="ph-sub">${DEMO_ORGS.length} total organisations</div></div>
+  </div>
+  <div class="tabs">
+    <div class="tab active">All (${DEMO_ORGS.length})</div>
+    <div class="tab">Trials (${DEMO_ORGS.filter(o=>o.status==='trial').length})</div>
+    <div class="tab">Active (${DEMO_ORGS.filter(o=>o.status==='active').length})</div>
+    <div class="tab">Issues (${DEMO_ORGS.filter(o=>o.status==='past_due'||o.status==='suspended').length})</div>
+  </div>
+  <div class="content" style="padding-top:0">
+    <div class="table-card">
+      <div class="tc-header">
+        <div class="tc-title">All Organisations</div>
+        <div class="tc-actions">
+          <input class="search-input" type="text" placeholder="Search…" oninput="filterUsers(this.value)">
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="users-table">
+          <thead><tr>
+            <th>Organisation</th><th>Plan / Status</th><th>Businesses</th>
+            <th>Docs</th><th>AI Tokens</th><th>Integrations</th><th>Last Active</th><th>Actions</th>
+          </tr></thead>
+          <tbody>
+            ${DEMO_ORGS.map(org => `
+            <tr id="row-${org.id}">
+              <td>
+                <div style="font-weight:500;color:var(--ink)">${org.name}</div>
+                <div style="font-size:10px;color:var(--ink-4);font-family:var(--mono)">${org.email}</div>
+              </td>
+              <td>
+                <span class="badge b-${org.status}">${org.plan}</span>
+                ${org.status==='trial' ? `<div style="font-size:10px;color:var(--amber);margin-top:2px">Expires ${org.trial_end}</div>` : ''}
+                ${org.status==='past_due' ? `<div style="font-size:10px;color:var(--red);margin-top:2px">Payment failed</div>` : ''}
+              </td>
+              <td style="font-family:var(--mono);text-align:right">${org.businesses}</td>
+              <td style="font-family:var(--mono);text-align:right">${org.docs}</td>
+              <td style="font-family:var(--mono);text-align:right;font-size:11px">${(org.ai_tokens/1000).toFixed(0)}k</td>
+              <td>
+                ${Object.entries(org.integrations).map(([k,v])=>`
+                  <span class="badge b-${v}" style="margin:1px;font-size:9px">${k}</span>`).join('')}
+              </td>
+              <td style="font-size:11px;color:var(--ink-4)">${org.last_active}</td>
+              <td>
+                <div style="display:flex;gap:4px;flex-wrap:wrap">
+                  <button class="btn btn-sm" onclick="openOrgDetail('${org.id}')">View</button>
+                  <button class="btn btn-sm" onclick="openExtendTrial('${org.id}')">Extend</button>
+                  <button class="btn btn-sm" onclick="openChangePlan('${org.id}')">Plan</button>
+                  <button class="btn btn-sm" onclick="requestImpersonation('${org.id}')" title="Requires user consent">🔍 Impersonate</button>
+                  ${org.status==='suspended'
+                    ? `<button class="btn btn-sm btn-green" onclick="unsuspend('${org.id}')">Unsuspend</button>`
+                    : `<button class="btn btn-sm btn-red" onclick="suspendOrg('${org.id}')">Suspend</button>`}
+                </div>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function filterUsers(q) {
+  document.querySelectorAll('#users-table tbody tr').forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// ORG DETAIL MODAL
+// ════════════════════════════════════════════════════════════════
+function openOrgDetail(orgId) {
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  if (!org) return;
+
+  openModal(`${org.name} — Detail`, `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      ${[
+        ['Plan', `<span class="badge b-${org.status}">${org.plan}</span>`],
+        ['Status', `<span class="badge b-${org.status}">${org.status}</span>`],
+        ['MRR', org.mrr ? `${org.mrr/100} kr/mo` : 'Free'],
+        ['Businesses', org.businesses],
+        ['Documents', org.docs],
+        ['AI Tokens', `${(org.ai_tokens/1000).toFixed(0)}k`],
+        ['Email', org.email],
+        ['Last Active', org.last_active],
+      ].map(([k,v])=>`
+        <div style="background:var(--card);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-4);margin-bottom:4px">${k}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--ink)">${v}</div>
+        </div>`).join('')}
+    </div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-4);margin-bottom:8px">Integration Health</div>
+    ${Object.entries(org.integrations).map(([k,v])=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;font-weight:500;color:var(--ink)">${k}</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <span class="badge b-${v}">${v}</span>
+          ${v==='error'||v==='warn' ? `<button class="btn btn-sm" onclick="runDiagnostic('${orgId}','${k}')">Fix</button>` : ''}
+        </div>
+      </div>`).join('')}
+  `, [
+    { label:'View Tickets', action:`nav('tickets',null);closeModal()` },
+    { label:'Run Full Diagnostic', action:`runFullDiagnostic('${orgId}');closeModal()`, primary:true },
+  ]);
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTIONS — EXTEND TRIAL
+// ════════════════════════════════════════════════════════════════
+function openExtendTrial(orgId) {
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  openModal('Extend Trial', `
+    <div class="field"><label>Organisation</label><input type="text" value="${org?.name}" disabled></div>
+    <div class="field">
+      <label>Extend by (days)</label>
+      <select id="extend-days">
+        <option value="7">7 days</option><option value="14">14 days</option>
+        <option value="30" selected>30 days</option><option value="60">60 days</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Reason (required for audit log)</label>
+      <input type="text" id="extend-reason" placeholder="e.g. Sales call — needs more time to evaluate">
+    </div>
+  `, [{label:'Cancel',action:'closeModal()'},{label:'Extend Trial',action:`confirmExtendTrial('${orgId}')`,primary:true}]);
+}
+
+function confirmExtendTrial(orgId) {
+  const days   = document.getElementById('extend-days')?.value;
+  const reason = document.getElementById('extend-reason')?.value;
+  if (!reason?.trim()) { alert('Reason is required for audit compliance.'); return; }
+  const org    = DEMO_ORGS.find(o=>o.id===orgId);
+  auditLog('extend_trial', 'org', orgId, org?.name, { plan:org?.plan }, { days_extended:parseInt(days) }, reason);
+  closeModal();
+  toast(`Trial extended ${days} days for ${org?.name}`, 'ok');
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTIONS — CHANGE PLAN
+// ════════════════════════════════════════════════════════════════
+function openChangePlan(orgId) {
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  openModal('Change Plan', `
+    <div class="field"><label>Organisation</label><input type="text" value="${org?.name}" disabled></div>
+    <div class="field">
+      <label>New Plan</label>
+      <select id="new-plan">
+        <option value="trial">Trial</option>
+        <option value="starter">Starter</option>
+        <option value="pro">Pro</option>
+        <option value="enterprise">Enterprise</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Reason (required)</label>
+      <input type="text" id="plan-reason" placeholder="e.g. Promotional upgrade for key account">
+    </div>
+    <div class="consent-banner">
+      <div class="cb-icon">⚠️</div>
+      <div class="cb-text">Changing a plan bypasses Stripe. <strong>Use only for manual overrides.</strong> The billing system is not automatically updated — update Stripe separately if needed.</div>
+    </div>
+  `, [{label:'Cancel',action:'closeModal()'},{label:'Change Plan',action:`confirmChangePlan('${orgId}')`,primary:true}]);
+}
+
+function confirmChangePlan(orgId) {
+  const newPlan = document.getElementById('new-plan')?.value;
+  const reason  = document.getElementById('plan-reason')?.value;
+  if (!reason?.trim()) { alert('Reason required.'); return; }
+  const org     = DEMO_ORGS.find(o=>o.id===orgId);
+  auditLog('change_plan', 'org', orgId, org?.name, { plan:org?.plan }, { plan:newPlan }, reason);
+  if (org) org.plan = newPlan;
+  closeModal();
+  toast(`Plan changed to ${newPlan} for ${org?.name}`, 'ok');
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTIONS — IMPERSONATION (with consent)
+// ════════════════════════════════════════════════════════════════
+function requestImpersonation(orgId) {
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  openModal('Request Impersonation', `
+    <div class="consent-banner">
+      <div class="cb-icon">🔐</div>
+      <div class="cb-text">
+        <strong>Impersonation requires explicit user consent.</strong><br>
+        A consent request will be sent to the account owner at <strong>${org?.email}</strong>. They must approve before any access is granted. This session will be fully logged.
+      </div>
+    </div>
+    <div class="field">
+      <label>Reason (shown to user)</label>
+      <input type="text" id="impers-reason" placeholder="e.g. Investigating Fortnox sync issue you reported in ticket #42">
+    </div>
+    <div class="field">
+      <label>Access scope</label>
+      <select id="impers-scope">
+        <option value="read_data">Read data only (no personal data)</option>
+        <option value="read_tickets">Read tickets and messages</option>
+        <option value="full_metadata">Full metadata access</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Consent expires in</label>
+      <select id="impers-expiry">
+        <option value="2">2 hours</option>
+        <option value="8" selected>8 hours</option>
+        <option value="24">24 hours</option>
+      </select>
+    </div>
+  `, [
+    {label:'Cancel',action:'closeModal()'},
+    {label:'Send Consent Request',action:`sendConsentRequest('${orgId}')`,primary:true}
+  ]);
+}
+
+function sendConsentRequest(orgId) {
+  const reason  = document.getElementById('impers-reason')?.value;
+  const scope   = document.getElementById('impers-scope')?.value;
+  const expiry  = document.getElementById('impers-expiry')?.value;
+  if (!reason?.trim()) { alert('Reason is required — it is shown to the user.'); return; }
+
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  auditLog('impersonation_requested', 'org', orgId, org?.name, null, { scope, expiry_hours:expiry, reason }, reason);
+  // In production: INSERT into impersonation_consents + send email to org owner
+  closeModal();
+  toast(`Consent request sent to ${org?.email}. You can impersonate once they approve.`, 'ok');
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTIONS — SUSPEND / UNSUSPEND
+// ════════════════════════════════════════════════════════════════
+function suspendOrg(orgId) {
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  openModal('Suspend Account', `
+    <div style="background:var(--red-lt);border:1px solid var(--red-dk);border-radius:9px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:var(--red)">
+      <strong>Warning:</strong> Suspending blocks all API access immediately. The user will see a suspension message.
+    </div>
+    <div class="field"><label>Organisation</label><input type="text" value="${org?.name}" disabled></div>
+    <div class="field">
+      <label>Suspension reason (shown to user in suspension message)</label>
+      <input type="text" id="suspend-reason" placeholder="e.g. Non-payment — please contact billing">
+    </div>
+  `, [
+    {label:'Cancel',action:'closeModal()'},
+    {label:'Suspend Account',action:`confirmSuspend('${orgId}')`,primary:false,danger:true}
+  ]);
+}
+
+function confirmSuspend(orgId) {
+  const reason = document.getElementById('suspend-reason')?.value;
+  if (!reason?.trim()) { alert('Suspension reason required.'); return; }
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  auditLog('suspend_account', 'org', orgId, org?.name, {status:org?.status}, {status:'suspended'}, reason);
+  if (org) org.status = 'suspended';
+  closeModal();
+  toast(`${org?.name} suspended.`,'err');
+  renderPage('users');
+}
+
+function unsuspend(orgId) {
+  const org = DEMO_ORGS.find(o=>o.id===orgId);
+  if (!confirm(`Unsuspend ${org?.name}?`)) return;
+  auditLog('unsuspend_account', 'org', orgId, org?.name, {status:'suspended'}, {status:'active'}, 'Manual reinstatement');
+  if (org) org.status = 'active';
+  toast(`${org?.name} reinstated.`,'ok');
+  renderPage('users');
+}
+
+// ════════════════════════════════════════════════════════════════
+// TICKETS PAGE
+// ════════════════════════════════════════════════════════════════
+function tickets() {
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Support</strong> Tickets</div><div class="ph-sub">${DEMO_TICKETS.filter(t=>t.status==='open').length} open · ${DEMO_TICKETS.filter(t=>t.status==='waiting_support').length} awaiting response</div></div>
+    <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="nav('kb',null)">Edit KB articles</button></div>
+  </div>
+  <div class="content">
+    <div class="table-card">
+      <div class="tc-header"><div class="tc-title">All Tickets</div></div>
+      <table>
+        <thead><tr><th>#</th><th>Organisation</th><th>Subject</th><th>Status</th><th>Priority</th><th>Category</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${DEMO_TICKETS.map((t,i)=>`
+          <tr>
+            <td style="font-family:var(--mono);color:var(--ink-4)">#${1041+i}</td>
+            <td style="font-weight:500">${t.org}</td>
+            <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject}</td>
+            <td><span class="badge b-${t.status==='open'?'open':t.status==='resolved'?'ok':t.status==='waiting_user'?'warn':'info'}">${t.status.replace('_',' ')}</span></td>
+            <td><span class="badge b-${t.priority==='urgent'||t.priority==='high'?'error':'info'}">${t.priority}</span></td>
+            <td><span style="font-size:11px;color:var(--ink-4)">${t.category}</span></td>
+            <td style="font-size:11px;color:var(--ink-4)">${t.created}</td>
+            <td>
+              <button class="btn btn-sm" onclick="openTicketDetail('${t.id}')">Open</button>
+              ${t.status!=='resolved'?`<button class="btn btn-sm btn-green" onclick="resolveTicket('${t.id}')">Resolve</button>`:''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function openTicketDetail(ticketId) {
+  const t = DEMO_TICKETS.find(t=>t.id===ticketId);
+  openModal(`Ticket — ${t?.subject}`, `
+    <div style="margin-bottom:12px;display:flex;gap:6px">
+      <span class="badge b-${t?.status==='open'?'open':'ok'}">${t?.status}</span>
+      <span class="badge b-${t?.priority==='high'?'error':'info'}">${t?.priority}</span>
+      <span class="badge b-info">${t?.category}</span>
+    </div>
+    <div style="background:var(--card);border-radius:8px;padding:12px;font-size:12px;color:var(--ink-2);margin-bottom:12px">
+      <strong>User message:</strong><br>${t?.subject}<br><br>
+      <em style="color:var(--ink-4)">Diagnostic snapshot, browser info, and page URL would appear here from the support widget.</em>
+    </div>
+    <div class="field">
+      <label>Reply to user</label>
+      <textarea style="width:100%;min-height:80px;background:var(--card);border:1px solid var(--border-l);border-radius:7px;padding:8px;font-size:12px;color:var(--ink);font-family:var(--font);resize:vertical;outline:none" placeholder="Write your reply…"></textarea>
+    </div>
+    <div class="field">
+      <label>Internal note (user cannot see this)</label>
+      <textarea style="width:100%;min-height:54px;background:var(--amber-lt);border:1px solid var(--amber-dk);border-radius:7px;padding:8px;font-size:12px;color:var(--ink-2);font-family:var(--font);resize:vertical;outline:none" placeholder="Internal note…"></textarea>
+    </div>
+  `, [
+    {label:'Close ticket',action:'closeModal()'},
+    {label:'Save note',action:'closeModal()'},
+    {label:'Send reply',action:`resolveTicket('${ticketId}');closeModal()`,primary:true}
+  ]);
+}
+
+function resolveTicket(id) {
+  const t = DEMO_TICKETS.find(t=>t.id===id);
+  if (t) t.status = 'resolved';
+  toast('Ticket resolved', 'ok');
+  renderPage('tickets');
+}
+
+// ════════════════════════════════════════════════════════════════
+// HEALTH PAGE
+// ════════════════════════════════════════════════════════════════
+function health() {
+  const providers = ['fortnox','caspeco','ancon','personalkollen'];
+  const stats = {};
+  providers.forEach(p => {
+    const orgs = DEMO_ORGS.map(o=>o.integrations[p]||'ok');
+    stats[p] = { ok: orgs.filter(s=>s==='ok').length, warn: orgs.filter(s=>s==='warn').length, error: orgs.filter(s=>s==='error').length, total: orgs.length };
+  });
+
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Integration</strong> Health</div><div class="ph-sub">Last checked: 2 minutes ago</div></div>
+    <div class="ph-actions">
+      <button class="btn btn-sm" onclick="runAllHealthChecks()"><span id="hc-spin">⟳</span> Run checks now</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="health-grid">
+      ${providers.map(p=>{
+        const s = stats[p];
+        const status = s.error>0?'error':s.warn>0?'warn':'ok';
+        return `<div class="hc-card ${status}">
+          <div class="hc-header">
+            <div class="hc-name">${p.charAt(0).toUpperCase()+p.slice(1)}</div>
+            <span class="badge b-${status}">${status}</span>
+          </div>
+          <div style="display:flex;gap:10px;font-size:11px;font-family:var(--mono);margin-bottom:4px">
+            <span style="color:var(--green)">✓ ${s.ok} ok</span>
+            ${s.warn?`<span style="color:var(--amber)">⚠ ${s.warn} warn</span>`:''}
+            ${s.error?`<span style="color:var(--red)">✗ ${s.error} error</span>`:''}
+          </div>
+          <div class="hc-meter"><div class="hcm-fill" style="width:${Math.round(s.ok/s.total*100)}%;background:${status==='error'?'var(--red)':status==='warn'?'var(--amber)':'var(--green)'}"></div></div>
+          ${status!=='ok'?`<button class="btn btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="runDiagnostic('all','${p}')">Run ${p} diagnostics</button>`:''}
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="table-card">
+      <div class="tc-header"><div class="tc-title">Orgs with Integration Issues</div></div>
+      <table>
+        <thead><tr><th>Organisation</th><th>Fortnox</th><th>Caspeco</th><th>Ancon</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${DEMO_ORGS.filter(o=>Object.values(o.integrations).some(v=>v!=='ok')).map(org=>`
+          <tr>
+            <td style="font-weight:500">${org.name}</td>
+            ${['fortnox','caspeco','ancon'].map(p=>`<td><span class="badge b-${org.integrations[p]||'ok'}">${org.integrations[p]||'ok'}</span></td>`).join('')}
+            <td>
+              <button class="btn btn-sm" onclick="runDiagnostic('${org.id}','all')">Diagnose</button>
+              <button class="btn btn-sm" onclick="openOrgDetail('${org.id}')">Detail</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+async function runAllHealthChecks() {
+  const btn = document.querySelector('[onclick="runAllHealthChecks()"]');
+  if (btn) { btn.innerHTML = '<span class="spin">⟳</span> Checking…'; btn.disabled = true; }
+  await delay(2000);
+  if (btn) { btn.innerHTML = '⟳ Run checks now'; btn.disabled = false; }
+  toast('Health checks complete', 'ok');
+  renderPage('health');
+}
+
+function runDiagnostic(orgId, provider) {
+  toast(`Running ${provider} diagnostics for org ${orgId}…`);
+  delay(1500).then(() => toast(`Diagnostic complete — see results in ticket`, 'ok'));
+}
+function runFullDiagnostic(orgId) { runDiagnostic(orgId,'all'); closeModal(); }
+
+// ════════════════════════════════════════════════════════════════
+// ALERTS PAGE
+// ════════════════════════════════════════════════════════════════
+function alerts() {
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>System</strong> Alerts</div><div class="ph-sub">${DEMO_ALERTS.filter(a=>a.status==='open').length} active · ${DEMO_ALERTS.filter(a=>a.status==='acknowledged').length} acknowledged</div></div>
+    <div class="ph-actions"><button class="btn btn-sm btn-primary" onclick="acknowledgeAll()">Acknowledge all</button></div>
+  </div>
+  <div class="content">
+    <div class="table-card">
+      <div class="tc-header"><div class="tc-title">All Alerts</div></div>
+      <table>
+        <thead><tr><th>Level</th><th>Title</th><th>Provider</th><th>Orgs</th><th>Since</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="alerts-tbody">
+          ${DEMO_ALERTS.map(a=>`
+          <tr id="alert-row-${a.id}">
+            <td><span class="badge b-${a.level==='critical'?'critical':a.level==='error'?'error':a.level==='warning'?'warn':'info'}">${a.level}</span></td>
+            <td style="font-weight:500;max-width:240px">${a.title}</td>
+            <td><span style="font-size:11px;font-family:var(--mono);color:var(--ink-4)">${a.provider}</span></td>
+            <td style="font-family:var(--mono);text-align:right">${a.orgs}</td>
+            <td style="font-size:11px;color:var(--ink-4)">${a.since}</td>
+            <td><span class="badge b-${a.status==='open'?'error':a.status==='acknowledged'?'warn':'ok'}">${a.status}</span></td>
+            <td>
+              ${a.status==='open'?`<button class="btn btn-sm" onclick="acknowledgeAlert('${a.id}')">Acknowledge</button>`:''}
+              ${a.status!=='resolved'?`<button class="btn btn-sm btn-green" onclick="resolveAlert('${a.id}')">Resolve</button>`:''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function acknowledgeAlert(id) {
+  const a = DEMO_ALERTS.find(a=>a.id===id);
+  if (a) a.status = 'acknowledged';
+  auditLog('acknowledge_alert', 'system', null, a?.title, {status:'open'}, {status:'acknowledged'}, 'Manual acknowledgement');
+  toast('Alert acknowledged');
+  renderPage('alerts');
+}
+
+function resolveAlert(id) {
+  const a = DEMO_ALERTS.find(a=>a.id===id);
+  if (a) a.status = 'resolved';
+  toast('Alert resolved','ok');
+  renderPage('alerts');
+}
+
+function acknowledgeAll() {
+  DEMO_ALERTS.forEach(a => { if (a.status==='open') a.status='acknowledged'; });
+  toast('All alerts acknowledged');
+  renderPage('alerts');
+}
+
+// ════════════════════════════════════════════════════════════════
+// JOBS PAGE
+// ════════════════════════════════════════════════════════════════
+function jobs() {
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Background</strong> Jobs</div><div class="ph-sub">Scheduled jobs via Vercel Cron + pg_cron</div></div>
+  </div>
+  <div class="content">
+    <div class="table-card">
+      <div class="tc-header"><div class="tc-title">Cron Jobs</div></div>
+      <table>
+        <thead><tr><th>Job</th><th>Status</th><th>Last Run</th><th>Next Run</th><th>Duration</th><th>Runs Today</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${DEMO_JOBS.map(j=>`<tr>
+            <td style="font-family:var(--mono);font-size:11px;font-weight:500">${j.name}</td>
+            <td><span class="badge b-${j.status==='ok'?'ok':'error'}">${j.status}${j.error?': '+j.error.slice(0,30):'+'}</span></td>
+            <td style="font-size:11px;color:var(--ink-4)">${j.last_run}</td>
+            <td style="font-size:11px;color:var(--ink-4)">${j.next_run}</td>
+            <td style="font-family:var(--mono);font-size:11px">${j.duration_ms ? j.duration_ms+'ms' : '—'}</td>
+            <td style="font-family:var(--mono);text-align:right">${j.runs_today}</td>
+            <td><button class="btn btn-sm" onclick="triggerJob('${j.name}')">▶ Run now</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+async function triggerJob(name) {
+  toast(`Triggering ${name}…`);
+  await delay(1200);
+  toast(`${name} completed`, 'ok');
+}
+
+// ════════════════════════════════════════════════════════════════
+// AUDIT LOG PAGE
+// ════════════════════════════════════════════════════════════════
+function audit() {
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Audit</strong> Log</div><div class="ph-sub">Immutable record of all admin actions. Rows cannot be modified or deleted.</div></div>
+    <div class="ph-actions"><button class="btn btn-sm" onclick="exportAuditLog()">Export CSV</button></div>
+  </div>
+  <div class="content">
+    <div class="table-card">
+      <div class="tc-header">
+        <div class="tc-title">All Actions</div>
+        <input class="search-input" type="text" placeholder="Filter…">
+      </div>
+      <div style="padding:0 14px">
+        ${[...DEMO_AUDIT, ...DEMO_AUDIT].map(a=>`
+        <div class="audit-item">
+          <div class="ai-dot" style="background:var(--${a.color})"></div>
+          <div class="ai-body">
+            <div class="ai-action" style="display:flex;align-items:center;gap:6px">
+              <span style="font-family:var(--mono);font-size:11px;background:var(--card);padding:1px 6px;border-radius:5px">${a.action}</span>
+              <span style="color:var(--ink-4)">${a.actor}</span>
+            </div>
+            <div class="ai-detail">Target: ${a.target} · ${a.detail}</div>
+          </div>
+          <div class="ai-time">${a.time}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function exportAuditLog() { toast('Exporting audit log as CSV…'); delay(800).then(()=>toast('CSV downloaded','ok')); }
+
+// ════════════════════════════════════════════════════════════════
+// MAINTENANCE PAGE
+// ════════════════════════════════════════════════════════════════
+function maintenance() {
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Maintenance</strong> & System</div><div class="ph-sub">System controls — use with care</div></div>
+  </div>
+  <div class="content">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+      <div class="table-card">
+        <div class="tc-header"><div class="tc-title">Maintenance Mode</div></div>
+        <div style="padding:16px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:var(--ink)">Maintenance mode</div>
+              <div style="font-size:11px;color:var(--ink-4);margin-top:2px">Shows a maintenance page to all users</div>
+            </div>
+            <button class="btn btn-sm" id="maint-btn" onclick="toggleMaintenance()" style="background:var(--card-d)">● Off</button>
+          </div>
+          <div class="field"><label>Message shown to users</label><textarea style="width:100%;background:var(--card);border:1px solid var(--border-l);border-radius:7px;padding:8px;font-size:12px;color:var(--ink);font-family:var(--font);resize:none;outline:none;height:60px">Scheduled maintenance. Back in 30 minutes.</textarea></div>
+          <div class="field"><label>Estimated duration</label><input type="text" placeholder="e.g. 30 minutes"></div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="tc-header"><div class="tc-title">System Actions</div></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:8px">
+          ${[
+            ['Clear AI response cache','Clears cached AI responses (users will get fresh answers)','clearCache'],
+            ['Reset rate limit counters','Resets per-org API rate limit counters','resetRateLimits'],
+            ['Force Fortnox token refresh','Re-fetches tokens for all connected orgs','forceTokenRefresh'],
+            ['Flush background job queue','Clears pending background jobs','flushJobs'],
+            ['Send test alert to Slack','Tests your Slack webhook is working','testSlackAlert'],
+          ].map(([name,desc,fn])=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--card);border-radius:8px;border:1px solid var(--border)">
+              <div>
+                <div style="font-size:12px;font-weight:500;color:var(--ink)">${name}</div>
+                <div style="font-size:10px;color:var(--ink-4);margin-top:1px">${desc}</div>
+              </div>
+              <button class="btn btn-sm" onclick="${fn}()">${fn==='clearCache'||fn==='testSlackAlert'?'Run':'Execute'}</button>
+            </div>`).join('')}
+        </div>
+      </div>
+
+    </div>
+  </div>`;
+}
+
+let maintenanceOn = false;
+function toggleMaintenance() {
+  maintenanceOn = !maintenanceOn;
+  const btn = document.getElementById('maint-btn');
+  btn.textContent = maintenanceOn ? '● On' : '● Off';
+  btn.style.background = maintenanceOn ? 'var(--red)' : 'var(--card-d)';
+  btn.style.color = maintenanceOn ? 'white' : '';
+  auditLog('toggle_maintenance', 'system', null, 'system', {maintenance:!maintenanceOn}, {maintenance:maintenanceOn}, 'Manual toggle');
+  toast(maintenanceOn ? 'Maintenance mode ON — users will see maintenance page' : 'Maintenance mode OFF — system live', maintenanceOn?'err':'ok');
+}
+
+function clearCache() { toast('AI cache cleared','ok'); auditLog('clear_cache','system',null,'system',null,{action:'clear_cache'},'Manual'); }
+function resetRateLimits() { toast('Rate limits reset','ok'); }
+function forceTokenRefresh() { toast('Token refresh queued for all orgs','ok'); }
+function flushJobs() { toast('Job queue flushed','ok'); }
+function testSlackAlert() { toast('Test alert sent to Slack','ok'); }
+
+// ════════════════════════════════════════════════════════════════
+// KB PAGE
+// ════════════════════════════════════════════════════════════════
+function kb() {
+  const articles = [
+    { slug:'fortnox-oauth', title:'Connecting Fortnox via OAuth', category:'integrations', views:342, published:true },
+    { slug:'caspeco-setup', title:'Setting up Caspeco POS integration', category:'integrations', views:218, published:true },
+    { slug:'add-business', title:'How to add a second restaurant location', category:'getting-started', views:512, published:true },
+    { slug:'export-pdf', title:'Generating monthly PDF reports', category:'exports', views:189, published:true },
+    { slug:'trial-limits', title:'What happens when my trial ends?', category:'billing', views:634, published:true },
+  ];
+  return `
+  <div class="page-header">
+    <div><div class="ph-title"><strong>Knowledge</strong> Base</div><div class="ph-sub">${articles.length} published articles</div></div>
+    <div class="ph-actions"><button class="btn btn-primary btn-sm" onclick="newArticle()">+ New article</button></div>
+  </div>
+  <div class="content">
+    <div class="table-card">
+      <div class="tc-header"><div class="tc-title">Articles</div><input class="search-input" placeholder="Search articles…"></div>
+      <table>
+        <thead><tr><th>Title</th><th>Category</th><th>Views</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${articles.map(a=>`<tr>
+            <td style="font-weight:500">${a.title}</td>
+            <td><span style="font-size:11px;font-family:var(--mono);color:var(--ink-4)">${a.category}</span></td>
+            <td style="font-family:var(--mono);text-align:right">${a.views}</td>
+            <td><span class="badge b-${a.published?'ok':'warn'}">${a.published?'published':'draft'}</span></td>
+            <td>
+              <button class="btn btn-sm">Edit</button>
+              <button class="btn btn-sm btn-red">Unpublish</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function newArticle() { toast('Article editor coming soon'); }
+
+// ════════════════════════════════════════════════════════════════
+// AUDIT LOG HELPER
+// ════════════════════════════════════════════════════════════════
+function auditLog(action, targetType, targetId, targetName, before, after, reason='') {
+  const entry = {
+    actor_type: 'admin',
+    actor_id:   'paul@commandcenter.se',
+    actor_ip:   'admin-ip',
+    action,
+    target_type: targetType,
+    target_id:   targetId,
+    target_name: targetName,
+    before_state: before,
+    after_state:  after,
+    reason,
+    session_id:  'admin-session-demo',
+    created_at:  new Date().toISOString(),
+  };
+  // In production: POST to /api/admin/audit-log
+  DEMO_AUDIT.unshift({ action, actor:'paul@commandcenter.se', target:targetName||targetType, detail:reason, time:'just now', color:'violet' });
+  console.log('[AUDIT]', entry);
+}
+
+// ════════════════════════════════════════════════════════════════
+// MODAL HELPER
+// ════════════════════════════════════════════════════════════════
+function openModal(title, body, buttons=[]) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = body;
+  document.getElementById('modal-footer').innerHTML = buttons.map(b=>
+    `<button class="btn ${b.primary?'btn-primary':b.danger?'btn-red':''}" onclick="${b.action}">${b.label}</button>`
+  ).join('');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function closeModalIfBg(e) { if (e.target.id==='modal-overlay') closeModal(); }
+
+// ════════════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════════════
+function delay(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+let toastTimer;
+function toast(msg, type=''){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+ 

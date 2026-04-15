@@ -1,0 +1,95 @@
+// @ts-nocheck
+import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/server'
+export const dynamic = 'force-dynamic'
+
+async function getAuth(req: NextRequest) {
+  const raw = req.cookies.get('sb-llzmixkrysduztsvmfzi-auth-token')?.value
+  if (!raw) return null
+  try {
+    let token = raw
+    try { const d = decodeURIComponent(raw); const p = JSON.parse(d); token = Array.isArray(p) ? p[0] : (p.access_token ?? raw) } catch {}
+    const db = createAdminClient()
+    const { data: { user } } = await db.auth.getUser(token)
+    if (!user) return null
+    const { data: m } = await db.from('organisation_members').select('org_id').eq('user_id', user.id).single()
+    return m ? { userId: user.id, orgId: m.org_id } : null
+  } catch { return null }
+}
+
+export async function GET(req: NextRequest) {
+  const auth = await getAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  const params     = req.nextUrl.searchParams
+  const from       = params.get('from') ?? new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10)
+  const to         = params.get('to')   ?? new Date().toISOString().slice(0,10)
+  const businessId = params.get('business_id')
+
+  const db = createAdminClient()
+
+  // Check integration — match by org, not business (connection may be org-level)
+  const { data: integ } = await db
+    .from('integrations')
+    .select('id, status, business_id')
+    .eq('org_id', auth.orgId)
+    .eq('provider', 'personalkollen')
+    .eq('status', 'connected')
+    .limit(1).maybeSingle()
+
+  // Read from staff_logs — only columns that exist
+  let query = db.from('staff_logs')
+    .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, pk_staff_url, is_late, late_minutes, ob_supplement_kr')
+    .eq('org_id', auth.orgId)
+    .gte('shift_date', from)
+    .lte('shift_date', to)
+    .gt('cost_actual', 0)
+
+  if (businessId) query = query.eq('business_id', businessId)
+
+  const { data: logs, error } = await query
+  if (error) return NextResponse.json({ error: error.message, connected: true }, { status: 500 })
+
+  // Aggregate by staff member
+  const staffMap: Record<string, any> = {}
+  for (const log of logs ?? []) {
+    const key = log.pk_staff_url ?? log.staff_name
+    if (!key) continue
+    if (!staffMap[key]) {
+      staffMap[key] = {
+        id: key, name: log.staff_name, group: log.staff_group,
+        hours_logged: 0, cost_actual: 0, shifts_logged: 0,
+        late_shifts: 0, avg_late_minutes: 0, ob_supplement_kr: 0,
+        costgroups: {},
+      }
+    }
+    const s = staffMap[key]
+    s.hours_logged     += log.hours_worked ?? 0
+    s.cost_actual      += log.cost_actual  ?? 0
+    s.shifts_logged    += 1
+    s.ob_supplement_kr += log.ob_supplement_kr ?? 0
+    if (log.is_late) { s.late_shifts++; s.avg_late_minutes += log.late_minutes ?? 0 }
+    if (log.staff_group) s.costgroups[log.staff_group] = (s.costgroups[log.staff_group] ?? 0) + (log.cost_actual ?? 0)
+  }
+
+  const staff = Object.values(staffMap).map((s: any) => ({
+    ...s,
+    hours_scheduled:  0,
+    cost_per_hour:    s.hours_logged > 0 ? Math.round(s.cost_actual / s.hours_logged) : 0,
+    variance_hours:   0,
+    avg_late_minutes: s.late_shifts > 0 ? Math.round(s.avg_late_minutes / s.late_shifts) : 0,
+  }))
+
+  const summary = {
+    logged_hours:         Math.round(staff.reduce((s, m) => s + m.hours_logged, 0) * 10) / 10,
+    scheduled_hours:      0,
+    staff_cost_actual:    Math.round(staff.reduce((s, m) => s + m.cost_actual, 0)),
+    staff_cost_scheduled: 0,
+    shifts_logged:        staff.reduce((s, m) => s + m.shifts_logged, 0),
+    shifts_scheduled:     0,
+    late_shifts:          staff.reduce((s, m) => s + m.late_shifts, 0),
+    shifts_with_ob:       staff.filter(m => m.ob_supplement_kr > 0).length,
+  }
+
+  return NextResponse.json({ connected: true, summary, staff })
+}

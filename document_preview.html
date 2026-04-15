@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document Intelligence — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- PDF.js for PDF rendering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F0EDE8;--surface:#FAFAF8;--white:#FFFFFF;
+  --border:#E0DBD3;--border-d:#C8C2B8;
+  --ink:#1A1714;--ink-2:#3A3733;--ink-3:#6A6560;--ink-4:#A8A49C;
+  --blue:#1D4ED8;--blue-lt:#EFF6FF;--blue-mid:#BFDBFE;
+  --green:#166534;--green-lt:#F0FDF4;
+  --amber:#92400E;--amber-lt:#FFFBEB;
+  --red:#991B1B;--red-lt:#FEF2F2;
+  --font:'DM Sans',system-ui,sans-serif;
+  --mono:'DM Mono',monospace;
+  --sidebar:320px;
+}
+html,body{height:100%;overflow:hidden;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:14px;color:var(--ink);background:var(--bg)}
+
+/* ══ LAYOUT ══════════════════════════════════ */
+.shell{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:var(--sidebar);border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;flex-shrink:0}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--white);border-bottom:1px solid var(--border);padding:0 20px;height:52px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.viewer-area{flex:1;overflow:hidden;display:flex;flex-direction:column;background:var(--bg);position:relative}
+
+/* ══ SIDEBAR ═════════════════════════════════ */
+.sb-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.sb-title{font-size:13px;font-weight:600;color:var(--ink)}
+.sb-count{font-size:11px;color:var(--ink-4)}
+
+.upload-zone{
+  margin:12px;border:1.5px dashed var(--border-d);border-radius:10px;
+  padding:16px;text-align:center;cursor:pointer;transition:all .15s;position:relative;
+}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--blue);background:var(--blue-lt)}
+.upload-zone input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.uz-icon{font-size:22px;margin-bottom:6px}
+.uz-text{font-size:12px;color:var(--ink-3);line-height:1.5}
+.uz-formats{font-size:10px;color:var(--ink-4);margin-top:4px;font-family:var(--mono)}
+
+.doc-list{flex:1;overflow-y:auto;padding:6px 0}
+.doc-item{
+  padding:10px 14px;cursor:pointer;border-left:3px solid transparent;
+  transition:all .1s;display:flex;align-items:flex-start;gap:10px;
+}
+.doc-item:hover{background:#F2EFE9}
+.doc-item.active{background:var(--blue-lt);border-left-color:var(--blue)}
+.doc-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;font-weight:700;font-size:11px;font-family:var(--mono)}
+.di-pdf {background:#FDEEEE;color:#B91C1C}
+.di-xlsx{background:#ECFDF5;color:#065F46}
+.di-docx{background:#EFF6FF;color:#1D4ED8}
+.di-csv {background:#F0FDF4;color:#166534}
+.di-img {background:#F5F3FF;color:#5B21B6}
+.di-txt {background:#F9FAFB;color:#374151}
+
+.doc-info{flex:1;min-width:0}
+.doc-name{font-size:12px;font-weight:500;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-meta{font-size:10px;color:var(--ink-4);margin-top:2px;display:flex;gap:8px}
+.doc-type-badge{display:inline-flex;align-items:center;font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;text-transform:uppercase;letter-spacing:.06em;margin-top:3px}
+.dtb-invoice{background:#FEF3C7;color:#92400E}
+.dtb-p_and_l{background:#ECFDF5;color:#065F46}
+.dtb-bank{background:#EFF6FF;color:#1D4ED8}
+.dtb-budget{background:#F5F3FF;color:#5B21B6}
+.dtb-contract{background:#FFF7ED;color:#C2410C}
+.dtb-other{background:#F9FAFB;color:#6B7280}
+
+/* Processing state */
+.doc-progress{height:2px;background:var(--blue-lt);border-radius:1px;margin-top:4px;overflow:hidden}
+.dp-bar{height:100%;background:var(--blue);border-radius:1px;transition:width .3s}
+
+/* ══ TOPBAR ══════════════════════════════════ */
+.tb-left{display:flex;align-items:center;gap:10px}
+.tb-filename{font-size:14px;font-weight:600;color:var(--ink);max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb-doctype{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600}
+.tb-right{display:flex;align-items:center;gap:8px}
+
+/* Page controls */
+.page-controls{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-3)}
+.page-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--border-d);background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--ink-3);transition:all .1s}
+.page-btn:hover{background:var(--bg);color:var(--ink)}
+.page-btn:disabled{opacity:.4;cursor:not-allowed}
+.page-input{width:48px;border:1px solid var(--border-d);border-radius:6px;padding:3px 6px;font-size:12px;font-family:var(--mono);text-align:center;color:var(--ink);background:var(--bg)}
+.zoom-select{border:1px solid var(--border-d);border-radius:6px;padding:3px 8px;font-size:12px;font-family:var(--font);color:var(--ink);background:var(--bg);cursor:pointer}
+
+/* Buttons */
+.btn{font-family:var(--font);font-size:12px;font-weight:500;padding:6px 13px;border-radius:7px;border:1px solid var(--border-d);background:none;cursor:pointer;color:var(--ink-3);transition:all .12s;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:var(--bg);color:var(--ink)}
+.btn-primary{background:var(--ink);color:white;border-color:var(--ink)}
+.btn-primary:hover{background:var(--ink-2)}
+
+/* ══ PDF VIEWER ══════════════════════════════ */
+.pdf-scroll{flex:1;overflow-y:auto;overflow-x:auto;padding:20px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.pdf-page-wrap{box-shadow:0 4px 20px rgba(0,0,0,.15);border-radius:4px;overflow:hidden;position:relative;background:white}
+.pdf-page-wrap canvas{display:block}
+.pdf-page-num{position:absolute;bottom:8px;right:10px;font-size:10px;font-family:var(--mono);color:rgba(0,0,0,.35);pointer-events:none}
+.pdf-loading{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:12px;color:var(--ink-4)}
+.pdf-spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ══ EXCEL VIEWER ════════════════════════════ */
+.excel-shell{display:flex;flex-direction:column;height:100%;overflow:hidden}
+.sheet-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);background:var(--surface);overflow-x:auto;flex-shrink:0;padding:0 12px}
+.sheet-tab{padding:8px 16px;font-size:12px;font-weight:500;cursor:pointer;color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:all .1s}
+.sheet-tab:hover{color:var(--ink)}
+.sheet-tab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.excel-table-wrap{flex:1;overflow:auto;padding:0}
+.excel-stats{padding:6px 14px;font-size:11px;color:var(--ink-4);background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:16px;font-family:var(--mono)}
+.excel-table{border-collapse:collapse;font-size:12px;min-width:100%}
+.excel-table th{background:#F1F0EC;border:1px solid var(--border);padding:5px 10px;text-align:left;font-weight:600;color:var(--ink-2);font-family:var(--mono);font-size:11px;position:sticky;top:0;z-index:2;white-space:nowrap}
+.excel-table th.row-num{background:#E8E5DF;color:var(--ink-4);text-align:center;min-width:40px;font-size:10px}
+.excel-table td{border:1px solid var(--border);padding:4px 10px;color:var(--ink-2);font-family:var(--mono);font-size:11px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.excel-table td.num{text-align:right;color:#1D6B3E}
+.excel-table td.neg{text-align:right;color:#9B1C1C}
+.excel-table tr:nth-child(even) td{background:#FAFAF8}
+.excel-table tr:hover td{background:var(--blue-lt)}
+.excel-table td.row-num{background:#F1F0EC;color:var(--ink-4);text-align:center;font-size:10px;border-right:2px solid var(--border)}
+
+/* ══ WORD VIEWER ═════════════════════════════ */
+.word-viewer{flex:1;overflow-y:auto;padding:40px;background:var(--bg)}
+.word-page{background:white;max-width:720px;margin:0 auto 24px;padding:60px 72px;box-shadow:0 4px 20px rgba(0,0,0,.1);border-radius:2px;min-height:960px}
+.word-h1{font-size:20px;font-weight:700;color:var(--ink);margin:20px 0 10px;line-height:1.3}
+.word-h2{font-size:16px;font-weight:600;color:var(--ink-2);margin:18px 0 8px}
+.word-h3{font-size:14px;font-weight:600;color:var(--ink-2);margin:14px 0 6px}
+.word-p{font-size:13px;color:var(--ink-2);line-height:1.8;margin-bottom:10px}
+.word-table{border-collapse:collapse;width:100%;margin:16px 0;font-size:12px}
+.word-table th{background:var(--bg);border:1px solid var(--border);padding:6px 10px;font-weight:600;text-align:left}
+.word-table td{border:1px solid var(--border);padding:6px 10px;color:var(--ink-2)}
+.word-hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+
+/* ══ IMAGE VIEWER ════════════════════════════ */
+.image-viewer{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)}
+.image-viewer img{max-width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);border-radius:4px}
+
+/* ══ EMPTY STATE ═════════════════════════════ */
+.empty-state{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink-4);gap:10px;text-align:center;padding:40px}
+.es-icon{font-size:48px;opacity:.4;margin-bottom:8px}
+.es-title{font-size:18px;font-weight:500;color:var(--ink-3)}
+.es-sub{font-size:13px;line-height:1.6;max-width:320px;color:var(--ink-4)}
+
+/* ══ EXTRACTION PANEL ════════════════════════ */
+.extract-panel{
+  width:300px;border-left:1px solid var(--border);background:var(--white);
+  display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;
+}
+.ep-header{padding:12px 14px;border-bottom:1px solid var(--border);font-size:12px;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.08em;display:flex;align-items:center;justify-content:space-between}
+.ep-section{padding:12px 14px;border-bottom:1px solid var(--border)}
+.ep-label{font-size:10px;font-weight:700;color:var(--ink-4);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.ep-field{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border)}
+.ep-field:last-child{border-bottom:none}
+.ep-key{font-size:11px;color:var(--ink-3)}
+.ep-val{font-size:12px;font-weight:500;color:var(--ink);font-family:var(--mono)}
+.ep-val.amount{color:var(--green)}
+.ep-val.date{color:var(--blue)}
+.ep-line-items{font-size:11px}
+.ep-line{padding:4px 0;border-bottom:1px solid var(--border);color:var(--ink-3)}
+.ep-line:last-child{border-bottom:none}
+.ep-empty{font-size:11px;color:var(--ink-4);font-style:italic;padding:6px 0}
+
+/* ══ TOAST ═══════════════════════════════════ */
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(60px);background:var(--ink);color:white;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:500;z-index:999;transition:all .25s;white-space:nowrap;opacity:0}
+.toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+/* ══ PROCESSING OVERLAY ══════════════════════ */
+.proc-overlay{position:absolute;inset:0;background:rgba(240,237,232,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;gap:12px;backdrop-filter:blur(2px);display:none}
+.proc-overlay.active{display:flex}
+.proc-label{font-size:13px;font-weight:500;color:var(--ink-3)}
+.proc-pct{font-size:32px;font-weight:700;color:var(--ink);font-family:var(--mono)}
+.proc-track{width:240px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.proc-fill{height:100%;background:var(--blue);border-radius:2px;transition:width .3s}
+
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--border-d);border-radius:3px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ══ SIDEBAR: DOCUMENT LIST ═══════════════ -->
+  <div class="sidebar">
+    <div class="sb-header">
+      <div class="sb-title">Documents</div>
+      <div class="sb-count" id="doc-count">0 files</div>
+    </div>
+
+    <label class="upload-zone" id="upload-zone">
+      <input type="file" id="file-input" multiple
+             accept=".pdf,.docx,.xlsx,.csv,.txt,.jpg,.jpeg,.png,.md"
+             onchange="handleFiles(this.files)">
+      <div class="uz-icon">+</div>
+      <div class="uz-text"><strong>Upload document</strong><br>Drop files or click to browse</div>
+      <div class="uz-formats">PDF · DOCX · XLSX · CSV · TXT · JPG · PNG</div>
+    </label>
+
+    <div class="doc-list" id="doc-list"></div>
+  </div>
+
+  <!-- ══ MAIN CONTENT ══════════════════════════ -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar" id="topbar">
+      <div class="tb-left" id="tb-left">
+        <span style="font-size:13px;color:var(--ink-4)">Select a document to preview</span>
+      </div>
+      <div class="tb-right" id="tb-right"></div>
+    </div>
+
+    <!-- Viewer + extraction panel -->
+    <div style="display:flex;flex:1;overflow:hidden">
+
+      <div class="viewer-area" id="viewer-area">
+        <div class="empty-state" id="empty-state">
+          <div class="es-icon">📂</div>
+          <div class="es-title">No document selected</div>
+          <div class="es-sub">Upload a PDF, Excel, Word, or image file to preview it here with smart data extraction.</div>
+        </div>
+
+        <!-- Processing overlay -->
+        <div class="proc-overlay" id="proc-overlay">
+          <div class="pdf-spinner"></div>
+          <div class="proc-pct" id="proc-pct">0%</div>
+          <div class="proc-label" id="proc-label">Processing document…</div>
+          <div class="proc-track"><div class="proc-fill" id="proc-fill" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <!-- Extraction panel (shown for invoices / reports) -->
+      <div class="extract-panel" id="extract-panel" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Configure PDF.js worker
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const DOCS      = [];  // { id, name, ext, size, status, url, data, extracted, docType }
+let   activeDoc = null;
+let   pdfDoc    = null;
+let   pdfZoom   = 1.2;
+let   pdfPage   = 1;
+
+const EXT_ICON = {
+  pdf:'PDF', xlsx:'XLS', xls:'XLS', docx:'DOC', doc:'DOC',
+  csv:'CSV', txt:'TXT', md:'MD', jpg:'IMG', jpeg:'IMG', png:'IMG', webp:'IMG'
+};
+const EXT_CLS  = {
+  pdf:'di-pdf', xlsx:'di-xlsx', xls:'di-xlsx', docx:'di-docx', doc:'di-docx',
+  csv:'di-csv',  txt:'di-txt',  md:'di-txt',  jpg:'di-img', jpeg:'di-img', png:'di-img', webp:'di-img'
+};
+const TYPE_BADGE = { invoice:'dtb-invoice', p_and_l:'dtb-p_and_l', bank_statement:'dtb-bank', budget:'dtb-budget', contract:'dtb-contract', other:'dtb-other' };
+const TYPE_LABEL = { invoice:'Invoice', p_and_l:'P&L', bank_statement:'Bank', budget:'Budget', contract:'Contract', payroll:'Payroll', other:'Other' };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FILE UPLOAD
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function handleFiles(files) {
+  for (const file of files) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const doc = {
+      id:        'doc_' + Date.now() + Math.random().toString(36).slice(2),
+      name:      file.name,
+      ext,
+      size:      file.size,
+      status:    'processing',
+      progress:  0,
+      url:       null,
+      arrayBuf:  null,
+      extracted: null,
+      docType:   'other',
+      sheets:    null,   // for Excel
+      wordSections: null, // for Word
+    };
+    DOCS.unshift(doc);
+    renderDocList();
+
+    // Read file
+    const ab = await file.arrayBuffer();
+    doc.arrayBuf = ab;
+    doc.url      = URL.createObjectURL(file);
+
+    // Process in background
+    await processDoc(doc);
+    renderDocList();
+
+    // Auto-select first upload
+    if (!activeDoc) selectDoc(doc.id);
+  }
+  document.getElementById('file-input').value = '';
+}
+
+// Drag & drop
+const zone = document.getElementById('upload-zone');
+zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', ()=> zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DOCUMENT PROCESSING (in-browser)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function processDoc(doc) {
+  try {
+    setProgress(doc, 10, 'Reading file…');
+
+    if (doc.ext === 'pdf') {
+      await processPDF(doc);
+    } else if (['xlsx','xls'].includes(doc.ext)) {
+      await processExcel(doc);
+    } else if (['docx','doc'].includes(doc.ext)) {
+      await processWord(doc);
+    } else if (doc.ext === 'csv') {
+      await processCSV(doc);
+    } else if (['jpg','jpeg','png','webp'].includes(doc.ext)) {
+      doc.docType = 'image';
+      doc.extracted = { type: 'image', note: 'Upload to server for OCR text extraction.' };
+    } else {
+      await processText(doc);
+    }
+
+    setProgress(doc, 90, 'Classifying…');
+    if (!doc.extracted?.type) classifyDoc(doc);
+    setProgress(doc, 100, 'Done');
+    doc.status = 'ready';
+
+  } catch (err) {
+    doc.status  = 'error';
+    doc.errorMsg = err.message;
+    console.error('Processing error:', err);
+  }
+}
+
+async function processPDF(doc) {
+  setProgress(doc, 20, 'Parsing PDF…');
+  const pdf  = await pdfjsLib.getDocument({ data: doc.arrayBuf.slice(0) }).promise;
+  doc.pdfDoc = pdf;
+
+  setProgress(doc, 40, `Extracting text (${pdf.numPages} pages)…`);
+  let fullText = '';
+  const pageTexts = [];
+
+  for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
+    const page    = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const text    = content.items.map(item => item.str).join(' ');
+    pageTexts.push({ page: i, text });
+    fullText += text + '\n';
+    if (i % 5 === 0) setProgress(doc, 40 + (i/pdf.numPages*40), `Reading page ${i}…`);
+  }
+
+  doc.fullText  = fullText;
+  doc.pageTexts = pageTexts;
+  doc.pageCount = pdf.numPages;
+  extractStructured(doc, fullText);
+}
+
+async function processExcel(doc) {
+  setProgress(doc, 30, 'Reading workbook…');
+  // Use SheetJS (XLSX) from CDN
+  if (typeof XLSX === 'undefined') {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+  }
+  const wb     = XLSX.read(doc.arrayBuf, { type: 'array', cellDates: true });
+  doc.sheets   = {};
+  doc.fullText = '';
+
+  wb.SheetNames.forEach((name, idx) => {
+    setProgress(doc, 30 + idx/wb.SheetNames.length*60, `Reading sheet: ${name}…`);
+    const ws   = wb.Sheets[name];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    doc.sheets[name] = rows;
+    doc.fullText     += `Sheet: ${name}\n` + rows.map(r => r.join('\t')).join('\n') + '\n\n';
+  });
+
+  doc.sheetNames = wb.SheetNames;
+  doc.activeSheet = wb.SheetNames[0];
+  extractStructured(doc, doc.fullText);
+}
+
+async function processWord(doc) {
+  setProgress(doc, 30, 'Parsing document…');
+  // Unzip and parse XML (no mammoth needed)
+  const JSZip = await loadJSZip();
+  const zip   = await JSZip.loadAsync(doc.arrayBuf);
+
+  if (!zip.files['word/document.xml']) {
+    throw new Error('Not a valid .docx file');
+  }
+
+  const xmlText = await zip.files['word/document.xml'].async('text');
+  doc.wordSections = parseWordXML(xmlText);
+  doc.fullText     = doc.wordSections.map(s => s.text).join('\n');
+  extractStructured(doc, doc.fullText);
+}
+
+function parseWordXML(xml) {
+  const parser   = new DOMParser();
+  const xmlDoc   = parser.parseFromString(xml, 'text/xml');
+  const W        = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+  const sections = [];
+
+  const body = xmlDoc.getElementsByTagNameNS(W, 'body')[0];
+  if (!body) return sections;
+
+  for (const child of body.children) {
+    const local = child.localName;
+    if (local === 'p') {
+      const styleEl = child.getElementsByTagNameNS(W, 'pStyle')[0];
+      const style   = styleEl?.getAttribute(`${W}:val`) || styleEl?.getAttribute('w:val') || '';
+      const texts   = [...child.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('');
+      if (texts.trim()) {
+        sections.push({
+          type: /heading|Heading/i.test(style) ? 'heading' : 'paragraph',
+          text: texts.trim(),
+          style,
+        });
+      }
+    } else if (local === 'tbl') {
+      const rows = [];
+      for (const tr of child.getElementsByTagNameNS(W, 'tr')) {
+        const row = [];
+        for (const tc of tr.getElementsByTagNameNS(W, 'tc')) {
+          const cellText = [...tc.getElementsByTagNameNS(W, 't')].map(t => t.textContent).join('');
+          row.push(cellText.trim());
+        }
+        if (row.length) rows.push(row);
+      }
+      if (rows.length) sections.push({ type: 'table', rows, text: rows.map(r=>r.join(' | ')).join('\n') });
+    }
+  }
+  return sections;
+}
+
+async function processCSV(doc) {
+  setProgress(doc, 40, 'Parsing CSV…');
+  const text   = new TextDecoder('utf-8').decode(doc.arrayBuf);
+  // Detect delimiter
+  const sample = text.split('\n').slice(0,3).join('\n');
+  const delim  = [',',';','\t','|'].map(d => ({d, n: sample.split(d).length})).sort((a,b)=>b.n-a.n)[0].d;
+
+  const rows = text.split('\n').filter(l=>l.trim()).map(l =>
+    l.split(delim).map(c => c.replace(/^"|"$/g,'').trim())
+  );
+
+  doc.sheets    = { 'Sheet1': rows };
+  doc.sheetNames = ['Sheet1'];
+  doc.activeSheet = 'Sheet1';
+  doc.fullText   = rows.map(r=>r.join('\t')).join('\n');
+  extractStructured(doc, doc.fullText);
+}
+
+async function processText(doc) {
+  const text   = new TextDecoder('utf-8').decode(doc.arrayBuf);
+  doc.fullText = text;
+  extractStructured(doc, text);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SMART EXTRACTION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function classifyDoc(doc) {
+  const t = (doc.fullText || '').toLowerCase();
+  const f = doc.name.toLowerCase();
+
+  const patterns = {
+    invoice:        [/faktura/,/invoice/,/att betala/,/förfallodatum/,/fakturanummer/],
+    p_and_l:        [/resultaträkning/,/nettoomsättning/,/rörelseresultat/,/bruttovinst/],
+    bank_statement: [/kontoutdrag/,/saldo/,/transaktioner/,/kontonummer/],
+    budget:         [/budget/,/prognos/,/forecast/,/budgeterat/],
+    contract:       [/avtal/,/kontrakt/,/agreement/,/parter/,/underteckna/],
+    payroll:        [/lönespecifikation/,/arbetsgivaravgift/,/nettolön/],
+  };
+
+  let best = 'other', bestScore = 0;
+  for (const [type, pats] of Object.entries(patterns)) {
+    const score = pats.filter(p => p.test(t) || p.test(f)).length;
+    if (score > bestScore) { best = type; bestScore = score; }
+  }
+  doc.docType = best;
+}
+
+function extractStructured(doc, text) {
+  classifyDoc(doc);
+  const t = text.toLowerCase();
+
+  if (doc.docType === 'invoice') {
+    doc.extracted = {
+      type:     'invoice',
+      vendor:   extractVendor(text),
+      inv_num:  extractPattern(t, [/fakturanummer[:\s]+([a-z0-9\-]+)/i, /invoice\s*(?:no|#)[:\s]+([a-z0-9\-]+)/i]),
+      inv_date: extractDate(t, [/fakturadatum[:\s]+(\d{4}-\d{2}-\d{2})/, /invoice date[:\s]+(\d{4}-\d{2}-\d{2})/]),
+      due_date: extractDate(t, [/förfallodatum[:\s]+(\d{4}-\d{2}-\d{2})/, /due date[:\s]+(\d{4}-\d{2}-\d{2})/, /betalas senast[:\s]+(\d{4}-\d{2}-\d{2})/]),
+      total:    extractAmount(t, [/att betala[:\s]+([\d\s,\.]+)\s*kr/, /total inc vat[:\s]+([\d\s,\.]+)/, /summa inkl[:\s]+([\d\s,\.]+)\s*kr/]),
+      net:      extractAmount(t, [/nettosumma[:\s]+([\d\s,\.]+)\s*kr/, /total exc vat[:\s]+([\d\s,\.]+)/]),
+      vat:      extractAmount(t, [/moms\s*(?:12|25|6)\s*%[:\s]+([\d\s,\.]+)\s*kr/]),
+    };
+  } else if (doc.docType === 'p_and_l') {
+    doc.extracted = {
+      type:      'p_and_l',
+      revenue:   extractAmount(t, [/summa nettoomsättning[:\s]+([\d\s,\.]+)\s*kr/, /nettoomsättning[:\s]+([\d\s,\.]+)\s*kr/]),
+      result:    extractAmount(t, [/rörelseresultat[:\s]+([\d\s,\.]+)\s*kr/, /resultat[:\s]+([\d\s,\.]+)\s*kr/]),
+      period:    extractPeriod(t),
+    };
+  } else if (doc.docType === 'bank_statement') {
+    doc.extracted = {
+      type:    'bank',
+      balance: extractAmount(t, [/saldo[:\s]+([\d\s,\.]+)\s*kr/, /closing balance[:\s]+([\d\s,\.]+)/]),
+      period:  extractPeriod(t),
+    };
+  }
+}
+
+// Extraction helpers
+function extractVendor(text) {
+  const lines = text.split('\n').slice(0, 6);
+  for (const l of lines) {
+    const t = l.trim();
+    if (t.length > 3 && !/^\d/.test(t) && !/^(faktura|invoice|datum|date)/i.test(t))
+      return t.slice(0, 80);
+  }
+  return null;
+}
+function extractPattern(text, patterns) {
+  for (const p of patterns) { const m = text.match(p); if (m) return m[1].trim().toUpperCase(); }
+  return null;
+}
+function extractDate(text, patterns) {
+  for (const p of patterns) { const m = text.match(p); if (m) return m[1]; }
+  const m = text.match(/\d{4}-\d{2}-\d{2}/); return m ? m[0] : null;
+}
+function extractAmount(text, patterns) {
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) {
+      const s = m[1].replace(/\s/g,'').replace(',','.');
+      const n = parseFloat(s);
+      if (!isNaN(n)) return n;
+    }
+  }
+  return null;
+}
+function extractPeriod(text) {
+  const m = text.match(/period[:\s]+(\d{4}-\d{2}-\d{2})[^\d]+(\d{4}-\d{2}-\d{2})/i);
+  if (m) return `${m[1]} — ${m[2]}`;
+  const m2 = text.match(/(\d{4}-\d{2}-\d{2})/);
+  return m2 ? m2[1] : null;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// RENDER DOCUMENT LIST
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function renderDocList() {
+  const list = document.getElementById('doc-list');
+  document.getElementById('doc-count').textContent = `${DOCS.length} file${DOCS.length!==1?'s':''}`;
+
+  list.innerHTML = DOCS.map(doc => {
+    const iconCls = EXT_CLS[doc.ext] || 'di-txt';
+    const iconTxt = EXT_ICON[doc.ext] || '?';
+    const kb      = (doc.size / 1024).toFixed(0);
+    const typeCls = TYPE_BADGE[doc.docType] || 'dtb-other';
+    const typeTxt = TYPE_LABEL[doc.docType] || 'Other';
+    const isActive = activeDoc?.id === doc.id;
+
+    return `<div class="doc-item ${isActive?'active':''}" onclick="selectDoc('${doc.id}')">
+      <div class="doc-icon ${iconCls}">${iconTxt}</div>
+      <div class="doc-info">
+        <div class="doc-name" title="${doc.name}">${doc.name}</div>
+        <div class="doc-meta">
+          <span>${kb} KB</span>
+          ${doc.pageCount ? `<span>${doc.pageCount} pages</span>` : ''}
+        </div>
+        ${doc.status === 'ready' ? `<div class="doc-type-badge ${typeCls}">${typeTxt}</div>` : ''}
+        ${doc.status === 'processing' ? `
+          <div class="doc-progress"><div class="dp-bar" style="width:${doc.progress||0}%"></div></div>` : ''}
+        ${doc.status === 'error' ? `<div style="font-size:10px;color:var(--red);margin-top:3px">Error: ${doc.errorMsg||'Processing failed'}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SELECT & RENDER DOCUMENT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async function selectDoc(id) {
+  const doc = DOCS.find(d => d.id === id);
+  if (!doc) return;
+  activeDoc = doc;
+  renderDocList();
+  renderTopbar(doc);
+  renderExtractionPanel(doc);
+
+  document.getElementById('empty-state').style.display = 'none';
+
+  const viewer = document.getElementById('viewer-area');
+  // Clear previous viewer content (keep overlay + empty state)
+  [...viewer.children].forEach(c => {
+    if (!c.id || (c.id !== 'proc-overlay' && c.id !== 'empty-state')) c.remove();
+  });
+
+  if (doc.ext === 'pdf') {
+    await renderPDF(doc);
+  } else if (['xlsx','xls','csv'].includes(doc.ext)) {
+    renderExcel(doc);
+  } else if (['docx','doc'].includes(doc.ext)) {
+    renderWord(doc);
+  } else if (['jpg','jpeg','png','webp'].includes(doc.ext)) {
+    renderImage(doc);
+  } else {
+    renderText(doc);
+  }
+}
+
+function renderTopbar(doc) {
+  const typeCls = TYPE_BADGE[doc.docType] || 'dtb-other';
+  const typeTxt = TYPE_LABEL[doc.docType] || 'Other';
+  document.getElementById('tb-left').innerHTML = `
+    <span class="tb-filename">${doc.name}</span>
+    <span class="doc-type-badge ${typeCls} tb-doctype">${typeTxt}</span>
+    ${doc.pageCount ? `<span style="font-size:12px;color:var(--ink-4)">${doc.pageCount} pages</span>` : ''}
+  `;
+
+  let right = '';
+  if (doc.ext === 'pdf') {
+    right = `
+      <div class="page-controls">
+        <button class="page-btn" onclick="prevPage()" id="prev-btn">‹</button>
+        <input class="page-input" type="number" id="page-input" value="1" min="1"
+               max="${doc.pageCount||1}" onchange="goToPage(this.value)">
+        <span>/ ${doc.pageCount||'?'}</span>
+        <button class="page-btn" onclick="nextPage()" id="next-btn">›</button>
+      </div>
+      <select class="zoom-select" onchange="setZoom(this.value)">
+        <option value="0.8">80%</option>
+        <option value="1.0">100%</option>
+        <option value="1.2" selected>120%</option>
+        <option value="1.5">150%</option>
+        <option value="2.0">200%</option>
+      </select>`;
+  }
+  right += `<button class="btn btn-primary" onclick="sendToChat()">Ask AI about this</button>`;
+  document.getElementById('tb-right').innerHTML = right;
+}
+
+// ── PDF RENDERING ──────────────────────────────
+async function renderPDF(doc) {
+  const viewer = document.getElementById('viewer-area');
+  const scroll = document.createElement('div');
+  scroll.className = 'pdf-scroll';
+  scroll.id        = 'pdf-scroll';
+  viewer.appendChild(scroll);
+
+  const pdf     = doc.pdfDoc;
+  const maxPages = Math.min(pdf.numPages, 30);
+
+  for (let i = 1; i <= maxPages; i++) {
+    const wrap    = document.createElement('div');
+    wrap.className = 'pdf-page-wrap';
+    wrap.id        = `pdf-page-${i}`;
+    scroll.appendChild(wrap);
+
+    const page      = await pdf.getPage(i);
+    const viewport  = page.getViewport({ scale: pdfZoom });
+    const canvas    = document.createElement('canvas');
+    canvas.width    = viewport.width;
+    canvas.height   = viewport.height;
+    const ctx       = canvas.getContext('2d');
+    wrap.appendChild(canvas);
+
+    const numEl     = document.createElement('div');
+    numEl.className = 'pdf-page-num';
+    numEl.textContent = i;
+    wrap.appendChild(numEl);
+
+    await page.render({ canvasContext: ctx, viewport }).promise;
+  }
+
+  if (pdf.numPages > maxPages) {
+    const note = document.createElement('div');
+    note.style.cssText = 'text-align:center;padding:16px;font-size:12px;color:var(--ink-4)';
+    note.textContent = `Showing first ${maxPages} of ${pdf.numPages} pages. All pages are indexed for AI search.`;
+    scroll.appendChild(note);
+  }
+}
+
+async function setZoom(val) {
+  pdfZoom = parseFloat(val);
+  if (activeDoc?.ext === 'pdf') await renderPDF(activeDoc);
+}
+
+function prevPage() {
+  const input = document.getElementById('page-input');
+  if (input && parseInt(input.value) > 1) {
+    goToPage(parseInt(input.value) - 1);
+  }
+}
+function nextPage() {
+  const input = document.getElementById('page-input');
+  if (input && activeDoc) {
+    const max = activeDoc.pageCount || 1;
+    if (parseInt(input.value) < max) goToPage(parseInt(input.value) + 1);
+  }
+}
+function goToPage(n) {
+  const el = document.getElementById(`pdf-page-${n}`);
+  if (el) el.scrollIntoView({ behavior: 'smooth' });
+  const input = document.getElementById('page-input');
+  if (input) input.value = n;
+}
+
+// ── EXCEL RENDERING ────────────────────────────
+function renderExcel(doc) {
+  const viewer = document.getElementById('viewer-area');
+  const shell  = document.createElement('div');
+  shell.className = 'excel-shell';
+
+  // Sheet tabs
+  const tabs = document.createElement('div');
+  tabs.className = 'sheet-tabs';
+  tabs.id        = 'sheet-tabs';
+  (doc.sheetNames || Object.keys(doc.sheets || {})).forEach(name => {
+    const tab = document.createElement('div');
+    tab.className = 'sheet-tab' + (name === doc.activeSheet ? ' active' : '');
+    tab.textContent = name;
+    tab.onclick = () => switchSheet(doc, name);
+    tabs.appendChild(tab);
+  });
+  shell.appendChild(tabs);
+
+  // Stats
+  const stats = document.createElement('div');
+  stats.className = 'excel-stats';
+  stats.id        = 'excel-stats';
+  shell.appendChild(stats);
+
+  // Table wrap
+  const wrap = document.createElement('div');
+  wrap.className = 'excel-table-wrap';
+  wrap.id        = 'excel-table-wrap';
+  shell.appendChild(wrap);
+
+  viewer.appendChild(shell);
+  renderSheet(doc, doc.activeSheet || Object.keys(doc.sheets || {})[0]);
+}
+
+function switchSheet(doc, name) {
+  doc.activeSheet = name;
+  document.querySelectorAll('.sheet-tab').forEach(t => t.classList.toggle('active', t.textContent === name));
+  renderSheet(doc, name);
+}
+
+function renderSheet(doc, sheetName) {
+  const rows = (doc.sheets || {})[sheetName] || [];
+  const wrap  = document.getElementById('excel-table-wrap');
+  const stats = document.getElementById('excel-stats');
+
+  if (!rows.length) { wrap.innerHTML = '<div style="padding:20px;color:var(--ink-4)">Empty sheet</div>'; return; }
+
+  const dataRows = rows.filter(r => r.some(c => c !== '' && c !== null && c !== undefined));
+  if (stats) stats.innerHTML = `<span>${dataRows.length} rows</span><span>${(rows[0]||[]).length} columns</span><span>${sheetName}</span>`;
+
+  const maxRows = Math.min(dataRows.length, 500);
+  const maxCols = Math.max(...dataRows.slice(0, maxRows).map(r => r.length));
+
+  let html = '<table class="excel-table"><thead><tr><th class="row-num">#</th>';
+  // Column letters
+  for (let c = 0; c < maxCols; c++) {
+    html += `<th>${colLetter(c)}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (let r = 0; r < maxRows; r++) {
+    html += `<tr><td class="row-num">${r+1}</td>`;
+    for (let c = 0; c < maxCols; c++) {
+      const val = dataRows[r][c] ?? '';
+      const str = String(val);
+      // Colour negative numbers red, positive amounts green
+      const isNum = typeof val === 'number' || /^-?[\d\s]+([,\.][\d]+)?$/.test(str.trim());
+      const isNeg = isNum && (typeof val === 'number' ? val < 0 : str.trim().startsWith('-'));
+      const cls   = isNeg ? 'neg' : isNum && str.trim() !== '0' ? 'num' : '';
+      html += `<td class="${cls}" title="${str}">${str.slice(0,60)}</td>`;
+    }
+    html += '</tr>';
+  }
+
+  if (dataRows.length > maxRows) {
+    html += `<tr><td colspan="${maxCols+1}" style="text-align:center;padding:8px;color:var(--ink-4);font-size:11px">… ${dataRows.length - maxRows} more rows (all indexed for AI)</td></tr>`;
+  }
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function colLetter(n) {
+  let s = '';
+  n++;
+  while (n > 0) { n--; s = String.fromCharCode(65 + n % 26) + s; n = Math.floor(n / 26); }
+  return s;
+}
+
+// ── WORD RENDERING ─────────────────────────────
+function renderWord(doc) {
+  const viewer = document.getElementById('viewer-area');
+  const wrap   = document.createElement('div');
+  wrap.className = 'word-viewer';
+
+  const page   = document.createElement('div');
+  page.className = 'word-page';
+
+  const sections = doc.wordSections || [];
+  let html = '';
+
+  for (const s of sections) {
+    if (s.type === 'heading') {
+      html += `<div class="word-h2">${escHtml(s.text)}</div>`;
+    } else if (s.type === 'table') {
+      html += '<table class="word-table"><tbody>';
+      s.rows.forEach((row, i) => {
+        html += `<tr>${row.map(c => `<${i===0?'th':'td'}>${escHtml(c)}</${i===0?'th':'td'}>`).join('')}</tr>`;
+      });
+      html += '</tbody></table>';
+    } else {
+      html += `<p class="word-p">${escHtml(s.text)}</p>`;
+    }
+  }
+
+  if (!html) html = `<p class="word-p" style="color:var(--ink-4)">Document content will appear here. Make sure the file is a valid .docx format.</p>`;
+
+  page.innerHTML = html;
+  wrap.appendChild(page);
+  viewer.appendChild(wrap);
+}
+
+// ── IMAGE RENDERING ────────────────────────────
+function renderImage(doc) {
+  const viewer = document.getElementById('viewer-area');
+  const wrap   = document.createElement('div');
+  wrap.className = 'image-viewer';
+  const img    = document.createElement('img');
+  img.src      = doc.url;
+  img.alt      = doc.name;
+  wrap.appendChild(img);
+  viewer.appendChild(wrap);
+}
+
+// ── TEXT RENDERING ─────────────────────────────
+function renderText(doc) {
+  const viewer = document.getElementById('viewer-area');
+  const wrap   = document.createElement('div');
+  wrap.style.cssText = 'flex:1;overflow:auto;padding:32px;background:white;margin:20px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.08)';
+  wrap.innerHTML = `<pre style="font-family:var(--mono);font-size:12px;color:var(--ink-2);white-space:pre-wrap;line-height:1.7">${escHtml(doc.fullText||'')}</pre>`;
+  viewer.appendChild(wrap);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// EXTRACTION PANEL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function renderExtractionPanel(doc) {
+  const panel = document.getElementById('extract-panel');
+  const e     = doc.extracted;
+
+  if (!e || doc.status !== 'ready') { panel.style.display = 'none'; return; }
+
+  panel.style.display = 'flex';
+
+  if (e.type === 'invoice') {
+    panel.innerHTML = `
+      <div class="ep-header">
+        Extracted Data
+        <span style="font-size:10px;color:var(--green)">Invoice detected</span>
+      </div>
+      <div class="ep-section">
+        <div class="ep-label">Supplier</div>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${e.vendor || '—'}</div>
+      </div>
+      <div class="ep-section">
+        <div class="ep-label">Invoice Details</div>
+        ${field('Invoice #', e.inv_num, '')}
+        ${field('Invoice date', e.inv_date, 'date')}
+        ${field('Due date', e.due_date, 'date')}
+      </div>
+      <div class="ep-section">
+        <div class="ep-label">Amounts</div>
+        ${field('Net amount', e.net ? kr(e.net) : null, '')}
+        ${field('VAT', e.vat ? kr(e.vat) : null, '')}
+        ${field('Total (inc VAT)', e.total ? kr(e.total) : null, 'amount')}
+      </div>
+      <div class="ep-section">
+        <div class="ep-label">Actions</div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px" onclick="saveToDatabase()">Save to database</button>
+        <button class="btn" style="width:100%;justify-content:center;margin-top:6px" onclick="sendToChat()">Ask AI about invoice</button>
+      </div>`;
+  } else if (e.type === 'p_and_l') {
+    panel.innerHTML = `
+      <div class="ep-header">Extracted Data <span style="font-size:10px;color:var(--green)">P&L Report</span></div>
+      <div class="ep-section">
+        <div class="ep-label">Key Figures</div>
+        ${field('Revenue', e.revenue ? kr(e.revenue) : null, 'amount')}
+        ${field('Operating result', e.result ? kr(e.result) : null, e.result < 0 ? '' : 'amount')}
+        ${field('Period', e.period, 'date')}
+      </div>
+      <div class="ep-section">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="sendToChat()">Analyse with AI</button>
+      </div>`;
+  } else if (e.type === 'bank') {
+    panel.innerHTML = `
+      <div class="ep-header">Extracted Data <span style="font-size:10px;color:var(--blue)">Bank Statement</span></div>
+      <div class="ep-section">
+        ${field('Balance', e.balance ? kr(e.balance) : null, 'amount')}
+        ${field('Period', e.period, 'date')}
+      </div>
+      <div class="ep-section">
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="sendToChat()">Reconcile with AI</button>
+      </div>`;
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function field(label, value, cls) {
+  if (!value) return `<div class="ep-field"><span class="ep-key">${label}</span><span class="ep-val" style="color:var(--ink-4)">—</span></div>`;
+  return `<div class="ep-field"><span class="ep-key">${label}</span><span class="ep-val ${cls}">${value}</span></div>`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ACTIONS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function sendToChat() {
+  if (!activeDoc) return;
+  // In production: pass doc context to chat interface
+  const msg = `I've uploaded ${activeDoc.name} (${TYPE_LABEL[activeDoc.docType]||'document'}). Please analyse it.`;
+  localStorage.setItem('cc_pending_chat_msg', msg);
+  localStorage.setItem('cc_pending_doc_id',   activeDoc.id);
+  toast('Opening AI chat…');
+  // window.open('chat_interface.html', '_blank');
+}
+
+function saveToDatabase() {
+  if (!activeDoc?.extracted) return;
+  // In production: POST to /api/documents/save-extraction
+  toast('Saved to database ✓', 'ok');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UTILITIES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setProgress(doc, pct, label) {
+  doc.progress = pct;
+  doc.progLabel = label;
+  renderDocList();
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function kr(n) {
+  return n.toLocaleString('sv-SE', {maximumFractionDigits:0}) + ' kr';
+}
+
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[src="${src}"]`)) { res(); return; }
+    const s = document.createElement('script'); s.src = src;
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+}
+
+async function loadJSZip() {
+  if (window.JSZip) return window.JSZip;
+  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+  return window.JSZip;
+}
+
+let toastTimer;
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show';
+  if (type === 'ok') el.style.background = 'var(--green)';
+  else el.style.background = 'var(--ink)';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DEMO: Load sample document on start
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+(async function loadDemo() {
+  // Simulate a pre-loaded document so the UI isn't empty
+  const demoCSV = `Datum;Beskrivning;Belopp;Saldo
+2026-03-01;Öppningssaldo;;;249386
+2026-03-03;Menigo Foodservice;-35064;214322
+2026-03-05;Sysco Sverige;-43624;170698
+2026-03-10;Caspeco AB;-2490;168208
+2026-03-12;Kortbetalningar in;+125400;293608
+2026-03-15;Lokalhyra mars;-64500;229108
+2026-03-18;Löneutbetalning;-224978;4130
+2026-03-20;Kortbetalningar in;+98200;102330
+2026-03-25;Drickasinkomst;+22450;124780
+2026-03-31;Stängningssaldo;;;124780`;
+
+  const blob = new Blob([demoCSV], { type: 'text/csv' });
+  const file = new File([blob], 'Handelsbanken_Mars_2026.csv', { type: 'text/csv' });
+  await handleFiles([file]);
+})();
+</script>
+</body>
+</html>
