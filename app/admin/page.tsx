@@ -54,7 +54,7 @@ export default function AdminPage() {
 
   async function loadOrgs() {
     setLoading(true)
-    const res  = await fetch('/api/admin/orgs')
+    const res  = await fetch(`/api/admin/orgs?t=${Date.now()}`, { cache: 'no-store' })
     const data = await res.json()
     if (data.orgs) setOrgs(data.orgs)
     setLoading(false)
@@ -246,6 +246,7 @@ export default function AdminPage() {
         <InziiDeptModal
           org={inziiModal.org}
           biz={inziiModal.biz}
+          onRefresh={loadOrgs}
           onClose={() => { setInziiModal(null); loadOrgs() }}
         />
       )}
@@ -277,7 +278,14 @@ function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{org.name ?? 'Unknown org'}</div>
-            <div style={{ fontSize: 12, color: '#9ca3af' }}>{org.email} · {org.businesses?.length ?? 0} businesses</div>
+            <div style={{ fontSize: 12, color: '#9ca3af' }}>
+              {org.email} · {org.businesses?.length ?? 0} businesses
+              {(() => {
+                const n = (org.businesses ?? []).reduce((sum: number, b: any) =>
+                  sum + (b.integrations ?? []).filter((i: any) => i.provider === 'inzii').length, 0)
+                return n > 0 ? ` · ${n} Inzii dept${n !== 1 ? 's' : ''}` : ''
+              })()}
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -337,6 +345,9 @@ function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
                 const depts = (biz.integrations ?? []).filter((i: any) => i.provider === 'inzii')
                 return (
                   <div style={{ borderTop: '0.5px solid #f3f4f6', paddingTop: 10 }}>
+                    <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontFamily: 'monospace' }}>
+                      DEBUG: {biz.integrations?.length ?? 0} total integrations | providers: [{(biz.integrations ?? []).map((i: any) => i.provider).join(', ')}]
+                    </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
                       Inzii POS — {depts.length} department{depts.length !== 1 ? 's' : ''} connected
                     </div>
@@ -545,7 +556,7 @@ function ConnectWizard({ org, biz, onClose }: any) {
   )
 }
 
-function InziiDeptModal({ org, biz, onClose }: any) {
+function InziiDeptModal({ org, biz, onRefresh, onClose }: any) {
   const [dept,    setDept]    = useState('')
   const [apiKey,  setApiKey]  = useState('')
   const [saving,  setSaving]  = useState(false)
@@ -572,6 +583,7 @@ function InziiDeptModal({ org, biz, onClose }: any) {
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Failed to save')
       setDone(true)
+      onRefresh?.()
     } catch (e: any) { setError(e.message) }
     setSaving(false)
   }

@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getOrgFromRequest }         from '@/lib/auth/get-org'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { getPlan }                   from '@/lib/stripe/config'
+import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
 
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
@@ -88,8 +89,8 @@ export async function POST(req: NextRequest) {
   let answer: string
   try {
     const response = await claude.messages.create({
-      model:      plan.model ?? 'claude-haiku-4-5-20251001',
-      max_tokens: 512,
+      model:      AI_MODELS.ASSISTANT,
+      max_tokens: MAX_TOKENS.ASSISTANT,
       system:     SYSTEM_PROMPT,
       messages:   [{ role: 'user', content: userMessage }],
     })

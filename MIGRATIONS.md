@@ -261,13 +261,46 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS onboarding_email_sent BOOLEAN 
 
 ---
 
+## M006 — 2026-04-15 — Session 7 — API Schema Discovery Agent
+**Run**: 2026-04-15 ✅
+**Status**: ✅ **SUCCESS** — Migration executed successfully
+
+```sql
+-- Table for API Schema Discovery Agent
+CREATE TABLE IF NOT EXISTS api_discoveries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  integration_id UUID REFERENCES integrations(id) ON DELETE CASCADE,
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  discoveries JSONB,
+  suggested_mappings JSONB,
+  recommendations JSONB,
+  discovered_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(integration_id)
+);
+ALTER TABLE api_discoveries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "api_discoveries_select_own" ON api_discoveries
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+-- Add last_discovery_at column to integrations table
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS last_discovery_at TIMESTAMPTZ;
+```
+
+**Purpose**: Stores API schema discoveries and suggested mappings for the API Schema Discovery Agent.
+**Agent**: `/api/cron/api-discovery` — analyzes API endpoints and suggests mappings to CommandCenter schema.
+
+---
+
 ## Next Steps
 
 1. **Run M003 SQL** in Supabase SQL Editor
-2. **Deploy AI agents** to Vercel
-3. **Test cron jobs** with Bearer token
-4. **Monitor logs** for agent execution
-5. **Update this file** with execution status
+2. **Run M006 SQL** for API Schema Discovery Agent
+3. **Deploy AI agents** to Vercel
+4. **Test cron jobs** with Bearer token
+5. **Monitor logs** for agent execution
+6. **Update this file** with execution status
 
 ---
 

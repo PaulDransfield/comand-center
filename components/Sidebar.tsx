@@ -23,7 +23,7 @@ const NAV = [
   { label: 'Food / Bev',       href: '/revenue-split'  },
   { label: 'Forecast',          href: '/forecast'       },
   { section: 'Operations' },
-  { label: 'Covers',           href: '/covers'         },
+  { label: 'Revenue',          href: '/revenue'        },
   { label: 'Staff',            href: '/staff'          },
   { label: 'Departments',       href: '/departments'    },
   { label: 'Invoices',         href: '/invoices'       },

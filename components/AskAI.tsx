@@ -34,6 +34,11 @@ const SUGGESTIONS: Record<string, string[]> = {
     'Am I on track to hit my annual revenue target?',
     'What is driving the difference between my best and worst months?',
   ],
+  revenue: [
+    'What is my average revenue per cover?',
+    'Which day of the week has the highest covers?',
+    'How does dine-in compare to takeaway revenue?',
+  ],
   forecast: [
     'How accurate have my forecasts been?',
     'What does next month look like?',

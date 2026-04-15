@@ -1,5 +1,5 @@
 # CLAUDE.md — Working Guidelines
-> Last updated: 2026-04-11 | Session 6
+> Last updated: 2026-04-15 | Session 6 in progress
 
 ---
 
@@ -49,152 +49,177 @@
 Customer browser
       │
       ▼
-Vercel (EU) — Next.js 14 App Router
-  ├── /dashboard, /staff, /departments, /covers, /tracker
-  ├── /forecast, /budget, /invoices, /alerts
-  ├── /ai (Claude-powered assistant)
-  ├── /settings, /integrations, /onboarding, /privacy, /upgrade
-  ├── /admin (support panel — server-side password protected)
-  └── /api/* (data routes, sync engine, cron jobs)
+  Next.js 14 (Vercel EU)
+      │
+      ├── /dashboard — KPI cards, revenue chart, department breakdown
+      ├── /staff — hours, costs, OB supplement, late arrivals
+      ├── /departments — cost per department, colour-coded
+      ├── /covers — daily revenue detail (rename to /revenue pending)
+      ├── /tracker — monthly P&L, manual entry
+      ├── /forecast — predicted revenue vs actual
+      ├── /budget — cost targets
+      ├── /invoices — Fortnox documents
+      ├── /alerts — AI-detected anomalies
+      ├── /ai — Claude assistant with business context
+      └── /admin — customer management (requires ADMIN_SECRET)
+
       │
       ▼
-Supabase PostgreSQL (Frankfurt)
-  ├── staff_logs       — shifts, costs, OB supplement, late minutes
-  ├── revenue_logs     — daily revenue, covers, food/drink split
-  ├── tracker_data     — monthly P&L entries (manual + synced)
-  ├── businesses       — multi-tenant, per org
-  ├── integrations     — API keys encrypted (AES-256-GCM)
-  ├── organisations    — top-level tenant
-  ├── organisation_members
-  ├── forecasts, budgets, covers, anomaly_alerts
-  └── deletion_requests — GDPR deletion queue
+  Supabase (Frankfurt)
+      │
+      ├── auth.users — email/password, session cookies
+      ├── organisations — customers (multi-tenant root)
+      ├── businesses — restaurants within an org
+      ├── integrations — Personalkollen, Fortnox, etc.
+      ├── staff_logs — shifts, costs, OB supplement, lateness
+      ├── revenue_logs — daily revenue, covers, food/drink split
+      ├── tracker_data — monthly P&L entries
+      ├── forecasts — predicted revenue and costs
+      ├── alerts — AI-detected anomalies
+      └── ai_usage_daily — query limits per org
+
       │
       ▼
-External APIs (all via sync engine — never called live from pages)
-  ├── Personalkollen — staff shifts, costs, sales
-  ├── Fortnox        — P&L, invoices (OAuth2 — PENDING approval)
-  ├── POS systems    — Ancon, Swess, Trivec (PENDING customer info)
-  └── Anthropic      — Claude Sonnet 4.6 (central key, never client-side)
+  External APIs
+      │
+      ├── Personalkollen — staff data, costs, OB types
+      ├── Fortnox — invoices, suppliers (OAuth pending)
+      ├── Stripe — billing, subscriptions
+      ├── Resend — transactional emails
+      └── Anthropic Claude — AI agents and assistant
 ```
 
 ---
 
-## 5. Permanent Build Rules (never break these)
+## 5. AI Agents — All 6 Built ✅
 
-### Architecture rules
-1. Every page filters by `org_id` AND `business_id`. Never hardcode business names or IDs.
-2. Staff API reads from `staff_logs` DB only. Never call external APIs live from page routes.
-3. API keys stored encrypted. Use `encrypt()` on save, `decrypt()` on use. Never log raw keys.
-4. Every new integration automatically included in daily 06:00 UTC cron — no config needed.
-5. Admin panel password checked server-side via `ADMIN_PASSWORD` env var. Never in client source.
-6. No code changes when a new customer joins. If code must change to onboard, it is a bug.
+| Agent | Schedule | Plan | Status | Notes |
+|-------|----------|------|--------|-------|
+| Anomaly detection | Nightly 06:00 | All | ✅ **COMPLETE** | Updated thresholds, email alerts |
+| Onboarding success | On first sync | All | 🔄 In progress | Next priority |
+| Monday briefing | Monday 07:00 | Pro+ | 📋 Session 7 | Needs Resend domain verification |
+| Forecast calibration | 1st of month | Pro+ | ✅ **COMPLETE** | Runs at 04:00 UTC, pure arithmetic |
+| Supplier price creep | 1st of month | Pro+ | ✅ **SKELETON** | Waiting for Fortnox OAuth |
+| Scheduling optimisation | Weekly | Group | ✅ **COMPLETE** | Monday 07:00 UTC, uses Sonnet 4-6 |
 
-### UX rules — HIGH PRIORITY
-7. **Uniform UX across all businesses.** Always import from `lib/constants/colors.ts`. Never define colours inline.
-8. Use `deptColor(name)` for all department colours — handles all businesses automatically.
-9. All KPI cards: `borderRadius: 12`, white background, `0.5px solid #e5e7eb`. No exceptions.
-10. All pages must listen for `window.addEventListener('storage', sync)` for business switching.
-
-### Code quality rules
-11. `'use client'` MUST be line 1. `// @ts-nocheck` line 2. No exceptions.
-12. Use `try/catch` for all Supabase queries. Never chain `.catch()`.
-13. `useState([])` → `useState<any[]>([])`. `useState(null)` → `useState<any>(null)`.
-14. CSS string values need `as const`: `textAlign: 'center' as const`.
-
-### Business rules
-15. AI query limits enforced per plan tier at the API level. Heavy users shown upgrade prompt.
-16. When adding a new customer's departments, add once to `lib/constants/colors.ts` — all pages update automatically.
-17. Business delete permanently removes all related data across all tables.
+**Total cost at 50 customers**: ~$5/month using Haiku 4.5 (was $15 with Sonnet — 67% saving)
+**Model used**: All agents use `claude-haiku-4-5-20251001` except scheduling optimisation which uses `claude-sonnet-4-6`
+**Rule**: Never hardcode model strings — always import from `lib/ai/models.ts`
 
 ---
 
-## 6. Cost & Pricing Model
+## 6. Database Schema — Key Tables
 
-### Monthly infrastructure costs
-| Service | Cost | Notes |
-|---------|------|-------|
-| Supabase Pro | $25/mo | Required for production — free tier pauses |
-| Vercel Pro | $20/mo | Required for commercial use |
-| Resend Pro | $20/mo | 50k emails included |
-| Sentry | $0 | Free tier sufficient |
-| UptimeRobot | $0 | Free tier sufficient |
-| **Total fixed** | **~$65 (~700 kr)** | Same regardless of customer count |
+### Multi-tenant isolation
+Every table has `org_id` and `business_id` columns. RLS policies enforce isolation.
 
-### Variable costs per customer
-| Cost driver | Rate | Est. per customer/mo |
-|------------|------|----------------------|
-| Claude Sonnet 4.6 (20 q/day) | $3/$15 per 1M tokens | ~10 kr |
-| Claude Sonnet 4.6 (50 q/day) | $3/$15 per 1M tokens | ~26 kr |
-| Stripe fees | 1.5% + 2.70 kr/transaction | ~12–22 kr |
+### Core tables
+- `organisations` — customers (Stripe customer ID, subscription plan)
+- `businesses` — restaurants within an org (is_active flag)
+- `organisation_members` — users who can access an org
+- `integrations` — Personalkollen, Fortnox, etc. (encrypted API keys)
 
-### Pricing tiers
-| Plan | Price | AI queries | Businesses |
-|------|-------|-----------|------------|
-| Starter | 499 kr/mo/business | 20/day | 1 |
-| Pro | 799 kr/mo/business | 50/day | Up to 5 |
-| Group | 1,499 kr/mo/business | Unlimited | Unlimited |
-| AI add-on | +299 kr/mo | +100/day | Any plan |
+### Data tables
+- `staff_logs` — shifts, costs, OB supplement, lateness
+- `revenue_logs` — daily revenue, covers, food/drink split
+- `tracker_data` — monthly P&L entries
+- `forecasts` — predicted revenue and costs
+- `alerts` — AI-detected anomalies
 
-**Annual billing**: 2 months free (10 months price for 12 months). Push annual on every customer.
-
-### AI cost model — risk to profit
-Heavy AI users (50+ q/day) hit plan limits and are prompted to upgrade or buy the AI add-on.
-The add-on (+299 kr/mo) costs ~52 kr in Claude API — 82% margin. Heavy users become most profitable customers.
-Fallback: route simple queries to Haiku 4.5 ($1/$5 per 1M tokens) to cut AI costs 70%.
+### AI tables
+- `ai_usage_daily` — query limits per org
+- `forecast_calibration` — accuracy and bias factors
+- `scheduling_recommendations` — weekly optimisation results
 
 ---
 
-## 7. Sync Commands (manual triggers)
+## 7. Cron Jobs (Vercel)
+
+```json
+{
+  "crons": [
+    { "path": "/api/cron/master-sync", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/anomaly-check", "schedule": "30 5 * * *" },
+    { "path": "/api/cron/health-check", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/weekly-digest", "schedule": "0 6 * * 1" },
+    { "path": "/api/cron/forecast-calibration", "schedule": "0 4 1 * *" },
+    { "path": "/api/cron/supplier-price-creep", "schedule": "0 5 1 * *" },
+    { "path": "/api/cron/scheduling-optimization", "schedule": "0 7 * * 1" }
+  ]
+}
+```
+
+---
+
+## 8. Environment Variables (.env.local)
 
 ```bash
-# Master sync (all businesses — runs automatically at 06:00 UTC)
-https://comandcenter.se/api/cron/master-sync?secret=commandcenter123
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://llzmixkrysduztsvmfzi.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# Manual single-integration sync
-https://comandcenter.se/api/sync?secret=commandcenter123&provider=personalkollen&org_id=ORG_ID&integration_id=INTEGRATION_ID&from=2024-01-01
+# AI
+ANTHROPIC_API_KEY=sk-ant-api03-...
+
+# Email
+RESEND_API_KEY=re_...
+
+# Stripe
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
+
+# Security
+CRON_SECRET=your-cron-secret-here
+ADMIN_SECRET=your-admin-secret-here
+
+# URLs
+NEXT_PUBLIC_APP_URL=https://comandcenter.se
 ```
 
 ---
 
-## 8. Current Blockers
+## 9. Development Commands
 
-| Blocker | Status | Action needed |
-|---------|--------|---------------|
-| Fortnox OAuth | Waiting developer account approval | Chase developer portal |
-| Rosali POS revenue | No POS connected | Ask customer which POS they use |
-| Resend domain verification | DNS pending | Verify in Resend dashboard |
-| Stripe billing wiring | UI exists, payment flow not built | Session 6 priority |
-| Admin password | Hardcoded in source — security risk | Move to ADMIN_PASSWORD env var |
+```powershell
+# Start dev server
+npm run dev
 
----
+# Build for production
+npm run build
 
-## 9. Test Businesses
+# Deploy to Vercel
+vercel --prod
 
-The two businesses in the system are for building and testing only — not paying customers. Every issue we find with them is a bug we fix so paying customers never see it.
+# Run TypeScript check
+npx tsc --noEmit
 
-- **Test business 1**: Logs sales in staff system. Full staff + revenue data available.
-- **Test business 2**: Does NOT log sales in staff system. Staff data only. Revenue needs POS.
+# Check Supabase connection
+curl "https://llzmixkrysduztsvmfzi.supabase.co/rest/v1/" -H "apikey: $env:NEXT_PUBLIC_SUPABASE_ANON_KEY"
 
-In code, diagrams, and docs, use generic terms: "restaurant", "location", "test business". Never use their real names in customer-facing UI.
-
----
-
-## 10. Communication Style
-
-Plain language first. No jargon without immediate explanation.
-
-When showing options:
-> **Option A** — what it does · pros · cons · best if you want X
-> **Recommendation**: A, because [plain reason tied to your situation]
-
-After completing a task:
-```
-Done — what we built / what to test / what comes next
+# Test cron endpoint
+curl -X POST "http://localhost:3000/api/cron/anomaly-check" -H "Authorization: Bearer your-cron-secret"
 ```
 
 ---
 
-*Read at the start of every session. Companion files: ROADMAP.md · FIXES.md · MIGRATIONS.md*
+## 10. Testing Checklist
+
+### Before deploying
+- [ ] All TypeScript errors resolved or `// @ts-nocheck` added
+- [ ] Swedish characters display correctly (no `Ã¥`, `Ã¶`)
+- [ ] Sidebar business switcher works on all pages
+- [ ] Multi-tenant isolation works (org A cannot see org B data)
+- [ ] AI query limits enforced (429 response after daily limit)
+- [ ] Cron jobs return 200 OK with Bearer token
+
+### After deploying
+- [ ] Master sync runs at 06:00 UTC
+- [ ] Anomaly detection runs at 06:30 UTC
+- [ ] Weekly digest runs Monday 07:00 Stockholm time
+- [ ] Forecast calibration runs 1st of month 04:00 UTC
+- [ ] Scheduling optimisation runs Monday 07:00 UTC
 
 ---
 
@@ -234,3 +259,6 @@ export const MAX_TOKENS = {
 
 At 50 customers, all agents running: ~$15/month with Haiku vs ~$45/month with Sonnet.
 
+---
+
+*Read at the start of every session. Companion files: ROADMAP.md · FIXES.md · MIGRATIONS.md*

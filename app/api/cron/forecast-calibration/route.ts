@@ -1,0 +1,196 @@
+// app/api/cron/forecast-calibration/route.ts
+// Runs 1st of each month at 04:00 UTC — calculates forecast accuracy and bias
+// No Claude needed — pure arithmetic
+// Follows spec in claude_code_agents_prompt.md
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/server'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60  // Allow up to 60 seconds for processing
+
+export async function POST(req: NextRequest) {
+  // Security: only allow Vercel cron with Bearer token
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const db = createAdminClient()
+  const today = new Date()
+  const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+  const year = lastMonth.getFullYear()
+  const month = lastMonth.getMonth() + 1
+
+  console.log(`[forecast-calibration] Running for ${year}-${month}`)
+
+  try {
+    // Get all active businesses with at least 3 months of data
+    const { data: businesses } = await db
+      .from('businesses')
+      .select('id, name, org_id')
+      .eq('is_active', true)
+
+    if (!businesses?.length) {
+      return NextResponse.json({ ok: true, calibrated: 0, message: 'No active businesses' })
+    }
+
+    let calibrated = 0
+    const errors: string[] = []
+
+    for (const biz of businesses) {
+      try {
+        // Check if business has at least 3 months of data
+        const { data: historyCount } = await db
+          .from('tracker_data')
+          .select('period_year, period_month')
+          .eq('business_id', biz.id)
+          .lt('period_year', year)
+          .or(`period_year.eq.${year},period_month.lt.${month}`)
+
+        if (!historyCount || historyCount.length < 2) {
+          console.log(`[forecast-calibration] Skipping ${biz.name} — insufficient history (${historyCount?.length ?? 0} months)`)
+          continue
+        }
+
+        // Get last month's forecast
+        const { data: forecast } = await db
+          .from('forecasts')
+          .select('revenue_forecast, staff_cost_forecast, food_cost_forecast')
+          .eq('business_id', biz.id)
+          .eq('period_year', year)
+          .eq('period_month', month)
+          .single()
+
+        if (!forecast) {
+          console.log(`[forecast-calibration] No forecast found for ${biz.name} ${year}-${month}`)
+          continue
+        }
+
+        // Get last month's actuals
+        const { data: actuals } = await db
+          .from('tracker_data')
+          .select('revenue, staff_cost, food_cost')
+          .eq('business_id', biz.id)
+          .eq('period_year', year)
+          .eq('period_month', month)
+          .single()
+
+        if (!actuals) {
+          console.log(`[forecast-calibration] No actuals found for ${biz.name} ${year}-${month}`)
+          continue
+        }
+
+        // Calculate accuracy and bias
+        const revenueForecast = Number(forecast.revenue_forecast ?? 0)
+        const revenueActual = Number(actuals.revenue ?? 0)
+        
+        let accuracyPct = 0
+        let biasFactor = 1.0
+        
+        if (revenueActual > 0 && revenueForecast > 0) {
+          // Accuracy: how close forecast was to actual (100% = perfect)
+          const error = Math.abs(revenueActual - revenueForecast)
+          accuracyPct = 100 - (error / revenueActual * 100)
+          
+          // Bias: >1.0 = we under-forecast, <1.0 = we over-forecast
+          biasFactor = revenueActual / revenueForecast
+        }
+
+        // Calculate day-of-week factors from 90 days of revenue_logs
+        const ninetyDaysAgo = new Date(today)
+        ninetyDaysAgo.setDate(today.getDate() - 90)
+        
+        const { data: revenueLogs } = await db
+          .from('revenue_logs')
+          .select('revenue_date, revenue')
+          .eq('business_id', biz.id)
+          .gte('revenue_date', ninetyDaysAgo.toISOString().slice(0, 10))
+          .lte('revenue_date', today.toISOString().slice(0, 10))
+
+        const dowFactors: Record<number, number> = { 0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0 }
+        
+        if (revenueLogs?.length) {
+          // Group by day of week (0=Sunday, 1=Monday, etc.)
+          const byDow: Record<number, { total: number; count: number }> = {}
+          
+          for (const log of revenueLogs) {
+            const date = new Date(log.revenue_date)
+            const dow = date.getDay() // 0=Sunday, 1=Monday, etc.
+            const revenue = Number(log.revenue ?? 0)
+            
+            if (!byDow[dow]) byDow[dow] = { total: 0, count: 0 }
+            byDow[dow].total += revenue
+            byDow[dow].count += 1
+          }
+          
+          // Calculate average revenue per day
+          const allDays = Object.values(byDow)
+          const totalRevenue = allDays.reduce((sum, day) => sum + day.total, 0)
+          const totalCount = allDays.reduce((sum, day) => sum + day.count, 0)
+          const avgRevenuePerDay = totalCount > 0 ? totalRevenue / totalCount : 0
+          
+          // Calculate factors (day revenue / average)
+          for (const [dowStr, data] of Object.entries(byDow)) {
+            const dow = parseInt(dowStr)
+            const avgRevenueForDay = data.count > 0 ? data.total / data.count : 0
+            dowFactors[dow] = avgRevenuePerDay > 0 ? avgRevenueForDay / avgRevenuePerDay : 1.0
+          }
+        }
+
+        // Get existing calibration to calculate rolling bias
+        const { data: existingCalibration } = await db
+          .from('forecast_calibration')
+          .select('bias_factor, calibrated_at')
+          .eq('business_id', biz.id)
+          .order('calibrated_at', { ascending: false })
+          .limit(3)
+
+        // Calculate 3-month rolling average bias
+        let rollingBias = biasFactor
+        if (existingCalibration?.length) {
+          const recentBiases = existingCalibration.map(c => Number(c.bias_factor ?? 1.0))
+          recentBiases.push(biasFactor)
+          const avgBias = recentBiases.reduce((sum, b) => sum + b, 0) / recentBiases.length
+          rollingBias = avgBias
+        }
+
+        // Upsert calibration data
+        await db.from('forecast_calibration').upsert({
+          business_id: biz.id,
+          org_id: biz.org_id,
+          calibrated_at: new Date().toISOString(),
+          accuracy_pct: Math.round(accuracyPct * 10) / 10, // 1 decimal place
+          bias_factor: Math.round(rollingBias * 100) / 100, // 2 decimal places
+          dow_factors: dowFactors,
+        }, {
+          onConflict: 'business_id'
+        })
+
+        calibrated++
+        console.log(`[forecast-calibration] Calibrated ${biz.name}: accuracy=${Math.round(accuracyPct)}%, bias=${rollingBias.toFixed(2)}`)
+
+      } catch (err: any) {
+        const errorMsg = `${biz.name}: ${err.message}`
+        errors.push(errorMsg)
+        console.error(`[forecast-calibration] Error for ${biz.name}:`, err)
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      calibrated,
+      errors: errors.length > 0 ? errors : undefined,
+      month: `${year}-${String(month).padStart(2, '0')}`,
+      timestamp: new Date().toISOString(),
+    })
+
+  } catch (error: any) {
+    console.error('[forecast-calibration] Failed:', error)
+    return NextResponse.json({ 
+      ok: false, 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }, { status: 500 })
+  }
+}

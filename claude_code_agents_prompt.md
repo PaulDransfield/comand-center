@@ -590,7 +590,7 @@ await db.from('anomaly_alerts').upsert({
 ## Build order (work through in this sequence)
 
 1. **Anomaly detection** — complete existing skeleton (3 hrs)
-2. **Onboarding success** — new, triggers from sync engine (2 hrs)  
+2. **Onboarding success** — in progress, route + trigger built (2 hrs)  
 3. **Monday briefing** — new cron + email (4 hrs, needs Resend working)
 4. **Forecast calibration** — new cron, no Claude needed (4 hrs)
 5. **Supplier check** — build after Fortnox connected (3 hrs)

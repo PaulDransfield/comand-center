@@ -3,6 +3,7 @@
 // Returns: vendor, amount, vat_amount, due_date, invoice_date, invoice_number, category
 
 import { NextRequest, NextResponse } from 'next/server'
+import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 
 const CATEGORIES = [
   'food_beverage','alcohol','staff','rent','cleaning',
@@ -73,8 +74,8 @@ Rules:
     ]
 
     const response = await client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 2000,
+      model:      AI_MODELS.AGENT,
+      max_tokens: MAX_TOKENS.ASSISTANT,
       messages:   [{ role: 'user', content }],
     })
 

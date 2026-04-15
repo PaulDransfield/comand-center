@@ -11,11 +11,12 @@ import { createAdminClient }         from '@/lib/supabase/server'
 import { generateDigestHtml, BusinessDigest } from '@/lib/email/digest'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60  // Allow up to 60 seconds for processing
 
-export async function GET(req: NextRequest) {
-  // Security: only allow Vercel cron or manual trigger with secret
-  const secret = req.headers.get('x-cron-secret') ?? req.nextUrl.searchParams.get('secret')
-  if (secret !== process.env.CRON_SECRET) {
+export async function POST(req: NextRequest) {
+  // Security: only allow Vercel cron with Bearer token
+  const authHeader = req.headers.get('authorization')
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

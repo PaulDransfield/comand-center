@@ -4,15 +4,16 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
+import AskAI from '@/components/AskAI'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
 const fmtDay = (d: string) => new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 
 const PERIODS = ['Breakfast','Lunch','Dinner','Takeaway','Catering','Other']
-const TABS    = ['Covers', 'Revenue Detail']
+const TABS    = ['Daily Revenue', 'Revenue Detail']
 
-export default function CoversPage() {
+export default function RevenuePage() {
   const now = new Date()
   const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10)
 
@@ -21,7 +22,7 @@ export default function CoversPage() {
   const [covers,      setCovers]      = useState<any[]>([])
   const [revDetail,   setRevDetail]   = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
-  const [tab,         setTab]         = useState('Covers')
+  const [tab,         setTab]         = useState('Daily Revenue')
   const [showForm,    setShowForm]    = useState(false)
   const [form,        setForm]        = useState<any>({ date: now.toISOString().slice(0,10), total: '', revenue: '', breakdown: {} })
   const [saving,      setSaving]      = useState(false)
@@ -86,8 +87,8 @@ export default function CoversPage() {
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Covers & Revenue</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Guest counts and revenue breakdown from all sources</p>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Revenue</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Daily revenue, covers, and breakdown from all sources</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={selected} onChange={e => { setSelected(e.target.value); localStorage.setItem('cc_selected_biz', e.target.value) }}
@@ -120,7 +121,7 @@ export default function CoversPage() {
 
         {loading ? (
           <div style={{ padding: 60, textAlign: 'center', color: '#9ca3af' }}>Loading...</div>
-        ) : tab === 'Covers' ? (
+        ) : tab === 'Daily Revenue' ? (
           <>
             {/* KPI cards */}
             <div className="grid-4" style={{ marginBottom: 20 }}>
@@ -346,6 +347,22 @@ export default function CoversPage() {
           </>
         )}
       </div>
+
+      {/* AI panel — sees the current revenue data */}
+      <AskAI
+        page="revenue"
+        context={[
+          `Period: ${fromDate} to ${toDate}`,
+          `Total covers: ${totalCovers}`,
+          `Total revenue: ${fmtKr(totalRev)}`,
+          `Average per cover: ${fmtKr(avgRpc)}`,
+          `Best day: ${bestDay ? fmtDay(bestDay.date) + ' with ' + bestDay.total + ' covers' : 'No data'}`,
+          tab === 'Daily Revenue' 
+            ? `Covers by period: ${PERIODS.filter(p => splitData[p] > 0).map(p => `${p}: ${splitData[p]}`).join(', ')}`
+            : `Revenue breakdown: Dine-in ${fmtKr(rev.total_dine_in ?? 0)}, Takeaway ${fmtKr(rev.total_takeaway ?? 0)}, Tips ${fmtKr(rev.total_tips ?? 0)}`,
+          revDetail?.rows?.length > 0 ? `Daily data: ${revDetail.rows.length} days with revenue` : 'No daily revenue data',
+        ].filter(Boolean).join('\n')}
+      />
     </AppShell>
   )
 }

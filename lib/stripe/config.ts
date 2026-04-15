@@ -4,6 +4,8 @@
 // Prices match SAAS_MANIFEST.md exactly.
 // To change a plan limit, change it once here and it propagates everywhere.
 
+import { AI_MODELS } from '@/lib/ai/models'
+
 export interface PlanLimits {
   businesses:       number
   documents:        number
@@ -85,7 +87,7 @@ export const PLANS: Record<string, Plan> = {
       'Scheduled reports',
       'Team access (3 users)',
     ],
-    model: 'claude-sonnet-4-6',
+    model: AI_MODELS.ASSISTANT,
     badge: null,
   },
 
@@ -115,7 +117,7 @@ export const PLANS: Record<string, Plan> = {
       'Priority support',
       'Team access (10 users)',
     ],
-    model: 'claude-sonnet-4-6',
+    model: AI_MODELS.ASSISTANT,
     badge: 'Most Popular',
   },
 
@@ -145,7 +147,7 @@ export const PLANS: Record<string, Plan> = {
       'Dedicated support',
       'Unlimited team members',
     ],
-    model: 'claude-sonnet-4-6',
+    model: AI_MODELS.ASSISTANT,
     badge: 'Best Value',
   },
 
@@ -170,7 +172,7 @@ export const PLANS: Record<string, Plan> = {
       storage_mb:       2_000,
     },
     features: [],
-    model: 'claude-haiku-4-5-20251001',
+    model: AI_MODELS.AGENT,
     badge: null,
   },
 
@@ -199,7 +201,7 @@ export const PLANS: Record<string, Plan> = {
       'SLA guarantee',
       'Dedicated account manager',
     ],
-    model: 'claude-sonnet-4-6',
+    model: AI_MODELS.ASSISTANT,
     badge: 'Custom',
   },
 }
