@@ -11,6 +11,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Server misconfiguration' }, { status: 500 })
     }
     if (password !== adminPassword) {
+      // Temporary debug — logs lengths only, never the actual values
+      console.log(`Auth fail: input length=${password?.length}, env length=${adminPassword?.length}, match=${password === adminPassword}`)
       return NextResponse.json({ ok: false, error: 'Wrong password' }, { status: 401 })
     }
     return NextResponse.json({ ok: true })
