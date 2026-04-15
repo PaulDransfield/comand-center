@@ -526,9 +526,12 @@ async function updateTrackerFromLogs(db: any, orgId: string, businessId: string 
   if (!businessId) return
 
   // Get monthly staff cost totals from staff_logs
+  // Also fetch estimated_salary as fallback: Personalkollen only populates cost_actual
+  // once payroll is approved, so recent months return cost_actual=0. We use
+  // estimated_salary (time × hourly rate) for those shifts until cost is finalised.
   const { data: staffMonths } = await db
     .from('staff_logs')
-    .select('period_year, period_month, cost_actual, hours_worked')
+    .select('period_year, period_month, cost_actual, estimated_salary, hours_worked')
     .eq('org_id', orgId)
     .eq('business_id', businessId)
 
@@ -536,7 +539,11 @@ async function updateTrackerFromLogs(db: any, orgId: string, businessId: string 
   for (const row of staffMonths ?? []) {
     const key = `${row.period_year}-${row.period_month}`
     if (!byMonth[key]) byMonth[key] = { cost: 0, hours: 0 }
-    byMonth[key].cost  += Number(row.cost_actual  ?? 0)
+    // Use actual cost when available; fall back to estimated_salary for unprocessed shifts
+    const cost = Number(row.cost_actual ?? 0) > 0
+      ? Number(row.cost_actual)
+      : Number(row.estimated_salary ?? 0)
+    byMonth[key].cost  += cost
     byMonth[key].hours += Number(row.hours_worked ?? 0)
   }
 
