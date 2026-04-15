@@ -44,7 +44,6 @@ export async function POST(req: NextRequest) {
         provider,
         credentials_enc: encrypted,
         status:          'connected',
-        connected_at:    new Date().toISOString(),
       }
       if (provider === 'inzii' && department) insertRow.department = department
 
