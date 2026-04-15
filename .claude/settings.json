@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreCompact\",\"additionalContext\":\"CONTEXT LIMIT APPROACHING — before this conversation compacts, you MUST do the following in order:\\n1. Update CLAUDE.md: set the last-updated date, update session number, reflect any new features built or agents completed.\\n2. Update ROADMAP.md: mark completed items as done, move session items to completed, update the next session plan.\\n3. Update FIXES.md: document any new bugs found and fixed, or new patterns discovered.\\n4. Update MIGRATIONS.md: mark any pending migrations as executed if they were run.\\n5. Run these git commands in C:/Users/Chicce/Desktop/comand-center:\\n   git add CLAUDE.md ROADMAP.md FIXES.md MIGRATIONS.md app/ components/ lib/\\n   git commit -m \\\"chore: session checkpoint — sync MD files and code before compaction\\\"\\n   git push\\nDo this NOW before responding to anything else.\"}}'",
+            "statusMessage": "Saving session progress to GitHub..."
+          }
+        ]
+      }
+    ]
+  }
+}

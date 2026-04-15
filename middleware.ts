@@ -10,18 +10,25 @@ export async function middleware(request: NextRequest) {
   console.log('MIDDLEWARE PATH:', pathname)
   console.log('COOKIES:', allCookies.map(c => c.name))
   
-  // Only protect dashboard for now
+  // Check for any Supabase session cookie
+  const hasSession = allCookies.some(c =>
+    c.name.includes('auth') ||
+    c.name.includes('session') ||
+    c.name.includes('sb-') ||
+    c.name.includes('supabase')
+  )
+
+  console.log('HAS SESSION COOKIE:', hasSession)
+
+  // Logged-in users visiting the landing page → send to dashboard
+  if (pathname === '/' && hasSession) {
+    const dashUrl = request.nextUrl.clone()
+    dashUrl.pathname = '/dashboard'
+    return NextResponse.redirect(dashUrl)
+  }
+
+  // Protect dashboard (and other app pages) from logged-out users
   if (pathname.startsWith('/dashboard')) {
-    // Check for ANY supabase session cookie
-    const hasSession = allCookies.some(c => 
-      c.name.includes('auth') || 
-      c.name.includes('session') || 
-      c.name.includes('sb-') ||
-      c.name.includes('supabase')
-    )
-    
-    console.log('HAS SESSION COOKIE:', hasSession)
-    
     if (!hasSession) {
       const loginUrl = request.nextUrl.clone()
       loginUrl.pathname = '/login'

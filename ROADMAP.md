@@ -83,17 +83,17 @@
 
 ---
 
-## Session 7 — Planned
+## Session 7 — IN PROGRESS
 
-| Item | Description | Est. |
-|------|-------------|------|
-| 8. Public landing page | No marketing page exists — just a login screen | 4 hrs |
-| 9. Sentry error monitoring | Know about issues before customers do | 2 hrs |
-| 10. Fix sync timeout | Chunked backfill — one month per call | 3 hrs |
-| 11. Contextual AI on every page | "Ask AI" button on staff, tracker, dashboard | 3 hrs |
-| 12. Rename /covers → /revenue | "Covers" is wrong term for this page | 30 min |
-| 13. Mobile dashboard, staff, tracker | KPI cards must stack on phones | 3 hrs |
-| 14. Schema migrations log | MIGRATIONS.md — record every SQL change (file created) | 2 hrs |
+| Item | Description | Status |
+|------|-------------|--------|
+| 8. Public landing page | Marketing page at comandcenter.se | ✅ **COMPLETE** — live at `/`, logged-in users redirect to `/dashboard` |
+| 9. Sentry error monitoring | Know about issues before customers do | ✅ **COMPLETE** |
+| 10. Fix sync timeout | Chunked backfill — one month per call | ✅ **COMPLETE** |
+| 11. Contextual AI on every page | "Ask AI" button on staff, tracker, dashboard | ✅ **COMPLETE** |
+| 12. Rename /covers → /revenue | "Covers" is wrong term for this page | ✅ **COMPLETE** |
+| 13. Mobile dashboard, staff, tracker | KPI cards must stack on phones | 📋 Next |
+| 14. Schema migrations log | MIGRATIONS.md — record every SQL change (file created) | ✅ **COMPLETE** |
 
 ---
 

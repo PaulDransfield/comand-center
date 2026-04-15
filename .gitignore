@@ -8,8 +8,8 @@ out/
 # Dependencies
 node_modules/
 
-# Claude Code
-.claude/
+# Claude Code — commit settings.json (project hooks), ignore personal overrides
+.claude/settings.local.json
 
 # Environment variables
 .env.local
