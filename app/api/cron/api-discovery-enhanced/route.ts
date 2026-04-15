@@ -10,7 +10,7 @@ import { createClient } from '@/lib/supabase/server'
 import { analyzeGenericAPIEnhanced, analyzeProviderEndpoints, generateImplementationPlan, APIAnalysisRequest } from '@/lib/api-discovery/enhanced-analyzer'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 600  // 10 minutes for comprehensive analysis
+export const maxDuration = 300  // 5 minutes max for Vercel Hobby plan
 
 // Common POS/staffing systems in Sweden
 const KNOWN_PROVIDERS = {
