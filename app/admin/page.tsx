@@ -15,6 +15,8 @@ const PROVIDERS = [
 
 const fmtDate = (d: string) => d ? new Date(d).toLocaleString('sv-SE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Never'
 
+const INZII_DEPTS = ['Bella', 'Brus', 'Carne', 'Chilango', 'Ölbaren', 'Rosalis Select']
+
 export default function AdminPage() {
   const router = useRouter()
   const [authed,       setAuthed]       = useState(false)
@@ -23,6 +25,7 @@ export default function AdminPage() {
   const [loading,      setLoading]      = useState(false)
   const [modal,        setModal]        = useState<any>(null)
   const [syncModal,    setSyncModal]    = useState<any>(null)
+  const [inziiModal,   setInziiModal]   = useState<any>(null)
   const [syncLogs,     setSyncLogs]     = useState<any[]>([])
   const [triggering,   setTriggering]   = useState(false)
   const [triggerMsg,   setTriggerMsg]   = useState('')
@@ -145,7 +148,7 @@ export default function AdminPage() {
               Setup requests ({setupRequests.length})
             </div>
             {setupRequests.map(org => (
-              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} highlight />
+              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} highlight />
             ))}
           </div>
         )}
@@ -157,7 +160,7 @@ export default function AdminPage() {
               Connected ({connected.length})
             </div>
             {connected.map(org => (
-              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} />
+              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} />
             ))}
           </div>
         )}
@@ -169,7 +172,7 @@ export default function AdminPage() {
               No connections yet ({pending.length})
             </div>
             {pending.map(org => (
-              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} />
+              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} />
             ))}
           </div>
         )}
@@ -238,6 +241,15 @@ export default function AdminPage() {
         />
       )}
 
+      {/* Inzii department modal */}
+      {inziiModal && (
+        <InziiDeptModal
+          org={inziiModal.org}
+          biz={inziiModal.biz}
+          onClose={() => { setInziiModal(null); loadOrgs() }}
+        />
+      )}
+
       {/* Sync modal */}
       {syncModal && (
         <SyncModal
@@ -249,7 +261,7 @@ export default function AdminPage() {
   )
 }
 
-function OrgCard({ org, onConnect, onSync, highlight }: any) {
+function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -288,8 +300,8 @@ function OrgCard({ org, onConnect, onSync, highlight }: any) {
                 {biz.name} <span style={{ fontWeight: 400, color: '#9ca3af' }}>({biz.city ?? 'no city'})</span>
               </div>
 
-              {/* Integrations for this business */}
-              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, marginBottom: 8 }}>
+              {/* Standard integrations (non-Inzii) */}
+              <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 8, marginBottom: 10 }}>
                 {PROVIDERS.map(p => {
                   const integ = (biz.integrations ?? []).find((i: any) => i.provider === p.key)
                   const connected = integ?.status === 'connected'
@@ -319,6 +331,44 @@ function OrgCard({ org, onConnect, onSync, highlight }: any) {
                   )
                 })}
               </div>
+
+              {/* Inzii POS departments */}
+              {(() => {
+                const depts = (biz.integrations ?? []).filter((i: any) => i.provider === 'inzii')
+                return (
+                  <div style={{ borderTop: '0.5px solid #f3f4f6', paddingTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+                      Inzii POS — {depts.length} department{depts.length !== 1 ? 's' : ''} connected
+                    </div>
+                    {depts.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, marginBottom: 8 }}>
+                        {depts.map((integ: any) => (
+                          <div key={integ.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 6, background: '#f8fafc', border: '0.5px solid #e5e7eb', fontSize: 12 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: integ.status === 'connected' ? '#10b981' : '#d1d5db', flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, color: '#374151', flex: 1 }}>{integ.department ?? '—'}</span>
+                            {integ.last_sync_at
+                              ? <span style={{ color: '#9ca3af', fontSize: 11 }}>{fmtDate(integ.last_sync_at)}</span>
+                              : <span style={{ color: '#f59e0b', fontSize: 11 }}>Never synced</span>
+                            }
+                            <button
+                              onClick={() => onSync({ integrationId: integ.id, name: `${biz.name} — ${integ.department}`, orgId: org.id })}
+                              style={{ fontSize: 11, padding: '2px 8px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                            >
+                              Sync
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => onAddInzii({ ...biz, _org: org })}
+                      style={{ fontSize: 11, padding: '4px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      + Add department
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           ))}
         </div>
@@ -488,6 +538,119 @@ function ConnectWizard({ org, biz, onClose }: any) {
               style={{ width: '100%', padding: 11, background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
               Back to admin
             </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function InziiDeptModal({ org, biz, onClose }: any) {
+  const [dept,    setDept]    = useState('')
+  const [apiKey,  setApiKey]  = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [done,    setDone]    = useState(false)
+  const [error,   setError]   = useState('')
+
+  async function save() {
+    if (!dept.trim()) { setError('Select or enter a department name'); return }
+    if (!apiKey.trim()) { setError('Enter the API key for this department'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/connect', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider:    'inzii',
+          api_key:     apiKey.trim(),
+          org_id:      org.id,
+          business_id: biz.id,
+          department:  dept.trim(),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Failed to save')
+      setDone(true)
+    } catch (e: any) { setError(e.message) }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 16, padding: 32, width: '100%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        {!done ? (
+          <>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1f2e', marginBottom: 4 }}>Add Inzii POS Department</div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 24 }}>{org.name} — {biz.name}</div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>
+                Department
+              </label>
+              <input
+                list="dept-suggestions"
+                value={dept}
+                onChange={e => setDept(e.target.value)}
+                placeholder="e.g. Bella, Brus, Carne..."
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const }}
+              />
+              <datalist id="dept-suggestions">
+                {INZII_DEPTS.map(d => <option key={d} value={d} />)}
+              </datalist>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>
+                Inzii API Key
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && save()}
+                placeholder="Paste the API key for this department"
+                style={{ width: '100%', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14, fontFamily: 'monospace', boxSizing: 'border-box' as const }}
+              />
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+                Find the key in Personalkollen under Kassaleverantör for this workplace.
+              </div>
+            </div>
+
+            {error && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#dc2626', marginBottom: 16 }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={save} disabled={saving}
+                style={{ flex: 1, padding: 11, background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                {saving ? 'Saving...' : 'Save department'}
+              </button>
+              <button onClick={onClose}
+                style={{ padding: '11px 18px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer', color: '#374151' }}>
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ textAlign: 'center' as const }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>+</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 8 }}>{dept} saved</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+              Key stored securely. The department will sync in the next daily run (05:00 UTC) or you can trigger a sync manually from the department row.
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { setDone(false); setDept(''); setApiKey('') }}
+                style={{ flex: 1, padding: 11, background: '#6366f1', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                Add another department
+              </button>
+              <button onClick={onClose}
+                style={{ flex: 1, padding: 11, background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                Done
+              </button>
+            </div>
           </div>
         )}
       </div>

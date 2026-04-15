@@ -42,6 +42,17 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    if (provider === 'inzii') {
+      const { testInziiConnection } = await import('@/lib/pos/inzii')
+      const result = await testInziiConnection(api_key)
+      return NextResponse.json({
+        ok:                result.ok,
+        workplace_name:    result.message,
+        earliest_date:     new Date(Date.now() - 2 * 365 * 86400000).toISOString().slice(0, 10),
+        estimated_records: result.days_found,
+      })
+    }
+
     return NextResponse.json({ error: `Provider ${provider} test not implemented` }, { status: 400 })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

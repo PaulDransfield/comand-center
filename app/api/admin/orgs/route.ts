@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     // Get integrations per business
     const { data: integrations } = await db
       .from('integrations')
-      .select('id, provider, status, business_id, last_sync_at, last_error')
+      .select('id, provider, status, business_id, last_sync_at, last_error, department')
       .eq('org_id', org.id)
 
     const enrichedBizs = (businesses ?? []).map((biz: any) => ({

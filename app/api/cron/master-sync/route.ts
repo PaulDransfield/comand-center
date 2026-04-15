@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     .from('integrations')
     .select('org_id, provider, id')
     .eq('status', 'connected')
-    .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco'])
+    .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco', 'inzii'])
 
   if (!integrations?.length) {
     return NextResponse.json({ ok: true, message: 'No active integrations' })

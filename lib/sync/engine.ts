@@ -13,12 +13,61 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
   if (!token) throw new Error('Invalid credentials')
 
   const { getWorkPeriods } = await import('@/lib/pos/personalkollen')
-  const [staff, logged, sales, scheduled] = await Promise.all([
-    getStaff(token),
-    getLoggedTimes(token, fromDate, toDate),
-    getSales(token, fromDate, toDate),
-    getWorkPeriods(token, fromDate, toDate),
-  ])
+  
+  // Get staff once (doesn't depend on date range)
+  const staff = await getStaff(token)
+  
+  // Calculate if we need chunked backfill (more than 3 months)
+  const from = new Date(fromDate)
+  const to = new Date(toDate)
+  const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth())
+  
+  let logged: any[] = []
+  let sales: any[] = []
+  let scheduled: any[] = []
+  
+  if (monthsDiff <= 3) {
+    // Small date range: fetch all at once
+    [logged, sales, scheduled] = await Promise.all([
+      getLoggedTimes(token, fromDate, toDate),
+      getSales(token, fromDate, toDate),
+      getWorkPeriods(token, fromDate, toDate),
+    ])
+  } else {
+    // Large date range: chunk by month to avoid timeouts
+    console.log(`Chunked backfill: ${monthsDiff} months from ${fromDate} to ${toDate}`)
+    
+    // Process month by month
+    for (let monthStart = new Date(from); monthStart <= to; monthStart.setMonth(monthStart.getMonth() + 1)) {
+      const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0)
+      if (monthEnd > to) monthEnd.setTime(to.getTime())
+      
+      const monthFrom = monthStart.toISOString().slice(0, 10)
+      const monthTo = monthEnd.toISOString().slice(0, 10)
+      
+      console.log(`  Fetching ${monthFrom} to ${monthTo}`)
+      
+      try {
+        const [monthLogged, monthSales, monthScheduled] = await Promise.all([
+          getLoggedTimes(token, monthFrom, monthTo),
+          getSales(token, monthFrom, monthTo),
+          getWorkPeriods(token, monthFrom, monthTo),
+        ])
+        
+        logged.push(...monthLogged)
+        sales.push(...monthSales)
+        scheduled.push(...monthScheduled)
+        
+        // Small delay between months to avoid rate limiting
+        if (monthStart.getMonth() < to.getMonth() || monthStart.getFullYear() < to.getFullYear()) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      } catch (error: any) {
+        console.error(`Failed to fetch ${monthFrom}-${monthTo}:`, error.message)
+        // Continue with next month instead of failing entire sync
+      }
+    }
+  }
 
   // Build staff lookup
   const staffMap: Record<string, any> = {}
@@ -323,6 +372,71 @@ async function syncCaspeco(db: any, integ: any, fromDate: string, toDate: string
   return { shifts: upserted, employees: employees.length }
 }
 
+// ── Inzii sync ────────────────────────────────────────────────────────────────
+async function syncInzii(db: any, integ: any, fromDate: string, toDate: string) {
+  const { getInziiDailySummary } = await import('@/lib/pos/inzii')
+  const token = decrypt(integ.credentials_enc)
+  if (!token) throw new Error('Invalid credentials')
+
+  const department = integ.department ?? 'pos'
+  const daily      = await getInziiDailySummary(token, fromDate, toDate)
+  let upserted     = 0
+
+  // Use provider = 'inzii_<dept>' so each department can store its own rows
+  // without conflicting on the (org_id, business_id, provider, revenue_date) unique key
+  const providerKey = `inzii_${department.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+
+  const rows = daily.map((d: any) => ({
+    org_id:            integ.org_id,
+    business_id:       integ.business_id ?? null,
+    provider:          providerKey,
+    revenue_date:      d.date,
+    revenue:           Math.round(d.revenue * 100) / 100,
+    covers:            d.covers ?? 0,
+    revenue_per_cover: d.covers > 0 ? Math.round(d.revenue / d.covers) : 0,
+    transactions:      d.transactions ?? 0,
+    food_revenue:      Math.round((d.food_revenue ?? 0) * 100) / 100,
+    bev_revenue:       Math.round((d.bev_revenue  ?? 0) * 100) / 100,
+    period_year:       parseInt(d.date.slice(0,4)),
+    period_month:      parseInt(d.date.slice(5,7)),
+  })).filter((r: any) => r.revenue > 0)
+
+  if (rows.length) {
+    await db.from('revenue_logs').upsert(rows, { onConflict: 'org_id,business_id,provider,revenue_date' })
+    upserted = rows.length
+
+    // Aggregate all Inzii departments for the covers table (daily total per business)
+    if (integ.business_id) {
+      // Sum across all inzii_ providers for this business per date
+      const { data: allInzii } = await db
+        .from('revenue_logs')
+        .select('revenue_date, revenue, covers, revenue_per_cover')
+        .eq('business_id', integ.business_id)
+        .like('provider', 'inzii_%')
+
+      const byDate: Record<string, { revenue: number; covers: number }> = {}
+      for (const r of allInzii ?? []) {
+        if (!byDate[r.revenue_date]) byDate[r.revenue_date] = { revenue: 0, covers: 0 }
+        byDate[r.revenue_date].revenue += Number(r.revenue ?? 0)
+        byDate[r.revenue_date].covers  += Number(r.covers  ?? 0)
+      }
+
+      const coverRows = Object.entries(byDate).map(([date, data]: any) => ({
+        business_id:       integ.business_id,
+        org_id:            integ.org_id,
+        date,
+        total:             data.covers,
+        revenue:           Math.round(data.revenue),
+        revenue_per_cover: data.covers > 0 ? Math.round(data.revenue / data.covers) : 0,
+        source:            'inzii',
+      }))
+      if (coverRows.length) await db.from('covers').upsert(coverRows, { onConflict: 'business_id,date' })
+    }
+  }
+
+  return { revenue_days: upserted, department }
+}
+
 // ── Ancon sync ────────────────────────────────────────────────────────────────
 async function syncAncon(db: any, integ: any, fromDate: string, toDate: string) {
   const { getAnconDailySummary } = await import('@/lib/pos/ancon')
@@ -426,12 +540,25 @@ async function updateTrackerFromLogs(db: any, orgId: string, businessId: string 
     byMonth[key].hours += Number(row.hours_worked ?? 0)
   }
 
-  // Get monthly revenue from revenue_logs
+  // Determine the correct revenue source per DATA_SOURCES.md:
+  // If Inzii data exists → use only Inzii (more accurate, direct POS)
+  // Otherwise → use whatever is available (personalkollen, ancon, etc.)
+  const { data: allProviders } = await db
+    .from('revenue_logs')
+    .select('provider')
+    .eq('business_id', businessId)
+
+  const providerSet = [...new Set((allProviders ?? []).map((p: any) => p.provider))]
+  const inziiProviders = providerSet.filter((p: any) => String(p).startsWith('inzii'))
+  const revenueProviders = inziiProviders.length > 0 ? inziiProviders : providerSet
+
+  // Get monthly revenue from revenue_logs — filtered to correct source
   const { data: revMonths } = await db
     .from('revenue_logs')
     .select('period_year, period_month, revenue, covers')
     .eq('org_id', orgId)
     .eq('business_id', businessId)
+    .in('provider', revenueProviders.length > 0 ? revenueProviders : ['__none__'])
 
   const revByMonth: Record<string, { revenue: number; covers: number }> = {}
   for (const row of revMonths ?? []) {
@@ -617,7 +744,7 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   if (integrationId) {
     const { data } = await db
       .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, provider')
+      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at')
       .eq('id', integrationId)
       .eq('status', 'connected')
       .maybeSingle()
@@ -625,7 +752,7 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   } else {
     const { data } = await db
       .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, provider')
+      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at')
       .eq('org_id', orgId)
       .eq('provider', provider)
       .eq('status', 'connected')
@@ -635,6 +762,10 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   }
 
   if (!integ) return { error: `No connected ${provider} integration` }
+
+  const { data: business } = integ.business_id
+    ? await db.from('businesses').select('id, name, city').eq('id', integ.business_id).maybeSingle()
+    : { data: null }
 
   let result: any = {}
   let status = 'success'
@@ -650,6 +781,8 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
       result = await syncAncon(db, integ, from, to)
     } else if (provider === 'swess') {
       result = await syncSwess(db, integ, from, to)
+    } else if (provider === 'inzii') {
+      result = await syncInzii(db, integ, from, to)
     }
 
     // Update tracker_data from stored logs
@@ -663,6 +796,30 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
       last_sync_at: now.toISOString(),
       last_error:   null,
     }).eq('id', integ.id)
+
+    if (provider === 'personalkollen' && result.shifts > 0 && !integ.last_sync_at) {
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://comandcenter.se'
+        await fetch(`${appUrl}/api/agents/onboarding-success`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-cron-secret': process.env.CRON_SECRET ?? '',
+          },
+          body: JSON.stringify({
+            org_id: orgId,
+            business_id: integ.business_id,
+            integration_id: integ.id,
+            business_name: business?.name ?? null,
+            city: business?.city ?? null,
+            systems: { personalkollen: 'connected' },
+            result,
+          }),
+        })
+      } catch (err: any) {
+        console.error('Onboarding success agent failed:', err)
+      }
+    }
 
   } catch (e: any) {
     status = 'error'

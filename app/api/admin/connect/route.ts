@@ -6,20 +6,26 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   try {
-    const { provider, api_key, org_id, business_id } = await req.json()
+    const { provider, api_key, org_id, business_id, department } = await req.json()
     if (!provider || !api_key || !org_id) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
 
     const db = createAdminClient()
     const encrypted = encrypt(api_key)
 
-    // Upsert integration — always tied to business_id
-    const { data: existing } = await db
+    // Inzii: one row per department — upsert on org+provider+business+department
+    // Other providers: one row per provider per business
+    let existingQuery = db
       .from('integrations')
       .select('id')
       .eq('org_id', org_id)
       .eq('provider', provider)
       .eq('business_id', business_id)
-      .maybeSingle()
+
+    if (provider === 'inzii' && department) {
+      existingQuery = existingQuery.eq('department', department)
+    }
+
+    const { data: existing } = await existingQuery.maybeSingle()
 
     let integrationId: string
 
@@ -32,14 +38,17 @@ export async function POST(req: NextRequest) {
       }).eq('id', existing.id)
       integrationId = existing.id
     } else {
-      const { data } = await db.from('integrations').insert({
+      const insertRow: any = {
         org_id,
         business_id,
         provider,
         credentials_enc: encrypted,
         status:          'connected',
         connected_at:    new Date().toISOString(),
-      }).select('id').single()
+      }
+      if (provider === 'inzii' && department) insertRow.department = department
+
+      const { data } = await db.from('integrations').insert(insertRow).select('id').single()
       integrationId = data.id
     }
 

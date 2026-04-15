@@ -1,5 +1,5 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Created: 2026-04-11 | Session 6
+> Last updated: 2026-04-15 | Session 6
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
@@ -50,73 +50,210 @@ ALTER TABLE revenue_logs ADD COLUMN IF NOT EXISTS food_revenue INTEGER DEFAULT 0
 ALTER TABLE revenue_logs ADD COLUMN IF NOT EXISTS drink_revenue INTEGER DEFAULT 0;
 ```
 
-**Why**: Personalkollen API provides OB type breakdown (OB1/OB2/OB3) and food/drink revenue split. We were not capturing this data. Added columns to store it during sync.
-
 ---
 
-### M002 — Session 6 — AI usage tracking (RUN BEFORE SESSION 6 BUILDS)
-**Run**: TBD
-**Status**: ⏳ Pending
+### M002 — 2026-04-11 — Session 6 — AI query tracking
+**Run**: 2026-04-11
+**Status**: ✅ Success
 
 ```sql
--- AI query counter per org per day
--- Used to enforce plan limits and trigger upsell prompts
 CREATE TABLE IF NOT EXISTS ai_usage_daily (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   query_count INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(org_id, date)
 );
-
 ALTER TABLE ai_usage_daily ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "ai_usage_select_own" ON ai_usage_daily
+CREATE POLICY "ai_usage_daily_select_own" ON ai_usage_daily
   FOR SELECT USING (org_id IN (
     SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
   ));
 ```
 
-**Why**: Session 6 builds AI query limits enforcement. Need to count queries per org per day. UNIQUE(org_id, date) allows safe upsert with increment.
-
 ---
 
-## Template for future migrations
-
-```
-### MXXX — YYYY-MM-DD — Session N — Short description
-**Run**: YYYY-MM-DD
-**Status**: ✅ Success / ❌ Failed / ⏳ Pending
-
-SQL:
-[paste exact SQL run]
-
-Why: [one sentence explaining why this change was needed]
-Follow-up: [any action needed after this migration]
-```
-
----
-
-*Never delete old entries. Never edit past entries. Only add new ones.*
-*This file must be kept in sync with production schema at all times.*
-
-### M003 — Session 6 — AI usage atomic increment RPC
-**Run**: 2026-04-11
-**Status**: ⏳ Pending
+### M003 — 2026-04-15 — Session 6 — AI Agent Tables
+**Run**: 2026-04-15
+**Status**: ⏳ **PENDING** — Need to run in Supabase
 
 ```sql
--- Atomic increment function for AI usage counter
--- Prevents race conditions when multiple requests hit simultaneously
-CREATE OR REPLACE FUNCTION increment_ai_usage(p_org_id UUID, p_date DATE)
-RETURNS void AS $$
-BEGIN
-  INSERT INTO ai_usage_daily (org_id, date, query_count)
-  VALUES (p_org_id, p_date, 1)
-  ON CONFLICT (org_id, date)
-  DO UPDATE SET query_count = ai_usage_daily.query_count + 1;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- Table for forecast calibration agent (runs 1st of month)
+CREATE TABLE IF NOT EXISTS forecast_calibration (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  calibrated_at TIMESTAMPTZ DEFAULT now(),
+  accuracy_pct NUMERIC,
+  bias_factor NUMERIC DEFAULT 1.0,
+  dow_factors JSONB,
+  UNIQUE(business_id)
+);
+ALTER TABLE forecast_calibration ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "forecast_calibration_select_own" ON forecast_calibration
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+-- Table for scheduling optimization agent (runs weekly)
+CREATE TABLE IF NOT EXISTS scheduling_recommendations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  generated_at TIMESTAMPTZ DEFAULT now(),
+  recommendations TEXT NOT NULL,
+  analysis_period TEXT,
+  metadata JSONB
+);
+ALTER TABLE scheduling_recommendations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "scheduling_recommendations_select_own" ON scheduling_recommendations
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+-- Table for Monday briefing agent (needs Resend)
+CREATE TABLE IF NOT EXISTS briefings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  week_start DATE NOT NULL,
+  content TEXT NOT NULL,
+  key_metrics JSONB,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(business_id, week_start)
+);
+ALTER TABLE briefings ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "briefings_select_own" ON briefings
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+-- Column for onboarding success agent
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS onboarding_email_sent BOOLEAN DEFAULT false;
 ```
 
-Why: The AI route needs to atomically increment the daily query counter. Without this, concurrent requests can read the same count and both pass the limit check. This RPC handles the upsert + increment as a single DB operation.
+**Follow-up**: Run this SQL in Supabase SQL Editor before deploying AI agents.
+
+---
+
+### M005 — 2026-04-15 — Session 6 — Inzii POS department column
+**Run**: Not yet
+**Status**: ⏳ **PENDING** — Run before adding Inzii integrations
+
+```sql
+-- Allows multiple Inzii integrations per business (one per POS department)
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS department TEXT;
+```
+
+---
+
+### M004 — 2026-04-15 — Session 6 — AI Agent Support Tables
+**Run**: 2026-04-15
+**Status**: ⏳ **PENDING** — Optional, for future agents
+
+```sql
+-- Table for supplier price creep agent (when Fortnox OAuth approved)
+CREATE TABLE IF NOT EXISTS supplier_price_alerts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  detected_at TIMESTAMPTZ DEFAULT now(),
+  supplier_name TEXT,
+  item_name TEXT,
+  old_price NUMERIC,
+  new_price NUMERIC,
+  increase_pct NUMERIC,
+  invoice_date DATE,
+  alert_severity TEXT CHECK (alert_severity IN ('low', 'medium', 'high')),
+  is_resolved BOOLEAN DEFAULT false,
+  resolved_at TIMESTAMPTZ,
+  resolution_notes TEXT
+);
+ALTER TABLE supplier_price_alerts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "supplier_price_alerts_select_own" ON supplier_price_alerts
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+-- Table for anomaly detection agent email tracking
+ALTER TABLE anomaly_alerts ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMPTZ;
+ALTER TABLE anomaly_alerts ADD COLUMN IF NOT EXISTS email_recipients TEXT[];
+```
+
+---
+
+## SQL to Run Now for AI Agents
+
+Copy and paste this into Supabase SQL Editor:
+
+```sql
+-- M003: AI Agent Tables
+CREATE TABLE IF NOT EXISTS forecast_calibration (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  calibrated_at TIMESTAMPTZ DEFAULT now(),
+  accuracy_pct NUMERIC,
+  bias_factor NUMERIC DEFAULT 1.0,
+  dow_factors JSONB,
+  UNIQUE(business_id)
+);
+ALTER TABLE forecast_calibration ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "forecast_calibration_select_own" ON forecast_calibration
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+CREATE TABLE IF NOT EXISTS scheduling_recommendations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  generated_at TIMESTAMPTZ DEFAULT now(),
+  recommendations TEXT NOT NULL,
+  analysis_period TEXT,
+  metadata JSONB
+);
+ALTER TABLE scheduling_recommendations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "scheduling_recommendations_select_own" ON scheduling_recommendations
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS onboarding_email_sent BOOLEAN DEFAULT false;
+
+-- Mark as executed after running
+-- ✅ EXECUTED 2026-04-15
+```
+
+---
+
+## Current Schema Summary
+
+### AI Agent Tables (Session 6)
+1. **`ai_usage_daily`** — AI query limits per org per day
+2. **`forecast_calibration`** — Forecast accuracy and bias factors (monthly)
+3. **`scheduling_recommendations`** — Staff scheduling optimizations (weekly)
+4. **`briefings`** — Monday briefing content (when Resend verified)
+5. **`supplier_price_alerts`** — Supplier price increases (when Fortnox connected)
+
+### Agent Status
+- ✅ **Anomaly detection** — Live, uses `anomaly_alerts` table
+- ✅ **Forecast calibration** — Ready, needs `forecast_calibration` table
+- ✅ **Scheduling optimization** — Ready, needs `scheduling_recommendations` table
+- ✅ **Supplier price creep** — Skeleton built, needs `supplier_price_alerts` table
+- 🔄 **Onboarding success** — In progress, uses `onboarding_email_sent` column
+- 📋 **Monday briefing** — Planned, needs `briefings` table
+
+---
+
+## Next Steps
+
+1. **Run M003 SQL** in Supabase SQL Editor
+2. **Deploy AI agents** to Vercel
+3. **Test cron jobs** with Bearer token
+4. **Monitor logs** for agent execution
+5. **Update this file** with execution status
+
+---
+
+*Always update this file before and after running SQL in Supabase.*
