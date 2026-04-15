@@ -149,6 +149,7 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS department TEXT;
 -- New indexes allow multiple Inzii rows (one per department) while keeping
 -- the single-row-per-provider rule for all other integrations.
 ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_business_id_provider_key;
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_org_business_provider_unique;
 
 CREATE UNIQUE INDEX IF NOT EXISTS integrations_uniq_with_dept
   ON integrations (business_id, provider, department)
