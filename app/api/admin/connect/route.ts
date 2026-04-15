@@ -48,7 +48,9 @@ export async function POST(req: NextRequest) {
       }
       if (provider === 'inzii' && department) insertRow.department = department
 
-      const { data } = await db.from('integrations').insert(insertRow).select('id').single()
+      const { data, error: insertErr } = await db.from('integrations').insert(insertRow).select('id').single()
+      if (insertErr) throw new Error(insertErr.message)
+      if (!data) throw new Error('Insert returned no data — check that M005 migration has been run (ALTER TABLE integrations ADD COLUMN IF NOT EXISTS department TEXT)')
       integrationId = data.id
     }
 
