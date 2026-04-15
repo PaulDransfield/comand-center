@@ -136,13 +136,27 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS onboarding_email_sent BOOLEAN 
 
 ---
 
-### M005 — 2026-04-15 — Session 6 — Inzii POS department column
-**Run**: Not yet
-**Status**: ⏳ **PENDING** — Run before adding Inzii integrations
+### M005 — 2026-04-15 — Session 6 — Inzii POS department support
+**Run**: 2026-04-15
+**Status**: ✅ Success (department column) / ⏳ PENDING (constraint fix)
 
 ```sql
--- Allows multiple Inzii integrations per business (one per POS department)
+-- Step 1: Add department column (run first)
 ALTER TABLE integrations ADD COLUMN IF NOT EXISTS department TEXT;
+
+-- Step 2: Replace single unique constraint with two partial indexes
+-- Old constraint only allowed one integration per provider per business.
+-- New indexes allow multiple Inzii rows (one per department) while keeping
+-- the single-row-per-provider rule for all other integrations.
+ALTER TABLE integrations DROP CONSTRAINT IF EXISTS integrations_business_id_provider_key;
+
+CREATE UNIQUE INDEX IF NOT EXISTS integrations_uniq_with_dept
+  ON integrations (business_id, provider, department)
+  WHERE department IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS integrations_uniq_no_dept
+  ON integrations (business_id, provider)
+  WHERE department IS NULL;
 ```
 
 ---
