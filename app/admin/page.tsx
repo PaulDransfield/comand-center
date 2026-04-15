@@ -133,6 +133,9 @@ export default function AdminPage() {
             <button onClick={() => { loadOrgs(); loadSyncLogs() }} style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#374151' }}>
               Refresh
             </button>
+            <a href="/admin/api-discoveries-enhanced" style={{ padding: '8px 16px', background: '#8b5cf6', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
+              Enhanced API Discovery
+            </a>
             <a href="/dashboard" style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
               Back to app
             </a>

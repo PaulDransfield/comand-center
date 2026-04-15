@@ -106,48 +106,62 @@ export default function EnhancedApiDiscoveriesPage() {
             AI-powered analysis of API integrations with unused data identification
           </p>
         </div>
-        <button 
-          onClick={triggerEnhancedDiscovery}
-          disabled={runningDiscovery}
-          style={{
-            backgroundColor: runningDiscovery ? '#93c5fd' : '#2563eb',
-            color: 'white',
-            fontWeight: '500',
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <a href="/admin" style={{
             padding: '8px 16px',
+            backgroundColor: '#f3f4f6',
+            color: '#374151',
+            fontWeight: '500',
             borderRadius: '8px',
-            border: 'none',
-            cursor: runningDiscovery ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-          onMouseOver={(e) => {
-            if (!runningDiscovery) {
-              e.currentTarget.style.backgroundColor = '#1d4ed8'
-            }
-          }}
-          onMouseOut={(e) => {
-            if (!runningDiscovery) {
-              e.currentTarget.style.backgroundColor = '#2563eb'
-            }
-          }}
-        >
-          {runningDiscovery ? (
-            <>
-              <div style={{
-                animation: 'spin 1s linear infinite',
-                borderRadius: '50%',
-                height: '16px',
-                width: '16px',
-                border: '2px solid white',
-                borderTopColor: 'transparent'
-              }}></div>
-              Running Discovery...
-            </>
-          ) : (
-            'Run Enhanced Discovery'
-          )}
-        </button>
+            border: '1px solid #e5e7eb',
+            textDecoration: 'none',
+            fontSize: '14px'
+          }}>
+            Back to Admin
+          </a>
+          <button 
+            onClick={triggerEnhancedDiscovery}
+            disabled={runningDiscovery}
+            style={{
+              backgroundColor: runningDiscovery ? '#93c5fd' : '#2563eb',
+              color: 'white',
+              fontWeight: '500',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: runningDiscovery ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onMouseOver={(e) => {
+              if (!runningDiscovery) {
+                e.currentTarget.style.backgroundColor = '#1d4ed8'
+              }
+            }}
+            onMouseOut={(e) => {
+              if (!runningDiscovery) {
+                e.currentTarget.style.backgroundColor = '#2563eb'
+              }
+            }}
+          >
+            {runningDiscovery ? (
+              <>
+                <div style={{
+                  animation: 'spin 1s linear infinite',
+                  borderRadius: '50%',
+                  height: '16px',
+                  width: '16px',
+                  border: '2px solid white',
+                  borderTopColor: 'transparent'
+                }}></div>
+                Running Discovery...
+              </>
+            ) : (
+              'Run Enhanced Discovery'
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Stats Overview */}
