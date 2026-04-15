@@ -39,27 +39,38 @@ export async function GET(req: NextRequest) {
   const basicHeaders    = { 'Authorization': `Basic ${Buffer.from(key + ':').toString('base64')}`, 'Accept': 'application/json' }
   const tokenHeaders    = { 'Authorization': `Token ${key}`, 'Accept': 'application/json' }
 
-  // Probe a range of plausible base URLs and endpoints
+  // api.swess.se resolves (one.com hosted) — probe path variations
+  // Key in query string variants
+  const noAuthHeaders = { 'Accept': 'application/json' }
+
   const results = await Promise.all([
-    // Current assumption — swess.se
-    probe('swess/transactions (Bearer)',    `https://api.swess.se/api/v1/transactions?date_from=${lastMonth}&date_to=${today}`,     bearerHeaders),
-    probe('swess/reports/daily (Bearer)',   `https://api.swess.se/api/v1/reports/daily?from=${lastMonth}&to=${today}`,              bearerHeaders),
-    probe('swess/root (Bearer)',            `https://api.swess.se/api/v1`,                                                           bearerHeaders),
-    probe('swess/root (ApiKey)',            `https://api.swess.se/api/v1`,                                                           apiKeyHeaders),
+    // Root paths — find what exists
+    probe('root /',                  `https://api.swess.se/`,                                                                       noAuthHeaders),
+    probe('root /api',               `https://api.swess.se/api`,                                                                    noAuthHeaders),
+    probe('root /api/v1',            `https://api.swess.se/api/v1`,                                                                 noAuthHeaders),
+    probe('root /api/v2',            `https://api.swess.se/api/v2`,                                                                 noAuthHeaders),
 
-    // Inzii-branded alternatives
-    probe('inzii/reports/daily (Bearer)',   `https://api.inzii.se/api/v1/reports/daily?from=${lastMonth}&to=${today}`,              bearerHeaders),
-    probe('inzii/transactions (Bearer)',    `https://api.inzii.se/api/v1/transactions?date_from=${lastMonth}&date_to=${today}`,      bearerHeaders),
-    probe('inzii/root (Bearer)',            `https://api.inzii.se/api/v1`,                                                           bearerHeaders),
-    probe('inzii/root (ApiKey)',            `https://api.inzii.se/api/v1`,                                                           apiKeyHeaders),
+    // Key as query param (common for simpler APIs)
+    probe('?key= /sales',            `https://api.swess.se/api/v1/sales?key=${key}&from=${lastMonth}&to=${today}`,                  noAuthHeaders),
+    probe('?api_key= /sales',        `https://api.swess.se/api/v1/sales?api_key=${key}&from=${lastMonth}&to=${today}`,              noAuthHeaders),
+    probe('?token= /transactions',   `https://api.swess.se/api/v1/transactions?token=${key}&date_from=${lastMonth}&date_to=${today}`, noAuthHeaders),
+    probe('?key= /reports/daily',    `https://api.swess.se/api/v1/reports/daily?key=${key}&from=${lastMonth}&to=${today}`,          noAuthHeaders),
 
-    // Inzii without /api prefix
-    probe('inzii.se/v1/reports (Bearer)',   `https://inzii.se/api/v1/reports/daily?from=${lastMonth}&to=${today}`,                  bearerHeaders),
-    probe('inzii.se/v1/reports (ApiKey)',   `https://inzii.se/api/v1/reports/daily?from=${lastMonth}&to=${today}`,                  apiKeyHeaders),
+    // Different path structures (no /api prefix)
+    probe('/v1/sales (Bearer)',       `https://api.swess.se/v1/sales?from=${lastMonth}&to=${today}`,                                bearerHeaders),
+    probe('/v1/reports (Bearer)',     `https://api.swess.se/v1/reports?from=${lastMonth}&to=${today}`,                              bearerHeaders),
+    probe('/sales (Bearer)',          `https://api.swess.se/sales?from=${lastMonth}&to=${today}`,                                   bearerHeaders),
+    probe('/sales (ApiKey hdr)',      `https://api.swess.se/sales?from=${lastMonth}&to=${today}`,                                   apiKeyHeaders),
 
-    // Token-style auth variants on most likely base
-    probe('swess/transactions (Token)',     `https://api.swess.se/api/v1/transactions?date_from=${lastMonth}&date_to=${today}`,      tokenHeaders),
-    probe('swess/transactions (Basic)',     `https://api.swess.se/api/v1/transactions?date_from=${lastMonth}&date_to=${today}`,      basicHeaders),
+    // Bearer on working domain, correct paths
+    probe('/api/v1/sales (Bearer)',   `https://api.swess.se/api/v1/sales?from=${lastMonth}&to=${today}`,                            bearerHeaders),
+    probe('/api/v1/daily (Bearer)',   `https://api.swess.se/api/v1/daily?from=${lastMonth}&to=${today}`,                            bearerHeaders),
+    probe('/api/v1/report (Bearer)',  `https://api.swess.se/api/v1/report?from=${lastMonth}&to=${today}`,                           bearerHeaders),
+    probe('/api/v1/receipts (Bearer)',`https://api.swess.se/api/v1/receipts?from=${lastMonth}&to=${today}`,                         bearerHeaders),
+
+    // Maybe it's swess.se (no subdomain)
+    probe('swess.se /api/v1 (Bearer)',`https://swess.se/api/v1/transactions?date_from=${lastMonth}&date_to=${today}`,               bearerHeaders),
+    probe('swess.se /api/v1 (Key)',   `https://swess.se/api/v1/transactions?api_key=${key}&date_from=${lastMonth}&date_to=${today}`, noAuthHeaders),
   ])
 
   // Highlight which probes got a non-error response
