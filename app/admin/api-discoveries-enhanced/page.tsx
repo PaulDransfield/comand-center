@@ -21,6 +21,7 @@ interface EnhancedApiDiscovery {
 export default function EnhancedApiDiscoveriesPage() {
   const [discoveries, setDiscoveries] = useState<EnhancedApiDiscovery[]>([])
   const [loading, setLoading] = useState(true)
+  const [runningDiscovery, setRunningDiscovery] = useState(false)
   const supabase = createClient()
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export default function EnhancedApiDiscoveriesPage() {
   }
 
   async function triggerEnhancedDiscovery() {
+    setRunningDiscovery(true)
     try {
       const response = await fetch('/api/cron/api-discovery-enhanced', {
         method: 'POST',
@@ -58,13 +60,15 @@ export default function EnhancedApiDiscoveriesPage() {
       }
 
       const result = await response.json()
-      alert(`Enhanced discovery triggered: ${result.integrations_processed} integrations processed`)
+      alert(`✅ Enhanced discovery completed!\n\nProcessed: ${result.integrations_processed} integrations\nCompleted: ${result.summary?.completed || 0}\nSkipped: ${result.summary?.skipped || 0}\nErrors: ${result.summary?.errors || 0}`)
       
       // Reload discoveries
       await loadEnhancedDiscoveries()
     } catch (error: any) {
       console.error('Failed to trigger enhanced discovery:', error)
-      alert(`Error: ${error.message}`)
+      alert(`❌ Error: ${error.message}\n\nMake sure the CRON_SECRET environment variable is set correctly.`)
+    } finally {
+      setRunningDiscovery(false)
     }
   }
 
@@ -105,19 +109,45 @@ export default function EnhancedApiDiscoveriesPage() {
         </div>
         <button 
           onClick={triggerEnhancedDiscovery}
+          disabled={runningDiscovery}
           style={{
-            backgroundColor: '#2563eb',
+            backgroundColor: runningDiscovery ? '#93c5fd' : '#2563eb',
             color: 'white',
             fontWeight: '500',
             padding: '8px 16px',
             borderRadius: '8px',
             border: 'none',
-            cursor: 'pointer'
+            cursor: runningDiscovery ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}
-          onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#1d4ed8'}
-          onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#2563eb'}
+          onMouseOver={(e) => {
+            if (!runningDiscovery) {
+              e.currentTarget.style.backgroundColor = '#1d4ed8'
+            }
+          }}
+          onMouseOut={(e) => {
+            if (!runningDiscovery) {
+              e.currentTarget.style.backgroundColor = '#2563eb'
+            }
+          }}
         >
-          Run Enhanced Discovery
+          {runningDiscovery ? (
+            <>
+              <div style={{
+                animation: 'spin 1s linear infinite',
+                borderRadius: '50%',
+                height: '16px',
+                width: '16px',
+                border: '2px solid white',
+                borderTopColor: 'transparent'
+              }}></div>
+              Running Discovery...
+            </>
+          ) : (
+            'Run Enhanced Discovery'
+          )}
         </button>
       </div>
 
