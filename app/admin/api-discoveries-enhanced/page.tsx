@@ -47,10 +47,9 @@ export default function EnhancedApiDiscoveriesPage() {
   async function triggerEnhancedDiscovery() {
     setRunningDiscovery(true)
     try {
-      const response = await fetch('/api/cron/api-discovery-enhanced', {
+      const response = await fetch('/api/admin/trigger-enhanced-discovery', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET || 'dev-secret'}`,
           'Content-Type': 'application/json'
         }
       })
@@ -66,7 +65,7 @@ export default function EnhancedApiDiscoveriesPage() {
       await loadEnhancedDiscoveries()
     } catch (error: any) {
       console.error('Failed to trigger enhanced discovery:', error)
-      alert(`❌ Error: ${error.message}\n\nMake sure the CRON_SECRET environment variable is set correctly.`)
+      alert(`❌ Error: ${error.message}\n\nPlease make sure you are logged in as an admin.`)
     } finally {
       setRunningDiscovery(false)
     }
