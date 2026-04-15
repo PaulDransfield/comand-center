@@ -1,4 +1,4 @@
-// app/admin/api-discoveries-enhanced/page.tsx
+// app/admin/api-discoveries-enhanced/simple.tsx
 // Minimal admin interface for Enhanced API schema discoveries
 
 'use client'
@@ -18,7 +18,7 @@ interface EnhancedApiDiscovery {
   discovered_at: string
 }
 
-export default function EnhancedApiDiscoveriesPage() {
+export default function SimpleEnhancedApiDiscoveriesPage() {
   const [discoveries, setDiscoveries] = useState<EnhancedApiDiscovery[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
