@@ -196,12 +196,7 @@ ANALYSIS TASKS:
    - Error handling strategies
    - Data retention policies
 
-7. CODE GENERATION:
-   - Provide sync configuration snippet
-   - Transformation functions needed
-   - Validation rules
-
-RESPONSE FORMAT (JSON):
+RESPONSE FORMAT - return ONLY this JSON, no other text:
 {
   "provider": "${request.provider}",
   "endpoint": "${request.endpoint}",
@@ -211,22 +206,20 @@ RESPONSE FORMAT (JSON):
   "confidence_score": 85,
   "field_mappings": [
     {
-      "source_field": "field.path",
-      "source_type": "string|number|date|boolean|object|array",
-      "sample_value": "example",
+      "source_field": "field_name",
+      "source_type": "string|number|date|boolean",
       "target_table": "table_name",
       "target_field": "field_name",
       "confidence": 90,
-      "transformation_needed": ["parseDate", "convertCurrency"],
-      "reasoning": "This field contains transaction dates in Swedish format"
+      "transformation_needed": ["parseDate"],
+      "reasoning": "one sentence"
     }
   ],
   "unused_fields": [
     {
-      "field_path": "field.path",
-      "field_type": "string|number|date|boolean|object|array",
-      "sample_value": "example",
-      "potential_use": "Could be used for customer segmentation",
+      "field_path": "field_name",
+      "field_type": "string|number|date|boolean",
+      "potential_use": "one sentence",
       "business_value": "high|medium|low",
       "implementation_effort": "low|medium|high",
       "suggested_action": "map_now|future_feature|ignore"
@@ -236,37 +229,37 @@ RESPONSE FORMAT (JSON):
     "completeness_score": 85,
     "consistency_score": 90,
     "freshness_score": 95,
-    "issues": ["Dates are in inconsistent formats", "Missing currency codes"],
-    "recommendations": ["Standardize date parsing", "Add currency detection"]
+    "issues": ["issue 1"],
+    "recommendations": ["recommendation 1"]
   },
   "business_insights": [
     {
-      "insight": "This data could reveal peak hours for better staff scheduling",
-      "impact": "efficiency",
-      "priority": "high",
-      "suggested_implementation": "Add to staff optimization agent"
+      "insight": "one sentence insight",
+      "impact": "revenue|costs|efficiency|compliance|customer_experience",
+      "priority": "high|medium|low",
+      "suggested_implementation": "one sentence"
     }
   ],
   "implementation": {
-    "sync_frequency": "daily",
-    "rate_limit_handling": ["Implement exponential backoff", "Respect X-RateLimit headers"],
-    "error_handling": ["Retry on 429/5xx", "Log failed syncs for manual review"],
-    "data_retention": "Keep 2 years of history, archive older data",
+    "sync_frequency": "daily|weekly|monthly|realtime",
+    "rate_limit_handling": ["strategy 1"],
+    "error_handling": ["strategy 1"],
+    "data_retention": "Keep 2 years",
     "estimated_monthly_rows": 1000
   },
   "code_snippets": {
-    "sync_config": "export const SYNC_CONFIG = {...}",
-    "transformation_functions": ["function parseSwedishDate(dateStr) {...}"],
-    "validation_rules": ["Amount must be positive", "Date must be within last 2 years"]
+    "sync_config": "",
+    "transformation_functions": [],
+    "validation_rules": []
   }
 }
 
-IMPORTANT: Focus on practical, actionable recommendations. Consider Swedish business context and common POS/staffing systems in Sweden.
+IMPORTANT: Keep all string values concise (one sentence max). Return valid JSON only.
 `
 
     const response = await anthropic.messages.create({
       model: AI_MODELS.ANALYSIS,
-      max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION * 2, // More tokens for comprehensive analysis
+      max_tokens: MAX_TOKENS.ASSISTANT, // 2000 — needed for full JSON response
       messages: [{ role: 'user', content: prompt }],
     })
 
