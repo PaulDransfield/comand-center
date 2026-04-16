@@ -686,4 +686,25 @@ CREATE TABLE IF NOT EXISTS forecast_calibration (
 
 ---
 
+---
+
+## Inzii/Swess Covers — Zero Data Issue
+
+**Symptom:** Revenue-per-cover KPI shows 0 or `—` on the /revenue page. Covers column is always 0 in revenue_logs even when revenue syncs correctly.
+
+**Root cause (two possibilities):**
+1. Field name mismatch — the Swess API may use a different field name for guest count (e.g. `antal_gaster`, `pax`, `guests`) that our adapter wasn't trying
+2. Covers tracking not enabled — Inzii/Swess may require this to be activated on the account
+
+**What was done:**
+- `lib/pos/inzii.ts` `parseRows()` now tries 11 field name candidates: `covers`, `guests`, `number_of_guests`, `persons`, `pax`, `party_size`, `num_guests`, `antal_gaster`, `seated`, `diners`
+- `/revenue` page now shows `—` for avg-per-cover KPI when covers = 0, and displays a yellow warning banner prompting the user to contact their Inzii/Swess account manager
+
+**Action required:**
+Contact Swess/Inzii support and ask: "What is the JSON field name for guest count / number of covers in your sales API response? Is covers tracking enabled on our account?"
+
+Once the correct field name is confirmed, add it to the `parseRows()` covers fallback chain in `lib/pos/inzii.ts`.
+
+---
+
 *Check this file before starting any debugging session. Most issues have already been solved here.*

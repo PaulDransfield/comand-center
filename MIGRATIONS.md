@@ -294,8 +294,8 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS last_discovery_at TIMESTAMPTZ;
 ---
 
 ## M007 — 2026-04-16 — Session 7 — Enhanced API Discovery tables
-**Run**: ⏳ **PENDING** — Run in Supabase SQL Editor
-**Status**: ⏳ PENDING
+**Run**: ✅ **COMPLETE** — Executed in Supabase SQL Editor during Session 7
+**Status**: ✅ COMPLETE
 
 ```sql
 -- Add missing columns to integrations table
