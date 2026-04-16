@@ -29,26 +29,37 @@ export async function POST(req: NextRequest) {
 
   try {
     // Get all active integrations that need enhanced discovery
-    const { data: integrations } = await supabase
+    const { data: integrations, error: integrationsError } = await supabase
       .from('integrations')
       .select(`
-        id, 
-        org_id, 
-        business_id, 
-        provider, 
+        id,
+        org_id,
+        business_id,
+        provider,
         provider_type,
-        credentials_enc, 
+        credentials_enc,
         config,
         last_enhanced_discovery_at,
         api_endpoints_cache
       `)
       .eq('status', 'active')
       .or('last_enhanced_discovery_at.is.null,last_enhanced_discovery_at.lt.now() - interval \'30 days\'')
-      .limit(3) // Process max 3 integrations per run (more intensive analysis)
+      .limit(3)
+
+    // Surface DB errors clearly instead of silently returning empty
+    if (integrationsError) {
+      console.error('Failed to query integrations:', integrationsError)
+      return NextResponse.json({
+        ok: false,
+        error: `Database error: ${integrationsError.message}`,
+        hint: 'Run M007 migration in Supabase — missing columns: last_enhanced_discovery_at, provider_type, api_endpoints_cache',
+        timestamp: new Date().toISOString()
+      }, { status: 500 })
+    }
 
     if (!integrations || integrations.length === 0) {
-      return NextResponse.json({ 
-        ok: true, 
+      return NextResponse.json({
+        ok: true,
         message: 'No integrations need enhanced discovery',
         timestamp: new Date().toISOString()
       })

@@ -293,10 +293,64 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS last_discovery_at TIMESTAMPTZ;
 
 ---
 
+## M007 — 2026-04-16 — Session 7 — Enhanced API Discovery tables
+**Run**: ⏳ **PENDING** — Run in Supabase SQL Editor
+**Status**: ⏳ PENDING
+
+```sql
+-- Add missing columns to integrations table
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS last_enhanced_discovery_at TIMESTAMPTZ;
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS provider_type TEXT;
+ALTER TABLE integrations ADD COLUMN IF NOT EXISTS api_endpoints_cache TEXT;
+
+-- Create api_discoveries_enhanced table
+CREATE TABLE IF NOT EXISTS api_discoveries_enhanced (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  integration_id UUID REFERENCES integrations(id) ON DELETE CASCADE,
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  business_id UUID REFERENCES businesses(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  provider_type TEXT,
+  analysis_result JSONB,
+  discovered_at TIMESTAMPTZ DEFAULT now(),
+  confidence_score INTEGER DEFAULT 0,
+  data_type TEXT,
+  unused_fields_count INTEGER DEFAULT 0,
+  business_insights_count INTEGER DEFAULT 0,
+  UNIQUE(integration_id)
+);
+ALTER TABLE api_discoveries_enhanced ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "api_discoveries_enhanced_select_own" ON api_discoveries_enhanced
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+
+-- Create implementation_plans table
+CREATE TABLE IF NOT EXISTS implementation_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  integration_id UUID REFERENCES integrations(id) ON DELETE CASCADE,
+  org_id UUID REFERENCES organisations(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL,
+  phase1_tasks JSONB,
+  phase2_tasks JSONB,
+  phase3_tasks JSONB,
+  estimated_timeline TEXT,
+  generated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(integration_id)
+);
+ALTER TABLE implementation_plans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "implementation_plans_select_own" ON implementation_plans
+  FOR SELECT USING (org_id IN (
+    SELECT org_id FROM organisation_members WHERE user_id = auth.uid()
+  ));
+```
+
+---
+
 ## Next Steps
 
-1. **Run M003 SQL** in Supabase SQL Editor
-2. **Run M006 SQL** for API Schema Discovery Agent
+1. **Run M007 SQL** — required for Enhanced API Discovery to work
+2. **Run M003 SQL** in Supabase SQL Editor (if not already done)
 3. **Deploy AI agents** to Vercel
 4. **Test cron jobs** with Bearer token
 5. **Monitor logs** for agent execution
