@@ -3,6 +3,78 @@ html, body { margin: 0; padding: 0; }
 a { color: inherit; }
 input, button, select, textarea { font-family: inherit; }
 
+/* ── CSS VARIABLES — used by login/auth pages ─────────────────── */
+:root {
+  --font:       system-ui, -apple-system, sans-serif;
+  --display:    system-ui, -apple-system, sans-serif;
+
+  /* Colours */
+  --navy:       #1a1f2e;
+  --blue:       #6366f1;
+  --green:      #15803d;
+  --green-lt:   #f0fdf4;
+  --green-mid:  #bbf7d0;
+  --red:        #dc2626;
+  --red-lt:     #fef2f2;
+  --red-mid:    #fecaca;
+  --amber:      #d97706;
+
+  /* Neutrals */
+  --white:      #ffffff;
+  --parchment:  #f9fafb;
+  --border:     #e5e7eb;
+  --ink-1:      #111827;
+  --ink-2:      #374151;
+  --ink-3:      #6b7280;
+  --ink-4:      #9ca3af;
+}
+
+/* ── AUTH / FORM COMPONENTS ──────────────────────────────────── */
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  color: var(--ink-1);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.input:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
+.input::placeholder { color: var(--ink-4); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .15s, transform .1s;
+}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: scale(0.98); }
+
+.btn-primary { background: var(--navy); color: white; }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+
+.btn-secondary { background: white; color: var(--ink-2); border: 1px solid var(--border); }
+.btn-secondary:hover:not(:disabled) { background: var(--parchment); }
+
+.btn-full { width: 100%; }
+
+/* Spinner used during loading */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin 0.8s linear infinite; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
