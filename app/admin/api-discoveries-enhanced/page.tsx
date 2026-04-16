@@ -1,340 +1,357 @@
-// app/admin/api-discoveries-enhanced/page.tsx
-// Minimal admin interface for Enhanced API schema discoveries
-
 'use client'
+// @ts-nocheck
 
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-interface EnhancedApiDiscovery {
-  id: string
-  integration_id: string
-  provider: string
-  provider_type: string
-  confidence_score: number
-  data_type: string
-  unused_fields_count: number
-  business_insights_count: number
-  discovered_at: string
-}
-
 export default function EnhancedApiDiscoveriesPage() {
-  const [discoveries, setDiscoveries] = useState<EnhancedApiDiscovery[]>([])
+  const [discoveries, setDiscoveries] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<Record<string, string>>({})
+  const [copied, setCopied] = useState<string | null>(null)
   const [runningDiscovery, setRunningDiscovery] = useState(false)
   const supabase = createClient()
 
-  useEffect(() => {
-    loadEnhancedDiscoveries()
-  }, [])
+  useEffect(() => { loadDiscoveries() }, [])
 
-  async function loadEnhancedDiscoveries() {
+  async function loadDiscoveries() {
     try {
       const { data, error } = await supabase
         .from('api_discoveries_enhanced')
         .select('*')
         .order('discovered_at', { ascending: false })
-
       if (error) throw error
       setDiscoveries(data || [])
-    } catch (error) {
-      console.error('Failed to load enhanced discoveries:', error)
+    } catch (e) {
+      console.error(e)
     } finally {
       setLoading(false)
     }
   }
 
-  async function triggerEnhancedDiscovery() {
+  async function runScan() {
     setRunningDiscovery(true)
-    // Read the admin password stored at login — used as Bearer token
     const adminSecret = sessionStorage.getItem('admin_auth') || ''
     try {
-      const response = await fetch('/api/admin/trigger-enhanced-discovery', {
+      const res = await fetch('/api/admin/trigger-enhanced-discovery', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${adminSecret}`
-        }
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminSecret}` }
       })
-
-      if (!response.ok) {
-        throw new Error(`Enhanced discovery failed: ${response.status}`)
-      }
-
-      const result = await response.json()
-      const errorDetails = result.results
-        ?.filter((r: any) => r.status === 'error')
-        .map((r: any) => `• ${r.provider}: ${r.error}`)
-        .join('\n') || ''
-      alert(`Enhanced discovery completed!\n\nProcessed: ${result.integrations_processed}\nCompleted: ${result.summary?.completed || 0}\nSkipped: ${result.summary?.skipped || 0}\nErrors: ${result.summary?.errors || 0}${errorDetails ? '\n\nErrors:\n' + errorDetails : ''}`)
-      
-      // Reload discoveries
-      await loadEnhancedDiscoveries()
-    } catch (error: any) {
-      console.error('Failed to trigger enhanced discovery:', error)
-      alert(`❌ Error: ${error.message}\n\nPlease make sure you are logged in as an admin.`)
+      const result = await res.json()
+      const errors = result.results?.filter((r: any) => r.status === 'error').map((r: any) => `• ${r.provider}: ${r.error}`).join('\n') || ''
+      alert(`Scan complete\n\nCompleted: ${result.summary?.completed || 0}  Skipped: ${result.summary?.skipped || 0}  Errors: ${result.summary?.errors || 0}${errors ? '\n\n' + errors : ''}`)
+      await loadDiscoveries()
+    } catch (e: any) {
+      alert(`Error: ${e.message}`)
     } finally {
       setRunningDiscovery(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '256px' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ 
-              animation: 'spin 1s linear infinite',
-              borderRadius: '50%',
-              height: '32px',
-              width: '32px',
-              borderBottom: '2px solid #111827',
-              margin: '0 auto 16px'
-            }}></div>
-            <p style={{ color: '#6b7280' }}>Loading enhanced API discoveries...</p>
-          </div>
-        </div>
-      </div>
-    )
+  function copy(text: string, id: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(id)
+    setTimeout(() => setCopied(null), 2000)
   }
 
-  const totalUnusedFields = discoveries.reduce((sum, d) => sum + d.unused_fields_count, 0)
-  const totalInsights = discoveries.reduce((sum, d) => sum + d.business_insights_count, 0)
-  const avgConfidence = discoveries.length > 0 
-    ? Math.round(discoveries.reduce((sum, d) => sum + d.confidence_score, 0) / discoveries.length)
-    : 0
+  // Build a ready-to-paste Claude Code prompt for a business insight
+  function insightPrompt(discovery: any, insight: any): string {
+    const analysis = discovery.analysis_result || {}
+    return `CommandCenter improvement — ${discovery.provider} (${discovery.provider_type})
+
+INSIGHT: ${insight.insight}
+IMPACT: ${insight.impact} | PRIORITY: ${insight.priority}
+ACTION: ${insight.suggested_implementation}
+
+CONTEXT:
+- Provider: ${discovery.provider} (${discovery.data_type} data)
+- Data available in: ${analysis.primary_table || 'staff_logs / revenue_logs'}
+- Confidence: ${discovery.confidence_score}%
+
+Please implement this improvement in CommandCenter. Reference the existing pages (dashboard, staff, tracker, revenue, departments) and use the data already synced in Supabase. Show me what you plan to build before writing any code.`
+  }
+
+  // Build a ready-to-paste Claude Code prompt for an unused field
+  function unusedFieldPrompt(discovery: any, field: any): string {
+    const analysis = discovery.analysis_result || {}
+    return `CommandCenter — add unused data field from ${discovery.provider}
+
+FIELD: ${field.field_path} (${field.field_type})
+POTENTIAL USE: ${field.potential_use}
+BUSINESS VALUE: ${field.business_value} | IMPLEMENTATION EFFORT: ${field.implementation_effort}
+RECOMMENDED ACTION: ${field.suggested_action}
+
+CONTEXT:
+- This field comes from ${discovery.provider} (${discovery.provider_type})
+- It maps to the ${analysis.primary_table || 'staff_logs / revenue_logs'} table
+- The data is already being synced — we just need to surface it in the UI
+
+Please implement this in CommandCenter. Show me what you plan to build before writing any code.`
+  }
+
+  // Build a prompt for a field mapping gap
+  function mappingPrompt(discovery: any, mapping: any): string {
+    return `CommandCenter — improve data mapping for ${discovery.provider}
+
+FIELD: ${mapping.source_field} → ${mapping.target_table}.${mapping.target_field}
+CONFIDENCE: ${mapping.confidence}%
+TRANSFORMATION NEEDED: ${(mapping.transformation_needed || []).join(', ') || 'none'}
+REASONING: ${mapping.reasoning}
+
+This field from ${discovery.provider} is mapped but may not be fully utilised in the UI. Please check if this data is being displayed correctly in CommandCenter and suggest improvements. Show me the plan before writing any code.`
+  }
+
+  const priorityColor = (p: string) => p === 'high' ? '#dc2626' : p === 'medium' ? '#d97706' : '#16a34a'
+  const valueColor = (v: string) => v === 'high' ? '#7c3aed' : v === 'medium' ? '#2563eb' : '#6b7280'
+  const effortColor = (e: string) => e === 'low' ? '#16a34a' : e === 'medium' ? '#d97706' : '#dc2626'
+
+  if (loading) return (
+    <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>Loading discoveries...</div>
+  )
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ fontSize: '30px', fontWeight: 'bold' }}>Enhanced API Schema Discoveries</h1>
-          <p style={{ color: '#6b7280', marginTop: '8px' }}>
-            AI-powered analysis of API integrations with unused data identification
-          </p>
+    <div style={{ minHeight: '100vh', background: '#f3f4f6', padding: 24 }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1f2e' }}>API Discovery Insights</div>
+            <div style={{ fontSize: 13, color: '#9ca3af', marginTop: 4 }}>
+              Click any insight or unused field to get a ready-to-paste Claude Code prompt
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <a href="/admin" style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#374151', textDecoration: 'none' }}>
+              Back to Admin
+            </a>
+            <button onClick={runScan} disabled={runningDiscovery} style={{ padding: '8px 16px', background: runningDiscovery ? '#93c5fd' : '#2563eb', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: runningDiscovery ? 'not-allowed' : 'pointer' }}>
+              {runningDiscovery ? 'Scanning...' : 'Run Scan'}
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <a href="/admin" style={{
-            padding: '8px 16px',
-            backgroundColor: '#f3f4f6',
-            color: '#374151',
-            fontWeight: '500',
-            borderRadius: '8px',
-            border: '1px solid #e5e7eb',
-            textDecoration: 'none',
-            fontSize: '14px'
-          }}>
-            Back to Admin
-          </a>
-          <button 
-            onClick={triggerEnhancedDiscovery}
-            disabled={runningDiscovery}
-            style={{
-              backgroundColor: runningDiscovery ? '#93c5fd' : '#2563eb',
-              color: 'white',
-              fontWeight: '500',
-              padding: '8px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              cursor: runningDiscovery ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-            onMouseOver={(e) => {
-              if (!runningDiscovery) {
-                e.currentTarget.style.backgroundColor = '#1d4ed8'
-              }
-            }}
-            onMouseOut={(e) => {
-              if (!runningDiscovery) {
-                e.currentTarget.style.backgroundColor = '#2563eb'
-              }
-            }}
-          >
-            {runningDiscovery ? (
-              <>
-                <div style={{
-                  animation: 'spin 1s linear infinite',
-                  borderRadius: '50%',
-                  height: '16px',
-                  width: '16px',
-                  border: '2px solid white',
-                  borderTopColor: 'transparent'
-                }}></div>
-                Running Discovery...
-              </>
-            ) : (
-              'Run Enhanced Discovery'
-            )}
-          </button>
-        </div>
+
+        {discoveries.length === 0 ? (
+          <div style={{ background: 'white', borderRadius: 12, padding: 40, textAlign: 'center', color: '#6b7280' }}>
+            No discoveries yet. Run a scan to analyse your integrations.
+          </div>
+        ) : discoveries.map(discovery => {
+          const analysis = discovery.analysis_result || {}
+          const insights = analysis.business_insights || []
+          const unusedFields = analysis.unused_fields || []
+          const fieldMappings = analysis.field_mappings || []
+          const isOpen = expanded === discovery.id
+          const tab = activeTab[discovery.id] || 'insights'
+          const confidenceColor = discovery.confidence_score >= 85 ? '#16a34a' : discovery.confidence_score >= 70 ? '#d97706' : '#dc2626'
+
+          return (
+            <div key={discovery.id} style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', marginBottom: 16, overflow: 'hidden' }}>
+
+              {/* Card header — click to expand */}
+              <div
+                onClick={() => setExpanded(isOpen ? null : discovery.id)}
+                style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1f2e', textTransform: 'capitalize' }}>{discovery.provider}</div>
+                    <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{discovery.provider_type} · {discovery.data_type} · {new Date(discovery.discovered_at).toLocaleDateString('sv-SE')}</div>
+                  </div>
+                  <span style={{ padding: '2px 10px', borderRadius: 20, background: confidenceColor + '15', color: confidenceColor, fontSize: 12, fontWeight: 600 }}>
+                    {discovery.confidence_score}% confidence
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 13 }}>
+                    <span style={{ color: '#7c3aed', fontWeight: 600 }}>{insights.length} insights</span>
+                    <span style={{ color: '#2563eb', fontWeight: 600 }}>{unusedFields.length} unused fields</span>
+                    <span style={{ color: '#6b7280' }}>{fieldMappings.length} mappings</span>
+                  </div>
+                  <span style={{ color: '#9ca3af', fontSize: 18 }}>{isOpen ? '▲' : '▼'}</span>
+                </div>
+              </div>
+
+              {/* Expanded detail */}
+              {isOpen && (
+                <div style={{ borderTop: '1px solid #f3f4f6' }}>
+
+                  {/* Tabs */}
+                  <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', padding: '0 20px' }}>
+                    {[
+                      { key: 'insights', label: `Business Insights (${insights.length})` },
+                      { key: 'unused', label: `Unused Fields (${unusedFields.length})` },
+                      { key: 'mappings', label: `Field Mappings (${fieldMappings.length})` },
+                    ].map(t => (
+                      <button
+                        key={t.key}
+                        onClick={() => setActiveTab(prev => ({ ...prev, [discovery.id]: t.key }))}
+                        style={{
+                          padding: '12px 16px', border: 'none', background: 'none', cursor: 'pointer',
+                          fontSize: 13, fontWeight: tab === t.key ? 700 : 400,
+                          color: tab === t.key ? '#1a1f2e' : '#6b7280',
+                          borderBottom: tab === t.key ? '2px solid #1a1f2e' : '2px solid transparent',
+                          marginBottom: -1
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={{ padding: 20 }}>
+
+                    {/* BUSINESS INSIGHTS TAB */}
+                    {tab === 'insights' && (
+                      <div>
+                        {insights.length === 0 ? (
+                          <p style={{ color: '#9ca3af', fontSize: 13 }}>No insights found.</p>
+                        ) : insights.map((insight: any, i: number) => {
+                          const promptId = `insight-${discovery.id}-${i}`
+                          const prompt = insightPrompt(discovery, insight)
+                          return (
+                            <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>{insight.impact}</span>
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, background: priorityColor(insight.priority) + '15', color: priorityColor(insight.priority), fontSize: 11, fontWeight: 600 }}>
+                                      {insight.priority} priority
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1f2e', marginBottom: 6 }}>{insight.insight}</div>
+                                  <div style={{ fontSize: 13, color: '#6b7280' }}>Action: {insight.suggested_implementation}</div>
+                                </div>
+                                <button
+                                  onClick={() => copy(prompt, promptId)}
+                                  style={{
+                                    padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb',
+                                    background: copied === promptId ? '#dcfce7' : 'white',
+                                    color: copied === promptId ? '#16a34a' : '#374151',
+                                    fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
+                                  }}
+                                >
+                                  {copied === promptId ? '✓ Copied' : 'Copy prompt'}
+                                </button>
+                              </div>
+                              {/* Preview of the prompt */}
+                              <details style={{ marginTop: 10 }}>
+                                <summary style={{ fontSize: 12, color: '#9ca3af', cursor: 'pointer' }}>Preview Claude Code prompt</summary>
+                                <pre style={{ marginTop: 8, padding: 12, background: '#f8fafc', borderRadius: 6, fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap', wordBreak: 'break-word', border: '1px solid #e5e7eb' }}>
+                                  {prompt}
+                                </pre>
+                              </details>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* UNUSED FIELDS TAB */}
+                    {tab === 'unused' && (
+                      <div>
+                        {unusedFields.length === 0 ? (
+                          <p style={{ color: '#9ca3af', fontSize: 13 }}>No unused fields found.</p>
+                        ) : unusedFields.map((field: any, i: number) => {
+                          const promptId = `field-${discovery.id}-${i}`
+                          const prompt = unusedFieldPrompt(discovery, field)
+                          return (
+                            <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, background: '#f3f4f6', color: '#374151', fontSize: 11, fontWeight: 700, fontFamily: 'monospace' }}>
+                                      {field.field_path}
+                                    </span>
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, background: valueColor(field.business_value) + '15', color: valueColor(field.business_value), fontSize: 11, fontWeight: 600 }}>
+                                      {field.business_value} value
+                                    </span>
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, background: effortColor(field.implementation_effort) + '15', color: effortColor(field.implementation_effort), fontSize: 11, fontWeight: 600 }}>
+                                      {field.implementation_effort} effort
+                                    </span>
+                                    <span style={{ padding: '2px 8px', borderRadius: 4, background: field.suggested_action === 'map_now' ? '#dcfce7' : '#f3f4f6', color: field.suggested_action === 'map_now' ? '#16a34a' : '#6b7280', fontSize: 11, fontWeight: 600 }}>
+                                      {field.suggested_action?.replace('_', ' ')}
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1f2e', marginBottom: 4 }}>{field.potential_use}</div>
+                                  <div style={{ fontSize: 12, color: '#9ca3af' }}>{field.field_type} field</div>
+                                </div>
+                                <button
+                                  onClick={() => copy(prompt, promptId)}
+                                  style={{
+                                    padding: '8px 14px', borderRadius: 6, border: '1px solid #e5e7eb',
+                                    background: copied === promptId ? '#dcfce7' : 'white',
+                                    color: copied === promptId ? '#16a34a' : '#374151',
+                                    fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
+                                  }}
+                                >
+                                  {copied === promptId ? '✓ Copied' : 'Copy prompt'}
+                                </button>
+                              </div>
+                              <details style={{ marginTop: 10 }}>
+                                <summary style={{ fontSize: 12, color: '#9ca3af', cursor: 'pointer' }}>Preview Claude Code prompt</summary>
+                                <pre style={{ marginTop: 8, padding: 12, background: '#f8fafc', borderRadius: 6, fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap', wordBreak: 'break-word', border: '1px solid #e5e7eb' }}>
+                                  {prompt}
+                                </pre>
+                              </details>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* FIELD MAPPINGS TAB */}
+                    {tab === 'mappings' && (
+                      <div>
+                        {fieldMappings.length === 0 ? (
+                          <p style={{ color: '#9ca3af', fontSize: 13 }}>No field mappings found.</p>
+                        ) : fieldMappings.map((mapping: any, i: number) => {
+                          const promptId = `mapping-${discovery.id}-${i}`
+                          const prompt = mappingPrompt(discovery, mapping)
+                          const confColor = mapping.confidence >= 85 ? '#16a34a' : mapping.confidence >= 70 ? '#d97706' : '#dc2626'
+                          return (
+                            <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 14, marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: '#1a1f2e' }}>{mapping.source_field}</span>
+                                    <span style={{ color: '#9ca3af' }}>→</span>
+                                    <span style={{ fontFamily: 'monospace', fontSize: 13, color: '#2563eb' }}>{mapping.target_table}.{mapping.target_field}</span>
+                                    <span style={{ padding: '1px 7px', borderRadius: 4, background: confColor + '15', color: confColor, fontSize: 11, fontWeight: 600 }}>
+                                      {mapping.confidence}%
+                                    </span>
+                                  </div>
+                                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>{mapping.reasoning}</div>
+                                  {mapping.transformation_needed?.length > 0 && (
+                                    <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                                      Transforms: {mapping.transformation_needed.join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => copy(prompt, promptId)}
+                                  style={{
+                                    padding: '6px 12px', borderRadius: 6, border: '1px solid #e5e7eb',
+                                    background: copied === promptId ? '#dcfce7' : 'white',
+                                    color: copied === promptId ? '#16a34a' : '#374151',
+                                    fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0
+                                  }}
+                                >
+                                  {copied === promptId ? '✓ Copied' : 'Copy prompt'}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
-
-      {/* Stats Overview */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '16px',
-        marginBottom: '24px'
-      }}>
-        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ fontSize: '14px', color: '#6b7280' }}>Total Discoveries</p>
-              <p style={{ fontSize: '24px', fontWeight: 'bold' }}>{discoveries.length}</p>
-            </div>
-            <div style={{ fontSize: '24px' }}>📊</div>
-          </div>
-        </div>
-        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ fontSize: '14px', color: '#6b7280' }}>Avg Confidence</p>
-              <p style={{ fontSize: '24px', fontWeight: 'bold' }}>{avgConfidence}%</p>
-            </div>
-            <div style={{ fontSize: '24px' }}>🎯</div>
-          </div>
-        </div>
-        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ fontSize: '14px', color: '#6b7280' }}>Unused Fields</p>
-              <p style={{ fontSize: '24px', fontWeight: 'bold' }}>{totalUnusedFields}</p>
-            </div>
-            <div style={{ fontSize: '24px' }}>📈</div>
-          </div>
-        </div>
-        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <p style={{ fontSize: '14px', color: '#6b7280' }}>Business Insights</p>
-              <p style={{ fontSize: '24px', fontWeight: 'bold' }}>{totalInsights}</p>
-            </div>
-            <div style={{ fontSize: '24px' }}>⚡</div>
-          </div>
-        </div>
-      </div>
-
-      {discoveries.length === 0 ? (
-        <div style={{ backgroundColor: '#dbeafe', border: '1px solid #93c5fd', borderRadius: '8px', padding: '16px' }}>
-          <div style={{ display: 'flex' }}>
-            <div style={{ color: '#1d4ed8', marginRight: '12px' }}>ℹ️</div>
-            <div>
-              <h3 style={{ fontWeight: '500', color: '#1e40af' }}>No enhanced discoveries yet</h3>
-              <p style={{ color: '#1e40af', fontSize: '14px', marginTop: '4px' }}>
-                Run the Enhanced API Schema Discovery Agent to analyze your integrations with AI-powered insights.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div style={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}>
-          <div style={{ borderBottom: '1px solid #e5e7eb', padding: '16px' }}>
-            <h2 style={{ fontSize: '18px', fontWeight: '600' }}>Enhanced Discoveries</h2>
-            <p style={{ color: '#6b7280', fontSize: '14px' }}>
-              {discoveries.length} integration{discoveries.length !== 1 ? 's' : ''} analyzed with AI
-            </p>
-          </div>
-          <div style={{ padding: '16px' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', fontSize: '14px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                    <th style={{ textAlign: 'left', padding: '8px', fontWeight: '500' }}>Provider</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontWeight: '500' }}>Type</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontWeight: '500' }}>Confidence</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontWeight: '500' }}>Unused Fields</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontWeight: '500' }}>Insights</th>
-                    <th style={{ textAlign: 'left', padding: '8px', fontWeight: '500' }}>Discovered</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {discoveries.map((discovery) => {
-                    const confidenceColor = discovery.confidence_score >= 85 ? '#10b981' : 
-                                           discovery.confidence_score >= 70 ? '#f59e0b' : '#ef4444'
-                    return (
-                      <tr key={discovery.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                        <td style={{ padding: '12px 8px' }}>
-                          <div style={{ fontWeight: '500' }}>{discovery.provider}</div>
-                          <div style={{ fontSize: '12px', color: '#6b7280' }}>{discovery.data_type}</div>
-                        </td>
-                        <td style={{ padding: '12px 8px' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            backgroundColor: '#f3f4f6',
-                            color: '#374151',
-                            fontSize: '12px'
-                          }}>
-                            {discovery.provider_type}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 8px' }}>
-                          <span style={{
-                            display: 'inline-block',
-                            padding: '2px 8px',
-                            borderRadius: '9999px',
-                            backgroundColor: confidenceColor + '20',
-                            color: confidenceColor,
-                            fontSize: '12px',
-                            fontWeight: '500'
-                          }}>
-                            {discovery.confidence_score}%
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 8px' }}>
-                          {discovery.unused_fields_count > 0 ? (
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              border: '1px solid #d1d5db',
-                              fontSize: '12px'
-                            }}>
-                              {discovery.unused_fields_count}
-                            </span>
-                          ) : (
-                            <span style={{ color: '#9ca3af', fontSize: '12px' }}>None</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 8px' }}>
-                          {discovery.business_insights_count > 0 ? (
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              border: '1px solid #c084fc',
-                              backgroundColor: '#f3e8ff',
-                              color: '#7c3aed',
-                              fontSize: '12px'
-                            }}>
-                              {discovery.business_insights_count}
-                            </span>
-                          ) : (
-                            <span style={{ color: '#9ca3af', fontSize: '12px' }}>None</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 8px', color: '#6b7280', fontSize: '12px' }}>
-                          {new Date(discovery.discovered_at).toLocaleDateString()}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   )
 }
