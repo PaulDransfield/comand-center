@@ -562,4 +562,128 @@ CREATE TABLE IF NOT EXISTS forecast_calibration (
 
 ---
 
+## 14. Enhanced API Discovery Agent with Unused Data Analysis — DEPLOYED ✅
+
+**Status:** Enhanced version deployed with unused data analysis and business insights.
+
+**What it does (beyond basic discovery):**
+1. **Generic analysis** for any POS/staffing system (not just predefined ones)
+2. **Identifies unused data** and suggests how to leverage it
+3. **Provides business insights** based on available data
+4. **Generates implementation plans** with phased approach
+5. **Analyzes cross-system opportunities** for data combination
+
+**New features:**
+- **Unused field detection:** Flags fields that are available but not being used
+- **Business insight generation:** Suggests how unused data could drive business value
+- **Implementation roadmap:** 3-phase plan for implementing discoveries
+- **Confidence scoring:** Rates how certain the analysis is
+- **Data type classification:** Categorizes data (transactional, master, analytical, etc.)
+
+**Files created/updated:**
+- `app/api/cron/api-discovery-enhanced/route.ts` — Enhanced agent (runs weekly)
+- `lib/api-discovery/enhanced-analyzer.ts` — Core enhanced analysis logic
+- `app/api/admin/trigger-enhanced-discovery/route.ts` — Manual trigger endpoint
+- `app/admin/api-discoveries-enhanced/page.tsx` — Enhanced admin interface
+- `app/admin/api-discoveries-enhanced/simple.tsx` — Simplified admin view
+- `ENHANCED-API-DISCOVERY-DEPLOYMENT.md` — Complete deployment guide
+- `scripts/test-enhanced-discovery.js` — Test script
+- `scripts/test-enhanced-discovery.ts` — TypeScript test script
+
+**Database tables added:**
+- `api_discoveries_enhanced` — Stores enhanced analysis results
+- `implementation_plans` — Stores 3-phase implementation plans
+
+**Environment variables required:**
+- `ANTHROPIC_API_KEY` — Claude Haiku 4.5 for AI analysis
+- `CRON_SECRET` — For cron job authentication
+- `ADMIN_SECRET` — For admin panel access (newly added)
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase connection
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase authentication
+- `SUPABASE_SERVICE_ROLE_KEY` — Supabase admin access
+
+**Recent fixes applied (2026-04-16):**
+1. **Admin authentication fixed** — Added `ADMIN_SECRET` environment variable
+2. **Logout button implemented** — Added to admin panel for security
+3. **Supabase variable naming fixed** — Updated to use `NEXT_PUBLIC_` prefix
+4. **Enhanced discovery API authentication** — Uses Supabase auth (requires proper Supabase config)
+
+**Deployment status:**
+- ✅ Code deployed to production (`main` branch pushed)
+- ✅ Logout button live in admin panel
+- ⚠️ Environment variables need updating in Vercel production
+- ⚠️ Enhanced discovery requires Supabase auth configuration
+
+**How to trigger:**
+1. **Cron:** Runs weekly on Sunday at 03:00 UTC
+2. **Manual:** `POST /api/admin/trigger-enhanced-discovery` (requires Supabase auth)
+3. **Admin panel:** "Enhanced API Discovery" button in admin header
+
+**Example enhanced output:**
+```json
+{
+  "confidence_score": 85,
+  "data_type": "transactional",
+  "field_mappings": [...],
+  "unused_fields": [
+    {
+      "field_name": "customer_loyalty_points",
+      "field_type": "integer",
+      "potential_use": "Loyalty program analysis, customer retention insights",
+      "business_value": "medium",
+      "implementation_effort": "low"
+    }
+  ],
+  "business_insights": [
+    "Combine staff schedule data with POS transactions to analyze revenue per employee hour",
+    "Use customer metadata to identify peak times for targeted marketing"
+  ]
+}
+```
+
+---
+
+## 15. Admin Panel Security & Authentication Fixes — DEPLOYED ✅
+
+**Issues fixed:**
+1. **Missing admin authentication** — Added `ADMIN_SECRET` environment variable
+2. **No logout functionality** — Added logout button to admin panel
+3. **Environment variable naming** — Fixed Supabase variable prefixes
+
+**Changes made:**
+- **File:** `app/admin/page.tsx` — Added logout button to header
+- **File:** `.env.local` — Updated with correct environment variables
+- **Variable:** `ADMIN_SECRET=admin123` — Admin panel password
+- **Variables:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Fixed naming
+
+**Logout button implementation:**
+```typescript
+<button 
+  onClick={() => {
+    sessionStorage.removeItem('admin_auth');
+    setAuthed(false);
+  }}
+  style={{ padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+>
+  Logout
+</button>
+```
+
+**Production deployment steps completed:**
+1. ✅ Code committed to `main` branch
+2. ✅ Changes pushed to GitHub
+3. ✅ Vercel auto-deployment triggered
+4. ⚠️ Environment variables need updating in Vercel dashboard
+
+**Remaining issues:**
+- Enhanced discovery API returns 401 — Requires Supabase authentication
+- Supabase environment variables need proper values in production
+
+**Next steps for production:**
+1. Update Vercel environment variables with correct Supabase credentials
+2. Test enhanced discovery after Supabase configuration
+3. Verify admin panel access with `admin123` password
+
+---
+
 *Check this file before starting any debugging session. Most issues have already been solved here.*
