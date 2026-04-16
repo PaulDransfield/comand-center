@@ -29,22 +29,40 @@ export async function GET(req: NextRequest) {
       email = user?.email ?? null
     }
 
-    // Get businesses
+    // Get businesses (active only for display, but keep IDs for integration lookup)
     const { data: businesses } = await db
       .from('businesses')
       .select('id, name, city, is_active')
       .eq('org_id', org.id)
       .eq('is_active', true)
 
-    // Get integrations per business
-    const { data: integrations } = await db
-      .from('integrations')
-      .select('id, provider, status, business_id, last_sync_at, last_error, department')
-      .eq('org_id', org.id)
+    const bizIds = (businesses ?? []).map((b: any) => b.id)
+
+    // Fetch integrations two ways to catch any org_id/business_id mismatch edge cases:
+    // 1. By org_id (normal path)
+    // 2. By business_id directly (catches rows where org_id was not set)
+    const [{ data: byOrg }, { data: byBiz }] = await Promise.all([
+      db.from('integrations')
+        .select('id, provider, status, business_id, last_sync_at, last_error, department')
+        .eq('org_id', org.id),
+      bizIds.length > 0
+        ? db.from('integrations')
+            .select('id, provider, status, business_id, last_sync_at, last_error, department')
+            .in('business_id', bizIds)
+        : Promise.resolve({ data: [] }),
+    ])
+
+    // Merge and deduplicate by id
+    const seen = new Set<string>()
+    const integrations = [...(byOrg ?? []), ...(byBiz ?? [])].filter((i: any) => {
+      if (seen.has(i.id)) return false
+      seen.add(i.id)
+      return true
+    })
 
     const enrichedBizs = (businesses ?? []).map((biz: any) => ({
       ...biz,
-      integrations: (integrations ?? []).filter((i: any) => i.business_id === biz.id || !i.business_id),
+      integrations: integrations.filter((i: any) => i.business_id === biz.id || !i.business_id),
     }))
 
     // Get setup request if any

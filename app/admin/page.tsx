@@ -294,7 +294,7 @@ function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
               {org.email} · {org.businesses?.length ?? 0} businesses
               {(() => {
                 const n = (org.businesses ?? []).reduce((sum: number, b: any) =>
-                  sum + (b.integrations ?? []).filter((i: any) => i.provider === 'inzii').length, 0)
+                  sum + (b.integrations ?? []).filter((i: any) => i.provider?.toLowerCase() === 'inzii').length, 0)
                 return n > 0 ? ` · ${n} Inzii dept${n !== 1 ? 's' : ''}` : ''
               })()}
             </div>
@@ -354,7 +354,7 @@ function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
 
               {/* Inzii POS departments */}
               {(() => {
-                const depts = (biz.integrations ?? []).filter((i: any) => i.provider === 'inzii')
+                const depts = (biz.integrations ?? []).filter((i: any) => i.provider?.toLowerCase() === 'inzii')
                 return (
                   <div style={{ borderTop: '0.5px solid #f3f4f6', paddingTop: 10 }}>
                     <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontFamily: 'monospace' }}>
