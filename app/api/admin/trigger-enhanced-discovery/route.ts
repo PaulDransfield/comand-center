@@ -202,6 +202,24 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// GET — return saved discoveries using the admin client (bypasses RLS on api_discoveries_enhanced)
+// The page uses anon key which can't read this table — must go through server API
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader || authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('api_discoveries_enhanced')
+    .select('*')
+    .order('discovered_at', { ascending: false })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ discoveries: data ?? [] })
+}
+
 // Helper functions (same as in cron endpoint)
 function determineProviderType(provider: string): string {
   const providerLower = provider.toLowerCase()

@@ -2,7 +2,6 @@
 // @ts-nocheck
 
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
 
 export default function EnhancedApiDiscoveriesPage() {
   const [discoveries, setDiscoveries] = useState<any[]>([])
@@ -11,18 +10,18 @@ export default function EnhancedApiDiscoveriesPage() {
   const [activeTab, setActiveTab] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState<string | null>(null)
   const [runningDiscovery, setRunningDiscovery] = useState(false)
-  const supabase = createClient()
 
   useEffect(() => { loadDiscoveries() }, [])
 
   async function loadDiscoveries() {
     try {
-      const { data, error } = await supabase
-        .from('api_discoveries_enhanced')
-        .select('*')
-        .order('discovered_at', { ascending: false })
-      if (error) throw error
-      setDiscoveries(data || [])
+      const adminSecret = sessionStorage.getItem('admin_auth') || ''
+      const res = await fetch('/api/admin/trigger-enhanced-discovery', {
+        headers: { 'Authorization': `Bearer ${adminSecret}` }
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to load')
+      setDiscoveries(json.discoveries || [])
     } catch (e) {
       console.error(e)
     } finally {
