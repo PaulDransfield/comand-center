@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
         last_enhanced_discovery_at,
         api_endpoints_cache
       `)
-      .eq('status', 'active')
+      .eq('status', 'connected')
       .or('last_enhanced_discovery_at.is.null,last_enhanced_discovery_at.lt.now() - interval \'30 days\'')
       .limit(3)
 
