@@ -18,9 +18,10 @@ export default function StaffPage() {
   const defaultFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
   const defaultTo   = now.toISOString().slice(0,10)
 
-  const [data,      setData]      = useState<any>(null)
-  const [tipData,   setTipData]   = useState<any>(null)
-  const [loading,   setLoading]   = useState(true)
+  const [data,       setData]      = useState<any>(null)
+  const [tipData,    setTipData]   = useState<any>(null)
+  const [staffRev,   setStaffRev]  = useState<any>(null)
+  const [loading,    setLoading]   = useState(true)
   const [error,     setError]     = useState('')
   const [fromDate,  setFromDate]  = useState(defaultFrom)
   const [toDate,    setToDate]    = useState(defaultTo)
@@ -49,9 +50,10 @@ export default function StaffPage() {
     setError('')
     try {
       const bizParam = selectedBiz ? `&business_id=${selectedBiz}` : ''
-      const [staffRes, revRes] = await Promise.all([
+      const [staffRes, revRes, srRes] = await Promise.all([
         fetch(`/api/staff?from=${fromDate}&to=${toDate}${bizParam}`),
         selectedBiz ? fetch(`/api/revenue-detail?business_id=${selectedBiz}&from=${fromDate}&to=${toDate}`) : Promise.resolve(null),
+        selectedBiz ? fetch(`/api/staff-revenue?business_id=${selectedBiz}&from=${fromDate}&to=${toDate}`) : Promise.resolve(null),
       ])
       const json = await staffRes.json()
       if (!staffRes.ok) throw new Error(json.error ?? 'Failed')
@@ -59,6 +61,10 @@ export default function StaffPage() {
       if (revRes?.ok) {
         const revJson = await revRes.json()
         setTipData(revJson)
+      }
+      if (srRes?.ok) {
+        const srJson = await srRes.json()
+        setStaffRev(srJson)
       }
     } catch (e: any) { setError(e.message) }
     setLoading(false)
@@ -86,6 +92,14 @@ export default function StaffPage() {
   const taxMultiplier   = summary?.tax_multiplier       ?? null
   const payrollPending  = summary?.payroll_pending      ?? false
   const effectiveCost   = summary?.staff_cost_effective ?? 0
+
+  // Staff cost % vs revenue (live join)
+  const srSummary    = staffRev?.summary ?? null
+  const srRows       = staffRev?.rows    ?? []
+  const liveStaffPct = srSummary?.avg_staff_pct ?? null
+  const targetPct    = 40  // standard restaurant industry target
+  // Max staff % across days — used to scale the bar chart
+  const maxSrPct     = srRows.length > 0 ? Math.max(...srRows.map((r: any) => r.staff_pct ?? 0), targetPct + 5) : 60
 
   // Tip data from revenue_logs (Inzii POS)
   const totalTips    = tipData?.summary?.total_tips ?? 0
@@ -265,6 +279,108 @@ export default function StaffPage() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Daily staff cost % vs revenue — only shown when both data sources have data */}
+            {srRows.length > 0 && (
+              <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+
+                {/* Header + summary strip */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Staff cost % vs revenue — daily</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>Target: {targetPct}% · {srSummary?.days_joined ?? 0} days with both staff + revenue data</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
+                    {liveStaffPct !== null && (
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>Period avg</div>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: liveStaffPct > targetPct ? '#dc2626' : '#15803d' }}>{liveStaffPct.toFixed(1)}%</div>
+                      </div>
+                    )}
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>Over target</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: (srSummary?.days_over_target ?? 0) > 0 ? '#dc2626' : '#15803d' }}>{srSummary?.days_over_target ?? 0} days</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>Under target</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#15803d' }}>{srSummary?.days_under_target ?? 0} days</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Daily bar chart */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14 }}>
+                  {/* Target line label */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+                    <div style={{ width: 90, fontSize: 10, color: '#9ca3af' }}></div>
+                    <div style={{ flex: 1, position: 'relative', height: 12 }}>
+                      <div style={{ position: 'absolute', left: `${(targetPct / maxSrPct) * 100}%`, top: 0, bottom: 0, width: 1, background: '#fcd34d', borderLeft: '1px dashed #fcd34d' }} />
+                      <div style={{ position: 'absolute', left: `${(targetPct / maxSrPct) * 100 + 0.5}%`, top: 0, fontSize: 9, color: '#d97706', whiteSpace: 'nowrap' }}>{targetPct}% target</div>
+                    </div>
+                  </div>
+
+                  {srRows.map((row: any) => {
+                    const pct      = row.staff_pct ?? 0
+                    const barPct   = maxSrPct > 0 ? (pct / maxSrPct) * 100 : 0
+                    const overBy   = pct - targetPct
+                    const isOver   = pct > targetPct
+                    const isWarn   = pct > targetPct * 0.9 && !isOver  // within 10% of target
+                    const barColor = isOver ? '#dc2626' : isWarn ? '#f59e0b' : '#15803d'
+                    const fmtDate  = new Date(row.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+                    return (
+                      <div key={row.date} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 90, fontSize: 11, color: '#6b7280', flexShrink: 0 }}>{fmtDate}</div>
+                        <div style={{ flex: 1, height: 14, background: '#f3f4f6', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+                          {/* Target marker */}
+                          <div style={{ position: 'absolute', left: `${(targetPct / maxSrPct) * 100}%`, top: 0, bottom: 0, width: 1, background: '#fcd34d', zIndex: 1 }} />
+                          {/* Bar */}
+                          <div style={{ height: '100%', width: `${barPct}%`, background: barColor, borderRadius: 6, opacity: 0.85, transition: 'width 0.3s' }} />
+                        </div>
+                        <div style={{ width: 42, textAlign: 'right', fontSize: 12, fontWeight: 700, color: barColor, flexShrink: 0 }}>{pct.toFixed(1)}%</div>
+                        <div style={{ width: 52, textAlign: 'right', fontSize: 10, color: isOver ? '#dc2626' : '#9ca3af', flexShrink: 0 }}>
+                          {overBy > 0 ? `+${overBy.toFixed(1)}%` : overBy < 0 ? `${overBy.toFixed(1)}%` : 'on target'}
+                        </div>
+                        <div style={{ width: 72, textAlign: 'right', fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>{fmtKr(row.staff_cost)}</div>
+                        <div style={{ width: 80, textAlign: 'right', fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>{fmtKr(row.revenue)} rev</div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Best / worst day callouts */}
+                {(srSummary?.best_day || srSummary?.worst_day) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, paddingTop: 10, borderTop: '0.5px solid #f3f4f6' }}>
+                    {srSummary.best_day && (
+                      <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                        <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>Best day</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                          {new Date(srSummary.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          <span style={{ marginLeft: 8, color: '#15803d' }}>{srSummary.best_day.pct.toFixed(1)}%</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#9ca3af' }}>{fmtKr(srSummary.best_day.staff_cost)} cost · {fmtKr(srSummary.best_day.revenue)} revenue</div>
+                      </div>
+                    )}
+                    {srSummary.worst_day && (
+                      <div style={{ padding: '8px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+                        <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 3 }}>Highest cost day</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                          {new Date(srSummary.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          <span style={{ marginLeft: 8, color: '#dc2626' }}>{srSummary.worst_day.pct.toFixed(1)}%</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#9ca3af' }}>{fmtKr(srSummary.worst_day.staff_cost)} cost · {fmtKr(srSummary.worst_day.revenue)} revenue</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Days with staff data but no revenue (POS not connected or no sales) */}
+                {(srSummary?.days_staff_only ?? 0) > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#9ca3af' }}>
+                    {srSummary.days_staff_only} day{srSummary.days_staff_only !== 1 ? 's' : ''} had staff cost but no revenue data — excluded from % calculation
+                  </div>
+                )}
               </div>
             )}
 

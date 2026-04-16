@@ -60,6 +60,7 @@ export default function DashboardPage() {
   const [forecasts,    setForecasts]    = useState<Forecast[]>([])
   const [deptData,     setDeptData]     = useState<any>(null)
   const [posData,      setPosData]      = useState<any>(null)
+  const [staffRevData, setStaffRevData] = useState<any>(null)
   const [loading,      setLoading]      = useState(true)
   const [greeting,     setGreeting]     = useState('Good morning')
   const [lastSync,     setLastSync]     = useState<string | null>(null)
@@ -108,7 +109,8 @@ export default function DashboardPage() {
       fetch(`/api/departments?year=${year}&business_id=${bizId}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/staff?from=${fromDate}&to=${toDate}&business_id=${bizId}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/revenue-detail?business_id=${bizId}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => null),
-    ]).then(([trackerData, forecastData, deptRes, staffRes, revDetail]) => {
+      fetch(`/api/staff-revenue?business_id=${bizId}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => null),
+    ]).then(([trackerData, forecastData, deptRes, staffRes, revDetail, staffRevDetail]) => {
       if (Array.isArray(trackerData?.rows)) setChartData(trackerData.rows)
       // If no tracker data and no staff data, likely still being set up
       const hasAnyData = (trackerData?.rows?.length > 0) || (staffRes?.summary?.shifts_logged > 0)
@@ -117,6 +119,7 @@ export default function DashboardPage() {
       if (deptRes?.totals) setDeptData(deptRes)
       if (staffRes?.summary) setStaffData(staffRes.summary)
       if (revDetail?.summary) setPosData(revDetail.summary)
+      if (staffRevDetail?.summary?.avg_staff_pct !== undefined) setStaffRevData(staffRevDetail.summary)
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [selected])
@@ -124,6 +127,11 @@ export default function DashboardPage() {
   const nextForecast = forecasts.find(f => f.period_month === month + 1) ?? forecasts.find(f => f.period_month > month)
   const thisMonthTracker = chartData.find(r => r.period_month === month)
   const lastMonthTracker = chartData.find(r => r.period_month === month - 1)
+
+  // Live staff cost % from daily join
+  const liveStaffPct     = staffRevData?.avg_staff_pct ?? null
+  const daysOverTarget   = staffRevData?.days_over_target ?? 0
+  const targetStaffPct   = selected?.target_staff_pct ?? 40
 
   // Live POS channel data for this month
   const liveRevenue  = posData?.total_revenue    ?? 0
@@ -237,10 +245,12 @@ export default function DashboardPage() {
               />
               <KpiCard
                 label="Staff cost"
-                value={fmtPct(selected.staffPct)}
-                sub={`Target ${fmtPct(selected.target_staff_pct)}`}
-                ok={selected.staffPct <= selected.target_staff_pct || selected.staffPct === 0}
-                delta={staffData ? fmtKr(staffData.staff_cost_actual) : '—'}
+                value={liveStaffPct !== null ? fmtPct(liveStaffPct) : fmtPct(selected.staffPct)}
+                sub={liveStaffPct !== null ? `Live · target ${fmtPct(targetStaffPct)}` : `Target ${fmtPct(selected.target_staff_pct)}`}
+                ok={(liveStaffPct ?? selected.staffPct) <= (selected.target_staff_pct) || selected.staffPct === 0}
+                delta={liveStaffPct !== null
+                  ? (daysOverTarget > 0 ? `${daysOverTarget} days over target` : '+ All days on target')
+                  : (staffData ? fmtKr(staffData.staff_cost_actual) : '—')}
                 href="/staff"
               />
               <KpiCard
@@ -557,7 +567,8 @@ export default function DashboardPage() {
           `Business: ${selected.name}${selected.city ? ', ' + selected.city : ''}`,
           `This month revenue: ${fmtKr(thisMonthTracker?.revenue ?? 0)}`,
           `This month net profit: ${fmtKr(thisMonthTracker?.net_profit ?? 0)}`,
-          `Staff cost: ${fmtKr(selected.staff_cost)} (${fmtPct(selected.staffPct)} of revenue, target ${fmtPct(selected.target_staff_pct)})`,
+          `Staff cost: ${fmtKr(selected.staff_cost)} (${liveStaffPct !== null ? fmtPct(liveStaffPct) + ' live avg' : fmtPct(selected.staffPct)} of revenue, target ${fmtPct(selected.target_staff_pct)})`,
+          liveStaffPct !== null ? `Live staff cost %: ${fmtPct(liveStaffPct)} avg this month · ${daysOverTarget} days over ${fmtPct(targetStaffPct)} target` : '',
           `Food cost: ${fmtKr(selected.food_cost)} (${fmtPct(selected.foodPct)} of revenue, target ${fmtPct(selected.target_food_pct)})`,
           `Net margin: ${fmtPct(selected.margin)} (target ${fmtPct(selected.target_margin_pct)})`,
           `YTD revenue: ${fmtKr(ytdRevenue)}`,
