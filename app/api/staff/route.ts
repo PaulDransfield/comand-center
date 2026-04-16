@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   // Read from staff_logs — include any row with cost OR lateness data
   let query = db.from('staff_logs')
-    .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, estimated_salary, pk_staff_url, is_late, late_minutes, ob_supplement_kr')
+    .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, estimated_salary, pk_staff_url, is_late, late_minutes, ob_supplement_kr, ob_type')
     .eq('org_id', auth.orgId)
     .gte('shift_date', from)
     .lte('shift_date', to)
@@ -55,6 +55,7 @@ export async function GET(req: NextRequest) {
   const staffMap:   Record<string, any> = {}
   const deptMap:    Record<string, any> = {}  // dept → lateness stats
   const weekdayMap: Record<number, any> = {}  // 0=Mon … 6=Sun
+  const obTypeMap:  Record<string, number> = {}  // ob_type → total supplement kr (period-wide)
 
   for (const log of logs ?? []) {
     const key = log.pk_staff_url ?? log.staff_name
@@ -66,6 +67,7 @@ export async function GET(req: NextRequest) {
         id: key, name: log.staff_name, group: log.staff_group,
         hours_logged: 0, cost_actual: 0, estimated_salary: 0, shifts_logged: 0,
         late_shifts: 0, avg_late_minutes: 0, ob_supplement_kr: 0,
+        ob_types: {},   // ob_type → total kr supplement
         costgroups: {},
       }
     }
@@ -75,6 +77,10 @@ export async function GET(req: NextRequest) {
     s.estimated_salary  += log.estimated_salary  ?? 0
     s.shifts_logged     += 1
     s.ob_supplement_kr  += log.ob_supplement_kr  ?? 0
+    if (log.ob_type && (log.ob_supplement_kr ?? 0) > 0) {
+      s.ob_types[log.ob_type] = (s.ob_types[log.ob_type] ?? 0) + (log.ob_supplement_kr ?? 0)
+      obTypeMap[log.ob_type]  = (obTypeMap[log.ob_type]  ?? 0) + (log.ob_supplement_kr ?? 0)
+    }
     if (log.is_late) { s.late_shifts++; s.avg_late_minutes += log.late_minutes ?? 0 }
     if (log.staff_group) s.costgroups[log.staff_group] = (s.costgroups[log.staff_group] ?? 0) + (log.cost_actual ?? 0)
 
@@ -139,6 +145,10 @@ export async function GET(req: NextRequest) {
     shifts_scheduled:       0,
     late_shifts:            staff.reduce((s, m) => s + m.late_shifts, 0),
     shifts_with_ob:         staff.filter(m => m.ob_supplement_kr > 0).length,
+    total_ob_supplement:    Math.round(staff.reduce((s, m) => s + m.ob_supplement_kr, 0)),
+    ob_type_breakdown:      Object.entries(obTypeMap)
+      .map(([type, kr]) => ({ type, kr: Math.round(kr as number) }))
+      .sort((a, b) => b.kr - a.kr),  // highest cost type first
     payroll_pending:        totalActual === 0 && totalEstimated > 0, // shifts not yet approved
   }
 

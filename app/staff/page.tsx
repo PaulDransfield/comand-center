@@ -103,6 +103,11 @@ export default function StaffPage() {
   // Max staff % across days — used to scale the bar chart
   const maxSrPct     = srRows.length > 0 ? Math.max(...srRows.map((r: any) => r.staff_pct ?? 0), targetPct + 5) : 60
 
+  // OB supplement type breakdown
+  const obTypeBreakdown  = summary?.ob_type_breakdown  ?? []   // [{ type, kr }] sorted highest first
+  const totalObSupplement = summary?.total_ob_supplement ?? 0
+  const hasObTypes       = obTypeBreakdown.length > 0
+
   // Tip data from revenue_logs (Inzii POS)
   const totalTips    = tipData?.summary?.total_tips ?? 0
   const staffCost    = summary?.staff_cost_actual ?? 0
@@ -462,6 +467,44 @@ export default function StaffPage() {
               </div>
             )}
 
+            {/* OB supplement by type — only shown when ob_type data exists */}
+            {hasObTypes && (
+              <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>OB supplement by type</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>Total: {Math.round(totalObSupplement).toLocaleString('sv-SE')} kr across {summary.shifts_with_ob} shifts</div>
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>Unsocial hours cost breakdown — sorted by highest spend</div>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+                  {obTypeBreakdown.map((ob: any) => {
+                    const pct     = totalObSupplement > 0 ? Math.round((ob.kr / totalObSupplement) * 100) : 0
+                    const barPct  = totalObSupplement > 0 ? (ob.kr / (obTypeBreakdown[0]?.kr ?? 1)) * 100 : 0
+                    return (
+                      <div key={ob.type}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{ob.type}</span>
+                          <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
+                            <span style={{ fontSize: 11, color: '#9ca3af' }}>{pct}% of total</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{ob.kr.toLocaleString('sv-SE')} kr</span>
+                          </div>
+                        </div>
+                        <div style={{ height: 8, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${barPct}%`, background: '#6366f1', borderRadius: 4, opacity: 0.7, transition: 'width 0.4s' }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* Cost-saving nudge: highlight the biggest type */}
+                {obTypeBreakdown[0] && totalObSupplement > 0 && (
+                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '0.5px solid #f3f4f6', fontSize: 11, color: '#6b7280' }}>
+                    <strong style={{ color: '#111' }}>{obTypeBreakdown[0].type}</strong> is your largest OB category at {Math.round((obTypeBreakdown[0].kr / totalObSupplement) * 100)}% of total supplement cost.
+                    {obTypeBreakdown.length > 1 && ` Reducing shifts in this category has the highest impact on OB spend.`}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Search */}
             <div style={{ marginBottom: 12 }}>
               <input value={search} onChange={e => setSearch(e.target.value)}
@@ -575,6 +618,23 @@ export default function StaffPage() {
                                   </div>
                                 )}
 
+                                {/* OB supplement by type — per staff member */}
+                                {s.ob_types && Object.keys(s.ob_types).length > 0 && (
+                                  <div style={{ marginBottom: 12 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>OB supplement by type</div>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                                      {Object.entries(s.ob_types)
+                                        .sort((a: any, b: any) => b[1] - a[1])
+                                        .map(([type, kr]: any) => (
+                                          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#f0f0ff', borderRadius: 6, border: '0.5px solid #e0e0ff' }}>
+                                            <span style={{ fontSize: 11, color: '#4f46e5' }}>{type}</span>
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#111' }}>{Math.round(kr).toLocaleString('sv-SE')} kr</span>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  </div>
+                                )}
+
                                 {/* Cost by section */}
                                 {s.costgroups && Object.keys(s.costgroups).length > 0 ? (
                                   <div>
@@ -650,6 +710,7 @@ export default function StaffPage() {
           weekdayLateness.filter((d: any) => d.late_count > 0).length > 0
             ? `Lateness by weekday: ${weekdayLateness.filter((d: any) => d.late_count > 0).map((d: any) => `${d.label} ${d.late_count} late (${d.late_rate_pct.toFixed(0)}%)`).join(', ')}`
             : '',
+          hasObTypes ? `OB supplement by type (total ${fmtKr(totalObSupplement)}): ${obTypeBreakdown.map((ob: any) => `${ob.type} ${fmtKr(ob.kr)} (${Math.round((ob.kr / totalObSupplement) * 100)}%)`).join(', ')}` : '',
           sorted.length > 0 ? `Top staff by cost:\n${sorted.slice(0,10).map((s: any) => `  ${s.name} (${s.group}): ${fmtKr(s.cost_actual)}, ${fmtH(s.hours_worked)}`).join('\n')}` : 'No staff data',
         ].filter(Boolean).join('\n') : 'No staff data loaded'}
       />
