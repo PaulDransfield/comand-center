@@ -72,9 +72,11 @@ export default function StaffPage() {
 
   useEffect(() => { load() }, [load])
 
-  const summary = data?.summary ?? null
-  const staff   = data?.staff   ?? []
-  const connected = data?.connected ?? false
+  const summary        = data?.summary          ?? null
+  const staff          = data?.staff            ?? []
+  const connected      = data?.connected        ?? false
+  const deptLateness   = data?.dept_lateness    ?? []
+  const weekdayLateness = data?.weekday_lateness ?? []
 
   const filtered = staff.filter((s: any) =>
     !search ||
@@ -384,6 +386,80 @@ export default function StaffPage() {
               </div>
             )}
 
+            {/* Lateness patterns — only shown when there are late shifts */}
+            {(summary?.late_shifts ?? 0) > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+
+                {/* By department */}
+                <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>Lateness by department</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>Sorted by late rate · {summary.late_shifts} late shift{summary.late_shifts !== 1 ? 's' : ''} total</div>
+                  {deptLateness.filter((d: any) => d.total_shifts > 0).map((d: any) => {
+                    const isRed   = d.late_rate_pct > 20
+                    const isAmber = d.late_rate_pct > 10 && !isRed
+                    const barColor = isRed ? '#dc2626' : isAmber ? '#f59e0b' : '#15803d'
+                    const maxRate  = deptLateness[0]?.late_rate_pct ?? 1
+                    return (
+                      <div key={d.dept} style={{ marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: deptColor(d.dept), flexShrink: 0 }} />
+                            <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{d.dept}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                            {d.late_count > 0 && (
+                              <span style={{ fontSize: 11, color: '#9ca3af' }}>{d.late_count} late · avg {d.avg_late_minutes} min</span>
+                            )}
+                            <span style={{ fontSize: 13, fontWeight: 700, color: d.late_count > 0 ? barColor : '#9ca3af' }}>
+                              {d.late_count > 0 ? `${d.late_rate_pct.toFixed(1)}%` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ height: 6, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: d.late_count > 0 ? `${(d.late_rate_pct / Math.max(maxRate, 1)) * 100}%` : '0%', background: barColor, borderRadius: 4, transition: 'width 0.3s' }} />
+                        </div>
+                        <div style={{ fontSize: 10, color: '#d1d5db', marginTop: 2 }}>{d.total_shifts} shifts total</div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* By day of week */}
+                <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>Lateness by day of week</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>Late shift count per weekday across the period</div>
+                  {(() => {
+                    const maxCount = Math.max(...weekdayLateness.map((d: any) => d.late_count), 1)
+                    return weekdayLateness.map((d: any) => {
+                      const isRed   = d.total_shifts > 0 && d.late_rate_pct > 20
+                      const isAmber = d.total_shifts > 0 && d.late_rate_pct > 10 && !isRed
+                      const barColor = isRed ? '#dc2626' : isAmber ? '#f59e0b' : d.late_count > 0 ? '#6366f1' : '#f3f4f6'
+                      return (
+                        <div key={d.weekday} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                          <div style={{ width: 28, fontSize: 12, fontWeight: 600, color: d.late_count > 0 ? '#374151' : '#d1d5db', flexShrink: 0 }}>{d.label}</div>
+                          <div style={{ flex: 1, height: 14, background: '#f3f4f6', borderRadius: 6, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${(d.late_count / maxCount) * 100}%`, background: barColor, borderRadius: 6, transition: 'width 0.3s' }} />
+                          </div>
+                          {d.late_count > 0 ? (
+                            <>
+                              <div style={{ width: 18, textAlign: 'right', fontSize: 13, fontWeight: 700, color: barColor, flexShrink: 0 }}>{d.late_count}</div>
+                              <div style={{ width: 52, textAlign: 'right', fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>{d.late_rate_pct.toFixed(0)}% rate</div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ width: 18, textAlign: 'right', fontSize: 12, color: '#d1d5db', flexShrink: 0 }}>0</div>
+                              <div style={{ width: 52 }} />
+                            </>
+                          )}
+                          <div style={{ width: 28, textAlign: 'right', fontSize: 10, color: '#d1d5db', flexShrink: 0 }}>{d.total_shifts > 0 ? `${d.total_shifts}s` : ''}</div>
+                        </div>
+                      )
+                    })
+                  })()}
+                </div>
+              </div>
+            )}
+
             {/* Search */}
             <div style={{ marginBottom: 12 }}>
               <input value={search} onChange={e => setSearch(e.target.value)}
@@ -564,6 +640,12 @@ export default function StaffPage() {
           costVariance !== 0 ? `Cost variance: ${costVariance > 0 ? '+' : ''}${fmtKr(costVariance)} vs estimate` : '',
           totalTips > 0 ? `Tips earned this period: ${fmtKr(totalTips)} (${tipPct.toFixed(1)}% of staff cost, avg ${fmtKr(avgDailyTip)}/day)` : 'No tip data available',
           totalTips > 0 ? `Net staff cost after tips: ${fmtKr(netBurden)}` : '',
+          deptLateness.filter((d: any) => d.late_count > 0).length > 0
+            ? `Lateness by dept: ${deptLateness.filter((d: any) => d.late_count > 0).map((d: any) => `${d.dept} ${d.late_rate_pct.toFixed(1)}% (${d.late_count} late, avg ${d.avg_late_minutes} min)`).join('; ')}`
+            : '',
+          weekdayLateness.filter((d: any) => d.late_count > 0).length > 0
+            ? `Lateness by weekday: ${weekdayLateness.filter((d: any) => d.late_count > 0).map((d: any) => `${d.label} ${d.late_count} late (${d.late_rate_pct.toFixed(0)}%)`).join(', ')}`
+            : '',
           sorted.length > 0 ? `Top staff by cost:\n${sorted.slice(0,10).map((s: any) => `  ${s.name} (${s.group}): ${fmtKr(s.cost_actual)}, ${fmtH(s.hours_worked)}`).join('\n')}` : 'No staff data',
         ].filter(Boolean).join('\n') : 'No staff data loaded'}
       />

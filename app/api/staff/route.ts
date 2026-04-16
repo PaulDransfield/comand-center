@@ -37,25 +37,30 @@ export async function GET(req: NextRequest) {
     .eq('status', 'connected')
     .limit(1).maybeSingle()
 
-  // Read from staff_logs — only columns that exist
+  // Read from staff_logs — include any row with cost OR lateness data
   let query = db.from('staff_logs')
     .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, estimated_salary, pk_staff_url, is_late, late_minutes, ob_supplement_kr')
     .eq('org_id', auth.orgId)
     .gte('shift_date', from)
     .lte('shift_date', to)
-    // Include rows where either cost is finalised OR estimated salary is available
-    .or('cost_actual.gt.0,estimated_salary.gt.0')
+    // Include rows with cost data OR lateness data (late shifts may have 0 cost on casual rates)
+    .or('cost_actual.gt.0,estimated_salary.gt.0,is_late.eq.true')
 
   if (businessId) query = query.eq('business_id', businessId)
 
   const { data: logs, error } = await query
   if (error) return NextResponse.json({ error: error.message, connected: true }, { status: 500 })
 
-  // Aggregate by staff member
-  const staffMap: Record<string, any> = {}
+  // Aggregate by staff member + lateness rollups in one pass
+  const staffMap:   Record<string, any> = {}
+  const deptMap:    Record<string, any> = {}  // dept → lateness stats
+  const weekdayMap: Record<number, any> = {}  // 0=Mon … 6=Sun
+
   for (const log of logs ?? []) {
     const key = log.pk_staff_url ?? log.staff_name
     if (!key) continue
+
+    // ── Per-staff aggregation ───────────────────────────────────────────────
     if (!staffMap[key]) {
       staffMap[key] = {
         id: key, name: log.staff_name, group: log.staff_group,
@@ -72,6 +77,28 @@ export async function GET(req: NextRequest) {
     s.ob_supplement_kr  += log.ob_supplement_kr  ?? 0
     if (log.is_late) { s.late_shifts++; s.avg_late_minutes += log.late_minutes ?? 0 }
     if (log.staff_group) s.costgroups[log.staff_group] = (s.costgroups[log.staff_group] ?? 0) + (log.cost_actual ?? 0)
+
+    // ── Department lateness rollup ──────────────────────────────────────────
+    const dept = log.staff_group ?? 'Unknown'
+    if (!deptMap[dept]) deptMap[dept] = { dept, total_shifts: 0, late_count: 0, total_late_minutes: 0 }
+    deptMap[dept].total_shifts      += 1
+    if (log.is_late) {
+      deptMap[dept].late_count        += 1
+      deptMap[dept].total_late_minutes += log.late_minutes ?? 0
+    }
+
+    // ── Weekday lateness rollup (0=Mon … 6=Sun) ─────────────────────────────
+    if (log.shift_date) {
+      // new Date('YYYY-MM-DD') parses as UTC midnight → getUTCDay() avoids timezone shift
+      const d   = new Date(log.shift_date)
+      const dow = (d.getUTCDay() + 6) % 7  // convert Sun=0 → Mon=0 … Sun=6
+      if (!weekdayMap[dow]) weekdayMap[dow] = { weekday: dow, total_shifts: 0, late_count: 0, total_late_minutes: 0 }
+      weekdayMap[dow].total_shifts       += 1
+      if (log.is_late) {
+        weekdayMap[dow].late_count         += 1
+        weekdayMap[dow].total_late_minutes += log.late_minutes ?? 0
+      }
+    }
   }
 
   const staff = Object.values(staffMap).map((s: any) => {
@@ -115,5 +142,26 @@ export async function GET(req: NextRequest) {
     payroll_pending:        totalActual === 0 && totalEstimated > 0, // shifts not yet approved
   }
 
-  return NextResponse.json({ connected: true, summary, staff })
+  // Finalise department lateness — add derived fields, sort worst first
+  const dept_lateness = Object.values(deptMap)
+    .map((d: any) => ({
+      ...d,
+      late_rate_pct:    d.total_shifts > 0 ? Math.round((d.late_count / d.total_shifts) * 1000) / 10 : 0,
+      avg_late_minutes: d.late_count > 0   ? Math.round(d.total_late_minutes / d.late_count) : 0,
+    }))
+    .sort((a: any, b: any) => b.late_rate_pct - a.late_rate_pct)
+
+  // Finalise weekday lateness — fill all 7 days even if no data, Mon–Sun order
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+  const weekday_lateness = DAYS.map((label, i) => {
+    const d = weekdayMap[i] ?? { weekday: i, total_shifts: 0, late_count: 0, total_late_minutes: 0 }
+    return {
+      ...d,
+      label,
+      late_rate_pct:    d.total_shifts > 0 ? Math.round((d.late_count / d.total_shifts) * 1000) / 10 : 0,
+      avg_late_minutes: d.late_count > 0   ? Math.round(d.total_late_minutes / d.late_count) : 0,
+    }
+  })
+
+  return NextResponse.json({ connected: true, summary, staff, dept_lateness, weekday_lateness })
 }
