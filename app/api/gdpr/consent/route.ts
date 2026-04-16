@@ -3,21 +3,11 @@
 // POST — record consent when user accepts privacy policy
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-async function getAuth(req: NextRequest) {
-  const raw = req.cookies.get('sb-llzmixkrysduztsvmfzi-auth-token')?.value
-  if (!raw) return null
-  try {
-    let token = raw
-    try { const d = decodeURIComponent(raw); const p = JSON.parse(d); token = Array.isArray(p) ? p[0] : (p.access_token ?? raw) } catch {}
-    const db = createAdminClient()
-    const { data: { user } } = await db.auth.getUser(token)
-    return user ?? null
-  } catch { return null }
-}
+const getAuth = getRequestAuth
 
 export async function POST(req: NextRequest) {
   const user = await getAuth(req)
@@ -27,7 +17,7 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient()
 
   await db.from('gdpr_consents').upsert({
-    user_id:      user.id,
+    user_id:      user.userId,
     consent_type,
     version,
     ip_address:   req.headers.get('x-forwarded-for') ?? null,
@@ -47,7 +37,7 @@ export async function GET(req: NextRequest) {
   const { data } = await db
     .from('gdpr_consents')
     .select('consent_type, version, consented_at, withdrawn_at')
-    .eq('user_id', user.id)
+    .eq('user_id', user.userId)
 
   return NextResponse.json({ consents: data ?? [] })
 }

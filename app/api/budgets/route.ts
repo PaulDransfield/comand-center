@@ -4,26 +4,9 @@
 // POST — save budget for a month (upsert)
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
-async function getAuth(req: NextRequest) {
-  const cookieName  = 'sb-llzmixkrysduztsvmfzi-auth-token'
-  const cookieValue = req.cookies.get(cookieName)?.value
-  if (!cookieValue) return null
-  try {
-    let accessToken = cookieValue
-    if (cookieValue.startsWith('[') || cookieValue.startsWith('{')) {
-      const parsed = JSON.parse(cookieValue)
-      accessToken  = Array.isArray(parsed) ? parsed[0] : parsed.access_token
-    }
-    const db = createAdminClient()
-    const { data: { user } } = await db.auth.getUser(accessToken)
-    if (!user) return null
-    const { data: m } = await db.from('organisation_members').select('org_id').eq('user_id', user.id).single()
-    if (!m) return null
-    return { userId: user.id, orgId: m.org_id }
-  } catch { return null }
-}
+const getAuth = getRequestAuth
 
 export async function GET(req: NextRequest) {
   const auth = await getAuth(req)

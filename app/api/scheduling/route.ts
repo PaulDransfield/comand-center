@@ -4,23 +4,11 @@
 // Joins staff_logs + revenue_logs by date — no new tables needed
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-async function getAuth(req: NextRequest) {
-  const raw = req.cookies.get('sb-llzmixkrysduztsvmfzi-auth-token')?.value
-  if (!raw) return null
-  try {
-    let token = raw
-    try { const d = decodeURIComponent(raw); const p = JSON.parse(d); token = Array.isArray(p) ? p[0] : (p.access_token ?? raw) } catch {}
-    const db = createAdminClient()
-    const { data: { user } } = await db.auth.getUser(token)
-    if (!user) return null
-    const { data: m } = await db.from('organisation_members').select('org_id').eq('user_id', user.id).single()
-    return m ? { userId: user.id, orgId: m.org_id } : null
-  } catch { return null }
-}
+const getAuth = getRequestAuth
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 

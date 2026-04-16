@@ -2,25 +2,9 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
-async function getAuth(req: NextRequest) {
-  const raw = req.cookies.get('sb-llzmixkrysduztsvmfzi-auth-token')?.value
-  if (!raw) return null
-  try {
-    let token = raw
-    try {
-      const decoded = decodeURIComponent(raw)
-      const parsed  = JSON.parse(decoded)
-      token = Array.isArray(parsed) ? parsed[0] : (parsed.access_token ?? raw)
-    } catch {}
-    const db = createAdminClient()
-    const { data: { user } } = await db.auth.getUser(token)
-    if (!user) return null
-    const { data: m } = await db.from('organisation_members').select('org_id').eq('user_id', user.id).single()
-    return m ? { userId: user.id, orgId: m.org_id } : null
-  } catch { return null }
-}
+const getAuth = getRequestAuth
 
 export async function POST(req: NextRequest) {
   const auth = await getAuth(req)

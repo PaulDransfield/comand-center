@@ -1,37 +1,17 @@
 // @ts-nocheck
-import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient }         from '@/lib/supabase/server'
-import { colourForIndex }            from '@/context/BizContext'
+import { NextRequest, NextResponse }          from 'next/server'
+import { createAdminClient, getRequestAuth }  from '@/lib/supabase/server'
+import { colourForIndex }                     from '@/context/BizContext'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export async function GET(req: NextRequest) {
-  const cookieName  = `sb-llzmixkrysduztsvmfzi-auth-token`
-  const cookieValue = req.cookies.get(cookieName)?.value
-  if (!cookieValue) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-
-  let userId: string
-  try {
-    let accessToken = cookieValue
-    if (cookieValue.startsWith('[') || cookieValue.startsWith('{')) {
-      const parsed = JSON.parse(cookieValue)
-      accessToken  = Array.isArray(parsed) ? parsed[0] : parsed.access_token
-    }
-    const adminDb = createAdminClient()
-    const { data: { user } } = await adminDb.auth.getUser(accessToken)
-    if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
-    userId = user.id
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Auth failed' }, { status: 401 })
-  }
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   const adminDb = createAdminClient()
-  const { data: membership } = await adminDb
-    .from('organisation_members')
-    .select('org_id')
-    .eq('user_id', userId)
-    .single()
+  const membership = { org_id: auth.orgId }
 
   if (!membership) return NextResponse.json({ error: 'No org' }, { status: 404 })
 

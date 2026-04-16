@@ -4,6 +4,7 @@
 
 import { createServerClient } from '@supabase/ssr'
 import { cookies }            from 'next/headers'
+import type { NextRequest }   from 'next/server'
 
 export function createClient() {
   const cookieStore = cookies()
@@ -26,52 +27,7 @@ export function createClient() {
 }
 
 export function createAdminClient() {
-  // DEVELOPMENT MODE: Return mock client for local development
-  if (process.env.NODE_ENV === 'development' || 
-      process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('mock-supabase-url-for-development')) {
-    console.log('DEVELOPMENT MODE: Creating mock Supabase admin client')
-    
-    // Create a mock Supabase client that doesn't throw errors
-    const mockClient = {
-      auth: {
-        getUser: async () => ({ 
-          data: { user: null }, 
-          error: null 
-        }),
-        getSession: async () => ({ 
-          data: { session: null }, 
-          error: null 
-        }),
-      },
-      from: (table: string) => ({
-        select: (columns: string, options?: any) => {
-          // Handle the health endpoint query
-          if (table === 'organisations' && options?.count === 'exact' && options?.head === true) {
-            return {
-              then: async (callback: any) => callback({ data: null, error: null, count: 0 })
-            }
-          }
-          
-          // Default select handler
-          return {
-            eq: (column: string, value: any) => ({
-              single: async () => ({ 
-                data: null, 
-                error: null 
-              }),
-              then: async (callback: any) => callback({ data: null, error: null })
-            }),
-            then: async (callback: any) => callback({ data: null, error: null, count: 0 })
-          }
-        },
-        then: async (callback: any) => callback({ data: null, error: null })
-      }),
-      then: async (callback: any) => callback({ data: null, error: null })
-    }
-    
-    return mockClient as any
-  }
-
+  // Uses the service role key — bypasses RLS, for server-only use
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -82,4 +38,36 @@ export function createAdminClient() {
       },
     }
   )
+}
+
+// ── Shared auth helper for API routes ────────────────────────────────────────
+// Uses createServerClient with all request cookies so @supabase/ssr can
+// reassemble chunked cookies (sb-<ref>-auth-token.0, .1 …) automatically.
+// Returns { userId, orgId } or null if not authenticated.
+export async function getRequestAuth(req: NextRequest): Promise<{ userId: string; orgId: string } | null> {
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll:  () => req.cookies.getAll(),
+          setAll:  () => {},           // read-only in API routes
+        },
+      }
+    )
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const adminDb = createAdminClient()
+    const { data: m } = await adminDb
+      .from('organisation_members')
+      .select('org_id')
+      .eq('user_id', user.id)
+      .single()
+
+    return m ? { userId: user.id, orgId: m.org_id } : null
+  } catch {
+    return null
+  }
 }

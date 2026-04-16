@@ -3,29 +3,13 @@
 // Returns VAT breakdown for a business and period.
 // Swedish VAT rates: 25% (alcohol/goods), 12% (food), 6% (rare)
 
-import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { NextRequest, NextResponse }          from 'next/server'
+import { createAdminClient, getRequestAuth }  from '@/lib/supabase/server'
 
 export async function GET(req: NextRequest) {
-  const cookieName  = 'sb-llzmixkrysduztsvmfzi-auth-token'
-  const cookieValue = req.cookies.get(cookieName)?.value
-  if (!cookieValue) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-
-  let userId = '', orgId = ''
-  try {
-    let accessToken = cookieValue
-    if (cookieValue.startsWith('[') || cookieValue.startsWith('{')) {
-      const parsed = JSON.parse(cookieValue)
-      accessToken  = Array.isArray(parsed) ? parsed[0] : parsed.access_token
-    }
-    const db = createAdminClient()
-    const { data: { user } } = await db.auth.getUser(accessToken)
-    if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 })
-    userId = user.id
-    const { data: m } = await db.from('organisation_members').select('org_id').eq('user_id', userId).single()
-    if (!m) return NextResponse.json({ error: 'No org' }, { status: 404 })
-    orgId = m.org_id
-  } catch { return NextResponse.json({ error: 'Auth failed' }, { status: 401 }) }
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const { orgId } = auth
 
   const { searchParams } = new URL(req.url)
   const businessId = searchParams.get('business_id')

@@ -3,33 +3,13 @@
 // Connect and sync Personalkollen staff data
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { encrypt, decrypt }          from '@/lib/integrations/encryption'
 import {
   getStaff, getWorkplaces, getWorkPeriods, getLoggedTimes, getStaffSummary
 } from '@/lib/pos/personalkollen'
 
-async function getAuth(req: NextRequest) {
-  const cookieName  = 'sb-llzmixkrysduztsvmfzi-auth-token'
-  const cookieValue = req.cookies.get(cookieName)?.value
-  if (!cookieValue) return null
-  try {
-    let accessToken = cookieValue
-    try {
-      const decoded = decodeURIComponent(cookieValue)
-      if (decoded.startsWith('[') || decoded.startsWith('{')) {
-        const parsed = JSON.parse(decoded)
-        accessToken  = Array.isArray(parsed) ? parsed[0] : (parsed.access_token ?? cookieValue)
-      }
-    } catch { /* use raw value */ }
-    const db = createAdminClient()
-    const { data: { user } } = await db.auth.getUser(accessToken)
-    if (!user) return null
-    const { data: m } = await db.from('organisation_members').select('org_id').eq('user_id', user.id).single()
-    if (!m) return null
-    return { userId: user.id, orgId: m.org_id }
-  } catch { return null }
-}
+const getAuth = getRequestAuth
 
 export async function POST(req: NextRequest) {
   const auth = await getAuth(req)
