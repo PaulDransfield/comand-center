@@ -1,5 +1,5 @@
 # CLAUDE.md — Working Guidelines
-> Last updated: 2026-04-15 | Session 7 in progress
+> Last updated: 2026-04-16 | Session 7 in progress
 
 ---
 
@@ -11,7 +11,22 @@
 
 ---
 
-## 2. Session Protocol (every session, in order)
+## 2. Hard Rules (non-negotiable)
+
+### Auto-push rule
+**At the end of every Claude response, all changes are automatically committed and pushed to GitHub.**
+This is enforced by a `Stop` hook in `.claude/settings.json` — it runs `git add -A && git commit && git push` after every response if there are any uncommitted changes.
+
+**Why**: Work must always be recoverable from any computer. Context window fills up, sessions end, computers change. GitHub is the source of truth.
+
+**Manually trigger if needed**:
+```bash
+git add -A && git commit -m "manual checkpoint" && git push
+```
+
+---
+
+## 3. Session Protocol (every session, in order)
 
 1. Read `ROADMAP.md` and this file before writing a single line of code
 2. Ask clarifying questions if requirements are not clear
