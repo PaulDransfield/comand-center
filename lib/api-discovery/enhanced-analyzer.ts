@@ -254,12 +254,12 @@ RESPONSE FORMAT - return ONLY this JSON, no other text:
   }
 }
 
-IMPORTANT: Keep all string values concise (one sentence max). Return valid JSON only.
+IMPORTANT: Return ONLY the JSON object. No markdown, no explanation before or after. Keep every string value under 10 words. Do not write code in code_snippets — leave those arrays empty.
 `
 
     const response = await anthropic.messages.create({
       model: AI_MODELS.ANALYSIS,
-      max_tokens: MAX_TOKENS.ASSISTANT, // 2000 — needed for full JSON response
+      max_tokens: 4000, // Needs high limit — JSON response with field mappings can be 3000+ tokens
       messages: [{ role: 'user', content: prompt }],
     })
 
