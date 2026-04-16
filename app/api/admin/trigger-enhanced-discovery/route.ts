@@ -204,38 +204,58 @@ function determineProviderType(provider: string): string {
 }
 
 async function fetchSampleData(integration: any, supabase: any): Promise<any[]> {
+  const provider = (integration.provider || '').toLowerCase()
+  const bizId = integration.business_id
+
   try {
-    // Try to get cached sample data from previous syncs
-    const { data: recentData } = await supabase
-      .from('sync_logs')
-      .select('response_data')
-      .eq('integration_id', integration.id)
-      .eq('status', 'success')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (recentData?.response_data) {
-      return Array.isArray(recentData.response_data) 
-        ? recentData.response_data.slice(0, 5) 
-        : [recentData.response_data]
+    // Personalkollen — pull from staff_logs (what we've already synced)
+    if (provider.includes('personalkollen')) {
+      const { data } = await supabase
+        .from('staff_logs')
+        .select('staff_name, staff_group, hours_worked, cost_actual, estimated_salary, ob_supplement_kr, ob_type, is_late, late_minutes, costgroup_name, shift_date, real_start, real_stop')
+        .eq('business_id', bizId)
+        .order('shift_date', { ascending: false })
+        .limit(5)
+      if (data && data.length > 0) return data
     }
 
-    // If no cached data, try to fetch from the integration's API endpoints cache
-    if (integration.api_endpoints_cache) {
-      const endpoints = JSON.parse(integration.api_endpoints_cache)
-      if (endpoints.length > 0) {
-        // Return sample from first endpoint
-        const firstEndpoint = endpoints[0]
-        if (firstEndpoint.sample_data) {
-          return Array.isArray(firstEndpoint.sample_data)
-            ? firstEndpoint.sample_data.slice(0, 3)
-            : [firstEndpoint.sample_data]
-        }
-      }
+    // Swess / Inzii — pull from revenue_logs
+    if (provider.includes('swess') || provider.includes('inzii')) {
+      const { data } = await supabase
+        .from('revenue_logs')
+        .select('revenue_date, revenue, covers, revenue_per_cover, food_revenue, drink_revenue, tip_revenue, dine_in_revenue, takeaway_revenue')
+        .eq('business_id', bizId)
+        .order('revenue_date', { ascending: false })
+        .limit(5)
+      if (data && data.length > 0) return data
     }
 
-    // Return empty array if no sample data available
+    // Fortnox — pull from tracker_data as a proxy for financial data
+    if (provider.includes('fortnox')) {
+      const { data } = await supabase
+        .from('tracker_data')
+        .select('period_year, period_month, revenue, staff_cost, food_cost, drink_cost, rent, other_costs, net_profit')
+        .eq('business_id', bizId)
+        .order('period_year', { ascending: false })
+        .limit(5)
+      if (data && data.length > 0) return data
+    }
+
+    // Generic fallback — try staff_logs then revenue_logs
+    const { data: staffData } = await supabase
+      .from('staff_logs')
+      .select('staff_name, staff_group, hours_worked, cost_actual, ob_type, costgroup_name, shift_date')
+      .eq('business_id', bizId)
+      .limit(5)
+    if (staffData && staffData.length > 0) return staffData
+
+    const { data: revenueData } = await supabase
+      .from('revenue_logs')
+      .select('revenue_date, revenue, covers, revenue_per_cover, food_revenue, drink_revenue')
+      .eq('business_id', bizId)
+      .limit(5)
+    if (revenueData && revenueData.length > 0) return revenueData
+
     return []
   } catch (error) {
     console.error(`Failed to fetch sample data for ${integration.provider}:`, error)
