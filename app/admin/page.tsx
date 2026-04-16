@@ -139,6 +139,15 @@ export default function AdminPage() {
             <a href="/dashboard" style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
               Back to app
             </a>
+            <button 
+              onClick={() => {
+                sessionStorage.removeItem('admin_auth');
+                setAuthed(false);
+              }}
+              style={{ padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+            >
+              Logout
+            </button>
           </div>
         </div>
 
