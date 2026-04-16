@@ -285,7 +285,33 @@ export default function AdminPage() {
 }
 
 function OrgCard({ org, onConnect, onSync, onAddInzii, onSetupDepts, highlight }: any) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded,     setExpanded]     = useState(false)
+  const [editingInteg, setEditingInteg] = useState<string | null>(null) // integ.id being edited
+  const [editKey,      setEditKey]      = useState('')
+  const [editSaving,   setEditSaving]   = useState(false)
+  const [editError,    setEditError]    = useState('')
+
+  async function saveEditKey(integ: any) {
+    if (!editKey.trim()) { setEditError('Enter an API key'); return }
+    setEditSaving(true); setEditError('')
+    try {
+      const res = await fetch('/api/admin/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider:    'inzii',
+          api_key:     editKey.trim(),
+          org_id:      org.id,
+          business_id: integ.business_id,
+          department:  integ.department,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Failed to save')
+      setEditingInteg(null); setEditKey('')
+    } catch (e: any) { setEditError(e.message) }
+    setEditSaving(false)
+  }
 
   return (
     <div style={{ background: 'white', border: `1px solid ${highlight ? '#fde68a' : '#e5e7eb'}`, borderRadius: 12, marginBottom: 10, overflow: 'hidden' }}>
@@ -367,28 +393,65 @@ function OrgCard({ org, onConnect, onSync, onAddInzii, onSetupDepts, highlight }
                 const depts = (biz.integrations ?? []).filter((i: any) => i.provider?.toLowerCase() === 'inzii')
                 return (
                   <div style={{ borderTop: '0.5px solid #f3f4f6', paddingTop: 10 }}>
-                    <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontFamily: 'monospace' }}>
-                      DEBUG: {biz.integrations?.length ?? 0} total integrations | providers: [{(biz.integrations ?? []).map((i: any) => i.provider).join(', ')}]
-                    </div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+<div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
                       Inzii POS — {depts.length} department{depts.length !== 1 ? 's' : ''} connected
                     </div>
                     {depts.length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, marginBottom: 8 }}>
                         {depts.map((integ: any) => (
-                          <div key={integ.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 6, background: '#f8fafc', border: '0.5px solid #e5e7eb', fontSize: 12 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: integ.status === 'connected' ? '#10b981' : '#d1d5db', flexShrink: 0 }} />
-                            <span style={{ fontWeight: 600, color: '#374151', flex: 1 }}>{integ.department ?? '—'}</span>
-                            {integ.last_sync_at
-                              ? <span style={{ color: '#9ca3af', fontSize: 11 }}>{fmtDate(integ.last_sync_at)}</span>
-                              : <span style={{ color: '#f59e0b', fontSize: 11 }}>Never synced</span>
-                            }
-                            <button
-                              onClick={() => onSync({ integrationId: integ.id, name: `${biz.name} — ${integ.department}`, orgId: org.id })}
-                              style={{ fontSize: 11, padding: '2px 8px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
-                            >
-                              Sync
-                            </button>
+                          <div key={integ.id}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', borderRadius: 6, background: '#f8fafc', border: '0.5px solid #e5e7eb', fontSize: 12 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: integ.status === 'connected' ? '#10b981' : '#d1d5db', flexShrink: 0 }} />
+                              <span style={{ fontWeight: 600, color: '#374151', flex: 1 }}>{integ.department ?? '—'}</span>
+                              {integ.last_sync_at
+                                ? <span style={{ color: '#9ca3af', fontSize: 11 }}>{fmtDate(integ.last_sync_at)}</span>
+                                : <span style={{ color: '#f59e0b', fontSize: 11 }}>Never synced</span>
+                              }
+                              <button
+                                onClick={() => { setEditingInteg(editingInteg === integ.id ? null : integ.id); setEditKey(''); setEditError('') }}
+                                style={{ fontSize: 11, padding: '2px 8px', background: editingInteg === integ.id ? '#f3f4f6' : 'white', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: 4, cursor: 'pointer' }}
+                              >
+                                Edit key
+                              </button>
+                              <button
+                                onClick={() => onSync({ integrationId: integ.id, name: `${biz.name} — ${integ.department}`, orgId: org.id })}
+                                style={{ fontSize: 11, padding: '2px 8px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+                              >
+                                Sync
+                              </button>
+                            </div>
+                            {/* Inline edit key form */}
+                            {editingInteg === integ.id && (
+                              <div style={{ margin: '4px 0 0 0', padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: '#92400e', marginBottom: 6 }}>
+                                  Update API key for {integ.department}
+                                </div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <input
+                                    type="password"
+                                    value={editKey}
+                                    onChange={e => setEditKey(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && saveEditKey(integ)}
+                                    placeholder="Paste new API key"
+                                    style={{ flex: 1, padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, fontFamily: 'monospace' }}
+                                  />
+                                  <button
+                                    onClick={() => saveEditKey(integ)}
+                                    disabled={editSaving}
+                                    style={{ padding: '6px 12px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                                  >
+                                    {editSaving ? 'Saving…' : 'Save'}
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditingInteg(null); setEditKey(''); setEditError('') }}
+                                    style={{ padding: '6px 10px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#6b7280' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                                {editError && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>{editError}</div>}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

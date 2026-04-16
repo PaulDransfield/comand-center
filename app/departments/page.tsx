@@ -58,7 +58,8 @@ export default function DepartmentsPage() {
     setLoading(false)
   }, [from, to, selectedBiz])
 
-  useEffect(() => { if (selectedBiz) load() }, [load, selectedBiz])
+  // Load on mount (using whatever business is already in state) and whenever deps change
+  useEffect(() => { load() }, [load])
 
   const depts: any[]  = data?.departments ?? []
   const summary: any  = data?.summary     ?? {}
@@ -121,8 +122,9 @@ export default function DepartmentsPage() {
           <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading departments...</div>
         ) : depts.length === 0 ? (
           <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af' }}>
-            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No departments set up yet</div>
-            <div style={{ fontSize: 13 }}>Go to the Admin panel and click "Setup Departments" on this business to auto-create them from your Inzii integrations.</div>
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No department data found</div>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>No staff data found for this period. Try widening the date range, or check that Personalkollen has synced.</div>
+            <div style={{ fontSize: 12, color: '#d1d5db' }}>If you haven't run the M006 SQL migration yet, do that first, then click "Setup Departments" in the Admin panel.</div>
           </div>
         ) : (
           <>

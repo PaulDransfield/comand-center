@@ -42,40 +42,48 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
 
   // ── 1. Load department definitions ────────────────────────────────────────
-  // Try departments table first — if no rows yet, fall back to inferring from
-  // staff_logs.staff_group so the page works before admin setup
+  // Source A: departments table (set up via admin panel, has colour + sort order)
+  // Source B: staff_logs.staff_group (always available — auto-fallback)
+  // Merge both: table rows take priority, staff_groups fill any gaps
   let deptDefs: Array<{ name: string; color: string; sort_order: number }> = []
+  const PALETTE = ['#f59e0b','#10b981','#ef4444','#3b82f6','#8b5cf6','#06b6d4','#f97316','#ec4899','#84cc16','#14b8a6','#a855f7','#0ea5e9']
 
-  let deptQuery = db.from('departments')
-    .select('name, color, sort_order')
-    .eq('org_id', auth.orgId)
-    .order('sort_order', { ascending: true })
-  if (businessId) deptQuery = deptQuery.eq('business_id', businessId)
+  // Source A — departments table (may not exist if M006 migration not yet run)
+  try {
+    let deptQuery = db.from('departments')
+      .select('name, color, sort_order')
+      .eq('org_id', auth.orgId)
+      .order('sort_order', { ascending: true })
+    if (businessId) deptQuery = deptQuery.eq('business_id', businessId)
+    const { data: deptRows, error: deptErr } = await deptQuery
+    if (!deptErr && deptRows && deptRows.length > 0) {
+      deptDefs = deptRows
+    }
+  } catch { /* table may not exist yet — fall through to staff_logs */ }
 
-  const { data: deptRows } = await deptQuery
-
-  if (deptRows && deptRows.length > 0) {
-    deptDefs = deptRows
-  } else {
-    // Fallback: derive from staff_logs.staff_group
+  // Source B — staff_logs.staff_group (always try; fills gaps when table is empty)
+  try {
     let sgQuery = db.from('staff_logs')
       .select('staff_group')
       .eq('org_id', auth.orgId)
       .not('staff_group', 'is', null)
-    if (businessId) sgQuery = sgQuery.eq('business_id', businessId)
+    // Don't filter by businessId here — some orgs share staff across businesses
     const { data: sgRows } = await sgQuery
+    const existingNames = new Set(deptDefs.map(d => d.name))
+    const newFromStaff: typeof deptDefs = []
     const seen = new Set<string>()
     for (const r of sgRows ?? []) {
-      if (r.staff_group && !seen.has(r.staff_group)) {
+      if (r.staff_group && !seen.has(r.staff_group) && !existingNames.has(r.staff_group)) {
         seen.add(r.staff_group)
-        deptDefs.push({ name: r.staff_group, color: '#6366f1', sort_order: 0 })
+        newFromStaff.push({ name: r.staff_group, color: PALETTE[seen.size % PALETTE.length], sort_order: 999 })
       }
     }
-    deptDefs.sort((a, b) => a.name.localeCompare(b.name))
-  }
+    newFromStaff.sort((a, b) => a.name.localeCompare(b.name))
+    deptDefs = [...deptDefs, ...newFromStaff]
+  } catch { /* ignore */ }
 
   if (deptDefs.length === 0) {
-    return NextResponse.json({ departments: [], monthly: [], totals: {}, staff: [], summary: {} })
+    return NextResponse.json({ departments: [], monthly: [], totals: {}, staff: [], summary: {}, _debug: 'no_depts_found' })
   }
 
   const deptNames = deptDefs.map(d => d.name)
