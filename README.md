@@ -71,6 +71,7 @@ RESEND_API_KEY=re_...
 # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 CREDENTIAL_ENCRYPTION_KEY=64_hex_chars
 CRON_SECRET=any_random_string
+ADMIN_SECRET=admin123  # Password for admin panel access
 
 # Fortnox — from developer.fortnox.se (apply for developer account)
 FORTNOX_CLIENT_ID=...
