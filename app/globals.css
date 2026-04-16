@@ -65,6 +65,10 @@ input, button, select, textarea { font-family: inherit; }
   .btn-mobile-full { width: 100% !important; }
 }
 
+/* ── CHART SCROLL — used for dense daily bar chart rows ─────── */
+.chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.chart-inner  { min-width: 460px; }
+
 /* ── AUTO TABLE SCROLL ───────────────────────────────────────── */
 /* Any table inside a page content area scrolls on mobile */
 @media (max-width: 768px) {

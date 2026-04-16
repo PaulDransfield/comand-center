@@ -116,7 +116,7 @@ export default function StaffPage() {
 
   return (
     <AppShell>
-      <div style={{ padding: '28px', maxWidth: 1100, width: '100%' }}>
+      <div className="page-wrap" style={{ maxWidth: 1100 }}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
@@ -156,7 +156,7 @@ export default function StaffPage() {
         ) : summary && (
           <>
             {/* KPI cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 10, marginBottom: 16 }}>
+            <div className="grid-4" style={{ marginBottom: 16 }}>
               {[
                 { label: 'Hours logged',     value: fmtH(summary.logged_hours),     sub: `${summary.shifts_logged} shifts`,  color: '#111' },
                 { label: 'Late arrivals',    value: String(summary.late_shifts ?? 0), sub: 'shifts starting late',            color: (summary.late_shifts ?? 0) > 0 ? '#dc2626' : '#15803d' },
@@ -176,7 +176,7 @@ export default function StaffPage() {
             </div>
 
             {/* Cost and hours panels */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+            <div className="grid-2" style={{ marginBottom: 16 }}>
 
               {/* Cost panel */}
               <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
@@ -228,7 +228,7 @@ export default function StaffPage() {
 
             {/* Tips panel — only shown when Inzii provides tip data */}
             {totalTips > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div className="grid-2" style={{ marginBottom: 16 }}>
 
                 {/* Tips vs cost summary */}
                 <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
@@ -312,8 +312,9 @@ export default function StaffPage() {
                   </div>
                 </div>
 
-                {/* Daily bar chart */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14 }}>
+                {/* Daily bar chart — scrolls on narrow screens */}
+                <div className="chart-scroll" style={{ marginBottom: 14 }}>
+                <div className="chart-inner" style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {/* Target line label */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
                     <div style={{ width: 90, fontSize: 10, color: '#9ca3af' }}></div>
@@ -349,7 +350,8 @@ export default function StaffPage() {
                       </div>
                     )
                   })}
-                </div>
+                </div>{/* end chart-inner */}
+                </div>{/* end chart-scroll */}
 
                 {/* Best / worst day callouts */}
                 {(srSummary?.best_day || srSummary?.worst_day) && (
@@ -388,7 +390,7 @@ export default function StaffPage() {
 
             {/* Lateness patterns — only shown when there are late shifts */}
             {(summary?.late_shifts ?? 0) > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div className="grid-2" style={{ marginBottom: 16 }}>
 
                 {/* By department */}
                 <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
@@ -473,6 +475,7 @@ export default function StaffPage() {
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{sorted.length} staff members</div>
                 <div style={{ fontSize: 11, color: '#9ca3af' }}>Sorted by cost   click to expand</div>
               </div>
+              <div className="table-scroll">
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#fafafa' }}>
@@ -613,7 +616,8 @@ export default function StaffPage() {
                   )}
                 </tbody>
               </table>
-              <div style={{ padding: '10px 20px', borderTop: '0.5px solid #f3f4f6', fontSize: 11, color: '#9ca3af', display: 'flex', gap: 16 }}>
+              </div>{/* end table-scroll */}
+              <div style={{ padding: '10px 20px', borderTop: '0.5px solid #f3f4f6', fontSize: 11, color: '#9ca3af', display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
                 <span>{sorted.length} staff</span>
                 {totalEstimated > 0 && <span>Estimated: <strong style={{ color: '#6366f1' }}>{fmtKr(totalEstimated)}</strong></span>}
                 {totalActual > 0 && <span>Actual: <strong style={{ color: '#111' }}>{fmtKr(totalActual)}</strong></span>}

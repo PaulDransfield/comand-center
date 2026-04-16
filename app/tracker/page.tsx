@@ -121,13 +121,13 @@ export default function TrackerPage() {
 
   return (
     <AppShell>
-      <div style={{ padding: '28px', maxWidth: 1000 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+      <div className="page-wrap" style={{ maxWidth: 1000 }}>
+        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>P&L Tracker</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Monthly profit & loss · click a month to see daily breakdown</p>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
             <select value={selected} onChange={e => setSelected(e.target.value)}
               style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, background: 'white' }}>
               {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}

@@ -374,7 +374,7 @@ export default function DashboardPage() {
 
             {/* Row 2.5 — Live channel breakdown (only shown when POS provides channel data) */}
             {(hasChannels || hasFoodBev) && (
-              <div style={{ display: 'grid', gridTemplateColumns: hasChannels && hasFoodBev ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 12 }}>
+              <div className={hasChannels && hasFoodBev ? 'grid-2' : ''} style={{ display: 'grid', gap: 12, marginBottom: 12 }}>
 
                 {/* Dine-in vs Takeaway */}
                 {hasChannels && (
