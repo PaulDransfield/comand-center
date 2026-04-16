@@ -39,11 +39,12 @@ export async function GET(req: NextRequest) {
 
   // Read from staff_logs — only columns that exist
   let query = db.from('staff_logs')
-    .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, pk_staff_url, is_late, late_minutes, ob_supplement_kr')
+    .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, estimated_salary, pk_staff_url, is_late, late_minutes, ob_supplement_kr')
     .eq('org_id', auth.orgId)
     .gte('shift_date', from)
     .lte('shift_date', to)
-    .gt('cost_actual', 0)
+    // Include rows where either cost is finalised OR estimated salary is available
+    .or('cost_actual.gt.0,estimated_salary.gt.0')
 
   if (businessId) query = query.eq('business_id', businessId)
 
@@ -58,37 +59,60 @@ export async function GET(req: NextRequest) {
     if (!staffMap[key]) {
       staffMap[key] = {
         id: key, name: log.staff_name, group: log.staff_group,
-        hours_logged: 0, cost_actual: 0, shifts_logged: 0,
+        hours_logged: 0, cost_actual: 0, estimated_salary: 0, shifts_logged: 0,
         late_shifts: 0, avg_late_minutes: 0, ob_supplement_kr: 0,
         costgroups: {},
       }
     }
     const s = staffMap[key]
-    s.hours_logged     += log.hours_worked ?? 0
-    s.cost_actual      += log.cost_actual  ?? 0
-    s.shifts_logged    += 1
-    s.ob_supplement_kr += log.ob_supplement_kr ?? 0
+    s.hours_logged      += log.hours_worked      ?? 0
+    s.cost_actual       += log.cost_actual       ?? 0
+    s.estimated_salary  += log.estimated_salary  ?? 0
+    s.shifts_logged     += 1
+    s.ob_supplement_kr  += log.ob_supplement_kr  ?? 0
     if (log.is_late) { s.late_shifts++; s.avg_late_minutes += log.late_minutes ?? 0 }
     if (log.staff_group) s.costgroups[log.staff_group] = (s.costgroups[log.staff_group] ?? 0) + (log.cost_actual ?? 0)
   }
 
-  const staff = Object.values(staffMap).map((s: any) => ({
-    ...s,
-    hours_scheduled:  0,
-    cost_per_hour:    s.hours_logged > 0 ? Math.round(s.cost_actual / s.hours_logged) : 0,
-    variance_hours:   0,
-    avg_late_minutes: s.late_shifts > 0 ? Math.round(s.avg_late_minutes / s.late_shifts) : 0,
-  }))
+  const staff = Object.values(staffMap).map((s: any) => {
+    // For shifts where payroll isn't approved yet, cost_actual = 0 — use estimated_salary as proxy
+    const effectiveCost = s.cost_actual > 0 ? s.cost_actual : s.estimated_salary
+    // Tax multiplier: how much employer cost exceeds net salary (typically ~1.42 in Sweden)
+    const multiplier = s.estimated_salary > 0 && s.cost_actual > 0
+      ? Math.round((s.cost_actual / s.estimated_salary) * 100) / 100
+      : null
+    return {
+      ...s,
+      effective_cost:   effectiveCost,
+      cost_variance:    s.cost_actual > 0 && s.estimated_salary > 0 ? s.cost_actual - s.estimated_salary : 0,
+      tax_multiplier:   multiplier,
+      hours_scheduled:  0,
+      cost_per_hour:    s.hours_logged > 0 ? Math.round(effectiveCost / s.hours_logged) : 0,
+      variance_hours:   0,
+      avg_late_minutes: s.late_shifts > 0 ? Math.round(s.avg_late_minutes / s.late_shifts) : 0,
+    }
+  })
+
+  const totalEstimated = Math.round(staff.reduce((s, m) => s + m.estimated_salary, 0))
+  const totalActual    = Math.round(staff.reduce((s, m) => s + m.cost_actual, 0))
 
   const summary = {
-    logged_hours:         Math.round(staff.reduce((s, m) => s + m.hours_logged, 0) * 10) / 10,
-    scheduled_hours:      0,
-    staff_cost_actual:    Math.round(staff.reduce((s, m) => s + m.cost_actual, 0)),
-    staff_cost_scheduled: 0,
-    shifts_logged:        staff.reduce((s, m) => s + m.shifts_logged, 0),
-    shifts_scheduled:     0,
-    late_shifts:          staff.reduce((s, m) => s + m.late_shifts, 0),
-    shifts_with_ob:       staff.filter(m => m.ob_supplement_kr > 0).length,
+    logged_hours:           Math.round(staff.reduce((s, m) => s + m.hours_logged, 0) * 10) / 10,
+    scheduled_hours:        0,
+    staff_cost_actual:      totalActual,
+    staff_cost_estimated:   totalEstimated,
+    // Fallback: if payroll not yet approved, use estimated as effective cost
+    staff_cost_effective:   totalActual > 0 ? totalActual : totalEstimated,
+    staff_cost_scheduled:   totalEstimated, // keep for backward compat with dashboard
+    cost_variance:          totalActual > 0 && totalEstimated > 0 ? totalActual - totalEstimated : 0,
+    tax_multiplier:         totalActual > 0 && totalEstimated > 0
+      ? Math.round((totalActual / totalEstimated) * 100) / 100
+      : null,
+    shifts_logged:          staff.reduce((s, m) => s + m.shifts_logged, 0),
+    shifts_scheduled:       0,
+    late_shifts:            staff.reduce((s, m) => s + m.late_shifts, 0),
+    shifts_with_ob:         staff.filter(m => m.ob_supplement_kr > 0).length,
+    payroll_pending:        totalActual === 0 && totalEstimated > 0, // shifts not yet approved
   }
 
   return NextResponse.json({ connected: true, summary, staff })

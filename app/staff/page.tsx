@@ -79,6 +79,14 @@ export default function StaffPage() {
 
   const variance = summary ? Math.round((summary.logged_hours - summary.scheduled_hours) * 10) / 10 : 0
 
+  // Estimated vs actual salary comparison
+  const totalEstimated  = summary?.staff_cost_estimated ?? 0
+  const totalActual     = summary?.staff_cost_actual    ?? 0
+  const costVariance    = summary?.cost_variance        ?? 0
+  const taxMultiplier   = summary?.tax_multiplier       ?? null
+  const payrollPending  = summary?.payroll_pending      ?? false
+  const effectiveCost   = summary?.staff_cost_effective ?? 0
+
   // Tip data from revenue_logs (Inzii POS)
   const totalTips    = tipData?.summary?.total_tips ?? 0
   const staffCost    = summary?.staff_cost_actual ?? 0
@@ -131,17 +139,17 @@ export default function StaffPage() {
           </div>
         ) : summary && (
           <>
-            {/* KPI cards — 6 staff + 1 tips */}
+            {/* KPI cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 10, marginBottom: 16 }}>
               {[
-                { label: 'Hours logged',    value: fmtH(summary.logged_hours),          sub: `${summary.shifts_logged} shifts`,        color: '#111' },
-                { label: 'Hours scheduled', value: fmtH(summary.scheduled_hours),        sub: `${summary.shifts_scheduled} shifts`,      color: '#111' },
-                { label: 'Variance',        value: (variance >= 0 ? '+' : '') + fmtH(variance), sub: 'logged vs scheduled',               color: Math.abs(variance) > 10 ? '#dc2626' : '#15803d' },
-                { label: 'Staff cost',      value: fmtKr(summary.staff_cost_actual),     sub: `vs ${fmtKr(summary.staff_cost_scheduled)} scheduled`, color: '#111' },
-                { label: 'Late arrivals',   value: String(summary.late_shifts ?? 0),     sub: 'shifts starting late',                   color: (summary.late_shifts ?? 0) > 0 ? '#dc2626' : '#15803d' },
-                { label: 'OB shifts',       value: String(summary.shifts_with_ob ?? 0),  sub: 'unsocial hours',                          color: '#9ca3af' },
-                { label: 'Tips earned',     value: totalTips > 0 ? fmtKr(totalTips) : '—', sub: totalTips > 0 ? `${tipPct.toFixed(1)}% of staff cost` : 'No tip data', color: tipPct >= 5 ? '#15803d' : '#9ca3af' },
-                { label: 'Net staff burden', value: totalTips > 0 ? fmtKr(netBurden) : '—', sub: totalTips > 0 ? `after ${fmtKr(totalTips)} tips` : 'Connect Inzii for tips', color: '#111' },
+                { label: 'Hours logged',     value: fmtH(summary.logged_hours),     sub: `${summary.shifts_logged} shifts`,  color: '#111' },
+                { label: 'Late arrivals',    value: String(summary.late_shifts ?? 0), sub: 'shifts starting late',            color: (summary.late_shifts ?? 0) > 0 ? '#dc2626' : '#15803d' },
+                { label: 'OB shifts',        value: String(summary.shifts_with_ob ?? 0), sub: 'unsocial hours',               color: '#9ca3af' },
+                { label: 'Tips earned',      value: totalTips > 0 ? fmtKr(totalTips) : '—', sub: totalTips > 0 ? `${tipPct.toFixed(1)}% of staff cost` : 'No tip data', color: tipPct >= 5 ? '#15803d' : '#9ca3af' },
+                { label: 'Estimated salary', value: totalEstimated > 0 ? fmtKr(totalEstimated) : '—', sub: 'net pay before taxes', color: '#111' },
+                { label: 'Actual cost',      value: totalActual > 0 ? fmtKr(totalActual) : payrollPending ? 'Pending' : '—', sub: totalActual > 0 ? 'incl. employer taxes' : 'payroll not yet approved', color: '#111' },
+                { label: 'Cost variance',    value: costVariance !== 0 ? (costVariance > 0 ? '+' : '') + fmtKr(costVariance) : '—', sub: costVariance > 0 ? 'over estimate' : costVariance < 0 ? 'under estimate' : 'no variance data', color: costVariance > 0 ? '#dc2626' : costVariance < 0 ? '#15803d' : '#9ca3af' },
+                { label: 'Tax multiplier',   value: taxMultiplier ? taxMultiplier.toFixed(2) + '×' : '—', sub: taxMultiplier ? `${Math.round((taxMultiplier - 1) * 100)}% employer overhead` : 'pending payroll approval', color: '#9ca3af' },
               ].map(kpi => (
                 <div key={kpi.label} style={{ background: 'white', border: `0.5px solid ${kpi.color === '#dc2626' ? '#fecaca' : '#e5e7eb'}`, borderRadius: 12, padding: '14px 16px' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{kpi.label}</div>
@@ -156,15 +164,24 @@ export default function StaffPage() {
 
               {/* Cost panel */}
               <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 14 }}>Cost   scheduled vs actual</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Estimated vs actual cost</div>
+                  {payrollPending && (
+                    <span style={{ fontSize: 10, background: '#fef3c7', color: '#d97706', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>PAYROLL PENDING</span>
+                  )}
+                </div>
                 {[
-                  { label: 'Scheduled', value: fmtKr(summary.staff_cost_scheduled), color: '#6366f1' },
-                  { label: 'Actual',    value: fmtKr(summary.staff_cost_actual),    color: '#1a1f2e' },
-                  { label: 'Difference', value: fmtKr(Math.abs(summary.staff_cost_actual - summary.staff_cost_scheduled)),
-                    color: summary.staff_cost_actual > summary.staff_cost_scheduled ? '#dc2626' : '#15803d' },
+                  { label: 'Estimated salary',  value: totalEstimated > 0 ? fmtKr(totalEstimated) : '—',  color: '#6366f1',  hint: 'hours × hourly rate' },
+                  { label: 'Actual cost',        value: totalActual    > 0 ? fmtKr(totalActual)    : '—',  color: '#1a1f2e',  hint: 'incl. employer taxes & vacation pay' },
+                  { label: 'Variance',           value: costVariance !== 0 ? (costVariance > 0 ? '+' : '') + fmtKr(costVariance) : '—',
+                    color: costVariance > 0 ? '#dc2626' : costVariance < 0 ? '#15803d' : '#9ca3af', hint: 'actual minus estimated' },
+                  { label: 'Tax multiplier',     value: taxMultiplier ? taxMultiplier.toFixed(2) + '×' : '—', color: '#9ca3af', hint: taxMultiplier ? `${Math.round((taxMultiplier - 1) * 100)}% employer overhead` : 'available once payroll approved' },
                 ].map(row => (
-                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '0.5px solid #f3f4f6' }}>
-                    <span style={{ fontSize: 13, color: '#6b7280' }}>{row.label}</span>
+                  <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '8px 0', borderBottom: '0.5px solid #f3f4f6' }}>
+                    <div>
+                      <div style={{ fontSize: 13, color: '#6b7280' }}>{row.label}</div>
+                      <div style={{ fontSize: 10, color: '#d1d5db', marginTop: 1 }}>{row.hint}</div>
+                    </div>
                     <span style={{ fontSize: 13, fontWeight: 600, color: row.color }}>{row.value}</span>
                   </div>
                 ))}
@@ -267,7 +284,7 @@ export default function StaffPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#fafafa' }}>
-                    {['', 'Name', 'Department', 'Hours', 'Scheduled', 'Cost', 'Cost/h', 'Shifts'].map((h, i) => (
+                    {['', 'Name', 'Department', 'Hours', 'Estimated', 'Actual cost', 'Variance', 'Shifts'].map((h, i) => (
                       <th key={i} style={{ textAlign: h === 'Name' || h === 'Department' || h === '' ? 'left' : 'right', padding: '9px 12px', color: '#9ca3af', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '.06em', whiteSpace: 'nowrap' as const }}>{h}</th>
                     ))}
                   </tr>
@@ -306,17 +323,21 @@ export default function StaffPage() {
                           <td style={{ padding: '10px 12px', textAlign: 'right' as const, color: '#111', fontWeight: hasActivity ? 600 : 400 }}>
                             {hasActivity ? fmtH(s.hours_logged) : <span style={{ color: '#d1d5db' }}> </span>}
                           </td>
-                          {/* Scheduled */}
-                          <td style={{ padding: '10px 12px', textAlign: 'right' as const, color: '#6b7280' }}>
-                            {s.hours_scheduled > 0 ? fmtH(s.hours_scheduled) : <span style={{ color: '#d1d5db' }}> </span>}
+                          {/* Estimated salary */}
+                          <td style={{ padding: '10px 12px', textAlign: 'right' as const, color: '#6366f1' }}>
+                            {s.estimated_salary > 0 ? fmtKr(s.estimated_salary) : <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
-                          {/* Cost */}
+                          {/* Actual cost */}
                           <td style={{ padding: '10px 12px', textAlign: 'right' as const, fontWeight: 700, color: hasActivity ? '#111' : '#d1d5db' }}>
-                            {hasActivity ? fmtKr(s.cost_actual) : ' '}
+                            {s.cost_actual > 0 ? fmtKr(s.cost_actual) : s.estimated_salary > 0 ? <span style={{ color: '#9ca3af', fontSize: 11 }}>pending</span> : '—'}
                           </td>
-                          {/* Cost/h */}
-                          <td style={{ padding: '10px 12px', textAlign: 'right' as const, color: '#6b7280' }}>
-                            {s.cost_per_hour > 0 ? fmtKr(s.cost_per_hour) : <span style={{ color: '#d1d5db' }}> </span>}
+                          {/* Variance */}
+                          <td style={{ padding: '10px 12px', textAlign: 'right' as const }}>
+                            {s.cost_variance !== 0
+                              ? <span style={{ fontSize: 12, fontWeight: 600, color: s.cost_variance > 0 ? '#dc2626' : '#15803d' }}>
+                                  {s.cost_variance > 0 ? '+' : ''}{fmtKr(s.cost_variance)}
+                                </span>
+                              : <span style={{ color: '#d1d5db' }}>—</span>}
                           </td>
                           {/* Shifts */}
                           <td style={{ padding: '10px 12px', textAlign: 'right' as const, color: '#6b7280' }}>
@@ -329,6 +350,24 @@ export default function StaffPage() {
                           <tr key={`exp-${s.id}`}>
                             <td colSpan={8} style={{ background: 'white', borderTop: '0.5px solid #e5e7eb', borderBottom: '0.5px solid #e5e7eb', padding: 0 }}>
                               <div style={{ padding: '14px 20px 14px 48px' }}>
+
+                                {/* Salary breakdown */}
+                                {(s.estimated_salary > 0 || s.cost_actual > 0) && (
+                                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12, padding: '10px 14px', background: '#f9fafb', borderRadius: 8 }}>
+                                    {[
+                                      { label: 'Estimated salary', value: s.estimated_salary > 0 ? fmtKr(s.estimated_salary) : '—', color: '#6366f1', hint: 'hours × rate' },
+                                      { label: 'Actual cost',      value: s.cost_actual > 0 ? fmtKr(s.cost_actual) : 'Pending',      color: s.cost_actual > 0 ? '#111' : '#9ca3af', hint: 'incl. taxes' },
+                                      { label: 'Variance',         value: s.cost_variance !== 0 ? (s.cost_variance > 0 ? '+' : '') + fmtKr(s.cost_variance) : '—', color: s.cost_variance > 0 ? '#dc2626' : s.cost_variance < 0 ? '#15803d' : '#9ca3af', hint: 'actual − estimated' },
+                                      { label: 'Tax multiplier',   value: s.tax_multiplier ? s.tax_multiplier.toFixed(2) + '×' : '—', color: '#9ca3af', hint: s.tax_multiplier ? `${Math.round((s.tax_multiplier - 1) * 100)}% overhead` : 'pending' },
+                                    ].map(r => (
+                                      <div key={r.label}>
+                                        <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 2 }}>{r.label}</div>
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: r.color }}>{r.value}</div>
+                                        <div style={{ fontSize: 10, color: '#d1d5db' }}>{r.hint}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
 
                                 {/* Late arrival warning */}
                                 {(s.late_shifts ?? 0) > 0 && (
@@ -357,12 +396,9 @@ export default function StaffPage() {
                                 ) : (
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 12 }}>
                                     {[
-                                      { label: 'Hours logged',   value: fmtH(s.hours_logged) },
-                                      { label: 'Cost actual',    value: fmtKr(s.cost_actual) },
-                                      { label: 'Cost/hour',      value: s.cost_per_hour > 0 ? fmtKr(s.cost_per_hour) : ' ' },
-                                      { label: 'Shifts logged',  value: String(s.shifts_logged) },
-                                      { label: 'Scheduled hrs',  value: fmtH(s.hours_scheduled) },
-                                      { label: 'Variance',       value: fmtH(s.variance_hours) },
+                                      { label: 'Hours logged',  value: fmtH(s.hours_logged) },
+                                      { label: 'Cost/hour',     value: s.cost_per_hour > 0 ? fmtKr(s.cost_per_hour) : '—' },
+                                      { label: 'Shifts logged', value: String(s.shifts_logged) },
                                     ].map(r => (
                                       <div key={r.label}>
                                         <div style={{ color: '#9ca3af', marginBottom: 2 }}>{r.label}</div>
@@ -385,8 +421,11 @@ export default function StaffPage() {
                   )}
                 </tbody>
               </table>
-              <div style={{ padding: '10px 20px', borderTop: '0.5px solid #f3f4f6', fontSize: 11, color: '#9ca3af' }}>
-                {sorted.length} staff - {sorted.reduce((s: number, m: any) => s + m.cost_actual, 0) > 0 ? fmtKr(sorted.reduce((s: number, m: any) => s + m.cost_actual, 0)) + ' total cost' : 'no cost data for this period'}
+              <div style={{ padding: '10px 20px', borderTop: '0.5px solid #f3f4f6', fontSize: 11, color: '#9ca3af', display: 'flex', gap: 16 }}>
+                <span>{sorted.length} staff</span>
+                {totalEstimated > 0 && <span>Estimated: <strong style={{ color: '#6366f1' }}>{fmtKr(totalEstimated)}</strong></span>}
+                {totalActual > 0 && <span>Actual: <strong style={{ color: '#111' }}>{fmtKr(totalActual)}</strong></span>}
+                {taxMultiplier && <span>Multiplier: <strong style={{ color: '#9ca3af' }}>{taxMultiplier.toFixed(2)}×</strong></span>}
               </div>
             </div>
           </>
@@ -403,6 +442,10 @@ export default function StaffPage() {
           `Variance (logged vs scheduled): ${fmtH(variance)}`,
           `Total staff cost: ${fmtKr(summary.staff_cost_actual)}`,
           `Shifts logged: ${summary.shifts_logged}`,
+          totalEstimated > 0 ? `Estimated salary: ${fmtKr(totalEstimated)} (net pay before taxes)` : '',
+          totalActual > 0 ? `Actual employer cost: ${fmtKr(totalActual)} (incl. taxes & vacation pay)` : payrollPending ? 'Payroll not yet approved — using estimated salary' : '',
+          taxMultiplier ? `Tax multiplier: ${taxMultiplier.toFixed(2)}× (${Math.round((taxMultiplier - 1) * 100)}% employer overhead)` : '',
+          costVariance !== 0 ? `Cost variance: ${costVariance > 0 ? '+' : ''}${fmtKr(costVariance)} vs estimate` : '',
           totalTips > 0 ? `Tips earned this period: ${fmtKr(totalTips)} (${tipPct.toFixed(1)}% of staff cost, avg ${fmtKr(avgDailyTip)}/day)` : 'No tip data available',
           totalTips > 0 ? `Net staff cost after tips: ${fmtKr(netBurden)}` : '',
           sorted.length > 0 ? `Top staff by cost:\n${sorted.slice(0,10).map((s: any) => `  ${s.name} (${s.group}): ${fmtKr(s.cost_actual)}, ${fmtH(s.hours_worked)}`).join('\n')}` : 'No staff data',
