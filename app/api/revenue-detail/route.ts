@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 
   const query = db
     .from('revenue_logs')
-    .select('revenue_date, revenue, covers, tip_revenue, takeaway_revenue, dine_in_revenue, revenue_per_cover, transactions, provider')
+    .select('revenue_date, revenue, covers, tip_revenue, takeaway_revenue, dine_in_revenue, food_revenue, bev_revenue, revenue_per_cover, transactions, provider')
     .eq('org_id', auth.orgId)
     .gte('revenue_date', from)
     .lte('revenue_date', to)
@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
     if (!byDate[d]) byDate[d] = {
       date: d, revenue: 0, covers: 0,
       tip_revenue: 0, takeaway_revenue: 0, dine_in_revenue: 0,
+      food_revenue: 0, bev_revenue: 0,
       transactions: 0, providers: []
     }
     byDate[d].revenue          += Number(row.revenue          ?? 0)
@@ -60,6 +61,8 @@ export async function GET(req: NextRequest) {
     byDate[d].tip_revenue      += Number(row.tip_revenue      ?? 0)
     byDate[d].takeaway_revenue += Number(row.takeaway_revenue ?? 0)
     byDate[d].dine_in_revenue  += Number(row.dine_in_revenue  ?? 0)
+    byDate[d].food_revenue     += Number(row.food_revenue     ?? 0)
+    byDate[d].bev_revenue      += Number(row.bev_revenue      ?? 0)
     byDate[d].transactions     += Number(row.transactions     ?? 0)
     if (!byDate[d].providers.includes(row.provider)) byDate[d].providers.push(row.provider)
   }
@@ -74,6 +77,7 @@ export async function GET(req: NextRequest) {
     const row = existing ?? {
       date: dateStr, revenue: 0, covers: 0,
       tip_revenue: 0, takeaway_revenue: 0, dine_in_revenue: 0,
+      food_revenue: 0, bev_revenue: 0,
       transactions: 0, providers: []
     }
     allDays.push({
@@ -88,14 +92,16 @@ export async function GET(req: NextRequest) {
 
   // Summary totals
   const summary = {
-    total_revenue:    rows.reduce((s, r) => s + r.revenue, 0),
-    total_covers:     rows.reduce((s, r) => s + r.covers, 0),
-    total_tips:       rows.reduce((s, r) => s + r.tip_revenue, 0),
-    total_takeaway:   rows.reduce((s, r) => s + r.takeaway_revenue, 0),
-    total_dine_in:    rows.reduce((s, r) => s + r.dine_in_revenue, 0),
-    days_with_data:   rows.length,
-    avg_daily_rev:    rows.length > 0 ? Math.round(rows.reduce((s,r) => s+r.revenue, 0) / rows.length) : 0,
-    avg_rpc:          rows.filter(r => r.covers > 0).length > 0
+    total_revenue:      rows.reduce((s, r) => s + r.revenue, 0),
+    total_covers:       rows.reduce((s, r) => s + r.covers, 0),
+    total_tips:         rows.reduce((s, r) => s + r.tip_revenue, 0),
+    total_takeaway:     rows.reduce((s, r) => s + r.takeaway_revenue, 0),
+    total_dine_in:      rows.reduce((s, r) => s + r.dine_in_revenue, 0),
+    total_food_revenue: rows.reduce((s, r) => s + (r.food_revenue ?? 0), 0),
+    total_bev_revenue:  rows.reduce((s, r) => s + (r.bev_revenue  ?? 0), 0),
+    days_with_data:     rows.length,
+    avg_daily_rev:      rows.length > 0 ? Math.round(rows.reduce((s,r) => s+r.revenue, 0) / rows.length) : 0,
+    avg_rpc:            rows.filter(r => r.covers > 0).length > 0
       ? Math.round(rows.filter(r => r.covers > 0).reduce((s,r) => s + r.revenue_per_cover, 0) / rows.filter(r => r.covers > 0).length)
       : 0,
   }

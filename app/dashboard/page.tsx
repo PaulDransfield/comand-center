@@ -59,6 +59,7 @@ export default function DashboardPage() {
   const [staffData,    setStaffData]    = useState<StaffSummary | null>(null)
   const [forecasts,    setForecasts]    = useState<Forecast[]>([])
   const [deptData,     setDeptData]     = useState<any>(null)
+  const [posData,      setPosData]      = useState<any>(null)
   const [loading,      setLoading]      = useState(true)
   const [greeting,     setGreeting]     = useState('Good morning')
   const [lastSync,     setLastSync]     = useState<string | null>(null)
@@ -106,7 +107,8 @@ export default function DashboardPage() {
       fetch(`/api/forecast?business_id=${bizId}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/departments?year=${year}&business_id=${bizId}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/staff?from=${fromDate}&to=${toDate}&business_id=${bizId}`).then(r => r.json()).catch(() => ({})),
-    ]).then(([trackerData, forecastData, deptRes, staffRes]) => {
+      fetch(`/api/revenue-detail?business_id=${bizId}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => null),
+    ]).then(([trackerData, forecastData, deptRes, staffRes, revDetail]) => {
       if (Array.isArray(trackerData?.rows)) setChartData(trackerData.rows)
       // If no tracker data and no staff data, likely still being set up
       const hasAnyData = (trackerData?.rows?.length > 0) || (staffRes?.summary?.shifts_logged > 0)
@@ -114,6 +116,7 @@ export default function DashboardPage() {
       if (Array.isArray(forecastData?.forecasts)) setForecasts(forecastData.forecasts)
       if (deptRes?.totals) setDeptData(deptRes)
       if (staffRes?.summary) setStaffData(staffRes.summary)
+      if (revDetail?.summary) setPosData(revDetail.summary)
       setLoading(false)
     }).catch(() => setLoading(false))
   }, [selected])
@@ -121,6 +124,21 @@ export default function DashboardPage() {
   const nextForecast = forecasts.find(f => f.period_month === month + 1) ?? forecasts.find(f => f.period_month > month)
   const thisMonthTracker = chartData.find(r => r.period_month === month)
   const lastMonthTracker = chartData.find(r => r.period_month === month - 1)
+
+  // Live POS channel data for this month
+  const liveRevenue  = posData?.total_revenue    ?? 0
+  const dineIn       = posData?.total_dine_in    ?? 0
+  const takeaway     = posData?.total_takeaway   ?? 0
+  const foodRevenue  = posData?.total_food_revenue ?? 0
+  const bevRevenue   = posData?.total_bev_revenue  ?? 0
+  const hasChannels  = dineIn > 0 || takeaway > 0
+  const hasFoodBev   = foodRevenue > 0 || bevRevenue > 0
+
+  // Live food cost % — uses POS revenue (updates daily) rather than monthly tracker entry
+  const trackerFoodCost = (thisMonthTracker as any)?.food_cost ?? selected?.food_cost ?? 0
+  const liveFoodCostPct = trackerFoodCost > 0 && liveRevenue > 0
+    ? (trackerFoodCost / liveRevenue * 100)
+    : 0
 
   const ytdRevenue = chartData.reduce((s, r) => s + Number(r.revenue ?? 0), 0)
   const ytdProfit  = chartData.reduce((s, r) => s + Number(r.net_profit ?? 0), 0)
@@ -227,10 +245,12 @@ export default function DashboardPage() {
               />
               <KpiCard
                 label="Food cost"
-                value={fmtPct(selected.foodPct)}
-                sub={`Target ${fmtPct(selected.target_food_pct)}`}
-                ok={selected.foodPct <= selected.target_food_pct || selected.foodPct === 0}
-                delta={selected.foodPct <= selected.target_food_pct ? '+ On target' : '- Over target'}
+                value={liveFoodCostPct > 0 ? fmtPct(liveFoodCostPct) : fmtPct(selected.foodPct)}
+                sub={liveFoodCostPct > 0 ? `Live · target ${fmtPct(selected.target_food_pct)}` : `Target ${fmtPct(selected.target_food_pct)}`}
+                ok={(liveFoodCostPct > 0 ? liveFoodCostPct : selected.foodPct) <= selected.target_food_pct || selected.foodPct === 0}
+                delta={liveFoodCostPct > 0
+                  ? (liveFoodCostPct <= selected.target_food_pct ? '+ On target' : '- Over target')
+                  : (selected.foodPct <= selected.target_food_pct ? '+ On target' : '- Over target')}
                 href="/food-bev"
               />
               <KpiCard
@@ -341,6 +361,87 @@ export default function DashboardPage() {
                 ))}
               </div>
             </div>
+
+            {/* Row 2.5 — Live channel breakdown (only shown when POS provides channel data) */}
+            {(hasChannels || hasFoodBev) && (
+              <div style={{ display: 'grid', gridTemplateColumns: hasChannels && hasFoodBev ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 12 }}>
+
+                {/* Dine-in vs Takeaway */}
+                {hasChannels && (
+                  <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', border: '0.5px solid #e5e7eb' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Sales channels — {MONTHS[month-1]}</div>
+                      <a href="/revenue" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none' }}>Full detail →</a>
+                    </div>
+                    {/* Stacked bar */}
+                    <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', marginBottom: 12, background: '#f3f4f6' }}>
+                      {liveRevenue > 0 && (
+                        <>
+                          {dineIn > 0 && <div style={{ width: `${(dineIn / liveRevenue) * 100}%`, background: '#1a1f2e', transition: 'width 0.4s' }} />}
+                          {takeaway > 0 && <div style={{ width: `${(takeaway / liveRevenue) * 100}%`, background: '#6366f1', transition: 'width 0.4s' }} />}
+                        </>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {[
+                        { color: '#1a1f2e', label: 'Dine-in',  value: dineIn,    pct: liveRevenue > 0 ? Math.round(dineIn / liveRevenue * 100) : 0 },
+                        { color: '#6366f1', label: 'Takeaway', value: takeaway,  pct: liveRevenue > 0 ? Math.round(takeaway / liveRevenue * 100) : 0 },
+                      ].map(ch => (
+                        <div key={ch.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: 2, background: ch.color, marginTop: 3, flexShrink: 0 }} />
+                          <div>
+                            <div style={{ fontSize: 11, color: '#9ca3af' }}>{ch.label}</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>{fmtKr(ch.value)}</div>
+                            <div style={{ fontSize: 11, color: '#9ca3af' }}>{ch.pct}% of revenue</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Food vs Beverage */}
+                {hasFoodBev && (
+                  <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', border: '0.5px solid #e5e7eb' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Food & beverage — {MONTHS[month-1]}</div>
+                      <a href="/revenue" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none' }}>Full detail →</a>
+                    </div>
+                    {/* Stacked bar */}
+                    <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', marginBottom: 12, background: '#f3f4f6' }}>
+                      {liveRevenue > 0 && (
+                        <>
+                          {foodRevenue > 0 && <div style={{ width: `${(foodRevenue / liveRevenue) * 100}%`, background: '#f59e0b', transition: 'width 0.4s' }} />}
+                          {bevRevenue > 0 && <div style={{ width: `${(bevRevenue / liveRevenue) * 100}%`, background: '#10b981', transition: 'width 0.4s' }} />}
+                        </>
+                      )}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      {[
+                        { color: '#f59e0b', label: 'Food',      value: foodRevenue, pct: liveRevenue > 0 ? Math.round(foodRevenue / liveRevenue * 100) : 0 },
+                        { color: '#10b981', label: 'Beverage',  value: bevRevenue,  pct: liveRevenue > 0 ? Math.round(bevRevenue  / liveRevenue * 100) : 0 },
+                      ].map(ch => (
+                        <div key={ch.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: 2, background: ch.color, marginTop: 3, flexShrink: 0 }} />
+                          <div>
+                            <div style={{ fontSize: 11, color: '#9ca3af' }}>{ch.label}</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>{fmtKr(ch.value)}</div>
+                            <div style={{ fontSize: 11, color: '#9ca3af' }}>{ch.pct}% of revenue</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Live food cost % if tracker data available */}
+                    {liveFoodCostPct > 0 && (
+                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '0.5px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 12, color: '#6b7280' }}>Food cost % <span style={{ fontSize: 10, background: '#f0fdf4', color: '#15803d', padding: '1px 5px', borderRadius: 4, fontWeight: 600, marginLeft: 4 }}>LIVE</span></span>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: liveFoodCostPct <= selected!.target_food_pct ? '#15803d' : '#dc2626' }}>{fmtPct(liveFoodCostPct)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Row 3 — Revenue chart + YTD summary */}
             <div className="layout-chart-side" style={{ marginBottom: 12 }}>

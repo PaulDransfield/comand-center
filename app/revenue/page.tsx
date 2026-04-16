@@ -257,7 +257,7 @@ export default function RevenuePage() {
                 { label: 'Total revenue',   value: fmtKr(rev.total_revenue ?? 0),  sub: `${rev.days_with_data ?? 0} days`, color: '#111' },
                 { label: 'Dine-in',         value: fmtKr(rev.total_dine_in ?? 0),  sub: rev.total_revenue > 0 ? Math.round((rev.total_dine_in / rev.total_revenue) * 100) + '%' : '—', color: '#1a1f2e' },
                 { label: 'Takeaway',        value: fmtKr(rev.total_takeaway ?? 0), sub: rev.total_revenue > 0 ? Math.round((rev.total_takeaway / rev.total_revenue) * 100) + '%' : '—', color: '#6366f1' },
-                { label: 'Tips',            value: fmtKr(rev.total_tips ?? 0),     sub: rev.total_revenue > 0 ? Math.round((rev.total_tips / rev.total_revenue) * 100) + '% of revenue' : '—', color: '#10b981' },
+                { label: 'Food revenue',    value: fmtKr(rev.total_food_revenue ?? 0), sub: rev.total_revenue > 0 && rev.total_food_revenue > 0 ? Math.round(((rev.total_food_revenue ?? 0) / rev.total_revenue) * 100) + '% of sales' : '—', color: '#f59e0b' },
                 { label: 'Avg per cover',   value: rev.avg_rpc > 0 ? fmtKr(rev.avg_rpc) : '—',  sub: rev.total_covers > 0 ? `${rev.total_covers} total covers` : 'Not reported by POS', color: rev.avg_rpc > 0 ? '#111' : '#9ca3af' },
               ].map(k => (
                 <div key={k.label} style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '14px 16px' }}>
@@ -268,32 +268,66 @@ export default function RevenuePage() {
               ))}
             </div>
 
-            {/* Dine-in vs takeaway visual */}
-            {(rev.total_dine_in > 0 || rev.total_takeaway > 0) && (
-              <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 12 }}>Dine-in vs takeaway</div>
-                <div style={{ display: 'flex', height: 20, borderRadius: 12, overflow: 'hidden', marginBottom: 10 }}>
-                  {rev.total_revenue > 0 && (
-                    <>
-                      <div style={{ width: `${(rev.total_dine_in / rev.total_revenue) * 100}%`, background: '#1a1f2e' }} />
-                      <div style={{ width: `${(rev.total_takeaway / rev.total_revenue) * 100}%`, background: '#6366f1' }} />
-                      <div style={{ flex: 1, background: '#f3f4f6' }} />
-                    </>
-                  )}
-                </div>
-                <div style={{ display: 'flex', gap: 20, fontSize: 12 }}>
-                  {[
-                    { color: '#1a1f2e', label: 'Dine-in',   value: fmtKr(rev.total_dine_in ?? 0) },
-                    { color: '#6366f1', label: 'Takeaway',  value: fmtKr(rev.total_takeaway ?? 0) },
-                    { color: '#10b981', label: 'Tips',       value: fmtKr(rev.total_tips ?? 0) },
-                  ].map(l => (
-                    <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
-                      <span style={{ color: '#6b7280' }}>{l.label}</span>
-                      <span style={{ fontWeight: 600, color: '#111' }}>{l.value}</span>
+            {/* Channel split visuals */}
+            {(rev.total_dine_in > 0 || rev.total_takeaway > 0 || (rev.total_food_revenue ?? 0) > 0 || (rev.total_bev_revenue ?? 0) > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: (rev.total_dine_in > 0 || rev.total_takeaway > 0) && ((rev.total_food_revenue ?? 0) > 0 || (rev.total_bev_revenue ?? 0) > 0) ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 16 }}>
+
+                {/* Dine-in vs takeaway */}
+                {(rev.total_dine_in > 0 || rev.total_takeaway > 0) && (
+                  <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 12 }}>Dine-in vs takeaway</div>
+                    <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', marginBottom: 10, background: '#f3f4f6' }}>
+                      {rev.total_revenue > 0 && (
+                        <>
+                          {rev.total_dine_in > 0 && <div style={{ width: `${(rev.total_dine_in / rev.total_revenue) * 100}%`, background: '#1a1f2e' }} />}
+                          {rev.total_takeaway > 0 && <div style={{ width: `${(rev.total_takeaway / rev.total_revenue) * 100}%`, background: '#6366f1' }} />}
+                        </>
+                      )}
                     </div>
-                  ))}
-                </div>
+                    <div style={{ display: 'flex', gap: 20, fontSize: 12 }}>
+                      {[
+                        { color: '#1a1f2e', label: 'Dine-in',  value: fmtKr(rev.total_dine_in ?? 0),  pct: rev.total_revenue > 0 ? Math.round((rev.total_dine_in / rev.total_revenue) * 100) : 0 },
+                        { color: '#6366f1', label: 'Takeaway', value: fmtKr(rev.total_takeaway ?? 0), pct: rev.total_revenue > 0 ? Math.round((rev.total_takeaway / rev.total_revenue) * 100) : 0 },
+                        { color: '#10b981', label: 'Tips',     value: fmtKr(rev.total_tips ?? 0),     pct: null },
+                      ].map(l => (
+                        <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
+                          <span style={{ color: '#6b7280' }}>{l.label}</span>
+                          <span style={{ fontWeight: 600, color: '#111' }}>{l.value}</span>
+                          {l.pct !== null && l.pct > 0 && <span style={{ color: '#9ca3af' }}>({l.pct}%)</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Food vs Beverage */}
+                {((rev.total_food_revenue ?? 0) > 0 || (rev.total_bev_revenue ?? 0) > 0) && (
+                  <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 12 }}>Food vs beverage</div>
+                    <div style={{ display: 'flex', height: 16, borderRadius: 8, overflow: 'hidden', marginBottom: 10, background: '#f3f4f6' }}>
+                      {rev.total_revenue > 0 && (
+                        <>
+                          {(rev.total_food_revenue ?? 0) > 0 && <div style={{ width: `${((rev.total_food_revenue ?? 0) / rev.total_revenue) * 100}%`, background: '#f59e0b' }} />}
+                          {(rev.total_bev_revenue  ?? 0) > 0 && <div style={{ width: `${((rev.total_bev_revenue  ?? 0) / rev.total_revenue) * 100}%`, background: '#10b981' }} />}
+                        </>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 20, fontSize: 12 }}>
+                      {[
+                        { color: '#f59e0b', label: 'Food',     value: fmtKr(rev.total_food_revenue ?? 0), pct: rev.total_revenue > 0 ? Math.round(((rev.total_food_revenue ?? 0) / rev.total_revenue) * 100) : 0 },
+                        { color: '#10b981', label: 'Beverage', value: fmtKr(rev.total_bev_revenue  ?? 0), pct: rev.total_revenue > 0 ? Math.round(((rev.total_bev_revenue  ?? 0) / rev.total_revenue) * 100) : 0 },
+                      ].map(l => (
+                        <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
+                          <span style={{ color: '#6b7280' }}>{l.label}</span>
+                          <span style={{ fontWeight: 600, color: '#111' }}>{l.value}</span>
+                          {l.pct > 0 && <span style={{ color: '#9ca3af' }}>({l.pct}%)</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
