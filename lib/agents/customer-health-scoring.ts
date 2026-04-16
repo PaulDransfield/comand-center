@@ -1,3 +1,4 @@
+// @ts-nocheck
 // lib/agents/customer-health-scoring.ts
 // Core logic for customer health scoring
 

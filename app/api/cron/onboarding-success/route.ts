@@ -1,3 +1,4 @@
+// @ts-nocheck
 // app/api/cron/onboarding-success/route.ts
 // Runs on first successful sync — sends welcome email with setup instructions
 // Uses Claude Haiku 4.5

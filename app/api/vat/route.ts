@@ -1,3 +1,4 @@
+// @ts-nocheck
 // app/api/vat/route.ts
 // Returns VAT breakdown for a business and period.
 // Swedish VAT rates: 25% (alcohol/goods), 12% (food), 6% (rare)

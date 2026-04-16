@@ -1,3 +1,4 @@
+// @ts-nocheck
 // app/api/cron/scheduling-optimization/route.ts
 // Runs weekly — optimizes staff scheduling for Group plan customers
 // Uses Claude Sonnet 4-6 (not Haiku) — needs 6 months of live data

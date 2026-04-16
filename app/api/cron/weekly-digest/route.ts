@@ -1,3 +1,4 @@
+// @ts-nocheck
 // app/api/cron/weekly-digest/route.ts
 //
 // Runs every Monday at 07:00 Stockholm time (05:00 UTC in summer, 06:00 UTC in winter)

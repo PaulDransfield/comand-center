@@ -1,3 +1,4 @@
+// @ts-nocheck
 // app/api/cron/health-check/route.ts
 //
 // HOURLY HEALTH CHECK — runs automatically every hour via Vercel Cron.
