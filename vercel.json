@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/api-discovery-enhanced",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/customer-health-scoring",
+      "schedule": "0 8 * * 1"
     }
   ]
 }

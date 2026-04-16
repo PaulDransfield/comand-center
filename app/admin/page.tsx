@@ -26,6 +26,7 @@ export default function AdminPage() {
   const [modal,        setModal]        = useState<any>(null)
   const [syncModal,    setSyncModal]    = useState<any>(null)
   const [inziiModal,   setInziiModal]   = useState<any>(null)
+  const [deptModal,    setDeptModal]    = useState<any>(null)
   const [syncLogs,     setSyncLogs]     = useState<any[]>([])
   const [triggering,   setTriggering]   = useState(false)
   const [triggerMsg,   setTriggerMsg]   = useState('')
@@ -160,7 +161,7 @@ export default function AdminPage() {
               Setup requests ({setupRequests.length})
             </div>
             {setupRequests.map(org => (
-              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} highlight />
+              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} onSetupDepts={(biz: any) => setDeptModal({ org, biz })} highlight />
             ))}
           </div>
         )}
@@ -172,7 +173,7 @@ export default function AdminPage() {
               Connected ({connected.length})
             </div>
             {connected.map(org => (
-              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} />
+              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} onSetupDepts={(biz: any) => setDeptModal({ org, biz })} />
             ))}
           </div>
         )}
@@ -184,7 +185,7 @@ export default function AdminPage() {
               No connections yet ({pending.length})
             </div>
             {pending.map(org => (
-              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} />
+              <OrgCard key={org.id} org={org} onConnect={(biz: any) => setModal({ org, biz })} onSync={setSyncModal} onAddInzii={(biz: any) => setInziiModal({ org, biz })} onSetupDepts={(biz: any) => setDeptModal({ org, biz })} />
             ))}
           </div>
         )}
@@ -263,6 +264,15 @@ export default function AdminPage() {
         />
       )}
 
+      {/* Department setup modal */}
+      {deptModal && (
+        <DeptSetupModal
+          org={deptModal.org}
+          biz={deptModal.biz}
+          onClose={() => { setDeptModal(null); loadOrgs() }}
+        />
+      )}
+
       {/* Sync modal */}
       {syncModal && (
         <SyncModal
@@ -274,7 +284,7 @@ export default function AdminPage() {
   )
 }
 
-function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
+function OrgCard({ org, onConnect, onSync, onAddInzii, onSetupDepts, highlight }: any) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -383,12 +393,22 @@ function OrgCard({ org, onConnect, onSync, onAddInzii, highlight }: any) {
                         ))}
                       </div>
                     )}
-                    <button
-                      onClick={() => onAddInzii({ ...biz, _org: org })}
-                      style={{ fontSize: 11, padding: '4px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
-                    >
-                      + Add department
-                    </button>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                      <button
+                        onClick={() => onAddInzii({ ...biz, _org: org })}
+                        style={{ fontSize: 11, padding: '4px 12px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        + Add department
+                      </button>
+                      {depts.length > 0 && (
+                        <button
+                          onClick={() => onSetupDepts?.({ ...biz, _org: org })}
+                          style={{ fontSize: 11, padding: '4px 12px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+                        >
+                          Setup departments →
+                        </button>
+                      )}
+                    </div>
                   </div>
                 )
               })()}
@@ -676,6 +696,96 @@ function InziiDeptModal({ org, biz, onRefresh, onClose }: any) {
               </button>
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── DeptSetupModal ────────────────────────────────────────────────────────────
+// Auto-creates department records from existing Inzii integrations for a business.
+// Shows the resulting list so the admin can verify before navigating to /departments.
+function DeptSetupModal({ org, biz, onClose }: any) {
+  const router = useRouter()
+  const [loading,  setLoading]  = useState(true)
+  const [done,     setDone]     = useState(false)
+  const [depts,    setDepts]    = useState<any[]>([])
+  const [error,    setError]    = useState('')
+
+  async function setup() {
+    setLoading(true); setError('')
+    try {
+      const res  = await fetch('/api/admin/departments', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: org.id, business_id: biz.id, action: 'auto' }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Failed to setup departments')
+      setDepts(data.departments ?? [])
+      setDone(true)
+    } catch (e: any) { setError(e.message) }
+    setLoading(false)
+  }
+
+  // Auto-run on mount
+  useEffect(() => { setup() }, [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 24 }}>
+      <div style={{ background: 'white', borderRadius: 16, padding: 32, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1f2e', marginBottom: 4 }}>Setup Departments</div>
+        <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>{org.name} — {biz.name}</div>
+
+        {loading && (
+          <div style={{ textAlign: 'center' as const, padding: '24px 0', color: '#9ca3af', fontSize: 13 }}>
+            Creating departments from Inzii integrations...
+          </div>
+        )}
+
+        {error && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#dc2626', marginBottom: 16 }}>
+            {error}
+          </div>
+        )}
+
+        {done && depts.length > 0 && (
+          <>
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#15803d', marginBottom: 16 }}>
+              {depts.length} department{depts.length !== 1 ? 's' : ''} created successfully
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, marginBottom: 20 }}>
+              {depts.map((d: any) => (
+                <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#f9fafb', borderRadius: 8, border: '0.5px solid #e5e7eb' }}>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', background: d.color, flexShrink: 0 }} />
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{d.name}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => { onClose(); router.push('/departments') }}
+                style={{ flex: 1, padding: 11, background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+                View Departments →
+              </button>
+              <button onClick={onClose}
+                style={{ padding: '11px 18px', background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer', color: '#374151' }}>
+                Close
+              </button>
+            </div>
+          </>
+        )}
+
+        {!loading && !done && !error && (
+          <div style={{ textAlign: 'center' as const, padding: '24px 0', color: '#9ca3af', fontSize: 13 }}>
+            No Inzii departments found. Add at least one Inzii department first using + Add department.
+          </div>
+        )}
+
+        {!loading && error && (
+          <button onClick={onClose}
+            style={{ width: '100%', marginTop: 12, padding: 11, background: '#f3f4f6', border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer', color: '#374151' }}>
+            Close
+          </button>
         )}
       </div>
     </div>

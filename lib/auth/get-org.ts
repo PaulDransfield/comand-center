@@ -15,6 +15,23 @@ export interface OrgContext {
 }
 
 export async function getOrgFromRequest(request: Request): Promise<OrgContext | null> {
+  // DEVELOPMENT MODE: Return mock authentication for local development
+  if (process.env.NODE_ENV === 'development' || 
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('mock-supabase-url-for-development')) {
+    console.log('DEVELOPMENT MODE: Using mock authentication')
+    
+    // Check for mock user header or return default mock user
+    const mockUserId = request.headers.get('x-mock-user-id') || 'mock-user-id-123'
+    const mockOrgId = request.headers.get('x-mock-org-id') || 'mock-org-id-456'
+    
+    return {
+      userId: mockUserId,
+      orgId: mockOrgId,
+      role: 'owner' as OrgContext['role'],
+      plan: 'pro' as OrgContext['plan'],
+    }
+  }
+
   const supabase = createAdminClient()
   let userId: string | null = null
 

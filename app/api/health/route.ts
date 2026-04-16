@@ -10,6 +10,21 @@ import { NextResponse }    from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 
 export async function GET() {
+  // DEVELOPMENT MODE: Return mock response for local development
+  if (process.env.NODE_ENV === 'development' || 
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('mock-supabase-url-for-development')) {
+    console.log('DEVELOPMENT MODE: Health check returning mock response')
+    
+    return NextResponse.json({
+      status:    'ok',
+      database:  'connected (mock)',
+      orgs:      0,
+      timestamp: new Date().toISOString(),
+      version:   process.env.npm_package_version ?? '0.1.0',
+      mode:      'development-mock'
+    })
+  }
+
   const supabase = createAdminClient()
 
   // Try to count rows in the organisations table

@@ -136,6 +136,31 @@ ALTER TABLE integrations ADD COLUMN IF NOT EXISTS onboarding_email_sent BOOLEAN 
 
 ---
 
+### M006 — 2026-04-16 — Session 8 — Departments table
+**Run**: ⏳ **PENDING** — Run in Supabase SQL Editor before using /departments page
+
+```sql
+-- Department definitions — one row per department per business
+-- Maps department name → used as PK staff_group AND Inzii integration key
+CREATE TABLE IF NOT EXISTS departments (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id      UUID NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+  business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  color       TEXT NOT NULL DEFAULT '#6366f1',
+  sort_order  INT  NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(business_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_departments_org ON departments(org_id);
+CREATE INDEX IF NOT EXISTS idx_departments_biz ON departments(business_id);
+```
+
+**After running SQL**: Go to Admin panel → expand Vero Italiano → click "Setup departments →" button
+This auto-creates department records from the existing Inzii integrations.
+
+---
+
 ### M005 — 2026-04-15 — Session 6 — Inzii POS department support
 **Run**: 2026-04-15
 **Status**: ✅ Success (department column) / ⏳ PENDING (constraint fix)

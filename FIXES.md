@@ -209,6 +209,96 @@ max_tokens: MAX_TOKENS.SCHEDULING, // Doesn't exist
 
 ---
 
+## 7. New AI Agents Planned — Session 7 (2026-04-16)
+
+**10 new AI agents planned for CommandCenter expansion:**
+
+### 🎯 High Priority (Admin + Customer Value)
+7. **Customer Health Scoring Agent** (`app/api/cron/customer-health-scoring/route.ts`)
+   - Purpose: Score customer health based on usage, data completeness, engagement
+   - Target: Admin/internal use
+   - Frequency: Weekly (Monday 08:00 UTC)
+   - Model: Claude Haiku 4.5
+   - Status: Specification complete, ready for implementation
+
+8. **Menu Performance Optimizer** (`app/api/cron/menu-performance-optimizer/route.ts`)
+   - Purpose: Analyze POS data to optimize menu items and pricing
+   - Target: Restaurant owners/customers
+   - Frequency: Weekly (Sunday 20:00 UTC)
+   - Model: Claude Sonnet 4-6
+   - Status: Specification complete, ready for implementation
+
+9. **Integration Quality Monitor** (`app/api/cron/integration-quality-monitor/route.ts`)
+   - Purpose: Monitor data quality from connected integrations
+   - Target: Admin/internal use
+   - Frequency: Daily (06:00 UTC)
+   - Model: Claude Haiku 4.5
+   - Status: Specification pending
+
+10. **Staff Performance Coach** (`app/api/cron/staff-performance-coach/route.ts`)
+    - Purpose: Provide personalized feedback to staff based on performance
+    - Target: Restaurant owners/customers
+    - Frequency: Bi-weekly (Monday & Thursday 07:00 UTC)
+    - Model: Claude Haiku 4.5
+    - Status: Specification pending
+
+### 🎯 Medium Priority
+11. **Usage Pattern Analyzer** (`app/api/cron/usage-pattern-analyzer/route.ts`)
+    - Purpose: Analyze how customers use the platform
+    - Target: Admin/internal use
+    - Frequency: Monthly (1st of month, 09:00 UTC)
+    - Model: Claude Sonnet 4-6
+    - Status: Specification pending
+
+12. **Customer Experience Analyzer** (`app/api/cron/customer-experience-analyzer/route.ts`)
+    - Purpose: Analyze customer feedback and transaction data
+    - Target: Restaurant owners/customers
+    - Frequency: Weekly (Saturday 18:00 UTC)
+    - Model: Claude Sonnet 4-6
+    - Status: Specification pending
+
+13. **Supplier Negotiation Assistant** (`app/api/cron/supplier-negotiation-assistant/route.ts`)
+    - Purpose: Analyze purchase patterns for supplier negotiations
+    - Target: Restaurant owners/customers
+    - Frequency: Quarterly (1st of quarter, 10:00 UTC)
+    - Model: Claude Sonnet 4-6
+    - Status: Specification pending
+
+### 🎯 Lower Priority
+14. **Support Ticket Triage Agent** (`app/api/cron/support-ticket-triage/route.ts`)
+    - Purpose: Categorize and triage incoming support tickets
+    - Target: Admin/internal use
+    - Frequency: Real-time
+    - Model: Claude Haiku 4.5
+    - Status: Specification pending
+
+15. **Compliance & Regulation Monitor** (`app/api/cron/compliance-regulation-monitor/route.ts`)
+    - Purpose: Monitor regulatory changes for Swedish restaurants
+    - Target: Restaurant owners/customers
+    - Frequency: Monthly (15th of month, 11:00 UTC)
+    - Model: Claude Haiku 4.5
+    - Status: Specification pending
+
+16. **Energy & Sustainability Optimizer** (`app/api/cron/energy-sustainability-optimizer/route.ts`)
+    - Purpose: Analyze utility costs and suggest sustainability improvements
+    - Target: Restaurant owners/customers
+    - Frequency: Monthly (5th of month, 12:00 UTC)
+    - Model: Claude Haiku 4.5
+    - Status: Specification pending
+
+**Documentation Status:**
+- ✅ Master plan: `AI-AGENTS-MASTER-PLAN.md`
+- ✅ Agent 7: `docs/AGENT-CUSTOMER-HEALTH-SCORING.md`
+- ✅ Agent 8: `docs/AGENT-MENU-PERFORMANCE-OPTIMIZER.md`
+- ⏳ Agents 9-16: Specifications pending
+
+**Estimated Build Effort:** ~40-50 hours across all 10 new agents
+**Estimated Monthly Cost at 50 customers:** ~$50-75 (Haiku + Sonnet mix)
+
+---
+
+## 8. Supabase RLS Policy Issues
+
 ## 7. Supabase RLS Policy Issues
 
 **Symptom:** Users can see data from other organisations.
