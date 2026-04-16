@@ -62,7 +62,11 @@ export default function EnhancedApiDiscoveriesPage() {
       }
 
       const result = await response.json()
-      alert(`✅ Enhanced discovery completed!\n\nProcessed: ${result.integrations_processed} integrations\nCompleted: ${result.summary?.completed || 0}\nSkipped: ${result.summary?.skipped || 0}\nErrors: ${result.summary?.errors || 0}`)
+      const errorDetails = result.results
+        ?.filter((r: any) => r.status === 'error')
+        .map((r: any) => `• ${r.provider}: ${r.error}`)
+        .join('\n') || ''
+      alert(`Enhanced discovery completed!\n\nProcessed: ${result.integrations_processed}\nCompleted: ${result.summary?.completed || 0}\nSkipped: ${result.summary?.skipped || 0}\nErrors: ${result.summary?.errors || 0}${errorDetails ? '\n\nErrors:\n' + errorDetails : ''}`)
       
       // Reload discoveries
       await loadEnhancedDiscoveries()
