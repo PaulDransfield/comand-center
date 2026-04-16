@@ -25,6 +25,7 @@ const NAV = [
   { section: 'Operations' },
   { label: 'Revenue',          href: '/revenue'        },
   { label: 'Staff',            href: '/staff'          },
+  { label: 'Scheduling',        href: '/scheduling'     },
   { label: 'Departments',       href: '/departments'    },
   { label: 'Invoices',         href: '/invoices'       },
   { label: 'Alerts',           href: '/alerts'         },
