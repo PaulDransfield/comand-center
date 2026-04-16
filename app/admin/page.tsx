@@ -32,7 +32,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     const saved = sessionStorage.getItem('admin_auth')
-    if (saved === 'true') { setAuthed(true); loadOrgs(); loadSyncLogs() }
+    if (saved) { setAuthed(true); loadOrgs(); loadSyncLogs() }
   }, [])
 
   async function login() {
@@ -43,7 +43,7 @@ export default function AdminPage() {
     })
     const data = await res.json()
     if (data.ok) {
-      sessionStorage.setItem('admin_auth', 'true')
+      sessionStorage.setItem('admin_auth', password)
       setAuthed(true)
       loadOrgs()
       loadSyncLogs()

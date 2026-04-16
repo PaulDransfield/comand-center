@@ -46,11 +46,14 @@ export default function EnhancedApiDiscoveriesPage() {
 
   async function triggerEnhancedDiscovery() {
     setRunningDiscovery(true)
+    // Read the admin password stored at login — used as Bearer token
+    const adminSecret = sessionStorage.getItem('admin_auth') || ''
     try {
       const response = await fetch('/api/admin/trigger-enhanced-discovery', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${adminSecret}`
         }
       })
 
