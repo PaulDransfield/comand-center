@@ -43,7 +43,7 @@ function parseRows(data: any): any[] {
   return rows.map((r: any) => ({
     date:         r.date ?? r.day ?? r.sale_date ?? r.transaction_date ?? r.created_at?.slice(0,10),
     revenue:      parseFloat(r.net_sales ?? r.revenue ?? r.total ?? r.net_amount ?? r.amount ?? 0),
-    covers:       parseInt(r.covers ?? r.guests ?? r.number_of_guests ?? 0),
+    covers:       parseInt(r.covers ?? r.guests ?? r.number_of_guests ?? r.persons ?? r.pax ?? r.party_size ?? r.num_guests ?? r.antal_gaster ?? r.antal_gastер ?? r.seated ?? r.diners ?? 0),
     transactions: parseInt(r.transactions ?? r.receipts ?? r.count ?? r.num_receipts ?? 0),
     food_revenue: parseFloat(r.food ?? r.food_revenue ?? r.food_sales ?? 0),
     bev_revenue:  parseFloat(r.beverage ?? r.drink ?? r.bev_revenue ?? r.bar ?? r.drink_sales ?? 0),

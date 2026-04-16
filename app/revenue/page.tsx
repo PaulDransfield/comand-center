@@ -242,6 +242,15 @@ export default function RevenuePage() {
         ) : (
           /* Revenue Detail Tab */
           <>
+            {/* Covers unavailable notice */}
+            {rev.total_revenue > 0 && rev.total_covers === 0 && (
+              <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <span>⚠️</span>
+                <span style={{ color: '#92400e' }}>
+                  <strong>Covers not reported by your POS.</strong> Revenue-per-cover cannot be calculated. Contact your Inzii/Swess account manager to check if guest count tracking is enabled.
+                </span>
+              </div>
+            )}
             {/* KPI cards */}
             <div className="grid-5" style={{ marginBottom: 20 }}>
               {[
@@ -249,7 +258,7 @@ export default function RevenuePage() {
                 { label: 'Dine-in',         value: fmtKr(rev.total_dine_in ?? 0),  sub: rev.total_revenue > 0 ? Math.round((rev.total_dine_in / rev.total_revenue) * 100) + '%' : '—', color: '#1a1f2e' },
                 { label: 'Takeaway',        value: fmtKr(rev.total_takeaway ?? 0), sub: rev.total_revenue > 0 ? Math.round((rev.total_takeaway / rev.total_revenue) * 100) + '%' : '—', color: '#6366f1' },
                 { label: 'Tips',            value: fmtKr(rev.total_tips ?? 0),     sub: rev.total_revenue > 0 ? Math.round((rev.total_tips / rev.total_revenue) * 100) + '% of revenue' : '—', color: '#10b981' },
-                { label: 'Avg per cover',   value: fmtKr(rev.avg_rpc ?? 0),        sub: `${rev.total_covers ?? 0} total covers`, color: '#111' },
+                { label: 'Avg per cover',   value: rev.avg_rpc > 0 ? fmtKr(rev.avg_rpc) : '—',  sub: rev.total_covers > 0 ? `${rev.total_covers} total covers` : 'Not reported by POS', color: rev.avg_rpc > 0 ? '#111' : '#9ca3af' },
               ].map(k => (
                 <div key={k.label} style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '14px 16px' }}>
                   <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 8 }}>{k.label}</div>
