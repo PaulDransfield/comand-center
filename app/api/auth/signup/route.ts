@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
-    email_confirm: false,  // sends a verification email — they must click it to log in
+    email_confirm: true,   // auto-confirm — user can log in immediately after signup
     user_metadata: { full_name: fullName },
   })
 
@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
 
   // ── DONE ───────────────────────────────────────────────────────
   return NextResponse.json({
-    message:    'Account created. Please check your email to verify your address.',
+    message:    'Account created successfully.',
     orgId:      org.id,
     trialDays:  30,
     trialEnd:   trialEnd.toISOString(),
