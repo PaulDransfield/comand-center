@@ -331,6 +331,50 @@ export default function RevenuePage() {
               </div>
             )}
 
+            {/* Tips trend — shown when at least one day has tip data */}
+            {revDetail?.rows?.some((r: any) => r.tip_revenue > 0) && (() => {
+              const tRows = revDetail.rows.filter((r: any) => r.tip_revenue > 0)
+              const maxT  = Math.max(...tRows.map((r: any) => r.tip_revenue), 1)
+              return (
+                <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Tips trend</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                      {tRows.length} days · avg {fmtKr(Math.round(tRows.reduce((s: number, r: any) => s + r.tip_revenue, 0) / tRows.length))} / day
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {tRows.map((row: any) => {
+                      const barPct    = (row.tip_revenue / maxT) * 100
+                      const tipRevPct = row.revenue > 0 ? ((row.tip_revenue / row.revenue) * 100).toFixed(1) : '0'
+                      // Colour intensity based on tip % — higher % = darker green
+                      const intensity = row.revenue > 0 ? Math.min(row.tip_revenue / row.revenue, 0.15) / 0.15 : 0
+                      const barColor  = `rgba(16, 185, 129, ${0.3 + intensity * 0.7})`
+                      return (
+                        <div key={row.date} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 90, fontSize: 11, color: '#6b7280', flexShrink: 0 }}>
+                            {fmtDay(row.date)}
+                          </div>
+                          <div style={{ flex: 1, height: 10, background: '#f3f4f6', borderRadius: 5, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${barPct}%`, background: barColor, borderRadius: 5, transition: 'width 0.3s' }} />
+                          </div>
+                          <div style={{ width: 68, textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#111', flexShrink: 0 }}>
+                            {fmtKr(row.tip_revenue)}
+                          </div>
+                          <div style={{ width: 38, textAlign: 'right', fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>
+                            {tipRevPct}%
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 11, color: '#9ca3af' }}>
+                    Bar colour intensity = tip % of revenue that day (darker = higher %)
+                  </div>
+                </div>
+              )
+            })()}
+
             {/* Daily breakdown table */}
             <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
               <div style={{ padding: '14px 20px', borderBottom: '0.5px solid #f3f4f6' }}>
