@@ -17,15 +17,22 @@ When you (or Claude) are about to build an adapter, read the provider's file fir
 
 ## Index
 
-### Built (6)
+### Built or in-progress (with adapter code)
 | Provider | Category | Adapter |
 |---|---|---|
-| [Personalkollen](./personalkollen.md)   | HR & staffing | `lib/pos/personalkollen.ts` |
-| [Fortnox](./fortnox.md)                 | Accounting    | `lib/api-discovery/fortnox.ts` (OAuth pending) |
-| [Inzii](./inzii.md)                     | POS           | `lib/pos/inzii.ts` |
-| [Swess](./swess.md)                     | POS           | Same API as Inzii — `lib/pos/inzii.ts` |
-| [Ancon](./ancon.md)                     | POS           | `lib/sync/engine.ts` (stub) |
-| [Caspeco](./caspeco.md)                 | POS           | `lib/sync/engine.ts` (stub) |
+| [Personalkollen](./personalkollen.md)   | HR & staffing | `lib/pos/personalkollen.ts` — **built & verified** |
+| [Fortnox](./fortnox.md)                 | Accounting    | `lib/api-discovery/fortnox.ts` — **blocked on OAuth approval** |
+| [Inzii](./inzii.md)                     | POS           | `lib/pos/inzii.ts` — endpoint still being probed |
+| [Swess](./swess.md)                     | POS           | Same API as Inzii |
+| [Ancon](./ancon.md)                     | POS           | `lib/pos/ancon.ts` — stub |
+| [Caspeco](./caspeco.md)                 | POS           | `lib/pos/caspeco.ts` — stub |
+| [Trivec](./trivec.md)                   | POS           | `lib/pos/trivec.ts` — stub |
+| [Zettle](./zettle.md)                   | POS           | `lib/pos/zettle.ts` — stub |
+| [TheFork](./thefork.md)                 | Reservations  | `lib/pos/thefork.ts` — stub |
+| [Foodora](./foodora.md)                 | Delivery      | `lib/pos/foodora.ts` — stub |
+| [Wolt](./wolt.md)                       | Delivery      | `lib/pos/wolt.ts` — stub |
+| [Bokad](./bokad.md)                     | Reservations  | `lib/pos/bokad.ts` — stub |
+| [Quinyx](./quinyx.md)                   | HR            | `lib/pos/quinyx.ts` — stub |
 
 ### Planned — Kassasystem (POS)
 [Superb](./superb-pos.md) · [Gastrogate POS](./gastrogate-pos.md) · [PUBQ](./pubq.md) · [Zettle](./zettle.md) · [Smart Cash](./smartcash.md) · [Flow POS](./flow-pos.md) · [Yabie](./yabie.md) · [Trivec](./trivec.md) · [Loomis Pay](./loomis-pay.md) · [Winpos](./winpos.md) · [Heynow](./heynow.md) · [Vendolink](./vendolink.md) · [JobOffice](./joboffice.md) · [Ordine](./ordine.md) · [Happy Order](./happy-order.md) · [Weiq](./weiq.md) · [Karma OS](./karma-os.md) · [Nimpos](./nimpos.md) · [Microdeb](./microdeb.md) · [Rebnis](./rebnis.md) · [LogiCash](./logicash.md) · [Qopla](./qopla.md) · [Munu](./munu.md) · [Northmill](./northmill.md) · [OpenPOS](./openpos.md) · [Baemingo](./baemingo.md) · [Onslip](./onslip.md) · [TruePOS](./truepos.md) · [Tickster Blink](./tickster-blink.md) · [ES Kassasystem](./es-kassasystem.md)
@@ -45,17 +52,17 @@ When you (or Claude) are about to build an adapter, read the provider's file fir
 ### Planned — Övriga
 [Skatteverket](./skatteverket.md) · [Cappy](./cappy.md) · [Seamlr](./seamlr.md) · [Sculpture / BevChek](./sculpture-bevchek.md)
 
-## Research status
+## Research status (2026-04-17 pass)
 
-| Section | Providers | Researched | Last sweep |
-|---|---|---|---|
-| Built | 6 | 6 | 2026-04-17 |
-| Planned POS | 30 | see individual files | 2026-04-17 |
-| Planned accounting | 3 | see individual files | 2026-04-17 |
-| Planned reservations | 6 | see individual files | 2026-04-17 |
-| Planned HR | 4 | see individual files | 2026-04-17 |
-| Planned hotel | 1 | see individual files | 2026-04-17 |
-| Planned other | 4 | see individual files | 2026-04-17 |
+| Section | Providers | Fully researched | Stubbed with "NEEDS RESEARCH" | Notes |
+|---|---|---|---|---|
+| Built / in-progress | 13 | 13 | 0 | PK, Fortnox, Inzii, Swess, Ancon, Caspeco, Trivec, Zettle, TheFork, Foodora, Wolt, Bokad, Quinyx |
+| Batch B (high-priority) | 8 | 8 | 0 | Onslip, Qopla, Loomis Pay, Winpos, Yabie, Gastrogate-POS, Superb-POS, Björn Lundén, Visma, Skatteverket, Waiteraid |
+| Long tail | 35 | 0 | 35 | POS (23), accounting (0 left), reservations (5), HR (4), hotel (1), other (3) |
+
+**Total providers tracked:** 54 in registry + 5 extras (bokad, foodora, thefork, wolt, quinyx) = 59 covered.
+
+Deep-research the long tail just-in-time when a customer requests that provider. Web search is available from the parent Claude Code session but denied to sub-agents — do research inline rather than delegating.
 
 ## How to add a new provider
 
