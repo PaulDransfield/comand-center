@@ -174,7 +174,7 @@ export default function LandingPage() {
             <Link href="/login" className="btn-outline-white nav-cta-login" style={{ padding: '8px 18px', fontSize: 13 }}>
               Log in
             </Link>
-            <Link href="/login" className="btn-white nav-cta-trial" style={{ padding: '8px 18px', fontSize: 13 }}>
+            <Link href="/login?mode=signup" className="btn-white nav-cta-trial" style={{ padding: '8px 18px', fontSize: 13 }}>
               Start free trial
             </Link>
           </div>
@@ -230,7 +230,7 @@ export default function LandingPage() {
 
           {/* CTAs */}
           <div className="hero-btns" style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 48 }}>
-            <Link href="/login" className="btn-white">
+            <Link href="/login?mode=signup" className="btn-white">
               Start 30-day free trial
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </Link>
@@ -438,7 +438,7 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
+              <Link href="/login?mode=signup" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
                 Start free trial
               </Link>
             </div>
@@ -474,7 +474,7 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login" className="btn-white" style={{ justifyContent: 'center' }}>
+              <Link href="/login?mode=signup" className="btn-white" style={{ justifyContent: 'center' }}>
                 Start free trial
               </Link>
             </div>
@@ -504,7 +504,7 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
+              <Link href="/login?mode=signup" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
                 Start free trial
               </Link>
             </div>
@@ -539,7 +539,7 @@ export default function LandingPage() {
             30-day free trial. No credit card. Cancel any time. Setup takes under 5 minutes.
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Link href="/login" className="btn-white">
+            <Link href="/login?mode=signup" className="btn-white">
               Start your free trial
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </Link>

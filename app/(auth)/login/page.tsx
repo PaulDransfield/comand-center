@@ -1,12 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const supabase = createClient()
+  const searchParams = useSearchParams()
 
-  const [mode,     setMode]     = useState<'login'|'signup'|'forgot'>('login')
+  // Landing page "Start free trial" sends users here with ?mode=signup so they
+  // land on the signup form instead of the login form.
+  const initialMode = searchParams.get('mode') === 'signup' ? 'signup'
+                    : searchParams.get('mode') === 'forgot' ? 'forgot'
+                    : 'login'
+  const [mode,     setMode]     = useState<'login'|'signup'|'forgot'>(initialMode)
   const [loading,  setLoading]  = useState(false)
   const [message,  setMessage]  = useState('')
   const [error,    setError]    = useState('')
