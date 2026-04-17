@@ -599,6 +599,8 @@ export default function LandingPage() {
               {[
                 { label: 'Terms of service', href: '/terms' },
                 { label: 'Privacy policy', href: '/privacy' },
+                { label: 'Sub-processors', href: '/privacy#5' },
+                { label: 'Security',         href: '/security' },
               ].map(l => (
                 <div key={l.label} style={{ marginBottom: 10 }}>
                   <a href={l.href} className="footer-link">{l.label}</a>
@@ -608,10 +610,27 @@ export default function LandingPage() {
 
           </div>
 
+          {/* Imprint — required by Lag (2002:562) §8 for Swedish commercial sites */}
+          <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 20, paddingBottom: 16, fontSize: 12, color: 'rgba(255,255,255,.35)', lineHeight: 1.7 }}>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>Provider</p>
+            <p style={{ margin: 0 }}>
+              CommandCenter is operated by <strong style={{ color: 'rgba(255,255,255,.55)' }}>Dransfield Invest AB</strong>.
+              {' '}Registered in Sweden.
+              {' '}Org. nr: <span style={{ fontFamily: 'ui-monospace, monospace' }}>pending registration</span>.
+              {' '}Momsnr (VAT): <span style={{ fontFamily: 'ui-monospace, monospace' }}>pending registration</span>.
+              {' '}Registered address: <span style={{ fontStyle: 'italic' as const }}>pending</span>.
+              {' '}Contact: <a href="mailto:paul@laweka.com" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>paul@laweka.com</a>
+              {' '}· Security / vulnerability reports: <a href="mailto:paul@laweka.com" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>paul@laweka.com</a>.
+              {' '}For data-subject requests (GDPR Art. 15–22) use the Data &amp; Privacy section inside your account.
+              {' '}Supervisory authority: <a href="https://www.imy.se" target="_blank" rel="noreferrer" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>Integritetsskyddsmyndigheten (IMY)</a>.
+              {' '}CommandCenter is a B2B service — not intended for consumers.
+            </p>
+          </div>
+
           {/* Bottom bar */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>
-              © {new Date().getFullYear()} CommandCenter. All rights reserved.
+              © {new Date().getFullYear()} Dransfield Invest AB. CommandCenter™ is a product of Dransfield Invest AB.
             </p>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>
               GDPR compliant · Data stored in EU (Frankfurt) · Swedish law

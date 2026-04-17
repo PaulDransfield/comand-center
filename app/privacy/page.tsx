@@ -11,7 +11,7 @@ export default function PrivacyPage() {
 
       <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Privacy Policy</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40, fontFamily: 'system-ui' }}>
-        Version 1.0 · Last updated April 2026 · CommandCenter (Dransfield Invest AB)
+        Version 1.1 · Last updated 17 April 2026 · CommandCenter (Dransfield Invest AB)
       </p>
 
       {[
@@ -59,6 +59,8 @@ Consent: For optional features such as marketing emails. You may withdraw consen
 — Comply with legal obligations
 — Prevent fraud and ensure platform security
 
+AI-generated insight: parts of the product — anomaly explanations, weekly briefings, scheduling recommendations, budget analysis and the AI assistant — are produced by a third-party large language model (Anthropic Claude). In line with EU Regulation 2024/1689 (AI Act) Article 52, every AI-generated output in the app is visibly labelled. AI output is advisory; it is not an automated decision with legal effect for you or your staff (GDPR Article 22).
+
 We do not sell your data. We do not use your data for advertising.`
         },
         {
@@ -80,10 +82,10 @@ Compliance: SOC 2 Type II, GDPR compliant
 Privacy: vercel.com/legal/privacy-policy
 
 AI PROCESSING — Anthropic PBC
-Role: AI assistant features (the CommandCenter AI chat)
-Data: Anonymised business queries only — no personal staff data is sent to Anthropic
-Location: USA (Standard Contractual Clauses applied)
-Privacy: anthropic.com/privacy
+Role: AI assistant features, anomaly explanations, weekly briefings, budget suggestions, scheduling recommendations.
+Data: Aggregated business data — revenue totals, staff-hour totals, cost breakdowns — is sent to Anthropic to generate insight and written commentary. Individual staff personal data (names, employee IDs) is not routinely included; business/financial figures are. We request Zero Data Retention so Anthropic does not retain inputs or outputs beyond the processing window.
+Location: USA. Standard Contractual Clauses are in place as the Chapter V transfer mechanism.
+Privacy: anthropic.com/privacy · anthropic.com/legal/commercial-terms
 
 PAYMENT PROCESSING — Stripe Inc.
 Role: Subscription billing and payment processing

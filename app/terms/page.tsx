@@ -11,7 +11,7 @@ export default function TermsPage() {
 
       <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Terms of Service</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40 }}>
-        Version 1.0 · Effective 11 April 2026 · Dransfield Invest AB
+        Version 1.1 · Effective 17 April 2026 · Dransfield Invest AB
       </p>
 
       {[
@@ -38,6 +38,10 @@ export default function TermsPage() {
         {
           title: '6. Third-party integrations',
           body: `The Service connects to third-party systems (Personalkollen, Fortnox, Ancon, Swess, and others) on your behalf using credentials you provide. You are responsible for ensuring you have the right to connect these systems and share their data with the Service.\n\nWe are not responsible for the availability, accuracy, or changes to third-party APIs. If a third-party system changes their API and this affects the Service, we will work to restore functionality as soon as reasonably possible.`
+        },
+        {
+          title: '6a. Nature of the Service — management view, not regulated output',
+          body: `CommandCenter is a management-information tool. The reports, dashboards, P&L views, forecasts, budgets, alerts and AI-generated insights produced by the Service are informational and not a substitute for a regulated financial statement, an audit, or a tax filing.\n\nYou remain responsible for your own accounting records under the Swedish Bokföringslag (1999:1078). Your accounting system (Fortnox, Björn Lundén, Visma or equivalent) is the system of record for bookkeeping purposes; CommandCenter holds a convenience mirror of that data for analytical purposes only.\n\nCommandCenter does not provide tax, legal, accounting, audit or investment advice. Insight produced by AI is advisory and should be reviewed by a qualified person before being acted on. No output of the Service constitutes an automated decision with legal effect for you or any third party (GDPR Article 22).`
         },
         {
           title: '7. Subscription and payment',
@@ -73,7 +77,7 @@ export default function TermsPage() {
         },
         {
           title: '15. Contact',
-          body: `Questions about these terms:\n\nDransfield Invest AB\npå@laweka.com\ncomanedcenter.se`
+          body: `Questions about these terms:\n\nDransfield Invest AB\npaul@laweka.com\ncomandcenter.se`
         },
       ].map(s => (
         <div key={s.title} style={{ marginBottom: 36 }}>
