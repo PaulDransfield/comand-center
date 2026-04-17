@@ -30,6 +30,9 @@ export default function BudgetPage() {
   const [genError,   setGenError]   = useState('')
   const [suggestions, setSuggestions] = useState<any>(null)  // { overall_strategy, monthly }
   const [applying,   setApplying]   = useState(false)
+  // Per-month analyse state
+  const [analysingMonth, setAnalysingMonth] = useState<number|null>(null)  // month being analysed (loading spinner)
+  const [analysis, setAnalysis] = useState<any>(null)                       // { month, result }
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
@@ -80,6 +83,23 @@ export default function BudgetPage() {
       setSuggestions(data)
     } catch (e: any) { setGenError(e.message) }
     setGenerating(false)
+  }
+
+  async function analyseMonth(month: number) {
+    if (!selected) return
+    setAnalysingMonth(month); setAnalysis(null)
+    try {
+      const res = await fetch('/api/budgets/analyse', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: selected, year, month }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
+      setAnalysis({ month, result: data })
+    } catch (e: any) {
+      setAnalysis({ month, result: { verdict: 'error', headline: e.message, analysis: [], recommendations: [] } })
+    }
+    setAnalysingMonth(null)
   }
 
   async function applyAllSuggestions() {
@@ -296,10 +316,23 @@ export default function BudgetPage() {
                       </span>}
                     </td>
                     <td style={{ padding: '11px 12px' }}>
-                      <button onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
-                        style={{ padding: '4px 10px', background: '#f3f4f6', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer', color: '#374151' }}>
-                        {b ? 'Edit' : 'Set budget'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                        <button onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
+                          style={{ padding: '4px 10px', background: '#f3f4f6', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer', color: '#374151' }}>
+                          {b ? 'Edit' : 'Set budget'}
+                        </button>
+                        {hasActual && (
+                          <button
+                            onClick={() => analyseMonth(row.month)}
+                            disabled={analysingMonth === row.month}
+                            style={{ padding: '4px 10px', background: '#eef2ff', border: '1px solid #e0e7ff', borderRadius: 6, fontSize: 11, cursor: analysingMonth === row.month ? 'wait' : 'pointer', color: '#4f46e5', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+                            title="AI review of this month vs budget / last year"
+                          >
+                            <span>✦</span>
+                            {analysingMonth === row.month ? 'Analysing…' : 'Analyse'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -307,6 +340,96 @@ export default function BudgetPage() {
             </tbody>
           </table></div>
         </div>
+
+        {/* Per-month analysis modal */}
+        {analysis && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {/* Header */}
+              <div style={{
+                padding: '18px 24px',
+                background: analysis.result?.verdict === 'hit'    ? 'linear-gradient(135deg, #15803d 0%, #22c55e 100%)'
+                           : analysis.result?.verdict === 'missed'? 'linear-gradient(135deg, #dc2626 0%, #f87171 100%)'
+                           : analysis.result?.verdict === 'mixed' ? 'linear-gradient(135deg, #d97706 0%, #fbbf24 100%)'
+                           : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                color: 'white',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase' as const, opacity: 0.85, marginBottom: 2 }}>
+                    {MONTHS[analysis.month - 1]} {year} · {analysis.result?.verdict?.toUpperCase() ?? 'ANALYSIS'}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4 }}>
+                    {analysis.result?.headline ?? 'Analysis'}
+                  </div>
+                </div>
+                <button onClick={() => setAnalysis(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'white', lineHeight: 1 }}>×</button>
+              </div>
+
+              {/* Body */}
+              <div style={{ overflowY: 'auto', flex: 1, padding: '16px 24px' }}>
+
+                {/* Per-metric analysis */}
+                {analysis.result?.analysis?.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>
+                      What happened
+                    </div>
+                    {analysis.result.analysis.map((a: any, idx: number) => {
+                      const color = a.status === 'good' ? { bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d' }
+                                  : a.status === 'bad'  ? { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' }
+                                  :                        { bg: '#fffbeb', border: '#fef3c7', text: '#d97706' }
+                      const label = a.metric === 'staff_cost' ? 'Staff cost'
+                                  : a.metric === 'food_cost'  ? 'Food cost'
+                                  : a.metric === 'net_profit' ? 'Net profit'
+                                  : a.metric === 'margin'     ? 'Margin'
+                                  : a.metric === 'revenue'    ? 'Revenue'
+                                  : a.metric
+                      return (
+                        <div key={idx} style={{ background: color.bg, border: `1px solid ${color.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: color.text, marginBottom: 3 }}>
+                            {label}
+                          </div>
+                          <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{a.message}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Recommendations */}
+                {analysis.result?.recommendations?.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>
+                      Recommendations
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
+                      {analysis.result.recommendations.map((rec: string, idx: number) => (
+                        <li key={idx} style={{ marginBottom: 6 }}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {analysis.result?.verdict === 'no-data' && (
+                  <div style={{ fontSize: 13, color: '#6b7280', padding: '10px 0' }}>
+                    Nothing to analyse for this month yet.
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setAnalysis(null)}
+                  style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   )
