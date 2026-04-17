@@ -24,6 +24,8 @@ import { createAdminClient }          from '@/lib/supabase/server'
 import { getOrgFromRequest }          from '@/lib/auth/get-org'
 import { encrypt, decrypt }           from '@/lib/integrations/encryption'
 import { rateLimit }                  from '@/lib/middleware/rate-limit'
+import { verifyOauthConnectToken }    from '@/lib/admin/oauth-link'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 // Fortnox API base URL
 const FORTNOX_API     = 'https://api.fortnox.se/3'
@@ -49,11 +51,8 @@ export async function GET(req: NextRequest) {
   const action = searchParams.get('action')
 
   if (action === 'connect') {
-    const auth = await getOrgFromRequest(req)
-    if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-
-    const clientId   = process.env.FORTNOX_CLIENT_ID
-    const appUrl     = process.env.NEXT_PUBLIC_APP_URL
+    const clientId = process.env.FORTNOX_CLIENT_ID
+    const appUrl   = process.env.NEXT_PUBLIC_APP_URL
 
     if (!clientId) {
       return NextResponse.json({
@@ -61,12 +60,31 @@ export async function GET(req: NextRequest) {
       }, { status: 500 })
     }
 
-    // Get business_id from query param (user selects which business to connect)
-    const businessId = searchParams.get('business_id') ?? ''
+    // Two paths to authorise the caller:
+    //   (A) Customer is logged in → use their Supabase session (self-service).
+    //   (B) Signed admin-issued token → concierge flow where admin sends the
+    //       customer a one-time link. The customer never logs into our app;
+    //       they only authorise at Fortnox. Token is HMAC-SHA256 with ADMIN_SECRET.
+    let orgId: string
+    let businessId: string
 
-    // Build the Fortnox authorisation URL
+    const token = searchParams.get('token')
+    if (token) {
+      const payload = verifyOauthConnectToken(token)
+      if (!payload || payload.provider !== 'fortnox') {
+        return NextResponse.json({ error: 'Invalid or expired connect link' }, { status: 401 })
+      }
+      orgId      = payload.orgId
+      businessId = payload.businessId ?? ''
+    } else {
+      const auth = await getOrgFromRequest(req)
+      if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      orgId      = auth.orgId
+      businessId = searchParams.get('business_id') ?? ''
+    }
+
     // State encodes both orgId and businessId so we can use them in the callback
-    const statePayload = JSON.stringify({ orgId: auth.orgId, businessId })
+    const statePayload = JSON.stringify({ orgId, businessId })
     const params = new URLSearchParams({
       client_id:     clientId,
       redirect_uri:  `${appUrl}/api/integrations/fortnox?action=callback`,
@@ -184,6 +202,15 @@ async function handleCallback(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_save_failed`)
   }
 
+  await recordAdminAction(supabase, {
+    action:     ADMIN_ACTIONS.INTEGRATION_ADD,
+    orgId,
+    targetType: 'integration',
+    payload:    { provider: 'fortnox', business_id: businessId || null, via: 'oauth_callback' },
+    actor:      'oauth_callback',
+    req,
+  })
+
   // Trigger initial sync in background (don't wait for it)
   syncFortnoxInBackground(orgId, access_token).catch(console.error)
 
@@ -217,10 +244,11 @@ async function syncFortnoxInBackground(orgId: string, accessToken: string) {
 async function syncFortnox(orgId: string): Promise<Response> {
   const supabase = createAdminClient()
 
-  // Get decrypted credentials
+  // Get decrypted credentials. Business_id is required so we know which
+  // business the Fortnox data belongs to (customer may have multiple).
   const { data: integration } = await supabase
     .from('integrations')
-    .select('credentials_enc, token_expires_at')
+    .select('credentials_enc, token_expires_at, business_id')
     .eq('org_id', orgId)
     .eq('provider', 'fortnox')
     .single()
@@ -271,16 +299,30 @@ async function syncFortnox(orgId: string): Promise<Response> {
   const year  = now.getFullYear()
   const month = now.getMonth() + 1
 
+  // Last day of current month — avoids `2026-04-31` style invalid dates
+  // by stepping into month N+1 at day 0, which JS resolves to last-day-of-N.
+  const lastDay = new Date(year, month, 0).getDate()
+  const mm      = String(month).padStart(2, '0')
+  const fromDate = `${year}-${mm}-01`
+  const toDate   = `${year}-${mm}-${String(lastDay).padStart(2, '0')}`
+
   try {
-    // Fetch supplier invoices for current month (costs)
-    // financialyear=0 = current financial year
+    // Fetch supplier invoices (costs) and sales invoices (revenue) in parallel.
     const [supplierRes, salesRes] = await Promise.all([
-      fortnoxGet(`/supplierinvoices?fromdate=${year}-${String(month).padStart(2,'0')}-01&todate=${year}-${String(month).padStart(2,'0')}-31`),
-      fortnoxGet(`/invoices?fromdate=${year}-${String(month).padStart(2,'0')}-01&todate=${year}-${String(month).padStart(2,'0')}-31`),
+      fortnoxGet(`/supplierinvoices?fromdate=${fromDate}&todate=${toDate}`),
+      fortnoxGet(`/invoices?fromdate=${fromDate}&todate=${toDate}`),
     ])
 
     const supplierInvoices: any[] = supplierRes.SupplierInvoices ?? []
     const salesInvoices:    any[] = salesRes.Invoices ?? []
+
+    // Revenue = sum of sales-invoice totals. Fortnox exposes `Total` in SEK
+    // (ex-moms on most account setups; the customer's chart of accounts determines
+    // whether Total is gross or net — we document this caveat in the Fortnox doc).
+    // We skip cancelled invoices (Fortnox `Cancelled: true`).
+    const revenue = salesInvoices
+      .filter((inv: any) => !inv.Cancelled)
+      .reduce((sum: number, inv: any) => sum + (parseFloat(inv.Total ?? '0') || 0), 0)
 
     // Aggregate supplier invoices into cost categories
     // Priority order:

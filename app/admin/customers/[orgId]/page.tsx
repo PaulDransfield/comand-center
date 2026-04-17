@@ -924,11 +924,32 @@ function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose,
   const [apiKey, setApiKey] = useState('')
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
+  const [oauthLink, setOauthLink] = useState<any>(null)
+  const [genLoading, setGenLoading] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
 
   const selected = getProvider(provider)
+  const isOAuth     = selected?.auth_type === 'oauth2'
   const isMultiDept = selected?.supports_multi_department ?? false
-  const canTest = !!selected?.supported && apiKey.trim().length > 0
-  const canSave = !!selected?.supported && apiKey.trim().length > 0 && (!isMultiDept || department.trim().length > 0)
+  const canTest = !isOAuth && !!selected?.supported && apiKey.trim().length > 0
+  const canSave = !isOAuth && !!selected?.supported && apiKey.trim().length > 0 && (!isMultiDept || department.trim().length > 0)
+
+  async function generateOauthLink() {
+    setGenLoading(true); setOauthLink(null); setLinkCopied(false)
+    try {
+      const r = await fetch('/api/admin/oauth-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ provider, org_id: orgId, business_id: businessId, ttl_seconds: 3600 }),
+      })
+      const json = await r.json()
+      if (!r.ok || !json.ok) throw new Error(json.error ?? 'Failed to generate link')
+      setOauthLink(json)
+    } catch (e: any) {
+      setOauthLink({ error: e.message })
+    }
+    setGenLoading(false)
+  }
 
   async function testConnection() {
     setTesting(true); setTestResult(null)
@@ -948,7 +969,11 @@ function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose,
 
   // Clear stale test result when the key/provider changes
   function onKeyChange(v: string) { setApiKey(v); if (testResult) setTestResult(null) }
-  function onProviderChange(v: string) { setProvider(v); if (testResult) setTestResult(null) }
+  function onProviderChange(v: string) {
+    setProvider(v)
+    if (testResult) setTestResult(null)
+    if (oauthLink) setOauthLink(null)
+  }
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -985,7 +1010,7 @@ function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose,
             )}
           </div>
 
-          {isMultiDept && (
+          {!isOAuth && isMultiDept && (
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Department</label>
               <input
@@ -1002,19 +1027,79 @@ function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose,
             </div>
           )}
 
-          <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>
-              {selected?.auth_type === 'oauth2' ? 'OAuth token / access key' : 'API key'}
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={e => onKeyChange(e.target.value)}
-              placeholder={selected?.supported ? 'Paste the key' : 'Select a supported provider first'}
-              disabled={!selected?.supported}
-              style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace', opacity: selected?.supported ? 1 : 0.5 }}
-            />
-          </div>
+          {!isOAuth && (
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>API key</label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={e => onKeyChange(e.target.value)}
+                placeholder={selected?.supported ? 'Paste the key' : 'Select a supported provider first'}
+                disabled={!selected?.supported}
+                style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace', opacity: selected?.supported ? 1 : 0.5 }}
+              />
+            </div>
+          )}
+
+          {isOAuth && selected?.supported && (
+            <div style={{ marginBottom: 20, padding: '14px 16px', background: '#fafbff', border: '1px solid #eef2ff', borderRadius: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#4f46e5', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>
+                OAuth — concierge flow
+              </div>
+              <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.55, marginBottom: 12 }}>
+                {selected.name} requires the customer to authorise access in their own account. Generate a one-time connect link below, then send it to the customer. When they click it they are redirected straight to {selected.name} login — no CommandCenter login needed.
+              </div>
+
+              {!oauthLink && (
+                <button
+                  onClick={generateOauthLink}
+                  disabled={genLoading}
+                  style={{ padding: '9px 14px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: genLoading ? 'wait' : 'pointer' }}
+                >
+                  {genLoading ? 'Generating…' : '✦ Generate 1h connect link'}
+                </button>
+              )}
+
+              {oauthLink?.error && (
+                <div style={{ fontSize: 12, color: '#dc2626', marginTop: 6 }}>✗ {oauthLink.error}</div>
+              )}
+
+              {oauthLink?.url && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#15803d', fontWeight: 600, marginBottom: 6 }}>
+                    ✓ Link ready · expires in {oauthLink.expires_in_minutes} min
+                  </div>
+                  <textarea
+                    readOnly
+                    value={oauthLink.url}
+                    onFocus={e => e.currentTarget.select()}
+                    style={{ width: '100%', minHeight: 78, padding: '8px 10px', border: '1px solid #e0e7ff', borderRadius: 8, fontSize: 11, fontFamily: 'ui-monospace, monospace', color: '#374151', resize: 'none' as const, boxSizing: 'border-box' as const, marginBottom: 8 }}
+                  />
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(oauthLink.url); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2500) }}
+                      style={{ padding: '7px 12px', background: linkCopied ? '#15803d' : '#1a1f2e', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {linkCopied ? '✓ Copied' : 'Copy link'}
+                    </button>
+                    <a
+                      href={`mailto:?subject=${encodeURIComponent('Connect ' + selected.name + ' to CommandCenter')}&body=${encodeURIComponent(`Hi,\n\nClick the link below to connect your ${selected.name} account to CommandCenter. The link expires in ${oauthLink.expires_in_minutes} minutes.\n\n${oauthLink.url}\n\nThanks,\nCommandCenter team`)}`}
+                      style={{ padding: '7px 12px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', textDecoration: 'none' }}
+                    >
+                      Email to customer
+                    </a>
+                    <button
+                      onClick={generateOauthLink}
+                      disabled={genLoading}
+                      style={{ padding: '7px 12px', background: 'transparent', color: '#6b7280', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {genLoading ? '…' : 'New link'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {testResult && (
             <div style={{
@@ -1038,23 +1123,32 @@ function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose,
         </div>
 
         <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8, flexShrink: 0 }}>
-          <button
-            onClick={testConnection}
-            disabled={!canTest || testing || saving}
-            style={{ padding: '11px 14px', background: canTest ? '#eef2ff' : '#f3f4f6', color: canTest ? '#4f46e5' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canTest && !testing ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' as const }}
-            title="Verify the API key works before saving"
-          >
-            {testing ? 'Testing…' : 'Test'}
-          </button>
-          <button
-            onClick={() => onSave(provider, apiKey.trim(), isMultiDept ? department.trim() : undefined)}
-            disabled={!canSave || saving}
-            style={{ flex: 1, padding: 11, background: canSave ? '#1a1f2e' : '#e5e7eb', color: canSave ? 'white' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canSave && !saving ? 'pointer' : 'not-allowed' }}
-          >
-            {saving ? 'Saving…' : 'Save integration'}
-          </button>
+          {!isOAuth && (
+            <>
+              <button
+                onClick={testConnection}
+                disabled={!canTest || testing || saving}
+                style={{ padding: '11px 14px', background: canTest ? '#eef2ff' : '#f3f4f6', color: canTest ? '#4f46e5' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canTest && !testing ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' as const }}
+                title="Verify the API key works before saving"
+              >
+                {testing ? 'Testing…' : 'Test'}
+              </button>
+              <button
+                onClick={() => onSave(provider, apiKey.trim(), isMultiDept ? department.trim() : undefined)}
+                disabled={!canSave || saving}
+                style={{ flex: 1, padding: 11, background: canSave ? '#1a1f2e' : '#e5e7eb', color: canSave ? 'white' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canSave && !saving ? 'pointer' : 'not-allowed' }}
+              >
+                {saving ? 'Saving…' : 'Save integration'}
+              </button>
+            </>
+          )}
+          {isOAuth && (
+            <div style={{ flex: 1, fontSize: 11, color: '#9ca3af', alignSelf: 'center' as const }}>
+              Saves automatically once the customer finishes the link flow.
+            </div>
+          )}
           <button onClick={onClose} style={{ padding: '11px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            Cancel
+            {isOAuth ? 'Close' : 'Cancel'}
           </button>
         </div>
       </div>
