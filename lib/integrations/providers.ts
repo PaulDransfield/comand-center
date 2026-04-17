@@ -85,7 +85,7 @@ export const PROVIDERS: Provider[] = [
   { key: 'northmill',      name: 'Northmill',      category: 'pos',        supported: false, auth_type: 'api_key' },
   { key: 'openpos',        name: 'OpenPOS',        category: 'pos',        supported: false, auth_type: 'api_key' },
   { key: 'baemingo',       name: 'Baemingo',       category: 'pos',        supported: false, auth_type: 'api_key' },
-  { key: 'onslip',         name: 'Onslip',         category: 'pos',        supported: false, auth_type: 'api_key' },
+  { key: 'onslip',         name: 'Onslip 360',     category: 'pos',        supported: true,  auth_type: 'api_key', note: 'Hawk auth (HMAC-SHA-256). Credential is a JSON blob: {"key_id":"user+token@realm","key":"base64...","realm":"example.com","env":"prod"}. Obtain from Onslip 360 Backoffice → API access tokens.' },
   { key: 'truepos',        name: 'TruePOS by Kassacentralen', category: 'pos', supported: false, auth_type: 'api_key' },
   { key: 'tickster_blink', name: 'Tickster Blink', category: 'pos',        supported: false, auth_type: 'api_key' },
   { key: 'es_kassasystem', name: 'ES Kassasystem', category: 'pos',        supported: false, auth_type: 'api_key' },

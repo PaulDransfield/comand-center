@@ -569,6 +569,52 @@ async function syncInzii(db: any, integ: any, fromDate: string, toDate: string) 
   return { revenue_days: upserted, department }
 }
 
+// ── Onslip sync ───────────────────────────────────────────────────────────────
+async function syncOnslipEngine(db: any, integ: any, fromDate: string, toDate: string) {
+  const { syncOnslip } = await import('@/lib/pos/onslip')
+
+  const raw = decrypt(integ.credentials_enc)
+  if (!raw) throw new Error('Invalid Onslip credentials')
+
+  let creds: any
+  try { creds = JSON.parse(raw) }
+  catch { throw new Error('Onslip credentials are not valid JSON') }
+
+  const daily = await syncOnslip(creds, fromDate, toDate)
+
+  const rows = daily.map(d => ({
+    org_id:            integ.org_id,
+    business_id:       integ.business_id ?? null,
+    provider:          'onslip',
+    revenue_date:      d.revenue_date,
+    revenue:           Math.round(d.revenue * 100) / 100,
+    covers:            d.covers,
+    revenue_per_cover: d.covers > 0 ? Math.round(d.revenue / d.covers) : 0,
+    period_year:       parseInt(d.revenue_date.slice(0, 4)),
+    period_month:      parseInt(d.revenue_date.slice(5, 7)),
+  })).filter(r => r.revenue > 0)
+
+  if (rows.length) {
+    await db.from('revenue_logs').upsert(rows, { onConflict: 'org_id,business_id,provider,revenue_date' })
+
+    // Daily covers rollup — matches the inzii pattern (business-level aggregate).
+    if (integ.business_id) {
+      const coverRows = daily.map(d => ({
+        business_id:       integ.business_id,
+        org_id:            integ.org_id,
+        date:              d.revenue_date,
+        total:             d.covers,
+        revenue:           Math.round(d.revenue),
+        revenue_per_cover: d.covers > 0 ? Math.round(d.revenue / d.covers) : 0,
+        source:            'onslip',
+      })).filter(r => r.revenue > 0)
+      if (coverRows.length) await db.from('covers').upsert(coverRows, { onConflict: 'business_id,date' })
+    }
+  }
+
+  return { revenue_days: rows.length, realm: creds.realm, env: creds.env ?? 'prod' }
+}
+
 // ── Ancon sync ────────────────────────────────────────────────────────────────
 async function syncAncon(db: any, integ: any, fromDate: string, toDate: string) {
   const { getAnconDailySummary } = await import('@/lib/pos/ancon')
@@ -943,6 +989,8 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
       result = await syncSwess(db, integ, from, to)
     } else if (provider === 'inzii') {
       result = await syncInzii(db, integ, from, to)
+    } else if (provider === 'onslip') {
+      result = await syncOnslipEngine(db, integ, from, to)
     }
 
     // Update tracker_data from stored logs

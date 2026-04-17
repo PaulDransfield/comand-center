@@ -69,6 +69,25 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    if (provider === 'onslip') {
+      const { testOnslipConnection } = await import('@/lib/pos/onslip')
+      // Onslip credential is a JSON blob (key_id, key, realm, env) — admin pastes it
+      // into the API key field. Parse leniently.
+      let creds: any
+      try { creds = JSON.parse(api_key) }
+      catch { throw new Error('Onslip credential must be JSON: {"key_id":"user+token@realm","key":"base64...","realm":"…","env":"prod"}') }
+      if (!creds.key_id || !creds.key || !creds.realm) {
+        throw new Error('Onslip credential missing key_id / key / realm')
+      }
+      const result = await testOnslipConnection(creds)
+      return NextResponse.json({
+        ok:             true,
+        workplace_name: `Onslip realm ${result.realm} (${result.env})`,
+        earliest_date:  new Date(Date.now() - 2 * 365 * 86400000).toISOString().slice(0, 10),
+        total_records:  result.users_count,
+      })
+    }
+
     return NextResponse.json({ error: `Provider ${provider} test not implemented` }, { status: 400 })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
