@@ -62,7 +62,23 @@ export async function GET(req: NextRequest) {
   }, 0)
   const totalHours = staffRows.reduce((s, r) => s + Number(r.hours_worked ?? 0), 0)
 
+  // Fetch a sample sale from PK to check if items have categories
+  let sampleSale = null
+  try {
+    const { data: integ } = await db.from('integrations').select('credentials_enc').eq('id', '2475e1ef-a4d9-4442-ab50-bffe4e831258').single()
+    if (integ) {
+      const { decrypt } = await import('@/lib/integrations/encryption')
+      const token = decrypt(integ.credentials_enc)
+      const { getSales } = await import('@/lib/pos/personalkollen')
+      const sales = await getSales(token, '2026-03-15', '2026-03-16')
+      if (sales.length > 0) {
+        sampleSale = { count: sales.length, first: sales[0], amounts: { amount: sales[0].amount, amount_gross: sales[0].amount_gross, food: sales[0].food_revenue, drink: sales[0].drink_revenue } }
+      }
+    }
+  } catch (e: any) { sampleSale = { error: e.message } }
+
   return NextResponse.json({
+    sample_sale: sampleSale,
     aggregation_result: aggResult,
     pk_reference: {
       revenue: 1422650,
