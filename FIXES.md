@@ -797,6 +797,24 @@ Once the correct field name is confirmed, add it to the `parseRows()` covers fal
 
 ---
 
+## Enhanced API Discovery — silent-failure bugs (2026-04-17)
+
+**Reported symptom:** "Vercel env vars for Enhanced Discovery need updating."
+
+**Investigation:** All env vars (`CRON_SECRET`, `ADMIN_SECRET`, `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) were already set in production. The real problem was code bugs that made the cron silently return "nothing to process" every run.
+
+**Bugs fixed in `app/api/cron/api-discovery-enhanced/route.ts`:**
+1. Line 47 filtered `status='active'` — integrations table uses `'connected'`. Result: query always returned 0 rows.
+2. `fetchSampleData` queried table `sync_logs` (real table is `sync_log`), column `response_data` (doesn't exist), filter `integration_id` (doesn't exist — sync_log links by org_id+provider, not integration_id).
+3. Resolution: rewrote `fetchSampleData` to do a live API fetch per provider. PK has a confirmed endpoint (`/sales/?page_size=5`) and returns real samples. Inzii/Fortnox return [] (no confirmed endpoint yet / OAuth pending).
+4. Added: integrations that return empty sample data now get `last_enhanced_discovery_at` stamped so they drop out of the candidate pool for 30 days — otherwise 6 Inzii integrations (no endpoint) would block the 2 PK ones from ever being picked (limit 3 per run).
+
+**Data state when fixed:** 2 PK + 6 Inzii connected. Next cron run picks 3 rows; PK integrations will produce real analysis, Inzii will skip-and-stamp.
+
+**Kept for reference:** `lib/api-discovery/personalkollen.ts` has a more thorough PK-specific discovery (`analyzePersonalkollenAPI`) that probes 8 endpoints. The enhanced cron's simpler live-sample is complementary, not a replacement.
+
+---
+
 ## Inzii Admin "0 departments" — NOT A BUG (2026-04-17)
 
 **Reported symptom:** Admin panel appeared to show 0 Inzii departments despite 6 rows in `integrations` table.

@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
         last_enhanced_discovery_at,
         api_endpoints_cache
       `)
-      .eq('status', 'active')
+      .eq('status', 'connected')
       .or('last_enhanced_discovery_at.is.null,last_enhanced_discovery_at.lt.now() - interval \'30 days\'')
       .limit(3) // Process max 3 integrations per run (more intensive analysis)
 
@@ -70,6 +70,13 @@ export async function POST(req: NextRequest) {
         
         if (!sampleData || sampleData.length === 0) {
           console.warn(`No sample data available for ${integ.provider}`)
+          // Stamp last_enhanced_discovery_at anyway so this integration drops out
+          // of the candidate pool for 30 days — otherwise 6 Inzii integrations (no
+          // live endpoint yet) would block the 2 PK ones from ever being picked.
+          await supabase
+            .from('integrations')
+            .update({ last_enhanced_discovery_at: new Date().toISOString() })
+            .eq('id', integ.id)
           results.push({
             integration_id: integ.id,
             provider: integ.provider,
@@ -205,44 +212,66 @@ function determineProviderType(provider: string): string {
   return 'other'
 }
 
+// Fetch a small sample of real records from the integration's API so Claude has
+// real field shapes to analyse. Prefers a live API call (authoritative); falls
+// back to whatever's cached on integrations.api_endpoints_cache. Any error at
+// any stage returns [] so the outer loop marks the integration "skipped"
+// instead of crashing the whole cron.
 async function fetchSampleData(integration: any, supabase: any): Promise<any[]> {
+  // 1) Live fetch — provider-specific
   try {
-    // Try to get cached sample data from previous syncs
-    const { data: recentData } = await supabase
-      .from('sync_logs')
-      .select('response_data')
-      .eq('integration_id', integration.id)
-      .eq('status', 'success')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
-
-    if (recentData?.response_data) {
-      return Array.isArray(recentData.response_data) 
-        ? recentData.response_data.slice(0, 5) 
-        : [recentData.response_data]
-    }
-
-    // If no cached data, try to fetch from the integration's API endpoints cache
-    if (integration.api_endpoints_cache) {
-      const endpoints = JSON.parse(integration.api_endpoints_cache)
-      if (endpoints.length > 0) {
-        // Return sample from first endpoint
-        const firstEndpoint = endpoints[0]
-        if (firstEndpoint.sample_data) {
-          return Array.isArray(firstEndpoint.sample_data)
-            ? firstEndpoint.sample_data.slice(0, 3)
-            : [firstEndpoint.sample_data]
-        }
-      }
-    }
-
-    // Return empty array if no sample data available
-    return []
-  } catch (error) {
-    console.error(`Failed to fetch sample data for ${integration.provider}:`, error)
-    return []
+    const live = await fetchLiveSample(integration)
+    if (live.length > 0) return live
+  } catch (err: any) {
+    console.warn(`[enhanced-discovery] live sample fetch failed for ${integration.provider}:`, err.message)
   }
+
+  // 2) Fallback: use whatever's pre-populated in api_endpoints_cache
+  if (integration.api_endpoints_cache) {
+    try {
+      const endpoints = JSON.parse(integration.api_endpoints_cache)
+      const first = Array.isArray(endpoints) ? endpoints[0] : endpoints
+      if (first?.sample_data) {
+        return Array.isArray(first.sample_data)
+          ? first.sample_data.slice(0, 5)
+          : [first.sample_data]
+      }
+    } catch (err: any) {
+      console.warn(`[enhanced-discovery] bad api_endpoints_cache for ${integration.id}:`, err.message)
+    }
+  }
+
+  return []
+}
+
+// Fetch up to 5 sample records directly from the provider's API.
+// PK has a confirmed endpoint today; Inzii and Fortnox are not yet probed —
+// they return [] and the cron marks the integration "skipped" for now.
+async function fetchLiveSample(integration: any): Promise<any[]> {
+  const { decrypt } = await import('@/lib/integrations/encryption')
+  const creds = decrypt(integration.credentials_enc)
+  if (!creds) return []
+
+  const provider = (integration.provider ?? '').toLowerCase()
+
+  if (provider === 'personalkollen') {
+    // Grab the last 7 days of /sales/ so Claude sees realistic sale objects
+    const to   = new Date().toISOString().slice(0, 10)
+    const from = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)
+    const url  = `https://personalkollen.se/api/sales/?sale_time__gte=${from}&sale_time__lte=${to}&page_size=5`
+    const res  = await fetch(url, {
+      headers: { Authorization: `Token ${creds}`, Accept: 'application/json' },
+      signal:  AbortSignal.timeout(20_000),
+    })
+    if (!res.ok) throw new Error(`PK /sales/ returned ${res.status}`)
+    const body = await res.json()
+    return Array.isArray(body?.results) ? body.results.slice(0, 5) : []
+  }
+
+  // Inzii / Swess — endpoint not yet confirmed (see docs/commandcenter ROADMAP).
+  // Fortnox — OAuth not yet approved.
+  // Other providers — no live adapter. All fall through to [].
+  return []
 }
 
 function getPrimaryEndpoint(integration: any): string {
