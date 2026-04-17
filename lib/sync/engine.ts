@@ -930,6 +930,14 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
     // Generate forecasts
     await generateForecasts(db, orgId, integ.business_id)
 
+    // Pre-compute summary tables (daily_metrics, monthly_metrics, dept_metrics)
+    try {
+      const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+      await aggregateMetrics(orgId, integ.business_id, from, to)
+    } catch (aggErr: any) {
+      console.warn('Aggregation step failed (non-fatal):', aggErr.message)
+    }
+
     // Update integration last_sync
     await db.from('integrations').update({
       last_sync_at: now.toISOString(),
