@@ -19,8 +19,6 @@ const NAV = [
   { section: 'Financials' },
   { label: 'P&L Tracker',     href: '/tracker'        },
   { label: 'Budget vs Actual', href: '/budget'         },
-  { label: 'VAT',              href: '/vat'            },
-  { label: 'Food / Bev',       href: '/revenue-split'  },
   { label: 'Forecast',          href: '/forecast'       },
   { section: 'Operations' },
   { label: 'Revenue',          href: '/revenue'        },

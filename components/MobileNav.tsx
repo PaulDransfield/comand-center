@@ -16,8 +16,6 @@ const TABS = [
 
 const MORE_ITEMS = [
   { label: 'Budget vs Actual', href: '/budget'        },
-  { label: 'VAT',              href: '/vat'            },
-  { label: 'Food / Bev',       href: '/revenue-split'  },
   { label: 'Scheduling',       href: '/scheduling'     },
   { label: 'Covers',           href: '/covers'         },
   { label: 'AI Assistant',     href: '/notebook'       },
