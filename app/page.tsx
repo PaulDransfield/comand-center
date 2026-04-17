@@ -6,7 +6,7 @@ import Link from 'next/link'
 
 export const metadata = {
   title: 'CommandCenter — Restaurant Intelligence for Swedish Restaurants',
-  description: 'AI-powered business intelligence for Swedish restaurant groups. Connect Personalkollen and Fortnox, track staff costs, revenue, and margins in one dashboard.',
+  description: 'AI-powered business intelligence for Swedish restaurant groups. Bring every system your business runs on into one place, and let AI make sense of the numbers so you can see what really matters.',
 }
 
 // ── DESIGN TOKENS (matching nextjs/app/globals.css) ───────────
@@ -225,7 +225,7 @@ export default function LandingPage() {
             color: 'rgba(255,255,255,.7)', lineHeight: 1.7,
             maxWidth: 620, margin: '0 auto 36px',
           }}>
-            CommandCenter connects Personalkollen and Fortnox to give your restaurant group real-time visibility into staff costs, revenue, and margins — with an AI assistant that explains what the numbers mean.
+            Every system your business runs on, in one place — with AI that reads the numbers, explains what's changing, and helps you see what really matters.
           </p>
 
           {/* CTAs */}
