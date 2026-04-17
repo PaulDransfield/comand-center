@@ -73,9 +73,9 @@ CREATE POLICY "ai_usage_daily_select_own" ON ai_usage_daily
 
 ---
 
-### M003 — 2026-04-15 — Session 6 — AI Agent Tables
-**Run**: 2026-04-15
-**Status**: ⏳ **PENDING** — Need to run in Supabase
+### M003 — 2026-04-17 — Session 7 — AI Agent Tables
+**Run**: 2026-04-17
+**Status**: ✅ **SUCCESS** — Verified via Supabase REST probe: all 3 tables + `integrations.onboarding_email_sent` column present
 
 ```sql
 -- Table for forecast calibration agent (runs 1st of month)
