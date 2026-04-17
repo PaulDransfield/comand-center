@@ -140,6 +140,11 @@ export default function DepartmentsPage() {
               </div>
             )}
 
+            {/* Deploy marker so we can tell new code from old at a glance */}
+            <div style={{ background: '#ede9fe', color: '#6d28d9', padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, marginBottom: 10, display: 'inline-block' }}>
+              table v3 · revenue · profit · gp%
+            </div>
+
             {/* Full table — revenue vs profit at a glance, same style as dashboard */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
               <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
