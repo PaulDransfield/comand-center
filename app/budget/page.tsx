@@ -25,6 +25,11 @@ export default function BudgetPage() {
   const [editing, setEditing]       = useState<number|null>(null)
   const [form, setForm]             = useState<any>({})
   const [saving, setSaving]         = useState(false)
+  // AI generation state
+  const [generating, setGenerating] = useState(false)
+  const [genError,   setGenError]   = useState('')
+  const [suggestions, setSuggestions] = useState<any>(null)  // { overall_strategy, monthly }
+  const [applying,   setApplying]   = useState(false)
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
@@ -62,6 +67,48 @@ export default function BudgetPage() {
     setSaving(false); setEditing(null); load()
   }
 
+  async function generateWithAI() {
+    if (!selected) return
+    setGenerating(true); setGenError(''); setSuggestions(null)
+    try {
+      const res = await fetch('/api/budgets/generate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: selected, year }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Generation failed')
+      setSuggestions(data)
+    } catch (e: any) { setGenError(e.message) }
+    setGenerating(false)
+  }
+
+  async function applyAllSuggestions() {
+    if (!suggestions?.monthly) return
+    setApplying(true)
+    try {
+      // Upsert each month in parallel
+      await Promise.all(suggestions.monthly.map((s: any) =>
+        fetch('/api/budgets', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            business_id:            selected,
+            year,
+            month:                  s.month,
+            revenue_target:         s.revenue_target,
+            food_cost_pct_target:   s.food_cost_pct_target,
+            staff_cost_pct_target:  s.staff_cost_pct_target,
+            net_profit_target:      s.net_profit_target,
+          }),
+        })
+      ))
+      setSuggestions(null)
+      load()
+    } catch (e: any) {
+      setGenError('Failed to apply: ' + e.message)
+    }
+    setApplying(false)
+  }
+
   const withActual = rows.filter(r => r.actual && r.actual.revenue > 0)
   const totalRev   = withActual.reduce((s, r) => s + (r.actual?.revenue ?? 0), 0)
   const totalBudg  = withActual.reduce((s, r) => s + (r.budget?.revenue_target ?? 0), 0)
@@ -73,7 +120,23 @@ export default function BudgetPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div><h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Budget vs Actual</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Full year comparison · {year}</p></div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+            <button
+              onClick={generateWithAI}
+              disabled={generating || !selected}
+              style={{
+                padding: '8px 14px',
+                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                cursor: generating || !selected ? 'not-allowed' : 'pointer',
+                opacity: generating || !selected ? 0.6 : 1,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+              title="Let AI suggest budgets based on your last year + forecasts"
+            >
+              <span>✦</span>
+              {generating ? 'Generating…' : 'Generate with AI'}
+            </button>
             <select value={selected} onChange={e => setSelected(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, background: 'white' }}>
               {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
@@ -82,6 +145,74 @@ export default function BudgetPage() {
             </select>
           </div>
         </div>
+
+        {/* Generation error banner */}
+        {genError && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#dc2626', marginBottom: 16 }}>
+            {genError}
+            <button onClick={() => setGenError('')} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontWeight: 700 }}>×</button>
+          </div>
+        )}
+
+        {/* AI suggestions review modal */}
+        {suggestions && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {/* Modal header */}
+              <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>AI-generated budgets for {year}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Review, then apply all — or close to discard</div>
+                </div>
+                <button onClick={() => setSuggestions(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
+              </div>
+
+              {/* Strategy */}
+              {suggestions.overall_strategy && (
+                <div style={{ padding: '14px 24px', background: '#fafbff', borderBottom: '1px solid #f3f4f6', fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
+                  <span style={{ fontWeight: 700, color: '#6366f1' }}>Strategy: </span>
+                  {suggestions.overall_strategy}
+                </div>
+              )}
+
+              {/* Monthly suggestions list */}
+              <div style={{ overflowY: 'auto', flex: 1, padding: '10px 24px 16px' }}>
+                {suggestions.monthly.map((s: any) => (
+                  <div key={s.month} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, color: '#111', fontSize: 14 }}>{MONTHS[s.month - 1]}</span>
+                      <span style={{ fontSize: 13, color: '#6366f1', fontWeight: 600 }}>{fmtKr(s.revenue_target)}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
+                      Food {s.food_cost_pct_target}% · Staff {s.staff_cost_pct_target}% · Profit target {fmtKr(s.net_profit_target)}
+                    </div>
+                    {s.reasoning && (
+                      <div style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>{s.reasoning}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Modal footer */}
+              <div style={{ padding: '14px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button
+                  onClick={() => setSuggestions(null)}
+                  disabled={applying}
+                  style={{ padding: '9px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={applyAllSuggestions}
+                  disabled={applying}
+                  style={{ padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: applying ? 'not-allowed' : 'pointer', opacity: applying ? 0.6 : 1 }}
+                >
+                  {applying ? 'Applying…' : 'Apply all 12 months →'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, marginBottom: 20 }}>
           {[
