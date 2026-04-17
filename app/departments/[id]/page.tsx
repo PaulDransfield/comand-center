@@ -7,9 +7,9 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { deptColor } from '@/lib/constants/colors'
 
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number | null) => n != null ? n.toFixed(1) + '%' : '—'
-const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('sv-SE') + 'h'
+const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('en-GB') + 'h'
 
 function monthStart() {
   const d = new Date()
@@ -208,7 +208,7 @@ export default function DepartmentDetailPage() {
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 120, paddingBottom: 4 }}>
                       {trendWithData.map((t: any) => {
                         const pct = (t.revenue / trendMax) * 100
-                        const dateLabel = new Date(t.date).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })
+                        const dateLabel = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
                         return (
                           <div key={t.date} style={{ flex: 1, minWidth: 20, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2, height: '100%', justifyContent: 'flex-end' }}
                             title={`${dateLabel}: ${fmtKr(t.revenue)}${t.covers > 0 ? ` · ${t.covers} covers` : ''}`}>

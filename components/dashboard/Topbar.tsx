@@ -30,7 +30,7 @@ export default function Topbar() {
   )
 
   // Current month label e.g. "March 2026"
-  const monthLabel = new Date().toLocaleDateString('sv-SE', { month: 'long', year: 'numeric' })
+  const monthLabel = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 
   async function signOut() {
     await supabase.auth.signOut()

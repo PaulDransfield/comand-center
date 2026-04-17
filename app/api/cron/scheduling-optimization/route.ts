@@ -147,13 +147,13 @@ ANALYSIS PERIOD: ${analysisData.analysis_period}
 STAFF SUMMARY:
 - Total shifts: ${analysisData.staff_summary.total_shifts}
 - Total hours: ${analysisData.staff_summary.total_hours.toFixed(1)}
-- Total labor cost: ${analysisData.staff_summary.total_cost.toLocaleString('sv-SE')} kr
-- Total OB supplement: ${analysisData.staff_summary.total_ob_supplement.toLocaleString('sv-SE')} kr
+- Total labor cost: ${analysisData.staff_summary.total_cost.toLocaleString('en-GB')} kr
+- Total OB supplement: ${analysisData.staff_summary.total_ob_supplement.toLocaleString('en-GB')} kr
 - Late shifts: ${analysisData.staff_summary.late_shifts} (${((analysisData.staff_summary.late_shifts / analysisData.staff_summary.total_shifts) * 100).toFixed(1)}%)
 - Average late minutes: ${analysisData.staff_summary.avg_late_minutes.toFixed(1)} min
 
 REVENUE SUMMARY:
-- Total revenue: ${analysisData.revenue_summary.total_revenue.toLocaleString('sv-SE')} kr
+- Total revenue: ${analysisData.revenue_summary.total_revenue.toLocaleString('en-GB')} kr
 - Total covers: ${analysisData.revenue_summary.total_covers}
 - Average revenue per cover: ${analysisData.revenue_summary.avg_revenue_per_cover.toFixed(0)} kr
 

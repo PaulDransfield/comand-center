@@ -82,8 +82,8 @@ async function sendCriticalAlertEmail(alert: Alert, businessName: string, ownerE
             <div style="background:#fef2f2;border-radius:8px;padding:16px;margin-bottom:16px">
               <div style="font-size:14px;color:#111827;margin-bottom:8px">${alert.description}</div>
               <div style="font-size:12px;color:#6b7280">
-                <div>Metric: ${alert.metric_value.toLocaleString('sv-SE')}</div>
-                <div>Expected: ${alert.expected_value.toLocaleString('sv-SE')}</div>
+                <div>Metric: ${alert.metric_value.toLocaleString('en-GB')}</div>
+                <div>Expected: ${alert.expected_value.toLocaleString('en-GB')}</div>
                 <div>Deviation: ${Math.abs(alert.deviation_pct).toFixed(1)}%</div>
                 <div>Period: ${alert.period_date}</div>
               </div>
@@ -228,7 +228,7 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
           alert_type: 'revenue_drop',
           severity: severity(revDev, [15, 25, 35]), // low: 15%, medium: 25%, high: 35%, critical: 35%+
           title: `Revenue down ${Math.abs(revDev).toFixed(0)}% — ${bizName}`,
-          description: `Revenue is ${Math.round(curRevenue).toLocaleString('sv-SE')} kr vs ${Math.round(avgRevenue).toLocaleString('sv-SE')} kr average over the last 4 months.`,
+          description: `Revenue is ${Math.round(curRevenue).toLocaleString('en-GB')} kr vs ${Math.round(avgRevenue).toLocaleString('en-GB')} kr average over the last 4 months.`,
           metric_value: curRevenue, expected_value: avgRevenue,
           deviation_pct: revDev, period_date: periodDate,
         })
@@ -303,7 +303,7 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
           alert_type: 'ob_supplement_spike',
           severity: severity(obDev, [40, 60, 80]), // low: 40%, medium: 60%, high: 80%, critical: 80%+
           title: `OB supplement spike +${obDev.toFixed(0)}% — ${bizName}`,
-          description: `OB supplement is ${Math.round(recentAvg).toLocaleString('sv-SE')} kr/shift vs ${Math.round(historicAvg).toLocaleString('sv-SE')} kr/shift average. Check for unplanned overtime.`,
+          description: `OB supplement is ${Math.round(recentAvg).toLocaleString('en-GB')} kr/shift vs ${Math.round(historicAvg).toLocaleString('en-GB')} kr/shift average. Check for unplanned overtime.`,
           metric_value: recentAvg, expected_value: historicAvg,
           deviation_pct: obDev, period_date: today.toISOString().slice(0, 10),
         })

@@ -7,7 +7,7 @@ import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
 import { deptColor, deptBg, DEPT_COLORS, KPI_CARD, CC_DARK, CC_PURPLE } from '@/lib/constants/colors'
 
-const fmtKr = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
+const fmtKr = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtH  = (n: number) => (Math.round(n * 10) / 10) + 'h'
 
 // deptColor() imported from @/lib/constants/colors
@@ -472,7 +472,7 @@ export default function StaffPage() {
               <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 20px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>OB supplement by type</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>Total: {Math.round(totalObSupplement).toLocaleString('sv-SE')} kr across {summary.shifts_with_ob} shifts</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>Total: {Math.round(totalObSupplement).toLocaleString('en-GB')} kr across {summary.shifts_with_ob} shifts</div>
                 </div>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>Unsocial hours cost breakdown — sorted by highest spend</div>
                 <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
@@ -485,7 +485,7 @@ export default function StaffPage() {
                           <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>{ob.type}</span>
                           <div style={{ display: 'flex', gap: 12, alignItems: 'baseline' }}>
                             <span style={{ fontSize: 11, color: '#9ca3af' }}>{pct}% of total</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{ob.kr.toLocaleString('sv-SE')} kr</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{ob.kr.toLocaleString('en-GB')} kr</span>
                           </div>
                         </div>
                         <div style={{ height: 8, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
@@ -628,7 +628,7 @@ export default function StaffPage() {
                                         .map(([type, kr]: any) => (
                                           <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: '#f0f0ff', borderRadius: 6, border: '0.5px solid #e0e0ff' }}>
                                             <span style={{ fontSize: 11, color: '#4f46e5' }}>{type}</span>
-                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#111' }}>{Math.round(kr).toLocaleString('sv-SE')} kr</span>
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#111' }}>{Math.round(kr).toLocaleString('en-GB')} kr</span>
                                           </div>
                                         ))}
                                     </div>

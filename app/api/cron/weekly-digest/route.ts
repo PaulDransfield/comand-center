@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
   // Week label e.g. "Week 14 — 31 Mar to 6 Apr 2026"
   const weekNum  = Math.ceil((lastMonday.getTime() - new Date(lastMonday.getFullYear(), 0, 1).getTime()) / 604800000)
-  const weekLabel = `Week ${weekNum} — ${lastMonday.toLocaleDateString('en-SE', { day: 'numeric', month: 'short' })} to ${lastSunday.toLocaleDateString('en-SE', { day: 'numeric', month: 'short', year: 'numeric' })}`
+  const weekLabel = `Week ${weekNum} — ${lastMonday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to ${lastSunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
   // Get all active orgs with email digest enabled
   const { data: orgs } = await db

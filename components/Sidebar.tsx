@@ -156,7 +156,7 @@ export default function Sidebar() {
               const diffH = Math.floor((now.getTime() - d.getTime()) / 3600000)
               if (diffH < 1) return 'Synced just now'
               if (diffH < 24) return `Synced ${diffH}h ago`
-              return `Synced ${d.toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })}`
+              return `Synced ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             })()}
           </div>
         </div>

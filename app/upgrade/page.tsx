@@ -352,7 +352,7 @@ export default function UpgradePage() {
 function formatMetric(key: string, val: number): string {
   if (val === Infinity) return '∞'
   if (key === 'monthly_tokens') return val >= 1_000_000 ? `${(val/1_000_000).toFixed(1)}M` : `${(val/1000).toFixed(0)}k`
-  return val.toLocaleString('sv-SE')
+  return val.toLocaleString('en-GB')
 }
 
 // ── Styles ────────────────────────────────────────────────────────

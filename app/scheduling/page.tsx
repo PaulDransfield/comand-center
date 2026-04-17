@@ -6,7 +6,7 @@ import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
 
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtH   = (n: number) => (Math.round(n * 10) / 10) + 'h'
 
 const STATUS_META = {

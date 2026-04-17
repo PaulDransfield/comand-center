@@ -81,6 +81,20 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
       const member    = staffMap[l.staff_url] ?? {}
       const shiftDate = l.start ? l.start.slice(0,10) : null
       if (!shiftDate || !l.url) return null
+
+      // Lateness: compare real_start vs scheduled start (if real_start is available)
+      let isLate = false
+      let lateMinutes = 0
+      if (l.real_start && l.start) {
+        const scheduled = new Date(l.start).getTime()
+        const actual    = new Date(l.real_start).getTime()
+        const diffMin   = Math.round((actual - scheduled) / 60000)
+        if (diffMin > 2) { // allow 2 min grace period
+          isLate = true
+          lateMinutes = diffMin
+        }
+      }
+
       return {
         org_id:           integ.org_id,
         business_id:      integ.business_id ?? null,
@@ -97,6 +111,11 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
         hours_worked:     l.hours  ?? 0,
         cost_actual:      l.cost   ?? 0,
         estimated_salary: l.salary ?? 0,
+        ob_supplement_kr: l.ob_amount_kr ? Math.round(l.ob_amount_kr) : 0,
+        ob_type:          l.ob_types || null,
+        is_late:          isLate,
+        late_minutes:     lateMinutes,
+        costgroup_name:   l.costgroup?.name ?? null,
         period_year:      parseInt(shiftDate.slice(0,4)),
         period_month:     parseInt(shiftDate.slice(5,7)),
         updated_at:       new Date().toISOString(),

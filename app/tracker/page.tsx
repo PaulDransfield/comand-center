@@ -19,7 +19,7 @@ interface DailyRow {
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-SE') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => n.toFixed(1) + '%'
 
 export default function TrackerPage() {

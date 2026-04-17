@@ -143,7 +143,7 @@ BUSINESS: ${businessInfo.name} in ${businessInfo.city}
 PLAN: ${businessInfo.plan}
 FIRST SYNC: ${businessInfo.first_sync_date}
 DATA SYNCED:
-- ${businessInfo.days_of_data} days of revenue data (${businessInfo.recent_revenue.toLocaleString('sv-SE')} kr total)
+- ${businessInfo.days_of_data} days of revenue data (${businessInfo.recent_revenue.toLocaleString('en-GB')} kr total)
 - ${businessInfo.recent_covers} covers served
 - ${businessInfo.staff_shifts} staff shifts (${businessInfo.total_hours.toFixed(1)} hours)
 

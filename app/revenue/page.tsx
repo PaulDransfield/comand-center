@@ -7,7 +7,7 @@ import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtDay = (d: string) => new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 
 const PERIODS = ['Breakfast','Lunch','Dinner','Takeaway','Catering','Other']

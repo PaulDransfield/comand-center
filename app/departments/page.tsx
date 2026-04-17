@@ -7,9 +7,9 @@ import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { deptColor, DEPT_COLORS } from '@/lib/constants/colors'
 
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number | null) => n != null ? n.toFixed(1) + '%' : '—'
-const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('sv-SE') + 'h'
+const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('en-GB') + 'h'
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 

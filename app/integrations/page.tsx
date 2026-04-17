@@ -422,7 +422,7 @@ export default function IntegrationsPage() {
                       </div>
                       {integ?.last_sync_at && (
                         <span style={{ color: '#9ca3af', fontSize: 11 }}>
-                          Synced {new Date(integ.last_sync_at).toLocaleString('sv-SE', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
+                          Synced {new Date(integ.last_sync_at).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
                         </span>
                       )}
                     </div>

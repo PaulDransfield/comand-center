@@ -13,7 +13,7 @@ interface Invoice {
 }
 interface Business { id: string; name: string }
 
-const fmtKr   = (n: number) => Math.round(n).toLocaleString('en-SE') + ' kr'
+const fmtKr   = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {

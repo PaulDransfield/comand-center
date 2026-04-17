@@ -6,6 +6,21 @@
 
 const BASE = 'https://personalkollen.se/api'
 
+// Map Swedish OB verbose names from PK to English labels
+// PK returns ob.tag like "ob1","ob2","ob3" and ob.verbose_name in Swedish
+// We keep the tag as the key and provide English display names
+const OB_TYPE_EN: Record<string, string> = {
+  ob1: 'Evening OB',
+  ob2: 'Night OB',
+  ob3: 'Weekend OB',
+}
+function obLabel(ob: any): string {
+  const tag = (ob.tag ?? '').toLowerCase()
+  if (OB_TYPE_EN[tag]) return OB_TYPE_EN[tag]
+  // Fallback: if tag doesn't match, use tag as-is (e.g. "ob1")
+  return ob.tag ?? 'OB'
+}
+
 async function fetchAll(endpoint: string, token: string): Promise<any[]> {
   const results: any[] = []
   let url: string | null = `${BASE}${endpoint}`
@@ -76,7 +91,7 @@ export async function getLoggedTimes(token: string, fromDate?: string, toDate?: 
       costgroup:        t.costgroup ?? null,          // { name, url } section within workplace
       ob_supplement:    0,                            // calculated below
       ob_hours:         Math.round(((t.additional_salaries ?? []).reduce((s: number, ob: any) => s + (ob.duration ? ob.duration / 3600 : 0), 0)) * 10) / 10,
-      ob_types:         (t.additional_salaries ?? []).map((ob: any) => ob.verbose_name ?? ob.tag).join(', '),
+      ob_types:         (t.additional_salaries ?? []).map((ob: any) => obLabel(ob)).join(', '),
       ob_amount_kr:     (t.additional_salaries ?? []).reduce((s: number, ob: any) => {
         // Approximate OB supplement value
         const tag = ob.tag ?? ''
