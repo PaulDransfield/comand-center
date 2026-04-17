@@ -10,6 +10,29 @@ const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtH   = (n: number) => (Math.round(n * 10) / 10) + 'h'
 const fmtPct = (n: number) => (Math.round(n * 10) / 10) + '%'
 
+// Local-date helpers matching departments/dashboard pages
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const WEEKDAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+function getISOWeek(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - day)
+  const y1 = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  return Math.ceil(((date.getTime() - y1.getTime()) / 86400000 + 1) / 7)
+}
+function getWeekBounds(offset = 0) {
+  const today = new Date(), dow = today.getDay()
+  const mon = new Date(today); mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7); mon.setHours(0,0,0,0)
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+  const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
+  return { from: localDate(mon), to: localDate(sun), weekNum: getISOWeek(mon), label: mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}` }
+}
+function getMonthBounds(offset = 0) {
+  const now = new Date(), d = new Date(now.getFullYear(), now.getMonth() + offset, 1), last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
+}
+
 // Status meta — note: we remap the API's 'understaffed' status to 'lean' (it's actually
 // the GOOD state: high revenue per labour hour means you're getting a lot out of every
 // scheduled hour, i.e. lean efficient staffing. The old label/colour were misleading.)
@@ -30,15 +53,18 @@ const mapStatus = (s: string) =>
   : 'no_data'
 
 export default function SchedulingPage() {
-  const now = new Date()
-  const ninetyDaysAgo = new Date(); ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
-
-  const [data,        setData]       = useState<any>(null)
-  const [loading,     setLoading]    = useState(true)
-  const [error,       setError]      = useState('')
+  const [data,        setData]        = useState<any>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
   const [selectedBiz, setSelectedBiz] = useState('')
-  const [fromDate,    setFromDate]   = useState(ninetyDaysAgo.toISOString().slice(0, 10))
-  const [toDate,      setToDate]     = useState(now.toISOString().slice(0, 10))
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')   // default to month — more data on the scorecard
+  const [weekOffset,  setWeekOffset]  = useState(0)
+  const [monthOffset, setMonthOffset] = useState(0)
+
+  // Drill-down modal state
+  const [drillDay,    setDrillDay]    = useState<number | null>(null)       // 0=Mon..6=Sun
+  const [drillData,   setDrillData]   = useState<any>(null)
+  const [drillLoading,setDrillLoading] = useState(false)
 
   useEffect(() => {
     const sync = () => {
@@ -49,6 +75,11 @@ export default function SchedulingPage() {
     window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
   }, [])
+
+  const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum} · ${curr.label}` : curr.label
+  const fromDate = curr.from
+  const toDate   = curr.to
 
   const load = useCallback(async () => {
     if (!selectedBiz) return
@@ -63,15 +94,43 @@ export default function SchedulingPage() {
     setLoading(false)
   }, [selectedBiz, fromDate, toDate])
 
-  useEffect(() => { if (selectedBiz) load() }, [selectedBiz])
+  useEffect(() => { if (selectedBiz) load() }, [selectedBiz, viewMode, weekOffset, monthOffset])
+
+  async function openDayDrill(weekday: number) {
+    setDrillDay(weekday)
+    setDrillData(null)
+    setDrillLoading(true)
+    try {
+      const res = await fetch(`/api/scheduling/day-details?business_id=${selectedBiz}&from=${fromDate}&to=${toDate}&weekday=${weekday}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to load day details')
+      setDrillData(json)
+    } catch (e: any) {
+      setDrillData({ error: e.message })
+    }
+    setDrillLoading(false)
+  }
 
   const weekdaysRaw      = data?.weekday_efficiency ?? []
   const daily            = data?.daily_revpah       ?? []
   const summary          = data?.summary            ?? null
   const recommendation   = data?.latest_recommendation ?? null
 
-  // Normalise weekday rows to new status names
-  const weekdays = weekdaysRaw.map((w: any) => ({ ...w, uiStatus: w.days_with_data >= 2 ? mapStatus(w.status) : 'no_data' }))
+  // Normalise weekday rows. In month mode we trust the API's status (which requires
+  // ≥2 data points for a weekday to be classified). In week mode each weekday only
+  // has 1 day of data so we recompute status locally from rev/hour vs weekly average —
+  // otherwise every card would be greyed out "no_data".
+  const weekdays = weekdaysRaw.map((w: any) => {
+    if (w.days_with_data < 1 || !w.avg_rev_per_hour || !summary?.avg_rev_per_hour) {
+      return { ...w, uiStatus: 'no_data' }
+    }
+    if (viewMode === 'week') {
+      const ratio = w.avg_rev_per_hour / summary.avg_rev_per_hour
+      const uiStatus = ratio > 1.20 ? 'lean' : ratio < 0.80 ? 'overstaffed' : 'on_target'
+      return { ...w, uiStatus }
+    }
+    return { ...w, uiStatus: w.days_with_data >= 2 ? mapStatus(w.status) : 'no_data' }
+  })
 
   const hasData = summary?.days_analyzed > 0
 
@@ -97,15 +156,30 @@ export default function SchedulingPage() {
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Scheduling Efficiency</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Labour cost vs revenue · weekly patterns · what to tweak next week</p>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13 }} />
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13 }} />
-            <button onClick={load}
-              style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>
-              Load
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {viewMode === 'week' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
+                <div style={{ minWidth: 160, textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {(curr as any).weekNum}</div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
+                </div>
+                <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button onClick={() => setMonthOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
+                <div style={{ minWidth: 140, textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{curr.label}</div>
+                </div>
+                <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: monthOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
+              </div>
+            )}
+            <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
+              {(['week', 'month'] as const).map(m => (
+                <button key={m} onClick={() => setViewMode(m)} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: viewMode === m ? 'white' : 'transparent', color: viewMode === m ? '#111' : '#9ca3af', boxShadow: viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{m === 'week' ? 'W' : 'M'}</button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -216,7 +290,8 @@ export default function SchedulingPage() {
                   return (
                     <div
                       key={w.weekday}
-                      title={meta.hint}
+                      onClick={() => has && openDayDrill(w.weekday)}
+                      title={has ? `${meta.hint} · click for staff details` : meta.hint}
                       style={{
                         background: has ? meta.bg : '#fafafa',
                         border: `1px solid ${has ? meta.border : '#f3f4f6'}`,
@@ -224,7 +299,11 @@ export default function SchedulingPage() {
                         padding: '12px 12px 10px',
                         display: 'flex', flexDirection: 'column' as const, gap: 4,
                         opacity: has ? 1 : 0.6,
+                        cursor: has ? 'pointer' : 'default',
+                        transition: 'transform .12s, box-shadow .12s',
                       }}
+                      onMouseEnter={e => { if (has) { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(16,24,40,.08)' } }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}
                     >
                       {/* Day name + status dot */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -327,6 +406,108 @@ export default function SchedulingPage() {
           </>
         )}
       </div>
+
+      {/* Day drill-down modal */}
+      {drillDay !== null && (
+        <div onClick={() => setDrillDay(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' as const }}>
+            {/* Header */}
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#9ca3af', marginBottom: 2 }}>
+                  {WEEKDAY_NAMES[drillDay]}s in {periodLabel}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>
+                  {drillLoading ? 'Loading…'
+                    : drillData?.error ? 'Error'
+                    : drillData ? (
+                      <>
+                        {fmtKr(drillData.totals.revenue)} rev · {fmtKr(drillData.totals.cost)} labour · {drillData.totals.rev_per_hour ? fmtKr(drillData.totals.rev_per_hour) + '/hr' : '—/hr'}
+                      </>
+                    ) : ''}
+                </div>
+                {!drillLoading && drillData && !drillData.error && (
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
+                    {drillData.dates.length} day{drillData.dates.length !== 1 ? 's' : ''} · {drillData.totals.staff_count} staff · {drillData.totals.shifts} shifts · {fmtH(drillData.totals.hours)}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setDrillDay(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ overflowY: 'auto', flex: 1, padding: '14px 24px 18px' }}>
+              {drillLoading ? (
+                <div style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>Loading day details…</div>
+              ) : drillData?.error ? (
+                <div style={{ fontSize: 13, color: '#dc2626' }}>{drillData.error}</div>
+              ) : drillData && drillData.dates.length > 0 ? (
+                <>
+                  {/* Per-date rows */}
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 8 }}>By date</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 20 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                        {['Date','Revenue','Labour','Hours','Staff','Rev/Hr'].map(h => (
+                          <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Date' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drillData.dates.map((d: any) => {
+                        const dt = new Date(d.date)
+                        const dateStr = `${dt.getDate()} ${MONTHS[dt.getMonth()]}`
+                        return (
+                          <tr key={d.date} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500 }}>{dateStr}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', fontWeight: 600 }}>{fmtKr(d.revenue)}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151' }}>{fmtKr(d.cost)}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{fmtH(d.hours)}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{d.staff_count}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, fontWeight: 600, color: '#111' }}>{d.rev_per_hour ? fmtKr(d.rev_per_hour) : '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Staff roster */}
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 8 }}>
+                    Who worked ({drillData.staff.length})
+                  </div>
+                  {drillData.staff.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>No staff shifts recorded for these dates.</div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                          {['Name','Department','Shifts','Hours','Cost','Cost/Hr'].map(h => (
+                            <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Name' || h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drillData.staff.map((s: any) => (
+                          <tr key={s.name} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500 }}>{s.name}</td>
+                            <td style={{ padding: '8px 8px', color: '#6b7280' }}>{s.group}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{s.shifts}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{fmtH(s.hours)}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, fontWeight: 600, color: '#111' }}>{fmtKr(s.cost)}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{s.avg_cost_per_hour ? fmtKr(s.avg_cost_per_hour) : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: '#9ca3af', padding: '20px 0' }}>No data for {WEEKDAY_NAMES[drillDay]} in this period.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Contextual AI — updated wording to match new terminology */}
       <AskAI
