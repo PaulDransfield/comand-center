@@ -8,8 +8,15 @@ import { createAdminClient }         from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
+function checkAuth(req: NextRequest): boolean {
+  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
+  return secret === process.env.ADMIN_SECRET
+}
+
 // GET — last 50 sync runs across all orgs
 export async function GET(req: NextRequest) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const db = createAdminClient()
 
   const { data: logs, error } = await db
@@ -40,9 +47,10 @@ export async function GET(req: NextRequest) {
 
 // POST — trigger master-sync immediately (admin use only)
 export async function POST(req: NextRequest) {
-  // Call the master-sync endpoint with the cron secret
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const baseUrl   = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
-  const cronSecret = process.env.CRON_SECRET ?? 'commandcenter123'
+  const cronSecret = process.env.CRON_SECRET ?? ''
 
   const res = await fetch(`${baseUrl}/api/cron/master-sync?secret=${cronSecret}`, {
     method: 'GET',

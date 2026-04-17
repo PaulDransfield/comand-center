@@ -14,19 +14,20 @@ const daysAgo = (s: string | null) => s ? Math.floor((Date.now() - new Date(s).g
 export default function HealthDashboard() {
   const router = useRouter()
   const [data, setData]       = useState<any>(null)
+  const [syncLogs, setSyncLogs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
   useEffect(() => {
     const secret = sessionStorage.getItem('admin_auth') ?? ''
-    if (!secret) { router.push('/admin'); return }
-    fetch('/api/admin/health', { headers: { 'x-admin-secret': secret } })
-      .then(async r => {
-        if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(setData)
-      .catch(e => setError(e.message))
+    if (!secret) { router.push('/admin/login?next=/admin/health'); return }
+    const h = { 'x-admin-secret': secret }
+    Promise.all([
+      fetch('/api/admin/health',   { headers: h }).then(r => r.ok ? r.json() : Promise.reject(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)),
+      fetch('/api/admin/sync-log', { headers: h }).then(r => r.ok ? r.json() : { logs: [] }),
+    ])
+      .then(([h, s]) => { setData(h); setSyncLogs(s.logs ?? []) })
+      .catch(e => setError(typeof e === 'string' ? e : e.message))
       .finally(() => setLoading(false))
   }, [router])
 
@@ -146,6 +147,58 @@ export default function HealthDashboard() {
               </table>
             )}
           </div>
+        </div>
+
+        {/* Recent sync runs */}
+        <div style={{ ...S.card, marginBottom: 14 }}>
+          <div style={S.head}>Recent sync runs (last 50)</div>
+          {syncLogs.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#9ca3af', padding: '12px 0' }}>No sync runs recorded.</div>
+          ) : (
+            <div style={{ maxHeight: 420, overflowY: 'auto' as const }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+                <thead style={{ position: 'sticky' as const, top: 0, background: '#f9fafb' }}>
+                  <tr>
+                    <th style={th('left')}>When</th>
+                    <th style={th('left')}>Org</th>
+                    <th style={th('left')}>Provider</th>
+                    <th style={th('right')}>Records</th>
+                    <th style={th('right')}>Duration</th>
+                    <th style={th('left')}>Range</th>
+                    <th style={th('right')}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncLogs.map((l: any) => {
+                    const ok = l.status === 'success'
+                    const colour = ok ? '#15803d' : l.status === 'partial' ? '#d97706' : '#dc2626'
+                    return (
+                      <tr key={l.id}
+                          onClick={() => router.push(`/admin/customers/${l.org_id}`)}
+                          style={{ borderTop: '1px solid #f3f4f6', cursor: 'pointer' }}>
+                        <td style={{ ...S.td, color: '#6b7280', whiteSpace: 'nowrap' as const }}>{fmt(l.created_at)}</td>
+                        <td style={{ ...S.td, color: '#111', fontWeight: 500 }}>{l.org_name}</td>
+                        <td style={{ ...S.td, color: '#374151' }}>{l.provider}</td>
+                        <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{l.records_synced ?? '—'}</td>
+                        <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{l.duration_ms != null ? `${(l.duration_ms / 1000).toFixed(1)}s` : '—'}</td>
+                        <td style={{ ...S.td, color: '#9ca3af', fontSize: 11 }}>{l.date_from && l.date_to ? `${l.date_from} → ${l.date_to}` : '—'}</td>
+                        <td style={{ ...S.td, textAlign: 'right' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'white', color: colour, border: `1px solid ${colour}`, textTransform: 'uppercase' as const }}>
+                            {l.status}
+                          </span>
+                          {l.error_msg && (
+                            <div style={{ fontSize: 10, color: '#dc2626', marginTop: 3, fontFamily: 'ui-monospace, monospace', textAlign: 'left' as const, maxWidth: 260, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }} title={l.error_msg}>
+                              {l.error_msg}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Error feed */}

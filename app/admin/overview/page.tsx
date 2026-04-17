@@ -18,19 +18,38 @@ export default function AdminOverview() {
   const [data, setData]       = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
+
+  const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
 
   useEffect(() => {
-    const secret = sessionStorage.getItem('admin_auth') ?? ''
-    if (!secret) { router.push('/admin'); return }
-    fetch('/api/admin/overview', { headers: { 'x-admin-secret': secret } })
-      .then(async r => {
-        if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized — log in at /admin' : `HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(setData)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
+    if (!secret) { router.push('/admin/login?next=/admin/overview'); return }
+    load()
   }, [router])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const r = await fetch('/api/admin/overview', { headers: { 'x-admin-secret': secret } })
+      if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized — log in again' : `HTTP ${r.status}`)
+      setData(await r.json())
+    } catch (e: any) { setError(e.message) }
+    setLoading(false)
+  }
+
+  async function triggerMasterSync() {
+    setSyncing(true); setSyncMsg('')
+    try {
+      const r = await fetch('/api/admin/sync-log', {
+        method: 'POST', headers: { 'x-admin-secret': secret },
+      })
+      const j = await r.json()
+      setSyncMsg(r.ok ? `✓ Master sync triggered · ${JSON.stringify(j).slice(0, 120)}` : `✗ ${j.error ?? 'Failed'}`)
+    } catch (e: any) { setSyncMsg('✗ ' + e.message) }
+    setSyncing(false)
+    setTimeout(() => setSyncMsg(''), 8000)
+  }
 
   if (loading) return <div><AdminNav /><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div></div>
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
@@ -49,10 +68,26 @@ export default function AdminOverview() {
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20, gap: 10, flexWrap: 'wrap' as const }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>Overview</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Business snapshot · last refreshed just now</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {syncMsg && <span style={{ fontSize: 12, color: syncMsg.startsWith('✓') ? '#15803d' : '#dc2626', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>{syncMsg}</span>}
+            <button
+              onClick={triggerMasterSync}
+              disabled={syncing}
+              style={{ padding: '8px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: syncing ? 'not-allowed' : 'pointer' }}
+            >
+              {syncing ? 'Syncing all…' : '↻ Sync all now'}
+            </button>
+            <button
+              onClick={load}
+              style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', color: '#374151', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >
+              Refresh
+            </button>
           </div>
         </div>
 

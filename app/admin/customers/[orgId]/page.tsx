@@ -45,12 +45,13 @@ export default function CustomerDetail() {
   const [editingKey, setEditingKey] = useState<any>(null)       // { id, provider, department, business_id }
   const [addIntegModal, setAddIntegModal] = useState<any>(null) // { business_id, business_name }
   const [discoveryResult, setDiscoveryResult] = useState<any>(null)
+  const [deptSetupResult, setDeptSetupResult] = useState<any>(null)
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
 
   useEffect(() => {
-    if (!secret) { router.push('/admin'); return }
+    if (!secret) { router.push('/admin/login'); return }
     load()
   }, [orgId])
 
@@ -155,6 +156,24 @@ export default function CustomerDetail() {
       if (!r.ok) throw new Error((await r.json()).error ?? 'Delete failed')
       await load()
     } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  async function setupDepartments(businessId: string, businessName: string) {
+    setActionLoading('setup_depts_' + businessId)
+    setDeptSetupResult(null)
+    try {
+      const r = await fetch('/api/admin/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ org_id: orgId, business_id: businessId, action: 'auto' }),
+      })
+      const json = await r.json()
+      if (!r.ok || !json.ok) throw new Error(json.error ?? 'Setup failed')
+      setDeptSetupResult({ ok: true, businessName, departments: json.departments ?? [] })
+    } catch (e: any) {
+      setDeptSetupResult({ ok: false, businessName, error: e.message })
+    }
     setActionLoading(null)
   }
 
@@ -343,13 +362,56 @@ export default function CustomerDetail() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' as const, gap: 10 }}>
           <div style={S.sectionHead}>Integrations ({integrations.length})</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
-            {businesses.map((b: any) => (
-              <button key={b.id} onClick={() => setAddIntegModal({ business_id: b.id, business_name: b.name })} style={{ ...S.btnTiny, background: '#eef2ff', color: '#4f46e5', fontWeight: 700 }}>
-                + {b.name}
-              </button>
-            ))}
+            {businesses.map((b: any) => {
+              const hasInzii = integrations.some((i: any) => i.business_id === b.id && (i.provider?.startsWith('inzii') || i.provider === 'swess'))
+              return (
+                <div key={b.id} style={{ display: 'inline-flex', gap: 4 }}>
+                  <button onClick={() => setAddIntegModal({ business_id: b.id, business_name: b.name })} style={{ ...S.btnTiny, background: '#eef2ff', color: '#4f46e5', fontWeight: 700 }}>
+                    + {b.name}
+                  </button>
+                  {hasInzii && (
+                    <button onClick={() => setupDepartments(b.id, b.name)} disabled={actionLoading === 'setup_depts_' + b.id} style={{ ...S.btnTiny, background: '#f0fdf4', color: '#15803d', fontWeight: 700 }} title={`Auto-create department records for ${b.name} from its Inzii integrations`}>
+                      {actionLoading === 'setup_depts_' + b.id ? '…' : `⚙ Setup depts · ${b.name}`}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
+
+        {/* Dept setup result banner */}
+        {deptSetupResult && (
+          <div style={{
+            background: deptSetupResult.ok ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${deptSetupResult.ok ? '#bbf7d0' : '#fecaca'}`,
+            borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 12,
+            color: deptSetupResult.ok ? '#15803d' : '#dc2626',
+            display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start',
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                {deptSetupResult.ok ? '✓ ' : '✗ '} Setup departments · {deptSetupResult.businessName}
+              </div>
+              {deptSetupResult.ok ? (
+                deptSetupResult.departments.length === 0 ? (
+                  <div style={{ color: '#374151' }}>No Inzii departments found on this business — add them via + {deptSetupResult.businessName} first.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
+                    {deptSetupResult.departments.map((d: any) => (
+                      <span key={d.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', background: 'white', borderRadius: 4, border: '1px solid #e5e7eb', fontSize: 11, color: '#374151' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: d.color || '#6b7280' }} /> {d.name}
+                      </span>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <div style={{ color: '#dc2626', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{deptSetupResult.error}</div>
+              )}
+            </div>
+            <button onClick={() => setDeptSetupResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#6b7280' }}>×</button>
+          </div>
+        )}
 
         {/* Discovery result banner */}
         {discoveryResult && (
@@ -656,9 +718,11 @@ export default function CustomerDetail() {
       ═══════════════════════════════════════════════════════ */}
       {addIntegModal && (
         <AddIntegrationModal
+          secret={secret}
           businessId={addIntegModal.business_id}
           businessName={addIntegModal.business_name}
           onClose={() => setAddIntegModal(null)}
+          orgId={orgId}
           onSave={(provider: string, apiKey: string, department?: string) => saveKey('new', apiKey, provider, department, addIntegModal.business_id)}
           saving={actionLoading === 'save_new'}
         />
@@ -743,15 +807,38 @@ export default function CustomerDetail() {
 }
 
 // Modal for adding a new integration to a specific business.
-function AddIntegrationModal({ businessId, businessName, onClose, onSave, saving }: any) {
+function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose, onSave, saving }: any) {
   const groups = groupedProviders()
   const [provider, setProvider] = useState('personalkollen')
   const [department, setDepartment] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<any>(null)
 
   const selected = getProvider(provider)
   const isMultiDept = selected?.supports_multi_department ?? false
+  const canTest = !!selected?.supported && apiKey.trim().length > 0
   const canSave = !!selected?.supported && apiKey.trim().length > 0 && (!isMultiDept || department.trim().length > 0)
+
+  async function testConnection() {
+    setTesting(true); setTestResult(null)
+    try {
+      const r = await fetch('/api/admin/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ provider, api_key: apiKey.trim(), org_id: orgId, business_id: businessId }),
+      })
+      const json = await r.json()
+      setTestResult({ ok: r.ok && !json.error, ...json })
+    } catch (e: any) {
+      setTestResult({ ok: false, error: e.message })
+    }
+    setTesting(false)
+  }
+
+  // Clear stale test result when the key/provider changes
+  function onKeyChange(v: string) { setApiKey(v); if (testResult) setTestResult(null) }
+  function onProviderChange(v: string) { setProvider(v); if (testResult) setTestResult(null) }
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -767,7 +854,7 @@ function AddIntegrationModal({ businessId, businessName, onClose, onSave, saving
         <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>Provider</label>
-            <select value={provider} onChange={e => setProvider(e.target.value)} style={inputStyle}>
+            <select value={provider} onChange={e => onProviderChange(e.target.value)} style={inputStyle}>
               {groups.map(g => (
                 <optgroup key={g.category} label={g.label}>
                   {g.providers.map(p => (
@@ -812,15 +899,43 @@ function AddIntegrationModal({ businessId, businessName, onClose, onSave, saving
             <input
               type="password"
               value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
+              onChange={e => onKeyChange(e.target.value)}
               placeholder={selected?.supported ? 'Paste the key' : 'Select a supported provider first'}
               disabled={!selected?.supported}
               style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace', opacity: selected?.supported ? 1 : 0.5 }}
             />
           </div>
+
+          {testResult && (
+            <div style={{
+              background: testResult.ok ? '#f0fdf4' : '#fef2f2',
+              border: `1px solid ${testResult.ok ? '#bbf7d0' : '#fecaca'}`,
+              borderRadius: 8, padding: '10px 12px', marginBottom: 16, fontSize: 12,
+              color: testResult.ok ? '#15803d' : '#dc2626',
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: testResult.ok ? 4 : 0 }}>
+                {testResult.ok ? '✓ Connection successful' : `✗ ${testResult.error || 'Connection failed'}`}
+              </div>
+              {testResult.ok && (
+                <div style={{ color: '#374151', fontSize: 11, display: 'flex', flexDirection: 'column' as const, gap: 2 }}>
+                  {testResult.workplace_name && <div><span style={{ color: '#9ca3af' }}>Workplace:</span> {testResult.workplace_name}</div>}
+                  {testResult.earliest_date && <div><span style={{ color: '#9ca3af' }}>Data from:</span> {testResult.earliest_date}</div>}
+                  {typeof testResult.total_records === 'number' && <div><span style={{ color: '#9ca3af' }}>Records:</span> {testResult.total_records.toLocaleString('en-GB')}</div>}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={testConnection}
+            disabled={!canTest || testing || saving}
+            style={{ padding: '11px 14px', background: canTest ? '#eef2ff' : '#f3f4f6', color: canTest ? '#4f46e5' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canTest && !testing ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap' as const }}
+            title="Verify the API key works before saving"
+          >
+            {testing ? 'Testing…' : 'Test'}
+          </button>
           <button
             onClick={() => onSave(provider, apiKey.trim(), isMultiDept ? department.trim() : undefined)}
             disabled={!canSave || saving}

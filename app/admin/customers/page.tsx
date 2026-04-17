@@ -32,7 +32,7 @@ export default function CustomersPipeline() {
     // That same password is the ADMIN_SECRET value used by our x-admin-secret header check.
     const secret = sessionStorage.getItem('admin_auth') ?? ''
     if (!secret) {
-      router.push('/admin')
+      router.push('/admin/login?next=/admin/customers')
       return
     }
     fetch('/api/admin/customers', { headers: { 'x-admin-secret': secret } })

@@ -3,7 +3,13 @@ import { NextRequest, NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
+function checkAuth(req: NextRequest): boolean {
+  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
+  return secret === process.env.ADMIN_SECRET
+}
+
 export async function POST(req: NextRequest) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const { provider, api_key, org_id, business_id } = await req.json()
     if (!provider || !api_key) return NextResponse.json({ error: 'provider and api_key required' }, { status: 400 })

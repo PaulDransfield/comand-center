@@ -22,7 +22,7 @@ export default function AgentsDashboard() {
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
 
   useEffect(() => {
-    if (!secret) { router.push('/admin'); return }
+    if (!secret) { router.push('/admin/login?next=/admin/agents'); return }
     load()
   }, [])
 
