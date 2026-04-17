@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
   if (action === 'extend_trial') {
     const days = parseInt(params.days ?? 14)
     const newEnd = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
-    await db.from('organisations').update({ trial_ends_at: newEnd }).eq('id', org_id)
+    await db.from('organisations').update({ trial_end: newEnd }).eq('id', org_id)
     await log(db, admin_email, 'extend_trial', 'org', org_id, { days, new_end: newEnd })
     return NextResponse.json({ ok: true, new_trial_end: newEnd })
   }

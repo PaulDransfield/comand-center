@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const todayStr = new Date().toISOString().slice(0, 10)
 
   const [orgsRes, membersRes, integsRes, onboardingRes, aiUsageRes] = await Promise.all([
-    db.from('organisations').select('id, name, plan, is_active, trial_ends_at, created_at, stripe_customer_id').order('created_at', { ascending: false }),
+    db.from('organisations').select('id, name, plan, is_active, trial_end, created_at, stripe_customer_id').order('created_at', { ascending: false }),
     db.from('organisation_members').select('org_id, user_id, role, created_at'),
     db.from('integrations').select('org_id, provider, status, last_sync_at, last_error'),
     db.from('onboarding_progress').select('org_id, step, metadata, current_step, steps_completed, completed_at'),
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
       is_active:         o.is_active,
       email,
       days_on_platform:  daysOnPlatform,
-      trial_ends_at:     o.trial_ends_at,
+      trial_end:         o.trial_end,
       has_stripe:        !!o.stripe_customer_id,
       member_count:      memberCount,
       integrations_total:     integs.length,

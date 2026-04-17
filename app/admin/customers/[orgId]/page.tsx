@@ -159,7 +159,7 @@ export default function CustomerDetail() {
   const stageMeta = STAGE_META[stage]
 
   const daysOnPlatform = Math.floor((Date.now() - new Date(org.created_at).getTime()) / 86400000)
-  const trialDaysLeft = org.trial_ends_at ? Math.floor((new Date(org.trial_ends_at).getTime() - Date.now()) / 86400000) : null
+  const trialDaysLeft = org.trial_end ? Math.floor((new Date(org.trial_end).getTime() - Date.now()) / 86400000) : null
 
   const setupRequested = onboarding?.step === 'setup_requested'
   const setupMeta = onboarding?.metadata ?? null
