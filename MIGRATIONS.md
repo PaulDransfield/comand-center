@@ -161,9 +161,9 @@ This auto-creates department records from the existing Inzii integrations.
 
 ---
 
-### M005 — 2026-04-15 — Session 6 — Inzii POS department support
+### M005 — 2026-04-15 — Session 7 — Inzii POS department support
 **Run**: 2026-04-15
-**Status**: ✅ Success (department column) / ⏳ PENDING (constraint fix)
+**Status**: ✅ Complete — both steps confirmed (all 6 Inzii dept rows inserted, constraint fix working)
 
 ```sql
 -- Step 1: Add department column (run first)

@@ -1,5 +1,5 @@
 # ROADMAP.md — CommandCenter
-> Version 6.0 | Updated: 2026-04-15 | Session 6 COMPLETE ✅
+> Version 7.0 | Updated: 2026-04-17 | Session 7 IN PROGRESS 🔄
 > Read alongside CLAUDE.md and FIXES.md
 
 ---
@@ -83,7 +83,7 @@
 
 ---
 
-## Session 7 — IN PROGRESS
+## Session 7 — IN PROGRESS 🔄
 
 | Item | Description | Status |
 |------|-------------|--------|
@@ -94,6 +94,19 @@
 | 12. Rename /covers → /revenue | "Covers" is wrong term for this page | ✅ **COMPLETE** |
 | 13. Mobile dashboard, staff, tracker | KPI cards must stack on phones | 📋 Next |
 | 14. Schema migrations log | MIGRATIONS.md — record every SQL change (file created) | ✅ **COMPLETE** |
+
+### Session 7 — Inzii POS Integration
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Inzii POS adapter (`lib/pos/inzii.ts`) | ✅ Built | Tries 8 endpoint patterns against api.swess.se |
+| Multi-department DB schema (M005) | ✅ Complete | `department` column + partial unique indexes |
+| Admin panel — add dept modal | ✅ Built | InziiDeptModal in `/admin` page |
+| Sync engine — Inzii provider | ✅ Built | Stores as `inzii_bella`, `inzii_brus` etc. in revenue_logs |
+| Admin panel — show depts | 🔄 **BUG** | Debug shows 1 integration (only PK), Inzii rows filtered out |
+| Inzii API endpoint | ⏳ Unknown | api.swess.se responds but correct path not confirmed |
+
+**Open bug:** Admin shows "0 departments" — `biz.integrations` has 1 item (Personalkollen) despite 6 Inzii rows in DB. Likely: businesses table has a different active business_id than what Inzii was saved against. Run: `SELECT id, name, is_active FROM businesses WHERE org_id = 'e917d4b8-635e-4be6-8af0-afc48c3c7450';`
 
 ---
 

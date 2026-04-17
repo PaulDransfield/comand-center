@@ -257,7 +257,7 @@ export default function DashboardPage() {
 
         {/* ── Alerts strip ────────────────────────────────────────────────── */}
         {alerts.filter(a => a.severity === 'high' || a.severity === 'critical').slice(0, 1).map(a => (
-          <a key={a.id} href="/alerts" style={{ textDecoration: 'none', display: 'block', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <a key={a.id} href="/alerts" style={{ textDecoration: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
             <div>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#c2410c' }}>⚠ {a.title}</span>
               <span style={{ fontSize: 12, color: '#9a3412', marginLeft: 8 }}>{a.description?.slice(0, 70)}{a.description?.length > 70 ? '…' : ''}</span>

@@ -1,5 +1,17 @@
 # CLAUDE.md — Working Guidelines
-> Last updated: 2026-04-16 | Session 7 in progress
+> Last updated: 2026-04-17 | Session 7 in progress
+
+---
+
+## 0. HARD RULE — Update MD Files at Context Limit
+
+**At 95% of context window capacity, Claude MUST:**
+1. Update `CLAUDE.md` — session status, any new rules or decisions
+2. Update `ROADMAP.md` — what was completed, what is in progress, what is next
+3. Update `MIGRATIONS.md` — any SQL run or pending, mark statuses
+4. Update `FIXES.md` — any new bugs found or fixed
+
+This is non-negotiable. Do not wait to be asked. Do it automatically before context runs out.
 
 ---
 
@@ -34,7 +46,7 @@ git add -A && git commit -m "manual checkpoint" && git push
 4. Write code with plain-English comments explaining why
 5. Explain how to test — specific steps to verify it works
 6. Provide SQL for any DB changes, formatted for Supabase SQL Editor
-7. Update this file at the end of every session
+7. Update this file at the end of every session AND at 95% context (see Rule 0)
 
 ---
 
@@ -111,8 +123,8 @@ Customer browser
 | Agent | Schedule | Plan | Status | Notes |
 |-------|----------|------|--------|-------|
 | Anomaly detection | Nightly 06:00 | All | ✅ **COMPLETE** | Updated thresholds, email alerts |
-| Onboarding success | On first sync | All | 🔄 In progress | Next priority |
-| Monday briefing | Monday 07:00 | Pro+ | 📋 Session 7 | Needs Resend domain verification |
+| Onboarding success | On first sync | All | ✅ **COMPLETE** | Sends welcome email on first sync |
+| Monday briefing | Monday 07:00 | Pro+ | ⏳ **BLOCKED** | Needs Resend domain verification |
 | Forecast calibration | 1st of month | Pro+ | ✅ **COMPLETE** | Runs at 04:00 UTC, pure arithmetic |
 | Supplier price creep | 1st of month | Pro+ | ✅ **SKELETON** | Waiting for Fortnox OAuth |
 | Scheduling optimisation | Weekly | Group | ✅ **COMPLETE** | Monday 07:00 UTC, uses Sonnet 4-6 |
