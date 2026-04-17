@@ -1,6 +1,7 @@
 // @ts-nocheck
 // app/api/tracker/route.ts
 // GET  — fetch P&L data for a business/year
+//        Merges manual tracker_data with real synced data from revenue_logs + staff_logs
 // POST — save or update a month's P&L data
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -19,15 +20,79 @@ export async function GET(req: NextRequest) {
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
   const db = createAdminClient()
-  const { data, error } = await db
-    .from('tracker_data')
-    .select('*')
-    .eq('business_id', businessId)
-    .eq('period_year', year)
-    .order('period_month')
+  const dateFrom = `${year}-01-01`
+  const dateTo   = `${year}-12-31`
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+  // Fetch all three sources in parallel
+  const [trackerRes, revRes, staffRes] = await Promise.all([
+    // Manual P&L entries
+    db.from('tracker_data').select('*').eq('business_id', businessId).eq('period_year', year).order('period_month'),
+    // Real revenue from POS sync (revenue_logs)
+    db.from('revenue_logs').select('revenue_date, revenue').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0),
+    // Real staff cost from Personalkollen sync (staff_logs)
+    db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).lte('shift_date', dateTo).or('cost_actual.gt.0,estimated_salary.gt.0'),
+  ])
+
+  const manualRows = trackerRes.data ?? []
+
+  // Aggregate synced revenue by month
+  const syncedRev: Record<number, number> = {}
+  for (const r of revRes.data ?? []) {
+    const m = parseInt(r.revenue_date.slice(5, 7))
+    syncedRev[m] = (syncedRev[m] ?? 0) + (r.revenue ?? 0)
+  }
+
+  // Aggregate synced staff cost by month
+  const syncedStaff: Record<number, number> = {}
+  for (const s of staffRes.data ?? []) {
+    const m    = parseInt(s.shift_date.slice(5, 7))
+    const cost = Number(s.cost_actual ?? 0) > 0 ? Number(s.cost_actual) : Number(s.estimated_salary ?? 0)
+    syncedStaff[m] = (syncedStaff[m] ?? 0) + cost
+  }
+
+  // Merge: use synced data when available, fall back to manual entries
+  const manualByMonth: Record<number, any> = {}
+  for (const r of manualRows) manualByMonth[r.period_month] = r
+
+  const merged = []
+  for (let m = 1; m <= 12; m++) {
+    const manual   = manualByMonth[m]
+    const realRev  = Math.round(syncedRev[m] ?? 0)
+    const realCost = Math.round(syncedStaff[m] ?? 0)
+
+    // Use synced data if it exists, otherwise use manual
+    const revenue    = realRev > 0 ? realRev : Number(manual?.revenue ?? 0)
+    const staff_cost = realCost > 0 ? realCost : Number(manual?.staff_cost ?? 0)
+    const food_cost  = Number(manual?.food_cost ?? 0) // only from manual/Fortnox — no POS source yet
+
+    if (revenue === 0 && staff_cost === 0 && food_cost === 0) continue // skip empty months
+
+    const net_profit = revenue - food_cost - staff_cost
+    const margin_pct = revenue > 0 ? Math.round((net_profit / revenue) * 1000) / 10 : 0
+    const food_pct   = revenue > 0 ? Math.round((food_cost / revenue) * 1000) / 10 : 0
+    const staff_pct  = revenue > 0 ? Math.round((staff_cost / revenue) * 1000) / 10 : 0
+
+    merged.push({
+      id:           manual?.id ?? null,
+      org_id:       auth.orgId,
+      business_id:  businessId,
+      period_year:  year,
+      period_month: m,
+      revenue,
+      food_cost,
+      staff_cost,
+      net_profit:   Math.round(net_profit),
+      margin_pct,
+      food_pct,
+      staff_pct,
+      source:       realRev > 0 || realCost > 0 ? 'synced' : 'manual',
+      // Flag which values are from synced vs manual
+      _synced_revenue:    realRev > 0,
+      _synced_staff_cost: realCost > 0,
+    })
+  }
+
+  return NextResponse.json(merged)
 }
 
 export async function POST(req: NextRequest) {
@@ -50,7 +115,6 @@ export async function POST(req: NextRequest) {
   const foodPct    = rev > 0 ? (food / rev) * 100 : 0
   const staffPct   = rev > 0 ? (staff / rev) * 100 : 0
 
-  // Check if exists
   const { data: existing } = await db
     .from('tracker_data')
     .select('id')
