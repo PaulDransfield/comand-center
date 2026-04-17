@@ -73,7 +73,8 @@ export async function POST(req: NextRequest) {
         error:   'Daily AI query limit reached',
         limit,
         used:    count,
-        upgrade: true,   // frontend shows upgrade prompt when this is true
+        plan:    auth.plan,   // so the upsell card can branch trial vs paid
+        upgrade: true,        // frontend shows upgrade prompt when this is true
       }, { status: 429 })
     }
   }

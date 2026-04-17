@@ -11,6 +11,7 @@
 
 import { useState, useRef, useEffect }  from 'react'
 import { createClient }                from '@/lib/supabase/client'
+import AiLimitReached                  from '@/components/AiLimitReached'
 
 interface Message {
   role:    'user' | 'assistant'
@@ -68,6 +69,7 @@ export default function AskAI({ page, context }: Props) {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
   const [upgrade,  setUpgrade]  = useState(false)
+  const [limitInfo, setLimitInfo] = useState<{ used: number; limit: number; plan: string } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
 
@@ -87,6 +89,7 @@ export default function AskAI({ page, context }: Props) {
     if (!question.trim() || loading) return
     setError('')
     setUpgrade(false)
+    setLimitInfo(null)
 
     const userMsg: Message = { role: 'user', content: question }
     setMessages(prev => [...prev, userMsg])
@@ -111,7 +114,7 @@ export default function AskAI({ page, context }: Props) {
       if (!res.ok) {
         if (data.upgrade) {
           setUpgrade(true)
-          setError(`You've used all ${data.limit} AI queries for today. Upgrade for more.`)
+          setLimitInfo({ used: data.used ?? data.limit ?? 0, limit: data.limit ?? 0, plan: data.plan ?? 'trial' })
         } else {
           setError(data.error ?? 'Something went wrong')
         }
@@ -271,15 +274,15 @@ export default function AskAI({ page, context }: Props) {
             </div>
           )}
 
-          {/* Error */}
-          {error && (
+          {/* AI limit reached — prominent upsell card */}
+          {upgrade && limitInfo && (
+            <AiLimitReached used={limitInfo.used} limit={limitInfo.limit} plan={limitInfo.plan} />
+          )}
+
+          {/* Regular error (non-limit) */}
+          {error && !upgrade && (
             <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
               {error}
-              {upgrade && (
-                <a href="/upgrade" style={{ display: 'block', marginTop: 6, color: '#1a1f2e', fontWeight: 600, textDecoration: 'none' }}>
-                  View upgrade options →
-                </a>
-              )}
             </div>
           )}
 

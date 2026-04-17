@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 // app/upgrade/page.tsx — Pricing page with Stripe checkout integration
 
 import AppShell from '@/components/AppShell'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams }     from 'next/navigation'
 import { createClient }        from '@/lib/supabase/client'
 import { track }               from '@/lib/analytics/posthog'
@@ -51,11 +51,26 @@ export default function UpgradePage() {
 
   const upgradeSuccess = searchParams.get('upgrade') === 'success'
   const cancelled      = searchParams.get('cancelled') === '1'
+  const focusAi        = searchParams.get('focus') === 'ai'
+
+  const boosterRef = useRef<HTMLDivElement>(null)
+  const [flashBooster, setFlashBooster] = useState(false)
 
   // Fetch usage data
   useEffect(() => {
     fetchUsage()
   }, [])
+
+  // If user came from AskAI limit banner, scroll booster into view and flash it
+  useEffect(() => {
+    if (!focusAi || !usage) return
+    const t = setTimeout(() => {
+      boosterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setFlashBooster(true)
+      setTimeout(() => setFlashBooster(false), 2500)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [focusAi, usage])
 
   async function fetchUsage() {
     const supabase = createClient()
@@ -278,24 +293,53 @@ export default function UpgradePage() {
         })}
       </div>
 
-      {/* AI Booster add-on — shown when user is on a paid plan */}
-      {usage && currentPlan !== 'trial' && currentPlan !== 'group' && currentPlan !== 'enterprise' && (
-        <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 16, padding: '20px 24px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' as const, gap: 16 }}>
+      {/* AI Booster add-on — hidden only for unlimited-query plans */}
+      {usage && currentPlan !== 'group' && currentPlan !== 'enterprise' && (
+        <div
+          ref={boosterRef}
+          style={{
+            background:   'white',
+            border:       `${flashBooster ? 2 : 1}px solid ${flashBooster ? '#6366f1' : '#e5e7eb'}`,
+            borderRadius: 16,
+            padding:      '20px 24px',
+            marginBottom: 20,
+            display:      'flex',
+            alignItems:   'center',
+            justifyContent: 'space-between',
+            flexWrap:     'wrap' as const,
+            gap:          16,
+            boxShadow:    flashBooster ? '0 0 0 6px rgba(99,102,241,0.15)' : 'none',
+            transition:   'border-color .3s, box-shadow .3s, border-width .3s',
+          }}
+        >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: 18 }}>⚡</span>
               <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>AI Booster</span>
               <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: '#fce7f3', color: '#9d174d' }}>+299 kr/mo</span>
             </div>
-            <div style={{ fontSize: 12, color: '#6b7280' }}>Add 100 extra AI queries per day to any plan. 82% margin — our most profitable product.</div>
+            <div style={{ fontSize: 12, color: '#6b7280' }}>
+              {currentPlan === 'trial'
+                ? 'Add 100 extra AI queries per day on top of any paid plan. Pick a plan above first.'
+                : 'Add 100 extra AI queries per day on top of your plan. Cancel anytime.'}
+            </div>
           </div>
-          <button
-            style={{ padding: '9px 18px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' as const }}
-            disabled={loading === 'ai_addon'}
-            onClick={() => handleUpgrade('ai_addon')}
-          >
-            {loading === 'ai_addon' ? 'Loading…' : 'Add AI Booster →'}
-          </button>
+          {currentPlan === 'trial' ? (
+            <button
+              disabled
+              style={{ padding: '9px 18px', background: '#e5e7eb', color: '#9ca3af', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'not-allowed', whiteSpace: 'nowrap' as const }}
+            >
+              Upgrade a plan first
+            </button>
+          ) : (
+            <button
+              style={{ padding: '9px 18px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' as const }}
+              disabled={loading === 'ai_addon'}
+              onClick={() => handleUpgrade('ai_addon')}
+            >
+              {loading === 'ai_addon' ? 'Loading…' : 'Add AI Booster →'}
+            </button>
+          )}
         </div>
       )}
 
