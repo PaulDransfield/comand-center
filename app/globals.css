@@ -1,5 +1,9 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+/* Reserve scrollbar space so pages that don't scroll don't shift left/right
+   when switching to pages that do. scrollbar-gutter has the best UX on modern
+   browsers; overflow-y:scroll forces a scrollbar as the fallback. */
+html { scrollbar-gutter: stable; overflow-y: scroll; }
 a { color: inherit; }
 input, button, select, textarea { font-family: inherit; }
 
