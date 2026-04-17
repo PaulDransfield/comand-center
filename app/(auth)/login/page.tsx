@@ -1,11 +1,20 @@
 'use client'
-export const dynamic = 'force-dynamic'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+// Next.js requires useSearchParams() to be inside a <Suspense> boundary during
+// prerender. Wrap the real form in Suspense so the build can emit a CSR fallback.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '60vh' }} />}>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const supabase = createClient()
   const searchParams = useSearchParams()
 
