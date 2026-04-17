@@ -53,9 +53,20 @@ export default function TrackerPage() {
   const load = useCallback(async () => {
     if (!selected) return
     setLoading(true)
-    const res  = await fetch(`/api/tracker?business_id=${selected}&year=${year}`)
+    // Use pre-computed monthly metrics as primary source
+    const res = await fetch(`/api/metrics/monthly?business_id=${selected}&year=${year}`)
     const data = await res.json()
-    if (Array.isArray(data)) setRows(data)
+    if (data.rows) {
+      // Map monthly_metrics to tracker row shape
+      setRows(data.rows.map((r: any) => ({
+        period_month: r.month, period_year: r.year,
+        revenue: r.revenue, food_cost: r.food_cost, staff_cost: r.staff_cost,
+        net_profit: r.net_profit, margin_pct: r.margin_pct,
+        food_pct: r.food_pct, staff_pct: r.labour_pct,
+      })))
+    } else if (Array.isArray(data)) {
+      setRows(data)
+    }
     setLoading(false)
   }, [selected, year])
 
@@ -81,34 +92,28 @@ export default function TrackerPage() {
     }
     setExpanded(month)
 
-    // Load daily revenue + staff cost data if not already loaded
+    // Load daily data from pre-computed summary table
     if (!dailyData[month]) {
       setLoadingDaily(month)
       const fromDate = `${year}-${String(month).padStart(2,'0')}-01`
       const lastDay  = new Date(year, month, 0).getDate()
       const toDate   = `${year}-${String(month).padStart(2,'0')}-${lastDay}`
       try {
-        // Fetch both revenue detail and staff-revenue in parallel
-        const [revRes, srRes] = await Promise.all([
-          fetch(`/api/revenue-detail?business_id=${selected}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => ({})),
-          fetch(`/api/staff-revenue?business_id=${selected}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => ({})),
-        ])
-        // Build a map of staff cost by date
-        const staffByDate: Record<string, number> = {}
-        for (const sr of (srRes.rows ?? [])) staffByDate[sr.date] = sr.staff_cost ?? 0
-
-        if (revRes.rows) {
-          const mapped = revRes.rows.map((r: any) => ({
-            date:              r.date,
-            total:             r.covers ?? 0,
-            revenue:           r.revenue ?? 0,
-            revenue_per_cover: r.revenue_per_cover ?? 0,
-            staff_cost:        staffByDate[r.date] ?? 0,
-            is_closed:         r.is_closed,
-          }))
+        // Single API call — daily_metrics has both revenue and staff cost
+        const res = await fetch(`/api/metrics/daily?business_id=${selected}&from=${fromDate}&to=${toDate}`)
+        const data = await res.json()
+        if (data.rows) {
+          const mapped = data.rows
+            .filter((r: any) => r.revenue > 0 || r.staff_cost > 0)
+            .map((r: any) => ({
+              date:              r.date,
+              total:             r.covers ?? 0,
+              revenue:           r.revenue ?? 0,
+              revenue_per_cover: r.rev_per_cover ?? 0,
+              staff_cost:        r.staff_cost ?? 0,
+              is_closed:         r.revenue === 0 && r.staff_cost === 0,
+            }))
           setDailyData(prev => ({ ...prev, [month]: mapped }))
-        } else if (Array.isArray(revRes)) {
-          setDailyData(prev => ({ ...prev, [month]: revRes }))
         }
       } catch {}
       setLoadingDaily(null)

@@ -101,12 +101,16 @@ export default function StaffPage() {
     const prev = viewMode === 'week' ? getWeekBounds(weekOffset - 1) : getMonthBounds(monthOffset - 1)
 
     Promise.all([
+      // Per-staff breakdown (still needs raw staff_logs for individual data)
       fetch(`/api/staff?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-      fetch(`/api/staff-revenue?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-      fetch(`/api/staff-revenue?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      // Pre-computed daily metrics for chart + totals
+      fetch(`/api/metrics/daily?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/metrics/daily?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
     ]).then(([staff, sr, prevSrRes]) => {
       setStaffData(staff)
-      setSrData(sr)
+      // Map daily_metrics fields to what staff page expects
+      const mapped = { ...sr, rows: (sr.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct })) }
+      setSrData(mapped)
       setPrevSr(prevSrRes)
       setLoading(false)
     })

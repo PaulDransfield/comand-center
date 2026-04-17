@@ -142,38 +142,25 @@ export default function DashboardPage() {
 
     const biz  = `business_id=${bizId}`
 
-    if (viewMode === 'week') {
-      const curr = getWeekBounds(weekOffset)
-      const prev = getWeekBounds(weekOffset - 1)
-      Promise.all([
-        fetch(`/api/staff-revenue?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-        fetch(`/api/staff-revenue?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-        fetch(`/api/departments?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-        fetch('/api/alerts').then(r => r.json()).catch(() => []),
-      ]).then(([curr_, prev_, deptRes, alertRes]) => {
-        setDailyRows(curr_.rows ?? [])
-        setPrevSummary(prev_.summary ?? null)
-        setDepts(deptRes ?? null)
-        setAlerts(Array.isArray(alertRes) ? alertRes : [])
-        setLoading(false)
-      })
-    } else {
-      // Month view — same real data sources as week, just a wider date range
-      const curr = getMonthBounds(monthOffset)
-      const prev = getMonthBounds(monthOffset - 1)
-      Promise.all([
-        fetch(`/api/staff-revenue?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-        fetch(`/api/staff-revenue?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-        fetch(`/api/departments?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-        fetch('/api/alerts').then(r => r.json()).catch(() => []),
-      ]).then(([curr_, prev_, deptRes, alertRes]) => {
-        setDailyRows(curr_.rows ?? [])
-        setPrevSummary(prev_.summary ?? null)
-        setDepts(deptRes ?? null)
-        setAlerts(Array.isArray(alertRes) ? alertRes : [])
-        setLoading(false)
-      })
-    }
+    const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+    const prev = viewMode === 'week' ? getWeekBounds(weekOffset - 1) : getMonthBounds(monthOffset - 1)
+
+    Promise.all([
+      // Pre-computed daily metrics (reads from summary tables)
+      fetch(`/api/metrics/daily?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/metrics/daily?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      // Departments (still reads from raw tables — has per-dept breakdown)
+      fetch(`/api/departments?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      fetch('/api/alerts').then(r => r.json()).catch(() => []),
+    ]).then(([curr_, prev_, deptRes, alertRes]) => {
+      // Map daily_metrics field names to what the dashboard expects
+      const rows = (curr_.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct }))
+      setDailyRows(rows)
+      setPrevSummary(prev_.summary ?? null)
+      setDepts(deptRes ?? null)
+      setAlerts(Array.isArray(alertRes) ? alertRes : [])
+      setLoading(false)
+    })
   }, [bizId, weekOffset, monthOffset, viewMode])
 
   // ── Derived values (week mode) ──────────────────────────────────────────────
