@@ -145,18 +145,63 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
   }
 
   // ── Per-workplace revenue breakdown from Personalkollen sales ────────────
-  // Each sale has a workplace_url. We match that to a department via staff_logs
-  // (staff_logs.pk_workplace_url ↔ staff_logs.staff_group = dept name).
+  // Personalkollen Kassaförsäljning (POS sales) already has per-workplace data.
+  // We match workplace_url → department using two strategies:
+  //   1. Workplace name from PK API → fuzzy-match to dept name (primary)
+  //   2. staff_logs.pk_workplace_url → staff_group voting (fallback)
   // Stored as provider='pk_<dept_slug>' so the departments page can show it.
+  //
+  // Swedish char handling: å/ä → a, ö → o for matching only.
+  // Storage keys always use the dept name slug (no normalization) so the API
+  // finds them via deptToProviderKeys(deptName).
   let perDeptRevUpserted = 0
   try {
-    // Build workplace_url → dept_slug map by voting on staff_group per workplace
+    // Slugify for MATCHING (normalise Swedish chars so ö→o, Öl→ol, Ölbaren→olbaren)
+    const matchSlug = (s: string) => s.toLowerCase()
+      .replace(/å/g,'a').replace(/ä/g,'a').replace(/ö/g,'o')
+      .replace(/[^a-z0-9]/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'')
+    // Slugify for STORAGE KEY (must match what deptToProviderKeys() returns in the API)
+    const storeSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g,'_')
+
+    // ── Strategy 1: workplace API names → dept name fuzzy match ─────────────
+    const { getWorkplaces } = await import('@/lib/pos/personalkollen')
+    const workplaces = await getWorkplaces(token)
+
+    // Collect all dept names from departments table + staff_group fallback
+    const { data: deptRows } = await db.from('departments').select('name').eq('org_id', integ.org_id)
+    const { data: sgRows }   = await db.from('staff_logs').select('staff_group').eq('org_id', integ.org_id).not('staff_group','is',null).limit(500)
+    const deptNames = [...new Set([
+      ...(deptRows ?? []).map((d: any) => d.name as string),
+      ...(sgRows   ?? []).map((d: any) => d.staff_group as string),
+    ])].filter(Boolean)
+
+    const deptList = deptNames.map(n => ({ name: n, matchSlug: matchSlug(n), storeSlug: storeSlug(n) }))
+
+    const wpToDeptSlug: Record<string, string> = {}
+    for (const wp of workplaces) {
+      const wSlug = matchSlug(wp.name)
+      // Exact match
+      let found = deptList.find(d => d.matchSlug === wSlug)
+      if (!found) {
+        // Substring match: dept slug is contained in workplace slug, or vice versa
+        // e.g. "brus" in "bubbel_brus", "chilango" in "chilango2", "ol" in "olbaren"
+        found = deptList.find(d => wSlug.includes(d.matchSlug) || d.matchSlug.includes(wSlug))
+      }
+      if (found) {
+        wpToDeptSlug[wp.url] = found.storeSlug
+        console.log(`  PK workplace "${wp.name}" → dept "${found.name}" (pk_${found.storeSlug})`)
+      } else {
+        console.log(`  PK workplace "${wp.name}" (${wSlug}) — no dept match`)
+      }
+    }
+
+    // ── Strategy 2: staff_logs voting (fills any gaps from strategy 1) ──────
     const { data: wpRows } = await db
       .from('staff_logs')
       .select('pk_workplace_url, staff_group')
       .eq('org_id', integ.org_id)
-      .not('pk_workplace_url', 'is', null)
-      .not('staff_group', 'is', null)
+      .not('pk_workplace_url','is',null)
+      .not('staff_group','is',null)
       .limit(2000)
 
     const wpVotes: Record<string, Record<string, number>> = {}
@@ -164,13 +209,13 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
       if (!wpVotes[row.pk_workplace_url]) wpVotes[row.pk_workplace_url] = {}
       wpVotes[row.pk_workplace_url][row.staff_group] = (wpVotes[row.pk_workplace_url][row.staff_group] ?? 0) + 1
     }
-    const wpToDeptSlug: Record<string, string> = {}
     for (const [wpUrl, votes] of Object.entries(wpVotes)) {
+      if (wpToDeptSlug[wpUrl]) continue  // strategy 1 already matched this URL
       const top = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0]
-      if (top) wpToDeptSlug[wpUrl] = top.toLowerCase().replace(/[^a-z0-9]/g, '_')
+      if (top) wpToDeptSlug[wpUrl] = storeSlug(top)
     }
 
-    // Aggregate per (dept, date)
+    // ── Aggregate sales by (dept_slug, date) ─────────────────────────────────
     const byDeptDay: Record<string, any> = {}
     for (const sale of sales) {
       if (!sale.sale_time || !sale.workplace_url) continue
@@ -207,6 +252,7 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
       await db.from('revenue_logs').upsert(pkRows, { onConflict: 'org_id,business_id,provider,revenue_date' })
       perDeptRevUpserted = pkRows.length
     }
+    console.log(`Per-dept revenue: ${perDeptRevUpserted} rows stored across ${new Set(pkRows.map((r: any) => r.provider)).size} departments`)
   } catch (e: any) {
     console.warn('Per-dept revenue sync error:', e.message)
   }
