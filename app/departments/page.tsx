@@ -142,42 +142,65 @@ export default function DepartmentsPage() {
 
             {/* Deploy marker + diagnostic counts */}
             <div style={{ background: '#ede9fe', color: '#6d28d9', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
-              table v5 · depts: {depts.length} · summary: {summary ? 'yes' : 'no'} · period: {periodLabel}
+              list v6 · depts: {depts.length} · summary: {summary ? 'yes' : 'no'} · period: {periodLabel}
             </div>
 
-            {/* Absolute minimum table — no extracted component, no complex styles */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: 16, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 12 }}>Departments — {periodLabel}</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', color: '#9ca3af', fontSize: 11 }}>
-                    <th style={{ padding: '6px 8px' }}>Department</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Revenue</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Profit</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>GP%</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Labour</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Hours</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {depts.map((d: any, i: number) => {
-                    const rev = Number(d?.revenue || 0)
-                    const cost = Number(d?.staff_cost || 0)
-                    const profit = Math.max(0, rev - cost)
-                    return (
-                      <tr key={i} style={{ borderTop: '1px solid #f3f4f6', cursor: 'pointer' }}
-                          onClick={() => router.push(`/departments/${encodeURIComponent(d?.name || '')}`)}>
-                        <td style={{ padding: '10px 8px', fontWeight: 500 }}>{d?.name || '—'}</td>
-                        <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 600 }}>{rev > 0 ? rev.toLocaleString('en-GB') + ' kr' : '—'}</td>
-                        <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 600, color: profit > 0 ? '#15803d' : '#d1d5db' }}>{profit > 0 ? profit.toLocaleString('en-GB') + ' kr' : '—'}</td>
-                        <td style={{ padding: '10px 8px', textAlign: 'right' }}>{d?.gp_pct != null ? Number(d.gp_pct).toFixed(1) + '%' : '—'}</td>
-                        <td style={{ padding: '10px 8px', textAlign: 'right', color: '#6b7280' }}>{cost > 0 ? cost.toLocaleString('en-GB') + ' kr' : '—'}</td>
-                        <td style={{ padding: '10px 8px', textAlign: 'right', color: '#9ca3af' }}>{Number(d?.hours || 0) > 0 ? Number(d.hours).toFixed(1) + 'h' : '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            {/* Div-based list (no <table>/<tr>/<td>) — if this renders, a CSS rule is hiding real tables */}
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', marginBottom: 16, overflow: 'hidden' }}>
+              <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', fontSize: 13, fontWeight: 700, color: '#111' }}>
+                Departments — {periodLabel}
+              </div>
+
+              {/* Column headers */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: 8, padding: '8px 20px', background: '#f9fafb', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                <div>Department</div>
+                <div style={{ textAlign: 'right' }}>Revenue</div>
+                <div style={{ textAlign: 'right' }}>Profit</div>
+                <div style={{ textAlign: 'right' }}>GP%</div>
+                <div style={{ textAlign: 'right' }}>Labour</div>
+                <div style={{ textAlign: 'right' }}>Hours</div>
+              </div>
+
+              {/* Rows */}
+              {depts.map((d: any, i: number) => {
+                const rev    = Number(d?.revenue || 0)
+                const cost   = Number(d?.staff_cost || 0)
+                const profit = Math.max(0, rev - cost)
+                return (
+                  <div
+                    key={i}
+                    onClick={() => router.push(`/departments/${encodeURIComponent(d?.name || '')}`)}
+                    style={{
+                      display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: 8,
+                      padding: '12px 20px', borderTop: '1px solid #f3f4f6', fontSize: 13,
+                      cursor: 'pointer', alignItems: 'center',
+                    }}
+                  >
+                    <div style={{ fontWeight: 500, color: '#111' }}>{d?.name || '—'}</div>
+                    <div style={{ textAlign: 'right', fontWeight: 600, color: '#111' }}>{rev > 0 ? rev.toLocaleString('en-GB') + ' kr' : '—'}</div>
+                    <div style={{ textAlign: 'right', fontWeight: 600, color: profit > 0 ? '#15803d' : '#d1d5db' }}>{profit > 0 ? profit.toLocaleString('en-GB') + ' kr' : '—'}</div>
+                    <div style={{ textAlign: 'right', color: '#374151' }}>{d?.gp_pct != null ? Number(d.gp_pct).toFixed(1) + '%' : '—'}</div>
+                    <div style={{ textAlign: 'right', color: '#6b7280' }}>{cost > 0 ? cost.toLocaleString('en-GB') + ' kr' : '—'}</div>
+                    <div style={{ textAlign: 'right', color: '#9ca3af' }}>{Number(d?.hours || 0) > 0 ? Number(d.hours).toFixed(1) + 'h' : '—'}</div>
+                  </div>
+                )
+              })}
+
+              {/* Total row */}
+              {summary && (
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: 8,
+                  padding: '12px 20px', borderTop: '2px solid #e5e7eb', background: '#f9fafb',
+                  fontSize: 13, fontWeight: 700,
+                }}>
+                  <div style={{ color: '#374151' }}>Total</div>
+                  <div style={{ textAlign: 'right', color: '#111' }}>{Number(summary.total_revenue || 0).toLocaleString('en-GB')} kr</div>
+                  <div style={{ textAlign: 'right', color: '#15803d' }}>{Math.max(0, Number(summary.total_revenue || 0) - Number(summary.total_staff_cost || 0)).toLocaleString('en-GB')} kr</div>
+                  <div style={{ textAlign: 'right', color: '#374151' }}>{summary?.gp_pct != null ? Number(summary.gp_pct).toFixed(1) + '%' : '—'}</div>
+                  <div style={{ textAlign: 'right', color: '#374151' }}>{Number(summary.total_staff_cost || 0).toLocaleString('en-GB')} kr</div>
+                  <div style={{ textAlign: 'right', color: '#111' }}>{Number(summary.total_hours || 0).toFixed(1)}h</div>
+                </div>
+              )}
             </div>
           </>
         )}
