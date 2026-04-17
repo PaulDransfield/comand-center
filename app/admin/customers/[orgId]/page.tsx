@@ -1,0 +1,361 @@
+'use client'
+// @ts-nocheck
+// app/admin/customers/[orgId]/page.tsx — customer god-page.
+// One URL that answers every "what's up with this customer" question.
+
+export const dynamic = 'force-dynamic'
+
+import { useEffect, useState } from 'react'
+import { useRouter, useParams } from 'next/navigation'
+
+const STAGE_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  new:     { label: 'New',        color: '#6d28d9', bg: '#ede9fe', border: '#ddd6fe' },
+  setup:   { label: 'In Setup',   color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
+  active:  { label: 'Active',     color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0' },
+  at_risk: { label: 'At Risk',    color: '#dc2626', bg: '#fef2f2', border: '#fecaca' },
+  churned: { label: 'Churned',    color: '#6b7280', bg: '#f9fafb', border: '#e5e7eb' },
+}
+
+const fmt = (s: string | null) => s ? new Date(s).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+const fmtDate = (s: string | null) => s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
+const daysAgo = (s: string | null) => {
+  if (!s) return null
+  return Math.floor((Date.now() - new Date(s).getTime()) / 86400000)
+}
+
+export default function CustomerDetail() {
+  const router = useRouter()
+  const params = useParams()
+  const orgId  = params?.orgId as string
+
+  const [data,    setData]    = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const [noteDraft,  setNoteDraft]  = useState('')
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
+
+  // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
+  const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
+
+  useEffect(() => {
+    if (!secret) { router.push('/admin'); return }
+    load()
+  }, [orgId])
+
+  async function load() {
+    setLoading(true); setError('')
+    try {
+      const r = await fetch(`/api/admin/customers/${orgId}`, { headers: { 'x-admin-secret': secret } })
+      if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)
+      setData(await r.json())
+    } catch (e: any) { setError(e.message) }
+    setLoading(false)
+  }
+
+  async function runAction(action: string, body: any = {}) {
+    setActionLoading(action)
+    try {
+      await fetch('/api/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ action, org_id: orgId, ...body }),
+      })
+      await load()
+    } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  async function addNote() {
+    if (!noteDraft.trim()) return
+    await runAction('add_note', { note: noteDraft.trim() })
+    setNoteDraft('')
+  }
+
+  async function triggerSync(integId: string) {
+    setActionLoading('sync_' + integId)
+    try {
+      await fetch(`/api/admin/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ integration_id: integId }),
+      })
+      await load()
+    } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  if (loading) return <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>
+  if (error) return <div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div>
+  if (!data) return null
+
+  const { org, members, businesses, integrations, onboarding, support_notes, recent_alerts, ai_usage, data_health } = data
+
+  // Derive stage like pipeline API
+  const connected = integrations.filter((i: any) => i.status === 'connected')
+  const lastSyncTs = integrations.map((i: any) => i.last_sync_at ? new Date(i.last_sync_at).getTime() : 0).reduce((a: number, b: number) => Math.max(a, b), 0)
+  const lastSyncDays = lastSyncTs > 0 ? Math.floor((Date.now() - lastSyncTs) / 86400000) : null
+  let stage: keyof typeof STAGE_META
+  if (!org.is_active) stage = 'churned'
+  else if (connected.length === 0) stage = 'new'
+  else if (lastSyncTs === 0) stage = 'setup'
+  else if (lastSyncDays !== null && lastSyncDays > 14) stage = 'at_risk'
+  else stage = 'active'
+  const stageMeta = STAGE_META[stage]
+
+  const daysOnPlatform = Math.floor((Date.now() - new Date(org.created_at).getTime()) / 86400000)
+  const trialDaysLeft = org.trial_ends_at ? Math.floor((new Date(org.trial_ends_at).getTime() - Date.now()) / 86400000) : null
+
+  const setupRequested = onboarding?.step === 'setup_requested'
+  const setupMeta = onboarding?.metadata ?? null
+
+  return (
+    <div style={{ padding: '24px 32px', maxWidth: 1200, margin: '0 auto' }}>
+
+      {/* Back link */}
+      <div style={{ marginBottom: 12 }}>
+        <a href="/admin/customers" style={{ fontSize: 13, color: '#6366f1', textDecoration: 'none' }}>← All customers</a>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          HEADER — name, plan, stage, quick actions
+      ═══════════════════════════════════════════════════════ */}
+      <div style={S.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' as const }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' as const }}>
+              <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>{org.name || 'Unnamed'}</h1>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 4, background: '#f3f4f6', color: '#374151', textTransform: 'uppercase' as const }}>{org.plan || 'trial'}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 4, background: stageMeta.bg, color: stageMeta.color, border: `1px solid ${stageMeta.border}`, textTransform: 'uppercase' as const }}>
+                {stageMeta.label}
+              </span>
+              {setupRequested && <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 4, background: '#fef3c7', color: '#d97706' }}>Setup requested</span>}
+            </div>
+            <div style={{ fontSize: 12, color: '#9ca3af' }}>
+              {org.id} · Signed up {fmtDate(org.created_at)} · {daysOnPlatform}d on platform
+              {trialDaysLeft !== null && (
+                <> · Trial {trialDaysLeft > 0 ? `${trialDaysLeft}d left` : 'expired'}</>
+              )}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+            <button onClick={() => runAction('extend_trial', { days: 14 })} disabled={actionLoading === 'extend_trial'} style={S.btnSec}>
+              {actionLoading === 'extend_trial' ? '…' : '+14d trial'}
+            </button>
+            <button onClick={() => runAction('toggle_active')} disabled={actionLoading === 'toggle_active'} style={{ ...S.btnSec, color: org.is_active ? '#dc2626' : '#15803d' }}>
+              {actionLoading === 'toggle_active' ? '…' : org.is_active ? 'Deactivate' : 'Reactivate'}
+            </button>
+            {org.stripe_customer_id && (
+              <a href={`https://dashboard.stripe.com/customers/${org.stripe_customer_id}`} target="_blank" rel="noreferrer" style={S.btnSec}>
+                Stripe →
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Top-line stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginTop: 20 }}>
+          <Stat label="Businesses" value={`${data_health.businesses_active} / ${data_health.businesses_total}`} />
+          <Stat label="Integrations" value={`${connected.length} / ${integrations.length}`} />
+          <Stat label="Last sync" value={lastSyncTs === 0 ? '—' : lastSyncDays === 0 ? 'today' : `${lastSyncDays}d ago`} />
+          <Stat label="Staff shifts" value={data_health.staff_logs_total.toLocaleString('en-GB')} />
+          <Stat label="Revenue rows" value={data_health.revenue_logs_total.toLocaleString('en-GB')} />
+          <Stat label="AI today" value={ai_usage.today} />
+          <Stat label="AI this month" value={ai_usage.month.toLocaleString('en-GB')} />
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          SETUP REQUEST (if present)
+      ═══════════════════════════════════════════════════════ */}
+      {setupMeta && (
+        <div style={{ ...S.card, background: '#fffbeb', border: '1px solid #fde68a' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#d97706', marginBottom: 10 }}>
+            Setup request {onboarding?.completed_at ? `· submitted ${fmt(onboarding.completed_at)}` : ''}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            {[
+              ['Restaurant',     setupMeta.restaurantName],
+              ['City',           setupMeta.city],
+              ['Staff system',   setupMeta.staffSystem],
+              ['Accounting',     setupMeta.accounting],
+              ['POS',            setupMeta.pos],
+              ['Contact time',   setupMeta.contactTime],
+              ['Phone',          setupMeta.phone],
+              ['Customer email', setupMeta.userEmail],
+            ].filter(([_, v]) => v).map(([k, v]) => (
+              <div key={k as string}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 2 }}>{k}</div>
+                <div style={{ fontSize: 13, color: '#111' }}>{v as string}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          TEAM MEMBERS
+      ═══════════════════════════════════════════════════════ */}
+      <div style={S.card}>
+        <div style={S.sectionHead}>Team ({members.length})</div>
+        {members.length === 0 ? (
+          <div style={S.empty}>No members yet.</div>
+        ) : (
+          <table style={S.table}>
+            <thead>
+              <tr><th style={S.th('left')}>Email</th><th style={S.th('left')}>Role</th><th style={S.th('right')}>Joined</th><th style={S.th('right')}>Last sign-in</th><th style={S.th('right')}>Confirmed</th></tr>
+            </thead>
+            <tbody>
+              {members.map((m: any, i: number) => (
+                <tr key={i} style={{ borderTop: '1px solid #f3f4f6' }}>
+                  <td style={S.td}>{m.email || '—'}</td>
+                  <td style={S.td}>{m.role}</td>
+                  <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{fmtDate(m.member_since)}</td>
+                  <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{m.last_sign_in ? fmt(m.last_sign_in) : '—'}</td>
+                  <td style={{ ...S.td, textAlign: 'right' }}>{m.email_confirmed_at ? '✓' : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          INTEGRATIONS
+      ═══════════════════════════════════════════════════════ */}
+      <div style={S.card}>
+        <div style={S.sectionHead}>Integrations ({integrations.length})</div>
+        {integrations.length === 0 ? (
+          <div style={S.empty}>No integrations connected yet.</div>
+        ) : (
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={S.th('left')}>Provider</th>
+                <th style={S.th('left')}>Department</th>
+                <th style={S.th('left')}>Business</th>
+                <th style={S.th('left')}>Status</th>
+                <th style={S.th('right')}>Last sync</th>
+                <th style={S.th('left')}>Last error</th>
+                <th style={S.th('right')}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {integrations.map((i: any) => {
+                const biz = businesses.find((b: any) => b.id === i.business_id)
+                const syncAgo = daysAgo(i.last_sync_at)
+                return (
+                  <tr key={i.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                    <td style={{ ...S.td, fontWeight: 600, color: '#111' }}>{i.provider}</td>
+                    <td style={S.td}>{i.department || '—'}</td>
+                    <td style={{ ...S.td, color: '#6b7280' }}>{biz?.name || '—'}</td>
+                    <td style={S.td}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
+                        background: i.status === 'connected' ? '#f0fdf4' : i.status === 'error' ? '#fef2f2' : '#f3f4f6',
+                        color:      i.status === 'connected' ? '#15803d' : i.status === 'error' ? '#dc2626' : '#6b7280' }}>
+                        {i.status}
+                      </span>
+                    </td>
+                    <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>
+                      {syncAgo === null ? 'never' : syncAgo === 0 ? 'today' : `${syncAgo}d ago`}
+                    </td>
+                    <td style={{ ...S.td, color: '#dc2626', fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={i.last_error || ''}>
+                      {i.last_error ? i.last_error.slice(0, 50) : '—'}
+                    </td>
+                    <td style={{ ...S.td, textAlign: 'right' }}>
+                      <button onClick={() => triggerSync(i.id)} disabled={actionLoading === 'sync_' + i.id} style={S.btnTiny}>
+                        {actionLoading === 'sync_' + i.id ? '…' : 'Sync'}
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          RECENT ALERTS
+      ═══════════════════════════════════════════════════════ */}
+      {recent_alerts.length > 0 && (
+        <div style={S.card}>
+          <div style={S.sectionHead}>Recent alerts ({recent_alerts.length})</div>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+            {recent_alerts.slice(0, 5).map((a: any, i: number) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, padding: '8px 10px', borderRadius: 6,
+                background: a.severity === 'critical' ? '#fef2f2' : a.severity === 'warning' ? '#fffbeb' : '#f9fafb' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'white',
+                  color: a.severity === 'critical' ? '#dc2626' : a.severity === 'warning' ? '#d97706' : '#6b7280',
+                  textTransform: 'uppercase' as const }}>
+                  {a.severity}
+                </span>
+                <span style={{ flex: 1, color: '#111' }}>{a.title}</span>
+                <span style={{ color: '#9ca3af', fontSize: 11 }}>{fmt(a.created_at)}</span>
+                {a.is_dismissed && <span style={{ color: '#9ca3af', fontSize: 11 }}>dismissed</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
+          SUPPORT NOTES (admin-only, internal)
+      ═══════════════════════════════════════════════════════ */}
+      <div style={S.card}>
+        <div style={S.sectionHead}>Internal notes ({support_notes.length})</div>
+
+        {/* Add new */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            value={noteDraft}
+            onChange={e => setNoteDraft(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !savingNote && addNote()}
+            placeholder="Add a private note about this customer…"
+            style={{ flex: 1, padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13 }}
+          />
+          <button onClick={addNote} disabled={!noteDraft.trim() || actionLoading === 'add_note'} style={S.btnPri}>
+            {actionLoading === 'add_note' ? 'Adding…' : 'Add note'}
+          </button>
+        </div>
+
+        {/* List */}
+        {support_notes.length === 0 ? (
+          <div style={S.empty}>No notes yet.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+            {support_notes.map((n: any) => (
+              <div key={n.id} style={{ padding: '10px 12px', borderLeft: '3px solid #6366f1', background: '#fafbff', borderRadius: '0 6px 6px 0' }}>
+                <div style={{ fontSize: 13, color: '#111', marginBottom: 3, whiteSpace: 'pre-wrap' as const }}>{n.note}</div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>{n.author || 'admin'} · {fmt(n.created_at)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: '#111' }}>{value}</div>
+    </div>
+  )
+}
+
+const S: Record<string, any> = {
+  card:      { background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '20px 24px', marginBottom: 14 },
+  bannerErr: { background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#dc2626' },
+  sectionHead: { fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 12 },
+  empty:     { fontSize: 13, color: '#9ca3af', padding: '12px 0' },
+  table:     { width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 },
+  th:        (align: 'left' | 'right' | 'center') => ({ padding: '8px 10px', textAlign: align, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.05em', background: '#f9fafb' }),
+  td:        { padding: '10px 10px', fontSize: 13 },
+  btnSec:    { padding: '7px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#374151', textDecoration: 'none' },
+  btnPri:    { padding: '9px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' },
+  btnTiny:   { padding: '4px 10px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' },
+}
