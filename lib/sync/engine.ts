@@ -760,36 +760,57 @@ async function updateTrackerFromLogs(db: any, orgId: string, businessId: string 
 async function generateForecasts(db: any, orgId: string, businessId: string | null) {
   if (!businessId) return
 
-  const { data: rawHistory } = await db
-    .from('tracker_data')
-    .select('period_year, period_month, revenue, staff_cost, food_cost, net_profit, margin_pct')
-    .eq('business_id', businessId)
-    .order('period_year', { ascending: true })
-    .order('period_month', { ascending: true })
+  // History source: monthly_metrics (auto-aggregated from POS + PK syncs). Previously
+  // we read tracker_data, but that only has manual P&L entries. The rolling-3-month
+  // average was polluted by months with staff_cost but no revenue, giving revenue
+  // forecasts 40-50x too low.  monthly_metrics.revenue is the authoritative total.
+  // We still merge tracker_data for food_cost (not in monthly_metrics yet) and for
+  // any months monthly_metrics doesn't cover (legacy manual entries).
+  const [mmRes, trRes] = await Promise.all([
+    db.from('monthly_metrics')
+      .select('year, month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .order('year', { ascending: true })
+      .order('month', { ascending: true }),
+    db.from('tracker_data')
+      .select('period_year, period_month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .order('period_year', { ascending: true })
+      .order('period_month', { ascending: true }),
+  ])
 
-  // Fill in revenue from revenue_logs where tracker has 0
-  const { data: revLogs } = await db
-    .from('revenue_logs')
-    .select('period_year, period_month, revenue')
-    .eq('business_id', businessId)
-    .order('period_year', { ascending: true })
-    .order('period_month', { ascending: true })
-
-  const revLogMap: Record<string, number> = {}
-  for (const r of revLogs ?? []) {
-    const key = `${r.period_year}-${r.period_month}`
-    revLogMap[key] = (revLogMap[key] ?? 0) + Number(r.revenue ?? 0)
+  // Build a month-keyed map, monthly_metrics wins, tracker_data fills gaps and
+  // supplies food_cost when monthly_metrics has 0 (food_cost isn't yet synced).
+  const historyMap = new Map<string, any>()
+  for (const t of trRes.data ?? []) {
+    historyMap.set(`${t.period_year}-${t.period_month}`, {
+      period_year:  t.period_year,
+      period_month: t.period_month,
+      revenue:      Number(t.revenue    ?? 0),
+      staff_cost:   Number(t.staff_cost ?? 0),
+      food_cost:    Number(t.food_cost  ?? 0),
+      net_profit:   Number(t.net_profit ?? 0),
+      margin_pct:   Number(t.margin_pct ?? 0),
+    })
+  }
+  for (const m of mmRes.data ?? []) {
+    const key = `${m.year}-${m.month}`
+    const existing = historyMap.get(key)
+    // Prefer monthly_metrics revenue/staff; keep tracker food_cost if mm has none
+    historyMap.set(key, {
+      period_year:  m.year,
+      period_month: m.month,
+      revenue:      Number(m.revenue    ?? 0),
+      staff_cost:   Number(m.staff_cost ?? 0),
+      food_cost:    Number(m.food_cost ?? 0) > 0 ? Number(m.food_cost) : (existing?.food_cost ?? 0),
+      net_profit:   Number(m.net_profit ?? 0),
+      margin_pct:   Number(m.margin_pct ?? 0),
+    })
   }
 
-  const history = (rawHistory ?? []).map(row => {
-    const key = `${row.period_year}-${row.period_month}`
-    const rev = Number(row.revenue ?? 0) > 0 ? Number(row.revenue) : (revLogMap[key] ?? 0)
-    const staff = Number(row.staff_cost ?? 0)
-    const food  = Number(row.food_cost  ?? 0)
-    const net   = rev - staff - food
-    const margin = rev > 0 ? (net / rev) * 100 : 0
-    return { ...row, revenue: rev, net_profit: net, margin_pct: margin }
-  }).filter(row => Number(row.revenue ?? 0) > 0 || Number(row.staff_cost ?? 0) > 0)
+  const history = Array.from(historyMap.values())
+    .filter(row => row.revenue > 0) // only months with real revenue inform the forecast
+    .sort((a, b) => a.period_year !== b.period_year ? a.period_year - b.period_year : a.period_month - b.period_month)
 
   if (!history || history.length < 2) return // need at least 2 months
 
