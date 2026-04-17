@@ -106,7 +106,7 @@ export default function RevenuePage() {
   // ── Derived values ─────────────────────────────────────────────────────────
   const now  = new Date()
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${curr.weekNum}` : curr.label
+  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
 
   const rows    = revData?.rows ?? []
   const sum     = revData?.summary ?? {}
@@ -158,7 +158,7 @@ export default function RevenuePage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
                 <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {curr.weekNum}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {(curr as any).weekNum}</div>
                   <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
                 </div>
                 <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
