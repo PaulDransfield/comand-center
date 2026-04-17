@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
           'Content-Type':  'application/json',
         },
         body: JSON.stringify({
-          from:    'CommandCenter <digest@commandcenter.se>',
+          from:    'CommandCenter <digest@comandcenter.se>',
           to:      ownerEmail,
           subject: `☕ Weekly digest — ${weekLabel}`,
           html,

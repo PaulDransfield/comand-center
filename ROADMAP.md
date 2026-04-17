@@ -117,7 +117,7 @@
 |------|---------|------|
 | Fortnox OAuth | Developer account approval pending | When approved |
 | POS adapter | Need to know which POS next customer uses | When known |
-| Weekly digest email | Resend domain not verified | When verified |
+| Weekly digest email | ~~Resend domain not verified~~ | ✅ Resolved 2026-04-17 |
 
 ### Scale features (20+ customers)
 | Item | Description |
@@ -139,7 +139,7 @@
 |-------|----------|------|-------------|--------|
 | Anomaly detection | Nightly 05:30 UTC | All | 3 hrs | ✅ **COMPLETE** — updated thresholds and email alerts |
 | Onboarding success | On first sync (inline) + daily 08:00 UTC (cron safety net) | All | 2 hrs | ✅ **COMPLETE** — inline path from sync engine + cron bugs fixed 2026-04-17 (provider col name, auth.admin.getUserById, plan col name, 48h safety window) |
-| Monday briefing | Monday 06:00 UTC | Pro+ | 4 hrs | ✅ **CRON FIXED** — needs Resend domain verification |
+| Monday briefing | Monday 06:00 UTC | Pro+ | 4 hrs | ✅ **COMPLETE** — Resend domain verified 2026-04-17, digest@ typo fixed |
 | Forecast calibration | 1st of month 04:00 UTC | Pro+ | 4 hrs | ✅ **COMPLETE** — M003 tables live 2026-04-17, runs 04:00 UTC on 1st of month |
 | Supplier price creep | 1st of month 05:00 UTC | Pro+ | 3 hrs | ✅ **SKELETON BUILT** — waiting for Fortnox OAuth |
 | Scheduling optimisation | Monday 07:00 UTC | Group | 6 hrs | ✅ **COMPLETE** — M003 tables live 2026-04-17, runs Monday 07:00 UTC, uses Sonnet 4-6 |
