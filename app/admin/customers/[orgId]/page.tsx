@@ -38,6 +38,7 @@ export default function CustomerDetail() {
   const [runResult, setRunResult] = useState<any>(null)
   const [impersonate, setImpersonate] = useState<any>(null)
   const [copied, setCopied] = useState(false)
+  const [timeline, setTimeline] = useState<any[]>([])
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
@@ -50,16 +51,15 @@ export default function CustomerDetail() {
   async function load() {
     setLoading(true); setError('')
     try {
-      const [r1, r2] = await Promise.all([
+      const [r1, r2, r3] = await Promise.all([
         fetch(`/api/admin/customers/${orgId}`, { headers: { 'x-admin-secret': secret } }),
         fetch(`/api/admin/customers/${orgId}/agents`, { headers: { 'x-admin-secret': secret } }),
+        fetch(`/api/admin/customers/${orgId}/timeline`, { headers: { 'x-admin-secret': secret } }),
       ])
       if (!r1.ok) throw new Error(r1.status === 401 ? 'Unauthorized' : `HTTP ${r1.status}`)
       setData(await r1.json())
-      if (r2.ok) {
-        const a = await r2.json()
-        setAgents(a.agents ?? [])
-      }
+      if (r2.ok) setAgents((await r2.json()).agents ?? [])
+      if (r3.ok) setTimeline((await r3.json()).events ?? [])
     } catch (e: any) { setError(e.message) }
     setLoading(false)
   }
@@ -444,6 +444,50 @@ export default function CustomerDetail() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          TIMELINE — unified event feed
+      ═══════════════════════════════════════════════════════ */}
+      <div style={S.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={S.sectionHead}>Timeline</div>
+          <div style={{ fontSize: 11, color: '#9ca3af' }}>{timeline.length} events · newest first</div>
+        </div>
+        {timeline.length === 0 ? (
+          <div style={S.empty}>No events yet.</div>
+        ) : (
+          <div style={{ position: 'relative', paddingLeft: 20 }}>
+            {/* Vertical spine */}
+            <div style={{ position: 'absolute', left: 7, top: 4, bottom: 4, width: 1, background: '#e5e7eb' }} />
+
+            {timeline.map((e: any, i: number) => (
+              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 14, alignItems: 'flex-start', position: 'relative' }}>
+                {/* Dot */}
+                <div style={{
+                  position: 'absolute', left: -20, top: 3,
+                  width: 14, height: 14, borderRadius: '50%',
+                  background: 'white', border: `2px solid ${e.color}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 8, fontWeight: 700, color: e.color,
+                }} title={e.type}>
+                  {e.icon}
+                </div>
+
+                {/* Content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' as const }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{e.title}</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap' as const }}>{fmt(e.at)}</div>
+                  </div>
+                  {e.body && (
+                    <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3, whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const }}>{e.body}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ═══════════════════════════════════════════════════════
