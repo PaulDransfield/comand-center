@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,21 +64,14 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
   const actionLink = (link as any)?.properties?.action_link ?? (link as any)?.action_link ?? null
   if (!actionLink) return NextResponse.json({ error: 'No action link returned from Supabase' }, { status: 500 })
 
-  // Log the impersonation for audit
-  try {
-    await db.from('admin_log').insert({
-      admin_email: 'admin',
-      action:      'impersonate',
-      target_type: 'org',
-      target_id:   orgId,
-      details: {
-        user_id:    user.id,
-        user_email: user.email,
-        role:       member.role,
-        at:         new Date().toISOString(),
-      },
-    })
-  } catch { /* admin_log may have different schema — non-fatal */ }
+  await recordAdminAction(db, {
+    action:     ADMIN_ACTIONS.IMPERSONATE,
+    orgId,
+    targetType: 'user',
+    targetId:   user.id,
+    payload:    { user_email: user.email, role: member.role },
+    req,
+  })
 
   return NextResponse.json({
     ok:           true,

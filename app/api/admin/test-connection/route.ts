@@ -1,5 +1,7 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
+import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
@@ -13,6 +15,14 @@ export async function POST(req: NextRequest) {
   try {
     const { provider, api_key, org_id, business_id } = await req.json()
     if (!provider || !api_key) return NextResponse.json({ error: 'provider and api_key required' }, { status: 400 })
+
+    await recordAdminAction(createAdminClient(), {
+      action:     ADMIN_ACTIONS.INTEGRATION_TEST,
+      orgId:      org_id ?? null,
+      targetType: 'integration',
+      payload:    { provider, business_id: business_id ?? null },
+      req,
+    })
 
     if (provider === 'personalkollen') {
       // Test connection

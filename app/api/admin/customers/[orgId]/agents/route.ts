@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
@@ -141,6 +142,7 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
       enabled: !!enabled,
       notes:   enabled === false ? `Disabled by admin ${new Date().toISOString().slice(0, 10)}` : null,
     }, { onConflict: 'org_id,flag' })
+    await recordAdminAction(db, { action: ADMIN_ACTIONS.AGENT_TOGGLE, orgId, targetType: 'agent', targetId: agent, payload: { enabled: !!enabled }, req })
     return NextResponse.json({ ok: true, enabled: !!enabled })
   }
 
@@ -160,6 +162,7 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
         },
       })
       const respText = await res.text()
+      await recordAdminAction(db, { action: ADMIN_ACTIONS.AGENT_RUN, orgId, targetType: 'agent', targetId: agent, payload: { scope: agentDef.scope, ok: res.ok, status: res.status }, req })
       return NextResponse.json({
         ok:           res.ok,
         status:       res.status,

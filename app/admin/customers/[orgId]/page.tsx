@@ -46,6 +46,9 @@ export default function CustomerDetail() {
   const [addIntegModal, setAddIntegModal] = useState<any>(null) // { business_id, business_name }
   const [discoveryResult, setDiscoveryResult] = useState<any>(null)
   const [deptSetupResult, setDeptSetupResult] = useState<any>(null)
+  const [deleteModal, setDeleteModal] = useState<boolean>(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleteResult, setDeleteResult] = useState<any>(null)
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
@@ -156,6 +159,26 @@ export default function CustomerDetail() {
       if (!r.ok) throw new Error((await r.json()).error ?? 'Delete failed')
       await load()
     } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  async function hardDeleteOrg() {
+    setActionLoading('hard_delete')
+    setDeleteResult(null)
+    try {
+      const r = await fetch(`/api/admin/customers/${orgId}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ confirm: deleteConfirm, actor: 'admin', reason: 'admin-triggered GDPR erasure' }),
+      })
+      const json = await r.json()
+      setDeleteResult({ ok: r.ok && json.ok, ...json })
+      if (r.ok && json.ok) {
+        setTimeout(() => router.push('/admin/customers'), 2500)
+      }
+    } catch (e: any) {
+      setDeleteResult({ ok: false, error: e.message })
+    }
     setActionLoading(null)
   }
 
@@ -712,6 +735,93 @@ export default function CustomerDetail() {
           </div>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          DANGER ZONE — GDPR hard delete
+      ═══════════════════════════════════════════════════════ */}
+      <div style={{ ...S.card, borderColor: '#fecaca', background: '#fff7f7' }}>
+        <div style={{ ...S.sectionHead, color: '#dc2626' }}>Danger zone</div>
+        <div style={{ fontSize: 13, color: '#991b1b', marginBottom: 14, lineHeight: 1.5 }}>
+          GDPR Art. 17 erasure — deletes the organisation, every business, every integration, every row of revenue/staff/accounting data, every alert, every AI log, every member. Supabase auth accounts that belong only to this org are removed. This is <strong>irreversible</strong> and logged to <code style={{ fontSize: 12 }}>deletion_requests</code>.
+        </div>
+        <button
+          onClick={() => { setDeleteModal(true); setDeleteConfirm(''); setDeleteResult(null) }}
+          style={{ padding: '9px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+        >
+          Hard delete organisation…
+        </button>
+      </div>
+
+      {/* Delete confirmation modal */}
+      {deleteModal && (
+        <div onClick={() => !actionLoading && setDeleteModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 520, padding: 24 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#dc2626', marginBottom: 6 }}>Hard delete — final confirmation</div>
+            <div style={{ fontSize: 13, color: '#374151', marginBottom: 18, lineHeight: 1.5 }}>
+              You're about to permanently erase <strong>{org.name}</strong>. This will remove:
+              <ul style={{ margin: '8px 0 0 18px', padding: 0, color: '#6b7280', fontSize: 12 }}>
+                <li>The organisation and all {businesses.length} business(es)</li>
+                <li>All integrations, revenue logs, staff logs, tracker entries, alerts, AI logs</li>
+                <li>{members.length} user(s) if this is their only org</li>
+                <li>Stripe customer record is KEPT (7-year bokföringslagen retention)</li>
+              </ul>
+            </div>
+
+            {!deleteResult && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Type <code style={{ background: '#fef2f2', padding: '2px 6px', borderRadius: 4, color: '#dc2626' }}>DELETE {org.name}</code> to confirm:
+                </div>
+                <input
+                  value={deleteConfirm}
+                  onChange={e => setDeleteConfirm(e.target.value)}
+                  placeholder={`DELETE ${org.name}`}
+                  autoFocus
+                  style={{ width: '100%', padding: '10px 12px', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontFamily: 'ui-monospace, monospace', boxSizing: 'border-box' as const, marginBottom: 18 }}
+                />
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button onClick={() => setDeleteModal(false)} disabled={actionLoading === 'hard_delete'} style={{ padding: '9px 16px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={hardDeleteOrg}
+                    disabled={deleteConfirm !== `DELETE ${org.name}` || actionLoading === 'hard_delete'}
+                    style={{ padding: '9px 16px', background: deleteConfirm === `DELETE ${org.name}` ? '#dc2626' : '#fecaca', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: deleteConfirm === `DELETE ${org.name}` ? 'pointer' : 'not-allowed' }}
+                  >
+                    {actionLoading === 'hard_delete' ? 'Deleting…' : 'Permanently delete'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {deleteResult && (
+              <div style={{ background: deleteResult.ok ? '#f0fdf4' : '#fef2f2', border: `1px solid ${deleteResult.ok ? '#bbf7d0' : '#fecaca'}`, borderRadius: 8, padding: '12px 14px', fontSize: 12, color: deleteResult.ok ? '#15803d' : '#dc2626' }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  {deleteResult.ok ? '✓ Organisation deleted' : '✗ Deletion failed / partial'}
+                </div>
+                {deleteResult.rows_deleted && (
+                  <div style={{ color: '#374151', fontFamily: 'ui-monospace, monospace', fontSize: 11, maxHeight: 180, overflowY: 'auto' as const, marginBottom: 6 }}>
+                    {Object.entries(deleteResult.rows_deleted)
+                      .filter(([_, c]: any) => c > 0)
+                      .map(([t, c]: any) => (
+                        <div key={t}>{t}: {c} row{c === 1 ? '' : 's'}</div>
+                      ))}
+                    {typeof deleteResult.users_deleted === 'number' && deleteResult.users_deleted > 0 && (
+                      <div>auth.users: {deleteResult.users_deleted}</div>
+                    )}
+                  </div>
+                )}
+                {deleteResult.errors && (
+                  <div style={{ color: '#dc2626', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
+                    Errors: {JSON.stringify(deleteResult.errors)}
+                  </div>
+                )}
+                {deleteResult.ok && <div style={{ color: '#15803d', marginTop: 6 }}>Redirecting to customer list…</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════
           ADD INTEGRATION MODAL

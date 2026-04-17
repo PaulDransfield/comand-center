@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,5 +58,14 @@ export async function POST(req: NextRequest) {
   })
 
   const data = await res.json()
+
+  const db = createAdminClient()
+  await recordAdminAction(db, {
+    action:     ADMIN_ACTIONS.MASTER_SYNC,
+    targetType: 'system',
+    payload:    { ok: res.ok, status: res.status },
+    req,
+  })
+
   return NextResponse.json(data, { status: res.status })
 }

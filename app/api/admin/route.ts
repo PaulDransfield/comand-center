@@ -5,14 +5,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 function checkAuth(req: NextRequest): boolean {
   const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
   return secret === process.env.ADMIN_SECRET
-}
-
-async function log(db: any, adminEmail: string, action: string, targetType: string, targetId: string, details: any = {}) {
-  await db.from('admin_log').insert({ admin_email: adminEmail, action, target_type: targetType, target_id: targetId, details })
 }
 
 export async function GET(req: NextRequest) {
@@ -102,7 +99,7 @@ export async function POST(req: NextRequest) {
     const days = parseInt(params.days ?? 14)
     const newEnd = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
     await db.from('organisations').update({ trial_end: newEnd }).eq('id', org_id)
-    await log(db, admin_email, 'extend_trial', 'org', org_id, { days, new_end: newEnd })
+    await recordAdminAction(db, { action: ADMIN_ACTIONS.EXTEND_TRIAL, orgId: org_id, targetType: 'org', targetId: org_id, payload: { days, new_end: newEnd }, actor: admin_email, req })
     return NextResponse.json({ ok: true, new_trial_end: newEnd })
   }
 
@@ -111,7 +108,7 @@ export async function POST(req: NextRequest) {
     const { data: org } = await db.from('organisations').select('is_active').eq('id', org_id).single()
     const newState = !org.is_active
     await db.from('organisations').update({ is_active: newState }).eq('id', org_id)
-    await log(db, admin_email, newState ? 'activate_org' : 'deactivate_org', 'org', org_id, {})
+    await recordAdminAction(db, { action: ADMIN_ACTIONS.TOGGLE_ACTIVE, orgId: org_id, targetType: 'org', targetId: org_id, payload: { new_state: newState }, actor: admin_email, req })
     return NextResponse.json({ ok: true, is_active: newState })
   }
 
@@ -122,7 +119,7 @@ export async function POST(req: NextRequest) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Cookie: `admin_org_id=${org_id}` },
     })
-    await log(db, admin_email, 'trigger_fortnox_sync', 'org', org_id, {})
+    await recordAdminAction(db, { action: ADMIN_ACTIONS.INTEGRATION_SYNC, orgId: org_id, targetType: 'integration', payload: { provider: 'fortnox' }, actor: admin_email, req })
     return NextResponse.json({ ok: true })
   }
 
@@ -132,7 +129,7 @@ export async function POST(req: NextRequest) {
     await fetch(`${appUrl}/api/cron/weekly-digest?secret=${process.env.CRON_SECRET}&org_id=${org_id}`, {
       headers: { 'x-cron-secret': process.env.CRON_SECRET ?? '' }
     })
-    await log(db, admin_email, 'trigger_digest', 'org', org_id, {})
+    await recordAdminAction(db, { action: 'trigger_digest', orgId: org_id, targetType: 'org', targetId: org_id, actor: admin_email, req })
     return NextResponse.json({ ok: true })
   }
 
@@ -141,14 +138,14 @@ export async function POST(req: NextRequest) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
     const res = await fetch(`${appUrl}/api/cron/anomaly-check?secret=${process.env.CRON_SECRET}&org_id=${org_id}`)
     const data = await res.json()
-    await log(db, admin_email, 'trigger_anomaly_check', 'org', org_id, data)
+    await recordAdminAction(db, { action: 'trigger_anomaly_check', orgId: org_id, targetType: 'org', targetId: org_id, payload: data, actor: admin_email, req })
     return NextResponse.json({ ok: true, ...data })
   }
 
   // Add support note
   if (action === 'add_note') {
     await db.from('support_notes').insert({ org_id, note: params.note, author: admin_email })
-    await log(db, admin_email, 'add_note', 'org', org_id, { note: params.note })
+    await recordAdminAction(db, { action: ADMIN_ACTIONS.NOTE_ADD, orgId: org_id, targetType: 'org', targetId: org_id, payload: { length: (params.note ?? '').length }, actor: admin_email, req })
     return NextResponse.json({ ok: true })
   }
 
@@ -158,14 +155,14 @@ export async function POST(req: NextRequest) {
       { org_id, flag: params.flag, enabled: params.enabled, notes: params.notes, set_by: admin_email },
       { onConflict: 'org_id,flag' }
     )
-    await log(db, admin_email, 'set_feature_flag', 'org', org_id, { flag: params.flag, enabled: params.enabled })
+    await recordAdminAction(db, { action: 'set_feature_flag', orgId: org_id, targetType: 'org', targetId: org_id, payload: { flag: params.flag, enabled: params.enabled }, actor: admin_email, req })
     return NextResponse.json({ ok: true })
   }
 
   // Change org plan
   if (action === 'set_plan') {
     await db.from('organisations').update({ plan: params.plan }).eq('id', org_id)
-    await log(db, admin_email, 'set_plan', 'org', org_id, { plan: params.plan })
+    await recordAdminAction(db, { action: 'set_plan', orgId: org_id, targetType: 'org', targetId: org_id, payload: { plan: params.plan }, actor: admin_email, req })
     return NextResponse.json({ ok: true })
   }
 

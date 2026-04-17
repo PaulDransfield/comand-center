@@ -5,8 +5,14 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 export const dynamic = 'force-dynamic'
+
+function checkAuth(req: NextRequest): boolean {
+  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
+  return secret === process.env.ADMIN_SECRET
+}
 
 // Preset colour palette — auto-assigned in order, cycling if more than 8 depts
 const PALETTE = [
@@ -49,6 +55,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db = createAdminClient()
   const body = await req.json()
   const { org_id, business_id, action, departments: manualDepts } = body
@@ -84,6 +91,7 @@ export async function POST(req: NextRequest) {
       .select('id, name, color, sort_order')
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    await recordAdminAction(db, { action: ADMIN_ACTIONS.DEPT_SETUP, orgId: org_id, targetType: 'business', targetId: business_id, payload: { created: rows.length, names: rows.map(r => r.name) }, req })
     return NextResponse.json({ ok: true, departments: data ?? [], created: rows.length })
   }
 
@@ -106,6 +114,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const db   = createAdminClient()
   const body = await req.json()
   const { id, business_id } = body

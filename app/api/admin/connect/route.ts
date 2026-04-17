@@ -2,9 +2,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { encrypt } from '@/lib/integrations/encryption'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 export const dynamic = 'force-dynamic'
 
+function checkAuth(req: NextRequest): boolean {
+  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
+  return secret === process.env.ADMIN_SECRET
+}
+
 export async function POST(req: NextRequest) {
+  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const { provider, api_key, org_id, business_id, department } = await req.json()
     if (!provider || !api_key || !org_id) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -52,6 +59,16 @@ export async function POST(req: NextRequest) {
       if (!data) throw new Error('Insert returned no data — check that M005 migration has been run (ALTER TABLE integrations ADD COLUMN IF NOT EXISTS department TEXT)')
       integrationId = data.id
     }
+
+    await recordAdminAction(db, {
+      action:        existing ? ADMIN_ACTIONS.INTEGRATION_KEY_EDIT : ADMIN_ACTIONS.INTEGRATION_ADD,
+      orgId:         org_id,
+      integrationId: integrationId,
+      targetType:    'integration',
+      targetId:      integrationId,
+      payload:       { provider, business_id, department: department || null },
+      req,
+    })
 
     return NextResponse.json({ ok: true, integration_id: integrationId })
   } catch (e: any) {

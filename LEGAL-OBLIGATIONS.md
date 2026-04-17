@@ -140,12 +140,15 @@ GDPR Art. 32 requires "appropriate technical and organisational measures" propor
 - Git history scrubbed of leaked secrets (incident 2026-04 — ANTHROPIC_API_KEY rotated).
 
 ### Gaps / action items
-- [ ] **Application-layer encryption for integration API keys/tokens.** Currently stored as plain text in `integrations.api_key`. Should use libsodium / AEAD with a KMS-backed key. Priority: HIGH before first paid customer.
-- [ ] **Audit log**: who accessed which customer, when. Currently only sync_log exists. Need an admin-action audit log for impersonation, key changes, deletions. Priority: HIGH.
+- [x] **Application-layer encryption for integration API keys/tokens.** `integrations.credentials_enc` is AES-256-GCM via `lib/integrations/encryption.ts`. Key stored in `CREDENTIAL_ENCRYPTION_KEY` env var. Verify with `npx tsx scripts/audit-encrypted-credentials.ts`. **Remaining:** key rotation runbook, and move key from env var to a proper secret manager before 50+ customers.
+- [x] **Admin audit log.** Every mutation by an admin writes to `admin_audit_log` via `lib/admin/audit.ts`. Viewable at `/admin/audit`. Retained 2+ years. Migration: `sql/M010-admin-audit-log.sql`.
+- [x] **TOTP 2FA on admin panel.** `lib/admin/totp.ts` — RFC 6238 verification, zero deps. Enrol via `GET /api/admin/2fa-setup`, set `ADMIN_TOTP_SECRET` env var. When set, login requires both password and 6-digit code.
+- [x] **GDPR hard-delete cascade.** `POST /api/admin/customers/[orgId]/delete` purges every tenanted table + orphan auth users. Writes to `deletion_requests` for audit. Confirmation gate: type `DELETE <org name>` exactly. Migration: `sql/M009-deletion-requests.sql`.
+- [x] **Self-service data export (DSAR).** `GET /api/gdpr` returns a full JSON bundle matching the hard-delete table list. Credentials redacted; admin audit log excluded.
+- [x] **AI output labelling (EU AI Act Art. 52).** `components/ui/AiBadge.tsx` is the canonical badge. Audited: scheduling observations ✓, anomaly alerts ✓, budget analysis modal ✓, budget generation modal ✓, AskAI button ✓. All AI-generated customer-facing output carries an `AI` visual marker.
 - [ ] **Backups**: Supabase daily backups are on. Confirm restore tested at least once.
 - [ ] **Access review cadence**: quarterly review of who has admin access. Right now only Paul.
 - [ ] **Secrets rotation policy**: document it. Right now ad-hoc.
-- [ ] **SSO / 2FA on admin panel**: currently password-only. Upgrade to TOTP at minimum before paid customers.
 - [ ] **Dependency scanning**: enable Dependabot or Renovate. Currently manual.
 - [ ] **Penetration test**: commission one before year-end, minimum.
 

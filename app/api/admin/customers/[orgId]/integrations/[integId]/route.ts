@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -38,16 +39,15 @@ export async function DELETE(req: NextRequest, { params }: { params: { orgId: st
   const { error } = await db.from('integrations').delete().eq('id', params.integId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Audit log
-  try {
-    await db.from('admin_log').insert({
-      admin_email: 'admin',
-      action:      'delete_integration',
-      target_type: 'integration',
-      target_id:   params.integId,
-      details:     { provider: integ.provider, org_id: params.orgId },
-    })
-  } catch { /* non-fatal */ }
+  await recordAdminAction(db, {
+    action:        ADMIN_ACTIONS.INTEGRATION_DELETE,
+    orgId:         params.orgId,
+    integrationId: params.integId,
+    targetType:    'integration',
+    targetId:      params.integId,
+    payload:       { provider: integ.provider },
+    req,
+  })
 
   return NextResponse.json({ ok: true })
 }
@@ -68,5 +68,17 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
     },
   })
   const text = await res.text()
+
+  const db = createAdminClient()
+  await recordAdminAction(db, {
+    action:        ADMIN_ACTIONS.DISCOVERY_RUN,
+    orgId:         params.orgId,
+    integrationId: params.integId,
+    targetType:    'integration',
+    targetId:      params.integId,
+    payload:       { ok: res.ok, status: res.status },
+    req,
+  })
+
   return NextResponse.json({ ok: res.ok, status: res.status, response: text.slice(0, 1000) })
 }

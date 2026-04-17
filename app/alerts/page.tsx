@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
+import { AiBadge } from '@/components/ui/AiBadge'
 
 interface Alert {
   id: string; alert_type: string; severity: string; title: string
@@ -115,10 +116,13 @@ export default function AlertsPage() {
                           </span>
                         )}
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#111', marginBottom: 4 }}>{alert.title}</div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#111', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {alert.title}
+                        <AiBadge label="AI" />
+                      </div>
                       <div style={{ fontSize: 13, color: '#555', lineHeight: 1.5 }}>{alert.description}</div>
                       <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-                        Detected {fmtDate(alert.created_at)} · Period: {fmtDate(alert.period_date)}
+                        Detected {fmtDate(alert.created_at)} · Period: {fmtDate(alert.period_date)} · AI-generated — review before acting
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginLeft: 16, flexShrink: 0 }}>
