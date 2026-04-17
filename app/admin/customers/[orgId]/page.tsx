@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { AdminNav } from '@/components/admin/AdminNav'
+import { groupedProviders, getProvider, supportedCount, plannedCount } from '@/lib/integrations/providers'
 
 const STAGE_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   new:     { label: 'New',        color: '#6d28d9', bg: '#ede9fe', border: '#ddd6fe' },
@@ -743,34 +744,51 @@ export default function CustomerDetail() {
 
 // Modal for adding a new integration to a specific business.
 function AddIntegrationModal({ businessId, businessName, onClose, onSave, saving }: any) {
+  const groups = groupedProviders()
   const [provider, setProvider] = useState('personalkollen')
   const [department, setDepartment] = useState('')
   const [apiKey, setApiKey] = useState('')
 
-  const isInzii = provider === 'inzii'
-  const canSave = apiKey.trim().length > 0 && (!isInzii || department.trim().length > 0)
+  const selected = getProvider(provider)
+  const isMultiDept = selected?.supports_multi_department ?? false
+  const canSave = !!selected?.supported && apiKey.trim().length > 0 && (!isMultiDept || department.trim().length > 0)
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 440, padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 480, padding: 0, overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' as const }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6', flexShrink: 0 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#9ca3af' }}>Add integration</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginTop: 2 }}>{businessName}</div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+            {supportedCount()} built · {plannedCount()} on the roadmap
+          </div>
         </div>
 
-        <div style={{ padding: '18px 24px' }}>
+        <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>Provider</label>
             <select value={provider} onChange={e => setProvider(e.target.value)} style={inputStyle}>
-              <option value="personalkollen">Personalkollen</option>
-              <option value="fortnox">Fortnox</option>
-              <option value="inzii">Inzii (Swess POS)</option>
-              <option value="ancon">Ancon</option>
-              <option value="caspeco">Caspeco</option>
+              {groups.map(g => (
+                <optgroup key={g.category} label={g.label}>
+                  {g.providers.map(p => (
+                    <option key={p.key} value={p.key} disabled={!p.supported}>
+                      {p.name}{!p.supported ? ' — coming soon' : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
+            {selected?.note && (
+              <div style={{ fontSize: 11, color: '#d97706', marginTop: 4 }}>Note: {selected.note}</div>
+            )}
+            {selected && !selected.supported && (
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                Adapter not built yet. Pick a different provider or <a href="mailto:paul@laweka.com?subject=Integration request" style={{ color: '#6366f1' }}>request this one</a>.
+              </div>
+            )}
           </div>
 
-          {isInzii && (
+          {isMultiDept && (
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Department</label>
               <input
@@ -783,33 +801,36 @@ function AddIntegrationModal({ businessId, businessName, onClose, onSave, saving
               <datalist id="inzii-depts">
                 {['Bella','Brus','Carne','Chilango','Ölbaren','Rosalis Select'].map(d => <option key={d} value={d} />)}
               </datalist>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Each Inzii dept gets its own integration row.</div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Each department gets its own integration row.</div>
             </div>
           )}
 
           <div style={{ marginBottom: 20 }}>
-            <label style={labelStyle}>API key</label>
+            <label style={labelStyle}>
+              {selected?.auth_type === 'oauth2' ? 'OAuth token / access key' : 'API key'}
+            </label>
             <input
               type="password"
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
-              placeholder="Paste the API key"
-              style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace' }}
+              placeholder={selected?.supported ? 'Paste the key' : 'Select a supported provider first'}
+              disabled={!selected?.supported}
+              style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace', opacity: selected?.supported ? 1 : 0.5 }}
             />
           </div>
+        </div>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => onSave(provider, apiKey.trim(), isInzii ? department.trim() : undefined)}
-              disabled={!canSave || saving}
-              style={{ flex: 1, padding: 11, background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}
-            >
-              {saving ? 'Saving…' : 'Save integration'}
-            </button>
-            <button onClick={onClose} style={{ padding: '11px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              Cancel
-            </button>
-          </div>
+        <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 8, flexShrink: 0 }}>
+          <button
+            onClick={() => onSave(provider, apiKey.trim(), isMultiDept ? department.trim() : undefined)}
+            disabled={!canSave || saving}
+            style={{ flex: 1, padding: 11, background: canSave ? '#1a1f2e' : '#e5e7eb', color: canSave ? 'white' : '#9ca3af', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: canSave && !saving ? 'pointer' : 'not-allowed' }}
+          >
+            {saving ? 'Saving…' : 'Save integration'}
+          </button>
+          <button onClick={onClose} style={{ padding: '11px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>
