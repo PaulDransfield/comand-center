@@ -12,10 +12,18 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   const orgId = 'e917d4b8-635e-4be6-8af0-afc48c3c7450'
 
+  // First re-aggregate Vero to get fresh numbers
+  const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+  const veroId = '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99'
+  let aggResult = null
+  try {
+    aggResult = await aggregateMetrics(orgId, veroId, '2026-03-01', '2026-03-31')
+  } catch (e: any) { aggResult = { error: e.message } }
+
   // March 2026 data from all sources
   const [monthlyRes, dailyRevRes, staffRes, revLogsRes] = await Promise.all([
-    // Summary tables
-    db.from('monthly_metrics').select('*').eq('year', 2026).eq('month', 3).in('org_id', [orgId]),
+    // Summary tables (fresh after re-aggregation above)
+    db.from('monthly_metrics').select('*').eq('year', 2026).eq('month', 3).eq('business_id', veroId),
     // Raw revenue_logs for March — Vero only
     db.from('revenue_logs').select('revenue_date, revenue, provider, business_id')
       .eq('org_id', orgId).eq('business_id', '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99')
@@ -55,6 +63,7 @@ export async function GET(req: NextRequest) {
   const totalHours = staffRows.reduce((s, r) => s + Number(r.hours_worked ?? 0), 0)
 
   return NextResponse.json({
+    aggregation_result: aggResult,
     pk_reference: {
       revenue: 1422650,
       staff_cost: 582571,
