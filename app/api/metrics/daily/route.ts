@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
   const { data: rows, error } = await db
     .from('daily_metrics')
     .select('*')
+    .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .gte('date', from)
     .lte('date', to)

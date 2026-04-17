@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   // Fetch revenue grouped by date
   let revQuery = db
     .from('revenue_logs')
-    .select('revenue_date, revenue')
+    .select('revenue_date, revenue, provider')
     .eq('org_id', auth.orgId)
     .gte('revenue_date', from)
     .lte('revenue_date', to)
@@ -44,12 +44,19 @@ export async function GET(req: NextRequest) {
 
   if (businessId) revQuery = revQuery.eq('business_id', businessId)
 
-  const [{ data: staffLogs, error: staffErr }, { data: revLogs, error: revErr }] = await Promise.all([
+  const [{ data: staffLogs, error: staffErr }, { data: rawRevLogs, error: revErr }] = await Promise.all([
     staffQuery, revQuery,
   ])
 
   if (staffErr) return NextResponse.json({ error: staffErr.message }, { status: 500 })
   if (revErr)   return NextResponse.json({ error: revErr.message  }, { status: 500 })
+
+  // Deduplicate: if per-dept rows (pk_*, inzii_*) exist, skip the aggregate 'personalkollen' row
+  // to avoid double-counting the same POS sales data
+  const hasDeptRevRows = (rawRevLogs ?? []).some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
+  const revLogs = hasDeptRevRows
+    ? (rawRevLogs ?? []).filter((r: any) => (r.provider ?? '') !== 'personalkollen')
+    : rawRevLogs ?? []
 
   // Aggregate staff cost by date
   // Use cost_actual when available; fall back to estimated_salary for unapproved shifts

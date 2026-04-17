@@ -27,17 +27,22 @@ export async function GET(req: NextRequest) {
   const [trackerRes, revRes, staffRes] = await Promise.all([
     // Manual P&L entries
     db.from('tracker_data').select('*').eq('business_id', businessId).eq('period_year', year).order('period_month'),
-    // Real revenue from POS sync (revenue_logs)
-    db.from('revenue_logs').select('revenue_date, revenue').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0),
+    // Real revenue from POS sync (revenue_logs) — include provider for dedup
+    db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0),
     // Real staff cost from Personalkollen sync (staff_logs)
     db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).lte('shift_date', dateTo).or('cost_actual.gt.0,estimated_salary.gt.0'),
   ])
 
   const manualRows = trackerRes.data ?? []
 
+  // Deduplicate: skip aggregate 'personalkollen' rows when per-dept pk_* rows exist
+  const rawRevRows = revRes.data ?? []
+  const hasDeptRevRows = rawRevRows.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
+  const dedupedRev = hasDeptRevRows ? rawRevRows.filter((r: any) => (r.provider ?? '') !== 'personalkollen') : rawRevRows
+
   // Aggregate synced revenue by month
   const syncedRev: Record<number, number> = {}
-  for (const r of revRes.data ?? []) {
+  for (const r of dedupedRev) {
     const m = parseInt(r.revenue_date.slice(5, 7))
     syncedRev[m] = (syncedRev[m] ?? 0) + (r.revenue ?? 0)
   }

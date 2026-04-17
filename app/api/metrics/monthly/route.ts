@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
   const { data: rows, error } = await db
     .from('monthly_metrics')
     .select('*')
+    .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .eq('year', year)
     .order('month', { ascending: true })

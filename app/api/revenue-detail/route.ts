@@ -34,9 +34,14 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Deduplicate: skip aggregate 'personalkollen' rows when per-dept pk_* rows exist
+  const rawRows = data ?? []
+  const hasDeptRows = rawRows.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
+  const dedupedRows = hasDeptRows ? rawRows.filter((r: any) => (r.provider ?? '') !== 'personalkollen') : rawRows
+
   // Aggregate by date (may have multiple providers per day)
   const byDate: Record<string, any> = {}
-  for (const row of data ?? []) {
+  for (const row of dedupedRows) {
     const d = row.revenue_date
     if (!byDate[d]) byDate[d] = {
       date: d, revenue: 0, covers: 0,

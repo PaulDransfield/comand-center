@@ -42,9 +42,23 @@ export async function aggregateMetrics(
       .lte('period_year', parseInt(toDate.slice(0, 4))),
   ])
 
-  const revLogs   = revRes.data ?? []
-  const staffLogs = staffRes.data ?? []
+  const rawRevLogs = revRes.data ?? []
+  const staffLogs  = staffRes.data ?? []
   const trackerRows = trackerRes.data ?? []
+
+  // ── Deduplicate revenue_logs ──────────────────────────────────────────────
+  // The sync engine writes BOTH an aggregate 'personalkollen' row AND per-dept
+  // 'pk_*' rows for the same sales data. If we sum all providers, we double-count.
+  // Priority: prefer per-dept rows (pk_*, inzii_*) over aggregate (personalkollen).
+  const hasDeptRows = rawRevLogs.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
+  const revLogs = hasDeptRows
+    ? rawRevLogs.filter((r: any) => {
+        const p = r.provider ?? ''
+        // Keep per-dept rows (pk_*, inzii_*) and any non-PK aggregate (e.g. fortnox, manual)
+        // Skip the aggregate 'personalkollen' row since pk_* rows contain the same data
+        return p !== 'personalkollen'
+      })
+    : rawRevLogs
 
   // ── 2. Build daily_metrics ────────────────────────────────────────────────
   // Aggregate revenue by date
@@ -206,23 +220,25 @@ export async function aggregateMetrics(
     deptAcc[key].ob += Number(s.ob_supplement_kr ?? 0)
   }
 
+  // Build a slug→name lookup from all known department names (from staff_group)
+  const knownDepts: Record<string, string> = {}  // slug → original name
+  for (const key of Object.keys(deptAcc)) {
+    const name = key.split('|')[0]
+    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+    knownDepts[slug] = name
+  }
+
   // Group revenue by department (provider = 'pk_<slug>' or 'inzii_<slug>')
   const deptRevAcc: Record<string, any> = {}
   for (const r of revLogs) {
     const provider = r.provider ?? ''
     let dept = null
     if (provider.startsWith('pk_') || provider.startsWith('inzii_')) {
-      // Reverse-lookup: find which department this provider matches
-      // The slug is the part after 'pk_' or 'inzii_'
       const slug = provider.replace(/^(pk_|inzii_)/, '')
-      // Find the dept key that has a matching slug
-      for (const key of Object.keys(deptAcc)) {
-        const d = key.split('|')[0]
-        const dSlug = d.toLowerCase().replace(/[^a-z0-9]/g, '_')
-        if (dSlug === slug) { dept = d; break }
-      }
-      // If no match from staff, try using the slug directly
-      if (!dept) dept = slug
+      // Look up the original mixed-case name from staff_group data
+      dept = knownDepts[slug] ?? null
+      // If no staff data for this dept, capitalize the slug as a best-effort name
+      if (!dept) dept = slug.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     }
     if (!dept) continue
 
