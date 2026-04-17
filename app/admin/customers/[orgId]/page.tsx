@@ -36,6 +36,8 @@ export default function CustomerDetail() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [agents, setAgents] = useState<any[]>([])
   const [runResult, setRunResult] = useState<any>(null)
+  const [impersonate, setImpersonate] = useState<any>(null)
+  const [copied, setCopied] = useState(false)
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
@@ -70,6 +72,23 @@ export default function CustomerDetail() {
       body: JSON.stringify({ action: 'toggle', agent, enabled }),
     })
     await load()
+    setActionLoading(null)
+  }
+
+  async function startImpersonate() {
+    setActionLoading('impersonate')
+    setCopied(false)
+    try {
+      const res = await fetch(`/api/admin/customers/${orgId}/impersonate`, {
+        method: 'POST',
+        headers: { 'x-admin-secret': secret },
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Impersonate failed')
+      setImpersonate(json)
+    } catch (e: any) {
+      setError(e.message)
+    }
     setActionLoading(null)
   }
 
@@ -174,6 +193,9 @@ export default function CustomerDetail() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+            <button onClick={startImpersonate} disabled={actionLoading === 'impersonate'} style={{ ...S.btnSec, background: '#ede9fe', color: '#6d28d9', borderColor: '#ddd6fe' }}>
+              {actionLoading === 'impersonate' ? '…' : '✦ Impersonate'}
+            </button>
             <button onClick={() => runAction('extend_trial', { days: 14 })} disabled={actionLoading === 'extend_trial'} style={S.btnSec}>
               {actionLoading === 'extend_trial' ? '…' : '+14d trial'}
             </button>
@@ -458,6 +480,79 @@ export default function CustomerDetail() {
           </div>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          IMPERSONATE MODAL
+      ═══════════════════════════════════════════════════════ */}
+      {impersonate && (
+        <div onClick={() => setImpersonate(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 560, padding: 0, overflow: 'hidden' }}>
+
+            {/* Header */}
+            <div style={{ padding: '18px 24px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 100%)', color: 'white' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: 0.85 }}>Impersonate</div>
+              <div style={{ fontSize: 17, fontWeight: 700, marginTop: 2 }}>Sign in as {impersonate.user_email}</div>
+              <div style={{ fontSize: 11, opacity: 0.8, marginTop: 4 }}>Role: {impersonate.role} · Expires in {impersonate.expires_in}</div>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '18px 24px' }}>
+
+              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#78350f', marginBottom: 16, lineHeight: 1.5 }}>
+                <strong>Use an incognito / private window.</strong> Opening this link in a regular window will overwrite your admin session cookie — you'll have to log back into admin afterwards. Incognito keeps admin and customer sessions separate.
+              </div>
+
+              {/* Primary: copy link */}
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(impersonate.action_link)
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 2500)
+                }}
+                style={{
+                  width: '100%', padding: '12px', background: '#1a1f2e', color: 'white',
+                  border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  marginBottom: 10,
+                }}
+              >
+                {copied ? '✓ Copied — now paste in an incognito window' : '1. Copy link'}
+              </button>
+
+              {/* Secondary: open in this tab (destructive to admin session) */}
+              <a
+                href={impersonate.action_link}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setImpersonate(null)}
+                style={{
+                  display: 'block', width: '100%', padding: '11px', background: '#f9fafb',
+                  color: '#374151', border: '1px solid #e5e7eb', borderRadius: 9, fontSize: 12,
+                  fontWeight: 600, cursor: 'pointer', textAlign: 'center', textDecoration: 'none',
+                  marginBottom: 16,
+                }}
+              >
+                Or: open in new tab (will replace your admin session)
+              </a>
+
+              {/* Raw link for manual copy */}
+              <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>Magic link</div>
+              <textarea
+                readOnly
+                value={impersonate.action_link}
+                style={{ width: '100%', minHeight: 62, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 11, fontFamily: 'ui-monospace, monospace', color: '#374151', resize: 'none' }}
+                onFocus={e => e.currentTarget.select()}
+              />
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setImpersonate(null)} style={{ padding: '8px 16px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   )
