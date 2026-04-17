@@ -9,6 +9,128 @@ This document outlines specific, actionable improvements to enhance customer exp
 - **Progressive Complexity**: Adapt to user's data maturity level
 - **Trust Through Transparency**: Show data sources, freshness, and confidence
 
+## Personalkollen-Inspired Layout Redesign
+
+### Overview
+Based on analysis of Personalkollen's successful analysis page layout, this redesign focuses on improving visual hierarchy, reducing cognitive load, and enabling better data exploration.
+
+### Current Layout Issues:
+1. **Grid Overload**: 5-column grid with equal weight to all metrics
+2. **No Clear Hierarchy**: All metrics compete for attention
+3. **Graph Placement**: Charts are small and not the visual centerpiece
+4. **Missing Interactive Details**: No floating details box for drill-down
+5. **Cognitive Overload**: Too many numbers without clear flow
+
+### Proposed Layout Structure:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  HEADER: Business selector + Date range                     │
+├─────────────────────────────────────────────────────────────┤
+│  TOP ROW: 3 Key KPI Cards                                   │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐                     │
+│  │ Turnover│  │Staff Cost│  │Net Profit│                    │
+│  │ 250,000 │  │  40%    │  │ 50,000  │                     │
+│  │   kr    │  │(35% tar)│  │   kr    │                     │
+│  └─────────┘  └─────────┘  └─────────┘                     │
+│                                                             │
+│  MIDDLE: Main Interactive Chart                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                                                     │   │
+│  │  Revenue vs. Staff Cost Over Time (Line Chart)      │   │
+│  │                                                     │   │
+│  │  [Interactive: Hover for details, click to zoom]    │   │
+│  │                                                     │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  BOTTOM ROW: 3 Insight Cards                                │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐                     │
+│  │Food Cost│  │Top Dept │  │Forecast │                     │
+│  │  30%    │  │ Kitchen │  │Next Month│                    │
+│  │(28% tar)│  │ 45,000kr│  │280,000kr│                     │
+│  └─────────┘  └─────────┘  └─────────┘                     │
+│                                                             │
+│  FLOATING DETAILS BOX (appears on interaction)             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ • Detailed breakdown of selected metric             │   │
+│  │ • Historical comparison                             │   │
+│  │ • Anomaly detection                                 │   │
+│  │ • Actionable insights                               │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Design Elements:
+
+#### 1. Top Row - 3 Key KPI Cards
+- **Card 1**: Turnover/Revenue (most important)
+- **Card 2**: Staff Cost % (critical restaurant metric)  
+- **Card 3**: Net Profit (bottom line)
+- **Each card shows**: Current value, target, trend indicator, brief context
+
+#### 2. Middle - Main Interactive Chart
+- **Primary chart**: Revenue vs. Staff Cost over time (line chart)
+- **Secondary toggle**: Switch between different views (daily, weekly, monthly)
+- **Interactive features**: Hover for details, click to zoom, drag to select range
+
+#### 3. Bottom Row - 3 Insight Cards
+- **Card 1**: Food Cost % (second major cost driver)
+- **Card 2**: Top Department by Cost (operational insight)
+- **Card 3**: Next Month Forecast (forward-looking)
+
+#### 4. Floating Details Box
+- **Triggers**: Hover over any KPI card or chart point
+- **Content**: Detailed breakdown, historical context, anomalies
+- **Position**: Floats near cursor, doesn't disrupt layout
+- **Persistence**: Can be pinned for continued reference
+
+### Implementation Plan:
+
+#### Phase 1A: Layout Restructuring (2-3 weeks)
+1. **Redesign dashboard component structure**
+2. **Implement 3-column top row for key KPIs**
+3. **Enlarge and center the main chart**
+4. **Add 3-column bottom row for insight cards**
+
+#### Phase 1B: Interactive Features (2-3 weeks)
+1. **Implement hover details for all metrics**
+2. **Add interactive chart with zoom/pan**
+3. **Create floating details box component**
+4. **Add chart view toggles (daily/weekly/monthly)**
+
+### Technical Implementation:
+
+```typescript
+// New component structure
+<DashboardLayout>
+  <DashboardHeader />           // Business selector + date range
+  <KPIRow>                     // Top 3 KPI cards
+    <KPICard metric="revenue" />
+    <KPICard metric="staff_cost" />
+    <KPICard metric="net_profit" />
+  </KPIRow>
+  
+  <MainChart>                  // Centerpiece chart
+    <RevenueVsStaffCostChart interactive={true} />
+  </MainChart>
+  
+  <InsightRow>                 // Bottom 3 insight cards
+    <InsightCard type="food_cost" />
+    <InsightCard type="top_department" />
+    <InsightCard type="forecast" />
+  </InsightRow>
+  
+  <FloatingDetailsBox />       // Appears on interaction
+</DashboardLayout>
+```
+
+### Benefits:
+1. **Clear Visual Hierarchy**: Users know where to look first
+2. **Reduced Cognitive Load**: 3 main metrics → chart → 3 insights
+3. **Interactive Exploration**: Floating details enable deep dive
+4. **Mobile Friendly**: Stacked layout works well on mobile
+5. **Focus on Relationships**: Chart shows revenue vs. staff cost correlation
+
 ## Phase 1: Quick Wins (1-2 weeks each)
 
 ### 1. Data Provenance & Freshness Indicators
@@ -322,43 +444,64 @@ class DashboardOptimizer {
 
 ## Implementation Priority Recommendations
 
-### **Start Here (Highest Impact, Lowest Effort):**
+### **Immediate Priority: Layout Redesign (Highest Impact)**
+**Personalkollen-Inspired Layout** (4-6 weeks total)
+- **Phase 1A: Layout Restructuring** (2-3 weeks)
+  - Redesign dashboard with clear hierarchy (top KPIs → main chart → bottom insights)
+  - Implement 3-column top row for key metrics
+  - Center and enlarge main interactive chart
+  - Add 3-column bottom row for insight cards
+  
+- **Phase 1B: Interactive Features** (2-3 weeks)
+  - Add hover details for all metrics
+  - Implement interactive chart with zoom/pan
+  - Create floating details box component
+  - Add chart view toggles (daily/weekly/monthly)
+
+### **Foundation Improvements (High Impact, Low Effort):**
 1. **Data Provenance Badges** (1-2 weeks)
-   - Builds immediate trust
+   - Builds immediate trust in data
    - Simple implementation
    - Sets foundation for other improvements
+   - **Can be implemented alongside layout redesign**
 
 2. **Metric Context** (2 weeks)
    - Makes numbers meaningful
    - Users understand "is this good?"
    - Can be added incrementally
+   - **Works well with new layout structure**
 
-3. **Progressive Dashboard** (3 weeks)
-   - Dramatically improves new user experience
-   - Reduces confusion for restaurants with little data
-   - Can be implemented alongside existing dashboard
-
-### **Then Move To (Medium Impact, Medium Effort):**
-4. **Enhanced Forecasting** (3-4 weeks)
+### **Core Feature Enhancements (Medium Impact):**
+3. **Enhanced Forecasting** (3-4 weeks)
    - Improves core forecasting feature
    - Adds confidence intervals
    - Builds trust in predictions
+   - **Fits perfectly in bottom insight row of new layout**
 
-5. **AI Suggestions** (2-3 weeks)
+4. **AI Suggestions** (2-3 weeks)
    - Makes AI more proactive
    - Helps users discover insights
    - Leverages existing AI infrastructure
+   - **Enhanced by new interactive features**
 
-### **Finally (High Impact, Higher Effort):**
-6. **Interactive Drill-Down** (4 weeks)
+### **Advanced Features (High Impact, Higher Effort):**
+5. **Interactive Drill-Down** (4 weeks)
    - Enables data exploration
    - Requires new UI components
    - Significant user experience improvement
+   - **Natural extension of floating details box**
 
-7. **Customizable Views** (4-5 weeks)
+6. **Customizable Views** (4-5 weeks)
    - Personalizes experience
    - Requires view management system
    - High value for different user roles
+   - **Builds on new layout foundation**
+
+### **Progressive Dashboard (Timing Flexible):**
+7. **Data Maturity Adaptation** (3 weeks)
+   - Dramatically improves new user experience
+   - Reduces confusion for restaurants with little data
+   - Can be implemented after layout is stable
 
 ## Technical Considerations
 
@@ -392,9 +535,63 @@ Track these metrics to measure improvement impact:
 
 ## Next Steps
 
-1. **Start with Phase 1, Item 1 (Data Provenance)**
-2. **Gather user feedback** on each improvement
-3. **Iterate based on feedback**
-4. **Document what works** for future reference
+### **Immediate Action Plan:**
 
-This document provides a roadmap for incremental improvements that collectively transform CommandCenter from a data reporting tool to a data understanding platform, while staying true to the core mission of providing accurate live data and forecasting capabilities.
+1. **Start with Personalkollen-Inspired Layout Redesign**
+   - **Phase 1A**: Implement new dashboard structure (2-3 weeks)
+   - **Phase 1B**: Add interactive features (2-3 weeks)
+   - **Parallel**: Implement Data Provenance Badges alongside layout work
+
+2. **Gather User Feedback** on layout changes
+   - Test with beta users
+   - Collect feedback on new hierarchy and interactions
+   - Iterate based on real user experience
+
+3. **Implement Foundation Improvements**
+   - Data Provenance Badges (builds trust)
+   - Metric Context (makes numbers meaningful)
+   - Both can be added to new layout structure
+
+4. **Enhance Core Features**
+   - Improved forecasting with confidence intervals
+   - AI-powered data exploration suggestions
+   - Both fit naturally into new layout design
+
+### **Long-Term Strategy:**
+
+5. **Document What Works** for future reference
+   - Track which improvements have highest impact
+   - Create implementation patterns for future features
+   - Build institutional knowledge about what users value
+
+6. **Continuous Improvement Cycle**
+   - Implement → Measure → Learn → Iterate
+   - Regular user testing sessions
+   - A/B testing for major changes
+   - Data-driven decision making
+
+### **Getting Started in Claude:**
+
+When building the Personalkollen-inspired layout in Claude, focus on:
+
+1. **Component Structure First**:
+   ```typescript
+   // Start with these core components
+   <DashboardLayout>
+     <KPIRow>...</KPIRow>
+     <MainChart>...</MainChart>
+     <InsightRow>...</InsightRow>
+   </DashboardLayout>
+   ```
+
+2. **Progressive Enhancement**:
+   - Build basic layout first
+   - Add interactivity second
+   - Polish visual design last
+
+3. **Mobile-First Approach**:
+   - Ensure stacked layout works on mobile
+   - Test touch interactions
+   - Optimize for different screen sizes
+
+This document provides a comprehensive roadmap for transforming CommandCenter from a data reporting tool to a data understanding platform, while staying true to the core mission of providing accurate live data and forecasting capabilities. The Personalkollen-inspired layout redesign addresses the fundamental issue of data presentation and user understanding identified in our analysis.
