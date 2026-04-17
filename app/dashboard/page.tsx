@@ -9,6 +9,8 @@ import AskAI from '@/components/AskAI'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
+// Format a Date as YYYY-MM-DD using local timezone (NOT UTC — avoids off-by-one in CET/CEST)
+const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
@@ -19,8 +21,8 @@ function getMonthBounds(offset = 0) {
   const d    = new Date(now.getFullYear(), now.getMonth() + offset, 1)
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
   return {
-    from:        d.toISOString().slice(0, 10),
-    to:          last.toISOString().slice(0, 10),
+    from:        localDate(d),
+    to:          localDate(last),
     label:       `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
     year:        d.getFullYear(),
     month:       d.getMonth() + 1,
@@ -46,8 +48,8 @@ function getWeekBounds(offset = 0) {
   const sun = new Date(mon)
   sun.setDate(mon.getDate() + 6)
   const wk    = getISOWeek(mon)
-  const mStr  = mon.toISOString().slice(0, 10)
-  const sStr  = sun.toISOString().slice(0, 10)
+  const mStr  = localDate(mon)
+  const sStr  = localDate(sun)
   const mMon  = MONTHS[mon.getMonth()]
   const sMon  = MONTHS[sun.getMonth()]
   const label = mMon === sMon
@@ -197,9 +199,9 @@ export default function DashboardPage() {
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d   = new Date(curr.mon)
     d.setDate(curr.mon.getDate() + i)
-    const ds  = d.toISOString().slice(0, 10)
+    const ds  = localDate(d)
     const row = dailyRows.find(r => r.date === ds) ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
-    const isToday   = ds === now.toISOString().slice(0, 10)
+    const isToday   = ds === localDate(now)
     const isFuture  = d > now
     return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture }
   })
@@ -207,9 +209,9 @@ export default function DashboardPage() {
   const monthDays = Array.from({ length: currM.daysInMonth }, (_, i) => {
     const d   = new Date(currM.firstDay)
     d.setDate(i + 1)
-    const ds  = d.toISOString().slice(0, 10)
+    const ds  = localDate(d)
     const row = dailyRows.find(r => r.date === ds) ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
-    const isToday  = ds === now.toISOString().slice(0, 10)
+    const isToday  = ds === localDate(now)
     const isFuture = d > now
     const dayIdx   = (d.getDay() + 6) % 7 // 0=Mon
     return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, dayIdx }

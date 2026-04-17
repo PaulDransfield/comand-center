@@ -11,6 +11,7 @@ import AskAI from '@/components/AskAI'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
+const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 
@@ -31,7 +32,7 @@ function getWeekBounds(offset = 0) {
   mon.setHours(0, 0, 0, 0)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
   const wk  = getISOWeek(mon)
-  const mStr = mon.toISOString().slice(0, 10), sStr = sun.toISOString().slice(0, 10)
+  const mStr = localDate(mon), sStr = localDate(sun)
   const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
   const label = mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}`
   return { from: mStr, to: sStr, weekNum: wk, label, mon }
@@ -41,7 +42,7 @@ function getMonthBounds(offset = 0) {
   const now  = new Date()
   const d    = new Date(now.getFullYear(), now.getMonth() + offset, 1)
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return { from: d.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, firstDay: d, daysInMonth: last.getDate() }
+  return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, firstDay: d, daysInMonth: last.getDate() }
 }
 
 function delta(cur: number, prev: number) {
@@ -140,9 +141,9 @@ export default function StaffPage() {
   const chartDays = Array.from({ length: dayCount }, (_, i) => {
     const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
     d.setDate(d.getDate() + i)
-    const ds  = d.toISOString().slice(0, 10)
+    const ds  = localDate(d)
     const row = srRows.find((r: any) => r.date === ds)
-    const isToday  = ds === now.toISOString().slice(0, 10)
+    const isToday  = ds === localDate(now)
     const isFuture = d > now
     const dayIdx   = (d.getDay() + 6) % 7
     return {

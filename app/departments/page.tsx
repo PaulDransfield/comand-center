@@ -10,6 +10,7 @@ import { deptColor } from '@/lib/constants/colors'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number | null) => n != null ? n.toFixed(1) + '%' : '—'
+const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('en-GB') + 'h'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -24,11 +25,11 @@ function getWeekBounds(offset = 0) {
   const mon = new Date(today); mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7); mon.setHours(0,0,0,0)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
   const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
-  return { from: mon.toISOString().slice(0,10), to: sun.toISOString().slice(0,10), weekNum: getISOWeek(mon), label: mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}` }
+  return { from: localDate(mon), to: localDate(sun), weekNum: getISOWeek(mon), label: mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}` }
 }
 function getMonthBounds(offset = 0) {
   const now = new Date(), d = new Date(now.getFullYear(), now.getMonth() + offset, 1), last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return { from: d.toISOString().slice(0,10), to: last.toISOString().slice(0,10), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
+  return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
 }
 
 export default function DepartmentsPage() {
