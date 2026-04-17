@@ -31,14 +31,15 @@ export async function GET(
   const db           = createAdminClient()
   const providerKey  = deptToProviderKey(deptName)
 
-  // ── Revenue: daily rows for this dept's Inzii provider ─────────────────
+  // ── Revenue: daily rows for this dept — try Inzii POS direct first, then PK per-workplace
+  const pkProviderKey = `pk_${deptName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
   let revQuery = db.from('revenue_logs')
-    .select('date, revenue_net, covers, food_revenue, drink_revenue')
+    .select('revenue_date, revenue, covers, food_revenue, bev_revenue')
     .eq('org_id', auth.orgId)
-    .eq('provider', providerKey)
-    .gte('date', from)
-    .lte('date', to)
-    .order('date', { ascending: true })
+    .in('provider', [providerKey, pkProviderKey])
+    .gte('revenue_date', from)
+    .lte('revenue_date', to)
+    .order('revenue_date', { ascending: true })
   if (businessId) revQuery = revQuery.eq('business_id', businessId)
 
   // ── Staff: shifts for this dept's PK group ───────────────────────────────
@@ -67,10 +68,11 @@ export async function GET(
   const revByDate: Record<string, { revenue: number; covers: number }> = {}
 
   for (const r of revLogs ?? []) {
-    totalRevenue += r.revenue_net ?? 0
-    totalCovers  += r.covers      ?? 0
-    revByDate[r.date] = {
-      revenue: Math.round(r.revenue_net ?? 0),
+    totalRevenue += r.revenue ?? 0
+    totalCovers  += r.covers  ?? 0
+    // If multiple providers return data for the same date (shouldn't happen), last one wins
+    revByDate[r.revenue_date] = {
+      revenue: Math.round(r.revenue ?? 0),
       covers:  r.covers ?? 0,
     }
   }

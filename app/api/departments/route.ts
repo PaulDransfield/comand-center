@@ -10,10 +10,12 @@ export const dynamic = 'force-dynamic'
 
 const getAuth = getRequestAuth
 
-// Convert a department name to the Inzii revenue_logs provider key
-// Mirrors the logic in lib/sync/engine.ts syncInzii()
-function deptToProviderKey(name: string): string {
-  return `inzii_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
+// Convert a department name to all possible revenue_logs provider keys.
+// 'inzii_*'  = direct Swess/Inzii POS API sync
+// 'pk_*'     = Personalkollen per-workplace sales sync (same POS data, different source)
+function deptToProviderKeys(name: string): string[] {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '_')
+  return [`inzii_${slug}`, `pk_${slug}`]
 }
 
 export async function GET(req: NextRequest) {
@@ -84,16 +86,16 @@ export async function GET(req: NextRequest) {
     dateTo   = `${year}-12-31`
   }
 
-  // ── 3. Revenue logs — one row per day per Inzii provider ─────────────────
-  // Collect all inzii_* provider keys for this business's departments
-  const inziiProviders = deptNames.map(deptToProviderKey)
+  // ── 3. Revenue logs — one row per day per provider ───────────────────────
+  // Look for both inzii_* (Swess direct) and pk_* (Personalkollen per-workplace) sources
+  const allRevProviders = deptNames.flatMap(deptToProviderKeys)
 
   let revQuery = db.from('revenue_logs')
-    .select('date, provider, revenue_net, covers')
+    .select('revenue_date, provider, revenue, covers')
     .eq('org_id', auth.orgId)
-    .gte('date', dateFrom)
-    .lte('date', dateTo)
-    .in('provider', inziiProviders)
+    .gte('revenue_date', dateFrom)
+    .lte('revenue_date', dateTo)
+    .in('provider', allRevProviders)
   if (businessId) revQuery = revQuery.eq('business_id', businessId)
 
   const { data: revLogs } = await revQuery
@@ -111,9 +113,11 @@ export async function GET(req: NextRequest) {
   const { data: staffLogs } = await staffQuery
 
   // ── 5. Aggregate per department ───────────────────────────────────────────
-  // Build lookup: provider_key → dept name
+  // Build lookup: provider_key → dept name (covers both inzii_* and pk_* keys)
   const providerToDept: Record<string, string> = {}
-  for (const d of deptDefs) providerToDept[deptToProviderKey(d.name)] = d.name
+  for (const d of deptDefs) {
+    for (const key of deptToProviderKeys(d.name)) providerToDept[key] = d.name
+  }
 
   // Per-dept accumulators
   const deptAcc: Record<string, {
@@ -135,8 +139,8 @@ export async function GET(req: NextRequest) {
   for (const r of revLogs ?? []) {
     const dept = providerToDept[r.provider]
     if (!dept || !deptAcc[dept]) continue
-    deptAcc[dept].revenue += r.revenue_net ?? 0
-    deptAcc[dept].covers  += r.covers      ?? 0
+    deptAcc[dept].revenue += r.revenue ?? 0
+    deptAcc[dept].covers  += r.covers  ?? 0
   }
 
   for (const s of staffLogs ?? []) {
@@ -209,11 +213,11 @@ export async function GET(req: NextRequest) {
   for (const r of revLogs ?? []) {
     const dept = providerToDept[r.provider]
     if (!dept) continue
-    const d   = new Date(r.date)
+    const d   = new Date(r.revenue_date)
     const key = `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}`
     if (!monthlyMap[key]) monthlyMap[key] = { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 }
     if (!monthlyMap[key][dept]) monthlyMap[key][dept] = { revenue: 0, cost: 0, hours: 0 }
-    monthlyMap[key][dept].revenue += r.revenue_net ?? 0
+    monthlyMap[key][dept].revenue += r.revenue ?? 0
   }
 
   for (const s of staffLogs ?? []) {

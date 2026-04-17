@@ -144,6 +144,73 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     }
   }
 
+  // ── Per-workplace revenue breakdown from Personalkollen sales ────────────
+  // Each sale has a workplace_url. We match that to a department via staff_logs
+  // (staff_logs.pk_workplace_url ↔ staff_logs.staff_group = dept name).
+  // Stored as provider='pk_<dept_slug>' so the departments page can show it.
+  let perDeptRevUpserted = 0
+  try {
+    // Build workplace_url → dept_slug map by voting on staff_group per workplace
+    const { data: wpRows } = await db
+      .from('staff_logs')
+      .select('pk_workplace_url, staff_group')
+      .eq('org_id', integ.org_id)
+      .not('pk_workplace_url', 'is', null)
+      .not('staff_group', 'is', null)
+      .limit(2000)
+
+    const wpVotes: Record<string, Record<string, number>> = {}
+    for (const row of wpRows ?? []) {
+      if (!wpVotes[row.pk_workplace_url]) wpVotes[row.pk_workplace_url] = {}
+      wpVotes[row.pk_workplace_url][row.staff_group] = (wpVotes[row.pk_workplace_url][row.staff_group] ?? 0) + 1
+    }
+    const wpToDeptSlug: Record<string, string> = {}
+    for (const [wpUrl, votes] of Object.entries(wpVotes)) {
+      const top = Object.entries(votes).sort((a, b) => b[1] - a[1])[0]?.[0]
+      if (top) wpToDeptSlug[wpUrl] = top.toLowerCase().replace(/[^a-z0-9]/g, '_')
+    }
+
+    // Aggregate per (dept, date)
+    const byDeptDay: Record<string, any> = {}
+    for (const sale of sales) {
+      if (!sale.sale_time || !sale.workplace_url) continue
+      const deptSlug = wpToDeptSlug[sale.workplace_url]
+      if (!deptSlug) continue
+      const date = sale.sale_time.slice(0, 10)
+      const key  = `${deptSlug}|${date}`
+      if (!byDeptDay[key]) byDeptDay[key] = { deptSlug, date, revenue: 0, covers: 0, transactions: 0, food: 0, drink: 0 }
+      byDeptDay[key].revenue      += sale.amount
+      byDeptDay[key].covers       += sale.covers ?? 0
+      byDeptDay[key].transactions += 1
+      byDeptDay[key].food         += sale.food_revenue  ?? 0
+      byDeptDay[key].drink        += sale.drink_revenue ?? 0
+    }
+
+    const pkRows = Object.values(byDeptDay)
+      .filter((d: any) => d.revenue > 0)
+      .map((d: any) => ({
+        org_id:            integ.org_id,
+        business_id:       integ.business_id ?? null,
+        provider:          `pk_${d.deptSlug}`,
+        revenue_date:      d.date,
+        revenue:           Math.round(d.revenue * 100) / 100,
+        covers:            d.covers,
+        revenue_per_cover: d.covers > 0 ? Math.round(d.revenue / d.covers) : 0,
+        transactions:      d.transactions,
+        food_revenue:      Math.round(d.food  * 100) / 100,
+        bev_revenue:       Math.round(d.drink * 100) / 100,
+        period_year:       parseInt(d.date.slice(0, 4)),
+        period_month:      parseInt(d.date.slice(5, 7)),
+      }))
+
+    if (pkRows.length) {
+      await db.from('revenue_logs').upsert(pkRows, { onConflict: 'org_id,business_id,provider,revenue_date' })
+      perDeptRevUpserted = pkRows.length
+    }
+  } catch (e: any) {
+    console.warn('Per-dept revenue sync error:', e.message)
+  }
+
   // Upsert revenue_logs from sales
   let revenueUpserted = 0
   const byDay: Record<string, any> = {}
@@ -225,7 +292,7 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     console.error('Sale forecast sync error:', e.message)
   }
 
-  return { shifts: shiftsUpserted, scheduled: scheduledUpserted, revenue_days: revenueUpserted, staff_count: staff.length, forecasts: forecastsUpserted }
+  return { shifts: shiftsUpserted, scheduled: scheduledUpserted, revenue_days: revenueUpserted, per_dept_days: perDeptRevUpserted, staff_count: staff.length, forecasts: forecastsUpserted }
 }
 
 // ── Fortnox sync ──────────────────────────────────────────────────────────────
