@@ -140,35 +140,67 @@ export default function DepartmentsPage() {
               </div>
             )}
 
-            {/* Deploy marker + diagnostic counts */}
-            <div style={{ background: '#ede9fe', color: '#6d28d9', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
-              list v7 · depts: {depts.length} · summary: {summary ? 'yes' : 'no'} · period: {periodLabel}
-            </div>
-
-            {/* Div-based list (no <table>/<tr>/<td>) — if this renders, a CSS rule is hiding real tables */}
+            {/* Full table — revenue vs profit at a glance, dashboard style */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', marginBottom: 16, overflow: 'hidden' }}>
-              <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', fontSize: 13, fontWeight: 700, color: '#111' }}>
-                Departments — {periodLabel}
+              <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — {periodLabel}</div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>Click a row for the drill-down</div>
               </div>
-
-              {/* v7: raw text lines — absolute minimum DOM */}
-              <pre style={{ margin: 0, padding: '12px 20px', fontFamily: 'ui-monospace, monospace', fontSize: 12, color: '#111', whiteSpace: 'pre-wrap' as const, lineHeight: 1.7 }}>
-{`=== LIST v7 · ${depts.length} departments ===
-`}{depts.map((d: any) => {
-  const rev    = Number(d?.revenue || 0)
-  const cost   = Number(d?.staff_cost || 0)
-  const profit = Math.max(0, rev - cost)
-  return `${(d?.name || '—').padEnd(18)}  rev ${rev.toLocaleString('en-GB').padStart(10)} kr  profit ${profit.toLocaleString('en-GB').padStart(10)} kr  gp ${d?.gp_pct != null ? Number(d.gp_pct).toFixed(1) : '—'}%  hours ${Number(d?.hours || 0).toFixed(1)}h\n`
-}).join('')}
-{summary ? `
---- TOTAL ---
-Revenue ${Number(summary.total_revenue || 0).toLocaleString('en-GB')} kr
-Profit  ${Math.max(0, Number(summary.total_revenue || 0) - Number(summary.total_staff_cost || 0)).toLocaleString('en-GB')} kr
-Labour  ${Number(summary.total_staff_cost || 0).toLocaleString('en-GB')} kr
-GP%     ${summary?.gp_pct != null ? Number(summary.gp_pct).toFixed(1) + '%' : '—'}
-Hours   ${Number(summary.total_hours || 0).toFixed(1)}h
-` : ''}
-              </pre>
+              <div style={{ overflowX: 'auto' as const }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#f9fafb' }}>
+                      {['Department','Revenue','Profit','GP%','Labour','Lab%','Rev/Hr','Hours'].map(h => (
+                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...depts].sort((a: any, b: any) => (Number(b?.revenue) || 0) - (Number(a?.revenue) || 0)).map((d: any, i: number) => {
+                      const rev    = Number(d?.revenue) || 0
+                      const cost   = Number(d?.staff_cost) || 0
+                      const profit = Math.max(0, rev - cost)
+                      return (
+                        <tr key={i}
+                            onClick={() => d?.name && router.push(`/departments/${encodeURIComponent(d.name)}`)}
+                            style={{ borderTop: '1px solid #f3f4f6', cursor: 'pointer' }}>
+                          <td style={{ padding: '10px 14px' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: d?.color || deptColor(d?.name || '') || '#9ca3af', display: 'inline-block' }} />
+                              <span style={{ fontWeight: 500, color: '#111' }}>{d?.name || '—'}</span>
+                            </span>
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: '#111' }}>{rev > 0 ? rev.toLocaleString('en-GB') + ' kr' : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: profit > 0 ? '#15803d' : '#d1d5db' }}>{profit > 0 ? profit.toLocaleString('en-GB') + ' kr' : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 600, color: d?.gp_pct != null ? (d.gp_pct >= 50 ? '#16a34a' : d.gp_pct >= 30 ? '#d97706' : '#dc2626') : '#d1d5db' }}>{d?.gp_pct != null ? Number(d.gp_pct).toFixed(1) + '%' : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', color: '#374151' }}>{cost > 0 ? cost.toLocaleString('en-GB') + ' kr' : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                            {d?.labour_pct != null ? (
+                              <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: d.labour_pct > 40 ? '#fee2e2' : '#dcfce7', color: d.labour_pct > 40 ? '#dc2626' : '#16a34a' }}>
+                                {Number(d.labour_pct).toFixed(1)}%
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', color: '#6b7280' }}>{Number(d?.rev_per_hour) > 0 ? Number(d.rev_per_hour).toLocaleString('en-GB') + ' kr' : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', color: '#9ca3af' }}>{Number(d?.hours) > 0 ? Number(d.hours).toFixed(1) + 'h' : '—'}</td>
+                        </tr>
+                      )
+                    })}
+                    {summary && (
+                      <tr style={{ background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
+                        <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Total</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#111' }}>{Number(summary.total_revenue || 0).toLocaleString('en-GB')} kr</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#15803d' }}>{Math.max(0, Number(summary.total_revenue || 0) - Number(summary.total_staff_cost || 0)).toLocaleString('en-GB')} kr</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: summary.gp_pct != null ? '#16a34a' : '#d1d5db' }}>{summary.gp_pct != null ? Number(summary.gp_pct).toFixed(1) + '%' : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#374151' }}>{Number(summary.total_staff_cost || 0).toLocaleString('en-GB')} kr</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>{summary.labour_pct != null && <span style={{ fontSize: 12, fontWeight: 700, color: summary.labour_pct > 40 ? '#dc2626' : '#16a34a' }}>{Number(summary.labour_pct).toFixed(1)}%</span>}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#111' }}>{Number(summary.rev_per_hour) > 0 ? Number(summary.rev_per_hour).toLocaleString('en-GB') + ' kr' : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#111' }}>{Number(summary.total_hours || 0).toFixed(1)}h</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </>
         )}
