@@ -45,7 +45,9 @@ export default function BudgetPage() {
     setLoading(true)
     const res = await fetch(`/api/budgets?business_id=${selected}&year=${year}`)
     const d   = await res.json()
-    if (Array.isArray(d)) setRows(d)
+    // API returns { year, months } — months is the array we render
+    const months = Array.isArray(d) ? d : (Array.isArray(d?.months) ? d.months : [])
+    setRows(months)
     setLoading(false)
   }, [selected, year])
 
@@ -55,7 +57,7 @@ export default function BudgetPage() {
     setSaving(true)
     await fetch('/api/budgets', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, business_id: selected, period_year: year, period_month: month }),
+      body: JSON.stringify({ ...form, business_id: selected, year, month }),
     })
     setSaving(false); setEditing(null); load()
   }

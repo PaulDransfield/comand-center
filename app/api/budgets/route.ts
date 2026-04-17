@@ -28,20 +28,60 @@ export async function GET(req: NextRequest) {
     .eq('year', year)
     .order('month')
 
-  // Fetch actuals (tracker_data) for this year
-  const { data: actuals } = await db
-    .from('tracker_data')
-    .select('period_month, revenue, staff_cost, food_cost, rent_cost, other_cost, net_profit, margin_pct')
-    .eq('business_id', businessId)
-    .eq('period_year', year)
-    .order('period_month')
+  // Fetch actuals from monthly_metrics (auto-aggregated from POS + PK syncs).
+  // Previously pulled from tracker_data, which only has manual P&L entries and misses
+  // every auto-synced month. monthly_metrics is the source of truth for revenue/staff.
+  // We still merge in tracker_data to fill gaps for legacy manually-entered months.
+  const [mmRes, mmLastRes, trRes, trLastRes] = await Promise.all([
+    db.from('monthly_metrics')
+      .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .eq('year', year)
+      .order('month'),
+    db.from('monthly_metrics')
+      .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .eq('year', year - 1),
+    db.from('tracker_data')
+      .select('period_month, revenue, staff_cost, food_cost, rent_cost, other_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .eq('period_year', year),
+    db.from('tracker_data')
+      .select('period_month, revenue, staff_cost, food_cost, rent_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .eq('period_year', year - 1),
+  ])
 
-  // Fetch last year's actuals for reference
-  const { data: lastYear } = await db
-    .from('tracker_data')
-    .select('period_month, revenue, staff_cost, food_cost, rent_cost, net_profit, margin_pct')
-    .eq('business_id', businessId)
-    .eq('period_year', year - 1)
+  // Reshape monthly_metrics to match tracker_data key (period_month) for downstream merge
+  const mmShaped = (mmRes.data ?? []).map((r: any) => ({
+    period_month: r.month,
+    revenue:      r.revenue,
+    staff_cost:   r.staff_cost,
+    food_cost:    r.food_cost,
+    net_profit:   r.net_profit,
+    margin_pct:   r.margin_pct,
+    rent_cost:    0,
+    other_cost:   0,
+  }))
+  const mmLastShaped = (mmLastRes.data ?? []).map((r: any) => ({
+    period_month: r.month,
+    revenue:      r.revenue,
+    staff_cost:   r.staff_cost,
+    food_cost:    r.food_cost,
+    net_profit:   r.net_profit,
+    margin_pct:   r.margin_pct,
+  }))
+
+  // Merge: monthly_metrics wins over tracker_data for the same month
+  const actualsByMonth   = new Map<number, any>()
+  const lastYearByMonth  = new Map<number, any>()
+  for (const t of trRes.data ?? [])     actualsByMonth.set(t.period_month, t)
+  for (const m of mmShaped)             actualsByMonth.set(m.period_month, m)
+  for (const t of trLastRes.data ?? []) lastYearByMonth.set(t.period_month, t)
+  for (const m of mmLastShaped)         lastYearByMonth.set(m.period_month, m)
+
+  const actuals  = [...actualsByMonth.values()].sort((a, b) => a.period_month - b.period_month)
+  const lastYear = [...lastYearByMonth.values()].sort((a, b) => a.period_month - b.period_month)
 
   // Fetch AI-generated forecasts to use as smart budget defaults
   const { data: forecasts } = await db
