@@ -32,11 +32,13 @@ export async function aggregateMetrics(
       .gte('revenue_date', fromDate).lte('revenue_date', toDate)
       .limit(50000),
 
+    // Exclude scheduled shifts (_scheduled suffix) — only count actual logged hours
     db.from('staff_logs')
       .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr')
       .eq('org_id', orgId).eq('business_id', businessId)
       .gte('shift_date', fromDate).lte('shift_date', toDate)
       .or('cost_actual.gt.0,estimated_salary.gt.0')
+      .not('pk_log_url', 'like', '%_scheduled')
       .limit(50000),
 
     db.from('tracker_data')

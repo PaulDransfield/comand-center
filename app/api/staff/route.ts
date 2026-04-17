@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
     .lte('shift_date', to)
     // Include rows with cost data OR lateness data (late shifts may have 0 cost on casual rates)
     .or('cost_actual.gt.0,estimated_salary.gt.0,is_late.eq.true')
+    .not('pk_log_url', 'like', '%_scheduled')
 
   if (businessId) query = query.eq('business_id', businessId)
   query = query.limit(50000)

@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
     .lte('shift_date', dateTo)
     .in('staff_group', deptNames)
     .or('cost_actual.gt.0,estimated_salary.gt.0')
+    .not('pk_log_url', 'like', '%_scheduled')
   if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
   staffQuery = staffQuery.limit(50000)
 
