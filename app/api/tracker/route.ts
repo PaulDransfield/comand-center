@@ -25,8 +25,8 @@ export async function GET(req: NextRequest) {
 
   // Fetch all three sources in parallel
   const [trackerRes, revRes, staffRes] = await Promise.all([
-    // Manual P&L entries
-    db.from('tracker_data').select('*').eq('business_id', businessId).eq('period_year', year).order('period_month'),
+    // Manual P&L entries — ALWAYS filter by org_id first (tenant isolation; service role bypasses RLS)
+    db.from('tracker_data').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).order('period_month'),
     // Real revenue from POS sync (revenue_logs) — include provider for dedup
     db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0).limit(50000),
     // Real staff cost from Personalkollen sync (staff_logs)

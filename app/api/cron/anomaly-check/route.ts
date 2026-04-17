@@ -4,14 +4,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { runAnomalyDetection }       from '@/lib/alerts/detector'
+import { checkCronSecret }           from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60  // Allow up to 60 seconds for processing
 
 export async function POST(req: NextRequest) {
-  // Check cron secret for authorization
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

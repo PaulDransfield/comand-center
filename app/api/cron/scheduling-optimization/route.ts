@@ -7,14 +7,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { checkCronSecret }    from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120  // Allow up to 2 minutes for AI processing
 
 export async function POST(req: NextRequest) {
-  // Security: only allow Vercel cron with Bearer token
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

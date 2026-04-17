@@ -431,12 +431,12 @@ Please provide a structured analysis with:
 
   try {
     const response = await anthropic.messages.create({
-      model: AI_MODELS.CLAUDE_3_5_SONNET,
-      max_tokens: MAX_TOKENS,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
+      // Route through AI_MODELS — the old CLAUDE_3_5_SONNET symbol never existed
+      // on AI_MODELS (it's not in lib/ai/models.ts) so this was a silent ReferenceError
+      // at runtime. Analysis is the right tier for deep API reasoning.
+      model:      AI_MODELS.ANALYSIS,
+      max_tokens: MAX_TOKENS.ASSISTANT,
+      messages:   [{ role: 'user', content: prompt }]
     })
     
     // Parse Claude's response (simplified - in reality you'd want more structured parsing)

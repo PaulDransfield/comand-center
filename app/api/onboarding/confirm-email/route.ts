@@ -1,13 +1,24 @@
 // @ts-nocheck
-// Sends confirmation email to customer after onboarding completes
+// Sends confirmation email to customer after onboarding completes.
+// Must be authenticated — otherwise anyone can trigger our domain to email
+// any org's members. We accept org_id in body for backward-compat with the
+// /api/onboarding/complete caller, but REQUIRE the session org to match.
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
   try {
     const { org_id, business_name, city, systems } = await req.json()
     if (!org_id) return NextResponse.json({ error: 'org_id required' }, { status: 400 })
+
+    // Caller cannot target another org — only themselves.
+    if (org_id !== auth.orgId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
 
     const db = createAdminClient()
 

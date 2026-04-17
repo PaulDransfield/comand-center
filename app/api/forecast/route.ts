@@ -34,12 +34,14 @@ export async function GET(req: NextRequest) {
   const [mmRes, trRes] = await Promise.all([
     db.from('monthly_metrics')
       .select('year, month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .in('year', [year - 1, year, year + 1])
       .order('year')
       .order('month'),
     db.from('tracker_data')
       .select('period_year, period_month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .in('period_year', [year - 1, year, year + 1])
       .order('period_year')

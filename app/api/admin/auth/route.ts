@@ -25,11 +25,22 @@ export async function POST(req: NextRequest) {
     if (!adminPassword) {
       return NextResponse.json({ ok: false, error: 'Server misconfiguration' }, { status: 500 })
     }
+
+    // Production must enforce TOTP. Password alone is not acceptable for an
+    // admin surface with service-role DB access and impersonation. Enrol via
+    // GET /api/admin/2fa-setup and set ADMIN_TOTP_SECRET in Vercel env.
+    if (process.env.NODE_ENV === 'production' && !totpSecret) {
+      return NextResponse.json({
+        ok:    false,
+        error: 'Admin 2FA not configured — ADMIN_TOTP_SECRET must be set in production.',
+      }, { status: 500 })
+    }
+
     if (password !== adminPassword) {
       return NextResponse.json({ ok: false, error: 'Wrong password' }, { status: 401 })
     }
 
-    // 2FA enforced if secret is set
+    // 2FA enforced if secret is set (mandatory in prod per check above).
     if (totpSecret) {
       if (!totp) {
         return NextResponse.json({ ok: false, totp_required: true }, { status: 401 })

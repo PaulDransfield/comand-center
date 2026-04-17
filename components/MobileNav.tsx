@@ -17,9 +17,8 @@ const TABS = [
 const MORE_ITEMS = [
   { label: 'Budget vs Actual', href: '/budget'        },
   { label: 'Scheduling',       href: '/scheduling'     },
-  { label: 'Covers',           href: '/covers'         },
+  { label: 'Revenue',          href: '/revenue'        },
   { label: 'AI Assistant',     href: '/notebook'       },
-  { label: 'AI Studio',        href: '/notebook/studio' },
   { label: 'Integrations',     href: '/integrations'   },
   { label: 'Settings',         href: '/settings'       },
   { label: 'Upgrade',          href: '/upgrade'        },

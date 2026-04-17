@@ -4,7 +4,9 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { AI_MODELS } from '@/lib/ai/models'
+import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { isAgentEnabled }        from '@/lib/ai/is-agent-enabled'
+import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -49,35 +51,59 @@ export async function analyzeCustomerHealth(specificOrgId?: string): Promise<Cus
   // Process each organization
   for (const org of orgs) {
     try {
+      // Gate 1 — customer feature flag. Skip if the customer disabled this agent.
+      if (!(await isAgentEnabled(db, org.id, 'customer_health_scoring'))) {
+        console.log(`[health-scoring] skip ${org.id} — agent disabled by feature flag`)
+        continue
+      }
+
+      // Gate 2 — AI daily cost limit. Skip if the org is over its plan quota.
+      const gate = await checkAiLimit(db, org.id)
+      if (!gate.ok) {
+        console.log(`[health-scoring] skip ${org.id} — over AI daily limit`)
+        continue
+      }
+
       // Gather data for this org
       const orgData = await gatherOrgData(org.id)
-      
+
       // Prepare prompt for Claude
       const prompt = buildHealthAnalysisPrompt(org, orgData)
-      
-      // Call Claude
+
+      // Call Claude — route both model and max_tokens through the shared constants.
       const response = await anthropic.messages.create({
-        model: AI_MODELS.AGENT, // Haiku 4.5
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: prompt }],
+        model:      AI_MODELS.AGENT,
+        max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
+        messages:   [{ role: 'user', content: prompt }],
       })
-      
+
+      // Increment usage before parsing — we consumed the tokens regardless.
+      try { await incrementAiUsage(db, org.id) } catch { /* non-fatal */ }
+
       // Parse response
       const content = response.content[0]
-      if (content.type !== 'text') {
+      if (!content || content.type !== 'text') {
         throw new Error('Claude returned non-text response')
       }
-      
-      const analysis = JSON.parse(content.text) as CustomerHealthAnalysis
+
+      let analysis: CustomerHealthAnalysis
+      try {
+        analysis = JSON.parse(content.text) as CustomerHealthAnalysis
+      } catch (parseErr: any) {
+        // One malformed response used to crash the entire cron run. Now we log and skip.
+        console.error(`[health-scoring] JSON parse failed for ${org.id}:`, parseErr.message,
+                      'response preview:', String(content.text).slice(0, 200))
+        continue
+      }
       analysis.org_id = org.id
-      
+
       // Save to database
       await saveHealthScore(analysis)
-      
+
       results.push(analysis)
-      
+
     } catch (error) {
-      console.error(`Failed to analyze org ${org.id}:`, error)
+      console.error(`[health-scoring] failed for ${org.id}:`, error)
       // Continue with other orgs
     }
   }

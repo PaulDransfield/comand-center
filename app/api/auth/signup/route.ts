@@ -9,8 +9,19 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { rateLimit }                 from '@/lib/middleware/rate-limit'
 
 export async function POST(req: NextRequest) {
+  // Rate-limit by IP — prevents signup flooding / org spam.
+  // Five signups per IP per hour is already generous.
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim()
+          ?? req.headers.get('x-real-ip')
+          ?? 'unknown'
+  const gate = rateLimit(`signup:${ip}`, { windowMs: 60 * 60_000, max: 5 })
+  if (!gate.allowed) {
+    return NextResponse.json({ error: 'Too many signups from this IP. Try again later.' }, { status: 429 })
+  }
+
   const body = await req.json().catch(() => null)
 
   // Validate that all required fields are present

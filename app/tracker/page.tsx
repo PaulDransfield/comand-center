@@ -266,7 +266,7 @@ export default function TrackerPage() {
                             ) : daily.length === 0 ? (
                               <div style={{ fontSize: 12, color: '#d1d5db', padding: '8px 0' }}>
                                 No daily covers data for this month. Log covers daily to see the breakdown.
-                                <a href="/covers" style={{ color: '#6366f1', marginLeft: 6 }}>Log covers →</a>
+                                <a href="/revenue" style={{ color: '#6366f1', marginLeft: 6 }}>Log covers →</a>
                               </div>
                             ) : (
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>

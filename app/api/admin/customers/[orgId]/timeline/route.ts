@@ -17,12 +17,12 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 export async function GET(req: NextRequest, { params }: { params: { orgId: string } }) {

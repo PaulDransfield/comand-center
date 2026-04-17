@@ -4,6 +4,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { getRequestAuth }        from '@/lib/supabase/server'
+import { rateLimit }             from '@/lib/middleware/rate-limit'
 
 const CATEGORIES = [
   'food_beverage','alcohol','staff','rent','cleaning',
@@ -11,6 +13,15 @@ const CATEGORIES = [
 ]
 
 export async function POST(req: NextRequest) {
+  // Auth — this route calls Claude Vision (cost) and writes to Supabase Storage.
+  // Without auth, anyone can trigger spend + upload files into the shared bucket.
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  // Per-user rate limit: 10 extractions per hour. Claude Vision is expensive.
+  const gate = rateLimit(auth.userId, { windowMs: 60 * 60_000, max: 10 })
+  if (!gate.allowed) return NextResponse.json({ error: 'Too many extractions — try later' }, { status: 429 })
+
   let formData: FormData
   try { formData = await req.formData() }
   catch { return NextResponse.json({ error: 'Invalid form data' }, { status: 400 }) }
@@ -150,7 +161,8 @@ Rules:
       const { createAdminClient } = await import('@/lib/supabase/server')
       const db       = createAdminClient()
       const ext      = file.name.split('.').pop()?.toLowerCase() ?? 'pdf'
-      const filename = `invoices/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
+      // Prefix with org_id so uploads can't be enumerated across tenants.
+      const filename = `invoices/${auth.orgId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`
 
       const { data: upload, error: uploadError } = await db.storage
         .from('documents')

@@ -6,13 +6,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { orgId: string; integId: string } }) {

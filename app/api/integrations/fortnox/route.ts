@@ -26,6 +26,26 @@ import { encrypt, decrypt }           from '@/lib/integrations/encryption'
 import { rateLimit }                  from '@/lib/middleware/rate-limit'
 import { verifyOauthConnectToken }    from '@/lib/admin/oauth-link'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
+import { createHmac, timingSafeEqual } from 'crypto'
+
+// HMAC-sign the OAuth state so Fortnox can't be used to bind an attacker's
+// Fortnox account to a victim's org. Signed with ADMIN_SECRET — same trust
+// boundary as the rest of the admin surface.
+function signState(payload: { orgId: string; businessId: string; nonce: string }): string {
+  const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
+  const sig  = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64')
+  return `${body}.${sig}`
+}
+function verifyState(state: string): { orgId: string; businessId: string; nonce: string } | null {
+  try {
+    const [body, sig] = state.split('.')
+    if (!body || !sig) return null
+    const expected = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64')
+    const a = Buffer.from(expected, 'utf8'), b = Buffer.from(sig, 'utf8')
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null
+    return JSON.parse(Buffer.from(body, 'base64').toString('utf8'))
+  } catch { return null }
+}
 
 // Fortnox API base URL
 const FORTNOX_API     = 'https://api.fortnox.se/3'
@@ -83,14 +103,16 @@ export async function GET(req: NextRequest) {
       businessId = searchParams.get('business_id') ?? ''
     }
 
-    // State encodes both orgId and businessId so we can use them in the callback
-    const statePayload = JSON.stringify({ orgId, businessId })
+    // State is HMAC-signed so the callback can verify it originated from us.
+    // Nonce makes replay attempts detectable if we ever cache recent states.
+    const nonce = Math.random().toString(36).slice(2, 14)
+    const state = signState({ orgId, businessId, nonce })
     const params = new URLSearchParams({
       client_id:     clientId,
       redirect_uri:  `${appUrl}/api/integrations/fortnox?action=callback`,
       scope:         FORTNOX_SCOPES,
       response_type: 'code',
-      state:         Buffer.from(statePayload).toString('base64'),
+      state,
       access_type:   'offline',   // request a refresh_token too
     })
 
@@ -125,17 +147,15 @@ async function handleCallback(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_invalid_callback`)
   }
 
-  // Decode state — could be base64 JSON (new) or plain orgId (old)
-  let orgId = state
-  let businessId = ''
-  try {
-    const decoded = JSON.parse(Buffer.from(state, 'base64').toString('utf8'))
-    orgId      = decoded.orgId
-    businessId = decoded.businessId ?? ''
-  } catch {
-    // Old format — state is just orgId
-    orgId = state
+  // Verify the HMAC-signed state. If the signature is wrong or the payload
+  // is malformed, the callback is rejected — this is the CSRF gate.
+  const verified = verifyState(state)
+  if (!verified) {
+    console.error('Fortnox OAuth callback: invalid state signature')
+    return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_invalid_state`)
   }
+  const orgId      = verified.orgId
+  const businessId = verified.businessId ?? ''
   const clientId       = process.env.FORTNOX_CLIENT_ID!
   const clientSecret   = process.env.FORTNOX_CLIENT_SECRET!
   const redirectUri    = `${appUrl}/api/integrations/fortnox?action=callback`

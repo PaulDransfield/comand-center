@@ -74,17 +74,7 @@ export default function ForecastPage() {
   }, [])
 
   const load = useCallback(async () => {
-    if (!selected) return (
-    <AppShell>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-        <div style={{ textAlign: 'center' as const, maxWidth: 360 }}>
-          <div style={{ fontSize: 32, marginBottom: 16 }}>📈</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1f2e', marginBottom: 8 }}>No restaurant selected</div>
-          <div style={{ fontSize: 13, color: '#6b7280' }}>Select a restaurant from the sidebar to see forecasts.</div>
-        </div>
-      </div>
-    </AppShell>
-  )
+    if (!selected) return
     setLoading(true)
     setError('')
     try {
@@ -99,6 +89,22 @@ export default function ForecastPage() {
   }, [selected])
 
   useEffect(() => { if (selected) load() }, [selected])
+
+  // Empty state — no business selected (the earlier version tried to return this
+  // JSX from inside the useCallback load() function, which silently did nothing).
+  if (!loading && !selected && businesses.length === 0) {
+    return (
+      <AppShell>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+          <div style={{ textAlign: 'center' as const, maxWidth: 360 }}>
+            <div style={{ fontSize: 32, marginBottom: 16 }}>📈</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1f2e', marginBottom: 8 }}>No restaurant yet</div>
+            <div style={{ fontSize: 13, color: '#6b7280' }}>Add a restaurant in <a href="/settings" style={{ color: '#6366f1', textDecoration: 'none' }}>Settings</a> to start generating forecasts.</div>
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
 
   const forecasts: any[]    = data?.forecasts    ?? []
   const actuals: any[]      = data?.actuals      ?? []

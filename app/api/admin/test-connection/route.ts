@@ -2,12 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 export async function POST(req: NextRequest) {
@@ -86,6 +86,51 @@ export async function POST(req: NextRequest) {
         earliest_date:  new Date(Date.now() - 2 * 365 * 86400000).toISOString().slice(0, 10),
         total_records:  result.users_count,
       })
+    }
+
+    if (provider === 'ancon') {
+      const { testAnconConnection } = await import('@/lib/pos/ancon')
+      const result = await testAnconConnection(api_key)
+      return NextResponse.json({
+        ok:             !!result?.ok,
+        workplace_name: result?.message ?? 'Ancon connected',
+        earliest_date:  new Date(Date.now() - 2 * 365 * 86400000).toISOString().slice(0, 10),
+        total_records:  result?.days_found ?? null,
+      })
+    }
+
+    if (provider === 'caspeco') {
+      const { testCaspecoConnection } = await import('@/lib/pos/caspeco')
+      const result = await testCaspecoConnection(api_key)
+      return NextResponse.json({
+        ok:             !!result?.ok,
+        workplace_name: result?.message ?? 'Caspeco connected',
+        earliest_date:  new Date(Date.now() - 2 * 365 * 86400000).toISOString().slice(0, 10),
+        total_records:  result?.employee_count ?? null,
+      })
+    }
+
+    if (provider === 'swess') {
+      // Swess and Inzii share the same backend (api.swess.se), so we reuse the Inzii
+      // test. A successful probe proves the key works against the shared endpoint.
+      const { testInziiConnection } = await import('@/lib/pos/inzii')
+      const result = await testInziiConnection(api_key)
+      return NextResponse.json({
+        ok:                result.ok,
+        workplace_name:    `Swess — ${result.message}`,
+        earliest_date:     new Date(Date.now() - 2 * 365 * 86400000).toISOString().slice(0, 10),
+        estimated_records: result.days_found,
+      })
+    }
+
+    if (provider === 'fortnox') {
+      // Fortnox is OAuth2. We don't test a raw bearer token — there isn't one to
+      // test yet until the customer completes the OAuth flow. Tell the admin to
+      // use the concierge "Generate connect link" button instead.
+      return NextResponse.json({
+        ok:    false,
+        error: 'Fortnox uses OAuth. Use the "Generate connect link" button instead — no API key to test.',
+      }, { status: 400 })
     }
 
     return NextResponse.json({ error: `Provider ${provider} test not implemented` }, { status: 400 })

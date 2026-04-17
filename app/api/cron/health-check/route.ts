@@ -10,14 +10,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { checkCronSecret }           from '@/lib/admin/check-secret'
 
 // How many orgs need to share an error before we alert
 const ALERT_THRESHOLD = 2
 
 export async function GET(req: NextRequest) {
-  // Verify this is called by Vercel Cron, not a random person hitting the URL
-  const cronSecret = req.headers.get('authorization')?.replace('Bearer ', '')
-  if (cronSecret !== process.env.CRON_SECRET) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 

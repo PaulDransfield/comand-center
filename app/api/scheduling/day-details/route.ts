@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
   const [dmRes, slRes] = await Promise.all([
     db.from('daily_metrics')
       .select('date, revenue, staff_cost, hours_worked, shifts')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .gte('date', from).lte('date', to)
       .limit(50000),

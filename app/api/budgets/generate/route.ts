@@ -31,26 +31,30 @@ export async function POST(req: NextRequest) {
   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
 
   // ── 1. Gather context: last year actuals, this year's forecasts, YTD actuals ──
+  // Every tenanted read filters org_id first — service role bypasses RLS.
   const [lyRes, fcRes, ytdRes, bizRes] = await Promise.all([
     // Last year actuals from monthly_metrics
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('year', year - 1)
       .order('month'),
     // Calibrated forecasts for this year
     db.from('forecasts')
       .select('period_month, revenue_forecast, staff_cost_forecast, food_cost_forecast, net_profit_forecast, margin_forecast')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('period_year', year)
       .order('period_month'),
     // Current year actuals so far
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('year', year)
       .order('month'),
-    db.from('businesses').select('name, city').eq('id', businessId).maybeSingle(),
+    db.from('businesses').select('name, city').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
   ])
 
   const lastYear = lyRes.data ?? []

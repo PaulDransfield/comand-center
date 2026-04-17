@@ -5,12 +5,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { PLANS }                     from '@/lib/stripe/config'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 // vercel.json cron schedule summary for expected next-run calculation + last-run lookup

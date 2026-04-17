@@ -6,10 +6,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 export async function GET(req: NextRequest) {

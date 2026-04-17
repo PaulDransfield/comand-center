@@ -7,14 +7,13 @@ import { createClient } from '@/lib/supabase/server'
 import { analyzeFortnoxAPI } from '@/lib/api-discovery/fortnox'
 import { analyzePersonalkollenAPI } from '@/lib/api-discovery/personalkollen'
 import { analyzeSwessInziiAPI } from '@/lib/api-discovery/swess-inzii'
+import { checkCronSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300  // 5 minutes for deep API exploration
 
 export async function POST(req: NextRequest) {
-  // Check cron secret for authorization
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

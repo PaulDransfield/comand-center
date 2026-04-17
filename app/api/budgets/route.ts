@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const { data: budgets } = await db
     .from('budgets')
     .select('*')
+    .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .eq('year', year)
     .order('month')
@@ -35,19 +36,23 @@ export async function GET(req: NextRequest) {
   const [mmRes, mmLastRes, trRes, trLastRes] = await Promise.all([
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('year', year)
       .order('month'),
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('year', year - 1),
     db.from('tracker_data')
       .select('period_month, revenue, staff_cost, food_cost, rent_cost, other_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('period_year', year),
     db.from('tracker_data')
       .select('period_month, revenue, staff_cost, food_cost, rent_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('period_year', year - 1),
   ])
@@ -87,6 +92,7 @@ export async function GET(req: NextRequest) {
   const { data: forecasts } = await db
     .from('forecasts')
     .select('period_month, revenue_forecast, staff_cost_forecast, food_cost_forecast, net_profit_forecast, margin_forecast, confidence')
+    .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .eq('period_year', year)
     .order('period_month')
@@ -95,6 +101,7 @@ export async function GET(req: NextRequest) {
   const { data: coversData } = await db
     .from('covers')
     .select('date, total, revenue_per_cover')
+    .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .gte('date', `${year}-01-01`)
     .lte('date', `${year}-12-31`)

@@ -8,12 +8,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes }               from 'crypto'
 import { otpauthUrl, totpNow }       from '@/lib/admin/totp'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 // Base32 encode (RFC 4648) — keep this inline so lib/admin/totp.ts stays decode-only.

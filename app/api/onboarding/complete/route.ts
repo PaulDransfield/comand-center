@@ -25,7 +25,11 @@ export async function POST(req: NextRequest) {
     const proto = host.includes('localhost') ? 'http' : 'https'
     await fetch(`${proto}://${host}/api/onboarding/confirm-email`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Forward the caller's auth so the confirm-email route can verify org.
+        'Cookie':       req.headers.get('cookie') ?? '',
+      },
       body: JSON.stringify({ org_id: auth.orgId, business_name, city, systems }),
     })
   } catch (e) {

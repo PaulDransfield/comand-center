@@ -44,23 +44,24 @@ export async function POST(req: NextRequest) {
   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
 
   // ── Pull actual (monthly_metrics with tracker_data fallback), budget, last year ──
+  // Every tenanted read filters org_id first — service role bypasses RLS.
   const [mmRes, trRes, bdRes, lyMmRes, lyTrRes, bizRes] = await Promise.all([
     db.from('monthly_metrics')
       .select('revenue, staff_cost, food_cost, net_profit, margin_pct, covers, hours_worked')
-      .eq('business_id', businessId).eq('year', year).eq('month', month).maybeSingle(),
+      .eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year).eq('month', month).maybeSingle(),
     db.from('tracker_data')
       .select('revenue, staff_cost, food_cost, rent_cost, other_cost, net_profit, margin_pct')
-      .eq('business_id', businessId).eq('period_year', year).eq('period_month', month).maybeSingle(),
+      .eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).eq('period_month', month).maybeSingle(),
     db.from('budgets')
       .select('revenue_target, food_cost_pct_target, staff_cost_pct_target, net_profit_target, margin_pct_target')
-      .eq('business_id', businessId).eq('year', year).eq('month', month).maybeSingle(),
+      .eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year).eq('month', month).maybeSingle(),
     db.from('monthly_metrics')
       .select('revenue, staff_cost, food_cost, net_profit, margin_pct')
-      .eq('business_id', businessId).eq('year', year - 1).eq('month', month).maybeSingle(),
+      .eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year - 1).eq('month', month).maybeSingle(),
     db.from('tracker_data')
       .select('revenue, staff_cost, food_cost, net_profit, margin_pct')
-      .eq('business_id', businessId).eq('period_year', year - 1).eq('period_month', month).maybeSingle(),
-    db.from('businesses').select('name').eq('id', businessId).maybeSingle(),
+      .eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year - 1).eq('period_month', month).maybeSingle(),
+    db.from('businesses').select('name').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
   ])
 
   // Merge actual: monthly_metrics wins, tracker_data fills gaps

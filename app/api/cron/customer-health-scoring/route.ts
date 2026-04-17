@@ -4,14 +4,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeCustomerHealth } from '@/lib/agents/customer-health-scoring'
+import { checkCronSecret }       from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 120 // 2 minutes for processing all customers
 
 export async function POST(req: NextRequest) {
-  // Authorization
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

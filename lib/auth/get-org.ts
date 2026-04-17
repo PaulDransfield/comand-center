@@ -15,20 +15,22 @@ export interface OrgContext {
 }
 
 export async function getOrgFromRequest(request: Request): Promise<OrgContext | null> {
-  // DEVELOPMENT MODE: Return mock authentication for local development
-  if (process.env.NODE_ENV === 'development' || 
-      process.env.NEXT_PUBLIC_SUPABASE_URL?.includes('mock-supabase-url-for-development')) {
-    console.log('DEVELOPMENT MODE: Using mock authentication')
-    
-    // Check for mock user header or return default mock user
-    const mockUserId = request.headers.get('x-mock-user-id') || 'mock-user-id-123'
-    const mockOrgId = request.headers.get('x-mock-org-id') || 'mock-org-id-456'
-    
+  // Mock authentication was previously enabled whenever NODE_ENV === 'development'
+  // OR the Supabase URL included a sentinel substring. Both heuristics made it
+  // trivial to ship a deployment that was silently unauthenticated. Removed.
+  //
+  // If you genuinely need a local mock, set ENABLE_AUTH_MOCK=1 explicitly and
+  // run against real Supabase for dev instead.
+  if (process.env.ENABLE_AUTH_MOCK === '1') {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('ENABLE_AUTH_MOCK must never be set in production')
+    }
+    console.warn('[auth] mock enabled via ENABLE_AUTH_MOCK=1 — do not ship')
     return {
-      userId: mockUserId,
-      orgId: mockOrgId,
-      role: 'owner' as OrgContext['role'],
-      plan: 'pro' as OrgContext['plan'],
+      userId: request.headers.get('x-mock-user-id') || 'mock-user-id-123',
+      orgId:  request.headers.get('x-mock-org-id')  || 'mock-org-id-456',
+      role:   'owner',
+      plan:   'pro',
     }
   }
 

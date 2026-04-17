@@ -13,15 +13,21 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { checkAdminSecret }          from '@/lib/admin/check-secret'
+import { timingSafeEqual }           from 'crypto'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.nextUrl.searchParams.get('secret')
-               ?? req.headers.get('x-admin-secret')
-               ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  // Accept ?secret= query (diagnostic uses this) OR the standard admin headers/cookie.
+  if (checkAdminSecret(req)) return true
+  const querySecret = req.nextUrl.searchParams.get('secret')
+  const want        = process.env.ADMIN_SECRET
+  if (!querySecret || !want) return false
+  const a = Buffer.from(querySecret, 'utf8')
+  const b = Buffer.from(want, 'utf8')
+  return a.length === b.length && timingSafeEqual(a, b)
 }
 
 export async function GET(req: NextRequest) {

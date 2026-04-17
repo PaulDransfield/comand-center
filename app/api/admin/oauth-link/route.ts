@@ -10,14 +10,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { signOauthConnectToken }     from '@/lib/admin/oauth-link'
 import { recordAdminAction }         from '@/lib/admin/audit'
+import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 
 const OAUTH_PROVIDERS = ['fortnox', 'visma', 'bjorn_lunden', 'zettle'] as const
 
 function checkAuth(req: NextRequest): boolean {
-  const secret = req.headers.get('x-admin-secret') ?? req.cookies.get('admin_secret')?.value
-  return secret === process.env.ADMIN_SECRET
+  return checkAdminSecret(req)
 }
 
 export async function POST(req: NextRequest) {

@@ -3,12 +3,18 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { rateLimit }                 from '@/lib/middleware/rate-limit'
 
 const getAuth = getRequestAuth
 
 export async function POST(req: NextRequest) {
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  // Rate-limit business creation — 20 per user per hour is enough for legit operators
+  // and stops any loop that tries to seed thousands of businesses through the API.
+  const gate = rateLimit(`biz-add:${auth.userId}`, { windowMs: 60 * 60_000, max: 20 })
+  if (!gate.allowed) return NextResponse.json({ error: 'Too many new businesses — slow down' }, { status: 429 })
 
   const body = await req.json()
   const {
