@@ -42,8 +42,8 @@ export type LimitGate = LimitGateOk | LimitGateBlocked
 // Unlimited plans (Group / Enterprise / anything with ai_queries_per_day === Infinity) always pass.
 // If planKey is omitted, looks it up from organisations.plan.
 export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Promise<LimitGate> {
-  let effectivePlanKey = planKey
-  if (!effectivePlanKey) {
+  let effectivePlanKey: string = planKey ?? 'trial'
+  if (!planKey) {
     const { data } = await db.from('organisations').select('plan').eq('id', orgId).maybeSingle()
     effectivePlanKey = data?.plan ?? 'trial'
   }
