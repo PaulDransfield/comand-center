@@ -184,6 +184,7 @@ export default function AskAI({ page, context }: Props) {
     <>
       {/* Floating button */}
       <button
+        className="ai-fab"
         style={FAB}
         onClick={() => setOpen(o => !o)}
         title="Ask AI about this data"
