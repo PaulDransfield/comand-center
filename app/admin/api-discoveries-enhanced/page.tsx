@@ -170,10 +170,11 @@ This field from ${discovery.provider} is mapped but may not be fully utilised in
                 {/* Stats */}
                 <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
                   {[
-                    { label: 'Probed', value: probeResult.summary?.total_probed },
-                    { label: '200 OK', value: probeResult.summary?.status_200, color: probeResult.summary?.status_200 > 0 ? '#16a34a' : undefined },
-                    { label: '401',    value: probeResult.summary?.status_401, color: probeResult.summary?.status_401 > 0 ? '#d97706' : undefined },
-                    { label: '404',    value: probeResult.summary?.status_404 },
+                    { label: 'Probed',   value: probeResult.summary?.total_probed },
+                    { label: '200 OK',  value: probeResult.summary?.status_200, color: probeResult.summary?.status_200 > 0 ? '#16a34a' : undefined },
+                    { label: '401',     value: probeResult.summary?.status_401, color: probeResult.summary?.status_401 > 0 ? '#d97706' : undefined },
+                    { label: '404',     value: probeResult.summary?.status_404 },
+                    { label: '429',     value: probeResult.summary?.status_429, color: probeResult.summary?.status_429 > 0 ? '#d97706' : undefined },
                     { label: 'Timeout', value: probeResult.summary?.status_0 },
                     { label: 'Has data', value: probeResult.summary?.has_data, color: probeResult.summary?.has_data > 0 ? '#16a34a' : '#dc2626' },
                   ].map(s => (
@@ -191,8 +192,8 @@ This field from ${discovery.provider} is mapped but may not be fully utilised in
                       <span style={{ fontWeight: 700, fontSize: 13, color: '#374151' }}>Claude's conclusion:</span>
                       <span style={{
                         padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                        background: probeResult.analysis.conclusion === 'found' ? '#dcfce7' : probeResult.analysis.conclusion === 'auth_issue' ? '#fef3c7' : '#fee2e2',
-                        color:      probeResult.analysis.conclusion === 'found' ? '#16a34a' : probeResult.analysis.conclusion === 'auth_issue' ? '#d97706' : '#dc2626',
+                        background: probeResult.analysis.conclusion === 'found' ? '#dcfce7' : ['auth_issue','rate_limited'].includes(probeResult.analysis.conclusion) ? '#fef3c7' : '#fee2e2',
+                        color:      probeResult.analysis.conclusion === 'found' ? '#16a34a' : ['auth_issue','rate_limited'].includes(probeResult.analysis.conclusion) ? '#d97706' : '#dc2626',
                       }}>{probeResult.analysis.conclusion}</span>
                     </div>
                     <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{probeResult.analysis.summary}</p>

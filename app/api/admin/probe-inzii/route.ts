@@ -1,16 +1,16 @@
 // @ts-nocheck
 // app/api/admin/probe-inzii/route.ts
 //
-// Live API prober for Inzii/Swess POS.
-// Fires real HTTP requests with the stored credentials across every plausible
-// base-URL + endpoint + auth combination, collects every response (including
-// error bodies — a 401 tells us auth format is wrong; a 404 tells us the base
-// URL is right but path is wrong), then asks Claude to identify the winner.
+// Careful single-server probe for Inzii/Swess POS.
+// api.swess.se is confirmed real (Varnish responds with 429 when hammered).
+// This version fires requests one at a time with 2s delays so we don't trip
+// the rate limiter. Tries most-likely paths + auth combos first, stops as
+// soon as we get a non-429 response that has data.
 //
 // POST /api/admin/probe-inzii
 //   Authorization: Bearer <ADMIN_SECRET>
-//   { integration_id: "uuid" }           ← specific integration to probe
-//   OR { org_id: "uuid" }               ← probes first inzii integration found
+//   { integration_id: "uuid" }  ← specific integration
+//   OR { org_id: "uuid" }       ← first inzii integration found
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
@@ -22,156 +22,122 @@ export const maxDuration = 300
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-// ── All base URLs to try ──────────────────────────────────────────────────────
-const BASE_URLS = [
-  'https://api.swess.se',
-  'https://api.swess.se/api/v1',
-  'https://app.inzii.io',
-  'https://api.inzii.io',
-  'https://inzii.io/api',
-  'https://portal.inzii.se',
-  'https://api.inzii.se',
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+// ── Confirmed: api.swess.se is the real server (Varnish cache confirmed)
+// Try paths in order of likelihood. Swess is a Swedish POS, likely REST + JSON.
+const CANDIDATES = [
+  // Most likely: versioned API paths with api_key query param
+  { path: '/api/v1/sales',         auth: 'api_key' },
+  { path: '/api/v1/daily',         auth: 'api_key' },
+  { path: '/api/v1/daily-summary', auth: 'api_key' },
+  { path: '/api/v1/report',        auth: 'api_key' },
+  { path: '/api/v1/z-report',      auth: 'api_key' },
+  { path: '/api/v1/z-reports',     auth: 'api_key' },
+  { path: '/api/v1/receipts',      auth: 'api_key' },
+  { path: '/api/v1/transactions',  auth: 'api_key' },
+  { path: '/api/v1/orders',        auth: 'api_key' },
+  { path: '/api/v1/revenue',       auth: 'api_key' },
+  // Unversioned paths
+  { path: '/sales',                auth: 'api_key' },
+  { path: '/daily',                auth: 'api_key' },
+  { path: '/daily-summary',        auth: 'api_key' },
+  { path: '/report',               auth: 'api_key' },
+  { path: '/z-report',             auth: 'api_key' },
+  { path: '/receipts',             auth: 'api_key' },
+  { path: '/transactions',         auth: 'api_key' },
+  // Try bearer token on most likely paths
+  { path: '/api/v1/sales',         auth: 'bearer' },
+  { path: '/api/v1/daily',         auth: 'bearer' },
+  { path: '/api/v1/report',        auth: 'bearer' },
+  { path: '/sales',                auth: 'bearer' },
+  { path: '/daily',                auth: 'bearer' },
+  // Try x-api-key header
+  { path: '/api/v1/sales',         auth: 'x-api-key' },
+  { path: '/api/v1/daily',         auth: 'x-api-key' },
+  { path: '/api/v1/report',        auth: 'x-api-key' },
+  // Try token query param (some Swess installs use ?token=)
+  { path: '/api/v1/sales',         auth: 'token' },
+  { path: '/api/v1/daily',         auth: 'token' },
+  { path: '/sales',                auth: 'token' },
 ]
 
-// ── Endpoint paths to try ─────────────────────────────────────────────────────
-const PATHS = [
-  '/sales',
-  '/daily',
-  '/daily-summary',
-  '/reports/daily',
-  '/report',
-  '/z-reports',
-  '/z-report',
-  '/receipts',
-  '/transactions',
-  '/api/sales',
-  '/api/daily',
-  '/api/report',
-]
+const BASE = 'https://api.swess.se'
 
-// ── Date range for test data ──────────────────────────────────────────────────
-function getTestDates() {
-  const to   = new Date()
-  const from = new Date(to.getTime() - 30 * 86400000)
-  return {
-    from: from.toISOString().slice(0, 10),
-    to:   to.toISOString().slice(0, 10),
+function buildRequest(path: string, auth: string, apiKey: string, from: string, to: string) {
+  const dateQuery = `from=${from}&to=${to}`
+  const headers: Record<string, string> = { Accept: 'application/json' }
+
+  switch (auth) {
+    case 'api_key':
+      return { url: `${BASE}${path}?api_key=${apiKey}&${dateQuery}`, headers }
+    case 'bearer':
+      headers.Authorization = `Bearer ${apiKey}`
+      return { url: `${BASE}${path}?${dateQuery}`, headers }
+    case 'x-api-key':
+      headers['x-api-key'] = apiKey
+      return { url: `${BASE}${path}?${dateQuery}`, headers }
+    case 'token':
+      return { url: `${BASE}${path}?token=${apiKey}&${dateQuery}`, headers }
+    default:
+      return { url: `${BASE}${path}?api_key=${apiKey}&${dateQuery}`, headers }
   }
 }
 
-// ── Build every candidate request ────────────────────────────────────────────
-function buildCandidates(apiKey: string) {
-  const { from, to } = getTestDates()
-  const candidates: Array<{ url: string; headers: Record<string, string>; authType: string }> = []
-
-  for (const base of BASE_URLS) {
-    for (const path of PATHS) {
-      // api_key query param
-      candidates.push({
-        url:      `${base}${path}?api_key=${apiKey}&from=${from}&to=${to}`,
-        headers:  { Accept: 'application/json' },
-        authType: 'query_api_key',
-      })
-      // token query param
-      candidates.push({
-        url:      `${base}${path}?token=${apiKey}&from=${from}&to=${to}`,
-        headers:  { Accept: 'application/json' },
-        authType: 'query_token',
-      })
-      // Bearer token
-      candidates.push({
-        url:      `${base}${path}?from=${from}&to=${to}`,
-        headers:  { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-        authType: 'bearer',
-      })
-      // x-api-key header
-      candidates.push({
-        url:      `${base}${path}?from=${from}&to=${to}`,
-        headers:  { 'x-api-key': apiKey, Accept: 'application/json' },
-        authType: 'x-api-key',
-      })
-    }
-  }
-
-  return candidates
+function redact(url: string, apiKey: string) {
+  return url.replace(apiKey, '***KEY***')
 }
 
-// ── Fire one request, capture everything ─────────────────────────────────────
-async function probe(candidate: ReturnType<typeof buildCandidates>[number]) {
-  try {
-    const res = await fetch(candidate.url, {
-      headers: candidate.headers,
-      signal:  AbortSignal.timeout(6000),
-    })
-
-    const contentType = res.headers.get('content-type') ?? ''
-    let body: any = null
-    try {
-      body = contentType.includes('json')
-        ? await res.json()
-        : await res.text()
-    } catch { body = null }
-
-    return {
-      url:        candidate.url.replace(/api_key=[^&]+/, 'api_key=***').replace(/token=[^&]+/, 'token=***'),
-      authType:   candidate.authType,
-      status:     res.status,
-      contentType,
-      body:       body,
-      hasData:    res.status === 200 && body !== null,
-    }
-  } catch (err: any) {
-    return {
-      url:        candidate.url.replace(/api_key=[^&]+/, 'api_key=***').replace(/token=[^&]+/, 'token=***'),
-      authType:   candidate.authType,
-      status:     0,
-      contentType: '',
-      body:       err.message,
-      hasData:    false,
-    }
-  }
-}
-
-// ── Ask Claude to interpret the probe results ─────────────────────────────────
-async function askClaude(results: any[], apiKey: string, department: string) {
-  // Only send interesting results to Claude — 200s and non-timeout errors
-  const interesting = results.filter(r =>
-    r.status === 200 || (r.status >= 400 && r.status < 500)
-  ).slice(0, 30)
+// ── Ask Claude to interpret results ──────────────────────────────────────────
+async function askClaude(results: any[], department: string) {
+  const interesting = results.filter(r => r.status !== 429 && r.status !== 0)
 
   if (interesting.length === 0) {
-    return { conclusion: 'no_response', summary: 'All requests timed out or got network errors. The base URLs may be wrong or the server is down.', working_url: null, working_auth: null, sample_data: null }
+    // All 429 still — report what we know
+    const has429 = results.some(r => r.status === 429)
+    return {
+      conclusion:          has429 ? 'rate_limited' : 'no_response',
+      summary:             has429
+        ? 'All requests returned 429 Too Many Requests. The server is still rate-limiting. Wait 5 minutes and try again, or the API key may need to be whitelisted for higher rate limits.'
+        : 'All requests timed out. The server may be down.',
+      working_url_pattern: null,
+      working_auth_type:   null,
+      base_url:            null,
+      path:                null,
+      revenue_field:       null,
+      date_field:          null,
+      covers_field:        null,
+      next_step:           has429 ? 'Wait 5 minutes then retry, or contact Swess support for API documentation.' : 'Check server status.',
+    }
   }
 
   const prompt = `
-You are an API integration expert. I probed a Swedish restaurant POS system (Inzii/Swess) with many URL+auth combinations.
-Below are all responses I got. Find the working endpoint that returns actual sales/revenue data.
+You are an API integration expert. I am probing a Swedish restaurant POS system (Swess/Inzii) at api.swess.se.
+Here are ALL responses I got (non-timeout, non-429). Find the working endpoint that returns sales/revenue data.
 
-Results (url with key redacted):
+Department: ${department}
+
+Results:
 ${JSON.stringify(interesting, null, 2)}
 
-Department name: ${department}
-
-Analyse these results and return JSON only:
+Return JSON only — no markdown, no explanation outside JSON:
 {
-  "conclusion": "found" | "auth_issue" | "wrong_urls" | "no_data" | "unknown",
-  "summary": "one paragraph explaining what you found",
-  "working_url_pattern": "the URL pattern that works, e.g. https://api.swess.se/sales?api_key=KEY&from=FROM&to=TO — or null",
-  "working_auth_type": "query_api_key | bearer | x-api-key | query_token — or null",
-  "base_url": "just the base, e.g. https://api.swess.se — or null",
-  "path": "just the path, e.g. /sales — or null",
-  "date_param_from": "the from date param name, e.g. from | date_from | start_date — or null",
-  "date_param_to": "the to date param name, e.g. to | date_to | end_date — or null",
-  "sample_fields": ["list of field names found in the data, if any"],
-  "revenue_field": "the field name that contains net revenue/sales amount — or null",
-  "date_field": "the field name for the date of each row — or null",
-  "covers_field": "the field name for guest count / covers — or null",
+  "conclusion": "found" | "auth_issue" | "wrong_path" | "rate_limited" | "unknown",
+  "summary": "one clear paragraph",
+  "working_url_pattern": "full URL pattern with placeholders e.g. https://api.swess.se/api/v1/sales?api_key=KEY&from=FROM&to=TO — or null",
+  "working_auth_type": "api_key | bearer | x-api-key | token — or null",
+  "base_url": "https://api.swess.se — or null",
+  "path": "/api/v1/sales — or null",
+  "revenue_field": "field name containing net sales amount — or null",
+  "date_field": "field name for the date — or null",
+  "covers_field": "field name for guest count — or null",
+  "sample_fields": ["all field names found in data if any"],
   "next_step": "what to do next if not found"
 }
 `
 
   try {
-    const msg = await anthropic.messages.create({
+    const msg  = await anthropic.messages.create({
       model:      'claude-haiku-4-5-20251001',
       max_tokens: 1000,
       messages:   [{ role: 'user', content: prompt }],
@@ -186,15 +152,15 @@ Analyse these results and return JSON only:
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  if (!auth || auth !== `Bearer ${process.env.ADMIN_SECRET}`) {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader || authHeader !== `Bearer ${process.env.ADMIN_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body           = await req.json().catch(() => ({}))
-  const integrationId  = body.integration_id
-  const orgId          = body.org_id
-  const db             = createAdminClient()
+  const body          = await req.json().catch(() => ({}))
+  const integrationId = body.integration_id
+  const orgId         = body.org_id
+  const db            = createAdminClient()
 
   // Fetch the integration
   let query = db.from('integrations')
@@ -218,38 +184,71 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Could not decrypt credentials' }, { status: 500 })
   }
 
-  // Fire all probes
-  console.log(`Probing Inzii API for department: ${department} (${integ.id})`)
-  const candidates = buildCandidates(apiKey)
+  const to   = new Date()
+  const from = new Date(to.getTime() - 30 * 86400000)
+  const fromStr = from.toISOString().slice(0, 10)
+  const toStr   = to.toISOString().slice(0, 10)
 
-  // Run in batches of 20 to avoid overwhelming the server
+  console.log(`Probing Inzii (careful mode) for dept: ${department} key: ${apiKey.slice(0,6)}…`)
+
   const results: any[] = []
-  for (let i = 0; i < candidates.length; i += 20) {
-    const batch = candidates.slice(i, i + 20)
-    const batchResults = await Promise.all(batch.map(probe))
-    results.push(...batchResults)
+  let foundResult: any = null
 
-    // If we found a 200 response, stop early
-    if (batchResults.some(r => r.status === 200 && r.hasData)) break
+  for (const c of CANDIDATES) {
+    const req2 = buildRequest(c.path, c.auth, apiKey, fromStr, toStr)
+
+    let result: any
+    try {
+      const res         = await fetch(req2.url, { headers: req2.headers, signal: AbortSignal.timeout(10000) })
+      const contentType = res.headers.get('content-type') ?? ''
+      let   body: any   = null
+      try {
+        body = contentType.includes('json') ? await res.json() : await res.text()
+      } catch { body = null }
+
+      result = {
+        url:         redact(req2.url, apiKey),
+        auth:        c.auth,
+        status:      res.status,
+        contentType,
+        body,
+        hasData:     res.status === 200 && body !== null,
+      }
+    } catch (err: any) {
+      result = { url: redact(req2.url, apiKey), auth: c.auth, status: 0, contentType: '', body: err.message, hasData: false }
+    }
+
+    results.push(result)
+    console.log(`  ${result.status} ${result.url}`)
+
+    // If we got actual data, stop immediately
+    if (result.hasData) {
+      foundResult = result
+      break
+    }
+
+    // If we get a definitive auth error (not 429), note it but keep trying
+    // If still 429, keep going with delay — different paths may have different rate limits
+    // Always wait 2s between requests to stay under the rate limit
+    await sleep(2000)
   }
 
-  // Ask Claude to interpret
-  const analysis = await askClaude(results, apiKey, department)
+  const analysis = await askClaude(results, department)
 
-  // Save to api_discoveries_enhanced if we found something
+  // Save confirmed endpoint to api_discoveries_enhanced
   if (analysis.conclusion === 'found' && analysis.base_url) {
     try {
       await db.from('api_discoveries_enhanced').upsert({
-        integration_id:       integ.id,
-        org_id:               integ.org_id,
-        business_id:          integ.business_id,
-        provider:             'inzii',
-        provider_type:        'pos',
-        analysis_result:      { probe_analysis: analysis, raw_results: results.filter(r => r.status === 200) },
-        discovered_at:        new Date().toISOString(),
-        confidence_score:     90,
-        data_type:            'revenue',
-        unused_fields_count:  0,
+        integration_id:          integ.id,
+        org_id:                  integ.org_id,
+        business_id:             integ.business_id,
+        provider:                'inzii',
+        provider_type:           'pos',
+        analysis_result:         { probe_analysis: analysis, raw_results: results.filter(r => r.hasData) },
+        discovered_at:           new Date().toISOString(),
+        confidence_score:        90,
+        data_type:               'revenue',
+        unused_fields_count:     0,
         business_insights_count: 1,
       }, { onConflict: 'integration_id' })
     } catch (e: any) {
@@ -257,27 +256,28 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Summary counts
   const summary = {
-    total_probed:  results.length,
-    status_200:    results.filter(r => r.status === 200).length,
-    status_401:    results.filter(r => r.status === 401).length,
-    status_403:    results.filter(r => r.status === 403).length,
-    status_404:    results.filter(r => r.status === 404).length,
-    status_0:      results.filter(r => r.status === 0).length,
-    has_data:      results.filter(r => r.hasData).length,
+    total_probed: results.length,
+    status_200:   results.filter(r => r.status === 200).length,
+    status_401:   results.filter(r => r.status === 401).length,
+    status_403:   results.filter(r => r.status === 403).length,
+    status_404:   results.filter(r => r.status === 404).length,
+    status_429:   results.filter(r => r.status === 429).length,
+    status_0:     results.filter(r => r.status === 0).length,
+    has_data:     results.filter(r => r.hasData).length,
   }
 
   return NextResponse.json({
-    ok:         true,
+    ok:          true,
     integration: { id: integ.id, department, business_id: integ.business_id },
     summary,
     analysis,
-    // Return all 200s in full + first few of each other status
     results: [
       ...results.filter(r => r.status === 200),
-      ...results.filter(r => r.status === 401).slice(0, 3),
-      ...results.filter(r => r.status === 404).slice(0, 3),
+      ...results.filter(r => r.status === 401).slice(0, 5),
+      ...results.filter(r => r.status === 403).slice(0, 5),
+      ...results.filter(r => r.status === 404).slice(0, 5),
+      ...results.filter(r => r.status === 429).slice(0, 5),
     ],
   })
 }
