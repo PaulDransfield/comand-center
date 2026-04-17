@@ -63,7 +63,6 @@ export default function DepartmentsPage() {
   const deptsWithGP = depts.filter(d => d.gp_pct != null && d.revenue > 0)
   const best  = deptsWithGP.reduce((a, b) => (b.gp_pct > a.gp_pct ? b : a), deptsWithGP[0] ?? null)
   const worst = deptsWithGP.reduce((a, b) => (b.gp_pct < a.gp_pct ? b : a), deptsWithGP[0] ?? null)
-  const barMax = Math.max(...depts.map(d => d.revenue), 1)
 
   return (
     <AppShell>
@@ -141,63 +140,53 @@ export default function DepartmentsPage() {
               </div>
             )}
 
-            {/* Revenue comparison chart */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 16 }}>Revenue by department — {periodLabel}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {[...depts].sort((a, b) => b.revenue - a.revenue).map(dept => {
-                  const c = dept.color ?? deptColor(dept.name)
-                  const pct = Math.min((dept.revenue / barMax) * 100, 100)
-                  return (
-                    <div key={dept.name} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
-                      onClick={() => router.push(`/departments/${encodeURIComponent(dept.name)}`)}>
-                      <div style={{ width: 90, fontSize: 12, fontWeight: 500, color: '#374151', textAlign: 'right', flexShrink: 0 }}>{dept.name}</div>
-                      <div style={{ flex: 1, height: 20, background: '#f9fafb', borderRadius: 4, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, background: c, borderRadius: 4, transition: 'width 0.4s' }} />
-                      </div>
-                      <div style={{ width: 100, fontSize: 12, fontWeight: 600, color: '#111', flexShrink: 0 }}>{dept.revenue > 0 ? fmtKr(dept.revenue) : '—'}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Full table */}
+            {/* Full table — revenue vs profit at a glance, same style as dashboard */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — {periodLabel}</div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>Click a row for the full department drill-down</div>
+              </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: '#f9fafb' }}>
-                    {['Department','Revenue','Labour','Lab%','GP%','Rev/Hr','Hours'].map(h => (
+                    {['Department','Revenue','Profit','GP%','Labour','Lab%','Rev/Hr','Hours'].map(h => (
                       <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {depts.map(d => (
-                    <tr key={d.name} style={{ borderBottom: '1px solid #f9fafb', cursor: 'pointer' }} onClick={() => router.push(`/departments/${encodeURIComponent(d.name)}`)}>
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color ?? deptColor(d.name) }} />
-                          <span style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{d.name}</span>
-                        </div>
-                      </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>{d.revenue > 0 ? fmtKr(d.revenue) : '—'}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>{d.staff_cost > 0 ? fmtKr(d.staff_cost) : '—'}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                        {d.labour_pct != null ? <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: d.labour_pct > 40 ? '#fee2e2' : '#dcfce7', color: d.labour_pct > 40 ? '#dc2626' : '#16a34a' }}>{fmtPct(d.labour_pct)}</span> : '—'}
-                      </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: d.gp_pct != null ? (d.gp_pct >= 50 ? '#16a34a' : d.gp_pct >= 30 ? '#d97706' : '#dc2626') : '#d1d5db' }}>{fmtPct(d.gp_pct)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>{d.rev_per_hour > 0 ? fmtKr(d.rev_per_hour) : '—'}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#9ca3af' }}>{d.hours > 0 ? fmtH(d.hours) : '—'}</td>
-                    </tr>
-                  ))}
+                  {[...depts].sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0)).map(d => {
+                    // Gross profit = revenue minus labour (the only cost we see per-dept).
+                    // This is department-level GP, not bottom-line net profit.
+                    const profit = Math.max(0, Number(d.revenue ?? 0) - Number(d.staff_cost ?? 0))
+                    return (
+                      <tr key={d.name} style={{ borderBottom: '1px solid #f9fafb', cursor: 'pointer' }} onClick={() => router.push(`/departments/${encodeURIComponent(d.name)}`)}>
+                        <td style={{ padding: '10px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color ?? deptColor(d.name) }} />
+                            <span style={{ fontSize: 13, fontWeight: 500, color: '#111' }}>{d.name}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>{d.revenue > 0 ? fmtKr(d.revenue) : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: profit > 0 ? '#15803d' : '#d1d5db' }}>{profit > 0 ? fmtKr(profit) : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: d.gp_pct != null ? (d.gp_pct >= 50 ? '#16a34a' : d.gp_pct >= 30 ? '#d97706' : '#dc2626') : '#d1d5db' }}>{fmtPct(d.gp_pct)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>{d.staff_cost > 0 ? fmtKr(d.staff_cost) : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                          {d.labour_pct != null ? <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: d.labour_pct > 40 ? '#fee2e2' : '#dcfce7', color: d.labour_pct > 40 ? '#dc2626' : '#16a34a' }}>{fmtPct(d.labour_pct)}</span> : '—'}
+                        </td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>{d.rev_per_hour > 0 ? fmtKr(d.rev_per_hour) : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#9ca3af' }}>{d.hours > 0 ? fmtH(d.hours) : '—'}</td>
+                      </tr>
+                    )
+                  })}
                   {summary && (
                     <tr style={{ background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
                       <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Total</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{fmtKr(summary.total_revenue ?? 0)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#15803d' }}>{fmtKr(Math.max(0, (summary.total_revenue ?? 0) - (summary.total_staff_cost ?? 0)))}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: summary.gp_pct != null ? '#16a34a' : '#d1d5db' }}>{fmtPct(summary.gp_pct)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#374151' }}>{fmtKr(summary.total_staff_cost ?? 0)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right' }}>{summary.labour_pct != null && <span style={{ fontSize: 12, fontWeight: 700, color: summary.labour_pct > 40 ? '#dc2626' : '#16a34a' }}>{fmtPct(summary.labour_pct)}</span>}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: summary.gp_pct != null ? '#16a34a' : '#d1d5db' }}>{fmtPct(summary.gp_pct)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{summary.rev_per_hour > 0 ? fmtKr(summary.rev_per_hour) : '—'}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{fmtH(summary.total_hours ?? 0)}</td>
                     </tr>
