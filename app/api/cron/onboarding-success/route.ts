@@ -47,9 +47,17 @@ export async function POST(req: NextRequest) {
     let welcomed = 0
     const errors: string[] = []
     const emailsSent: any[] = []
+    const { isAgentEnabled } = await import('@/lib/ai/is-agent-enabled')
 
     for (const integration of newIntegrations) {
       try {
+        // Respect per-customer agent toggle set in admin panel
+        const enabled = await isAgentEnabled(db, integration.org_id, 'onboarding_success')
+        if (!enabled) {
+          console.log(`[onboarding-success] Skipping integration ${integration.id} — disabled via feature flag`)
+          continue
+        }
+
         // Get business details
         const { data: businessData } = await db
           .from('businesses')

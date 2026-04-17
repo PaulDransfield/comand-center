@@ -38,9 +38,17 @@ export async function POST(req: NextRequest) {
     let analyzed = 0
     const errors: string[] = []
     const alerts: any[] = []
+    const { isAgentEnabled } = await import('@/lib/ai/is-agent-enabled')
 
     for (const biz of businesses) {
       try {
+        // Respect per-customer agent toggle set in admin panel
+        const enabled = await isAgentEnabled(db, biz.org_id, 'supplier_price_creep')
+        if (!enabled) {
+          console.log(`[supplier-price-creep] Skipping ${biz.name} — disabled via feature flag`)
+          continue
+        }
+
         // Check if business has Fortnox integration
         const { data: fortnoxIntegration } = await db
           .from('integrations')

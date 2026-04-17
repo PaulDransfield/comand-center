@@ -54,9 +54,17 @@ export async function POST(req: NextRequest) {
 
   let sent = 0
   const errors: string[] = []
+  const { isAgentEnabled } = await import('@/lib/ai/is-agent-enabled')
 
   for (const org of orgs) {
     try {
+      // Respect per-customer agent toggle set in admin panel
+      const enabled = await isAgentEnabled(db, org.id, 'monday_briefing')
+      if (!enabled) {
+        console.log(`[digest] Skipping ${org.name} — disabled via feature flag`)
+        continue
+      }
+
       // Get org owner user_id then fetch email from auth.users
       const { data: member } = await db
         .from('organisation_members')

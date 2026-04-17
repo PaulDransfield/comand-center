@@ -38,9 +38,17 @@ export async function POST(req: NextRequest) {
 
     let calibrated = 0
     const errors: string[] = []
+    const { isAgentEnabled } = await import('@/lib/ai/is-agent-enabled')
 
     for (const biz of businesses) {
       try {
+        // Respect per-customer agent toggle set in admin panel
+        const enabled = await isAgentEnabled(db, biz.org_id, 'forecast_calibration')
+        if (!enabled) {
+          console.log(`[forecast-calibration] Skipping ${biz.name} — disabled via feature flag`)
+          continue
+        }
+
         // Check if business has at least 2 months of revenue data in monthly_metrics
         // (source of truth). Before 2026-04-17 this read tracker_data, which counted
         // empty manual-entry rows as "history" and calibrated off the wrong baseline.

@@ -38,9 +38,17 @@ export async function POST(req: NextRequest) {
     let optimized = 0
     const errors: string[] = []
     const recommendations: any[] = []
+    const { isAgentEnabled } = await import('@/lib/ai/is-agent-enabled')
 
     for (const org of groupOrgs) {
       try {
+        // Respect per-customer agent toggle set in admin panel
+        const enabled = await isAgentEnabled(db, org.id, 'scheduling_optimization')
+        if (!enabled) {
+          console.log(`[scheduling-optimization] Skipping ${org.name} — disabled via feature flag`)
+          continue
+        }
+
         // Get all active businesses for this org
         const { data: businesses } = await db
           .from('businesses')
