@@ -1,5 +1,6 @@
 # ROADMAP.md — CommandCenter
-> Version 7.0 | Updated: 2026-04-17 | Session 7 IN PROGRESS 🔄
+> Version 8.0 | Updated: 2026-04-17 | Session 7 ✅ COMPLETE · Session 8 (data integrity + polish) ✅ COMPLETE
+> Next phase: UX redesign (see docs/ux-redesign-spec.md)
 > Read alongside CLAUDE.md and FIXES.md
 
 ---
@@ -79,11 +80,11 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | 25. Enforce AI query limits at API level | ✅ **COMPLETE** | Implemented in `/api/ask/route.ts` with daily counter and 429 response |
-| 26. AI add-on upsell (+299 kr/mo) | ⏳ **PENDING** | Limit enforcement triggers `upgrade: true` flag but UI upsell not built |
+| 26. AI add-on upsell (+299 kr/mo) | ✅ **COMPLETE** (2026-04-17) | `AiLimitReached` card in AskAI panel with trial vs paid branches; `/upgrade?focus=ai` scroll+highlight; Booster card visible to trial users with "upgrade a plan first" state |
 
 ---
 
-## Session 7 — IN PROGRESS 🔄
+## Session 7 — COMPLETE ✅
 
 | Item | Description | Status |
 |------|-------------|--------|
@@ -92,7 +93,7 @@
 | 10. Fix sync timeout | Chunked backfill — one month per call | ✅ **COMPLETE** |
 | 11. Contextual AI on every page | "Ask AI" button on staff, tracker, dashboard | ✅ **COMPLETE** |
 | 12. Rename /covers → /revenue | "Covers" is wrong term for this page | ✅ **COMPLETE** |
-| 13. Mobile dashboard, staff, tracker | KPI cards must stack on phones | 📋 Next |
+| 13. Mobile dashboard, staff, tracker | KPI cards must stack on phones | ✅ **COMPLETE** (2026-04-17) — `.kpi-row` class with 4→2→1 breakpoints applied to dashboard, staff, tracker; landing page nav fixed at <480px; AI FAB repositioned above mobile bottom nav |
 | 14. Schema migrations log | MIGRATIONS.md — record every SQL change (file created) | ✅ **COMPLETE** |
 
 ### Session 7 — Inzii POS Integration
@@ -110,7 +111,59 @@
 
 ---
 
-## Session 8+ — Blocked / Scale
+## Session 8 — COMPLETE ✅ (2026-04-17 · data integrity + polish)
+
+This session focused on fixing data-source bugs exposed once tracker_data vs monthly_metrics divergence surfaced, plus closing the remaining items from Session 7's pending list.
+
+### Infrastructure / security
+| Item | Status | Notes |
+|------|--------|-------|
+| M003 SQL run in Supabase | ✅ | `forecast_calibration`, `scheduling_recommendations`, `briefings` tables + `integrations.onboarding_email_sent` column |
+| Resend domain verified | ✅ | `comandcenter.se` verified; `digest@commandcenter.se` typo → `digest@comandcenter.se` |
+| Git history cleanup | ✅ | Removed `.env.vercel` from 14 local commits after GitHub push-protection blocked; ANTHROPIC_API_KEY rotated |
+| Vercel CLI installed + project linked | ✅ | `vercel logs`, `vercel env pull`, `vercel ls` now available |
+
+### Data-source audit (tracker_data → monthly_metrics)
+Root cause: aggregate reads were hitting `tracker_data` (only holds manual P&L entries), not `monthly_metrics` (auto-aggregated POS + PK sync). For Vero Italiano this meant e.g. April revenue = 115k (manual) shown instead of 485k (real). Fixed across:
+
+| File | Fix |
+|------|-----|
+| `app/api/forecast/route.ts` | Actuals from monthly_metrics, tracker_data fallback for food_cost |
+| `app/api/budgets/route.ts` | Same pattern, plus fixed page shape mismatch (`{year, months}` vs array) |
+| `app/forecast/page.tsx` | Normalised `depts` to string[] so drill-down expansion renders dept breakdown |
+| `lib/sync/engine.ts → generateForecasts` | History from monthly_metrics so rolling avg is ~1.7M kr/mo not 38k |
+| `lib/alerts/detector.ts` | Anomaly baseline no longer fires false positives against empty 2024 manual rows |
+| `lib/ai/buildContext.ts` | AI assistant answers with real synced revenue, not partial manual entries |
+| `app/api/cron/forecast-calibration/route.ts` | Calibration actuals + DOW factors from monthly/daily_metrics |
+
+### AI agent cleanup
+| Item | Status | Notes |
+|------|--------|-------|
+| Onboarding-success cron bugs | ✅ | `integration_type` → `provider`, `users` table → `auth.admin.getUserById`, `subscription_plan` → `plan`, added 48h safety window so the cron can never mass-email ancient integrations |
+| Enhanced Discovery cron | ✅ | Status filter `active` → `connected`, rewrote `fetchSampleData` to do live PK API sample fetch instead of broken `sync_logs` query, skipped integrations get `last_enhanced_discovery_at` stamped so they rotate |
+| AI usage tracking unified | ✅ | New `lib/ai/usage.ts` with `checkAiLimit` / `incrementAiUsage` — applied to `/api/ask`, `/api/budgets/generate`, `/api/budgets/analyse`; all AI calls now count against daily plan limit |
+
+### New features
+| Feature | Notes |
+|---------|-------|
+| Budget: "Generate with AI" | `/api/budgets/generate` — reads last year + forecasts + YTD, Claude Haiku returns 12-month budgets with reasoning; review modal with Apply-all |
+| Budget: per-month "Analyse" | `/api/budgets/analyse` — conditional prompt only includes metrics with data (no food-cost commentary if food_cost is 0); verdict-tinted modal with color-coded metric cards + recommendations |
+| Scheduling redesign | Bar charts removed; labour % hero + 7-day scorecard cards + clickable drill-down modal; W/M navigator replaces date picker; new `/api/scheduling/day-details` endpoint |
+| Departments redesign | Bar chart removed; table matches dashboard style with new Profit column; rows sorted by revenue |
+| Landing page copy | Value-focused wording (removed Personalkollen/Fortnox specifics from hero + meta); mobile nav fits on 375px |
+
+### Outcome
+Everything from the original Session 7 build list is now live. Product is functionally complete. Next phase is UX redesign.
+
+---
+
+## Session 9 — UX redesign (NEXT)
+
+Full spec at `docs/ux-redesign-spec.md`, mockup at `docs/commandcenter-v2.html`. Work through the 12 pages in the Section 7 order, one PR per page. Recon already done — findings saved in memory (`project_state.md`).
+
+---
+
+## Future — Blocked / Scale
 
 ### Blocked on external dependency
 | Item | Blocker | When |
@@ -263,6 +316,6 @@ ALTER TABLE ai_usage_daily ENABLE ROW LEVEL SECURITY;
 
 ---
 
-*Last updated: Session 6 — 2026-04-15*
-*Next action: Session 7 items 8-14*
+*Last updated: Session 8 — 2026-04-17*
+*Next action: Dogfood onboarding flow end-to-end, then start Session 9 UX redesign from page 1 (Overview)*
 
