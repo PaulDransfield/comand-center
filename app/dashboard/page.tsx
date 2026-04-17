@@ -8,10 +8,10 @@ import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('sv-SE') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
-const MONTHS = ['Jan','Feb','Mar','Apr','Maj','Jun','Jul','Aug','Sep','Okt','Nov','Dec']
-const DAYS   = ['Mån','Tis','Ons','Tor','Fre','Lör','Sön']
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 
 // ── Week helpers ──────────────────────────────────────────────────────────────
 function getISOWeek(d: Date): number {
@@ -233,13 +233,13 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
               <div style={{ minWidth: 160, textAlign: 'center', padding: '0 8px' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Vecka {curr.weekNum}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {curr.weekNum}</div>
                 <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
               </div>
               <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
             </div>
           ) : (
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{curYear} — year to date</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#111' }}>{curYear} — Year to Date</div>
           )}
 
           {/* W / M toggle */}
@@ -250,14 +250,14 @@ export default function DashboardPage() {
                 background: viewMode === m ? 'white' : 'transparent',
                 color:      viewMode === m ? '#111'   : '#9ca3af',
                 boxShadow:  viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
-              }}>{m === 'week' ? 'V' : 'M'}</button>
+              }}>{m === 'week' ? 'W' : 'M'}</button>
             ))}
           </div>
         </div>
 
         {/* ── Alerts strip ────────────────────────────────────────────────── */}
         {alerts.filter(a => a.severity === 'high' || a.severity === 'critical').slice(0, 1).map(a => (
-          <a key={a.id} href="/alerts" style={{ textDecoration: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+          <a key={a.id} href="/alerts" style={{ textDecoration: 'none', display: 'flex', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 16, justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#c2410c' }}>⚠ {a.title}</span>
               <span style={{ fontSize: 12, color: '#9a3412', marginLeft: 8 }}>{a.description?.slice(0, 70)}{a.description?.length > 70 ? '…' : ''}</span>
@@ -277,31 +277,31 @@ export default function DashboardPage() {
             {/* ── 4 KPI cards ────────────────────────────────────────────── */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <KpiCard
-                label="Försäljning"
+                label="Revenue"
                 value={fmtKr(totalRev)}
-                sub={`vs Vecka ${getWeekBounds(weekOffset - 1).weekNum}`}
+                sub={`vs Week ${getWeekBounds(weekOffset - 1).weekNum}`}
                 deltaVal={delta(totalRev, prevRev)}
                 href="/revenue"
               />
               <KpiCard
-                label="Personalkostnad"
+                label="Labour Cost"
                 value={fmtKr(totalLabour)}
-                sub={`vs Vecka ${getWeekBounds(weekOffset - 1).weekNum}`}
+                sub={`vs Week ${getWeekBounds(weekOffset - 1).weekNum}`}
                 deltaVal={totalLabour > 0 && prevLabour > 0 ? { pct: Math.abs(delta(totalLabour, prevLabour)?.pct ?? 0), up: (delta(totalLabour, prevLabour)?.up ?? true) === false } : null}
                 href="/staff"
               />
               <KpiCard
-                label="Personalkostnad %"
+                label="Labour Cost %"
                 value={totalRev > 0 ? fmtPct(labourPct) : '—'}
-                sub={`Mål ${targetPct}%${prevLabPct !== null ? ` · prev ${fmtPct(prevLabPct)}` : ''}`}
+                sub={`Target ${targetPct}%${prevLabPct !== null ? ` · prev ${fmtPct(prevLabPct)}` : ''}`}
                 deltaVal={null}
                 ok={totalRev > 0 ? labourPct <= targetPct : null}
                 href="/staff"
               />
               <KpiCard
-                label={totalHours > 0 ? 'Timmar / Intäkt/tim' : 'Timmar'}
+                label={totalHours > 0 ? 'Hours / Rev per hr' : 'Hours'}
                 value={totalHours > 0 ? `${Math.round(totalHours)}h` : '—'}
-                sub={revPerHour > 0 ? `${Math.round(revPerHour).toLocaleString('sv-SE')} kr/tim` : undefined}
+                sub={revPerHour > 0 ? `${Math.round(revPerHour).toLocaleString('en-GB')} kr/hr` : undefined}
                 deltaVal={null}
                 href="/staff"
               />
@@ -311,12 +311,12 @@ export default function DashboardPage() {
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                  Vecka {curr.weekNum} — {curr.label}
+                  Week {curr.weekNum} — {curr.label}
                 </div>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
-                    { color: '#1a1f2e', label: 'Försäljning' },
-                    { color: '#f59e0b', label: 'Personalkostnad' },
+                    { color: '#1a1f2e', label: 'Revenue' },
+                    { color: '#f59e0b', label: 'Labour Cost' },
                   ].map(l => (
                     <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
@@ -379,12 +379,12 @@ export default function DashboardPage() {
                   display: 'flex', gap: 24, flexWrap: 'wrap'
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
-                    {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('sv-SE', { weekday: 'long', day: 'numeric', month: 'short' })}
+                    {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
                   </div>
                   {[
-                    { label: 'Försäljning',       value: fmtKr(tooltip.revenue),    color: 'white' },
-                    { label: 'Personalkostnad',    value: fmtKr(tooltip.staff_cost), color: '#f59e0b' },
-                    { label: 'Personal %',         value: fmtPct(tooltip.labPct),    color: tooltip.labPct > targetPct ? '#f87171' : '#86efac' },
+                    { label: 'Revenue',      value: fmtKr(tooltip.revenue),    color: 'white' },
+                    { label: 'Labour Cost',  value: fmtKr(tooltip.staff_cost), color: '#f59e0b' },
+                    { label: 'Labour %',     value: fmtPct(tooltip.labPct),    color: tooltip.labPct > targetPct ? '#f87171' : '#86efac' },
                   ].map(col => (
                     <div key={col.label}>
                       <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
@@ -401,17 +401,17 @@ export default function DashboardPage() {
               {/* Department table */}
               <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
                 <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Avdelningar — Vecka {curr.weekNum}</div>
-                  <a href="/departments" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>Alla →</a>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — Week {curr.weekNum}</div>
+                  <a href="/departments" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>View all →</a>
                 </div>
                 {(depts?.departments ?? []).length === 0 ? (
-                  <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Synkronisera för att se avdelningsdata</div>
+                  <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Run a sync to see department data</div>
                 ) : (
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                       <tr style={{ background: '#f9fafb' }}>
-                        {['Avdelning', 'Intäkt', 'Personal', 'Pers%', 'GP%'].map(h => (
-                          <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Avdelning' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                        {['Department', 'Revenue', 'Labour', 'Lab%', 'GP%'].map(h => (
+                          <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -425,10 +425,10 @@ export default function DashboardPage() {
                             </div>
                           </td>
                           <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#111', fontWeight: 600 }}>
-                            {d.revenue > 0 ? Math.round(d.revenue).toLocaleString('sv-SE') : '—'}
+                            {d.revenue > 0 ? Math.round(d.revenue).toLocaleString('en-GB') : '—'}
                           </td>
                           <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>
-                            {d.staff_cost > 0 ? Math.round(d.staff_cost).toLocaleString('sv-SE') : '—'}
+                            {d.staff_cost > 0 ? Math.round(d.staff_cost).toLocaleString('en-GB') : '—'}
                           </td>
                           <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                             {d.labour_pct !== null ? (
@@ -448,9 +448,9 @@ export default function DashboardPage() {
                     {depts?.summary && (
                       <tfoot>
                         <tr style={{ background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
-                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Totalt</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{Math.round(depts.summary.total_revenue).toLocaleString('sv-SE')}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#374151' }}>{Math.round(depts.summary.total_staff_cost).toLocaleString('sv-SE')}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Total</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{Math.round(depts.summary.total_revenue).toLocaleString('en-GB')}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#374151' }}>{Math.round(depts.summary.total_staff_cost).toLocaleString('en-GB')}</td>
                           <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                             {depts.summary.labour_pct !== null && (
                               <span style={{ fontSize: 12, fontWeight: 700, color: depts.summary.labour_pct > targetPct ? '#dc2626' : '#16a34a' }}>{fmtPct(depts.summary.labour_pct)}</span>
@@ -471,15 +471,15 @@ export default function DashboardPage() {
 
                 {/* Week P&L */}
                 <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 16 }}>Resultat — Vecka {curr.weekNum}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 16 }}>P&L — Week {curr.weekNum}</div>
                   {[
-                    { label: 'Försäljning',    value: totalRev,              color: '#111',     prefix: '+' },
-                    { label: 'Personalkostnad', value: -totalLabour,          color: '#374151',  prefix: '' },
+                    { label: 'Revenue',     value: totalRev,    color: '#111',    prefix: '+' },
+                    { label: 'Labour Cost', value: -totalLabour, color: '#374151', prefix: '' },
                   ].map(row => (
                     <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
                       <span style={{ fontSize: 13, color: '#6b7280' }}>{row.label}</span>
                       <span style={{ fontSize: 13, fontWeight: 600, color: row.color }}>
-                        {row.value >= 0 ? (row.prefix + Math.round(row.value).toLocaleString('sv-SE')) : '−' + Math.abs(Math.round(row.value)).toLocaleString('sv-SE')} kr
+                        {row.value >= 0 ? (row.prefix + Math.round(row.value).toLocaleString('en-GB')) : '−' + Math.abs(Math.round(row.value)).toLocaleString('en-GB')} kr
                       </span>
                     </div>
                   ))}
@@ -487,14 +487,14 @@ export default function DashboardPage() {
                   {/* Gross margin line */}
                   <div style={{ marginTop: 12, padding: '12px 14px', background: '#f9fafb', borderRadius: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Bruttomarginal</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Gross Margin</span>
                       <span style={{ fontSize: 18, fontWeight: 700, color: (totalRev - totalLabour) >= 0 ? '#16a34a' : '#dc2626' }}>
                         {totalRev > 0 ? fmtKr(totalRev - totalLabour) : '—'}
                       </span>
                     </div>
                     {totalRev > 0 && totalLabour > 0 && (
                       <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                        {fmtPct(((totalRev - totalLabour) / totalRev) * 100)} marginal (efter personal)
+                        {fmtPct(((totalRev - totalLabour) / totalRev) * 100)} margin (after labour)
                       </div>
                     )}
                   </div>
@@ -502,8 +502,8 @@ export default function DashboardPage() {
                   {/* Hours + rev/hour */}
                   {totalHours > 0 && (
                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
-                      <span>{Math.round(totalHours)}h arbetade</span>
-                      {revPerHour > 0 && <span>{Math.round(revPerHour).toLocaleString('sv-SE')} kr/tim</span>}
+                      <span>{Math.round(totalHours)}h worked</span>
+                      {revPerHour > 0 && <span>{Math.round(revPerHour).toLocaleString('en-GB')} kr/hr</span>}
                     </div>
                   )}
                 </div>
@@ -511,10 +511,10 @@ export default function DashboardPage() {
                 {/* Quick links */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {[
-                    { label: 'Personalstyrka', href: '/staff',       icon: '👥' },
-                    { label: 'AI-assistent',   href: '/notebook',    icon: '✦'  },
-                    { label: 'Prognos',        href: '/forecast',    icon: '📈' },
-                    { label: 'Tracker',        href: '/tracker',     icon: '📋' },
+                    { label: 'Staff',        href: '/staff',    icon: '👥' },
+                    { label: 'AI Assistant', href: '/notebook', icon: '✦'  },
+                    { label: 'Forecast',     href: '/forecast', icon: '📈' },
+                    { label: 'Tracker',      href: '/tracker',  icon: '📋' },
                   ].map(a => (
                     <a key={a.href} href={a.href} style={{
                       display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
@@ -538,31 +538,31 @@ export default function DashboardPage() {
             {/* KPI cards */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <KpiCard
-                label="Intäkt denna månad"
+                label="Revenue This Month"
                 value={thisMonthRow?.revenue > 0 ? fmtKr(thisMonthRow.revenue) : '—'}
                 sub={`${MONTHS[curMonth - 1]} ${curYear}`}
                 deltaVal={thisMonthRow?.revenue > 0 && lastMonthRow?.revenue > 0 ? delta(thisMonthRow.revenue, lastMonthRow.revenue) : null}
                 href="/tracker"
               />
               <KpiCard
-                label="Nettoresultat"
+                label="Net Profit"
                 value={thisMonthRow?.net_profit !== undefined ? fmtKr(thisMonthRow.net_profit) : '—'}
-                sub={thisMonthRow?.net_profit > 0 && thisMonthRow?.revenue > 0 ? fmtPct(thisMonthRow.net_profit / thisMonthRow.revenue * 100) + ' marginal' : undefined}
+                sub={thisMonthRow?.net_profit > 0 && thisMonthRow?.revenue > 0 ? fmtPct(thisMonthRow.net_profit / thisMonthRow.revenue * 100) + ' margin' : undefined}
                 deltaVal={null}
                 ok={thisMonthRow?.net_profit > 0}
                 href="/tracker"
               />
               <KpiCard
-                label="Hittills i år"
+                label="Year to Date"
                 value={ytdRev > 0 ? fmtKr(ytdRev) : '—'}
-                sub={`${monthData.filter(r => r.revenue > 0).length} månader med data`}
+                sub={`${monthData.filter(r => r.revenue > 0).length} months with data`}
                 deltaVal={null}
                 href="/tracker"
               />
               <KpiCard
-                label={nextForecast ? `Prognos ${MONTHS[nextForecast.period_month - 1]}` : 'Nästa månad prognos'}
+                label={nextForecast ? `Forecast ${MONTHS[nextForecast.period_month - 1]}` : 'Next Month Forecast'}
                 value={nextForecast ? fmtKr(nextForecast.revenue_forecast) : '—'}
-                sub={nextForecast ? fmtPct(nextForecast.margin_forecast) + ' marginal' : 'Kör sync för prognos'}
+                sub={nextForecast ? fmtPct(nextForecast.margin_forecast) + ' margin' : 'Run sync for forecast'}
                 deltaVal={null}
                 href="/forecast"
               />
@@ -571,8 +571,8 @@ export default function DashboardPage() {
             {/* Annual bar chart */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Intäkt vs resultat — {curYear}</div>
-                <a href="/tracker" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>Fullständig P&L →</a>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Revenue vs Profit — {curYear}</div>
+                <a href="/tracker" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>Full P&L →</a>
               </div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 160 }}>
                 {MONTHS.map((mon, i) => {
@@ -605,7 +605,7 @@ export default function DashboardPage() {
                 })}
               </div>
               <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                {[{ color: '#1a1f2e', label: 'Intäkt' }, { color: '#10b981', label: 'Resultat' }, { color: '#e5e7eb', label: 'Prognos', dashed: true }].map(l => (
+                {[{ color: '#1a1f2e', label: 'Revenue' }, { color: '#10b981', label: 'Profit' }, { color: '#e5e7eb', label: 'Forecast', dashed: true }].map(l => (
                   <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <div style={{ width: 10, height: 8, borderRadius: 2, background: l.dashed ? 'repeating-linear-gradient(45deg,#9ca3af,#9ca3af 1px,white 1px,white 3px)' : l.color, border: l.dashed ? '1px solid #e5e7eb' : 'none' }} />
                     <span style={{ fontSize: 11, color: '#9ca3af' }}>{l.label}</span>
@@ -617,17 +617,17 @@ export default function DashboardPage() {
             {/* Dept table (year to date) */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
               <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Avdelningar — {curYear}</div>
-                <a href="/departments" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>Alla →</a>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — {curYear}</div>
+                <a href="/departments" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>View all →</a>
               </div>
               {(depts?.departments ?? []).length === 0 ? (
-                <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Ingen avdelningsdata tillgänglig</div>
+                <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No department data available</div>
               ) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#f9fafb' }}>
-                      {['Avdelning', 'Intäkt', 'Personal', 'Pers%', 'GP%', 'Tim'].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Avdelning' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                      {['Department', 'Revenue', 'Labour', 'Lab%', 'GP%', 'Hrs'].map(h => (
+                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -640,8 +640,8 @@ export default function DashboardPage() {
                             <a href={`/departments/${encodeURIComponent(d.name)}`} style={{ fontSize: 13, color: '#111', textDecoration: 'none' }}>{d.name}</a>
                           </div>
                         </td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>{d.revenue > 0 ? Math.round(d.revenue).toLocaleString('sv-SE') : '—'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>{d.staff_cost > 0 ? Math.round(d.staff_cost).toLocaleString('sv-SE') : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>{d.revenue > 0 ? Math.round(d.revenue).toLocaleString('en-GB') : '—'}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>{d.staff_cost > 0 ? Math.round(d.staff_cost).toLocaleString('en-GB') : '—'}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                           {d.labour_pct !== null ? (
                             <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: d.labour_pct > targetPct ? '#fee2e2' : '#dcfce7', color: d.labour_pct > targetPct ? '#dc2626' : '#16a34a' }}>
@@ -664,11 +664,11 @@ export default function DashboardPage() {
       <AskAI
         page="dashboard"
         context={selectedBiz ? [
-          `Företag: ${selectedBiz.name}`,
+          `Business: ${selectedBiz.name}`,
           viewMode === 'week'
-            ? `Vecka ${curr.weekNum} (${curr.label}): intäkt ${fmtKr(totalRev)}, personalkostnad ${fmtKr(totalLabour)} (${totalRev > 0 ? fmtPct(labourPct) : '—'}), ${Math.round(totalHours)}h`
-            : `${curYear} hittills: ${fmtKr(ytdRev)}`,
-          depts?.summary ? `Avdelningar: ${(depts.departments ?? []).map((d: any) => `${d.name} ${d.revenue > 0 ? fmtKr(d.revenue) : 'ingen intäkt'}`).join(', ')}` : '',
+            ? `Week ${curr.weekNum} (${curr.label}): revenue ${fmtKr(totalRev)}, labour cost ${fmtKr(totalLabour)} (${totalRev > 0 ? fmtPct(labourPct) : '—'}), ${Math.round(totalHours)}h`
+            : `${curYear} year to date: ${fmtKr(ytdRev)}`,
+          depts?.summary ? `Departments: ${(depts.departments ?? []).map((d: any) => `${d.name} ${d.revenue > 0 ? fmtKr(d.revenue) : 'no revenue'}`).join(', ')}` : '',
         ].filter(Boolean).join('\n') : 'Inget företag valt'}
       />
     </AppShell>
