@@ -40,14 +40,49 @@ export async function buildLiveContext(orgId: string): Promise<string> {
       ctx += `\nCONNECTED INTEGRATIONS: ${integrations.map(i => `${i.provider} (last sync: ${i.last_sync_at?.slice(0,10) ?? 'never'})`).join(', ')}\n`
     }
 
-    // ── P&L Tracker — this year + last year ─────────────────────────────────
-    const { data: tracker } = await db
-      .from('tracker_data')
-      .select('business_id, period_year, period_month, revenue, staff_cost, food_cost, net_profit, margin_pct, staff_pct, food_pct')
-      .eq('org_id', orgId)
-      .in('period_year', [lastYear, year])
-      .order('period_year', { ascending: false })
-      .order('period_month', { ascending: false })
+    // ── P&L — this year + last year ─────────────────────────────────
+    // Source of truth is monthly_metrics (auto-aggregated POS + PK sync). tracker_data
+    // only holds manual food/rent/other entries, so merge it in for food_cost.
+    // Previously read tracker_data directly, which meant the AI saw partial manual entries
+    // (e.g. April 2026: 115k) instead of real synced totals (485k+) and answered
+    // questions like "what's my revenue this month" with wrong numbers.
+    const [mmRes, trRes] = await Promise.all([
+      db.from('monthly_metrics')
+        .select('business_id, year, month, revenue, staff_cost, food_cost, net_profit, margin_pct, labour_pct, food_pct')
+        .eq('org_id', orgId)
+        .in('year', [lastYear, year])
+        .order('year', { ascending: false })
+        .order('month', { ascending: false }),
+      db.from('tracker_data')
+        .select('business_id, period_year, period_month, food_cost')
+        .eq('org_id', orgId)
+        .in('period_year', [lastYear, year]),
+    ])
+
+    // Lookup tracker food_cost per (business, year, month) to fill gaps
+    const trFoodKey = (biz: string, y: number, m: number) => `${biz}|${y}-${m}`
+    const trFoodByKey: Record<string, number> = {}
+    for (const t of trRes.data ?? []) {
+      trFoodByKey[trFoodKey(t.business_id, t.period_year, t.period_month)] = Number(t.food_cost ?? 0)
+    }
+
+    // Reshape monthly_metrics rows to match the old tracker shape the code below uses
+    const tracker = (mmRes.data ?? []).map((r: any) => {
+      const food = Number(r.food_cost ?? 0) > 0 ? Number(r.food_cost) : (trFoodByKey[trFoodKey(r.business_id, r.year, r.month)] ?? 0)
+      const rev  = Number(r.revenue ?? 0)
+      return {
+        business_id:  r.business_id,
+        period_year:  r.year,
+        period_month: r.month,
+        revenue:      rev,
+        staff_cost:   r.staff_cost,
+        food_cost:    food,
+        net_profit:   rev - Number(r.staff_cost ?? 0) - food,
+        margin_pct:   r.margin_pct,
+        staff_pct:    r.labour_pct,
+        food_pct:     rev > 0 ? (food / rev) * 100 : 0,
+      }
+    })
 
     if (tracker?.length) {
       // Group by year

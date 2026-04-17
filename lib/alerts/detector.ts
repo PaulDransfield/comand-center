@@ -181,15 +181,31 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
   const year  = today.getFullYear()
   const month = today.getMonth() + 1
 
-  // ── 1. Check revenue and cost metrics from tracker_data ───────────
-  // Get current month
-  const { data: current } = await db
-    .from('tracker_data')
-    .select('revenue, food_cost, staff_cost, margin_pct, period_year, period_month')
-    .eq('business_id', bizId)
-    .eq('period_year', year)
-    .eq('period_month', month)
-    .single()
+  // ── 1. Check revenue and cost metrics from monthly_metrics ────────
+  // Source of truth is monthly_metrics (auto-aggregated POS + PK sync). tracker_data
+  // only has manually-entered food/rent/other costs, so we merge it in for food_cost.
+  // Prior to 2026-04-17 this read tracker_data directly, which meant anomaly alerts
+  // compared real synced current-month revenue against mostly-empty manual baselines
+  // and fired false positives.
+  const [mmCur, trCur] = await Promise.all([
+    db.from('monthly_metrics')
+      .select('revenue, food_cost, staff_cost, margin_pct, year, month')
+      .eq('business_id', bizId).eq('year', year).eq('month', month).maybeSingle(),
+    db.from('tracker_data')
+      .select('food_cost')
+      .eq('business_id', bizId).eq('period_year', year).eq('period_month', month).maybeSingle(),
+  ])
+
+  const current = mmCur.data
+    ? {
+        revenue:      mmCur.data.revenue,
+        food_cost:    Number(mmCur.data.food_cost ?? 0) > 0 ? mmCur.data.food_cost : (trCur.data?.food_cost ?? 0),
+        staff_cost:   mmCur.data.staff_cost,
+        margin_pct:   mmCur.data.margin_pct,
+        period_year:  mmCur.data.year,
+        period_month: mmCur.data.month,
+      }
+    : null
 
   // Get last 4 months for rolling average
   const pastMonths: { year: number; month: number }[] = []
@@ -198,15 +214,34 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
     pastMonths.push({ year: d.getFullYear(), month: d.getMonth() + 1 })
   }
 
-  const { data: history } = await db
-    .from('tracker_data')
-    .select('revenue, food_cost, staff_cost, period_year, period_month')
-    .eq('business_id', bizId)
-    .in('period_year', [...new Set(pastMonths.map(m => m.year))])
+  const pastYears = [...new Set(pastMonths.map(m => m.year))]
+  const [mmHist, trHist] = await Promise.all([
+    db.from('monthly_metrics')
+      .select('revenue, food_cost, staff_cost, year, month')
+      .eq('business_id', bizId)
+      .in('year', pastYears),
+    db.from('tracker_data')
+      .select('food_cost, period_year, period_month')
+      .eq('business_id', bizId)
+      .in('period_year', pastYears),
+  ])
 
-  const filteredHistory = (history ?? []).filter((r: any) =>
-    pastMonths.some(m => m.year === r.period_year && m.month === r.period_month)
-  )
+  // Build tracker food_cost lookup to fill gaps
+  const trFoodByKey: Record<string, number> = {}
+  for (const t of trHist.data ?? []) {
+    trFoodByKey[`${t.period_year}-${t.period_month}`] = Number(t.food_cost ?? 0)
+  }
+
+  const filteredHistory = (mmHist.data ?? [])
+    .filter((r: any) => pastMonths.some(m => m.year === r.year && m.month === r.month))
+    .map((r: any) => ({
+      revenue:      r.revenue,
+      staff_cost:   r.staff_cost,
+      food_cost:    Number(r.food_cost ?? 0) > 0 ? r.food_cost : (trFoodByKey[`${r.year}-${r.month}`] ?? 0),
+      period_year:  r.year,
+      period_month: r.month,
+    }))
+    .filter((r: any) => Number(r.revenue ?? 0) > 0) // only months with real revenue inform the baseline
 
   if (current && filteredHistory.length >= 2) {
     const avgRevenue   = filteredHistory.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0) / filteredHistory.length

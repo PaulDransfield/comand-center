@@ -41,13 +41,15 @@ export async function POST(req: NextRequest) {
 
     for (const biz of businesses) {
       try {
-        // Check if business has at least 3 months of data
+        // Check if business has at least 2 months of revenue data in monthly_metrics
+        // (source of truth). Before 2026-04-17 this read tracker_data, which counted
+        // empty manual-entry rows as "history" and calibrated off the wrong baseline.
         const { data: historyCount } = await db
-          .from('tracker_data')
-          .select('period_year, period_month')
+          .from('monthly_metrics')
+          .select('year, month')
           .eq('business_id', biz.id)
-          .lt('period_year', year)
-          .or(`period_year.eq.${year},period_month.lt.${month}`)
+          .gt('revenue', 0)
+          .or(`year.lt.${year},and(year.eq.${year},month.lt.${month})`)
 
         if (!historyCount || historyCount.length < 2) {
           console.log(`[forecast-calibration] Skipping ${biz.name} — insufficient history (${historyCount?.length ?? 0} months)`)
@@ -68,14 +70,25 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        // Get last month's actuals
-        const { data: actuals } = await db
-          .from('tracker_data')
-          .select('revenue, staff_cost, food_cost')
-          .eq('business_id', biz.id)
-          .eq('period_year', year)
-          .eq('period_month', month)
-          .single()
+        // Get last month's actuals from monthly_metrics. Merge tracker_data food_cost
+        // since monthly_metrics doesn't populate that column yet.
+        const [mmActualsRes, trActualsRes] = await Promise.all([
+          db.from('monthly_metrics')
+            .select('revenue, staff_cost, food_cost')
+            .eq('business_id', biz.id).eq('year', year).eq('month', month).maybeSingle(),
+          db.from('tracker_data')
+            .select('food_cost')
+            .eq('business_id', biz.id).eq('period_year', year).eq('period_month', month).maybeSingle(),
+        ])
+        const actuals = mmActualsRes.data
+          ? {
+              revenue:    mmActualsRes.data.revenue,
+              staff_cost: mmActualsRes.data.staff_cost,
+              food_cost:  Number(mmActualsRes.data.food_cost ?? 0) > 0
+                ? mmActualsRes.data.food_cost
+                : (trActualsRes.data?.food_cost ?? 0),
+            }
+          : null
 
         if (!actuals) {
           console.log(`[forecast-calibration] No actuals found for ${biz.name} ${year}-${month}`)
@@ -98,16 +111,19 @@ export async function POST(req: NextRequest) {
           biasFactor = revenueActual / revenueForecast
         }
 
-        // Calculate day-of-week factors from 90 days of revenue_logs
+        // Calculate day-of-week factors from 90 days of daily_metrics (deduped).
+        // revenue_logs has both aggregate `personalkollen` rows AND per-dept `pk_*`
+        // rows for the same data — summing it double-counts. daily_metrics is the
+        // deduped summary table aggregated by the sync engine.
         const ninetyDaysAgo = new Date(today)
         ninetyDaysAgo.setDate(today.getDate() - 90)
-        
+
         const { data: revenueLogs } = await db
-          .from('revenue_logs')
-          .select('revenue_date, revenue')
+          .from('daily_metrics')
+          .select('date, revenue')
           .eq('business_id', biz.id)
-          .gte('revenue_date', ninetyDaysAgo.toISOString().slice(0, 10))
-          .lte('revenue_date', today.toISOString().slice(0, 10))
+          .gte('date', ninetyDaysAgo.toISOString().slice(0, 10))
+          .lte('date', today.toISOString().slice(0, 10))
 
         const dowFactors: Record<number, number> = { 0: 1.0, 1: 1.0, 2: 1.0, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0 }
         
@@ -116,7 +132,7 @@ export async function POST(req: NextRequest) {
           const byDow: Record<number, { total: number; count: number }> = {}
           
           for (const log of revenueLogs) {
-            const date = new Date(log.revenue_date)
+            const date = new Date(log.date)
             const dow = date.getDay() // 0=Sunday, 1=Monday, etc.
             const revenue = Number(log.revenue ?? 0)
             
