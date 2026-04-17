@@ -81,28 +81,34 @@ export default function TrackerPage() {
     }
     setExpanded(month)
 
-    // Load daily covers/revenue data if not already loaded
+    // Load daily revenue + staff cost data if not already loaded
     if (!dailyData[month]) {
       setLoadingDaily(month)
       const fromDate = `${year}-${String(month).padStart(2,'0')}-01`
       const lastDay  = new Date(year, month, 0).getDate()
       const toDate   = `${year}-${String(month).padStart(2,'0')}-${lastDay}`
       try {
-        // Try revenue-detail first (has POS data), fall back to covers
-        const res  = await fetch(`/api/revenue-detail?business_id=${selected}&from=${fromDate}&to=${toDate}`)
-        const data = await res.json()
-        if (data.rows) {
-          // Map revenue-detail format to covers format
-          const mapped = data.rows.map((r: any) => ({
+        // Fetch both revenue detail and staff-revenue in parallel
+        const [revRes, srRes] = await Promise.all([
+          fetch(`/api/revenue-detail?business_id=${selected}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => ({})),
+          fetch(`/api/staff-revenue?business_id=${selected}&from=${fromDate}&to=${toDate}`).then(r => r.json()).catch(() => ({})),
+        ])
+        // Build a map of staff cost by date
+        const staffByDate: Record<string, number> = {}
+        for (const sr of (srRes.rows ?? [])) staffByDate[sr.date] = sr.staff_cost ?? 0
+
+        if (revRes.rows) {
+          const mapped = revRes.rows.map((r: any) => ({
             date:              r.date,
             total:             r.covers ?? 0,
             revenue:           r.revenue ?? 0,
             revenue_per_cover: r.revenue_per_cover ?? 0,
+            staff_cost:        staffByDate[r.date] ?? 0,
             is_closed:         r.is_closed,
           }))
           setDailyData(prev => ({ ...prev, [month]: mapped }))
-        } else if (Array.isArray(data)) {
-          setDailyData(prev => ({ ...prev, [month]: data }))
+        } else if (Array.isArray(revRes)) {
+          setDailyData(prev => ({ ...prev, [month]: revRes }))
         }
       } catch {}
       setLoadingDaily(null)
@@ -261,37 +267,49 @@ export default function TrackerPage() {
                               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                                 <thead>
                                   <tr style={{ borderBottom: '0.5px solid #e5e7eb' }}>
-                                    {['Date','Covers','Revenue','Rev / cover'].map(h => (
-                                      <th key={h} style={{ textAlign: 'left', padding: '4px 10px', color: '#9ca3af', fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+                                    {['Date','Revenue','Staff Cost','Labour %','Covers','Rev / cover'].map(h => (
+                                      <th key={h} style={{ textAlign: h === 'Date' ? 'left' : 'right', padding: '4px 10px', color: '#9ca3af', fontWeight: 600, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
                                     ))}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {daily.map((d: DailyRow) => (
-                                    <tr key={d.date} style={{ borderBottom: '0.5px solid #f3f4f6', background: (d as any).is_closed ? '#fafafa' : 'white' }}>
-                                      <td style={{ padding: '6px 10px', fontWeight: 500, color: (d as any).is_closed ? '#9ca3af' : '#374151' }}>
-                                        {new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                                        {(d as any).is_closed && <span style={{ marginLeft: 6, fontSize: 10, color: '#d1d5db' }}>{(d as any).is_future ? 'no data' : 'no revenue'}</span>}
-                                      </td>
-                                      <td style={{ padding: '6px 10px', color: (d as any).is_closed ? '#d1d5db' : '#374151' }}>{d.total > 0 ? d.total : '—'}</td>
-                                      <td style={{ padding: '6px 10px', color: d.revenue > 0 ? '#111' : '#d1d5db', fontWeight: d.revenue > 0 ? 600 : 400 }}>{d.revenue > 0 ? fmtKr(d.revenue) : '—'}</td>
-                                      <td style={{ padding: '6px 10px', color: d.revenue_per_cover > 0 ? '#374151' : '#d1d5db' }}>{d.revenue_per_cover > 0 ? fmtKr(d.revenue_per_cover) : '—'}</td>
-                                    </tr>
-                                  ))}
+                                  {daily.filter((d: any) => !d.is_closed).map((d: any) => {
+                                    const labPct = d.revenue > 0 && d.staff_cost > 0 ? (d.staff_cost / d.revenue) * 100 : null
+                                    return (
+                                      <tr key={d.date} style={{ borderBottom: '0.5px solid #f3f4f6' }}>
+                                        <td style={{ padding: '6px 10px', fontWeight: 500, color: '#374151' }}>
+                                          {new Date(d.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                        </td>
+                                        <td style={{ padding: '6px 10px', textAlign: 'right', color: d.revenue > 0 ? '#111' : '#d1d5db', fontWeight: d.revenue > 0 ? 600 : 400 }}>{d.revenue > 0 ? fmtKr(d.revenue) : '—'}</td>
+                                        <td style={{ padding: '6px 10px', textAlign: 'right', color: d.staff_cost > 0 ? '#374151' : '#d1d5db' }}>{d.staff_cost > 0 ? fmtKr(d.staff_cost) : '—'}</td>
+                                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                                          {labPct !== null ? (
+                                            <span style={{ fontSize: 11, fontWeight: 600, color: labPct > 40 ? '#dc2626' : '#16a34a' }}>{fmtPct(labPct)}</span>
+                                          ) : <span style={{ color: '#d1d5db' }}>—</span>}
+                                        </td>
+                                        <td style={{ padding: '6px 10px', textAlign: 'right', color: d.total > 0 ? '#374151' : '#d1d5db' }}>{d.total > 0 ? d.total : '—'}</td>
+                                        <td style={{ padding: '6px 10px', textAlign: 'right', color: d.revenue_per_cover > 0 ? '#374151' : '#d1d5db' }}>{d.revenue_per_cover > 0 ? fmtKr(d.revenue_per_cover) : '—'}</td>
+                                      </tr>
+                                    )
+                                  })}
                                 </tbody>
                                 <tfoot>
-                                  <tr style={{ borderTop: '1px solid #e5e7eb', background: '#f3f4f6' }}>
-                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: '#111', fontSize: 12 }}>Total</td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: '#111' }}>{daily.reduce((s: number, d: DailyRow) => s + d.total, 0)}</td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: '#111' }}>{fmtKr(daily.reduce((s: number, d: DailyRow) => s + d.revenue, 0))}</td>
-                                    <td style={{ padding: '7px 10px', color: '#9ca3af' }}>
-                                      {(() => {
-                                        const totCovers = daily.reduce((s: number, d: DailyRow) => s + d.total, 0)
-                                        const totRev    = daily.reduce((s: number, d: DailyRow) => s + d.revenue, 0)
-                                        return totCovers > 0 ? fmtKr(Math.round(totRev / totCovers)) : '--'
-                                      })()}
-                                    </td>
-                                  </tr>
+                                  {(() => {
+                                    const totRev   = daily.reduce((s: number, d: any) => s + (d.revenue ?? 0), 0)
+                                    const totStaff = daily.reduce((s: number, d: any) => s + (d.staff_cost ?? 0), 0)
+                                    const totCov   = daily.reduce((s: number, d: any) => s + (d.total ?? 0), 0)
+                                    const totLabPct = totRev > 0 && totStaff > 0 ? (totStaff / totRev) * 100 : null
+                                    return (
+                                      <tr style={{ borderTop: '1px solid #e5e7eb', background: '#f3f4f6' }}>
+                                        <td style={{ padding: '7px 10px', fontWeight: 600, color: '#111', fontSize: 12 }}>Total</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: '#111' }}>{fmtKr(totRev)}</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: '#374151' }}>{totStaff > 0 ? fmtKr(totStaff) : '—'}</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'right' }}>{totLabPct !== null ? <span style={{ fontWeight: 600, color: totLabPct > 40 ? '#dc2626' : '#16a34a' }}>{fmtPct(totLabPct)}</span> : '—'}</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: '#111' }}>{totCov > 0 ? totCov : '—'}</td>
+                                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#9ca3af' }}>{totCov > 0 ? fmtKr(Math.round(totRev / totCov)) : '—'}</td>
+                                      </tr>
+                                    )
+                                  })()}
                                 </tfoot>
                               </table>
                             )}
