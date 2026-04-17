@@ -131,7 +131,12 @@ export default function ForecastPage() {
 
   // Dept monthly data for drill-down
   const deptMonthly = deptData?.monthly ?? []
-  const depts       = deptData?.departments ?? []
+  // /api/departments now returns departments as objects {name, color, ...}; older
+  // shape was string[]. Normalise to string[] so the drill-down row lookups
+  // (deptRow[deptName]) work regardless of which version responded.
+  const depts: string[] = (deptData?.departments ?? []).map((d: any) =>
+    typeof d === 'string' ? d : d?.name
+  ).filter(Boolean)
   // deptColor() imported from @/lib/constants/colors
 
   async function triggerSync() {

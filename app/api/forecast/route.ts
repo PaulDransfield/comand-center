@@ -27,14 +27,43 @@ export async function GET(req: NextRequest) {
     .order('period_year')
     .order('period_month')
 
-  // Get actuals from tracker
-  const { data: actuals } = await db
-    .from('tracker_data')
-    .select('period_month, period_year, revenue, staff_cost, food_cost, net_profit, margin_pct')
-    .eq('business_id', businessId)
-    .in('period_year', [year, year + 1])
-    .order('period_year')
-    .order('period_month')
+  // Get actuals from monthly_metrics (auto-aggregated from real POS + PK syncs).
+  // Previously we read tracker_data, but that table only holds manual P&L entries
+  // and misses every auto-synced month. monthly_metrics is the source of truth.
+  // Fall back to tracker_data for any month monthly_metrics doesn't have (legacy manual entries).
+  const [mmRes, trRes] = await Promise.all([
+    db.from('monthly_metrics')
+      .select('year, month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .in('year', [year - 1, year, year + 1])
+      .order('year')
+      .order('month'),
+    db.from('tracker_data')
+      .select('period_year, period_month, revenue, staff_cost, food_cost, net_profit, margin_pct')
+      .eq('business_id', businessId)
+      .in('period_year', [year - 1, year, year + 1])
+      .order('period_year')
+      .order('period_month'),
+  ])
+
+  // Map monthly_metrics → tracker_data shape (page expects period_year/period_month)
+  const mmRows = (mmRes.data ?? []).map((r: any) => ({
+    period_year:  r.year,
+    period_month: r.month,
+    revenue:      r.revenue,
+    staff_cost:   r.staff_cost,
+    food_cost:    r.food_cost,
+    net_profit:   r.net_profit,
+    margin_pct:   r.margin_pct,
+  }))
+
+  // Merge: monthly_metrics wins over tracker_data for the same (year, month)
+  const actualsByKey = new Map<string, any>()
+  for (const t of trRes.data ?? []) actualsByKey.set(`${t.period_year}-${t.period_month}`, t)
+  for (const m of mmRows)           actualsByKey.set(`${m.period_year}-${m.period_month}`, m)
+  const actuals = [...actualsByKey.values()].sort((a, b) =>
+    a.period_year !== b.period_year ? a.period_year - b.period_year : a.period_month - b.period_month
+  )
 
   // Get Personalkollen sale forecasts if connected
   let pkForecasts: any[] = []
