@@ -23,11 +23,20 @@ export async function POST(req: NextRequest) {
   console.log(`[onboarding-success] Checking for new businesses needing welcome`)
 
   try {
-    // Get all integrations that have had a successful sync but no welcome email sent
+    // Only process integrations that:
+    //   (a) have completed at least one sync
+    //   (b) have not been welcomed yet
+    //   (c) synced within the last 48 hours — safety net so we never mass-email old customers
+    //       if the column default was ever mis-set again.
+    // The inline agent (lib/sync/engine.ts → /api/agents/onboarding-success) handles Personalkollen
+    // in real-time on first sync. This cron catches anything the inline path missed.
+    const cutoff48h = new Date(Date.now() - 48 * 3600_000).toISOString()
+
     const { data: newIntegrations } = await db
       .from('integrations')
-      .select('id, business_id, org_id, integration_type, last_sync_at, onboarding_email_sent')
+      .select('id, business_id, org_id, provider, last_sync_at, onboarding_email_sent')
       .not('last_sync_at', 'is', null)
+      .gte('last_sync_at', cutoff48h)
       .eq('onboarding_email_sent', false)
       .limit(10) // Process in batches
 
@@ -57,7 +66,7 @@ export async function POST(req: NextRequest) {
         // Get organisation details
         const { data: orgData } = await db
           .from('organisations')
-          .select('id, name, subscription_plan')
+          .select('id, name, plan')
           .eq('id', integration.org_id)
           .single()
 
@@ -78,18 +87,14 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        const { data: userData } = await db
-          .from('users')
-          .select('email')
-          .eq('id', orgMembers[0].user_id)
-          .single()
+        const { data: { user: authUser } } = await db.auth.admin.getUserById(orgMembers[0].user_id)
 
-        if (!userData?.email) {
+        if (!authUser?.email) {
           console.log(`[onboarding-success] Skipping ${businessData.name} — no user email`)
           continue
         }
 
-        const userEmail = userData.email
+        const userEmail = authUser.email
 
         // Get some initial data to personalize the email
         const { data: recentRevenue } = await db
@@ -110,14 +115,14 @@ export async function POST(req: NextRequest) {
         const businessInfo = {
           name: businessData.name,
           city: businessData.city,
-          integration_type: integration.integration_type,
+          integration_type: integration.provider,
           first_sync_date: integration.last_sync_at,
           days_of_data: recentRevenue?.length || 0,
           recent_revenue: recentRevenue?.reduce((sum, r) => sum + Number(r.revenue ?? 0), 0) || 0,
           recent_covers: recentRevenue?.reduce((sum, r) => sum + Number(r.covers ?? 0), 0) || 0,
           staff_shifts: recentStaff?.length || 0,
           total_hours: recentStaff?.reduce((sum, s) => sum + Number(s.hours_worked ?? 0), 0) || 0,
-          plan: orgData.subscription_plan,
+          plan: orgData.plan,
         }
 
         // Generate personalized welcome email using Claude Haiku 4.5

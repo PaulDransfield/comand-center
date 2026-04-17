@@ -138,7 +138,7 @@
 | Agent | Schedule | Plan | Build effort | Status |
 |-------|----------|------|-------------|--------|
 | Anomaly detection | Nightly 05:30 UTC | All | 3 hrs | ✅ **COMPLETE** — updated thresholds and email alerts |
-| Onboarding success | Daily 08:00 UTC | All | 2 hrs | ✅ **COMPLETE** — sends welcome email on first sync |
+| Onboarding success | On first sync (inline) + daily 08:00 UTC (cron safety net) | All | 2 hrs | ✅ **COMPLETE** — inline path from sync engine + cron bugs fixed 2026-04-17 (provider col name, auth.admin.getUserById, plan col name, 48h safety window) |
 | Monday briefing | Monday 06:00 UTC | Pro+ | 4 hrs | ✅ **CRON FIXED** — needs Resend domain verification |
 | Forecast calibration | 1st of month 04:00 UTC | Pro+ | 4 hrs | ✅ **COMPLETE** — M003 tables live 2026-04-17, runs 04:00 UTC on 1st of month |
 | Supplier price creep | 1st of month 05:00 UTC | Pro+ | 3 hrs | ✅ **SKELETON BUILT** — waiting for Fortnox OAuth |
