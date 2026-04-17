@@ -60,7 +60,7 @@ export default function DepartmentDetailPage() {
 
   const now = new Date()
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${curr.weekNum}` : curr.label
+  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
 
   const summary = data?.summary ?? {}
   const trend   = data?.trend ?? []

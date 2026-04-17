@@ -57,7 +57,7 @@ export default function DepartmentsPage() {
   const depts: any[]  = data?.departments ?? []
   const summary: any  = data?.summary ?? {}
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${curr.weekNum}` : curr.label
+  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
 
   const deptsWithGP = depts.filter(d => d.gp_pct != null && d.revenue > 0)
   const best  = deptsWithGP.reduce((a, b) => (b.gp_pct > a.gp_pct ? b : a), deptsWithGP[0] ?? null)
