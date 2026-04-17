@@ -10,6 +10,8 @@ export default function EnhancedApiDiscoveriesPage() {
   const [activeTab, setActiveTab] = useState<Record<string, string>>({})
   const [copied, setCopied] = useState<string | null>(null)
   const [runningDiscovery, setRunningDiscovery] = useState(false)
+  const [probingInzii,    setProbingInzii]    = useState(false)
+  const [probeResult,     setProbeResult]     = useState<any>(null)
 
   useEffect(() => { loadDiscoveries() }, [])
 
@@ -26,6 +28,25 @@ export default function EnhancedApiDiscoveriesPage() {
       console.error(e)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function probeInzii() {
+    setProbingInzii(true)
+    setProbeResult(null)
+    const adminSecret = sessionStorage.getItem('admin_auth') || ''
+    try {
+      const res = await fetch('/api/admin/probe-inzii', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminSecret}` },
+        body:    JSON.stringify({}),
+      })
+      const data = await res.json()
+      setProbeResult(data)
+    } catch (e: any) {
+      setProbeResult({ error: e.message })
+    } finally {
+      setProbingInzii(false)
     }
   }
 
@@ -121,15 +142,99 @@ This field from ${discovery.provider} is mapped but may not be fully utilised in
               Click any insight or unused field to get a ready-to-paste Claude Code prompt
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <a href="/admin" style={{ padding: '8px 16px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, color: '#374151', textDecoration: 'none' }}>
               Back to Admin
             </a>
+            <button onClick={probeInzii} disabled={probingInzii} style={{ padding: '8px 16px', background: probingInzii ? '#d1d5db' : '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: probingInzii ? 'not-allowed' : 'pointer' }}>
+              {probingInzii ? 'Probing Inzii API…' : '🔍 Probe Inzii API'}
+            </button>
             <button onClick={runScan} disabled={runningDiscovery} style={{ padding: '8px 16px', background: runningDiscovery ? '#93c5fd' : '#2563eb', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: runningDiscovery ? 'not-allowed' : 'pointer' }}>
               {runningDiscovery ? 'Scanning...' : 'Run Scan'}
             </button>
           </div>
         </div>
+
+        {/* Inzii probe result panel */}
+        {probeResult && (
+          <div style={{ background: 'white', border: '2px solid #1a1f2e', borderRadius: 12, padding: 24, marginBottom: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1f2e' }}>Inzii API Probe Results</div>
+              <button onClick={() => setProbeResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 18 }}>✕</button>
+            </div>
+
+            {probeResult.error ? (
+              <div style={{ color: '#dc2626', fontSize: 13 }}>{probeResult.error}</div>
+            ) : (
+              <>
+                {/* Stats */}
+                <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+                  {[
+                    { label: 'Probed', value: probeResult.summary?.total_probed },
+                    { label: '200 OK', value: probeResult.summary?.status_200, color: probeResult.summary?.status_200 > 0 ? '#16a34a' : undefined },
+                    { label: '401',    value: probeResult.summary?.status_401, color: probeResult.summary?.status_401 > 0 ? '#d97706' : undefined },
+                    { label: '404',    value: probeResult.summary?.status_404 },
+                    { label: 'Timeout', value: probeResult.summary?.status_0 },
+                    { label: 'Has data', value: probeResult.summary?.has_data, color: probeResult.summary?.has_data > 0 ? '#16a34a' : '#dc2626' },
+                  ].map(s => (
+                    <div key={s.label} style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: s.color ?? '#111827' }}>{s.value ?? '—'}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', textTransform: 'uppercase' }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Claude analysis */}
+                {probeResult.analysis && (
+                  <div style={{ background: '#f9fafb', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: '#374151' }}>Claude's conclusion:</span>
+                      <span style={{
+                        padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                        background: probeResult.analysis.conclusion === 'found' ? '#dcfce7' : probeResult.analysis.conclusion === 'auth_issue' ? '#fef3c7' : '#fee2e2',
+                        color:      probeResult.analysis.conclusion === 'found' ? '#16a34a' : probeResult.analysis.conclusion === 'auth_issue' ? '#d97706' : '#dc2626',
+                      }}>{probeResult.analysis.conclusion}</span>
+                    </div>
+                    <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{probeResult.analysis.summary}</p>
+
+                    {probeResult.analysis.conclusion === 'found' && (
+                      <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
+                        {[
+                          { label: 'Working URL pattern', value: probeResult.analysis.working_url_pattern },
+                          { label: 'Auth type',           value: probeResult.analysis.working_auth_type },
+                          { label: 'Revenue field',       value: probeResult.analysis.revenue_field },
+                          { label: 'Date field',          value: probeResult.analysis.date_field },
+                          { label: 'Covers field',        value: probeResult.analysis.covers_field },
+                        ].filter(r => r.value).map(r => (
+                          <div key={r.label} style={{ display: 'flex', gap: 8, fontSize: 13 }}>
+                            <span style={{ color: '#9ca3af', minWidth: 140 }}>{r.label}:</span>
+                            <code style={{ color: '#1a1f2e', background: '#e5e7eb', padding: '1px 6px', borderRadius: 4 }}>{r.value}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Raw 200 responses */}
+                {probeResult.results?.filter((r: any) => r.status === 200).map((r: any, i: number) => (
+                  <div key={i} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 12, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 700, marginBottom: 4 }}>✓ 200 OK — {r.url}</div>
+                    <pre style={{ fontSize: 11, color: '#374151', overflow: 'auto', maxHeight: 200, margin: 0 }}>
+                      {JSON.stringify(r.body, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+
+                {probeResult.analysis?.next_step && probeResult.analysis.conclusion !== 'found' && (
+                  <div style={{ fontSize: 13, color: '#6b7280', marginTop: 8 }}>
+                    <strong>Next step:</strong> {probeResult.analysis.next_step}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {discoveries.length === 0 ? (
           <div style={{ background: 'white', borderRadius: 12, padding: 40, textAlign: 'center', color: '#6b7280' }}>
