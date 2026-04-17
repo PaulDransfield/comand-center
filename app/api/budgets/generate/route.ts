@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -24,6 +25,10 @@ export async function POST(req: NextRequest) {
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
   const db = createAdminClient()
+
+  // Daily AI query gate — counts the same as an /api/ask call against the plan limit.
+  const gate = await checkAiLimit(db, auth.orgId)
+  if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
 
   // ── 1. Gather context: last year actuals, this year's forecasts, YTD actuals ──
   const [lyRes, fcRes, ytdRes, bizRes] = await Promise.all([
@@ -161,6 +166,8 @@ Return JSON only, no prose outside JSON, no markdown code fence:
         reasoning:              String(s?.reasoning ?? ''),
       }
     })
+
+    await incrementAiUsage(db, auth.orgId)
 
     return NextResponse.json({
       overall_strategy: String(parsed.overall_strategy ?? ''),

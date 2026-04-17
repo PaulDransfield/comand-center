@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
+import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
@@ -37,6 +38,10 @@ export async function POST(req: NextRequest) {
   }
 
   const db = createAdminClient()
+
+  // Daily AI query gate — counts same as an /api/ask call against the plan limit.
+  const gate = await checkAiLimit(db, auth.orgId)
+  if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
 
   // ── Pull actual (monthly_metrics with tracker_data fallback), budget, last year ──
   const [mmRes, trRes, bdRes, lyMmRes, lyTrRes, bizRes] = await Promise.all([
@@ -199,6 +204,8 @@ Return JSON only, no markdown fence, no prose outside JSON:
     // (belt and braces — guards against Claude ignoring the "only comment on present metrics" rule)
     const allowed = new Set(metricsAvailable)
     const analysis = (parsed.analysis ?? []).filter((a: any) => allowed.has(a.metric))
+
+    await incrementAiUsage(db, auth.orgId)
 
     return NextResponse.json({
       verdict:         parsed.verdict ?? 'mixed',

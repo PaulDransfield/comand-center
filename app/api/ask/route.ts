@@ -16,8 +16,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOrgFromRequest }         from '@/lib/auth/get-org'
 import { createAdminClient }         from '@/lib/supabase/server'
-import { getPlan }                   from '@/lib/stripe/config'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
+import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
 
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
@@ -51,33 +51,10 @@ export async function POST(req: NextRequest) {
   if (!question) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
   if (question.length > 1000) return NextResponse.json({ error: 'Question too long' }, { status: 400 })
 
-  // ── 3. Check daily query limit ────────────────────────────────
+  // ── 3. Check daily query limit (shared helper in lib/ai/usage.ts) ────────
   const supabase = createAdminClient()
-  const plan     = getPlan(auth.plan)
-  const limit    = plan.ai_queries_per_day
-
-  if (limit !== Infinity) {
-    const today = new Date().toISOString().slice(0, 10)
-
-    const { data: usage } = await supabase
-      .from('ai_usage_daily')
-      .select('query_count')
-      .eq('org_id', auth.orgId)
-      .eq('date', today)
-      .maybeSingle()
-
-    const count = usage?.query_count ?? 0
-
-    if (count >= limit) {
-      return NextResponse.json({
-        error:   'Daily AI query limit reached',
-        limit,
-        used:    count,
-        plan:    auth.plan,   // so the upsell card can branch trial vs paid
-        upgrade: true,        // frontend shows upgrade prompt when this is true
-      }, { status: 429 })
-    }
-  }
+  const gate = await checkAiLimit(supabase, auth.orgId, auth.plan)
+  if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
 
   // ── 4. Call Claude ─────────────────────────────────────────────
   const Anthropic = (await import('@anthropic-ai/sdk')).default
@@ -98,18 +75,7 @@ export async function POST(req: NextRequest) {
     answer = (response.content[0] as any).text ?? 'No response'
 
     // ── 5. Increment daily counter ─────────────────────────────
-    // Upsert: create row if first query today, otherwise increment
-    const today = new Date().toISOString().slice(0, 10)
-    await supabase.rpc('increment_ai_usage', { p_org_id: auth.orgId, p_date: today })
-      .then(({ error }: any) => {
-        // If RPC doesn't exist yet, fall back to manual upsert
-        if (error) {
-          return supabase.from('ai_usage_daily').upsert(
-            { org_id: auth.orgId, date: today, query_count: 1 },
-            { onConflict: 'org_id,date', ignoreDuplicates: false }
-          )
-        }
-      })
+    await incrementAiUsage(supabase, auth.orgId)
 
   } catch (err: any) {
     console.error('Claude API error:', err)

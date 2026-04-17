@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
+import AiLimitReached from '@/components/AiLimitReached'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 
 interface Business { id: string; name: string }
@@ -33,6 +34,8 @@ export default function BudgetPage() {
   // Per-month analyse state
   const [analysingMonth, setAnalysingMonth] = useState<number|null>(null)  // month being analysed (loading spinner)
   const [analysis, setAnalysis] = useState<any>(null)                       // { month, result }
+  // Shared AI limit-reached flag (either Generate or Analyse triggered a 429 with upgrade:true)
+  const [aiLimitHit, setAiLimitHit] = useState<{limit:number,used:number,plan:string}|null>(null)
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
@@ -72,13 +75,17 @@ export default function BudgetPage() {
 
   async function generateWithAI() {
     if (!selected) return
-    setGenerating(true); setGenError(''); setSuggestions(null)
+    setGenerating(true); setGenError(''); setSuggestions(null); setAiLimitHit(null)
     try {
       const res = await fetch('/api/budgets/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ business_id: selected, year }),
       })
       const data = await res.json()
+      if (res.status === 429 && data.upgrade) {
+        setAiLimitHit({ limit: data.limit, used: data.used, plan: data.plan })
+        return
+      }
       if (!res.ok) throw new Error(data.error ?? 'Generation failed')
       setSuggestions(data)
     } catch (e: any) { setGenError(e.message) }
@@ -87,13 +94,18 @@ export default function BudgetPage() {
 
   async function analyseMonth(month: number) {
     if (!selected) return
-    setAnalysingMonth(month); setAnalysis(null)
+    setAnalysingMonth(month); setAnalysis(null); setAiLimitHit(null)
     try {
       const res = await fetch('/api/budgets/analyse', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ business_id: selected, year, month }),
       })
       const data = await res.json()
+      if (res.status === 429 && data.upgrade) {
+        setAiLimitHit({ limit: data.limit, used: data.used, plan: data.plan })
+        setAnalysingMonth(null)
+        return
+      }
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
       setAnalysis({ month, result: data })
     } catch (e: any) {
@@ -165,6 +177,13 @@ export default function BudgetPage() {
             </select>
           </div>
         </div>
+
+        {/* AI daily limit hit — reuse the AskAI upsell card */}
+        {aiLimitHit && (
+          <div style={{ marginBottom: 16 }}>
+            <AiLimitReached used={aiLimitHit.used} limit={aiLimitHit.limit} plan={aiLimitHit.plan} />
+          </div>
+        )}
 
         {/* Generation error banner */}
         {genError && (
