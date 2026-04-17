@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AdminNav } from '@/components/admin/AdminNav'
 
 const STAGE_META: Record<string, { label: string; color: string; bg: string; border: string; hint: string }> = {
   new:     { label: 'New',        color: '#6d28d9', bg: '#ede9fe', border: '#ddd6fe', hint: 'Signed up, no integration connected yet' },
@@ -57,16 +58,15 @@ export default function CustomersPipeline() {
   })
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 1400, margin: '0 auto' }}>
+    <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
+      <AdminNav />
+      <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto' }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 16, flexWrap: 'wrap' as const }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, gap: 16, flexWrap: 'wrap' as const }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>Customers</h1>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Pipeline view · every org grouped by lifecycle stage</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <a href="/admin" style={{ padding: '8px 14px', background: '#f3f4f6', color: '#374151', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>← Legacy admin</a>
         </div>
       </div>
 
@@ -181,6 +181,7 @@ export default function CustomersPipeline() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

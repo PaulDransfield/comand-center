@@ -157,7 +157,38 @@ Everything from the original Session 7 build list is now live. Product is functi
 
 ---
 
-## Session 9 — UX redesign (NEXT)
+## Session 9 — Admin Panel ✅ COMPLETE (2026-04-17 · Phase 1 + 2)
+
+Full operator tooling for customer support + agent management. Replaces the flat org-list view in /admin with a lifecycle-aware pipeline and per-customer god-pages.
+
+### Phase 1 — Customer tooling
+| Item | Status |
+|------|--------|
+| `/admin/customers` pipeline view (New · Setup · Active · At Risk · Churned) | ✅ |
+| `/admin/customers/[orgId]` god-page (header · setup request · team · integrations · alerts · agents · timeline · notes) | ✅ |
+| Impersonation via Supabase magic-link | ✅ |
+| Per-customer agent feature flags (enable/disable) + enforcement in all 6 agents | ✅ |
+| Manual "Run now" agent triggers sending real emails | ✅ |
+| Internal support notes | ✅ |
+| Timeline event feed (signup · setup · integrations · syncs · alerts · admin actions · notes) | ✅ |
+| Onboarding metadata capture (M008 — step + metadata columns) | ✅ |
+
+### Phase 2 — System tooling
+| Item | Status |
+|------|--------|
+| `/admin/overview` KPI dashboard (MRR, signups, at-risk, cron strip, critical alerts, recent signups + setup requests) | ✅ |
+| `/admin/agents` cross-customer agent runs dashboard | ✅ |
+| `/admin/health` cron status + AI spend + sync success rate + integration error feed | ✅ |
+| Shared `AdminNav` component across all admin pages | ✅ |
+
+### Phase 3 (future — not urgent)
+- Broadcast email to all customers
+- Signup funnel analytics
+- Plan-change UI (currently Stripe dashboard link-out)
+
+---
+
+## Session 10 — UX redesign (NEXT)
 
 Full spec at `docs/ux-redesign-spec.md`, mockup at `docs/commandcenter-v2.html`. Work through the 12 pages in the Section 7 order, one PR per page. Recon already done — findings saved in memory (`project_state.md`).
 
@@ -316,6 +347,6 @@ ALTER TABLE ai_usage_daily ENABLE ROW LEVEL SECURITY;
 
 ---
 
-*Last updated: Session 8 — 2026-04-17*
-*Next action: Dogfood onboarding flow end-to-end, then start Session 9 UX redesign from page 1 (Overview)*
+*Last updated: Session 9 — 2026-04-17*
+*Next action: Session 10 UX redesign (docs/ux-redesign-spec.md) page-by-page from page 1 (Overview)*
 

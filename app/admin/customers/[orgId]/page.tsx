@@ -7,6 +7,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import { AdminNav } from '@/components/admin/AdminNav'
 
 const STAGE_META: Record<string, { label: string; color: string; bg: string; border: string }> = {
   new:     { label: 'New',        color: '#6d28d9', bg: '#ede9fe', border: '#ddd6fe' },
@@ -139,8 +140,8 @@ export default function CustomerDetail() {
     setActionLoading(null)
   }
 
-  if (loading) return <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>
-  if (error) return <div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div>
+  if (loading) return <div><AdminNav /><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div></div>
+  if (error) return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data) return null
 
   const { org, members, businesses, integrations, onboarding, support_notes, recent_alerts, ai_usage, data_health } = data
@@ -164,7 +165,9 @@ export default function CustomerDetail() {
   const setupMeta = onboarding?.metadata ?? null
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
+      <AdminNav />
+      <div style={{ padding: '20px 32px', maxWidth: 1200, margin: '0 auto' }}>
 
       {/* Back link */}
       <div style={{ marginBottom: 12 }}>
@@ -598,6 +601,7 @@ export default function CustomerDetail() {
         </div>
       )}
 
+      </div>
     </div>
   )
 }
