@@ -34,6 +34,8 @@ export default function CustomerDetail() {
   const [savingNote, setSavingNote] = useState(false)
   const [noteDraft,  setNoteDraft]  = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [agents, setAgents] = useState<any[]>([])
+  const [runResult, setRunResult] = useState<any>(null)
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
@@ -46,11 +48,44 @@ export default function CustomerDetail() {
   async function load() {
     setLoading(true); setError('')
     try {
-      const r = await fetch(`/api/admin/customers/${orgId}`, { headers: { 'x-admin-secret': secret } })
-      if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)
-      setData(await r.json())
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/admin/customers/${orgId}`, { headers: { 'x-admin-secret': secret } }),
+        fetch(`/api/admin/customers/${orgId}/agents`, { headers: { 'x-admin-secret': secret } }),
+      ])
+      if (!r1.ok) throw new Error(r1.status === 401 ? 'Unauthorized' : `HTTP ${r1.status}`)
+      setData(await r1.json())
+      if (r2.ok) {
+        const a = await r2.json()
+        setAgents(a.agents ?? [])
+      }
     } catch (e: any) { setError(e.message) }
     setLoading(false)
+  }
+
+  async function toggleAgent(agent: string, enabled: boolean) {
+    setActionLoading('toggle_' + agent)
+    await fetch(`/api/admin/customers/${orgId}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+      body: JSON.stringify({ action: 'toggle', agent, enabled }),
+    })
+    await load()
+    setActionLoading(null)
+  }
+
+  async function runAgent(agent: string) {
+    setActionLoading('run_' + agent)
+    setRunResult(null)
+    const res = await fetch(`/api/admin/customers/${orgId}/agents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+      body: JSON.stringify({ action: 'run', agent }),
+    })
+    const json = await res.json()
+    setRunResult({ agent, ok: res.ok, ...json })
+    setActionLoading(null)
+    // Reload agent state in a few seconds so last_run refreshes once writes land
+    setTimeout(() => load(), 2500)
   }
 
   async function runAction(action: string, body: any = {}) {
@@ -298,6 +333,96 @@ export default function CustomerDetail() {
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════
+          AGENTS — toggle + run now
+      ═══════════════════════════════════════════════════════ */}
+      <div style={S.card}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={S.sectionHead}>Agents</div>
+          <div style={{ fontSize: 11, color: '#9ca3af' }}>Toggle to disable for this customer · "Run now" fires the cron immediately</div>
+        </div>
+
+        {/* Run result banner */}
+        {runResult && (
+          <div style={{
+            background: runResult.ok ? '#f0fdf4' : '#fef2f2',
+            border:    `1px solid ${runResult.ok ? '#bbf7d0' : '#fecaca'}`,
+            borderRadius: 10, padding: '10px 14px', marginBottom: 12,
+            fontSize: 12, color: runResult.ok ? '#15803d' : '#dc2626',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10,
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 2 }}>
+                {runResult.ok ? '✓ ' : '✗ '}
+                Ran {runResult.agent}{runResult.scope ? ` · scope: ${runResult.scope}` : ''}
+              </div>
+              {runResult.note && <div style={{ color: '#6b7280' }}>{runResult.note}</div>}
+              {runResult.error && <div>{runResult.error}</div>}
+              {runResult.response && <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, marginTop: 4, color: '#374151' }}>{runResult.response}</div>}
+            </div>
+            <button onClick={() => setRunResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#6b7280' }}>×</button>
+          </div>
+        )}
+
+        <table style={S.table}>
+          <thead>
+            <tr>
+              <th style={S.th('left')}>Agent</th>
+              <th style={S.th('left')}>Last run for this org</th>
+              <th style={S.th('left')}>Scope</th>
+              <th style={S.th('center')}>Enabled</th>
+              <th style={S.th('right')}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {agents.map((a: any) => (
+              <tr key={a.key} style={{ borderTop: '1px solid #f3f4f6', opacity: a.blocked ? 0.55 : 1 }}>
+                <td style={S.td}>
+                  <div style={{ fontWeight: 600, color: '#111' }}>{a.name}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{a.desc}</div>
+                </td>
+                <td style={{ ...S.td, color: '#6b7280' }}>{a.last_run ? fmt(a.last_run) : a.blocked ? '—' : 'never'}</td>
+                <td style={S.td}>
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
+                    background: a.scope === 'per-org' ? '#f0fdf4' : '#fffbeb',
+                    color:      a.scope === 'per-org' ? '#15803d' : '#d97706' }}>
+                    {a.scope === 'per-org' ? 'per-org' : 'global'}
+                  </span>
+                </td>
+                <td style={{ ...S.td, textAlign: 'center' }}>
+                  <button
+                    onClick={() => toggleAgent(a.key, !a.enabled)}
+                    disabled={actionLoading === 'toggle_' + a.key}
+                    style={{
+                      width: 38, height: 22, borderRadius: 11, border: 'none',
+                      background: a.enabled ? '#15803d' : '#e5e7eb',
+                      cursor: 'pointer', padding: 0, position: 'relative',
+                      transition: 'background .15s',
+                    }}
+                    title={a.enabled ? 'Click to disable' : 'Click to enable'}
+                  >
+                    <span style={{
+                      position: 'absolute', top: 2, left: a.enabled ? 18 : 2,
+                      width: 18, height: 18, borderRadius: '50%', background: 'white',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.2)', transition: 'left .15s',
+                    }} />
+                  </button>
+                </td>
+                <td style={{ ...S.td, textAlign: 'right' }}>
+                  <button
+                    onClick={() => runAgent(a.key)}
+                    disabled={actionLoading === 'run_' + a.key || a.blocked}
+                    style={{ ...S.btnTiny, opacity: a.blocked ? 0.5 : 1, cursor: a.blocked ? 'not-allowed' : 'pointer' }}
+                  >
+                    {actionLoading === 'run_' + a.key ? '…' : a.blocked ? 'Blocked' : 'Run now'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {/* ═══════════════════════════════════════════════════════
           SUPPORT NOTES (admin-only, internal)

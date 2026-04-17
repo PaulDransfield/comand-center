@@ -125,6 +125,7 @@ export async function runAnomalyDetection(orgId?: string): Promise<Alert[]> {
   const db      = createAdminClient()
   const today   = new Date()
   const alerts: Alert[] = []
+  const { isAgentEnabled } = await import('@/lib/ai/is-agent-enabled')
 
   // Get orgs to check
   let orgsQuery = db.from('organisations').select('id, name, billing_email').eq('is_active', true)
@@ -133,6 +134,13 @@ export async function runAnomalyDetection(orgId?: string): Promise<Alert[]> {
   if (!orgs?.length) return []
 
   for (const org of orgs) {
+    // Respect per-customer agent toggle set in admin panel
+    const enabled = await isAgentEnabled(db, org.id, 'anomaly_detection')
+    if (!enabled) {
+      console.log(`[anomaly-check] Skipping ${org.name} — disabled via feature flag`)
+      continue
+    }
+
     const { data: businesses } = await db
       .from('businesses')
       .select('id, name')
