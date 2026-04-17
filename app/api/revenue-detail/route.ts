@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
     .gte('revenue_date', from)
     .lte('revenue_date', to)
     .order('revenue_date', { ascending: false })
+    .limit(50000)
 
   if (businessId) query.eq('business_id', businessId)
 

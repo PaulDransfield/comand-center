@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
     .or('hours_worked.gt.0,cost_actual.gt.0,estimated_salary.gt.0')
 
   if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
+  staffQuery = staffQuery.limit(50000)
 
   // Fetch revenue logs
   let revQuery = db
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
     .gt('revenue', 0)
 
   if (businessId) revQuery = revQuery.eq('business_id', businessId)
+  revQuery = revQuery.limit(50000)
 
   const [{ data: staffLogs, error: staffErr }, { data: revLogs, error: revErr }] = await Promise.all([
     staffQuery, revQuery,

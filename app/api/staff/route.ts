@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
     .or('cost_actual.gt.0,estimated_salary.gt.0,is_late.eq.true')
 
   if (businessId) query = query.eq('business_id', businessId)
+  query = query.limit(50000)
 
   const { data: logs, error } = await query
   if (error) return NextResponse.json({ error: error.message, connected: true }, { status: 500 })

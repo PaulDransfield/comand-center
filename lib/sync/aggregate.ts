@@ -24,22 +24,27 @@ export async function aggregateMetrics(
 
   // ── 1. Fetch raw data for the date range ──────────────────────────────────
   const [revRes, staffRes, trackerRes] = await Promise.all([
+    // Note: Supabase defaults to 1000 rows. Restaurants can have 1000+ shifts/month.
+    // Use limit(50000) to ensure we get all data.
     db.from('revenue_logs')
       .select('revenue_date, revenue, covers, tip_revenue, food_revenue, bev_revenue, dine_in_revenue, takeaway_revenue, provider')
       .eq('org_id', orgId).eq('business_id', businessId)
-      .gte('revenue_date', fromDate).lte('revenue_date', toDate),
+      .gte('revenue_date', fromDate).lte('revenue_date', toDate)
+      .limit(50000),
 
     db.from('staff_logs')
       .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr')
       .eq('org_id', orgId).eq('business_id', businessId)
       .gte('shift_date', fromDate).lte('shift_date', toDate)
-      .or('cost_actual.gt.0,estimated_salary.gt.0'),
+      .or('cost_actual.gt.0,estimated_salary.gt.0')
+      .limit(50000),
 
     db.from('tracker_data')
       .select('period_year, period_month, revenue, food_cost, staff_cost, net_profit')
       .eq('business_id', businessId)
       .gte('period_year', parseInt(fromDate.slice(0, 4)))
-      .lte('period_year', parseInt(toDate.slice(0, 4))),
+      .lte('period_year', parseInt(toDate.slice(0, 4)))
+      .limit(1000),
   ])
 
   const rawRevLogs = revRes.data ?? []

@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
     .lte('revenue_date', dateTo)
     .in('provider', allRevProviders)
   if (businessId) revQuery = revQuery.eq('business_id', businessId)
+  revQuery = revQuery.limit(50000)
 
   const { data: revLogs } = await revQuery
 
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
     .in('staff_group', deptNames)
     .or('cost_actual.gt.0,estimated_salary.gt.0')
   if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
+  staffQuery = staffQuery.limit(50000)
 
   const { data: staffLogs } = await staffQuery
 

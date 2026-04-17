@@ -41,6 +41,7 @@ export async function GET(
     .lte('revenue_date', to)
     .order('revenue_date', { ascending: true })
   if (businessId) revQuery = revQuery.eq('business_id', businessId)
+  revQuery = revQuery.limit(50000)
 
   // ── Staff: shifts for this dept's PK group ───────────────────────────────
   let staffQuery = db.from('staff_logs')
@@ -51,6 +52,7 @@ export async function GET(
     .lte('shift_date', to)
     .or('cost_actual.gt.0,estimated_salary.gt.0')
   if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
+  staffQuery = staffQuery.limit(50000)
 
   // ── Dept definition (color) ──────────────────────────────────────────────
   let defQuery = db.from('departments')

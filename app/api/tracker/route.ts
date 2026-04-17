@@ -28,9 +28,9 @@ export async function GET(req: NextRequest) {
     // Manual P&L entries
     db.from('tracker_data').select('*').eq('business_id', businessId).eq('period_year', year).order('period_month'),
     // Real revenue from POS sync (revenue_logs) — include provider for dedup
-    db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0),
+    db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0).limit(50000),
     // Real staff cost from Personalkollen sync (staff_logs)
-    db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).lte('shift_date', dateTo).or('cost_actual.gt.0,estimated_salary.gt.0'),
+    db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).lte('shift_date', dateTo).or('cost_actual.gt.0,estimated_salary.gt.0').limit(50000),
   ])
 
   const manualRows = trackerRes.data ?? []
