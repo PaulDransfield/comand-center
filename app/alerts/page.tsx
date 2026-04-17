@@ -33,7 +33,6 @@ const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'n
 export default function AlertsPage() {
   const [alerts,   setAlerts]  = useState<Alert[]>([])
   const [loading,  setLoading] = useState(true)
-  const [running,  setRunning] = useState(false)
   const [showAll,  setShowAll] = useState(false)
 
   const load = useCallback(async () => {
@@ -51,15 +50,7 @@ export default function AlertsPage() {
     load()
   }
 
-  async function runCheck() {
-    setRunning(true)
-    const res  = await fetch('/api/cron/anomaly-check?secret=commandcenter123')
-    const data = await res.json()
-    setRunning(false)
-    load()
-    if (data.alerts_created === 0) alert('No anomalies detected.')
-    else alert(`${data.alerts_created} new alert${data.alerts_created !== 1 ? 's' : ''} created.`)
-  }
+  // Anomaly check runs automatically at 06:00 daily via cron
 
   const critical = alerts.filter(a => a.severity === 'critical').length
   const high     = alerts.filter(a => a.severity === 'high').length
@@ -77,10 +68,6 @@ export default function AlertsPage() {
             <button onClick={() => setShowAll(s => !s)}
               style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#374151' }}>
               {showAll ? 'Unread only' : 'Show all'}
-            </button>
-            <button onClick={runCheck} disabled={running}
-              style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              {running ? 'Checking...' : 'Run check now'}
             </button>
           </div>
         </div>
