@@ -797,4 +797,20 @@ Once the correct field name is confirmed, add it to the `parseRows()` covers fal
 
 ---
 
+## Inzii Admin "0 departments" — NOT A BUG (2026-04-17)
+
+**Reported symptom:** Admin panel appeared to show 0 Inzii departments despite 6 rows in `integrations` table.
+
+**Investigation:** Built `/api/admin/diagnose-inzii?org_id=…` which dumps all businesses + all inzii rows and labels every row against the active business list. Direct Supabase query from `scripts/diagnose-inzii.mjs` confirmed:
+- All 6 Inzii rows have correct `org_id`, `status=connected`, and point at an active business (`Vero Italiano` / `0f948ac3`)
+- Zero orphans, zero `org_id` mismatches, zero ghost business_ids
+- All 6 depts (Bella, Brus, Carne, Chilango, Ölbaren, Rosalis Select) correctly belong to Vero Italiano
+- Rosali Deli is a separate business with only Personalkollen — by design
+
+**Resolution:** The admin UI was working correctly. Expanding the **Vero Italiano** card (not Rosali Deli) shows all 6 Inzii departments as expected. Likely the original report was made while looking at Rosali Deli's card.
+
+**Kept for future use:** The diagnose endpoint `app/api/admin/diagnose-inzii/route.ts` — reusable whenever an integration seems "missing" in the admin panel. Call with `x-admin-secret` header or `?secret=` query param.
+
+---
+
 *Check this file before starting any debugging session. Most issues have already been solved here.*

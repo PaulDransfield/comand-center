@@ -103,10 +103,10 @@
 | Multi-department DB schema (M005) | ✅ Complete | `department` column + partial unique indexes |
 | Admin panel — add dept modal | ✅ Built | InziiDeptModal in `/admin` page |
 | Sync engine — Inzii provider | ✅ Built | Stores as `inzii_bella`, `inzii_brus` etc. in revenue_logs |
-| Admin panel — show depts | 🔄 **BUG** | Debug shows 1 integration (only PK), Inzii rows filtered out |
+| Admin panel — show depts | ✅ **NOT A BUG** | Diagnose-inzii endpoint confirmed all 6 depts correctly attached to Vero Italiano — see FIXES.md |
 | Inzii API endpoint | ⏳ Unknown | api.swess.se responds but correct path not confirmed |
 
-**Open bug:** Admin shows "0 departments" — `biz.integrations` has 1 item (Personalkollen) despite 6 Inzii rows in DB. Likely: businesses table has a different active business_id than what Inzii was saved against. Run: `SELECT id, name, is_active FROM businesses WHERE org_id = 'e917d4b8-635e-4be6-8af0-afc48c3c7450';`
+**Resolved 2026-04-17:** The "0 departments" report was a misread — all 6 Inzii depts are correctly attached to Vero Italiano (Rosali Deli is a separate business with only PK). Expanding Vero's card in the admin panel shows all 6 as expected. Built `/api/admin/diagnose-inzii?org_id=…` for future investigations of this kind.
 
 ---
 
