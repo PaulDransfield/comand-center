@@ -54,7 +54,7 @@ function delta(cur: number, prev: number) {
 // ── KPI Card ──────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, sub, deltaVal, ok }: any) {
   return (
-    <div style={{ background: 'white', borderRadius: 12, padding: '18px 20px', border: `1px solid ${ok === false ? '#fecaca' : '#e5e7eb'}`, flex: 1 }}>
+    <div style={{ background: 'white', borderRadius: 12, padding: '18px 20px', border: `1px solid ${ok === false ? '#fecaca' : '#e5e7eb'}` }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 700, color: '#111', marginBottom: 6, letterSpacing: '-0.5px' }}>{value}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 18 }}>
@@ -239,7 +239,7 @@ export default function StaffPage() {
         ) : (
           <>
             {/* ── 4 KPI cards ────────────────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div className="kpi-row" style={{ marginBottom: 16 }}>
               <KpiCard label="Labour Cost" value={fmtKr(totalCost)} deltaVal={delta(totalCost, prevTotalCost)} sub={`vs prev ${viewMode === 'week' ? 'week' : 'month'}`} />
               <KpiCard label="Labour %" value={curRev > 0 ? fmtPct(labourPct) : '—'} sub={`Target ${targetPct}%`} ok={curRev > 0 ? labourPct <= targetPct : null} />
               <KpiCard label="Hours Worked" value={totalHours > 0 ? `${Math.round(totalHours)}h` : '—'} sub={`${summary?.shifts_logged ?? 0} shifts`} />

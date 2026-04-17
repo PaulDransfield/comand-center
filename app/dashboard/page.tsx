@@ -70,7 +70,7 @@ function KpiCard({ label, value, sub, deltaVal, ok, href }: any) {
     <div style={{
       background: 'white', borderRadius: 12, padding: '18px 20px',
       border: `1px solid ${ok === false ? '#fecaca' : '#e5e7eb'}`,
-      cursor: href ? 'pointer' : 'default', flex: 1,
+      cursor: href ? 'pointer' : 'default',
     }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 700, color: '#111', marginBottom: 6, letterSpacing: '-0.5px' }}>{value}</div>
@@ -87,7 +87,7 @@ function KpiCard({ label, value, sub, deltaVal, ok, href }: any) {
       </div>
     </div>
   )
-  return href ? <a href={href} style={{ textDecoration: 'none', flex: 1 }}>{card}</a> : card
+  return href ? <a href={href} style={{ textDecoration: 'none' }}>{card}</a> : card
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -290,7 +290,7 @@ export default function DashboardPage() {
           ══════════════════════════════════════════════════════════════════ */
           <>
             {/* ── 4 KPI cards ────────────────────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div className="kpi-row" style={{ marginBottom: 16 }}>
               <KpiCard
                 label="Revenue"
                 value={fmtKr(totalRev)}
@@ -551,7 +551,7 @@ export default function DashboardPage() {
           ══════════════════════════════════════════════════════════════════ */
           <>
             {/* ── 4 KPI cards ────────────────────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+            <div className="kpi-row" style={{ marginBottom: 16 }}>
               <KpiCard
                 label="Revenue"
                 value={fmtKr(totalRev)}

@@ -151,7 +151,7 @@ export default function TrackerPage() {
         </div>
 
         {/* KPIs */}
-        <div className="grid-4" style={{ marginBottom: 20 }}>
+        <div className="kpi-row" style={{ marginBottom: 20 }}>
           {[
             { label: 'YTD Revenue',    value: fmtKr(totRev),    sub: `${rows.length} months` },
             { label: 'YTD Profit',     value: fmtKr(totProfit), sub: fmtPct(avgMargin) + ' avg margin' },
