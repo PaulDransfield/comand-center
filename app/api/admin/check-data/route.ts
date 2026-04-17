@@ -16,13 +16,16 @@ export async function GET(req: NextRequest) {
   const [monthlyRes, dailyRevRes, staffRes, revLogsRes] = await Promise.all([
     // Summary tables
     db.from('monthly_metrics').select('*').eq('year', 2026).eq('month', 3).in('org_id', [orgId]),
-    // Raw revenue_logs for March (with provider for dedup analysis)
+    // Raw revenue_logs for March — Vero only
     db.from('revenue_logs').select('revenue_date, revenue, provider, business_id')
-      .eq('org_id', orgId).gte('revenue_date', '2026-03-01').lte('revenue_date', '2026-03-31'),
-    // Raw staff_logs for March
+      .eq('org_id', orgId).eq('business_id', '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99')
+      .gte('revenue_date', '2026-03-01').lte('revenue_date', '2026-03-31'),
+    // Raw staff_logs for March — Vero only to match PK "Hela företaget"
     db.from('staff_logs').select('shift_date, cost_actual, estimated_salary, hours_worked, business_id')
-      .eq('org_id', orgId).gte('shift_date', '2026-03-01').lte('shift_date', '2026-03-31')
-      .or('cost_actual.gt.0,estimated_salary.gt.0'),
+      .eq('org_id', orgId).eq('business_id', '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99')
+      .gte('shift_date', '2026-03-01').lte('shift_date', '2026-03-31')
+      .or('cost_actual.gt.0,estimated_salary.gt.0')
+      .limit(5000),
     // Revenue providers breakdown
     db.from('revenue_logs').select('provider, business_id')
       .eq('org_id', orgId).gte('revenue_date', '2026-03-01').lte('revenue_date', '2026-03-31'),
