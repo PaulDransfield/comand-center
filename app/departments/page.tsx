@@ -140,94 +140,49 @@ export default function DepartmentsPage() {
               </div>
             )}
 
-            {/* Deploy marker — remove when the table is confirmed working */}
-            <div style={{ background: '#ede9fe', color: '#6d28d9', padding: '6px 12px', borderRadius: 8, fontSize: 11, fontWeight: 600, marginBottom: 10, display: 'inline-block' }}>
-              table v4 · simplified render
+            {/* Deploy marker + diagnostic counts */}
+            <div style={{ background: '#ede9fe', color: '#6d28d9', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
+              table v5 · depts: {depts.length} · summary: {summary ? 'yes' : 'no'} · period: {periodLabel}
             </div>
 
-            {/* Full table — stripped-down, no per-cell inline styles that could blow up */}
-            <DeptTable depts={depts} summary={summary} periodLabel={periodLabel} onRowClick={(name: string) => router.push(`/departments/${encodeURIComponent(name)}`)} />
+            {/* Absolute minimum table — no extracted component, no complex styles */}
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: 16, marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 12 }}>Departments — {periodLabel}</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: '#9ca3af', fontSize: 11 }}>
+                    <th style={{ padding: '6px 8px' }}>Department</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Revenue</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Profit</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>GP%</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Labour</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Hours</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {depts.map((d: any, i: number) => {
+                    const rev = Number(d?.revenue || 0)
+                    const cost = Number(d?.staff_cost || 0)
+                    const profit = Math.max(0, rev - cost)
+                    return (
+                      <tr key={i} style={{ borderTop: '1px solid #f3f4f6', cursor: 'pointer' }}
+                          onClick={() => router.push(`/departments/${encodeURIComponent(d?.name || '')}`)}>
+                        <td style={{ padding: '10px 8px', fontWeight: 500 }}>{d?.name || '—'}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 600 }}>{rev > 0 ? rev.toLocaleString('en-GB') + ' kr' : '—'}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'right', fontWeight: 600, color: profit > 0 ? '#15803d' : '#d1d5db' }}>{profit > 0 ? profit.toLocaleString('en-GB') + ' kr' : '—'}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'right' }}>{d?.gp_pct != null ? Number(d.gp_pct).toFixed(1) + '%' : '—'}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'right', color: '#6b7280' }}>{cost > 0 ? cost.toLocaleString('en-GB') + ' kr' : '—'}</td>
+                        <td style={{ padding: '10px 8px', textAlign: 'right', color: '#9ca3af' }}>{Number(d?.hours || 0) > 0 ? Number(d.hours).toFixed(1) + 'h' : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </div>
     </AppShell>
-  )
-}
-
-// Extracted so any render error here is confined to this component; parent keeps rendering.
-function DeptTable({ depts, summary, periodLabel, onRowClick }: any) {
-  const rows = [...(depts ?? [])].sort((a: any, b: any) => (Number(b?.revenue ?? 0)) - (Number(a?.revenue ?? 0)))
-  const kr = (n: any) => Math.round(Number(n) || 0).toLocaleString('en-GB') + ' kr'
-  const pct = (n: any) => (n == null || isNaN(Number(n))) ? '—' : Number(n).toFixed(1) + '%'
-
-  const th: any = { padding: '9px 14px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }
-  const td: any = { padding: '10px 14px', fontSize: 13 }
-
-  const totalRev = Number(summary?.total_revenue ?? 0)
-  const totalCost = Number(summary?.total_staff_cost ?? 0)
-  const totalProfit = Math.max(0, totalRev - totalCost)
-
-  return (
-    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-      <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — {periodLabel}</div>
-        <div style={{ fontSize: 11, color: '#9ca3af' }}>Click a row for the department drill-down</div>
-      </div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f9fafb' }}>
-              <th style={{ ...th, textAlign: 'left' }}>Department</th>
-              <th style={{ ...th, textAlign: 'right' }}>Revenue</th>
-              <th style={{ ...th, textAlign: 'right' }}>Profit</th>
-              <th style={{ ...th, textAlign: 'right' }}>GP%</th>
-              <th style={{ ...th, textAlign: 'right' }}>Labour</th>
-              <th style={{ ...th, textAlign: 'right' }}>Lab%</th>
-              <th style={{ ...th, textAlign: 'right' }}>Rev/Hr</th>
-              <th style={{ ...th, textAlign: 'right' }}>Hours</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((d: any) => {
-              const rev = Number(d?.revenue ?? 0)
-              const cost = Number(d?.staff_cost ?? 0)
-              const profit = Math.max(0, rev - cost)
-              return (
-                <tr key={d?.name ?? Math.random()}
-                    style={{ borderBottom: '1px solid #f9fafb', cursor: 'pointer' }}
-                    onClick={() => d?.name && onRowClick(d.name)}>
-                  <td style={td}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: d?.color || deptColor(d?.name ?? '') || '#9ca3af', display: 'inline-block' }} />
-                      <span style={{ fontWeight: 500, color: '#111' }}>{d?.name ?? 'Unknown'}</span>
-                    </span>
-                  </td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: '#111' }}>{rev > 0 ? kr(rev) : '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: profit > 0 ? '#15803d' : '#d1d5db' }}>{profit > 0 ? kr(profit) : '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: '#374151' }}>{pct(d?.gp_pct)}</td>
-                  <td style={{ ...td, textAlign: 'right', color: '#374151' }}>{cost > 0 ? kr(cost) : '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', color: '#374151' }}>{pct(d?.labour_pct)}</td>
-                  <td style={{ ...td, textAlign: 'right', color: '#6b7280' }}>{Number(d?.rev_per_hour ?? 0) > 0 ? kr(d.rev_per_hour) : '—'}</td>
-                  <td style={{ ...td, textAlign: 'right', color: '#9ca3af' }}>{Number(d?.hours ?? 0) > 0 ? (Number(d.hours).toFixed(1) + 'h') : '—'}</td>
-                </tr>
-              )
-            })}
-            {summary && (
-              <tr style={{ background: '#f9fafb', borderTop: '2px solid #e5e7eb', fontWeight: 700 }}>
-                <td style={{ ...td, color: '#374151' }}>Total</td>
-                <td style={{ ...td, textAlign: 'right', color: '#111' }}>{kr(totalRev)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#15803d' }}>{kr(totalProfit)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#374151' }}>{pct(summary?.gp_pct)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#374151' }}>{kr(totalCost)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#374151' }}>{pct(summary?.labour_pct)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#111' }}>{Number(summary?.rev_per_hour ?? 0) > 0 ? kr(summary.rev_per_hour) : '—'}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#111' }}>{Number(summary?.total_hours ?? 0).toFixed(1)}h</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
   )
 }
 
