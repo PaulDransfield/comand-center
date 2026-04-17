@@ -151,31 +151,25 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
   return sales.map((s: any) => {
     const totalGross = (s.payments ?? []).reduce((sum: number, p: any) => sum + parseFloat(p.amount ?? 0), 0)
 
-    // PK API returns gross amounts (incl. VAT/moms). Strip VAT using item categories.
-    // Swedish VAT: food/takeaway = 12%, alcohol/drinks = 25%
+    // PK API returns payment amounts — store as-is since the exact VAT treatment
+    // depends on POS configuration. Revenue figures match PK's "Kassaförsäljning"
+    // view. PK's dashboard "Försäljning" may show different figures depending on
+    // their own VAT/reporting settings.
     const foodGross  = (s.items ?? []).filter((i: any) => i.category === 'food' || i.item_type === 'food').reduce((sum: number, i: any) => sum + parseFloat(i.total ?? 0), 0)
     const drinkGross = (s.items ?? []).filter((i: any) => i.category === 'drink' || i.item_type === 'drink').reduce((sum: number, i: any) => sum + parseFloat(i.total ?? 0), 0)
-    const otherGross = totalGross - foodGross - drinkGross
-
-    // Convert to ex-VAT (netto)
-    const foodNet  = foodGross  / 1.12   // 12% moms on food
-    const drinkNet = drinkGross / 1.25   // 25% moms on drinks
-    const otherNet = otherGross / 1.12   // assume food VAT for uncategorised
-    const totalNet = Math.round((foodNet + drinkNet + otherNet) * 100) / 100
 
     return {
       uid:           s.uid,
       url:           s.url,
       sale_time:     s.sale_time,
       workplace_url: s.workplace,
-      amount:        totalNet,  // ex-VAT to match PK dashboard
-      amount_gross:  Math.round(totalGross * 100) / 100,  // keep gross for reference
+      amount:        Math.round(totalGross * 100) / 100,
       covers:        s.number_of_guests ?? null,
       is_takeaway:   s.is_take_away ?? false,
       tip:           s.tip ? parseFloat(s.tip) : 0,
       payment_types: (s.payments ?? []).map((p: any) => p.payment_type ?? 'unknown'),
-      food_revenue:  Math.round(foodNet * 100) / 100,
-      drink_revenue: Math.round(drinkNet * 100) / 100,
+      food_revenue:  Math.round(foodGross * 100) / 100,
+      drink_revenue: Math.round(drinkGross * 100) / 100,
     }
   })
 }
