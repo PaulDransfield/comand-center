@@ -372,6 +372,19 @@ CREATE POLICY "implementation_plans_select_own" ON implementation_plans
 
 ---
 
+## M008 — 2026-04-17 — Session 8 — Onboarding step + metadata columns
+**Run**: 2026-04-17
+**Status**: ✅ **SUCCESS** — verified via REST probe
+
+```sql
+ALTER TABLE onboarding_progress ADD COLUMN IF NOT EXISTS step TEXT;
+ALTER TABLE onboarding_progress ADD COLUMN IF NOT EXISTS metadata JSONB;
+```
+
+**Why**: `/api/onboarding/setup-request` was writing to `step` and `metadata` columns that didn't exist, so every new customer's setup-form data (restaurant name, city, staff system, accounting, POS) was silently dropped. Admin panel's "Setup requests" section was always empty. After this migration, signup metadata persists and admin renders correctly.
+
+---
+
 ## Next Steps
 
 1. **Run M007 SQL** — required for Enhanced API Discovery to work
