@@ -225,6 +225,9 @@ A personal data breach triggers:
 
 ## 10. Gaps we know about (priority order)
 
+**Blocked on company formation:**
+- Anthropic ZDR request, Supabase/Vercel/Stripe/Resend DPA countersigns, Fortnox developer program application, and the customer-facing DPA template all require a registered legal entity (company name, org number, registered address). Register the AB first; then the rest of §10 unblocks.
+
 **Before first paying customer:**
 1. Application-layer encryption of integration API keys (§5).
 2. Signed privacy policy + ToS published on comandcenter.se (§1).
