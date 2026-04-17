@@ -43,6 +43,7 @@ export default function LandingPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=DM+Mono:wght@400;500&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { overflow-x: hidden; max-width: 100vw; }
         body { font-family: ${F.body}; color: ${C.ink}; background: ${C.offWhite}; -webkit-font-smoothing: antialiased; }
         a { text-decoration: none; color: inherit; }
 
@@ -122,7 +123,15 @@ export default function LandingPage() {
           .nav-links { display: none; }
           .footer-grid { grid-template-columns: 1fr !important; gap: 32px !important; }
           .hero-headline { font-size: clamp(32px, 8vw, 52px) !important; }
-          .stat-row { flex-wrap: wrap; }
+          .stat-row { flex-wrap: wrap; gap: 24px !important; }
+        }
+        /* Extra-small phones: shrink nav so the logo + CTA fit at 320–400px */
+        @media (max-width: 480px) {
+          .nav-logo-text { display: none; }
+          .nav-cta-login { display: none; }
+          .nav-cta-trial { padding: 7px 14px !important; font-size: 12px !important; }
+          nav > div { padding: 0 16px !important; }
+          section { padding-left: 16px !important; padding-right: 16px !important; }
         }
       `}</style>
 
@@ -148,7 +157,7 @@ export default function LandingPage() {
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
               </svg>
             </div>
-            <span style={{ fontFamily: F.display, fontSize: 16, color: 'white', fontWeight: 400 }}>
+            <span className="nav-logo-text" style={{ fontFamily: F.display, fontSize: 16, color: 'white', fontWeight: 400 }}>
               CommandCenter
             </span>
           </Link>
@@ -162,10 +171,10 @@ export default function LandingPage() {
 
           {/* CTAs */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Link href="/login" className="btn-outline-white" style={{ padding: '8px 18px', fontSize: 13 }}>
+            <Link href="/login" className="btn-outline-white nav-cta-login" style={{ padding: '8px 18px', fontSize: 13 }}>
               Log in
             </Link>
-            <Link href="/login" className="btn-white" style={{ padding: '8px 18px', fontSize: 13 }}>
+            <Link href="/login" className="btn-white nav-cta-trial" style={{ padding: '8px 18px', fontSize: 13 }}>
               Start free trial
             </Link>
           </div>
