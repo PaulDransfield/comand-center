@@ -40,6 +40,10 @@ export default function CustomerDetail() {
   const [impersonate, setImpersonate] = useState<any>(null)
   const [copied, setCopied] = useState(false)
   const [timeline, setTimeline] = useState<any[]>([])
+  const [integRowAction, setIntegRowAction] = useState<{id: string; action: string} | null>(null)
+  const [editingKey, setEditingKey] = useState<any>(null)       // { id, provider, department, business_id }
+  const [addIntegModal, setAddIntegModal] = useState<any>(null) // { business_id, business_name }
+  const [discoveryResult, setDiscoveryResult] = useState<any>(null)
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
@@ -135,6 +139,57 @@ export default function CustomerDetail() {
         headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
         body: JSON.stringify({ integration_id: integId }),
       })
+      await load()
+    } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  async function deleteIntegration(integId: string, provider: string) {
+    if (!confirm(`Delete the ${provider} integration? This drops cached discoveries too. Cannot be undone.`)) return
+    setActionLoading('delete_' + integId)
+    try {
+      const r = await fetch(`/api/admin/customers/${orgId}/integrations/${integId}`, {
+        method: 'DELETE', headers: { 'x-admin-secret': secret },
+      })
+      if (!r.ok) throw new Error((await r.json()).error ?? 'Delete failed')
+      await load()
+    } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  async function runDiscovery(integId: string, provider: string) {
+    setActionLoading('discover_' + integId)
+    setDiscoveryResult(null)
+    try {
+      const r = await fetch(`/api/admin/customers/${orgId}/integrations/${integId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ action: 'run_discovery' }),
+      })
+      const json = await r.json()
+      setDiscoveryResult({ integId, provider, ok: r.ok, ...json })
+      await load()
+    } catch (e: any) { setError(e.message) }
+    setActionLoading(null)
+  }
+
+  async function saveKey(integId: string, newKey: string, provider: string, department?: string, businessId?: string) {
+    setActionLoading('save_' + integId)
+    try {
+      const r = await fetch('/api/admin/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({
+          org_id: orgId,
+          business_id: businessId,
+          provider,
+          api_key: newKey,
+          department,
+        }),
+      })
+      if (!r.ok) throw new Error((await r.json()).error ?? 'Save failed')
+      setEditingKey(null)
+      setAddIntegModal(null)
       await load()
     } catch (e: any) { setError(e.message) }
     setActionLoading(null)
@@ -284,9 +339,40 @@ export default function CustomerDetail() {
           INTEGRATIONS
       ═══════════════════════════════════════════════════════ */}
       <div style={S.card}>
-        <div style={S.sectionHead}>Integrations ({integrations.length})</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' as const, gap: 10 }}>
+          <div style={S.sectionHead}>Integrations ({integrations.length})</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+            {businesses.map((b: any) => (
+              <button key={b.id} onClick={() => setAddIntegModal({ business_id: b.id, business_name: b.name })} style={{ ...S.btnTiny, background: '#eef2ff', color: '#4f46e5', fontWeight: 700 }}>
+                + {b.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Discovery result banner */}
+        {discoveryResult && (
+          <div style={{
+            background: discoveryResult.ok ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${discoveryResult.ok ? '#bbf7d0' : '#fecaca'}`,
+            borderRadius: 8, padding: '10px 12px', marginBottom: 12, fontSize: 12,
+            color: discoveryResult.ok ? '#15803d' : '#dc2626',
+            display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start',
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, marginBottom: 3 }}>
+                {discoveryResult.ok ? '✓ ' : '✗ '} Discovery · {discoveryResult.provider}
+              </div>
+              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap' as const, wordBreak: 'break-word' as const }}>
+                {discoveryResult.response}
+              </div>
+            </div>
+            <button onClick={() => setDiscoveryResult(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#6b7280' }}>×</button>
+          </div>
+        )}
+
         {integrations.length === 0 ? (
-          <div style={S.empty}>No integrations connected yet.</div>
+          <div style={S.empty}>No integrations connected yet. Click a business name above to add one.</div>
         ) : (
           <table style={S.table}>
             <thead>
@@ -297,41 +383,77 @@ export default function CustomerDetail() {
                 <th style={S.th('left')}>Status</th>
                 <th style={S.th('right')}>Last sync</th>
                 <th style={S.th('left')}>Last error</th>
-                <th style={S.th('right')}></th>
+                <th style={S.th('right')}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {integrations.map((i: any) => {
                 const biz = businesses.find((b: any) => b.id === i.business_id)
                 const syncAgo = daysAgo(i.last_sync_at)
+                const isEditing = editingKey?.id === i.id
                 return (
-                  <tr key={i.id} style={{ borderTop: '1px solid #f3f4f6' }}>
-                    <td style={{ ...S.td, fontWeight: 600, color: '#111' }}>{i.provider}</td>
-                    <td style={S.td}>{i.department || '—'}</td>
-                    <td style={{ ...S.td, color: '#6b7280' }}>{biz?.name || '—'}</td>
-                    <td style={S.td}>
-                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
-                        background: i.status === 'connected' ? '#f0fdf4' : i.status === 'error' ? '#fef2f2' : '#f3f4f6',
-                        color:      i.status === 'connected' ? '#15803d' : i.status === 'error' ? '#dc2626' : '#6b7280' }}>
-                        {i.status}
-                      </span>
-                    </td>
-                    <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>
-                      {syncAgo === null ? 'never' : syncAgo === 0 ? 'today' : `${syncAgo}d ago`}
-                    </td>
-                    <td style={{ ...S.td, color: '#dc2626', fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={i.last_error || ''}>
-                      {i.last_error ? i.last_error.slice(0, 50) : '—'}
-                    </td>
-                    <td style={{ ...S.td, textAlign: 'right' }}>
-                      <button onClick={() => triggerSync(i.id)} disabled={actionLoading === 'sync_' + i.id} style={S.btnTiny}>
-                        {actionLoading === 'sync_' + i.id ? '…' : 'Sync'}
-                      </button>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={i.id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ ...S.td, fontWeight: 600, color: '#111' }}>{i.provider}</td>
+                      <td style={S.td}>{i.department || '—'}</td>
+                      <td style={{ ...S.td, color: '#6b7280' }}>{biz?.name || '—'}</td>
+                      <td style={S.td}>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 4,
+                          background: i.status === 'connected' ? '#f0fdf4' : i.status === 'error' ? '#fef2f2' : '#f3f4f6',
+                          color:      i.status === 'connected' ? '#15803d' : i.status === 'error' ? '#dc2626' : '#6b7280' }}>
+                          {i.status}
+                        </span>
+                      </td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>
+                        {syncAgo === null ? 'never' : syncAgo === 0 ? 'today' : `${syncAgo}d ago`}
+                      </td>
+                      <td style={{ ...S.td, color: '#dc2626', fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={i.last_error || ''}>
+                        {i.last_error ? i.last_error.slice(0, 50) : '—'}
+                      </td>
+                      <td style={{ ...S.td, textAlign: 'right', whiteSpace: 'nowrap' as const }}>
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          <button onClick={() => triggerSync(i.id)} disabled={actionLoading === 'sync_' + i.id} style={S.btnTiny} title="Trigger sync">
+                            {actionLoading === 'sync_' + i.id ? '…' : 'Sync'}
+                          </button>
+                          <button onClick={() => setEditingKey({ id: i.id, provider: i.provider, department: i.department, business_id: i.business_id })} style={S.btnTiny} title="Update API key">
+                            Edit
+                          </button>
+                          <button onClick={() => runDiscovery(i.id, i.provider)} disabled={actionLoading === 'discover_' + i.id} style={{ ...S.btnTiny, background: '#ede9fe', color: '#6d28d9', fontWeight: 700 }} title="Run Enhanced API Discovery">
+                            {actionLoading === 'discover_' + i.id ? '…' : '✦ Discover'}
+                          </button>
+                          <button onClick={() => deleteIntegration(i.id, i.provider)} disabled={actionLoading === 'delete_' + i.id} style={{ ...S.btnTiny, background: '#fef2f2', color: '#dc2626' }} title="Delete integration">
+                            {actionLoading === 'delete_' + i.id ? '…' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isEditing && (
+                      <tr key={i.id + '-edit'} style={{ background: '#fafbff' }}>
+                        <td colSpan={7} style={{ padding: '12px 14px' }}>
+                          <KeyEditor
+                            provider={i.provider}
+                            department={i.department}
+                            onSave={(newKey: string) => saveKey(i.id, newKey, i.provider, i.department, i.business_id)}
+                            onCancel={() => setEditingKey(null)}
+                            saving={actionLoading === 'save_' + i.id}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 )
               })}
             </tbody>
           </table>
+        )}
+
+        {/* Link out to detailed discovery results page */}
+        {integrations.length > 0 && (
+          <div style={{ marginTop: 12, textAlign: 'right' as const }}>
+            <a href="/admin/api-discoveries-enhanced" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>
+              View all discovery results →
+            </a>
+          </div>
         )}
       </div>
 
@@ -529,6 +651,19 @@ export default function CustomerDetail() {
       </div>
 
       {/* ═══════════════════════════════════════════════════════
+          ADD INTEGRATION MODAL
+      ═══════════════════════════════════════════════════════ */}
+      {addIntegModal && (
+        <AddIntegrationModal
+          businessId={addIntegModal.business_id}
+          businessName={addIntegModal.business_name}
+          onClose={() => setAddIntegModal(null)}
+          onSave={(provider: string, apiKey: string, department?: string) => saveKey('new', apiKey, provider, department, addIntegModal.business_id)}
+          saving={actionLoading === 'save_new'}
+        />
+      )}
+
+      {/* ═══════════════════════════════════════════════════════
           IMPERSONATE MODAL
       ═══════════════════════════════════════════════════════ */}
       {impersonate && (
@@ -602,6 +737,110 @@ export default function CustomerDetail() {
       )}
 
       </div>
+    </div>
+  )
+}
+
+// Modal for adding a new integration to a specific business.
+function AddIntegrationModal({ businessId, businessName, onClose, onSave, saving }: any) {
+  const [provider, setProvider] = useState('personalkollen')
+  const [department, setDepartment] = useState('')
+  const [apiKey, setApiKey] = useState('')
+
+  const isInzii = provider === 'inzii'
+  const canSave = apiKey.trim().length > 0 && (!isInzii || department.trim().length > 0)
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 440, padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#9ca3af' }}>Add integration</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginTop: 2 }}>{businessName}</div>
+        </div>
+
+        <div style={{ padding: '18px 24px' }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Provider</label>
+            <select value={provider} onChange={e => setProvider(e.target.value)} style={inputStyle}>
+              <option value="personalkollen">Personalkollen</option>
+              <option value="fortnox">Fortnox</option>
+              <option value="inzii">Inzii (Swess POS)</option>
+              <option value="ancon">Ancon</option>
+              <option value="caspeco">Caspeco</option>
+            </select>
+          </div>
+
+          {isInzii && (
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Department</label>
+              <input
+                list="inzii-depts"
+                value={department}
+                onChange={e => setDepartment(e.target.value)}
+                placeholder="e.g. Bella, Brus, Carne"
+                style={inputStyle}
+              />
+              <datalist id="inzii-depts">
+                {['Bella','Brus','Carne','Chilango','Ölbaren','Rosalis Select'].map(d => <option key={d} value={d} />)}
+              </datalist>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>Each Inzii dept gets its own integration row.</div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>API key</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder="Paste the API key"
+              style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => onSave(provider, apiKey.trim(), isInzii ? department.trim() : undefined)}
+              disabled={!canSave || saving}
+              style={{ flex: 1, padding: 11, background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}
+            >
+              {saving ? 'Saving…' : 'Save integration'}
+            </button>
+            <button onClick={onClose} style={{ padding: '11px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const labelStyle: React.CSSProperties = { display: 'block', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: '#374151', marginBottom: 5 }
+const inputStyle: React.CSSProperties = { width: '100%', padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' }
+
+// Inline key-replacement row shown below the integration when "Edit" is clicked.
+function KeyEditor({ provider, department, onSave, onCancel, saving }: any) {
+  const [key, setKey] = useState('')
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: '#6b7280' }}>
+        New API key for {provider}{department ? ` · ${department}` : ''}:
+      </span>
+      <input
+        type="password"
+        value={key}
+        onChange={e => setKey(e.target.value)}
+        placeholder="Paste new key"
+        style={{ flex: 1, minWidth: 220, padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+      />
+      <button onClick={() => onSave(key)} disabled={!key.trim() || saving}
+        style={{ padding: '7px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
+        {saving ? '…' : 'Save'}
+      </button>
+      <button onClick={onCancel} style={{ padding: '7px 12px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
+        Cancel
+      </button>
     </div>
   )
 }

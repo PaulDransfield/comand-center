@@ -26,10 +26,13 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = createAdminClient()
+  // Optional filter — if integration_id is provided, run discovery for just that one
+  // integration (used by the customer detail "Run discovery" button). Otherwise fall
+  // back to the default behaviour (up to 3 integrations that haven't been analysed recently).
+  const integrationId = req.nextUrl.searchParams.get('integration_id')
 
   try {
-    // Get all active integrations that need enhanced discovery
-    const { data: integrations, error: integrationsError } = await supabase
+    let query = supabase
       .from('integrations')
       .select(`
         id,
@@ -43,8 +46,16 @@ export async function POST(req: NextRequest) {
         api_endpoints_cache
       `)
       .eq('status', 'connected')
-      .or('last_enhanced_discovery_at.is.null,last_enhanced_discovery_at.lt.now() - interval \'30 days\'')
-      .limit(3)
+
+    if (integrationId) {
+      query = query.eq('id', integrationId)
+    } else {
+      query = query
+        .or('last_enhanced_discovery_at.is.null,last_enhanced_discovery_at.lt.now() - interval \'30 days\'')
+        .limit(3)
+    }
+
+    const { data: integrations, error: integrationsError } = await query
 
     // Surface DB errors clearly instead of silently returning empty
     if (integrationsError) {
