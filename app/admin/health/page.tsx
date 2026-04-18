@@ -15,6 +15,7 @@ export default function HealthDashboard() {
   const router = useRouter()
   const [data, setData]       = useState<any>(null)
   const [syncLogs, setSyncLogs] = useState<any[]>([])
+  const [aiGlobal, setAiGlobal] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
 
@@ -23,10 +24,11 @@ export default function HealthDashboard() {
     if (!secret) { router.push('/admin/login?next=/admin/health'); return }
     const h = { 'x-admin-secret': secret }
     Promise.all([
-      fetch('/api/admin/health',   { headers: h }).then(r => r.ok ? r.json() : Promise.reject(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)),
-      fetch('/api/admin/sync-log', { headers: h }).then(r => r.ok ? r.json() : { logs: [] }),
+      fetch('/api/admin/health',    { headers: h }).then(r => r.ok ? r.json() : Promise.reject(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)),
+      fetch('/api/admin/sync-log',  { headers: h }).then(r => r.ok ? r.json() : { logs: [] }),
+      fetch('/api/admin/ai-usage',  { headers: h }).then(r => r.ok ? r.json() : null),
     ])
-      .then(([h, s]) => { setData(h); setSyncLogs(s.logs ?? []) })
+      .then(([h, s, ai]) => { setData(h); setSyncLogs(s.logs ?? []); setAiGlobal(ai) })
       .catch(e => setError(typeof e === 'string' ? e : e.message))
       .finally(() => setLoading(false))
   }, [router])
@@ -148,6 +150,107 @@ export default function HealthDashboard() {
             )}
           </div>
         </div>
+
+        {/* Global AI spend — detailed cross-customer view */}
+        {aiGlobal && (
+          <div style={{ ...S.card, marginBottom: 14 }}>
+            <div style={S.head}>AI spend — cross-customer (detailed)</div>
+
+            {/* Totals strip */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+              <div style={{ padding: '10px 12px', background: '#fafbff', borderRadius: 8 }}>
+                <div style={S.statLabel}>Today</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>{(aiGlobal.today?.cost_sek ?? 0).toFixed(2)} kr</div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>{aiGlobal.today?.queries ?? 0} queries · ${(aiGlobal.today?.cost_usd ?? 0).toFixed(3)}</div>
+              </div>
+              <div style={{ padding: '10px 12px', background: '#fafbff', borderRadius: 8 }}>
+                <div style={S.statLabel}>7 days</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>{(aiGlobal.week?.cost_sek ?? 0).toFixed(2)} kr</div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>{aiGlobal.week?.queries ?? 0} queries</div>
+              </div>
+              <div style={{ padding: '10px 12px', background: '#fafbff', borderRadius: 8 }}>
+                <div style={S.statLabel}>Month</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#111' }}>{(aiGlobal.month?.cost_sek ?? 0).toFixed(2)} kr</div>
+                <div style={{ fontSize: 11, color: '#6b7280' }}>{aiGlobal.month?.queries ?? 0} queries · ${(aiGlobal.month?.cost_usd ?? 0).toFixed(2)}</div>
+              </div>
+              <div style={{ padding: '10px 12px', background: '#f0fdf4', borderRadius: 8 }}>
+                <div style={{ ...S.statLabel, color: '#15803d' }}>Booster revenue (active)</div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: '#15803d' }}>{aiGlobal.booster_revenue_sek ?? 0} kr</div>
+                <div style={{ fontSize: 11, color: '#15803d' }}>{(aiGlobal.active_boosters ?? []).length} active</div>
+              </div>
+            </div>
+
+            {/* Global kill-switch status — today's spend vs $50 cap */}
+            {(() => {
+              const cap = 50
+              const spent = aiGlobal.today?.cost_usd ?? 0
+              const pct = Math.min(100, Math.round((spent / cap) * 100))
+              const color = pct >= 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#6366f1'
+              return (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
+                    <span>Global kill-switch — 24h rolling spend</span>
+                    <span style={{ color, fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>
+                      ${spent.toFixed(3)} / ${cap} ({pct}%)
+                    </span>
+                  </div>
+                  <div style={{ width: '100%', height: 6, background: '#f3f4f6', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: color, transition: 'width .3s' }} />
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Top spenders + model mix side-by-side */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 14 }}>
+              <div>
+                <div style={S.statLabel}>Top spenders (this month)</div>
+                {(aiGlobal.top_spenders ?? []).length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>No AI usage yet.</div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: '#f9fafb' }}>
+                        <th style={th('left')}>Org</th>
+                        <th style={th('left')}>Plan</th>
+                        <th style={th('right')}>Queries</th>
+                        <th style={th('right')}>Cost (kr)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {aiGlobal.top_spenders.slice(0, 10).map((o: any) => (
+                        <tr key={o.org_id} onClick={() => router.push(`/admin/customers/${o.org_id}`)} style={{ borderTop: '1px solid #f3f4f6', cursor: 'pointer' }}>
+                          <td style={{ ...S.td, color: '#111', fontWeight: 500 }}>{o.org_name}</td>
+                          <td style={{ ...S.td, color: '#6b7280', textTransform: 'uppercase' as const, fontSize: 10 }}>{o.plan}</td>
+                          <td style={{ ...S.td, textAlign: 'right', color: '#374151' }}>{o.queries}</td>
+                          <td style={{ ...S.td, textAlign: 'right', color: '#111', fontFamily: 'ui-monospace, monospace' }}>{o.cost_sek.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div>
+                <div style={S.statLabel}>Model mix</div>
+                {(aiGlobal.model_mix ?? []).length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>No calls yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                    {aiGlobal.model_mix.slice(0, 6).map((m: any) => {
+                      const [model, tier] = m.key.split('|')
+                      return (
+                        <div key={m.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fafbff', borderRadius: 6, fontSize: 11 }}>
+                          <span style={{ color: '#374151', fontFamily: 'ui-monospace, monospace' }}>{model}{tier !== '-' ? ` · ${tier}` : ''}</span>
+                          <span style={{ color: '#6b7280', fontWeight: 600 }}>{m.count}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Recent sync runs */}
         <div style={{ ...S.card, marginBottom: 14 }}>

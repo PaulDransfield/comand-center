@@ -351,14 +351,14 @@ Before declaring done:
 ## 12. Definition of done
 
 - Every AI call produces an `ai_request_log` row with accurate token + SEK cost ✅ (Tranche 1)
-- No customer can exceed their plan cap or monthly cost ceiling ☐
-- No single day across all customers can cost us more than `MAX_DAILY_GLOBAL_USD` ☐
-- Customers see their own usage + a warning before they hit the cap ☐
-- Customers can self-serve purchase a Booster via Stripe ☐
-- Admin can see per-customer + global usage in one click, with SEK cost ☐
-- Customer can opt out of question storage ☐
-- Old logs auto-delete after 365 days ☐
-- Daily ops email summarises usage + flags anomalies ☐
+- No customer can exceed their plan cap or monthly cost ceiling ✅ (Tranche 2)
+- No single day across all customers can cost us more than `MAX_DAILY_GLOBAL_USD` ✅ (Tranche 2)
+- Customers see their own usage + a warning before they hit the cap ✅ (Tranche 2)
+- Customers can self-serve purchase a Booster via Stripe ☐ (blocked on company formation; manual admin activation live)
+- Admin can see per-customer + global usage in one click, with SEK cost ✅ (Tranche 3)
+- Customer can opt out of question storage ☐ (Tranche 4)
+- Old logs auto-delete after 365 days ☐ (Tranche 4)
+- Daily ops email summarises usage + flags anomalies ☐ (Tranche 4)
 - Tests 1–6 above pass end-to-end ☐
 
 ---

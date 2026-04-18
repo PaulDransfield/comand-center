@@ -49,6 +49,10 @@ export default function CustomerDetail() {
   const [deleteModal, setDeleteModal] = useState<boolean>(false)
   const [deleteConfirm, setDeleteConfirm] = useState('')
   const [deleteResult, setDeleteResult] = useState<any>(null)
+  const [aiUsage, setAiUsage] = useState<any>(null)
+  const [boosterModal, setBoosterModal] = useState(false)
+  const [boosterForm, setBoosterForm] = useState({ extra: 100, amount: 299, days: 30 })
+  const [boosterResult, setBoosterResult] = useState<any>(null)
 
   // /admin stores the password in sessionStorage — same value as ADMIN_SECRET env var.
   const secret = typeof window !== 'undefined' ? (sessionStorage.getItem('admin_auth') ?? '') : ''
@@ -61,17 +65,39 @@ export default function CustomerDetail() {
   async function load() {
     setLoading(true); setError('')
     try {
-      const [r1, r2, r3] = await Promise.all([
+      const [r1, r2, r3, r4] = await Promise.all([
         fetch(`/api/admin/customers/${orgId}`, { headers: { 'x-admin-secret': secret } }),
         fetch(`/api/admin/customers/${orgId}/agents`, { headers: { 'x-admin-secret': secret } }),
         fetch(`/api/admin/customers/${orgId}/timeline`, { headers: { 'x-admin-secret': secret } }),
+        fetch(`/api/admin/ai-usage?org_id=${orgId}`, { headers: { 'x-admin-secret': secret } }),
       ])
       if (!r1.ok) throw new Error(r1.status === 401 ? 'Unauthorized' : `HTTP ${r1.status}`)
       setData(await r1.json())
       if (r2.ok) setAgents((await r2.json()).agents ?? [])
       if (r3.ok) setTimeline((await r3.json()).events ?? [])
+      if (r4.ok) setAiUsage(await r4.json())
     } catch (e: any) { setError(e.message) }
     setLoading(false)
+  }
+
+  async function addBooster() {
+    setActionLoading('add_booster')
+    setBoosterResult(null)
+    try {
+      const r = await fetch(`/api/admin/ai-booster`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+        body: JSON.stringify({ org_id: orgId, ...boosterForm }),
+      })
+      const json = await r.json()
+      if (!r.ok) throw new Error(json.error || 'Failed to add Booster')
+      setBoosterResult({ ok: true, ...json })
+      await load()
+      setTimeout(() => setBoosterModal(false), 2000)
+    } catch (e: any) {
+      setBoosterResult({ ok: false, error: e.message })
+    }
+    setActionLoading(null)
   }
 
   async function toggleAgent(agent: string, enabled: boolean) {
@@ -735,6 +761,151 @@ export default function CustomerDetail() {
           </div>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════
+          AI SPEND — cost visibility + Booster management
+      ═══════════════════════════════════════════════════════ */}
+      {aiUsage && (
+        <div style={S.card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' as const, gap: 8 }}>
+            <div style={S.sectionHead}>AI Spend</div>
+            <button onClick={() => { setBoosterModal(true); setBoosterResult(null) }} style={{ ...S.btnTiny, background: '#ede9fe', color: '#6d28d9', fontWeight: 700 }}>
+              + Add Booster (manual)
+            </button>
+          </div>
+
+          {/* Today / Week / Month */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 14 }}>
+            {[
+              { label: 'Today',    s: aiUsage.today },
+              { label: '7 days',   s: aiUsage.week },
+              { label: 'Month',    s: aiUsage.month },
+            ].map(cell => (
+              <div key={cell.label} style={{ padding: '10px 12px', background: '#fafbff', borderRadius: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af' }}>{cell.label}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginTop: 4 }}>
+                  {cell.s?.queries ?? 0} queries
+                </div>
+                <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                  {(cell.s?.cost_sek ?? 0).toFixed(2)} kr · ${(cell.s?.cost_usd ?? 0).toFixed(4)} USD
+                </div>
+                <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, fontFamily: 'ui-monospace, monospace' }}>
+                  {((cell.s?.input_tok ?? 0) + (cell.s?.output_tok ?? 0)).toLocaleString('en-GB')} tok
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Active Boosters */}
+          {(aiUsage.boosters ?? []).length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af', marginBottom: 6 }}>Active Boosters</div>
+              {aiUsage.boosters.map((b: any) => (
+                <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, marginBottom: 4 }}>
+                  <span>
+                    <strong style={{ color: '#15803d' }}>+{b.extra_queries_per_day}/day</strong> — {b.period_start} → {b.period_end}
+                  </span>
+                  <span style={{ color: '#6b7280', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
+                    {b.amount_sek} kr · {b.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Per-user breakdown (month) */}
+          {(aiUsage.by_user ?? []).length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af', marginBottom: 6 }}>Month usage by user</div>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    <th style={S.th('left')}>User</th>
+                    <th style={S.th('right')}>Queries</th>
+                    <th style={S.th('right')}>Cost (kr)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {aiUsage.by_user.map((u: any) => (
+                    <tr key={u.user_id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ ...S.td, color: '#111' }}>{u.email}</td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#374151' }}>{u.queries}</td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#374151', fontFamily: 'ui-monospace, monospace' }}>{u.cost_sek.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Recent questions — privacy-clipped to 100 chars */}
+          {(aiUsage.recent ?? []).length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af', marginBottom: 6 }}>Last 20 queries</div>
+              <div style={{ maxHeight: 320, overflowY: 'auto' as const, border: '1px solid #f3f4f6', borderRadius: 6 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+                  <tbody>
+                    {aiUsage.recent.map((r: any, i: number) => (
+                      <tr key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid #f3f4f6' }}>
+                        <td style={{ padding: '6px 10px', color: '#9ca3af', whiteSpace: 'nowrap' as const, fontSize: 10, fontFamily: 'ui-monospace, monospace' }}>{fmt(r.created_at)}</td>
+                        <td style={{ padding: '6px 10px', color: '#6b7280', fontSize: 10 }}>{r.request_type}{r.tier ? ` · ${r.tier}` : ''}</td>
+                        <td style={{ padding: '6px 10px', color: '#111', maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }} title={r.question_preview}>
+                          {r.question_preview || <em style={{ color: '#9ca3af' }}>(not logged)</em>}
+                        </td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' as const, color: '#374151', fontFamily: 'ui-monospace, monospace', fontSize: 10, whiteSpace: 'nowrap' as const }}>
+                          {(r.cost_sek ?? 0).toFixed(3)} kr
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Add-Booster modal */}
+      {boosterModal && (
+        <div onClick={() => !actionLoading && setBoosterModal(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 440, padding: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 6 }}>Add AI Booster (manual)</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 18, lineHeight: 1.5 }}>
+              Grants this customer extra daily AI queries for the specified period. Use when Stripe isn't available yet — activates immediately and counts toward their effective daily cap. Logged to <code style={{ fontSize: 11 }}>ai_booster_purchases</code>.
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+              <label style={{ fontSize: 11, color: '#374151' }}>
+                Extra queries/day
+                <input type="number" value={boosterForm.extra} onChange={e => setBoosterForm({ ...boosterForm, extra: parseInt(e.target.value) || 0 })} style={{ width: '100%', padding: '8px 10px', marginTop: 3, border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 13, boxSizing: 'border-box' as const }} />
+              </label>
+              <label style={{ fontSize: 11, color: '#374151' }}>
+                Amount (SEK)
+                <input type="number" value={boosterForm.amount} onChange={e => setBoosterForm({ ...boosterForm, amount: parseInt(e.target.value) || 0 })} style={{ width: '100%', padding: '8px 10px', marginTop: 3, border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 13, boxSizing: 'border-box' as const }} />
+              </label>
+              <label style={{ fontSize: 11, color: '#374151', gridColumn: '1 / -1' }}>
+                Duration (days)
+                <input type="number" value={boosterForm.days} onChange={e => setBoosterForm({ ...boosterForm, days: parseInt(e.target.value) || 30 })} style={{ width: '100%', padding: '8px 10px', marginTop: 3, border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 13, boxSizing: 'border-box' as const }} />
+              </label>
+            </div>
+
+            {boosterResult && (
+              <div style={{ marginBottom: 14, padding: '10px 12px', background: boosterResult.ok ? '#f0fdf4' : '#fef2f2', border: `1px solid ${boosterResult.ok ? '#bbf7d0' : '#fecaca'}`, borderRadius: 8, fontSize: 12, color: boosterResult.ok ? '#15803d' : '#dc2626' }}>
+                {boosterResult.ok ? '✓ Booster added and active' : `✗ ${boosterResult.error}`}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setBoosterModal(false)} disabled={actionLoading === 'add_booster'} style={{ padding: '8px 14px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={addBooster} disabled={actionLoading === 'add_booster' || !boosterForm.extra || !boosterForm.days} style={{ padding: '8px 14px', background: '#6d28d9', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {actionLoading === 'add_booster' ? 'Adding…' : 'Add Booster'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══════════════════════════════════════════════════════
           DANGER ZONE — GDPR hard delete
