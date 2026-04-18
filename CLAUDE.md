@@ -250,6 +250,49 @@ curl -X POST "http://localhost:3000/api/cron/anomaly-check" -H "Authorization: B
 
 ---
 
+## 10b. Supabase query footguns — MUST avoid
+
+These two patterns have caused production outages. Every new query must follow them.
+
+### Never chain `.gte().lte()` on a `date` column
+
+Supabase/PostgREST silently drops top-boundary rows when both `.gte()` and `.lte()` are chained on a column of type `date`. No error, no warning, just missing rows. An `.eq()` on the same date works fine.
+
+**Bad:**
+```ts
+db.from('revenue_logs').gte('revenue_date', from).lte('revenue_date', to)
+```
+
+**Good:**
+```ts
+const { data } = await db.from('revenue_logs').gte('revenue_date', from)
+const rows = (data ?? []).filter(r => r.revenue_date <= to)
+```
+
+Applies to `revenue_date`, `shift_date`, `date`, `period_date` and any other `date`-type column. It does NOT (currently) bite on `timestamptz` columns like `created_at`. See `FIXES.md §0` for the 2026-04-18 incident.
+
+### Always set `cache: 'no-store'` on live-data `fetch()` calls
+
+Client-side `fetch()` responses are cached by the browser. `Ctrl+F5` reloads the HTML but does not reliably evict the fetch cache. Any API call that must reflect current DB state needs:
+
+```ts
+fetch('/api/metrics/daily?…', { cache: 'no-store' })
+```
+
+And the API route must also set the `Cache-Control` header:
+
+```ts
+return NextResponse.json(data, {
+  headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+})
+```
+
+Both layers required — belt and braces against CDN / reverse-proxy / future browser quirks. See `FIXES.md §0a` for the 2026-04-18 dashboard-staleness incident.
+
+Applies to: `/api/metrics/*`, `/api/tracker`, `/api/forecast`, `/api/budgets`, `/api/departments`, `/api/staff`, `/api/revenue-detail`, `/api/scheduling*`, and any future live-data endpoint.
+
+---
+
 ## 11. AI Model Routing — always follow this
 
 Never hardcode model strings. Always import from `lib/ai/models.ts`.
