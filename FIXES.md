@@ -6,6 +6,34 @@ Before trying anything new, check here first.
 
 ---
 
+## 0a. Client-side `fetch()` keeps serving stale responses after data changes
+
+**Symptom:** DB is updated. Direct API call shows fresh data. But the dashboard still shows old numbers even after `Ctrl+F5`. Network tab response has an older `updated_at` than what's actually in the DB.
+
+**Root cause:** The browser's HTTP cache for `fetch()` calls survives hard refresh in many browsers (it only reliably reloads the HTML + top-level CSS/JS). API responses without explicit `Cache-Control: no-store` can sit in the memory cache indefinitely.
+
+**Fix — two sides, belt and braces:**
+
+1. Client-side — add `cache: 'no-store'` to the `fetch()` options on pages that need fresh data:
+   ```ts
+   fetch('/api/metrics/daily?…', { cache: 'no-store' })
+   ```
+
+2. Server-side — have the API route set the response header:
+   ```ts
+   return NextResponse.json(data, {
+     headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+   })
+   ```
+
+Either works in isolation; both together is defensive against CDNs, reverse proxies, and future browser quirks.
+
+**Files patched 2026-04-18:** `app/dashboard/page.tsx`, `app/api/metrics/daily/route.ts`. Other pages that fetch metrics endpoints (tracker, revenue, staff, departments) should get the same treatment next time they're touched.
+
+**Diagnostic:** open DevTools → Network → click the API call → Response → check if `updated_at` matches what's actually in the DB. If it lags, it's cache. Incognito window is the fastest confirm.
+
+---
+
 ## 0. Supabase `.gte().lte()` chain silently drops boundary rows
 
 **Symptom:** Dashboard shows data stale by one day. `sync_log` reports `success`. Raw tables (`revenue_logs`, `staff_logs`) have the latest date. `daily_metrics` does NOT. Aggregator log says `aggregate OK` with plausible row counts but the most-recent date isn't in the summary.

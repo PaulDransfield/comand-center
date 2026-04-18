@@ -72,5 +72,11 @@ export async function GET(req: NextRequest) {
     worst_day: worstDay ? { date: worstDay.date, pct: worstDay.labour_pct, staff_cost: worstDay.staff_cost, revenue: worstDay.revenue } : null,
   }
 
-  return NextResponse.json({ rows, summary })
+  // Cache-Control: no-store prevents browsers + Vercel edge from serving a stale
+  // snapshot after aggregation re-runs. Without this, a dashboard that opened
+  // before a fresh sync will show pre-sync numbers indefinitely (hard refresh
+  // reloads the HTML but doesn't always evict fetched JSON).
+  return NextResponse.json({ rows, summary }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }
