@@ -1,5 +1,5 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-15 | Session 6
+> Last updated: 2026-04-18 | Session 10 (M009–M012 applied)
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
@@ -382,6 +382,55 @@ ALTER TABLE onboarding_progress ADD COLUMN IF NOT EXISTS metadata JSONB;
 ```
 
 **Why**: `/api/onboarding/setup-request` was writing to `step` and `metadata` columns that didn't exist, so every new customer's setup-form data (restaurant name, city, staff system, accounting, POS) was silently dropped. Admin panel's "Setup requests" section was always empty. After this migration, signup metadata persists and admin renders correctly.
+
+---
+
+## M009 — 2026-04-18 — Session 10 — Deletion requests audit table
+**Run**: 2026-04-18
+**Status**: ✅ **SUCCESS**
+**File**: `sql/M009-deletion-requests.sql`
+
+Creates `public.deletion_requests` — tamper-evident audit of every GDPR Art. 17 hard delete. Written before purge, updated after. Retained indefinitely as compliance evidence. RLS enabled, no policies (service-role only).
+
+---
+
+## M010 — 2026-04-18 — Session 10 — Admin audit log
+**Run**: 2026-04-18
+**Status**: ✅ **SUCCESS**
+**File**: `sql/M010-admin-audit-log.sql`
+
+Creates `public.admin_audit_log` — every mutation by an admin gets a row (impersonate, key edits, integration deletes, hard deletes, trial extensions, agent toggles, etc.). Three indexes: per-org, per-action, per-date. Retained 2+ years for GDPR Art. 32 evidence. Paired with new `lib/admin/audit.ts` helper and `/admin/audit` viewer page.
+
+---
+
+## M011 — 2026-04-18 — Session 10 — Unique constraints on upsert targets
+**Run**: 2026-04-18
+**Status**: ✅ **SUCCESS** — all 7 partial unique indexes verified via `pg_indexes`
+**File**: `sql/M011-unique-constraints.sql`
+
+Closes a correctness-bug class: `lib/sync/engine.ts` upserts rely on `onConflict` keys that had no matching unique constraint, meaning duplicates silently accumulated. Each block dedupes (keeps newest by `created_at` DESC / `id` DESC) then adds a partial unique index (`WHERE business_id IS NOT NULL` pattern handles the nullable-column issue where Postgres treats NULLs as distinct).
+
+Indexes created:
+- `revenue_logs_org_biz_provider_date_unique` on (org_id, business_id, provider, revenue_date)
+- `covers_business_date_unique` on (business_id, date)
+- `staff_logs_pk_log_url_unique` on (pk_log_url)
+- `integrations_org_biz_provider_dept_unique` on (org_id, business_id, provider, COALESCE(department, ''))
+- `integrations_org_null_biz_provider_unique` on (org_id, provider, COALESCE(department, '')) WHERE business_id IS NULL
+- `forecasts_org_biz_period_unique` on (org_id, business_id, period_year, period_month)
+- `tracker_data_biz_period_unique` on (business_id, period_year, period_month)
+
+Note for future migrations: `revenue_logs` and `forecasts` do not have `updated_at`; `integrations` does not have `connected_at`. Initial M011 file referenced those columns and had to be patched to use `created_at DESC NULLS LAST, id DESC` everywhere.
+
+---
+
+## M012 — 2026-04-18 — Session 10 — Orphan-table authoritative schema
+**Run**: 2026-04-18
+**Status**: ✅ **SUCCESS** (after sync_log schema drift patch)
+**File**: `sql/M012-orphan-tables.sql`
+
+Documents every table the code reads/writes that never had a formal migration. Each `CREATE TABLE IF NOT EXISTS` is a no-op if the table already exists — safe to run repeatedly. Tables codified: `billing_events`, `invoices`, `feature_flags`, `support_notes`, `support_tickets`, `supplier_mappings`, `pk_sale_forecasts`, `financial_logs`, `api_credentials`, `api_probe_results`, `integration_health_checks`, `pos_connections`, `sync_log`, `customer_health_scores`, `ai_usage`, `ai_request_log`, `export_schedules`, `notebook_documents`.
+
+**Patch applied during run**: `sync_log` existed in prod without the `integration_id` column, so the `CREATE INDEX … ON sync_log (integration_id, …)` statement failed with `42703`. Fix: reshaped sync_log section to `CREATE TABLE IF NOT EXISTS` with only the original five columns, then `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for the seven drifted columns (`business_id`, `integration_id`, `records_synced`, `date_from`, `date_to`, `error_msg`, `duration_ms`). Re-run after patch succeeded.
 
 ---
 
