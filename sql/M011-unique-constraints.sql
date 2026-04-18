@@ -27,7 +27,7 @@ WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY org_id, business_id, provider, revenue_date
-           ORDER BY COALESCE(updated_at, created_at, '1970-01-01'::timestamptz) DESC, id DESC
+           ORDER BY created_at DESC NULLS LAST, id DESC
          ) AS rn
     FROM public.revenue_logs
    WHERE business_id IS NOT NULL
@@ -50,7 +50,7 @@ WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY business_id, date
-           ORDER BY COALESCE(updated_at, created_at, '1970-01-01'::timestamptz) DESC, id DESC
+           ORDER BY created_at DESC NULLS LAST, id DESC
          ) AS rn
     FROM public.covers
    WHERE business_id IS NOT NULL
@@ -70,7 +70,7 @@ WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY pk_log_url
-           ORDER BY COALESCE(updated_at, created_at, '1970-01-01'::timestamptz) DESC, id DESC
+           ORDER BY created_at DESC NULLS LAST, id DESC
          ) AS rn
     FROM public.staff_logs
    WHERE pk_log_url IS NOT NULL
@@ -93,7 +93,7 @@ WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY org_id, business_id, provider, COALESCE(department, '')
-           ORDER BY COALESCE(updated_at, connected_at, created_at, '1970-01-01'::timestamptz) DESC, id DESC
+           ORDER BY COALESCE(updated_at, connected_at, created_at) DESC NULLS LAST, id DESC
          ) AS rn
     FROM public.integrations
 )
@@ -115,7 +115,7 @@ WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY org_id, business_id, period_year, period_month
-           ORDER BY COALESCE(updated_at, created_at, '1970-01-01'::timestamptz) DESC, id DESC
+           ORDER BY created_at DESC NULLS LAST, id DESC
          ) AS rn
     FROM public.forecasts
    WHERE business_id IS NOT NULL
@@ -132,7 +132,7 @@ WITH ranked AS (
   SELECT id,
          ROW_NUMBER() OVER (
            PARTITION BY business_id, period_year, period_month
-           ORDER BY COALESCE(updated_at, created_at, '1970-01-01'::timestamptz) DESC, id DESC
+           ORDER BY created_at DESC NULLS LAST, id DESC
          ) AS rn
     FROM public.tracker_data
    WHERE business_id IS NOT NULL
