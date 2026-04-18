@@ -63,6 +63,21 @@ export async function recordAdminAction(db: SupabaseClient, input: AuditInput): 
     })
   } catch (e: any) {
     // Audit write failures must never break the primary action — but must be visible in logs.
+    // Why: a silently-missing audit row is a compliance incident (GDPR Art. 30,
+    // Bokföringslagen traceability) — Sentry must surface this immediately.
     console.error('[admin_audit] write failed:', e?.message || e)
+    try {
+      const { captureError } = await import('@/lib/monitoring/sentry')
+      captureError(e, {
+        route:          'lib/admin/audit',
+        phase:          'recordAdminAction',
+        action:         input.action,
+        actor:          input.actor ?? 'admin',
+        org_id:         input.orgId,
+        integration_id: input.integrationId,
+        target_type:    input.targetType,
+        target_id:      input.targetId,
+      })
+    } catch { /* monitoring must never break the request */ }
   }
 }

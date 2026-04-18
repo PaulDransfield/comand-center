@@ -275,6 +275,17 @@ export async function logAiRequest(db: Db, params: {
     })
   } catch (e: any) {
     console.error('[ai] log insert failed:', e?.message || e)
+    try {
+      const { captureError } = await import('@/lib/monitoring/sentry')
+      captureError(e, {
+        route:        'lib/ai/usage',
+        phase:        'ai_request_log insert',
+        org_id:       params.org_id,
+        user_id:      params.user_id,
+        request_type: params.request_type,
+        model:        params.model,
+      })
+    } catch { /* monitoring must never break the request */ }
   }
 
   // Per-user daily aggregate (optional — only if user_id supplied)
@@ -308,6 +319,15 @@ export async function logAiRequest(db: Db, params: {
       }
     } catch (e: any) {
       console.error('[ai] per-user usage update failed:', e?.message || e)
+      try {
+        const { captureError } = await import('@/lib/monitoring/sentry')
+        captureError(e, {
+          route:   'lib/ai/usage',
+          phase:   'ai_usage_daily_by_user update',
+          org_id:  params.org_id,
+          user_id: params.user_id,
+        })
+      } catch { /* monitoring must never break the request */ }
     }
   }
 }
@@ -342,6 +362,15 @@ export async function incrementAiUsage(db: Db, orgId: string): Promise<void> {
 
   if (selErr) {
     console.error('[ai] ai_usage_daily select failed', { orgId, date: d, error: selErr.message })
+    try {
+      const { captureError } = await import('@/lib/monitoring/sentry')
+      captureError(selErr, {
+        route:  'lib/ai/usage',
+        phase:  'ai_usage_daily select',
+        org_id: orgId,
+        date:   d,
+      })
+    } catch {}
     return
   }
 
@@ -349,9 +378,31 @@ export async function incrementAiUsage(db: Db, orgId: string): Promise<void> {
     const { error } = await db.from('ai_usage_daily')
       .update({ query_count: (existing.query_count ?? 0) + 1 })
       .eq('id', existing.id)
-    if (error) console.error('[ai] ai_usage_daily update failed', { orgId, date: d, error: error.message })
+    if (error) {
+      console.error('[ai] ai_usage_daily update failed', { orgId, date: d, error: error.message })
+      try {
+        const { captureError } = await import('@/lib/monitoring/sentry')
+        captureError(error, {
+          route:  'lib/ai/usage',
+          phase:  'ai_usage_daily update',
+          org_id: orgId,
+          date:   d,
+        })
+      } catch {}
+    }
   } else {
     const { error } = await db.from('ai_usage_daily').insert({ org_id: orgId, date: d, query_count: 1 })
-    if (error) console.error('[ai] ai_usage_daily insert failed', { orgId, date: d, error: error.message })
+    if (error) {
+      console.error('[ai] ai_usage_daily insert failed', { orgId, date: d, error: error.message })
+      try {
+        const { captureError } = await import('@/lib/monitoring/sentry')
+        captureError(error, {
+          route:  'lib/ai/usage',
+          phase:  'ai_usage_daily insert',
+          org_id: orgId,
+          date:   d,
+        })
+      } catch {}
+    }
   }
 }

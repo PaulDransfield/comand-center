@@ -11,7 +11,7 @@ export default function PrivacyPage() {
 
       <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Privacy Policy</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40, fontFamily: 'system-ui' }}>
-        Version 1.1 · Last updated 17 April 2026 · CommandCenter (Dransfield Invest AB)
+        Version 1.2 · Last updated 19 April 2026 · CommandCenter (Dransfield Invest AB)
       </p>
 
       {[
@@ -92,6 +92,12 @@ Role: Subscription billing and payment processing
 Data: Billing information only — payment card details never stored by us
 Location: EU with EU data processing addendum
 Privacy: stripe.com/privacy
+
+ERROR MONITORING — Sentry (Functional Software, Inc.)
+Role: Production error and crash reporting — stack traces, breadcrumbs, session replay on error only.
+Data: Stack traces, URL of the failing page, user id and organisation id (used for error-by-customer filtering). Sensitive strings (auth cookies, bearer tokens, API keys) are scrubbed by a beforeSend hook before transmission. Customer business data and AI question text never leave our server via Sentry.
+Location: EU region (ingest.de.sentry.io). Standard Contractual Clauses are in place for any incidental US transfer.
+Privacy: sentry.io/privacy
 
 INTEGRATION PARTNERS — data synced on your explicit instruction only
 Personalkollen (Sweden): Staff scheduling and hours data

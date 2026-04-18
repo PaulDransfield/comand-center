@@ -1016,6 +1016,21 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
         message:       aggErr.message,
         stack:         aggErr.stack,
       })
+      // Surface to Sentry so we see aggregation failures in the issues stream.
+      // Dashboard goes stale when this fires — high priority to investigate.
+      try {
+        const { captureError } = await import('@/lib/monitoring/sentry')
+        captureError(aggErr, {
+          route:          'lib/sync/engine',
+          phase:          'aggregateMetrics',
+          org_id:         orgId,
+          business_id:    integ.business_id,
+          provider,
+          integration_id: integ.id,
+          from, to,
+        })
+      } catch { /* monitoring must never break sync */ }
+
       // Mark the sync as partially successful — raw data landed but summaries didn't.
       // The dashboard will show whatever daily_metrics currently has; we'll retry
       // aggregation on the next master-sync.

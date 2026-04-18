@@ -115,12 +115,21 @@ export async function getRequestAuth(
     const org = (m as any).organisations
     if (org && org.is_active === false) return null
 
-    return {
+    const result = {
       userId: user.id,
       orgId:  (m as any).org_id,
       role:   (m as any).role || 'viewer',
       plan:   org?.plan || 'trial',
     }
+
+    // Attach this customer to the current Sentry scope so any error captured
+    // later in the request is tagged by org + plan. No-op when Sentry is off.
+    try {
+      const { setSentryUser } = await import('@/lib/monitoring/sentry')
+      setSentryUser({ orgId: result.orgId, userId: result.userId, plan: result.plan })
+    } catch { /* non-fatal */ }
+
+    return result
   } catch {
     return null
   }
