@@ -999,12 +999,38 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
     // Generate forecasts
     await generateForecasts(db, orgId, integ.business_id)
 
-    // Pre-compute summary tables (daily_metrics, monthly_metrics, dept_metrics)
+    // Pre-compute summary tables (daily_metrics, monthly_metrics, dept_metrics).
+    // Aggregation errors used to be swallowed with a warning — syncs reported
+    // "success" with stale summary data and the dashboard went days behind.
+    // Surface the error on sync_log and fail the integration's sync cleanly.
     try {
       const { aggregateMetrics } = await import('@/lib/sync/aggregate')
-      await aggregateMetrics(orgId, integ.business_id, from, to)
+      const aggResult = await aggregateMetrics(orgId, integ.business_id, from, to)
+      console.log('[sync] aggregate OK', { orgId, business_id: integ.business_id, ...aggResult })
     } catch (aggErr: any) {
-      console.warn('Aggregation step failed (non-fatal):', aggErr.message)
+      console.error('[sync] aggregation FAILED', {
+        org_id:        orgId,
+        business_id:   integ.business_id,
+        provider,
+        integration_id: integ.id,
+        message:       aggErr.message,
+        stack:         aggErr.stack,
+      })
+      // Mark the sync as partially successful — raw data landed but summaries didn't.
+      // The dashboard will show whatever daily_metrics currently has; we'll retry
+      // aggregation on the next master-sync.
+      try {
+        await db.from('sync_log').insert({
+          org_id:       orgId,
+          business_id:  integ.business_id ?? null,
+          integration_id: integ.id,
+          provider,
+          status:       'partial',
+          error_msg:    `Aggregation failed: ${aggErr.message}`,
+          date_from:    from,
+          date_to:      to,
+        })
+      } catch { /* best-effort */ }
     }
 
     // Update integration last_sync

@@ -68,18 +68,29 @@ export async function aggregateMetrics(
     : rawRevLogs
 
   // ── 2. Build daily_metrics ────────────────────────────────────────────────
-  // Aggregate revenue by date
+  // Aggregate revenue by date.
+  //
+  // IMPORTANT: Supabase returns `numeric` columns as STRINGS, not JS numbers.
+  // Without Number() coercion, `0 + "23899.00"` becomes `"023899.00"` (string
+  // concatenation), every subsequent row keeps concatenating, and Math.round
+  // on the final string returns NaN → upserted as 0. That was the "revenue=0
+  // in daily_metrics despite non-zero raw rows" bug. Always coerce.
+  const toNum = (v: any): number => {
+    if (v == null) return 0
+    const n = typeof v === 'number' ? v : parseFloat(String(v))
+    return Number.isFinite(n) ? n : 0
+  }
   const dailyRev: Record<string, any> = {}
   for (const r of revLogs) {
     const d = r.revenue_date
     if (!dailyRev[d]) dailyRev[d] = { revenue: 0, covers: 0, tips: 0, food_revenue: 0, bev_revenue: 0, dine_in: 0, takeaway: 0 }
-    dailyRev[d].revenue      += r.revenue ?? 0
-    dailyRev[d].covers       += r.covers ?? 0
-    dailyRev[d].tips         += r.tip_revenue ?? 0
-    dailyRev[d].food_revenue += r.food_revenue ?? 0
-    dailyRev[d].bev_revenue  += r.bev_revenue ?? 0
-    dailyRev[d].dine_in      += r.dine_in_revenue ?? 0
-    dailyRev[d].takeaway     += r.takeaway_revenue ?? 0
+    dailyRev[d].revenue      += toNum(r.revenue)
+    dailyRev[d].covers       += toNum(r.covers)
+    dailyRev[d].tips         += toNum(r.tip_revenue)
+    dailyRev[d].food_revenue += toNum(r.food_revenue)
+    dailyRev[d].bev_revenue  += toNum(r.bev_revenue)
+    dailyRev[d].dine_in      += toNum(r.dine_in_revenue)
+    dailyRev[d].takeaway     += toNum(r.takeaway_revenue)
   }
 
   // Aggregate staff cost by date
