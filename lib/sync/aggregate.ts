@@ -137,12 +137,33 @@ export async function aggregateMetrics(
     }
   })
 
-  // Upsert daily_metrics in batches
+  // Upsert daily_metrics in batches.
+  // CRITICAL: Supabase does NOT throw on constraint violations — it returns an
+  // `error` object. If we don't check, a bad row silently drops the whole batch
+  // and the log says "aggregate OK" with a fake row count. The "Apr 17 missing
+  // for Vero" bug was exactly this: the upsert rejected the batch containing
+  // Apr 17, but nothing surfaced.
   const BATCH = 50
+  let daily_written = 0
   for (let i = 0; i < dailyRows.length; i += BATCH) {
     const batch = dailyRows.slice(i, i + BATCH)
     if (batch.length) {
-      await db.from('daily_metrics').upsert(batch, { onConflict: 'business_id,date' })
+      const { error } = await db.from('daily_metrics').upsert(batch, { onConflict: 'business_id,date' })
+      if (error) {
+        const sample = batch.slice(0, 2).map((r: any) => ({ date: r.date, revenue: r.revenue, staff_cost: r.staff_cost }))
+        console.error('[aggregate] daily_metrics upsert FAILED', {
+          business_id: businessId,
+          batch_index: i / BATCH,
+          batch_size:  batch.length,
+          error:       error.message,
+          code:        (error as any).code,
+          details:     (error as any).details,
+          hint:        (error as any).hint,
+          sample_rows: sample,
+        })
+        throw new Error(`daily_metrics upsert failed (batch ${i / BATCH}): ${error.message}`)
+      }
+      daily_written += batch.length
     }
   }
 
@@ -213,10 +234,22 @@ export async function aggregateMetrics(
     }
   })
 
+  let monthly_written = 0
   for (let i = 0; i < monthlyRows.length; i += BATCH) {
     const batch = monthlyRows.slice(i, i + BATCH)
     if (batch.length) {
-      await db.from('monthly_metrics').upsert(batch, { onConflict: 'business_id,year,month' })
+      const { error } = await db.from('monthly_metrics').upsert(batch, { onConflict: 'business_id,year,month' })
+      if (error) {
+        console.error('[aggregate] monthly_metrics upsert FAILED', {
+          business_id: businessId,
+          batch_size:  batch.length,
+          error:       error.message,
+          code:        (error as any).code,
+          details:     (error as any).details,
+        })
+        throw new Error(`monthly_metrics upsert failed: ${error.message}`)
+      }
+      monthly_written += batch.length
     }
   }
 
@@ -301,17 +334,31 @@ export async function aggregateMetrics(
     }
   }).filter(r => r.year && r.month)
 
+  let dept_written = 0
   for (let i = 0; i < deptRows.length; i += BATCH) {
     const batch = deptRows.slice(i, i + BATCH)
     if (batch.length) {
-      await db.from('dept_metrics').upsert(batch, { onConflict: 'business_id,dept_name,year,month' })
+      const { error } = await db.from('dept_metrics').upsert(batch, { onConflict: 'business_id,dept_name,year,month' })
+      if (error) {
+        console.error('[aggregate] dept_metrics upsert FAILED', {
+          business_id: businessId,
+          batch_size:  batch.length,
+          error:       error.message,
+          code:        (error as any).code,
+          details:     (error as any).details,
+        })
+        throw new Error(`dept_metrics upsert failed: ${error.message}`)
+      }
+      dept_written += batch.length
     }
   }
 
+  // Return actual WRITTEN counts, not just the compute-intent counts.
+  // Previously this returned `dailyRows.length` etc. even when upserts failed silently.
   return {
-    daily_rows:   dailyRows.length,
-    monthly_rows: monthlyRows.length,
-    dept_rows:    deptRows.length,
+    daily_rows:   daily_written,
+    monthly_rows: monthly_written,
+    dept_rows:    dept_written,
   }
 }
 
