@@ -5,10 +5,16 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { unstable_noStore as noStore } from 'next/cache'
 
-export const dynamic = 'force-dynamic'
+export const dynamic  = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET(req: NextRequest) {
+  // Escape Next.js 14's internal fetch cache — Supabase calls inside this
+  // handler would otherwise be served from cache even on a dynamic route.
+  noStore()
+
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 

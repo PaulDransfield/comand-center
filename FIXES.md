@@ -6,6 +6,34 @@ Before trying anything new, check here first.
 
 ---
 
+## 0b. Next.js 14 caches internal fetch() calls inside route handlers
+
+**Symptom:** API route returns the same value every call regardless of DB changes. `dynamic = 'force-dynamic'` is set. `Cache-Control: no-store` is on the response. `cache: 'no-store'` is on the client fetch. DB clearly has different data. API stays frozen at an early value.
+
+**Root cause:** Next.js 14 caches `fetch()` calls made inside server code by default — *including* the ones Supabase's SDK makes internally to PostgREST. `export const dynamic = 'force-dynamic'` disables the route-level cache but doesn't reach fetches made inside the handler.
+
+**Fix:** call `unstable_noStore()` from `next/cache` at the top of the handler:
+
+```ts
+import { unstable_noStore as noStore } from 'next/cache'
+
+export const dynamic  = 'force-dynamic'
+export const revalidate = 0
+
+export async function GET(req: NextRequest) {
+  noStore()   // escape Next.js internal fetch cache
+  // … rest of handler
+}
+```
+
+Apply this to every route that must reflect live DB state.
+
+**Files patched 2026-04-18:** `app/api/ai/usage/route.ts`, `app/api/metrics/daily/route.ts`. Other live-data routes (tracker, forecast, budgets, scheduling, departments, staff, revenue-detail) will need the same treatment next time they're touched or when any staleness is observed.
+
+**Diagnostic:** if API returns a different value from what SQL editor shows for the same query, and `Cache-Control` headers are correct — this is almost certainly the issue.
+
+---
+
 ## 0a. Client-side `fetch()` keeps serving stale responses after data changes
 
 **Symptom:** DB is updated. Direct API call shows fresh data. But the dashboard still shows old numbers even after `Ctrl+F5`. Network tab response has an older `updated_at` than what's actually in the DB.

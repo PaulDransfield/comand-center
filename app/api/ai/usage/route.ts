@@ -10,10 +10,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { getEffectiveDailyLimit }    from '@/lib/ai/usage'
+import { unstable_noStore as noStore } from 'next/cache'
 
-export const dynamic = 'force-dynamic'
+export const dynamic  = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET(req: NextRequest) {
+  // Without this, Next.js 14 caches internal fetch() calls (including
+  // Supabase's REST calls) even on a force-dynamic route. Result: the endpoint
+  // returns the first query_count it ever saw and never updates.
+  noStore()
+
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
