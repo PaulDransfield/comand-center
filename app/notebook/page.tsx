@@ -11,17 +11,66 @@ interface Message {
   content: string
 }
 
+const fmtKr = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
+const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+// Compact summary — one line per business per month. Aim for <800 tokens total
+// so the per-query cost on Haiku stays around $0.002.
+async function buildContext(): Promise<string> {
+  try {
+    const bizRes = await fetch('/api/businesses', { cache: 'no-store' })
+    const businesses: any[] = bizRes.ok ? await bizRes.json() : []
+    if (!Array.isArray(businesses) || businesses.length === 0) {
+      return 'No business data loaded — the user has not set up any restaurants yet.'
+    }
+
+    const year  = new Date().getFullYear()
+    const lines: string[] = [`Business overview — ${year} (last 6 months of synced data):`, '']
+
+    for (const biz of businesses.slice(0, 5)) {
+      const mRes = await fetch(`/api/metrics/monthly?business_id=${biz.id}&year=${year}`, { cache: 'no-store' })
+      const data = mRes.ok ? await mRes.json() : { rows: [] }
+      const rows = (data.rows ?? []).slice(-6)
+      lines.push(`### ${biz.name || biz.id}${biz.city ? ` (${biz.city})` : ''}`)
+      if (rows.length === 0) {
+        lines.push('  No synced data yet.')
+      } else {
+        for (const r of rows) {
+          const rev   = fmtKr(Number(r.revenue ?? 0))
+          const staff = fmtKr(Number(r.staff_cost ?? 0))
+          const food  = fmtKr(Number(r.food_cost ?? 0))
+          const net   = fmtKr(Number(r.net_profit ?? 0))
+          const mpct  = r.margin_pct != null ? `${r.margin_pct}%` : '—'
+          const lpct  = r.labour_pct != null ? `${r.labour_pct}%` : '—'
+          lines.push(`  ${MONTHS_EN[(r.month ?? 1) - 1]}: revenue ${rev}, staff ${staff} (${lpct}), food ${food}, net ${net} (${mpct})`)
+        }
+      }
+      lines.push('')
+    }
+    return lines.join('\n')
+  } catch (e: any) {
+    return `Context fetch failed: ${e?.message || 'unknown'}`
+  }
+}
+
 export default function NotebookPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input,    setInput]    = useState('')
   const [loading,  setLoading]  = useState(false)
   const [bizId,    setBizId]    = useState<string | null>(null)
+  const [ctx,      setCtx]      = useState<string>('')
+  const [ctxLoading, setCtxLoading] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     // Get the selected business from sessionStorage (set by sidebar switcher)
     const stored = sessionStorage.getItem('cc_selected_biz')
     if (stored) setBizId(stored)
+
+    // Fetch the compact business-summary context once on mount.
+    // Every question reuses this context — saves re-fetching per query and
+    // keeps input tokens predictable (~500) so Haiku cost stays <$0.003/query.
+    buildContext().then(c => { setCtx(c); setCtxLoading(false) })
   }, [])
 
   useEffect(() => {
@@ -37,16 +86,16 @@ export default function NotebookPage() {
     setLoading(true)
 
     try {
-      const params = new URLSearchParams({ page: 'assistant', context: '' })
-      if (bizId) params.append('business_id', bizId)
-
       const res  = await fetch('/api/ask', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           question: q,
           page:     'assistant',
-          context:  'General business intelligence assistant for this restaurant business.',
+          // tier 'light' routes through Haiku for ~$0.002/query vs Sonnet's ~$0.012.
+          // Every query still counts against the org's daily AI limit.
+          tier:     'light',
+          context:  ctx || 'General business intelligence assistant for this restaurant business.',
           ...(bizId ? { business_id: bizId } : {}),
         }),
       })
@@ -75,6 +124,11 @@ export default function NotebookPage() {
           <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>AI Assistant</h1>
           <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
             Ask anything about your restaurant data — revenue, staff costs, margins, and more.
+          </p>
+          <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+            {ctxLoading
+              ? 'Loading your business data for context…'
+              : 'AI sees last 6 months per business (pre-loaded). Each question counts toward your daily limit.'}
           </p>
         </div>
 

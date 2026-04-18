@@ -59,10 +59,11 @@ const SUGGESTIONS: Record<string, string[]> = {
 
 interface Props {
   page:    string
-  context: string   // plain-text summary of the page data built by the parent
+  context: string             // plain-text summary of the page data built by the parent
+  tier?:   'light' | 'full'   // 'light' routes through Haiku (cheap). Defaults to 'full' (Sonnet).
 }
 
-export default function AskAI({ page, context }: Props) {
+export default function AskAI({ page, context, tier = 'full' }: Props) {
   const [open,     setOpen]     = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input,    setInput]    = useState('')
@@ -107,7 +108,7 @@ export default function AskAI({ page, context }: Props) {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${session?.access_token ?? ''}`,
         },
-        body:    JSON.stringify({ question, context, page }),
+        body:    JSON.stringify({ question, context, page, tier }),
       })
       const data = await res.json()
 

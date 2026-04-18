@@ -40,12 +40,17 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // ── 2. Parse body ──────────────────────────────────────────────
-  let question: string, context: string, page: string
+  let question: string, context: string, page: string, tier: 'light' | 'full'
   try {
     const body = await req.json()
     question   = (body.question ?? '').trim()
     context    = (body.context  ?? '').trim()
     page       = (body.page     ?? 'dashboard').trim()
+    // Tier selects model + token budget. 'light' = Haiku + shorter output,
+    // used by /notebook and other low-stakes surfaces to keep cost per query
+    // to ~$0.002 instead of Sonnet's ~$0.012. 'full' is the default for
+    // page-level AskAI where context is richer and nuance matters.
+    tier       = body.tier === 'light' ? 'light' : 'full'
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
@@ -66,11 +71,14 @@ export async function POST(req: NextRequest) {
     ? `Current page: ${page}\n\nData context:\n${context}\n\nQuestion: ${question}`
     : `Question: ${question}`
 
+  const model     = tier === 'light' ? AI_MODELS.AGENT                : AI_MODELS.ASSISTANT
+  const maxTokens = tier === 'light' ? MAX_TOKENS.AGENT_RECOMMENDATION : MAX_TOKENS.ASSISTANT
+
   let answer: string
   try {
     const response = await claude.messages.create({
-      model:      AI_MODELS.ASSISTANT,
-      max_tokens: MAX_TOKENS.ASSISTANT,
+      model,
+      max_tokens: maxTokens,
       system:     SYSTEM_PROMPT,
       messages:   [{ role: 'user', content: userMessage }],
     })

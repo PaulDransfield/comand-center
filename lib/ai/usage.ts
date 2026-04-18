@@ -38,8 +38,16 @@ export interface LimitGateBlocked {
 }
 export type LimitGate = LimitGateOk | LimitGateBlocked
 
+// Hard safety cap on "unlimited" plans (Group / Enterprise). The published
+// promise is unlimited, but a single runaway script or bad prompt loop could
+// burn hundreds of Sonnet calls in a minute. 500/day/org is 5× what a heavy
+// user realistically needs and keeps worst-case cost bounded (~$6/day per
+// org at Sonnet, ~$1 at Haiku).
+const UNLIMITED_SAFETY_CAP_PER_DAY = 500
+
 // Check whether this org can make another AI call today. Does NOT increment.
-// Unlimited plans (Group / Enterprise / anything with ai_queries_per_day === Infinity) always pass.
+// Unlimited plans (Group / Enterprise / anything with ai_queries_per_day === Infinity)
+// use the safety cap above rather than truly unlimited.
 // If planKey is omitted, looks it up from organisations.plan.
 export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Promise<LimitGate> {
   let effectivePlanKey: string = planKey ?? 'trial'
@@ -47,12 +55,10 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
     const { data } = await db.from('organisations').select('plan').eq('id', orgId).maybeSingle()
     effectivePlanKey = data?.plan ?? 'trial'
   }
-  const plan  = getPlan(effectivePlanKey)
-  const limit = plan.ai_queries_per_day
-
-  if (!limit || limit === Infinity) {
-    return { ok: true, limit: Infinity as any, used: 0 }
-  }
+  const plan        = getPlan(effectivePlanKey)
+  const rawLimit    = plan.ai_queries_per_day
+  const isUnlimited = !rawLimit || rawLimit === Infinity
+  const limit       = isUnlimited ? UNLIMITED_SAFETY_CAP_PER_DAY : rawLimit
 
   const { data: usage } = await db
     .from('ai_usage_daily')
