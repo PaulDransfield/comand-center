@@ -23,20 +23,25 @@ export async function aggregateMetrics(
   const db = createAdminClient()
 
   // ── 1. Fetch raw data for the date range ──────────────────────────────────
+  // .lte(toDate) was dropped. With the upper-bound chained, Supabase was returning
+  // rows up to toDate - 1 — Apr 17 rows were silently excluded despite satisfying
+  // `<= '2026-04-18'`. An .eq() on the same date worked fine. Without the upper
+  // bound we rely on: (a) no sync writes future-dated rows; (b) in-memory
+  // filtering below if we ever want a strict window.
   const [revRes, staffRes, trackerRes] = await Promise.all([
     // Note: Supabase defaults to 1000 rows. Restaurants can have 1000+ shifts/month.
     // Use limit(50000) to ensure we get all data.
     db.from('revenue_logs')
       .select('revenue_date, revenue, covers, tip_revenue, food_revenue, bev_revenue, dine_in_revenue, takeaway_revenue, provider')
       .eq('org_id', orgId).eq('business_id', businessId)
-      .gte('revenue_date', fromDate).lte('revenue_date', toDate)
+      .gte('revenue_date', fromDate)
       .limit(50000),
 
     // Exclude scheduled shifts (_scheduled suffix) — only count actual logged hours
     db.from('staff_logs')
       .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr')
       .eq('org_id', orgId).eq('business_id', businessId)
-      .gte('shift_date', fromDate).lte('shift_date', toDate)
+      .gte('shift_date', fromDate)
       .or('cost_actual.gt.0,estimated_salary.gt.0')
       .not('pk_log_url', 'like', '%_scheduled')
       .limit(50000),
@@ -82,6 +87,19 @@ export async function aggregateMetrics(
     rows:        targeted.data?.length ?? 0,
     error:       targeted.error?.message ?? null,
     sample:      targeted.data?.slice(0, 3) ?? [],
+  })
+
+  // Diagnostic — gte only, no upper bound. If this returns MORE rows than the
+  // bounded range query, .lte is incorrectly excluding rows.
+  const gteOnly = await db.from('revenue_logs')
+    .select('revenue_date', { count: 'exact', head: true })
+    .eq('org_id', orgId).eq('business_id', businessId)
+    .gte('revenue_date', fromDate)
+  console.log('[aggregate] gte-only count', {
+    business_id: businessId,
+    fromDate,
+    count:       gteOnly.count ?? null,
+    error:       gteOnly.error?.message ?? null,
   })
 
   // ── Deduplicate revenue_logs ──────────────────────────────────────────────
