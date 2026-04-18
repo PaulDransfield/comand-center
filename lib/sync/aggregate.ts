@@ -58,48 +58,15 @@ export async function aggregateMetrics(
   const staffLogs  = staffRes.data ?? []
   const trackerRows = trackerRes.data ?? []
 
-  // Diagnostic — latest date actually fetched per table. If these don't match
-  // the raw DB state, we're looking at a scoping / replication / caching issue.
-  const latestRev   = rawRevLogs.reduce((m: string, r: any) => r.revenue_date > m ? r.revenue_date : m, '')
-  const latestStaff = staffLogs.reduce((m: string, s: any)  => s.shift_date   > m ? s.shift_date   : m, '')
+  // Single compact fetch summary. Expanded diagnostics can be re-added from git
+  // history (`.lte` bug recovery, 2026-04-18) if another pipeline break surfaces.
+  const latestRev = rawRevLogs.reduce((m: string, r: any) => r.revenue_date > m ? r.revenue_date : m, '')
   console.log('[aggregate] fetched', {
-    business_id:       businessId,
-    fromDate, toDate,
-    rev_rows:          rawRevLogs.length,
-    latest_rev_date:   latestRev,
-    staff_rows:        staffLogs.length,
-    latest_shift_date: latestStaff,
-  })
-
-  // Targeted diagnostic — a second independent fetch using `.eq()` on yesterday's date.
-  // If this returns rows but the range query above missed them, the bug is in the
-  // .gte/.lte chain (type coercion, pagination, ordering). If it also returns
-  // zero, the DB connection itself can't see those rows (replication lag, RLS,
-  // connection-pool snapshot) — totally different category of bug.
-  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const targeted = await db.from('revenue_logs')
-    .select('revenue_date, provider, revenue, created_at')
-    .eq('org_id', orgId).eq('business_id', businessId)
-    .eq('revenue_date', yesterday)
-  console.log('[aggregate] targeted yesterday', {
-    business_id: businessId,
-    yesterday,
-    rows:        targeted.data?.length ?? 0,
-    error:       targeted.error?.message ?? null,
-    sample:      targeted.data?.slice(0, 3) ?? [],
-  })
-
-  // Diagnostic — gte only, no upper bound. If this returns MORE rows than the
-  // bounded range query, .lte is incorrectly excluding rows.
-  const gteOnly = await db.from('revenue_logs')
-    .select('revenue_date', { count: 'exact', head: true })
-    .eq('org_id', orgId).eq('business_id', businessId)
-    .gte('revenue_date', fromDate)
-  console.log('[aggregate] gte-only count', {
     business_id: businessId,
     fromDate,
-    count:       gteOnly.count ?? null,
-    error:       gteOnly.error?.message ?? null,
+    rev_rows:    rawRevLogs.length,
+    staff_rows:  staffLogs.length,
+    latest_rev:  latestRev,
   })
 
   // ── Deduplicate revenue_logs ──────────────────────────────────────────────

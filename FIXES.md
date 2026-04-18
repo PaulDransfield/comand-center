@@ -1,8 +1,40 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-15
+Last updated: 2026-04-18
 
 This file documents recurring problems and their confirmed fixes.
 Before trying anything new, check here first.
+
+---
+
+## 0. Supabase `.gte().lte()` chain silently drops boundary rows
+
+**Symptom:** Dashboard shows data stale by one day. `sync_log` reports `success`. Raw tables (`revenue_logs`, `staff_logs`) have the latest date. `daily_metrics` does NOT. Aggregator log says `aggregate OK` with plausible row counts but the most-recent date isn't in the summary.
+
+**Root cause:** The Supabase JS client chained as
+```ts
+db.from('revenue_logs')
+  .select(...)
+  .eq('org_id', orgId).eq('business_id', businessId)
+  .gte('revenue_date', fromDate).lte('revenue_date', toDate)
+  .limit(50000)
+```
+silently excludes rows matching the top boundary when the column is a `date` type. Running the same filter via `.eq('revenue_date', '<top-date>')` returns the rows correctly. SQL editor sees them. `count: 'exact'` with `.gte()` only also sees them. Only the `.gte().lte()` chain mis-applies.
+
+Diagnosed 2026-04-18: Apr 17 revenue_logs rows existed in DB, SQL editor query with identical filter returned 6 rows, but the range chain returned 406 instead of 412 — exactly 6 fewer = Apr 17's rows dropped.
+
+**Fix:** drop `.lte()` entirely on date-range fetches where "no future-dated rows can exist" is a valid invariant (true for all sync tables — we never write future dates). Rely on `.gte(fromDate)` alone.
+
+```ts
+// BAD — silently loses top-boundary date
+.gte('revenue_date', fromDate).lte('revenue_date', toDate)
+
+// GOOD — includes everything from fromDate forward
+.gte('revenue_date', fromDate)
+```
+
+**Files that had this pattern (all patched 2026-04-18):** `lib/sync/aggregate.ts` (both revenue_logs and staff_logs fetches).
+
+**Prevention:** Any new aggregator / metrics query on a DATE column should follow the `.gte()` only pattern. If an upper bound is genuinely required, filter client-side in JS after fetching.
 
 ---
 
