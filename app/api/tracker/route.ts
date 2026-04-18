@@ -28,15 +28,19 @@ export async function GET(req: NextRequest) {
     // Manual P&L entries — ALWAYS filter by org_id first (tenant isolation; service role bypasses RLS)
     db.from('tracker_data').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).order('period_month'),
     // Real revenue from POS sync (revenue_logs) — include provider for dedup
-    db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).lte('revenue_date', dateTo).gt('revenue', 0).limit(50000),
+    // .lte() on date columns silently drops top-boundary rows in Supabase — use .gte only, filter year in aggregation.
+    db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).gt('revenue', 0).limit(50000),
     // Real staff cost from Personalkollen sync (staff_logs)
-    db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).lte('shift_date', dateTo).or('cost_actual.gt.0,estimated_salary.gt.0').not('pk_log_url', 'like', '%_scheduled').limit(50000),
+    db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).or('cost_actual.gt.0,estimated_salary.gt.0').not('pk_log_url', 'like', '%_scheduled').limit(50000),
   ])
 
   const manualRows = trackerRes.data ?? []
 
-  // Deduplicate: skip aggregate 'personalkollen' rows when per-dept pk_* rows exist
-  const rawRevRows = revRes.data ?? []
+  // Deduplicate: skip aggregate 'personalkollen' rows when per-dept pk_* rows exist.
+  // Also filter to the requested year — we had to drop .lte() on the DB query
+  // because Supabase silently excludes top-boundary dates in chained gte/lte.
+  const yearPrefix = String(year)
+  const rawRevRows = (revRes.data ?? []).filter((r: any) => r.revenue_date?.startsWith(yearPrefix))
   const hasDeptRevRows = rawRevRows.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
   const dedupedRev = hasDeptRevRows ? rawRevRows.filter((r: any) => (r.provider ?? '') !== 'personalkollen') : rawRevRows
 
@@ -47,9 +51,10 @@ export async function GET(req: NextRequest) {
     syncedRev[m] = (syncedRev[m] ?? 0) + (r.revenue ?? 0)
   }
 
-  // Aggregate synced staff cost by month
+  // Aggregate synced staff cost by month — same year filter as revenue.
+  const staffRows = (staffRes.data ?? []).filter((s: any) => s.shift_date?.startsWith(yearPrefix))
   const syncedStaff: Record<number, number> = {}
-  for (const s of staffRes.data ?? []) {
+  for (const s of staffRows) {
     const m    = parseInt(s.shift_date.slice(5, 7))
     const cost = Number(s.cost_actual ?? 0) > 0 ? Number(s.cost_actual) : Number(s.estimated_salary ?? 0)
     syncedStaff[m] = (syncedStaff[m] ?? 0) + cost

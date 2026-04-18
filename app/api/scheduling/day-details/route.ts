@@ -34,17 +34,18 @@ export async function GET(req: NextRequest) {
 
   // Pull daily_metrics and staff_logs in the window, filter by weekday in memory
   const [dmRes, slRes] = await Promise.all([
+    // Supabase .lte() on date columns silently drops top-boundary rows — .gte only, filter in memory below.
     db.from('daily_metrics')
       .select('date, revenue, staff_cost, hours_worked, shifts')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
-      .gte('date', from).lte('date', to)
+      .gte('date', from)
       .limit(50000),
     db.from('staff_logs')
       .select('shift_date, staff_name, staff_group, hours_worked, cost_actual, estimated_salary')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
-      .gte('shift_date', from).lte('shift_date', to)
+      .gte('shift_date', from)
       .or('cost_actual.gt.0,estimated_salary.gt.0')
       .not('pk_log_url', 'like', '%_scheduled')
       .limit(50000),
@@ -54,9 +55,13 @@ export async function GET(req: NextRequest) {
   const toMonIdx = (jsDow: number) => (jsDow + 6) % 7
   const matchesDay = (iso: string) => toMonIdx(new Date(iso).getUTCDay()) === targetWeekday
 
+  // In-memory upper-bound filter (replaces the .lte() we removed from the query).
+  const dmRows = (dmRes.data ?? []).filter((r: any) => r.date   <= to)
+  const slRows = (slRes.data ?? []).filter((r: any) => r.shift_date <= to)
+
   // ── Per-date rows ──────────────────────────────────────────────
   const datesMap: Record<string, any> = {}
-  for (const d of dmRes.data ?? []) {
+  for (const d of dmRows) {
     if (!matchesDay(d.date)) continue
     datesMap[d.date] = {
       date:         d.date,
@@ -71,7 +76,7 @@ export async function GET(req: NextRequest) {
 
   // Count unique staff per date from staff_logs (daily_metrics.shifts is shift count, not people count)
   const staffPerDate: Record<string, Set<string>> = {}
-  for (const s of slRes.data ?? []) {
+  for (const s of slRows) {
     if (!matchesDay(s.shift_date)) continue
     if (!staffPerDate[s.shift_date]) staffPerDate[s.shift_date] = new Set()
     if (s.staff_name) staffPerDate[s.shift_date].add(s.staff_name)
@@ -86,7 +91,7 @@ export async function GET(req: NextRequest) {
 
   // ── Per-staff aggregate across matching dates ─────────────────
   const staffAcc: Record<string, any> = {}
-  for (const s of slRes.data ?? []) {
+  for (const s of slRows) {
     if (!matchesDay(s.shift_date)) continue
     const name  = s.staff_name ?? 'Unknown'
     const group = s.staff_group ?? '—'

@@ -23,14 +23,19 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  const { data: rows, error } = await db
+  // Same .gte().lte() Supabase/PostgREST bug as in lib/sync/aggregate.ts — the
+  // chained upper bound silently drops rows at the top of the range. Fetch with
+  // .gte() only, then filter in memory so the response still honours the `to`
+  // parameter.
+  const { data: allRows, error } = await db
     .from('daily_metrics')
     .select('*')
     .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .gte('date', from)
-    .lte('date', to)
     .order('date', { ascending: true })
+
+  const rows = (allRows ?? []).filter((r: any) => r.date <= to)
 
   if (error) {
     // Table might not exist yet — return empty so pages still work

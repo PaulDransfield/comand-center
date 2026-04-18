@@ -97,14 +97,15 @@ export async function GET(req: NextRequest) {
     .eq('period_year', year)
     .order('period_month')
 
-  // Fetch covers for this year
-  const { data: coversData } = await db
+  // Fetch covers for this year — .lte() on date columns silently drops top-boundary
+  // rows in Supabase. Filter year prefix in memory instead.
+  const { data: coversRaw } = await db
     .from('covers')
     .select('date, total, revenue_per_cover')
     .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .gte('date', `${year}-01-01`)
-    .lte('date', `${year}-12-31`)
+  const coversData = (coversRaw ?? []).filter((c: any) => c.date?.startsWith(String(year)))
 
   // Aggregate covers by month
   const coversByMonth: Record<number, { total: number; rpc: number; count: number }> = {}
