@@ -14,8 +14,7 @@
 // Claude never hits the DB directly — the page does the data fetching.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getOrgFromRequest }         from '@/lib/auth/get-org'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
 
@@ -34,7 +33,10 @@ Guidelines:
 
 export async function POST(req: NextRequest) {
   // ── 1. Auth ────────────────────────────────────────────────────
-  const auth = await getOrgFromRequest(req)
+  // Use the battle-tested cookie parser — the old getOrgFromRequest relied on
+  // @supabase/ssr's createServerClient session getter which silently missed
+  // some cookie formats and was returning 401 for valid sessions (2026-04-18).
+  const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // ── 2. Parse body ──────────────────────────────────────────────

@@ -44,8 +44,14 @@ export function createAdminClient() {
 // Reads the Supabase session from request cookies, handles @supabase/ssr v0.3+
 // chunked cookie storage (sb-<ref>-auth-token.0, .1, …), extracts the JWT,
 // validates it with the admin client, and resolves the org membership.
-// Returns { userId, orgId } or null if not authenticated.
-export async function getRequestAuth(req: NextRequest): Promise<{ userId: string; orgId: string } | null> {
+// Returns { userId, orgId, role, plan } or null if not authenticated.
+//
+// Prefer this over lib/auth/get-org.ts `getOrgFromRequest`; this one has a
+// battle-tested cookie parser (the other one relies on createServerClient's
+// session getter which misses some Supabase cookie formats silently).
+export async function getRequestAuth(
+  req: NextRequest
+): Promise<{ userId: string; orgId: string; role: string; plan: string } | null> {
   try {
     const BASE = 'sb-llzmixkrysduztsvmfzi-auth-token'
 
@@ -73,6 +79,14 @@ export async function getRequestAuth(req: NextRequest): Promise<{ userId: string
       if (chunks.length) raw = chunks.join('')
     }
 
+    // Bearer-token fallback — some pages still pass the access_token via
+    // Authorization. Useful for API-only calls and for the AskAI component
+    // which pulls session via supabase-js then forwards it.
+    if (!raw) {
+      const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
+      if (bearer && bearer.length > 20) raw = bearer
+    }
+
     if (!raw) return null
 
     // Extract the JWT access_token from the stored session object
@@ -86,18 +100,27 @@ export async function getRequestAuth(req: NextRequest): Promise<{ userId: string
       // raw is already a plain JWT — use as-is
     }
 
-    // Validate and resolve org membership using the service-role admin client
+    // Validate and resolve org membership + plan using the admin client
     const adminDb = createAdminClient()
     const { data: { user } } = await adminDb.auth.getUser(accessToken)
     if (!user) return null
 
     const { data: m } = await adminDb
       .from('organisation_members')
-      .select('org_id')
+      .select('org_id, role, organisations(plan, is_active)')
       .eq('user_id', user.id)
       .single()
 
-    return m ? { userId: user.id, orgId: m.org_id } : null
+    if (!m) return null
+    const org = (m as any).organisations
+    if (org && org.is_active === false) return null
+
+    return {
+      userId: user.id,
+      orgId:  (m as any).org_id,
+      role:   (m as any).role || 'viewer',
+      plan:   org?.plan || 'trial',
+    }
   } catch {
     return null
   }
