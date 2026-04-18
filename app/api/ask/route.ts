@@ -58,6 +58,14 @@ export async function POST(req: NextRequest) {
   if (!question) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
   if (question.length > 1000) return NextResponse.json({ error: 'Question too long' }, { status: 400 })
 
+  // Hard cap on context size. Caps input tokens roughly at ~2 500 tokens (4 chars ≈ 1 token),
+  // keeping a single call below ~$0.04 on Sonnet and ~$0.007 on Haiku.
+  const MAX_CONTEXT_CHARS = 6000
+  if (context.length > MAX_CONTEXT_CHARS) {
+    console.warn(`[ask] context truncated — was ${context.length} chars, capped at ${MAX_CONTEXT_CHARS}`)
+    context = context.slice(0, MAX_CONTEXT_CHARS) + '\n\n[context truncated for cost]'
+  }
+
   // ── 3. Check daily query limit (shared helper in lib/ai/usage.ts) ────────
   const supabase = createAdminClient()
   const gate = await checkAiLimit(supabase, auth.orgId, auth.plan)

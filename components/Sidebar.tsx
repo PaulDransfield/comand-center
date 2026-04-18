@@ -48,6 +48,7 @@ export default function Sidebar() {
   const [showBizMenu, setShowBizMenu] = useState(false)
   const [userName,   setUserName]   = useState('')
   const [syncStatus, setSyncStatus] = useState<any>(null)
+  const [aiUsage,    setAiUsage]    = useState<any>(null)
 
   useEffect(() => {
     const db = createClient()
@@ -82,6 +83,22 @@ export default function Sidebar() {
       setSyncStatus(data ?? null)
     } catch { setSyncStatus(null) }
   }
+
+  // AI usage meter — updates on mount, every 60 s, and whenever an AI call
+  // fires a 'cc_ai_used' event from AskAI / notebook.
+  async function fetchAiUsage() {
+    try {
+      const res = await fetch('/api/ai/usage', { cache: 'no-store' })
+      if (res.ok) setAiUsage(await res.json())
+    } catch { /* non-fatal — badge hides if fetch fails */ }
+  }
+  useEffect(() => {
+    fetchAiUsage()
+    const t = setInterval(fetchAiUsage, 60_000)
+    const handler = () => fetchAiUsage()
+    window.addEventListener('cc_ai_used', handler)
+    return () => { clearInterval(t); window.removeEventListener('cc_ai_used', handler) }
+  }, [])
 
   function selectBiz(biz: Business) {
     setSelected(biz)
@@ -201,9 +218,34 @@ export default function Sidebar() {
               </div>
             )
           })}
-          <div style={{ padding: '4px 10px 8px', fontSize: 9, color: 'rgba(165,180,252,0.5)', lineHeight: 1.4 }}>
-            Powered by your live data
-          </div>
+          {/* AI usage meter — daily queries + warning colour */}
+          {aiUsage && typeof aiUsage.limit === 'number' && (
+            <div style={{ padding: '4px 10px 10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
+                <span style={{ fontSize: 9, color: 'rgba(165,180,252,0.7)', fontWeight: 500 }}>Today</span>
+                <span style={{
+                  fontSize: 9, fontFamily: 'ui-monospace, monospace',
+                  color: aiUsage.blocked ? '#fca5a5' : aiUsage.warning ? '#fde68a' : 'rgba(199,210,254,0.85)',
+                }}
+                title={`${aiUsage.used} of ${aiUsage.limit} queries today · month ${aiUsage.month_cost_sek?.toFixed(2) ?? '0.00'} kr`}>
+                  {aiUsage.used} / {aiUsage.limit}{aiUsage.booster > 0 ? ` ·+${aiUsage.booster}` : ''}
+                </span>
+              </div>
+              <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{
+                  width:  `${Math.min(100, aiUsage.percent ?? 0)}%`,
+                  height: '100%',
+                  background: aiUsage.blocked ? '#dc2626' : aiUsage.warning ? '#f59e0b' : '#818cf8',
+                  transition: 'width .3s',
+                }} />
+              </div>
+            </div>
+          )}
+          {!aiUsage && (
+            <div style={{ padding: '4px 10px 8px', fontSize: 9, color: 'rgba(165,180,252,0.5)', lineHeight: 1.4 }}>
+              Powered by your live data
+            </div>
+          )}
         </div>
       </div>
 

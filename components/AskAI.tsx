@@ -70,7 +70,8 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
   const [upgrade,  setUpgrade]  = useState(false)
-  const [limitInfo, setLimitInfo] = useState<{ used: number; limit: number; plan: string } | null>(null)
+  const [limitInfo, setLimitInfo] = useState<{ used: number; limit: number; plan: string; reason?: string } | null>(null)
+  const [warning,  setWarning]  = useState<{ percent: number; used: number; limit: number } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
 
@@ -113,9 +114,22 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
       const data = await res.json()
 
       if (!res.ok) {
-        if (data.upgrade) {
+        // Three distinct block reasons — surface the right CTA for each.
+        // daily_cap      → upgrade plan or buy AI Booster
+        // monthly_ceiling → contact support
+        // global_kill_switch → try later (company-wide pause)
+        if (data.reason === 'global_kill_switch') {
+          setError(data.error || 'AI is temporarily paused. Please try again shortly.')
+        } else if (data.reason === 'monthly_ceiling') {
+          setError(data.error || 'Monthly AI cost ceiling reached. Please contact paul@laweka.com to review.')
+        } else if (data.upgrade || data.reason === 'daily_cap') {
           setUpgrade(true)
-          setLimitInfo({ used: data.used ?? data.limit ?? 0, limit: data.limit ?? 0, plan: data.plan ?? 'trial' })
+          setLimitInfo({
+            used:  data.used ?? data.limit ?? 0,
+            limit: data.limit ?? 0,
+            plan:  data.plan ?? 'trial',
+            reason: data.reason,
+          })
         } else {
           setError(data.error ?? 'Something went wrong')
         }
@@ -123,6 +137,10 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
       }
 
       setMessages(prev => [...prev, { role: 'assistant', content: data.answer }])
+      // Surface the 80 %-used warning if returned; clears when under threshold.
+      setWarning(data.warning ?? null)
+      // Poke the sidebar meter to refresh immediately.
+      try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
     } catch {
       setError('Connection error. Please try again.')
     } finally {
@@ -290,6 +308,17 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
           {loading && (
             <div style={{ alignSelf: 'flex-start', padding: '10px 14px', background: '#f3f4f6', borderRadius: '14px 14px 14px 4px', fontSize: 13, color: '#9ca3af' }}>
               Thinking...
+            </div>
+          )}
+
+          {/* Soft warning — 80 % of daily quota used. Shown once then persists
+              for the session until the next question confirms it's gone. */}
+          {warning && !upgrade && (
+            <div style={{ padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#78350f', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <span>You've used {warning.percent}% of today's AI quota ({warning.used} of {warning.limit}).</span>
+              <a href="/upgrade?focus=ai" style={{ fontSize: 11, color: '#b45309', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                Upgrade →
+              </a>
             </div>
           )}
 

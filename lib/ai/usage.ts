@@ -23,28 +23,60 @@ function today(): string {
 
 export interface LimitGateOk {
   ok: true
-  limit:    number
-  used:     number
-  booster:  number   // extra queries unlocked by active AI Boosters
-  warning?: {         // present when used is ≥ 80 % of limit
+  limit:        number
+  used:         number
+  booster:      number
+  monthly_used_sek?: number
+  monthly_ceiling_sek?: number
+  warning?: {         // present when used is ≥ 80 % of daily limit
     used:    number
     limit:   number
     percent: number
   }
 }
+// Three distinct block reasons so the UI can give the right call-to-action.
 export interface LimitGateBlocked {
   ok: false
-  status: 429
+  status: 429 | 503
   body: {
-    error:   string
-    limit:   number
-    used:    number
-    plan:    string
-    booster: number
-    upgrade: true
+    error:        string
+    reason:       'daily_cap' | 'monthly_ceiling' | 'global_kill_switch'
+    // daily_cap: user hit their per-day quota — CTA: Upgrade or buy Booster
+    // monthly_ceiling: org hit per-plan monthly cost ceiling — CTA: contact support
+    // global_kill_switch: every AI call paused company-wide — CTA: try later
+    limit?:       number
+    used?:        number
+    plan?:        string
+    booster?:     number
+    upgrade?:     boolean
+    contact_support?: boolean
   }
 }
 export type LimitGate = LimitGateOk | LimitGateBlocked
+
+// ── Monthly cost ceilings per plan, in SEK ───────────────────────────────────
+// Set above a typical-month COGS so only runaway usage trips them. Acts as
+// a backstop when the daily cap + model tiering aren't enough.
+// Reviewed against pricing sheet 2026-04-18.
+const MONTHLY_COST_CEILING_SEK: Record<string, number> = {
+  trial:      30,
+  starter:    60,
+  pro:       150,
+  group:     500,
+  enterprise: 1500,
+}
+function monthlyCeilingFor(planKey: string): number {
+  return MONTHLY_COST_CEILING_SEK[planKey] ?? MONTHLY_COST_CEILING_SEK.trial
+}
+
+// ── Global daily kill-switch ─────────────────────────────────────────────────
+// If total Claude spend across ALL orgs in the last 24 h exceeds this cap,
+// every AI call is blocked until the rolling window drops back below. Covers
+// exploited endpoints, runaway scripts, prompt injection attacks. Env-configurable.
+function globalDailyCapUsd(): number {
+  const raw = parseFloat(process.env.MAX_DAILY_GLOBAL_USD ?? '50')
+  return Number.isFinite(raw) && raw > 0 ? raw : 50
+}
 
 // Hard safety cap on "unlimited" plans (Group / Enterprise). The published
 // promise is unlimited, but a single runaway script or bad prompt loop could
@@ -96,6 +128,54 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
     effectivePlanKey = data?.plan ?? 'trial'
   }
 
+  // Gate 1 — global kill-switch. Stops all AI company-wide when 24 h spend
+  // exceeds MAX_DAILY_GLOBAL_USD. Cheapest check, run first.
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { data: globalRows } = await db
+    .from('ai_request_log')
+    .select('total_cost_usd')
+    .gte('created_at', since)
+  const globalSpend = (globalRows ?? []).reduce((s: number, r: any) => s + Number(r.total_cost_usd ?? 0), 0)
+  const globalCap   = globalDailyCapUsd()
+  if (globalSpend >= globalCap) {
+    return {
+      ok:     false,
+      status: 503,
+      body: {
+        error:           'AI temporarily paused across CommandCenter — please try again shortly.',
+        reason:          'global_kill_switch',
+        contact_support: true,
+      },
+    }
+  }
+
+  // Gate 2 — per-plan monthly cost ceiling. Sum cost_sek for the current
+  // calendar month; if over, block with a contact-support message.
+  const monthStart = new Date()
+  monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0)
+  const { data: monthRows } = await db
+    .from('ai_request_log')
+    .select('cost_sek')
+    .eq('org_id', orgId)
+    .gte('created_at', monthStart.toISOString())
+  const monthSpendSek = (monthRows ?? []).reduce((s: number, r: any) => s + Number(r.cost_sek ?? 0), 0)
+  const monthCeiling  = monthlyCeilingFor(effectivePlanKey)
+  if (monthSpendSek >= monthCeiling) {
+    return {
+      ok:     false,
+      status: 429,
+      body: {
+        error:           'Monthly AI cost ceiling reached. Please contact support to review usage.',
+        reason:          'monthly_ceiling',
+        plan:            effectivePlanKey,
+        used:            Math.round(monthSpendSek),
+        limit:           monthCeiling,
+        contact_support: true,
+      },
+    }
+  }
+
+  // Gate 3 — per-day query cap (the normal "you've used your quota" gate).
   const { total: limit, booster } = await getEffectiveDailyLimit(db, orgId, effectivePlanKey)
 
   const { data: usage } = await db
@@ -113,6 +193,7 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
       status: 429,
       body: {
         error:   'Daily AI query limit reached',
+        reason:  'daily_cap',
         limit,
         used,
         plan:    effectivePlanKey,
@@ -126,7 +207,15 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
     ? { used, limit, percent: Math.round((used / limit) * 100) }
     : undefined
 
-  return { ok: true, limit, used, booster, warning }
+  return {
+    ok: true,
+    limit,
+    used,
+    booster,
+    monthly_used_sek:    Math.round(monthSpendSek * 100) / 100,
+    monthly_ceiling_sek: monthCeiling,
+    warning,
+  }
 }
 
 /**
