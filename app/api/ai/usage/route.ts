@@ -21,14 +21,34 @@ export async function GET(req: NextRequest) {
   const today = new Date().toISOString().slice(0, 10)
 
   // Today's usage
-  const { data: usage } = await db
+  const { data: usage, error: usageErr } = await db
     .from('ai_usage_daily')
-    .select('query_count')
+    .select('query_count, org_id, date')
     .eq('org_id', auth.orgId)
     .eq('date', today)
     .maybeSingle()
 
   const used = usage?.query_count ?? 0
+
+  // Also peek at whatever rows exist for this org (ignoring date) so we can
+  // see if it's a date-matching issue vs org-matching issue.
+  const { data: anyRows } = await db
+    .from('ai_usage_daily')
+    .select('date, query_count')
+    .eq('org_id', auth.orgId)
+    .order('date', { ascending: false })
+    .limit(3)
+
+  console.log('[ai-usage] debug', {
+    auth_orgId:   auth.orgId,
+    auth_userId:  auth.userId,
+    auth_plan:    auth.plan,
+    today,
+    row_found:    !!usage,
+    row_count:    used,
+    err:          usageErr?.message ?? null,
+    latest_rows:  anyRows,
+  })
 
   // Effective cap (plan base + active Boosters)
   const { base, booster, total: limit } = await getEffectiveDailyLimit(db, auth.orgId, auth.plan)
