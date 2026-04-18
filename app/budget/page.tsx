@@ -88,6 +88,8 @@ export default function BudgetPage() {
       }
       if (!res.ok) throw new Error(data.error ?? 'Generation failed')
       setSuggestions(data)
+      // Tell the sidebar meter to refresh — AI counter just moved server-side.
+      try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
     } catch (e: any) { setGenError(e.message) }
     setGenerating(false)
   }
@@ -108,6 +110,7 @@ export default function BudgetPage() {
       }
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
       setAnalysis({ month, result: data })
+      try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
     } catch (e: any) {
       setAnalysis({ month, result: { verdict: 'error', headline: e.message, analysis: [], recommendations: [] } })
     }

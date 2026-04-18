@@ -298,28 +298,44 @@ export async function logAiRequest(db: Db, params: {
 
 // Bump the daily counter. Safe to call after the AI call succeeds.
 // Uses the increment_ai_usage RPC when available, falls back to manual upsert.
+// Logs errors loudly — silent counter failures caused "AI says 0 / 20 after 5
+// questions" on 2026-04-18.
 export async function incrementAiUsage(db: Db, orgId: string): Promise<void> {
   const d = today()
+
+  // Try RPC first (atomic on the DB side if deployed).
   try {
     const rpc = await db.rpc('increment_ai_usage', { p_org_id: orgId, p_date: d })
     if (!rpc.error) return
-    // If the RPC errors (not deployed yet, or wrong signature), fall through to upsert
-  } catch { /* fall through */ }
+    // Common: RPC not deployed yet. Only log once per cold-start to avoid spam.
+    if (!(globalThis as any).__aiRpcWarned) {
+      console.warn('[ai] increment_ai_usage RPC unavailable, falling back to manual upsert:', rpc.error.message)
+      ;(globalThis as any).__aiRpcWarned = true
+    }
+  } catch (e: any) {
+    console.warn('[ai] RPC call threw, falling back to manual upsert:', e?.message || e)
+  }
 
-  // Manual fallback: try to increment an existing row, else insert a fresh one at 1.
-  // Not strictly atomic, but daily-counter drift is acceptable.
-  const { data: existing } = await db
+  // Manual fallback — select + update or insert.
+  const { data: existing, error: selErr } = await db
     .from('ai_usage_daily')
     .select('id, query_count')
     .eq('org_id', orgId)
     .eq('date', d)
     .maybeSingle()
 
+  if (selErr) {
+    console.error('[ai] ai_usage_daily select failed', { orgId, date: d, error: selErr.message })
+    return
+  }
+
   if (existing) {
-    await db.from('ai_usage_daily')
+    const { error } = await db.from('ai_usage_daily')
       .update({ query_count: (existing.query_count ?? 0) + 1 })
       .eq('id', existing.id)
+    if (error) console.error('[ai] ai_usage_daily update failed', { orgId, date: d, error: error.message })
   } else {
-    await db.from('ai_usage_daily').insert({ org_id: orgId, date: d, query_count: 1 })
+    const { error } = await db.from('ai_usage_daily').insert({ org_id: orgId, date: d, query_count: 1 })
+    if (error) console.error('[ai] ai_usage_daily insert failed', { orgId, date: d, error: error.message })
   }
 }

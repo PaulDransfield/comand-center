@@ -101,6 +101,8 @@ export default function NotebookPage() {
       })
       const data = await res.json()
       setMessages([...updated, { role: 'assistant', content: data.answer ?? data.error ?? 'No response.' }])
+      // Poke the sidebar meter so the counter updates immediately.
+      if (res.ok) { try { window.dispatchEvent(new Event('cc_ai_used')) } catch {} }
     } catch {
       setMessages([...updated, { role: 'assistant', content: 'Something went wrong. Please try again.' }])
     }
