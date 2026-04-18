@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
-import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
+import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -136,6 +136,7 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+    const startedAt = Date.now()
     const response = await claude.messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: 2500, // 12 months × ~150 tokens each + overall strategy + JSON overhead
@@ -172,6 +173,16 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     })
 
     await incrementAiUsage(db, auth.orgId)
+    await logAiRequest(db, {
+      org_id:        auth.orgId,
+      user_id:       auth.userId,
+      request_type:  'budget_generate',
+      model:         AI_MODELS.AGENT,
+      page:          'budget',
+      input_tokens:  (response as any).usage?.input_tokens  ?? 0,
+      output_tokens: (response as any).usage?.output_tokens ?? 0,
+      duration_ms:   Date.now() - startedAt,
+    })
 
     return NextResponse.json({
       overall_strategy: String(parsed.overall_strategy ?? ''),

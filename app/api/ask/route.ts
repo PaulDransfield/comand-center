@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
-import { checkAiLimit, incrementAiUsage } from '@/lib/ai/usage'
+import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
   const maxTokens = tier === 'light' ? MAX_TOKENS.AGENT_RECOMMENDATION : MAX_TOKENS.ASSISTANT
 
   let answer: string
+  const startedAt = Date.now()
   try {
     const response = await claude.messages.create({
       model,
@@ -84,13 +85,35 @@ export async function POST(req: NextRequest) {
     })
     answer = (response.content[0] as any).text ?? 'No response'
 
-    // ── 5. Increment daily counter ─────────────────────────────
+    // ── 5. Increment daily counter (gates the daily cap) ──────
     await incrementAiUsage(supabase, auth.orgId)
+
+    // ── 6. Write full audit row — tokens, cost, user, duration ─
+    // Non-fatal: the helper logs and swallows any error so a slow DB write
+    // doesn't break the user's response.
+    const inputTokens  = (response as any).usage?.input_tokens  ?? 0
+    const outputTokens = (response as any).usage?.output_tokens ?? 0
+    await logAiRequest(supabase, {
+      org_id:           auth.orgId,
+      user_id:          auth.userId,
+      request_type:     'ask',
+      model,
+      tier,
+      page,
+      question_preview: question.slice(0, 100),
+      input_tokens:     inputTokens,
+      output_tokens:    outputTokens,
+      duration_ms:      Date.now() - startedAt,
+    })
 
   } catch (err: any) {
     console.error('Claude API error:', err)
     return NextResponse.json({ error: 'AI service unavailable. Please try again.' }, { status: 503 })
   }
 
-  return NextResponse.json({ answer })
+  // Return the answer plus the approaching-limit warning if the gate set one.
+  return NextResponse.json({
+    answer,
+    ...(gate.ok && gate.warning ? { warning: gate.warning } : {}),
+  })
 }
