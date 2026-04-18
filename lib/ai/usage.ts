@@ -242,6 +242,20 @@ export async function logAiRequest(db: Db, params: {
   const cost_usd = calcCostUsd(params.model, input, output)
   const cost_sek = usdToSek(cost_usd)
 
+  // Respect the per-org log_ai_questions opt-out. If false, the question
+  // preview is not persisted — only the metadata (tokens, cost, model, tier).
+  // Failure to read the flag defaults to the safer path (don't log the
+  // question), not the default-true behaviour.
+  let storeQuestion = true
+  try {
+    const { data: org } = await db
+      .from('organisations')
+      .select('log_ai_questions')
+      .eq('id', params.org_id)
+      .maybeSingle()
+    if (org && org.log_ai_questions === false) storeQuestion = false
+  } catch { storeQuestion = false }
+
   try {
     await db.from('ai_request_log').insert({
       org_id:           params.org_id,
@@ -250,7 +264,9 @@ export async function logAiRequest(db: Db, params: {
       model:            params.model,
       tier:             params.tier ?? null,
       page:             params.page ?? null,
-      question_preview: params.question_preview ? params.question_preview.slice(0, 100) : null,
+      question_preview: storeQuestion && params.question_preview
+        ? params.question_preview.slice(0, 100)
+        : null,
       input_tokens:     input,
       output_tokens:    output,
       total_cost_usd:   cost_usd,

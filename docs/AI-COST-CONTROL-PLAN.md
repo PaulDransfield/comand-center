@@ -356,9 +356,9 @@ Before declaring done:
 - Customers see their own usage + a warning before they hit the cap ✅ (Tranche 2)
 - Customers can self-serve purchase a Booster via Stripe ☐ (blocked on company formation; manual admin activation live)
 - Admin can see per-customer + global usage in one click, with SEK cost ✅ (Tranche 3)
-- Customer can opt out of question storage ☐ (Tranche 4)
-- Old logs auto-delete after 365 days ☐ (Tranche 4)
-- Daily ops email summarises usage + flags anomalies ☐ (Tranche 4)
+- Customer can opt out of question storage ✅ (Tranche 4)
+- Old logs auto-delete after 365 days ✅ (Tranche 4)
+- Daily ops email summarises usage + flags anomalies ✅ (Tranche 4)
 - Tests 1–6 above pass end-to-end ☐
 
 ---

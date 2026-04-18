@@ -43,6 +43,14 @@
     {
       "path": "/api/cron/customer-health-scoring",
       "schedule": "0 8 * * 1"
+    },
+    {
+      "path": "/api/cron/ai-log-retention",
+      "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/ai-daily-report",
+      "schedule": "0 8 * * *"
     }
   ]
 }

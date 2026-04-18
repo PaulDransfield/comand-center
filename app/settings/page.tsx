@@ -396,12 +396,31 @@ function GdprSection() {
   const [consents,   setConsents]   = React.useState<any[]>([])
   const [delStatus,  setDelStatus]  = React.useState('')
   const [showConfirm, setShowConfirm] = React.useState(false)
+  const [aiPrivacy,  setAiPrivacy]  = React.useState<boolean | null>(null)
+  const [aiSaving,   setAiSaving]   = React.useState(false)
 
   React.useEffect(() => {
     fetch('/api/gdpr/consent').then(r => r.json()).then(d => {
       if (d.consents) setConsents(d.consents)
     })
+    fetch('/api/settings/ai-privacy', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setAiPrivacy(d.log_ai_questions !== false) })
+      .catch(() => {})
   }, [])
+
+  async function toggleAiPrivacy(next: boolean) {
+    setAiSaving(true)
+    try {
+      const r = await fetch('/api/settings/ai-privacy', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ log_ai_questions: next }),
+      })
+      if (r.ok) setAiPrivacy(next)
+    } catch {}
+    setAiSaving(false)
+  }
 
   async function exportData() {
     setLoading(true)
@@ -446,6 +465,37 @@ function GdprSection() {
         ) : (
           <div style={{ fontSize: 12, color: '#9ca3af' }}>No consent recorded</div>
         )}
+      </div>
+
+      {/* AI question logging toggle — per-org privacy control */}
+      <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>Store AI question text</div>
+            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.55 }}>
+              When on, we save the first 100 characters of each AI question for quality debugging — retained 365 days, visible only to our support team. When off, we keep the model, token counts and cost (needed for billing) but the question text itself is never stored.
+            </div>
+          </div>
+          <label style={{ position: 'relative' as const, display: 'inline-block', width: 44, height: 24, flexShrink: 0, marginTop: 3 }}>
+            <input
+              type="checkbox"
+              checked={aiPrivacy === true}
+              onChange={e => toggleAiPrivacy(e.target.checked)}
+              disabled={aiPrivacy === null || aiSaving}
+              style={{ opacity: 0, width: 0, height: 0 }}
+            />
+            <span style={{
+              position: 'absolute' as const, inset: 0, cursor: aiSaving ? 'wait' : 'pointer',
+              background: aiPrivacy === true ? '#1a1f2e' : '#e5e7eb',
+              borderRadius: 24, transition: 'background .2s',
+            }}>
+              <span style={{
+                position: 'absolute' as const, top: 3, left: aiPrivacy === true ? 23 : 3,
+                width: 18, height: 18, background: 'white', borderRadius: '50%', transition: 'left .2s',
+              }} />
+            </span>
+          </label>
+        </div>
       </div>
 
       {/* Export */}
