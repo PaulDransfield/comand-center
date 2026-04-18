@@ -184,20 +184,24 @@ ALTER TABLE public.pos_connections ENABLE ROW LEVEL SECURITY;
 
 -- ── sync_log ──────────────────────────────────────────────────────────────────
 -- One row per sync run. Feeds /admin/health + customer-facing "Last sync" UI.
+-- Production has drifted — this table may already exist without the newer columns.
+-- Use ALTER TABLE … ADD COLUMN IF NOT EXISTS for every column so the indexes below
+-- can reference them regardless of the prior schema state.
 CREATE TABLE IF NOT EXISTS public.sync_log (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id          uuid NOT NULL,
-  business_id     uuid,
-  integration_id  uuid,
   provider        text NOT NULL,
-  status          text NOT NULL,           -- success | partial | error
-  records_synced  integer,
-  date_from       date,
-  date_to         date,
-  error_msg       text,
-  duration_ms     integer,
+  status          text NOT NULL,
   created_at      timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS business_id     uuid;
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS integration_id  uuid;
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS records_synced  integer;
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS date_from       date;
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS date_to         date;
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS error_msg       text;
+ALTER TABLE public.sync_log ADD COLUMN IF NOT EXISTS duration_ms     integer;
+
 CREATE INDEX IF NOT EXISTS sync_log_org_idx ON public.sync_log (org_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS sync_log_integration_idx ON public.sync_log (integration_id, created_at DESC);
 ALTER TABLE public.sync_log ENABLE ROW LEVEL SECURITY;
