@@ -66,6 +66,24 @@ export async function aggregateMetrics(
     latest_shift_date: latestStaff,
   })
 
+  // Targeted diagnostic — a second independent fetch using `.eq()` on yesterday's date.
+  // If this returns rows but the range query above missed them, the bug is in the
+  // .gte/.lte chain (type coercion, pagination, ordering). If it also returns
+  // zero, the DB connection itself can't see those rows (replication lag, RLS,
+  // connection-pool snapshot) — totally different category of bug.
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const targeted = await db.from('revenue_logs')
+    .select('revenue_date, provider, revenue, created_at')
+    .eq('org_id', orgId).eq('business_id', businessId)
+    .eq('revenue_date', yesterday)
+  console.log('[aggregate] targeted yesterday', {
+    business_id: businessId,
+    yesterday,
+    rows:        targeted.data?.length ?? 0,
+    error:       targeted.error?.message ?? null,
+    sample:      targeted.data?.slice(0, 3) ?? [],
+  })
+
   // ── Deduplicate revenue_logs ──────────────────────────────────────────────
   // The sync engine writes BOTH an aggregate 'personalkollen' row AND per-dept
   // 'pk_*' rows for the same sales data. If we sum all providers, we double-count.
