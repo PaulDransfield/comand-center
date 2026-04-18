@@ -53,6 +53,19 @@ export async function aggregateMetrics(
   const staffLogs  = staffRes.data ?? []
   const trackerRows = trackerRes.data ?? []
 
+  // Diagnostic — latest date actually fetched per table. If these don't match
+  // the raw DB state, we're looking at a scoping / replication / caching issue.
+  const latestRev   = rawRevLogs.reduce((m: string, r: any) => r.revenue_date > m ? r.revenue_date : m, '')
+  const latestStaff = staffLogs.reduce((m: string, s: any)  => s.shift_date   > m ? s.shift_date   : m, '')
+  console.log('[aggregate] fetched', {
+    business_id:       businessId,
+    fromDate, toDate,
+    rev_rows:          rawRevLogs.length,
+    latest_rev_date:   latestRev,
+    staff_rows:        staffLogs.length,
+    latest_shift_date: latestStaff,
+  })
+
   // ── Deduplicate revenue_logs ──────────────────────────────────────────────
   // The sync engine writes BOTH an aggregate 'personalkollen' row AND per-dept
   // 'pk_*' rows for the same sales data. If we sum all providers, we double-count.
