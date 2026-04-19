@@ -5,11 +5,15 @@
 // POST — save or update a month's P&L data
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+
+export const dynamic = 'force-dynamic'
 
 const getAuth = getRequestAuth
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -20,47 +24,28 @@ export async function GET(req: NextRequest) {
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
   const db = createAdminClient()
-  const dateFrom = `${year}-01-01`
-  const dateTo   = `${year}-12-31`
 
-  // Fetch all three sources in parallel
-  const [trackerRes, revRes, staffRes] = await Promise.all([
-    // Manual P&L entries — ALWAYS filter by org_id first (tenant isolation; service role bypasses RLS)
+  // Read from the summary table the aggregator writes after every sync.
+  // Previously re-aggregated raw revenue_logs + staff_logs here with
+  // `.limit(50000)` which silently hit Supabase's 1000-row cap on staff
+  // and under-counted cost for any business with >1000 shifts a year.
+  // The summary tables already dedupe providers + coerce numeric strings.
+  const [trackerRes, monthlyRes] = await Promise.all([
     db.from('tracker_data').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).order('period_month'),
-    // Real revenue from POS sync (revenue_logs) — include provider for dedup
-    // .lte() on date columns silently drops top-boundary rows in Supabase — use .gte only, filter year in aggregation.
-    db.from('revenue_logs').select('revenue_date, revenue, provider').eq('org_id', auth.orgId).eq('business_id', businessId).gte('revenue_date', dateFrom).gt('revenue', 0).limit(50000),
-    // Real staff cost from Personalkollen sync (staff_logs)
-    db.from('staff_logs').select('shift_date, cost_actual, estimated_salary').eq('org_id', auth.orgId).eq('business_id', businessId).gte('shift_date', dateFrom).or('cost_actual.gt.0,estimated_salary.gt.0').not('pk_log_url', 'like', '%_scheduled').limit(50000),
+    db.from('monthly_metrics').select('month, revenue, staff_cost, food_cost').eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year),
   ])
 
   const manualRows = trackerRes.data ?? []
 
-  // Deduplicate: skip aggregate 'personalkollen' rows when per-dept pk_* rows exist.
-  // Also filter to the requested year — we had to drop .lte() on the DB query
-  // because Supabase silently excludes top-boundary dates in chained gte/lte.
-  const yearPrefix = String(year)
-  const rawRevRows = (revRes.data ?? []).filter((r: any) => r.revenue_date?.startsWith(yearPrefix))
-  const hasDeptRevRows = rawRevRows.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
-  const dedupedRev = hasDeptRevRows ? rawRevRows.filter((r: any) => (r.provider ?? '') !== 'personalkollen') : rawRevRows
-
-  // Aggregate synced revenue by month
-  const syncedRev: Record<number, number> = {}
-  for (const r of dedupedRev) {
-    const m = parseInt(r.revenue_date.slice(5, 7))
-    syncedRev[m] = (syncedRev[m] ?? 0) + (r.revenue ?? 0)
-  }
-
-  // Aggregate synced staff cost by month — same year filter as revenue.
-  const staffRows = (staffRes.data ?? []).filter((s: any) => s.shift_date?.startsWith(yearPrefix))
+  const syncedRev:   Record<number, number> = {}
   const syncedStaff: Record<number, number> = {}
-  for (const s of staffRows) {
-    const m    = parseInt(s.shift_date.slice(5, 7))
-    const cost = Number(s.cost_actual ?? 0) > 0 ? Number(s.cost_actual) : Number(s.estimated_salary ?? 0)
-    syncedStaff[m] = (syncedStaff[m] ?? 0) + cost
+  const syncedFood:  Record<number, number> = {}
+  for (const m of monthlyRes.data ?? []) {
+    syncedRev[m.month]   = Number(m.revenue ?? 0)
+    syncedStaff[m.month] = Number(m.staff_cost ?? 0)
+    syncedFood[m.month]  = Number(m.food_cost ?? 0)
   }
 
-  // Merge: use synced data when available, fall back to manual entries
   const manualByMonth: Record<number, any> = {}
   for (const r of manualRows) manualByMonth[r.period_month] = r
 
@@ -73,7 +58,8 @@ export async function GET(req: NextRequest) {
     // Use synced data if it exists, otherwise use manual
     const revenue    = realRev > 0 ? realRev : Number(manual?.revenue ?? 0)
     const staff_cost = realCost > 0 ? realCost : Number(manual?.staff_cost ?? 0)
-    const food_cost  = Number(manual?.food_cost ?? 0) // only from manual/Fortnox — no POS source yet
+    const syncedFc   = Math.round(syncedFood[m] ?? 0)
+    const food_cost  = syncedFc > 0 ? syncedFc : Number(manual?.food_cost ?? 0)
 
     if (revenue === 0 && staff_cost === 0 && food_cost === 0) continue // skip empty months
 
@@ -102,7 +88,9 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.json(merged)
+  return NextResponse.json(merged, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }
 
 export async function POST(req: NextRequest) {
