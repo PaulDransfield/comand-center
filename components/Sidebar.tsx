@@ -100,6 +100,14 @@ export default function Sidebar() {
     return () => { clearInterval(t); window.removeEventListener('cc_ai_used', handler) }
   }, [])
 
+  // Re-check sync status every 60 s so the "Live · Xm ago" stamp ticks up
+  // between hot-sync runs. Also refreshes the dot colour (green <30m, amber older).
+  useEffect(() => {
+    if (!selected?.id) return
+    const t = setInterval(() => fetchSyncStatus(selected.id), 60_000)
+    return () => clearInterval(t)
+  }, [selected?.id])
+
   function selectBiz(biz: Business) {
     setSelected(biz)
     localStorage.setItem('cc_selected_biz', biz.id)
@@ -160,16 +168,23 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Sync status */}
+      {/* Sync status — hot-sync runs every 15 min so "just now" is the common case. */}
       {syncStatus?.last_sync_at && (
         <div style={{ padding: '6px 14px', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#10b981', display: 'inline-block', flexShrink: 0 }} />
+            <span style={{
+              width: 5, height: 5, borderRadius: '50%',
+              background: (Date.now() - new Date(syncStatus.last_sync_at).getTime()) < 30 * 60_000 ? '#10b981' : '#f59e0b',
+              display: 'inline-block', flexShrink: 0,
+              boxShadow: (Date.now() - new Date(syncStatus.last_sync_at).getTime()) < 30 * 60_000
+                ? '0 0 6px rgba(16,185,129,0.6)' : 'none',
+            }} />
             {(() => {
               const d = new Date(syncStatus.last_sync_at)
-              const now = new Date()
-              const diffH = Math.floor((now.getTime() - d.getTime()) / 3600000)
-              if (diffH < 1) return 'Synced just now'
+              const diffMin = Math.floor((Date.now() - d.getTime()) / 60_000)
+              if (diffMin < 1)  return 'Live · just synced'
+              if (diffMin < 60) return `Live · ${diffMin}m ago`
+              const diffH = Math.floor(diffMin / 60)
               if (diffH < 24) return `Synced ${diffH}h ago`
               return `Synced ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             })()}
