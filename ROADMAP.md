@@ -1,6 +1,7 @@
 # ROADMAP.md — CommandCenter
-> Version 8.0 | Updated: 2026-04-17 | Session 7 ✅ COMPLETE · Session 8 (data integrity + polish) ✅ COMPLETE
-> Next phase: UX redesign (see docs/ux-redesign-spec.md)
+> Version 8.1 | Updated: 2026-04-19 | Session 7 ✅ · Session 8 ✅ · AI differentiation in progress
+> Active focus: **docs/AI-ROADMAP.md** (Weekly AI Manager + Schedule Comparison shipping 2026-04-19)
+> UX redesign queued: docs/ux-redesign-spec.md
 > Read alongside CLAUDE.md and FIXES.md
 
 ---

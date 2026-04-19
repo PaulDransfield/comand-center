@@ -154,7 +154,10 @@ export default function SchedulingPage() {
         <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Scheduling Efficiency</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Labour cost vs revenue · weekly patterns · what to tweak next week</p>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
+              Labour cost vs revenue · weekly patterns ·{' '}
+              <a href="/scheduling/ai" style={{ color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>AI suggested schedule →</a>
+            </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {viewMode === 'week' ? (
