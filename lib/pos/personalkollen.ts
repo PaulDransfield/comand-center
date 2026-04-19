@@ -139,37 +139,88 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
-// Response: { uid, url, sale_time, workplace, payments, items, number_of_guests }
+//
+// Looping day-by-day is essential. PK's /sales/ endpoint uses cursor-based
+// pagination. A range query (`sale_time__gte=X&sale_time__lte=Y`) can silently
+// drop rows inside the window when the cursor ordering doesn't align with
+// sale_time — confirmed 2026-04-19: range query returned 11 % of Apr 15 sales
+// (139 / 1115). Per-day queries with explicit T-bounds return 100 %.
+//
+// Revenue interpretation:
+//   item.amount         = quantity
+//   item.price_per_unit = NET price (ex-VAT)  ← verified by reconciling
+//                         sum(qty × price × (1+vat)) against sum(payments)
+//   item.vat            = VAT rate as decimal (0.12, 0.25, 0.06 …)
+//   payments[].amount   = GROSS paid (inc-VAT + tip)
+//   sale.tip            = tip portion of payments
+//
+// The `net_revenue` field below matches PK's dashboard "Försäljning ex. moms".
+// Food/drink split approximated from VAT rate since PK's API doesn't expose
+// product category reliably: 12 % → food, 25 % → drink (alcohol), 6 % → bev.
 export async function getSales(token: string, fromDate?: string, toDate?: string) {
-  let endpoint = '/sales/'
-  const params: string[] = []
-  if (fromDate) params.push(`sale_time__gte=${fromDate}`)
-  if (toDate)   params.push(`sale_time__lte=${toDate}`)
-  if (params.length) endpoint += '?' + params.join('&')
+  const from = fromDate ?? new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10)
+  const to   = toDate   ?? new Date().toISOString().slice(0, 10)
 
-  const sales = await fetchAll(endpoint, token)
-  return sales.map((s: any) => {
-    const totalGross = (s.payments ?? []).reduce((sum: number, p: any) => sum + parseFloat(p.amount ?? 0), 0)
+  // Enumerate days [from, to] inclusive.
+  const days: string[] = []
+  for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+    days.push(d.toISOString().slice(0, 10))
+  }
 
-    // PK API returns payment amounts — store as-is since the exact VAT treatment
-    // depends on POS configuration. Revenue figures match PK's "Kassaförsäljning"
-    // view. PK's dashboard "Försäljning" may show different figures depending on
-    // their own VAT/reporting settings.
-    const foodGross  = (s.items ?? []).filter((i: any) => i.category === 'food' || i.item_type === 'food').reduce((sum: number, i: any) => sum + parseFloat(i.total ?? 0), 0)
-    const drinkGross = (s.items ?? []).filter((i: any) => i.category === 'drink' || i.item_type === 'drink').reduce((sum: number, i: any) => sum + parseFloat(i.total ?? 0), 0)
+  const raw: any[] = []
+  // Sequential to keep PK rate-limit friendly. ~1 s per day × 90 days ≈ 90 s;
+  // fits comfortably inside master-sync's per-integration budget.
+  for (const day of days) {
+    const endpoint = `/sales/?sale_time__gte=${day}T00:00:00&sale_time__lt=${day}T23:59:59`
+    try {
+      const dayRows = await fetchAll(endpoint, token)
+      raw.push(...dayRows)
+    } catch (e: any) {
+      // Per-day failure shouldn't kill the whole window — log and continue.
+      console.warn(`[pk] getSales day ${day} failed: ${e.message}`)
+    }
+  }
+
+  return raw.map((s: any) => {
+    // Net from items: Σ (qty × price_per_unit). This is already ex-VAT.
+    let net       = 0
+    let foodNet   = 0
+    let drinkNet  = 0
+    let otherNet  = 0
+    for (const i of (s.items ?? [])) {
+      const qty    = parseFloat(i.amount          ?? 0)
+      const price  = parseFloat(i.price_per_unit  ?? 0)
+      const vat    = parseFloat(i.vat             ?? 0)
+      const line   = qty * price
+      net += line
+      // Split by VAT rate (Swedish restaurant VAT coding):
+      // 12% = food, 25% = alcohol, 6% = other (papers / transport / rarely in restaurants)
+      if      (Math.abs(vat - 0.12) < 0.001) foodNet  += line
+      else if (Math.abs(vat - 0.25) < 0.001) drinkNet += line
+      else                                   otherNet += line
+    }
+
+    const gross = (s.payments ?? []).reduce((sum: number, p: any) => sum + parseFloat(p.amount ?? 0), 0)
+    const tip   = s.tip ? parseFloat(s.tip) : 0
 
     return {
       uid:           s.uid,
       url:           s.url,
       sale_time:     s.sale_time,
       workplace_url: s.workplace,
-      amount:        Math.round(totalGross * 100) / 100,
+
+      // `amount` is now NET ex-VAT (matches PK dashboard "Försäljning ex. moms").
+      // Tip is excluded (reported separately). Gross still available as
+      // `gross_amount` for reconciliation / VAT reports.
+      amount:        Math.round(net * 100) / 100,
+      gross_amount:  Math.round(gross * 100) / 100,
+
       covers:        s.number_of_guests ?? null,
       is_takeaway:   s.is_take_away ?? false,
-      tip:           s.tip ? parseFloat(s.tip) : 0,
-      payment_types: (s.payments ?? []).map((p: any) => p.payment_type ?? 'unknown'),
-      food_revenue:  Math.round(foodGross * 100) / 100,
-      drink_revenue: Math.round(drinkGross * 100) / 100,
+      tip,
+      payment_types: (s.payments ?? []).map((p: any) => p.method?.name ?? p.payment_type ?? 'unknown'),
+      food_revenue:  Math.round(foodNet * 100) / 100,
+      drink_revenue: Math.round((drinkNet + otherNet) * 100) / 100,
     }
   })
 }
