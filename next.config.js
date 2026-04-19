@@ -53,8 +53,11 @@ module.exports = withSentryConfig(nextConfig, {
   org:     'paul-7076s-projects',
   project: 'javascript-nextjs',
 
-  // Suppress Sentry's noisy build output
-  silent: true,
+  // Temporarily unsilenced + debug to diagnose why Sentry shows minified
+  // chunks ("Images Loaded: Unreferenced"). Flip back to silent:true, debug:false
+  // once source maps are resolving. Task #81.
+  silent: false,
+  debug:  true,
 
   // Upload source maps to Sentry so stack traces show real line numbers
   // rather than minified gibberish. Only runs during production builds.
