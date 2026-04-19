@@ -18,8 +18,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { fetchAllPaged } from '@/lib/supabase/page'
-import { decrypt }       from '@/lib/integrations/encryption'
-import { getWorkPeriods } from '@/lib/pos/personalkollen'
+import { decrypt }                    from '@/lib/integrations/encryption'
+import { getWorkPeriods }              from '@/lib/pos/personalkollen'
+import { weatherBucket }               from '@/lib/weather/forecast'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,20 +127,43 @@ export async function GET(req: NextRequest) {
     row.dept_breakdown[dept].cost  += cost
   }
 
-  // ── Historical pattern: last 8 complete weeks of daily_metrics ─────────────
-  const histEnd = new Date(nextMon); histEnd.setDate(nextMon.getDate() - 1)  // last Sunday
-  const histStart = new Date(histEnd); histStart.setDate(histEnd.getDate() - 7 * 8)
-  const { data: daily } = await db
-    .from('daily_metrics')
-    .select('date, revenue, staff_cost, hours_worked, labour_pct')
-    .eq('business_id', bizId)
-    .gte('date', histStart.toISOString().slice(0, 10))
-    .lte('date', histEnd.toISOString().slice(0, 10))
+  // ── Historical pattern: last 12 complete weeks of daily_metrics + weather ─
+  const histEnd = new Date(nextMon); histEnd.setDate(nextMon.getDate() - 1)
+  const histStart = new Date(histEnd); histStart.setDate(histEnd.getDate() - 7 * 12)
+  const histStartIso = histStart.toISOString().slice(0, 10)
+  const histEndIso   = histEnd.toISOString().slice(0, 10)
+  const [dailyRes, wxHistRes, wxFcastRes] = await Promise.all([
+    db.from('daily_metrics')
+      .select('date, revenue, staff_cost, hours_worked, labour_pct')
+      .eq('business_id', bizId)
+      .gte('date', histStartIso).lte('date', histEndIso),
+    // Observed weather for the same range (correlation input)
+    db.from('weather_daily')
+      .select('date, temp_avg, precip_mm, weather_code, summary, is_forecast')
+      .eq('business_id', bizId)
+      .gte('date', histStartIso).lte('date', histEndIso)
+      .eq('is_forecast', false),
+    // Forecast for the target week (to pick the matching bucket per day)
+    db.from('weather_daily')
+      .select('date, temp_avg, precip_mm, weather_code, summary, temp_min, temp_max, wind_max')
+      .eq('business_id', bizId)
+      .gte('date', weekFrom).lte('date', weekTo),
+  ])
+  const daily   = dailyRes.data ?? []
+  const wxHist  = wxHistRes.data ?? []
+  const wxNext  = wxFcastRes.data ?? []
+  const wxNextByDate: Record<string, any> = {}
+  for (const w of wxNext) wxNextByDate[w.date] = w
+  const wxHistByDate: Record<string, any> = {}
+  for (const w of wxHist) wxHistByDate[w.date] = w
 
-  // Per-weekday historical averages (ignore days with zero rev — closed days
-  // would drag the average down artificially).
+  // Per-weekday historical averages (ignore days with zero rev).
   const byDow: Record<number, { rev: number[]; hours: number[]; revPerHour: number[]; labourPct: number[] }> = {}
   for (let i = 0; i < 7; i++) byDow[i] = { rev: [], hours: [], revPerHour: [], labourPct: [] }
+
+  // Per (weekday × bucket) for weather-aware refinement.
+  const byDowBucket: Record<string, { rev: number[]; hours: number[]; revPerHour: number[] }> = {}
+
   for (const r of (daily ?? [])) {
     if (!r.date || Number(r.revenue ?? 0) <= 0) continue
     const dow = (new Date(r.date).getUTCDay() + 6) % 7
@@ -149,14 +173,18 @@ export async function GET(req: NextRequest) {
     byDow[dow].hours.push(hrs)
     if (hrs > 0) byDow[dow].revPerHour.push(rev / hrs)
     if (r.labour_pct != null) byDow[dow].labourPct.push(Number(r.labour_pct))
+
+    const wx = wxHistByDate[r.date]
+    if (wx) {
+      const bucket = weatherBucket(wx)
+      const key    = `${dow}|${bucket}`
+      if (!byDowBucket[key]) byDowBucket[key] = { rev: [], hours: [], revPerHour: [] }
+      byDowBucket[key].rev.push(rev)
+      byDowBucket[key].hours.push(hrs)
+      if (hrs > 0) byDowBucket[key].revPerHour.push(rev / hrs)
+    }
   }
   const avg = (a: number[]) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
-  const median = (a: number[]) => {
-    if (!a.length) return 0
-    const s = [...a].sort((x, y) => x - y)
-    const m = Math.floor(s.length / 2)
-    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
-  }
 
   // ── Suggested schedule: target rev-per-hour at 75th percentile of history ─
   // If last 8 weeks Mon averaged 25k rev at 40h (= 625 kr/h), and the best Mons
@@ -170,21 +198,45 @@ export async function GET(req: NextRequest) {
   for (const date of Object.keys(currentByDate).sort()) {
     const dow = (new Date(date).getUTCDay() + 6) % 7
     const d   = byDow[dow]
-    const avgRev   = Math.round(avg(d.rev))
-    const avgHours = Math.round(avg(d.hours) * 10) / 10
-    const sortedRph = [...d.revPerHour].sort((a, b) => a - b)
+
+    // Weather-aware refinement: if we have a forecast for this date AND we've
+    // seen ≥3 historical days with the same (weekday, bucket) combination,
+    // use THAT subset's rev/hour + revenue expectation. Otherwise fall back
+    // to plain all-weather weekday averages.
+    const fcast = wxNextByDate[date]
+    const bucket = fcast ? weatherBucket(fcast) : null
+    const bucketKey = bucket ? `${dow}|${bucket}` : null
+    const bucketData = bucketKey ? byDowBucket[bucketKey] : null
+
+    const useBucket    = !!(bucketData && bucketData.rev.length >= 3)
+    const sourceRev    = useBucket ? bucketData!.rev        : d.rev
+    const sourceHours  = useBucket ? bucketData!.hours      : d.hours
+    const sourceRph    = useBucket ? bucketData!.revPerHour : d.revPerHour
+
+    const avgRev    = Math.round(avg(sourceRev))
+    const avgHours  = Math.round(avg(sourceHours) * 10) / 10
+    const sortedRph = [...sourceRph].sort((a, b) => a - b)
     const p75Rph    = sortedRph.length ? sortedRph[Math.floor(sortedRph.length * 0.75)] : 0
     const targetHours = avgRev > 0 && p75Rph > 0 ? Math.round((avgRev / p75Rph) * 10) / 10 : avgHours
 
     const current   = currentByDate[date]
     const deltaHrs  = Math.round((targetHours - current.hours) * 10) / 10
-    // Estimate cost delta: use the weekday's average cost-per-hour from history.
     const avgCostPerHour = current.hours > 0 ? current.est_cost / current.hours : 0
     const deltaCost = Math.round(deltaHrs * avgCostPerHour)
+
+    const weatherNote = fcast ? `${fcast.summary}, ${fcast.temp_min ?? '?'}–${fcast.temp_max ?? '?'}°C${Number(fcast.precip_mm) > 0.5 ? `, ${fcast.precip_mm}mm` : ''}` : null
+
     const rationale = (() => {
-      if (d.rev.length < 3)                        return 'Not enough history for this weekday yet — holding as-scheduled.'
-      if (Math.abs(deltaHrs) < 2)                   return 'Current schedule roughly matches historical optimum.'
-      if (deltaHrs < 0)                             return `Your best ${DAYS[dow]}s in the last 8 weeks ran ${Math.round(p75Rph)} kr/hour. At the day's average revenue (${fmtKr(avgRev)}), that's ${targetHours}h.`
+      if (sourceRev.length < 3) {
+        return useBucket
+          ? `Forecast: ${weatherNote}. Not enough matching ${DAYS[dow]} history for this weather yet — using all-weather weekday average (${avgHours}h).`
+          : 'Not enough history for this weekday yet — holding as-scheduled.'
+      }
+      if (useBucket) {
+        return `Forecast: ${weatherNote}. Your ${bucket} ${DAYS[dow]}s (${sourceRev.length} days) averaged ${fmtKr(avgRev)} rev; top-quartile ran ${Math.round(p75Rph)} kr/hour → ${targetHours}h target.`
+      }
+      if (Math.abs(deltaHrs) < 2) return 'Current schedule roughly matches historical optimum.'
+      if (deltaHrs < 0)           return `Your best ${DAYS[dow]}s in the last 12 weeks ran ${Math.round(p75Rph)} kr/hour. At the day's average revenue (${fmtKr(avgRev)}), that's ${targetHours}h.`
       return `Historical average on ${DAYS[dow]} is ${avgHours}h worked; current schedule is ${current.hours}h — consider adding hours if demand rising.`
     })()
 
@@ -197,6 +249,13 @@ export async function GET(req: NextRequest) {
       rev_per_hour:  Math.round(p75Rph),
       delta_hours:   deltaHrs,
       delta_cost:    deltaCost,
+      weather:       fcast ? {
+        summary:  fcast.summary,
+        temp_min: fcast.temp_min, temp_max: fcast.temp_max,
+        precip_mm: fcast.precip_mm,
+        bucket,
+      } : null,
+      bucket_days_seen: useBucket ? bucketData!.rev.length : 0,
       reasoning:     rationale,
     })
   }
@@ -220,7 +279,7 @@ export async function GET(req: NextRequest) {
       saving_kr:        savingKr,
       added_cost_kr:    addCost,
       net_saving_kr:    savingKr - addCost,
-      rationale:        'Hours sized to match 75th-percentile rev-per-hour from last 8 weeks of the same weekday. Conservative target — keeps a safety margin over historical average.',
+      rationale:        'Hours sized to match 75th-percentile rev-per-hour from last 12 weeks. Where the forecast matches ≥3 historical days of the same weekday+weather combination (e.g. rainy Friday), that subset is used — otherwise all-weather weekday average.',
     },
   }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
 }

@@ -55,7 +55,7 @@ export default function ScheduleAIComparison() {
       </div>
 
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
         <KPI label="Scheduled hours" value={`${data.summary.current_hours}h`} sub="in PK now" />
         <KPI label="AI-suggested" value={`${data.summary.suggested_hours}h`} sub={data.summary.suggested_hours < data.summary.current_hours ? 'trim' : 'add'} />
         <KPI
@@ -65,6 +65,27 @@ export default function ScheduleAIComparison() {
           colour={data.summary.net_saving_kr > 0 ? '#059669' : '#b91c1c'}
         />
       </div>
+
+      {/* Weather forecast strip */}
+      {data.suggested.some((s: any) => s.weather) && (
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', gap: 12, overflowX: 'auto' }}>
+          {data.suggested.map((s: any) => s.weather ? (
+            <div key={s.date} style={{ minWidth: 90, textAlign: 'center', fontSize: 12 }}>
+              <div style={{ fontWeight: 600 }}>{s.weekday}</div>
+              <div style={{ color: '#6b7280', fontSize: 11 }}>{s.weather.summary}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>
+                {s.weather.temp_min != null ? `${Math.round(s.weather.temp_min)}–${Math.round(s.weather.temp_max)}°` : '—'}
+              </div>
+              {Number(s.weather.precip_mm) > 0.5 && (
+                <div style={{ fontSize: 10, color: '#3b82f6' }}>{s.weather.precip_mm}mm</div>
+              )}
+              {s.bucket_days_seen >= 3 && (
+                <div style={{ fontSize: 9, color: '#059669', marginTop: 2 }}>✓ {s.bucket_days_seen} matches</div>
+              )}
+            </div>
+          ) : null)}
+        </div>
+      )}
 
       <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 13, color: '#78350f' }}>
         <strong>Method.</strong> {data.summary.rationale}
