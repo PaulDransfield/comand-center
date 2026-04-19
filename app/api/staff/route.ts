@@ -1,11 +1,14 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { fetchAllPaged } from '@/lib/supabase/page'
 export const dynamic = 'force-dynamic'
 
 const getAuth = getRequestAuth
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -25,21 +28,25 @@ export async function GET(req: NextRequest) {
     .eq('status', 'connected')
     .limit(1).maybeSingle()
 
-  // Read from staff_logs — include any row with cost OR lateness data
-  let query = db.from('staff_logs')
-    .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, estimated_salary, pk_staff_url, is_late, late_minutes, ob_supplement_kr, ob_type')
-    .eq('org_id', auth.orgId)
-    .gte('shift_date', from)
-    .lte('shift_date', to)
-    // Include rows with cost data OR lateness data (late shifts may have 0 cost on casual rates)
-    .or('cost_actual.gt.0,estimated_salary.gt.0,is_late.eq.true')
-    .not('pk_log_url', 'like', '%_scheduled')
+  // Read from staff_logs — include any row with cost OR lateness data.
+  // Paginate via .range() — Supabase silently caps at max_rows (default 1000)
+  // regardless of any .limit() we set. Without pagination, businesses with
+  // >1000 shifts in the window silently lose rows.
+  // .lte() on shift_date was dropped — chained gte/lte silently excludes the
+  // top-boundary date on date-typed columns. Filter upper bound in memory.
+  const rawLogs = await fetchAllPaged(async (lo, hi) => {
+    let q = db.from('staff_logs')
+      .select('staff_name, staff_group, shift_date, hours_worked, cost_actual, estimated_salary, pk_staff_url, is_late, late_minutes, ob_supplement_kr, ob_type')
+      .eq('org_id', auth.orgId)
+      .gte('shift_date', from)
+      .or('cost_actual.gt.0,estimated_salary.gt.0,is_late.eq.true')
+      .not('pk_log_url', 'like', '%_scheduled')
+      .order('shift_date', { ascending: true })
+    if (businessId) q = q.eq('business_id', businessId)
+    return q.range(lo, hi)
+  }).catch((e: any) => { throw new Error(e.message) })
 
-  if (businessId) query = query.eq('business_id', businessId)
-  query = query.limit(50000)
-
-  const { data: logs, error } = await query
-  if (error) return NextResponse.json({ error: error.message, connected: true }, { status: 500 })
+  const logs = rawLogs.filter((r: any) => !r.shift_date || r.shift_date <= to)
 
   // Aggregate by staff member + lateness rollups in one pass
   const staffMap:   Record<string, any> = {}
@@ -163,5 +170,7 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  return NextResponse.json({ connected: true, summary, staff, dept_lateness, weekday_lateness })
+  return NextResponse.json({ connected: true, summary, staff, dept_lateness, weekday_lateness }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }

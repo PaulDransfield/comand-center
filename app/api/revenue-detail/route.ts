@@ -3,13 +3,16 @@
 // GET daily revenue breakdown — dine-in, takeaway, tips from revenue_logs
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { fetchAllPaged } from '@/lib/supabase/page'
 
 export const dynamic = 'force-dynamic'
 
 const getAuth = getRequestAuth
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -20,23 +23,20 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  const query = db
-    .from('revenue_logs')
-    .select('revenue_date, revenue, covers, tip_revenue, takeaway_revenue, dine_in_revenue, food_revenue, bev_revenue, revenue_per_cover, transactions, provider')
-    .eq('org_id', auth.orgId)
-    .gte('revenue_date', from)
-    .lte('revenue_date', to)
-    .order('revenue_date', { ascending: false })
-    .limit(50000)
+  // Paginate + drop .lte on date column (boundary bug, FIXES.md §0).
+  // Using .range() instead of .limit() so all rows are fetched, then filter
+  // the upper bound in memory.
+  const rawAll = await fetchAllPaged(async (lo, hi) => {
+    let q = db.from('revenue_logs')
+      .select('revenue_date, revenue, covers, tip_revenue, takeaway_revenue, dine_in_revenue, food_revenue, bev_revenue, revenue_per_cover, transactions, provider')
+      .eq('org_id', auth.orgId)
+      .gte('revenue_date', from)
+      .order('revenue_date', { ascending: true })
+    if (businessId) q = q.eq('business_id', businessId)
+    return q.range(lo, hi)
+  }).catch((e: any) => { throw new Error(e.message) })
 
-  if (businessId) query.eq('business_id', businessId)
-
-  const { data, error } = await query
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  // Deduplicate: skip aggregate 'personalkollen' rows when per-dept pk_* rows exist
-  const rawRows = data ?? []
+  const rawRows = rawAll.filter((r: any) => !r.revenue_date || r.revenue_date <= to)
   const hasDeptRows = rawRows.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
   const dedupedRows = hasDeptRows ? rawRows.filter((r: any) => (r.provider ?? '') !== 'personalkollen') : rawRows
 
@@ -100,5 +100,7 @@ export async function GET(req: NextRequest) {
       : 0,
   }
 
-  return NextResponse.json({ rows, summary })
+  return NextResponse.json({ rows, summary }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }

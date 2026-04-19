@@ -4,6 +4,7 @@
 // Joins staff_logs + revenue_logs by date — no new tables needed
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -13,6 +14,7 @@ const getAuth = getRequestAuth
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -24,65 +26,36 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // Fetch staff logs — one row per shift per staff member
-  let staffQuery = db
-    .from('staff_logs')
-    .select('shift_date, hours_worked, cost_actual, estimated_salary')
+  // Read from daily_metrics (aggregator already joined revenue + staff by date
+  // and coerced numeric-as-string into JS numbers). Used to re-aggregate raw
+  // staff_logs + revenue_logs here with `.limit(50000)` — hit Supabase's silent
+  // 1000-row cap and under-counted.
+  // .lte dropped on date column (§0 boundary bug); filter upper bound in memory.
+  let metricsQuery = db.from('daily_metrics')
+    .select('date, revenue, staff_cost, hours_worked')
     .eq('org_id', auth.orgId)
-    .gte('shift_date', from)
-    .lte('shift_date', to)
-    .or('hours_worked.gt.0,cost_actual.gt.0,estimated_salary.gt.0')
-    .not('pk_log_url', 'like', '%_scheduled')
+    .gte('date', from)
+    .order('date', { ascending: true })
+  if (businessId) metricsQuery = metricsQuery.eq('business_id', businessId)
+  const { data: metrics, error: metricsErr } = await metricsQuery
+  if (metricsErr) return NextResponse.json({ error: metricsErr.message }, { status: 500 })
 
-  if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
-  staffQuery = staffQuery.limit(50000)
-
-  // Fetch revenue logs
-  let revQuery = db
-    .from('revenue_logs')
-    .select('revenue_date, revenue')
-    .eq('org_id', auth.orgId)
-    .gte('revenue_date', from)
-    .lte('revenue_date', to)
-    .gt('revenue', 0)
-
-  if (businessId) revQuery = revQuery.eq('business_id', businessId)
-  revQuery = revQuery.limit(50000)
-
-  const [{ data: staffLogs, error: staffErr }, { data: revLogs, error: revErr }] = await Promise.all([
-    staffQuery, revQuery,
-  ])
-
-  if (staffErr) return NextResponse.json({ error: staffErr.message }, { status: 500 })
-  if (revErr)   return NextResponse.json({ error: revErr.message  }, { status: 500 })
-
-  // Aggregate staff totals by date
-  const staffByDate: Record<string, { hours: number; cost: number }> = {}
-  for (const log of staffLogs ?? []) {
-    const d = log.shift_date
-    if (!staffByDate[d]) staffByDate[d] = { hours: 0, cost: 0 }
-    staffByDate[d].hours += Number(log.hours_worked  ?? 0)
-    // Use actual cost when approved; fall back to estimated for pending payroll
-    const cost = Number(log.cost_actual ?? 0) > 0 ? Number(log.cost_actual) : Number(log.estimated_salary ?? 0)
-    staffByDate[d].cost += cost
-  }
-
-  // Aggregate revenue by date
-  const revByDate: Record<string, number> = {}
-  for (const r of revLogs ?? []) {
-    revByDate[r.revenue_date] = (revByDate[r.revenue_date] ?? 0) + Number(r.revenue ?? 0)
-  }
-
-  // Build joined daily rows — only days where both revenue AND hours exist
-  const joinedDates = Object.keys(staffByDate).filter(d => (revByDate[d] ?? 0) > 0 && staffByDate[d].hours > 0)
-  const daily = joinedDates.map(date => {
-    const hours     = staffByDate[date].hours
-    const cost      = staffByDate[date].cost
-    const revenue   = revByDate[date]
-    const rev_per_hour  = hours > 0 ? Math.round(revenue / hours) : null
-    const staff_pct     = revenue > 0 ? Math.round((cost / revenue) * 1000) / 10 : null
-    return { date, revenue: Math.round(revenue), hours: Math.round(hours * 10) / 10, cost: Math.round(cost), rev_per_hour, staff_pct }
-  }).sort((a, b) => a.date.localeCompare(b.date))
+  const daily = (metrics ?? [])
+    .filter((m: any) => !m.date || m.date <= to)
+    .filter((m: any) => Number(m.revenue ?? 0) > 0 && Number(m.hours_worked ?? 0) > 0)
+    .map((m: any) => {
+      const revenue = Number(m.revenue ?? 0)
+      const hours   = Number(m.hours_worked ?? 0)
+      const cost    = Number(m.staff_cost ?? 0)
+      return {
+        date:         m.date,
+        revenue:      Math.round(revenue),
+        hours:        Math.round(hours * 10) / 10,
+        cost:         Math.round(cost),
+        rev_per_hour: hours > 0 ? Math.round(revenue / hours) : null,
+        staff_pct:    revenue > 0 ? Math.round((cost / revenue) * 1000) / 10 : null,
+      }
+    })
 
   // Summary stats
   const daysWithRevPAH = daily.filter(d => d.rev_per_hour !== null)
@@ -158,5 +131,7 @@ export async function GET(req: NextRequest) {
     daily_revpah: daily,
     summary,
     latest_recommendation,
+  }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
   })
 }

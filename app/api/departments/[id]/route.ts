@@ -4,7 +4,9 @@
 // The [id] is the department name (URL-encoded) — no UUID needed since names are unique per business
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { fetchAllPaged } from '@/lib/supabase/page'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +20,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  noStore()
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -31,40 +34,42 @@ export async function GET(
   const db           = createAdminClient()
   const providerKey  = deptToProviderKey(deptName)
 
-  // ── Revenue: daily rows for this dept — try Inzii POS direct first, then PK per-workplace
+  // ── Revenue: daily rows for this dept — try Inzii POS direct first, then PK per-workplace.
+  // Paginate (Supabase 1000-row silent cap) and drop .lte on date cols (boundary bug).
   const pkProviderKey = `pk_${deptName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`
-  let revQuery = db.from('revenue_logs')
-    .select('revenue_date, revenue, covers, food_revenue, bev_revenue')
-    .eq('org_id', auth.orgId)
-    .in('provider', [providerKey, pkProviderKey])
-    .gte('revenue_date', from)
-    .lte('revenue_date', to)
-    .order('revenue_date', { ascending: true })
-  if (businessId) revQuery = revQuery.eq('business_id', businessId)
-  revQuery = revQuery.limit(50000)
+  const rawRev = await fetchAllPaged(async (lo, hi) => {
+    let q = db.from('revenue_logs')
+      .select('revenue_date, revenue, covers, food_revenue, bev_revenue')
+      .eq('org_id', auth.orgId)
+      .in('provider', [providerKey, pkProviderKey])
+      .gte('revenue_date', from)
+      .order('revenue_date', { ascending: true })
+    if (businessId) q = q.eq('business_id', businessId)
+    return q.range(lo, hi)
+  }).catch(() => [])
+  const revLogs = rawRev.filter((r: any) => !r.revenue_date || r.revenue_date <= to)
 
   // ── Staff: shifts for this dept's PK group ───────────────────────────────
-  let staffQuery = db.from('staff_logs')
-    .select('shift_date, staff_name, hours_worked, cost_actual, estimated_salary, ob_supplement_kr, ob_type, is_late, late_minutes')
-    .eq('org_id', auth.orgId)
-    .eq('staff_group', deptName)
-    .gte('shift_date', from)
-    .lte('shift_date', to)
-    .or('cost_actual.gt.0,estimated_salary.gt.0')
-    .not('pk_log_url', 'like', '%_scheduled')
-  if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
-  staffQuery = staffQuery.limit(50000)
+  const rawStaff = await fetchAllPaged(async (lo, hi) => {
+    let q = db.from('staff_logs')
+      .select('shift_date, staff_name, hours_worked, cost_actual, estimated_salary, ob_supplement_kr, ob_type, is_late, late_minutes')
+      .eq('org_id', auth.orgId)
+      .eq('staff_group', deptName)
+      .gte('shift_date', from)
+      .or('cost_actual.gt.0,estimated_salary.gt.0')
+      .not('pk_log_url', 'like', '%_scheduled')
+      .order('shift_date', { ascending: true })
+    if (businessId) q = q.eq('business_id', businessId)
+    return q.range(lo, hi)
+  }).catch(() => [])
+  const staffLogs = rawStaff.filter((s: any) => !s.shift_date || s.shift_date <= to)
 
   // ── Dept definition (color) ──────────────────────────────────────────────
-  let defQuery = db.from('departments')
+  const { data: deptDef } = await db.from('departments')
     .select('name, color')
     .eq('org_id', auth.orgId)
     .eq('name', deptName)
     .limit(1).maybeSingle()
-
-  const [{ data: revLogs }, { data: staffLogs }, { data: deptDef }] = await Promise.all([
-    revQuery, staffQuery, defQuery,
-  ])
 
   // ── Aggregate revenue ────────────────────────────────────────────────────
   let totalRevenue = 0, totalCovers = 0
@@ -157,5 +162,7 @@ export async function GET(
     staff,      // per-person breakdown
     date_from:  from,
     date_to:    to,
+  }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
   })
 }

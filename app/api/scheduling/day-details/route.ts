@@ -11,11 +11,14 @@
 //   }
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { fetchAllPaged } from '@/lib/supabase/page'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -32,15 +35,17 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // Pull daily_metrics and staff_logs in the window, filter by weekday in memory
-  const [dmRes, slRes] = await Promise.all([
-    // Supabase .lte() on date columns silently drops top-boundary rows — .gte only, filter in memory below.
-    db.from('daily_metrics')
-      .select('date, revenue, staff_cost, hours_worked, shifts')
-      .eq('org_id', auth.orgId)
-      .eq('business_id', businessId)
-      .gte('date', from)
-      .limit(50000),
+  // Pull daily_metrics + staff_logs in the window, filter by weekday in memory.
+  // Paginate staff_logs because Supabase silently caps responses at ~1000 rows
+  // regardless of .limit(). daily_metrics is a small summary table so a single
+  // query is fine.
+  const dmRes = await db.from('daily_metrics')
+    .select('date, revenue, staff_cost, hours_worked, shifts')
+    .eq('org_id', auth.orgId)
+    .eq('business_id', businessId)
+    .gte('date', from)
+
+  const slRows = await fetchAllPaged(async (lo, hi) =>
     db.from('staff_logs')
       .select('shift_date, staff_name, staff_group, hours_worked, cost_actual, estimated_salary')
       .eq('org_id', auth.orgId)
@@ -48,16 +53,17 @@ export async function GET(req: NextRequest) {
       .gte('shift_date', from)
       .or('cost_actual.gt.0,estimated_salary.gt.0')
       .not('pk_log_url', 'like', '%_scheduled')
-      .limit(50000),
-  ])
+      .order('shift_date', { ascending: true })
+      .range(lo, hi)
+  ).catch(() => [])
 
   // Convert JS dow (0=Sun..6=Sat) → our weekday index (0=Mon..6=Sun)
   const toMonIdx = (jsDow: number) => (jsDow + 6) % 7
   const matchesDay = (iso: string) => toMonIdx(new Date(iso).getUTCDay()) === targetWeekday
 
   // In-memory upper-bound filter (replaces the .lte() we removed from the query).
-  const dmRows = (dmRes.data ?? []).filter((r: any) => r.date   <= to)
-  const slRows = (slRes.data ?? []).filter((r: any) => r.shift_date <= to)
+  const dmRows    = (dmRes.data ?? []).filter((r: any) => r.date <= to)
+  const slFiltered = slRows.filter((r: any) => !r.shift_date || r.shift_date <= to)
 
   // ── Per-date rows ──────────────────────────────────────────────
   const datesMap: Record<string, any> = {}
@@ -76,7 +82,7 @@ export async function GET(req: NextRequest) {
 
   // Count unique staff per date from staff_logs (daily_metrics.shifts is shift count, not people count)
   const staffPerDate: Record<string, Set<string>> = {}
-  for (const s of slRows) {
+  for (const s of slFiltered) {
     if (!matchesDay(s.shift_date)) continue
     if (!staffPerDate[s.shift_date]) staffPerDate[s.shift_date] = new Set()
     if (s.staff_name) staffPerDate[s.shift_date].add(s.staff_name)
@@ -91,7 +97,7 @@ export async function GET(req: NextRequest) {
 
   // ── Per-staff aggregate across matching dates ─────────────────
   const staffAcc: Record<string, any> = {}
-  for (const s of slRows) {
+  for (const s of slFiltered) {
     if (!matchesDay(s.shift_date)) continue
     const name  = s.staff_name ?? 'Unknown'
     const group = s.staff_group ?? '—'
@@ -123,5 +129,7 @@ export async function GET(req: NextRequest) {
   }
   totals.rev_per_hour = totals.hours > 0 ? Math.round(totals.revenue / totals.hours) : 0
 
-  return NextResponse.json({ dates, staff, totals })
+  return NextResponse.json({ dates, staff, totals }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }

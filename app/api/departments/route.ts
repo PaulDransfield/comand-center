@@ -4,7 +4,9 @@
 // Also returns monthly trend and per-staff breakdown for the expanded detail view
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { fetchAllPaged } from '@/lib/supabase/page'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +21,7 @@ function deptToProviderKeys(name: string): string[] {
 }
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -87,33 +90,36 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 3. Revenue logs — one row per day per provider ───────────────────────
-  // Look for both inzii_* (Swess direct) and pk_* (Personalkollen per-workplace) sources
+  // Look for both inzii_* (Swess direct) and pk_* (Personalkollen per-workplace) sources.
+  // Paginate to avoid Supabase's silent 1000-row cap. Drop .lte on date cols
+  // (boundary bug, FIXES.md §0) — filter upper bound in memory.
   const allRevProviders = deptNames.flatMap(deptToProviderKeys)
-
-  let revQuery = db.from('revenue_logs')
-    .select('revenue_date, provider, revenue, covers')
-    .eq('org_id', auth.orgId)
-    .gte('revenue_date', dateFrom)
-    .lte('revenue_date', dateTo)
-    .in('provider', allRevProviders)
-  if (businessId) revQuery = revQuery.eq('business_id', businessId)
-  revQuery = revQuery.limit(50000)
-
-  const { data: revLogs } = await revQuery
+  const rawRev = await fetchAllPaged(async (lo, hi) => {
+    let q = db.from('revenue_logs')
+      .select('revenue_date, provider, revenue, covers')
+      .eq('org_id', auth.orgId)
+      .gte('revenue_date', dateFrom)
+      .in('provider', allRevProviders)
+      .order('revenue_date', { ascending: true })
+    if (businessId) q = q.eq('business_id', businessId)
+    return q.range(lo, hi)
+  }).catch(() => [])
+  const revLogs = rawRev.filter((r: any) => !r.revenue_date || r.revenue_date <= dateTo)
 
   // ── 4. Staff logs — hours + cost per shift ────────────────────────────────
-  let staffQuery = db.from('staff_logs')
-    .select('shift_date, staff_name, staff_group, hours_worked, cost_actual, estimated_salary, ob_supplement_kr, is_late, period_month')
-    .eq('org_id', auth.orgId)
-    .gte('shift_date', dateFrom)
-    .lte('shift_date', dateTo)
-    .in('staff_group', deptNames)
-    .or('cost_actual.gt.0,estimated_salary.gt.0')
-    .not('pk_log_url', 'like', '%_scheduled')
-  if (businessId) staffQuery = staffQuery.eq('business_id', businessId)
-  staffQuery = staffQuery.limit(50000)
-
-  const { data: staffLogs } = await staffQuery
+  const rawStaff = await fetchAllPaged(async (lo, hi) => {
+    let q = db.from('staff_logs')
+      .select('shift_date, staff_name, staff_group, hours_worked, cost_actual, estimated_salary, ob_supplement_kr, is_late, period_month')
+      .eq('org_id', auth.orgId)
+      .gte('shift_date', dateFrom)
+      .in('staff_group', deptNames)
+      .or('cost_actual.gt.0,estimated_salary.gt.0')
+      .not('pk_log_url', 'like', '%_scheduled')
+      .order('shift_date', { ascending: true })
+    if (businessId) q = q.eq('business_id', businessId)
+    return q.range(lo, hi)
+  }).catch(() => [])
+  const staffLogs = rawStaff.filter((s: any) => !s.shift_date || s.shift_date <= dateTo)
 
   // ── 5. Aggregate per department ───────────────────────────────────────────
   // Build lookup: provider_key → dept name (covers both inzii_* and pk_* keys)
@@ -257,5 +263,7 @@ export async function GET(req: NextRequest) {
     staff:       staffLegacy,
     date_from:   dateFrom,
     date_to:     dateTo,
+  }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
   })
 }
