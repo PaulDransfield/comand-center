@@ -4,11 +4,13 @@
 // Single source of truth — merges synced POS + PK + Fortnox + manual data.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
@@ -53,5 +55,7 @@ export async function GET(req: NextRequest) {
     months_with_data: rows.length,
   }
 
-  return NextResponse.json({ rows, summary, year })
+  return NextResponse.json({ rows, summary, year }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }

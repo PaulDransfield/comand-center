@@ -53,8 +53,10 @@ export default function TrackerPage() {
   const load = useCallback(async () => {
     if (!selected) return
     setLoading(true)
-    // Use pre-computed monthly metrics as primary source
-    const res = await fetch(`/api/metrics/monthly?business_id=${selected}&year=${year}`)
+    // Use pre-computed monthly metrics as primary source.
+    // cache:'no-store' bypasses browser/CDN caching of the JSON response —
+    // without it, a page opened before a fresh sync stays on stale numbers.
+    const res = await fetch(`/api/metrics/monthly?business_id=${selected}&year=${year}`, { cache: 'no-store' })
     const data = await res.json()
     if (data.rows) {
       // Map monthly_metrics to tracker row shape
