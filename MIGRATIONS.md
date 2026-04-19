@@ -1,6 +1,15 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-18 | Session 10 (M009–M012 applied)
+> Last updated: 2026-04-19 | M015 (weather_daily) pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Pending — apply when ready
+
+### M015 — weather_daily
+**File:** `sql/M015-weather-daily.sql`
+**Purpose:** store observed + forecast weather per business per day. Feeds AI memo, scheduling suggestion, and `/weather` correlation page.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Then hit `POST /api/admin/weather/backfill?secret=ADMIN_SECRET` once to populate historical rows. After that, daily sync keeps it current.
 
 ---
 

@@ -108,3 +108,59 @@ export function coordsFor(city: string | null | undefined): { lat: number; lon: 
   const key = city.toLowerCase().trim()
   return CITY_COORDS[key] ?? DEFAULT_COORD
 }
+
+// ── Historical weather (archive API) ────────────────────────────────────────
+// Open-Meteo's ERA5 reanalysis — observed weather, free, same JSON shape as
+// the forecast endpoint. Used for one-time backfill of `weather_daily` so we
+// can correlate past sales to weather.
+//
+// Data typically lags 2 days behind real-time. Request ranges that extend
+// into the last 48h will be capped server-side. For recent days combine this
+// with the forecast endpoint.
+export async function getHistoricalWeather(
+  lat: number,
+  lon: number,
+  fromDate: string,  // YYYY-MM-DD
+  toDate:   string,
+): Promise<DailyWeather[]> {
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&start_date=${fromDate}&end_date=${toDate}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,wind_speed_10m_max&timezone=Europe/Stockholm&wind_speed_unit=ms`
+  const res = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (!res.ok) throw new Error(`Open-Meteo archive ${res.status}: ${await res.text().catch(() => '')}`)
+  const json = await res.json()
+
+  const d = json.daily
+  if (!d?.time?.length) return []
+
+  return d.time.map((date: string, i: number) => {
+    const max = Number(d.temperature_2m_max?.[i] ?? 0)
+    const min = Number(d.temperature_2m_min?.[i] ?? 0)
+    const code = Number(d.weather_code?.[i] ?? 0)
+    return {
+      date,
+      temp_min:     Math.round(min * 10) / 10,
+      temp_max:     Math.round(max * 10) / 10,
+      temp_avg:     Math.round(((min + max) / 2) * 10) / 10,
+      precip_mm:    Math.round(Number(d.precipitation_sum?.[i] ?? 0) * 10) / 10,
+      wind_max:     Math.round(Number(d.wind_speed_10m_max?.[i] ?? 0) * 10) / 10,
+      weather_code: code,
+      summary:      WMO2str[code] ?? 'Unknown',
+    }
+  })
+}
+
+// ── Bucketing for correlation analysis ──────────────────────────────────────
+// Groups weather into bands a restaurant owner would intuitively use when
+// thinking about staffing. Not a pure meteorological classification — this
+// is about what moves footfall.
+export function weatherBucket(w: { temp_avg: number; precip_mm: number; weather_code: number }): string {
+  if (w.precip_mm >= 5)                             return 'wet'           // substantial rain/snow
+  if (w.weather_code >= 71 && w.weather_code <= 77) return 'snow'
+  if (w.weather_code >= 95)                         return 'thunder'
+  if (w.temp_avg < 0)                               return 'freezing'
+  if (w.temp_avg < 5)                               return 'cold_dry'
+  if (w.temp_avg >= 20)                             return 'hot'
+  if (w.weather_code <= 1 && w.precip_mm < 1)       return 'clear'
+  return 'mild'
+}
+
+export const BUCKET_ORDER = ['clear', 'mild', 'cold_dry', 'wet', 'snow', 'freezing', 'hot', 'thunder']
