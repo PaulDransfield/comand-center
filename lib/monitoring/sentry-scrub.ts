@@ -15,15 +15,20 @@
 import type { ErrorEvent, EventHint } from '@sentry/core'
 
 // Match obvious secret-shaped strings. Order matters — more specific first.
+// Character class `[\w-]` = `[A-Za-z0-9_-]` — Stripe, Resend, Anthropic
+// tokens sometimes include underscores/dashes inside the payload, not only
+// after the prefix. Verified against a mis-scrubbed test event 2026-04-19
+// where `sk_live_fake_stripe_key_123` only partially redacted because the
+// regex stopped at the first underscore.
 const SECRET_PATTERNS: RegExp[] = [
   /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,  // JWTs
   /\bBearer\s+[A-Za-z0-9._\-~+/=]+/gi,                    // Bearer <token>
   /sb-[a-z0-9]+-auth-token/gi,                            // Supabase cookie name
-  /sk_live_[A-Za-z0-9]+/g,                                // Stripe live secret
-  /sk_test_[A-Za-z0-9]+/g,                                // Stripe test secret
-  /whsec_[A-Za-z0-9]+/g,                                  // Stripe webhook secret
-  /\bre_[A-Za-z0-9_-]{20,}/g,                             // Resend API key
-  /sk-ant-api[0-9]+-[A-Za-z0-9_-]+/g,                     // Anthropic API key
+  /sk_live_[\w-]+/g,                                      // Stripe live secret
+  /sk_test_[\w-]+/g,                                      // Stripe test secret
+  /whsec_[\w-]+/g,                                        // Stripe webhook secret
+  /\bre_[\w-]{10,}/g,                                     // Resend API key (≥10 chars post-prefix)
+  /sk-ant-api[0-9]+-[\w-]+/g,                             // Anthropic API key
 ]
 
 const MAX_STRING = 2000  // truncate any single string field above this length
