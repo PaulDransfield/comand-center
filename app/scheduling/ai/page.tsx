@@ -66,9 +66,18 @@ export default function ScheduleAIComparison() {
         />
       </div>
 
-      <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8, padding: 14, marginBottom: 24, fontSize: 13, color: '#78350f' }}>
+      <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 13, color: '#78350f' }}>
         <strong>Method.</strong> {data.summary.rationale}
       </div>
+
+      {data.pk_shifts_found === 0 && (
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: 14, marginBottom: 24, fontSize: 13, color: '#7f1d1d' }}>
+          <strong>No PK schedule yet for next week.</strong>{' '}
+          {data.pk_fetch_error
+            ? `PK fetch failed: ${data.pk_fetch_error}`
+            : 'Personalkollen returned zero WorkPeriods for ' + data.week_from + ' → ' + data.week_to + '. Either nothing\'s been scheduled yet or the integration needs attention. AI suggestion shown below uses historical averages only.'}
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e5e7eb', marginBottom: 16 }}>

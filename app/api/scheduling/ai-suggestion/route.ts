@@ -18,6 +18,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { fetchAllPaged } from '@/lib/supabase/page'
+import { decrypt }       from '@/lib/integrations/encryption'
+import { getWorkPeriods } from '@/lib/pos/personalkollen'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,18 +48,57 @@ export async function GET(req: NextRequest) {
   const weekTo   = nextSun.toISOString().slice(0,10)
 
   // ── Current PK schedule for next week ──────────────────────────────────────
-  // staff_logs with pk_log_url ending '_scheduled' are the scheduled shifts PK
-  // returned (vs logged-actual shifts). They carry estimated_salary + hours.
-  const scheduledRows = await fetchAllPaged(async (lo, hi) =>
-    db.from('staff_logs')
-      .select('shift_date, staff_name, staff_group, hours_worked, estimated_salary, cost_actual')
+  // Fetch LIVE from PK — staff_logs only holds past+sync-window data, but next
+  // week's schedule often sits in PK awaiting the next sync. Going direct
+  // means the user sees real PK state whenever they load this page.
+  //
+  // Shift mapping: each WorkPeriod has start + end timestamps. hours = (end-start)/3600.
+  let scheduledRows: any[] = []
+  let liveFetchError: string | null = null
+  try {
+    const { data: integ } = await db.from('integrations')
+      .select('credentials_enc')
       .eq('business_id', bizId)
-      .gte('shift_date', weekFrom)
-      .lte('shift_date', weekTo)
-      .like('pk_log_url', '%_scheduled')
-      .order('shift_date', { ascending: true })
-      .range(lo, hi)
-  ).catch(() => [])
+      .eq('provider', 'personalkollen')
+      .eq('status', 'connected')
+      .maybeSingle()
+    if (integ?.credentials_enc) {
+      const token = decrypt(integ.credentials_enc)
+      if (token) {
+        const periods = await getWorkPeriods(token, weekFrom, weekTo)
+        scheduledRows = periods.map((p: any) => {
+          const startMs = p.start ? new Date(p.start).getTime() : 0
+          const endMs   = p.end   ? new Date(p.end).getTime()   : 0
+          const hours   = startMs && endMs ? Math.max(0, (endMs - startMs) / 3_600_000) : 0
+          return {
+            shift_date:        p.date ?? (p.start ? p.start.slice(0, 10) : null),
+            staff_name:        p.staff_name,
+            staff_group:       p.costgroup ?? null,
+            hours_worked:      hours,
+            estimated_salary:  p.estimated_cost ?? 0,
+          }
+        }).filter((r: any) => r.shift_date && r.shift_date >= weekFrom && r.shift_date <= weekTo)
+      }
+    }
+  } catch (e: any) {
+    liveFetchError = e.message
+    console.warn('[ai-suggestion] live PK WorkPeriods fetch failed, falling back to staff_logs:', e.message)
+  }
+
+  // Fallback: if PK call failed OR returned nothing, read from staff_logs.
+  if (scheduledRows.length === 0) {
+    const fallback = await fetchAllPaged(async (lo, hi) =>
+      db.from('staff_logs')
+        .select('shift_date, staff_name, staff_group, hours_worked, estimated_salary, cost_actual')
+        .eq('business_id', bizId)
+        .gte('shift_date', weekFrom)
+        .lte('shift_date', weekTo)
+        .like('pk_log_url', '%_scheduled')
+        .order('shift_date', { ascending: true })
+        .range(lo, hi)
+    ).catch(() => [])
+    scheduledRows = fallback
+  }
 
   const currentByDate: Record<string, any> = {}
   for (let d = new Date(nextMon); d <= nextSun; d.setDate(d.getDate() + 1)) {
@@ -169,6 +210,8 @@ export async function GET(req: NextRequest) {
     week_from:       weekFrom,
     week_to:         weekTo,
     business_name:   biz.name,
+    pk_shifts_found: scheduledRows.length,
+    pk_fetch_error:  liveFetchError,
     current:         Object.values(currentByDate),
     suggested,
     summary: {
