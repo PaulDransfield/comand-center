@@ -236,3 +236,7 @@ export async function POST(req: NextRequest) {
     week:   weekLabel,
   })
 }
+
+
+// Vercel Cron dispatches GET — delegate to the same handler.
+export const GET = POST

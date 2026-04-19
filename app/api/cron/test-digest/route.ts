@@ -24,3 +24,7 @@ export async function POST(req: NextRequest) {
   const data = await res.json()
   return NextResponse.json({ ok: true, message: `Test digest sent to ${userEmail}`, ...data })
 }
+
+
+// Vercel Cron dispatches GET — delegate to the same handler.
+export const GET = POST

@@ -23,11 +23,12 @@ export async function POST(req: NextRequest) {
   console.log(`[scheduling-optimization] Running weekly optimization`)
 
   try {
-    // Get all Group plan customers (orgs with Group subscription)
+    // Get all Group plan customers (orgs with Group subscription).
+    // Column is `plan` not `subscription_plan` — bugfix 2026-04-19.
     const { data: groupOrgs } = await db
       .from('organisations')
-      .select('id, name, subscription_plan')
-      .eq('subscription_plan', 'group')
+      .select('id, name, plan')
+      .eq('plan', 'group')
       .eq('is_active', true)
 
     if (!groupOrgs?.length) {
@@ -250,3 +251,7 @@ Format as bullet points with concrete actions.`
     }, { status: 500 })
   }
 }
+
+
+// Vercel Cron dispatches GET — delegate to the same handler.
+export const GET = POST

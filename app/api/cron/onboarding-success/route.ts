@@ -270,3 +270,7 @@ Format as plain text email body (no HTML).`
     }, { status: 500 })
   }
 }
+
+
+// Vercel Cron dispatches GET — delegate to the same handler.
+export const GET = POST

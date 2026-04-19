@@ -218,3 +218,7 @@ export async function POST(req: NextRequest) {
     }, { status: 500 })
   }
 }
+
+
+// Vercel Cron dispatches GET — delegate to the same handler.
+export const GET = POST
