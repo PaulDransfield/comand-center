@@ -183,25 +183,37 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
 
   return raw.map((s: any) => {
     // Net from items: Σ (qty × price_per_unit). This is already ex-VAT.
-    let net       = 0
-    let foodNet   = 0
-    let drinkNet  = 0
-    let otherNet  = 0
+    //
+    // Swedish VAT coding (verified 2026-04-19 against Vero restaurant data):
+    //   12 %  → dine-in food
+    //   25 %  → alcohol / soft drinks
+    //    6 %  → takeaway food (reduced rate — Swedish tax code)
+    //
+    // So the VAT rate doubles as a reliable dine-in-vs-takeaway signal, since
+    // PK's own `is_take_away` boolean is null on most rows.
+    let net          = 0
+    let foodNet      = 0
+    let drinkNet     = 0
+    let takeawayNet  = 0
+    let dineInNet    = 0
     for (const i of (s.items ?? [])) {
       const qty    = parseFloat(i.amount          ?? 0)
       const price  = parseFloat(i.price_per_unit  ?? 0)
       const vat    = parseFloat(i.vat             ?? 0)
       const line   = qty * price
       net += line
-      // Split by VAT rate (Swedish restaurant VAT coding):
-      // 12% = food, 25% = alcohol, 6% = other (papers / transport / rarely in restaurants)
-      if      (Math.abs(vat - 0.12) < 0.001) foodNet  += line
-      else if (Math.abs(vat - 0.25) < 0.001) drinkNet += line
-      else                                   otherNet += line
+      if      (Math.abs(vat - 0.12) < 0.001) { foodNet  += line; dineInNet   += line }
+      else if (Math.abs(vat - 0.06) < 0.001) { foodNet  += line; takeawayNet += line }
+      else if (Math.abs(vat - 0.25) < 0.001) { drinkNet += line; dineInNet   += line }
+      else                                   { drinkNet += line; dineInNet   += line }  // unknowns default to drink / dine-in
     }
 
     const gross = (s.payments ?? []).reduce((sum: number, p: any) => sum + parseFloat(p.amount ?? 0), 0)
     const tip   = s.tip ? parseFloat(s.tip) : 0
+
+    // Prefer the VAT-rate signal over PK's `is_take_away` (mostly null).
+    // Fall back to the flag only if no 6 % items at all.
+    const isTakeaway = takeawayNet > 0 ? true : (s.is_take_away ?? false)
 
     return {
       uid:           s.uid,
@@ -210,17 +222,19 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
       workplace_url: s.workplace,
 
       // `amount` is now NET ex-VAT (matches PK dashboard "Försäljning ex. moms").
-      // Tip is excluded (reported separately). Gross still available as
-      // `gross_amount` for reconciliation / VAT reports.
+      // Tip excluded (reported separately). Gross kept as `gross_amount` for
+      // reconciliation / VAT reports.
       amount:        Math.round(net * 100) / 100,
       gross_amount:  Math.round(gross * 100) / 100,
 
       covers:        s.number_of_guests ?? null,
-      is_takeaway:   s.is_take_away ?? false,
+      is_takeaway:   isTakeaway,
       tip,
       payment_types: (s.payments ?? []).map((p: any) => p.method?.name ?? p.payment_type ?? 'unknown'),
-      food_revenue:  Math.round(foodNet * 100) / 100,
-      drink_revenue: Math.round((drinkNet + otherNet) * 100) / 100,
+      food_revenue:     Math.round(foodNet * 100) / 100,
+      drink_revenue:    Math.round(drinkNet * 100) / 100,
+      takeaway_revenue: Math.round(takeawayNet * 100) / 100,
+      dine_in_revenue:  Math.round(dineInNet * 100) / 100,
     }
   })
 }

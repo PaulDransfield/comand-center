@@ -17,23 +17,24 @@ async function pkAll(path){const a=[];let u=`https://personalkollen.se/api${path
 const num=v=>{const n=parseFloat(v??0);return Number.isFinite(n)?n:0}
 
 console.log(`
-Date        Raw sales  Net ex-VAT   Food (12%)   Drink (25%)  Other    Stored now
-──────────  ────────── ──────────── ──────────── ───────────  ──────── ──────────`)
+Date        Sales  Net ex-VAT   DineIn-Food(12%) Drink(25%) Takeaway(6%)  Stored
+──────────  ─────  ────────── ──────────────── ─────────── ────────────  ──────`)
 
 for (const DATE of ['2026-04-14','2026-04-15','2026-04-16','2026-04-17','2026-04-18']) {
   const sales = await pkAll(`/sales/?sale_time__gte=${DATE}T00:00:00&sale_time__lt=${DATE}T23:59:59&page_size=500`)
-  let net=0, food=0, drink=0, other=0
+  let net=0, food12=0, drink25=0, takeaway6=0, other=0
   for (const s of sales) for (const i of (s.items ?? [])) {
     const line = num(i.amount) * num(i.price_per_unit)
     const vat = num(i.vat)
     net += line
-    if      (Math.abs(vat - 0.12) < 0.001) food  += line
-    else if (Math.abs(vat - 0.25) < 0.001) drink += line
-    else                                   other += line
+    if      (Math.abs(vat - 0.12) < 0.001) food12    += line
+    else if (Math.abs(vat - 0.25) < 0.001) drink25   += line
+    else if (Math.abs(vat - 0.06) < 0.001) takeaway6 += line
+    else                                   other     += line
   }
   const stored = await q(`revenue_logs?select=revenue&business_id=eq.0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99&revenue_date=eq.${DATE}&provider=eq.personalkollen`)
   const s = stored[0]?.revenue ?? 0
-  console.log(`${DATE}  ${String(sales.length).padStart(8)}  ${net.toFixed(0).padStart(10)}  ${food.toFixed(0).padStart(10)}  ${drink.toFixed(0).padStart(10)}  ${other.toFixed(0).padStart(6)}  ${String(s).padStart(9)}`)
+  console.log(`${DATE}  ${String(sales.length).padStart(5)}  ${net.toFixed(0).padStart(10)}  ${food12.toFixed(0).padStart(14)}  ${drink25.toFixed(0).padStart(10)}  ${takeaway6.toFixed(0).padStart(11)}  ${String(s).padStart(5)}`)
 }
 
 console.log(`

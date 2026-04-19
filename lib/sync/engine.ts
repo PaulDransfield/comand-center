@@ -289,8 +289,10 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     byDay[date].tip          += sale.tip ?? 0
     byDay[date].food         += sale.food_revenue ?? 0
     byDay[date].drink        += sale.drink_revenue ?? 0
-    if (sale.is_takeaway)      byDay[date].takeaway += sale.amount
-    else                       byDay[date].dine_in  += sale.amount
+    // Takeaway/dine-in split now computed per-item from VAT rate (6 % = takeaway
+    // in Swedish tax code), so a mixed sale correctly attributes across both.
+    byDay[date].takeaway     += sale.takeaway_revenue ?? 0
+    byDay[date].dine_in      += sale.dine_in_revenue  ?? 0
   }
 
   const revRows = Object.entries(byDay).map(([date, data]: any) => ({
