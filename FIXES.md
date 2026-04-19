@@ -1,8 +1,41 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-18
+Last updated: 2026-04-19
 
 This file documents recurring problems and their confirmed fixes.
 Before trying anything new, check here first.
+
+---
+
+## 0c. Supabase/PostgREST silently caps queries at `max_rows` (default 1000)
+
+**Symptom:** A table you're aggregating from keeps growing. One day, recent rows stop appearing in the summary/output. Raw data in the source table looks correct. `.limit(50000)` is on the query but the result is exactly 1000 rows. No error. No warning.
+
+**Root cause:** Supabase (PostgREST) enforces a server-side `max_rows` config — 1000 by default. `.limit(N)` in the client doesn't override it. When the real row count exceeds 1000, the extras get dropped silently, and without `.order()` the dropped rows are undefined — so "which days disappeared" is arbitrary.
+
+**First bite:** 2026-04-19. `lib/sync/aggregate.ts` fetched staff_logs with `.limit(50000)`. Vero has ~27 shifts/day × 90 days ≈ 2400 rows → the aggregator saw 1000, the most recent days fell out, and `daily_metrics` for Apr 18/19 never got written even though raw `staff_logs` had them.
+
+**Fix:** paginate with `.range()` until a page returns fewer than the page size. Always combine with an explicit `.order()` for stable iteration.
+
+```ts
+async function fetchAllPaged<T>(buildQuery: (lo: number, hi: number) => any, pageSize = 1000): Promise<T[]> {
+  const out: T[] = []
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await buildQuery(offset, offset + pageSize - 1)
+    if (error) throw new Error(`paged fetch failed at offset ${offset}: ${error.message}`)
+    const rows = data ?? []
+    out.push(...rows)
+    if (rows.length < pageSize) break
+    if (offset > 200000) break  // runaway guard
+  }
+  return out
+}
+```
+
+Used with `.order('shift_date', { ascending: true }).range(lo, hi)`.
+
+**Applies to:** any query over `revenue_logs`, `staff_logs`, `tracker_data`, `ai_request_log`, or any other table that can exceed 1000 rows. Do NOT trust `.limit()` — paginate.
+
+**Diagnostic:** if a query returns exactly 1000 rows, that's the cap speaking, not your data.
 
 ---
 
