@@ -61,6 +61,27 @@
 
 ---
 
+### 4. Weather-aware intelligence
+**Footfall swings hard on Swedish weather.** Rain on Fri night = fewer walk-ins. Heat wave = drinks-heavy mix. Injecting weather forecast into every AI feature makes each one measurably smarter.
+
+**Status:** 🔄 MVP in progress (this session)
+
+| Component | Status |
+|-----------|--------|
+| Open-Meteo fetcher — free, no API key (SMHI direct was 404 2026-04-19) | ✅ |
+| City → lat/lon lookup for 16 Swedish towns (no schema migration yet) | ✅ |
+| Daily weather summary (temp min/max, precip, wind, WMO code + label) | ✅ |
+| Weather injected into `buildWeeklyContext` — AI memo references upcoming weather | ✅ |
+| Weather-adjusted scheduling suggestion (weather_multiplier on rev-per-hour target) | ⏳ |
+| Dashboard 7-day forecast strip | ⏳ |
+| Revenue/weather regression (after 3 months of correlated data) | ⏳ |
+| False-positive suppression in anomaly detection ("rainy Thursday, matches pattern") | ⏳ |
+
+**MVP effort:** 1 day (just fetcher + context injection). **Full version:** 3–4 days.
+**Compound value:** after 3 months, we have `(day, revenue, weather)` tuples. Claude can answer "why was March 14 slow?" with "3°C with rain — your rainy sub-10°C Saturdays average 42k, you did 38k, above that segment's mean." No POS/accounting vendor can give that answer.
+
+---
+
 ## Shared infrastructure (compounding value)
 
 - Prompt-versioning + A/B test harness — 3 days

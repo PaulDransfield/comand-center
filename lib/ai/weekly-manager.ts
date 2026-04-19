@@ -11,6 +11,7 @@
 
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest }          from '@/lib/ai/usage'
+import { getForecast, coordsFor, DailyWeather } from '@/lib/weather/forecast'
 
 type Db = any
 
@@ -35,6 +36,7 @@ export interface WeeklyContext {
   budget:       { revenue_target: number; food_cost_pct_target: number; staff_cost_pct_target: number } | null
   departments:  Array<{ name: string; revenue: number; labour_pct: number | null }>
   weekdayPattern: Array<{ weekday: string; avg_rev: number; avg_hours: number; avg_labour_pct: number | null }>
+  upcomingWeather: DailyWeather[]  // next 7 days from SMHI — empty array if fetch failed
 }
 
 interface WeekBlock {
@@ -65,6 +67,7 @@ export async function buildWeeklyContext(
   businessId:   string,
   businessName: string,
   mondayOfBriefing: Date,  // the Monday AFTER the week being summarised
+  businessCity: string | null = null,  // used for weather coord lookup
 ): Promise<WeeklyContext> {
   const lastSunday = new Date(mondayOfBriefing); lastSunday.setDate(lastSunday.getDate() - 1)
   const lastMonday = new Date(mondayOfBriefing); lastMonday.setDate(lastMonday.getDate() - 7)
@@ -184,6 +187,19 @@ export async function buildWeeklyContext(
 
   const weekLabel = `${lastMonday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${lastSunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
+  // ── Upcoming weather (next 7 days) ─────────────────────────────────────────
+  // Failure is non-fatal — AI memo renders fine without weather. SMHI is free
+  // and reliable, but we tolerate the occasional outage.
+  let upcomingWeather: DailyWeather[] = []
+  try {
+    const { lat, lon } = coordsFor(businessCity)
+    const forecast = await getForecast(lat, lon)
+    const todayIso = new Date().toISOString().slice(0, 10)
+    upcomingWeather = forecast.filter(d => d.date >= todayIso).slice(0, 7)
+  } catch (e: any) {
+    console.warn('[weekly-manager] weather fetch failed:', e.message)
+  }
+
   return {
     businessName,
     weekLabel,
@@ -201,6 +217,7 @@ export async function buildWeeklyContext(
     } : null,
     departments,
     weekdayPattern,
+    upcomingWeather,
   }
 }
 
@@ -234,6 +251,9 @@ ${ctx.prior4Weeks.map((w, i) => `  Week -${4 - i}: ${fmt(w.revenue)}`).join('\n'
 
 ${ctx.openAlerts.length ? `OPEN ALERTS\n${ctx.openAlerts.map(a => `  [${a.severity}] ${a.title} — ${a.description}`).join('\n')}` : 'OPEN ALERTS\n  None.'}
 
+${ctx.upcomingWeather.length ? `UPCOMING WEATHER (next 7 days — from SMHI)
+${ctx.upcomingWeather.map(w => `  ${w.date} ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(w.date).getUTCDay()]}: ${w.summary}, ${w.temp_min}-${w.temp_max}°C${w.precip_mm > 0.5 ? `, ${w.precip_mm}mm rain` : ''}${w.wind_max > 12 ? `, wind ${w.wind_max}m/s` : ''}`).join('\n')}` : 'UPCOMING WEATHER: not available'}
+
 WRITE YOUR MEMO
 Constraints — NON-NEGOTIABLE:
 - 150–200 words total
@@ -245,6 +265,7 @@ Constraints — NON-NEGOTIABLE:
 - No generic advice. Every action must reference numbers from the data above.
 - Tone: direct, conversational, Swedish owner-to-owner. Assume technical literacy.
 - No "I recommend", no "You should consider" — just say it. "Drop X. Saves Y."
+- Weather matters for footfall. If the forecast above shows rain / extreme temp / high wind on specific days, FACTOR IT into one of your 3 actions ("Wednesday rain forecast + historical wet-Wed pattern = cut 6 hours from dinner shift, saves 1 800 kr"). Only mention weather if it's actually notable — don't force it.
 - End with ONE sentence flagging the biggest risk for next week if it exists.
 - Output JSON ONLY in this exact shape:
 
