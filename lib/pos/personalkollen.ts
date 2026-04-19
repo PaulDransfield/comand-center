@@ -140,54 +140,30 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
 
 // ── Sales ─────────────────────────────────────────────────────────────────────
 //
-// Looping day-by-day is essential. PK's /sales/ endpoint uses cursor-based
-// pagination. A range query (`sale_time__gte=X&sale_time__lte=Y`) can silently
-// drop rows inside the window when the cursor ordering doesn't align with
-// sale_time — confirmed 2026-04-19: range query returned 11 % of Apr 15 sales
-// (139 / 1115). Per-day queries with explicit T-bounds return 100 %.
+// Revenue interpretation (verified against live PK data 2026-04-19 via
+// scripts/diag-vat-*.mjs):
 //
-// Revenue interpretation:
-//   item.amount         = quantity
-//   item.price_per_unit = NET price (ex-VAT)  ← verified by reconciling
-//                         sum(qty × price × (1+vat)) against sum(payments)
-//   item.vat            = VAT rate as decimal (0.12, 0.25, 0.06 …)
-//   payments[].amount   = GROSS paid (inc-VAT + tip)
-//   sale.tip            = tip portion of payments
+//   item.amount          = quantity
+//   item.price_per_unit  = NET price (ex-VAT)
+//   item.vat             = VAT rate as decimal (0.06, 0.12, 0.25)
+//   payments[].amount    = GROSS paid (inc-VAT + tip)
+//   sale.tip             = tip portion of payments
 //
-// The `net_revenue` field below matches PK's dashboard "Försäljning ex. moms".
-// Food/drink split approximated from VAT rate since PK's API doesn't expose
-// product category reliably: 12 % → food, 25 % → drink (alcohol), 6 % → bev.
+// Swedish VAT coding doubles as product/service classification:
+//   6 %  → takeaway food (reduced rate)
+//   12 % → dine-in food
+//   25 % → alcohol / soft drinks
+//
+// We report `amount` as NET so it matches PK dashboard "Försäljning ex. moms".
+// Tip is separated, gross kept as `gross_amount` for reconciliation.
 export async function getSales(token: string, fromDate?: string, toDate?: string) {
-  const from = fromDate ?? new Date(Date.now() - 90 * 86400_000).toISOString().slice(0, 10)
-  const to   = toDate   ?? new Date().toISOString().slice(0, 10)
+  let endpoint = '/sales/'
+  const params: string[] = []
+  if (fromDate) params.push(`sale_time__gte=${fromDate}`)
+  if (toDate)   params.push(`sale_time__lte=${toDate}`)
+  if (params.length) endpoint += '?' + params.join('&')
 
-  // Enumerate days [from, to] inclusive.
-  const days: string[] = []
-  for (let d = new Date(`${from}T00:00:00Z`); d <= new Date(`${to}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
-    days.push(d.toISOString().slice(0, 10))
-  }
-
-  const raw: any[] = []
-  // Run day-fetches in a small concurrency pool. Pure sequential was 90 s
-  // for a 90-day window which already approached Vercel's per-function cap
-  // on busy days where some dates take 3-5 s each. Concurrency 6 is low
-  // enough to stay polite on PK's rate limit while compressing the window.
-  const CONCURRENCY = 6
-  async function fetchDay(day: string) {
-    const endpoint = `/sales/?sale_time__gte=${day}T00:00:00&sale_time__lt=${day}T23:59:59`
-    try {
-      return await fetchAll(endpoint, token)
-    } catch (e: any) {
-      // Per-day failure shouldn't kill the whole window — log and return empty.
-      console.warn(`[pk] getSales day ${day} failed: ${e.message}`)
-      return []
-    }
-  }
-  for (let i = 0; i < days.length; i += CONCURRENCY) {
-    const batch = days.slice(i, i + CONCURRENCY)
-    const results = await Promise.all(batch.map(fetchDay))
-    for (const r of results) raw.push(...r)
-  }
+  const raw = await fetchAll(endpoint, token)
 
   return raw.map((s: any) => {
     // Net from items: Σ (qty × price_per_unit). This is already ex-VAT.
