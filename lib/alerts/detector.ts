@@ -27,12 +27,15 @@ function severity(deviationPct: number, thresholds: [number, number, number]): '
   return 'low'
 }
 
-async function explainAnomalyDescriptions(alerts: Alert[], businessName: string) {
+async function explainAnomalyDescriptions(alerts: Alert[], businessName: string, orgId?: string) {
   if (!process.env.ANTHROPIC_API_KEY || !alerts.length) return
 
   try {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    const { createAdminClient } = await import('@/lib/supabase/server')
+    const { logAiRequest } = await import('@/lib/ai/usage')
+    const db = createAdminClient()
 
     for (const alert of alerts) {
       const prompt = `You are analysing restaurant financial data for ${businessName}. Write ONE sentence explaining this anomaly to a restaurant owner. Be specific, practical, and suggest a likely cause.
@@ -46,6 +49,7 @@ Period: ${alert.period_date}
 
 Write only one sentence. No preamble.`
 
+      const started = Date.now()
       try {
         const response = await claude.messages.create({
           model:      AI_MODELS.AGENT,
@@ -54,6 +58,21 @@ Write only one sentence. No preamble.`
         })
         const text = (response.content?.[0] as any)?.text?.trim()
         if (text) alert.description = text
+
+        // Log to ai_request_log so agent spend is visible in the cost
+        // dashboard alongside /api/ask and /api/budgets calls.
+        if (orgId) {
+          try {
+            await logAiRequest(db, {
+              org_id:        orgId,
+              request_type:  'anomaly_explain',
+              model:         AI_MODELS.AGENT,
+              input_tokens:  response.usage?.input_tokens ?? 0,
+              output_tokens: response.usage?.output_tokens ?? 0,
+              duration_ms:   Date.now() - started,
+            })
+          } catch { /* non-fatal */ }
+        }
       } catch (err: any) {
         console.error('AI anomaly explanation failed:', err)
       }
@@ -186,8 +205,15 @@ export async function runAnomalyDetection(orgId?: string): Promise<Alert[]> {
 
 async function checkBusiness(db: any, orgId: string, bizId: string, bizName: string, today: Date): Promise<Alert[]> {
   const alerts: Alert[] = []
-  const year  = today.getFullYear()
-  const month = today.getMonth() + 1
+
+  // Analyse the most recently COMPLETED month — comparing a partial
+  // current month against 4 full historical months guarantees a false
+  // "revenue drop" every day until the current month finishes.
+  // Example: Apr 19 has 13 days of sales vs full-March baseline → appears
+  // as -55%. Fix: rewind to the previous complete month.
+  const completed = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+  const year  = completed.getFullYear()
+  const month = completed.getMonth() + 1
 
   // ── 1. Check revenue and cost metrics from monthly_metrics ────────
   // Source of truth is monthly_metrics (auto-aggregated POS + PK sync). tracker_data
@@ -355,7 +381,7 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
   }
 
   if (alerts.length) {
-    await explainAnomalyDescriptions(alerts, bizName)
+    await explainAnomalyDescriptions(alerts, bizName, orgId)
   }
 
   return alerts

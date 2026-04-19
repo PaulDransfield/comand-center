@@ -97,47 +97,45 @@ export async function POST(req: NextRequest) {
       const bizDigests: BusinessDigest[] = []
 
       for (const biz of businesses) {
-        // This week's tracker data (aggregated from covers table by week)
-        const { data: weekCovers } = await db
-          .from('covers')
-          .select('total, revenue, revenue_per_cover')
+        // Read from daily_metrics (summary table the aggregator maintains).
+        // Old code read from `covers` (deprecated — empty for most orgs) and
+        // `tracker_data` (manual entries only, misses synced totals).
+        const { data: weekDaily } = await db
+          .from('daily_metrics')
+          .select('revenue, covers, rev_per_cover')
           .eq('business_id', biz.id)
           .gte('date', fromDate)
           .lte('date', toDate)
 
-        // Last week's covers
         const lwFrom = new Date(lastMonday); lwFrom.setDate(lwFrom.getDate() - 7)
         const lwTo   = new Date(lastSunday); lwTo.setDate(lwTo.getDate() - 7)
-        const { data: lwCovers } = await db
-          .from('covers')
-          .select('total, revenue, revenue_per_cover')
+        const { data: lwDaily } = await db
+          .from('daily_metrics')
+          .select('revenue, covers')
           .eq('business_id', biz.id)
           .gte('date', lwFrom.toISOString().slice(0, 10))
           .lte('date', lwTo.toISOString().slice(0, 10))
 
-        const revenue        = weekCovers?.reduce((s, c) => s + Number(c.revenue ?? 0), 0) ?? 0
-        const revenueLW      = lwCovers?.reduce((s, c) => s + Number(c.revenue ?? 0), 0) ?? 0
-        const covers         = weekCovers?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0
-        const coversLW       = lwCovers?.reduce((s, c) => s + (c.total ?? 0), 0) ?? 0
-        const rpcCount       = weekCovers?.filter(c => c.revenue_per_cover).length ?? 0
-        const revenuePerCover= rpcCount > 0
-          ? (weekCovers?.reduce((s, c) => s + Number(c.revenue_per_cover ?? 0), 0) ?? 0) / rpcCount
-          : (covers > 0 ? revenue / covers : 0)
+        const revenue        = weekDaily?.reduce((s: number, c: any) => s + Number(c.revenue ?? 0), 0) ?? 0
+        const revenueLW      = lwDaily?.reduce((s: number, c: any)   => s + Number(c.revenue ?? 0), 0) ?? 0
+        const covers         = weekDaily?.reduce((s: number, c: any) => s + Number(c.covers ?? 0),  0) ?? 0
+        const coversLW       = lwDaily?.reduce((s: number, c: any)   => s + Number(c.covers ?? 0),  0) ?? 0
+        const revenuePerCover = covers > 0 ? revenue / covers : 0
 
-        // Get monthly tracker data for cost %
+        // Cost % from monthly_metrics (auto-aggregated) not tracker_data (manual-only)
         const month = lastSunday.getMonth() + 1
         const year  = lastSunday.getFullYear()
-        const { data: tracker } = await db
-          .from('tracker_data')
+        const { data: mm } = await db
+          .from('monthly_metrics')
           .select('revenue, staff_cost, food_cost, margin_pct')
           .eq('business_id', biz.id)
-          .eq('period_year', year)
-          .eq('period_month', month)
-          .single()
+          .eq('year', year)
+          .eq('month', month)
+          .maybeSingle()
 
-        const monthRevenue  = Number(tracker?.revenue    ?? 0)
-        const foodPct       = monthRevenue > 0 ? (Number(tracker?.food_cost  ?? 0) / monthRevenue) * 100 : 0
-        const staffPct      = monthRevenue > 0 ? (Number(tracker?.staff_cost ?? 0) / monthRevenue) * 100 : 0
+        const monthRevenue  = Number(mm?.revenue    ?? 0)
+        const foodPct       = monthRevenue > 0 ? (Number(mm?.food_cost  ?? 0) / monthRevenue) * 100 : 0
+        const staffPct      = monthRevenue > 0 ? (Number(mm?.staff_cost ?? 0) / monthRevenue) * 100 : 0
 
         // Get budget for this month
         const { data: budget } = await db
@@ -217,6 +215,32 @@ export async function POST(req: NextRequest) {
       if (emailRes.ok) {
         sent++
         console.log(`[digest] Sent to ${ownerEmail} for org ${org.name}`)
+
+        // Persist to briefings for audit / history / idempotency. UNIQUE
+        // (business_id, week_start) so re-running the same week is a no-op
+        // upsert rather than a duplicate send target.
+        try {
+          const briefRows = bizDigests.map(bd => ({
+            org_id:      org.id,
+            business_id: businesses.find((b: any) => b.name === bd.name)?.id ?? null,
+            week_start:  fromDate,
+            content:     `Week ${weekNum}: revenue ${Math.round(bd.revenue).toLocaleString('en-GB')} kr (${bd.revenueLW > 0 ? Math.round(((bd.revenue - bd.revenueLW) / bd.revenueLW) * 100) : 0}% vs LW), covers ${bd.covers}, labour ${bd.staffPct.toFixed(1)}%`,
+            key_metrics: {
+              revenue:         Math.round(bd.revenue),
+              revenue_lw:      Math.round(bd.revenueLW),
+              covers:          bd.covers,
+              covers_lw:       bd.coversLW,
+              revenue_per_cover: Math.round(bd.revenuePerCover),
+              food_pct:        Math.round(bd.foodPct * 10) / 10,
+              staff_pct:       Math.round(bd.staffPct * 10) / 10,
+            },
+          })).filter(r => r.business_id)
+          if (briefRows.length) {
+            await db.from('briefings').upsert(briefRows, { onConflict: 'business_id,week_start' })
+          }
+        } catch (bErr: any) {
+          console.warn(`[digest] briefings persist failed for ${org.name}: ${bErr.message}`)
+        }
       } else {
         const err = await emailRes.text()
         errors.push(`${org.name}: ${err}`)
