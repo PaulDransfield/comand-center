@@ -50,14 +50,21 @@ const nextConfig = {
 // tunnelRoute proxies Sentry traffic through our own domain so ad-blockers
 // don't block error reports.
 module.exports = withSentryConfig(nextConfig, {
-  org:     'paul-7076s-projects',
+  // NOTE: this is the SENTRY org slug (from sentry.io/settings/). It is
+  // intentionally different from our Vercel org slug (`paul-7076s-projects`).
+  // Getting this wrong makes the release-upload step 404 silently — symptom
+  // is "Unreferenced" images in Sentry issue view and minified stack traces.
+  org:     'comandcenter',
   project: 'javascript-nextjs',
 
-  // Temporarily unsilenced + debug to diagnose why Sentry shows minified
-  // chunks ("Images Loaded: Unreferenced"). Flip back to silent:true, debug:false
-  // once source maps are resolving. Task #81.
-  silent: false,
-  debug:  true,
+  silent: true,
+
+  // Pin release name to the full Vercel git SHA. Matches what the runtime
+  // Sentry SDK is configured to read below (sentry.server.config.ts etc.),
+  // so events and source-map uploads align.
+  release: {
+    name: process.env.VERCEL_GIT_COMMIT_SHA,
+  },
 
   // Upload source maps to Sentry so stack traces show real line numbers
   // rather than minified gibberish. Only runs during production builds.

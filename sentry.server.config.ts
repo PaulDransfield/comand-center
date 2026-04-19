@@ -11,6 +11,11 @@ const DSN = process.env.NEXT_PUBLIC_SENTRY_DSN
 Sentry.init({
   dsn: DSN,
 
+  // Pin release to the full git SHA to match the webpack plugin's upload
+  // release name (configured in next.config.js). Must be identical on both
+  // sides or source maps will not link to events.
+  release: process.env.VERCEL_GIT_COMMIT_SHA,
+
   // 10 % of transactions get a full perf trace. Raise temporarily during a
   // performance investigation; otherwise keep low to stay in free-tier quota.
   tracesSampleRate: 0.1,

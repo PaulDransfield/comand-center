@@ -10,6 +10,10 @@ const DSN = process.env.NEXT_PUBLIC_SENTRY_DSN
 Sentry.init({
   dsn: DSN,
 
+  // Release is auto-injected into the client bundle by the Sentry webpack
+  // plugin (configured in next.config.js with release.name). Don't set it
+  // here — process.env.VERCEL_GIT_COMMIT_SHA is server-side only.
+
   tracesSampleRate: 0.1,
 
   // Replay a short video of the DOM when a crash happens. 0 % session-replay
