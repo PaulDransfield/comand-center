@@ -168,17 +168,25 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
   }
 
   const raw: any[] = []
-  // Sequential to keep PK rate-limit friendly. ~1 s per day × 90 days ≈ 90 s;
-  // fits comfortably inside master-sync's per-integration budget.
-  for (const day of days) {
+  // Run day-fetches in a small concurrency pool. Pure sequential was 90 s
+  // for a 90-day window which already approached Vercel's per-function cap
+  // on busy days where some dates take 3-5 s each. Concurrency 6 is low
+  // enough to stay polite on PK's rate limit while compressing the window.
+  const CONCURRENCY = 6
+  async function fetchDay(day: string) {
     const endpoint = `/sales/?sale_time__gte=${day}T00:00:00&sale_time__lt=${day}T23:59:59`
     try {
-      const dayRows = await fetchAll(endpoint, token)
-      raw.push(...dayRows)
+      return await fetchAll(endpoint, token)
     } catch (e: any) {
-      // Per-day failure shouldn't kill the whole window — log and continue.
+      // Per-day failure shouldn't kill the whole window — log and return empty.
       console.warn(`[pk] getSales day ${day} failed: ${e.message}`)
+      return []
     }
+  }
+  for (let i = 0; i < days.length; i += CONCURRENCY) {
+    const batch = days.slice(i, i + CONCURRENCY)
+    const results = await Promise.all(batch.map(fetchDay))
+    for (const r of results) raw.push(...r)
   }
 
   return raw.map((s: any) => {
