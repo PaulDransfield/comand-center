@@ -100,13 +100,36 @@ export default function Sidebar() {
     return () => { clearInterval(t); window.removeEventListener('cc_ai_used', handler) }
   }, [])
 
-  // Re-check sync status every 60 s so the "Live · Xm ago" stamp ticks up
-  // between hot-sync runs. Also refreshes the dot colour (green <30m, amber older).
+  // Keep the "Live · Xm ago" stamp ticking and trigger on-demand syncs when
+  // freshness crosses 10 min. The /api/sync/today endpoint is throttled server
+  // side so repeat calls are cheap; we call liberally to keep the feel live.
   useEffect(() => {
     if (!selected?.id) return
-    const t = setInterval(() => fetchSyncStatus(selected.id), 60_000)
-    return () => clearInterval(t)
+    const bizId = selected.id
+
+    // Trigger immediately when the business changes / page mounts.
+    triggerLiveSync(bizId)
+
+    const refresh = setInterval(() => fetchSyncStatus(bizId), 60_000)
+    const sync    = setInterval(() => triggerLiveSync(bizId), 5 * 60_000)
+
+    // Also resync whenever the tab regains focus — catches "I came back from lunch".
+    const onVis = () => { if (document.visibilityState === 'visible') triggerLiveSync(bizId) }
+    document.addEventListener('visibilitychange', onVis)
+
+    return () => {
+      clearInterval(refresh); clearInterval(sync)
+      document.removeEventListener('visibilitychange', onVis)
+    }
   }, [selected?.id])
+
+  async function triggerLiveSync(bizId: string) {
+    try {
+      await fetch(`/api/sync/today?business_id=${bizId}`, { method: 'POST', cache: 'no-store' })
+      // Refresh the timestamp label after the sync settles.
+      fetchSyncStatus(bizId)
+    } catch { /* non-fatal; sidebar still shows last known sync */ }
+  }
 
   function selectBiz(biz: Business) {
     setSelected(biz)
