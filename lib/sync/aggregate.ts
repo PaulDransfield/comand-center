@@ -28,34 +28,59 @@ export async function aggregateMetrics(
   // `<= '2026-04-18'`. An .eq() on the same date worked fine. Without the upper
   // bound we rely on: (a) no sync writes future-dated rows; (b) in-memory
   // filtering below if we ever want a strict window.
-  const [revRes, staffRes, trackerRes] = await Promise.all([
-    // Note: Supabase defaults to 1000 rows. Restaurants can have 1000+ shifts/month.
-    // Use limit(50000) to ensure we get all data.
-    db.from('revenue_logs')
-      .select('revenue_date, revenue, covers, tip_revenue, food_revenue, bev_revenue, dine_in_revenue, takeaway_revenue, provider')
-      .eq('org_id', orgId).eq('business_id', businessId)
-      .gte('revenue_date', fromDate)
-      .limit(50000),
+  //
+  // PostgREST / Supabase silently caps response size at `max_rows` (default 1000)
+  // regardless of `.limit(N)` — we discovered this 2026-04-19 when Apr 18 daily
+  // rows were missing. Vero has ~27 shifts/day × 90 days ≈ 2400 rows, so the
+  // first 1000 truncated the most recent dates. Must paginate with `.range()`.
+  async function fetchAllPaged<T = any>(
+    buildQuery: (from: number, to: number) => any,
+    pageSize = 1000,
+  ): Promise<T[]> {
+    const out: T[] = []
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await buildQuery(offset, offset + pageSize - 1)
+      if (error) {
+        console.error('[aggregate] fetch page failed', { offset, error: error.message })
+        throw new Error(`paged fetch failed at offset ${offset}: ${error.message}`)
+      }
+      const rows = data ?? []
+      out.push(...rows)
+      if (rows.length < pageSize) break  // last page
+      if (offset > 200000) {
+        console.error('[aggregate] fetch pagination runaway — bailing', { offset })
+        break
+      }
+    }
+    return out
+  }
 
-    // Exclude scheduled shifts (_scheduled suffix) — only count actual logged hours
-    db.from('staff_logs')
-      .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr')
-      .eq('org_id', orgId).eq('business_id', businessId)
-      .gte('shift_date', fromDate)
-      .or('cost_actual.gt.0,estimated_salary.gt.0')
-      .not('pk_log_url', 'like', '%_scheduled')
-      .limit(50000),
-
+  const [rawRevLogs, staffLogs, trackerRes] = await Promise.all([
+    fetchAllPaged((lo, hi) =>
+      db.from('revenue_logs')
+        .select('revenue_date, revenue, covers, tip_revenue, food_revenue, bev_revenue, dine_in_revenue, takeaway_revenue, provider')
+        .eq('org_id', orgId).eq('business_id', businessId)
+        .gte('revenue_date', fromDate)
+        .order('revenue_date', { ascending: true })
+        .range(lo, hi)
+    ),
+    fetchAllPaged((lo, hi) =>
+      db.from('staff_logs')
+        .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr')
+        .eq('org_id', orgId).eq('business_id', businessId)
+        .gte('shift_date', fromDate)
+        .or('cost_actual.gt.0,estimated_salary.gt.0')
+        .not('pk_log_url', 'like', '%_scheduled')
+        .order('shift_date', { ascending: true })
+        .range(lo, hi)
+    ),
     db.from('tracker_data')
       .select('period_year, period_month, revenue, food_cost, staff_cost, net_profit')
       .eq('business_id', businessId)
       .gte('period_year', parseInt(fromDate.slice(0, 4)))
-      .lte('period_year', parseInt(toDate.slice(0, 4)))
-      .limit(1000),
+      .lte('period_year', parseInt(toDate.slice(0, 4))),
   ])
 
-  const rawRevLogs = revRes.data ?? []
-  const staffLogs  = staffRes.data ?? []
   const trackerRows = trackerRes.data ?? []
 
   // Single compact fetch summary. Expanded diagnostics can be re-added from git
