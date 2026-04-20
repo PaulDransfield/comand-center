@@ -37,7 +37,8 @@ export default function DepartmentsPage() {
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
+  // Default to month — week view early in the week is empty.
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
   const [data,        setData]        = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
 

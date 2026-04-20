@@ -64,7 +64,10 @@ export default function RevenuePage() {
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
+  // Default to month — week view lands on the current week which early in
+  // the week has no synced data yet and shows blanks. Month matches the
+  // other detail pages and gives something useful on first load.
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
   const [revData,     setRevData]     = useState<any>(null)
   const [prevRev,     setPrevRev]     = useState<any>(null)
   const [loading,     setLoading]     = useState(true)

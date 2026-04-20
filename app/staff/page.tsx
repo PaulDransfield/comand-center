@@ -74,7 +74,8 @@ export default function StaffPage() {
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
+  // Default to month — week view early in the week is empty.
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
   const [staffData,   setStaffData]   = useState<any>(null)
   const [srData,      setSrData]      = useState<any>(null)
   const [prevSr,      setPrevSr]      = useState<any>(null)
