@@ -1,5 +1,5 @@
 # CLAUDE.md — Working Guidelines
-> Last updated: 2026-04-17 | Session 7 in progress
+> Last updated: 2026-04-20 | Session 10 in progress (AI differentiation)
 
 ---
 

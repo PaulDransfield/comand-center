@@ -1,6 +1,6 @@
 # ROADMAP.md — CommandCenter
-> Version 8.1 | Updated: 2026-04-19 | Session 7 ✅ · Session 8 ✅ · AI differentiation in progress
-> Active focus: **docs/AI-ROADMAP.md** (Weekly AI Manager + Schedule Comparison shipping 2026-04-19)
+> Version 8.2 | Updated: 2026-04-20 | Session 7 ✅ · Session 8 ✅ · Session 9 ✅ · Session 10 🔄 (AI differentiation)
+> Active focus: **docs/AI-ROADMAP.md** (Feature 1 + 4 shipped; Feature 2/3 next)
 > UX redesign queued: docs/ux-redesign-spec.md
 > Read alongside CLAUDE.md and FIXES.md
 
@@ -189,9 +189,56 @@ Full operator tooling for customer support + agent management. Replaces the flat
 
 ---
 
-## Session 10 — UX redesign (NEXT)
+## Session 10 — AI differentiation + chart rebuild 🔄 (2026-04-19 → 2026-04-20)
 
-Full spec at `docs/ux-redesign-spec.md`, mockup at `docs/commandcenter-v2.html`. Work through the 12 pages in the Section 7 order, one PR per page. Recon already done — findings saved in memory (`project_state.md`).
+Session pivoted from the original UX-redesign plan (docs/ux-redesign-spec.md) to executing `docs/AI-ROADMAP.md` once Paul decided the product's differentiation story was weaker than its build quality. UX redesign remains queued after this.
+
+### Feature 1 — Weekly AI Manager ✅ SHIPPED
+| Item | Status |
+|------|--------|
+| 12-week context packer (daily_metrics + dept + alerts + budget) | ✅ |
+| Strict-constraint memo prompt (≤200 words, 3 SEK-cited actions) | ✅ |
+| Template HTML replaced with AI narrative | ✅ |
+| Thumbs 👍/👎 feedback loop in emails → `memo_feedback` table (M016) | ✅ (2026-04-20) |
+| Two-step feedback UX (confirm → optional comment) to dodge Gmail prefetch | ✅ |
+| Admin memo-preview page for QA + demos | ✅ |
+| Admin agents card shows 30-day up/down rollup + last comment | ✅ |
+| Schedule AI-comparison page (replaces PK write-back idea) | ✅ |
+
+### Feature 4 — Weather-aware intelligence ✅ MOSTLY SHIPPED
+| Item | Status |
+|------|--------|
+| Open-Meteo fetcher, city-coord lookup, WMO→label mapping | ✅ |
+| Weather in weekly memo (forecast + historical correlation) | ✅ |
+| Historical backfill + `weather_daily` + `/weather` correlation page | ✅ |
+| Weather-adjusted scheduling target hours | ✅ |
+| Forecast-day horizon bumped 10 → 16 (was cutting off next-week Thu–Sun) | ✅ (2026-04-20) |
+| Live `getForecast()` fallback in scheduling (weather_daily forecast rows go stale) | ✅ (2026-04-20) |
+| Revenue/weather regression | ⏳ Gating on data volume (3 months) |
+| Anomaly-detection false-positive suppression | ⏳ Needs a daily anomaly detector first — current is monthly |
+
+### Scheduling AI — asymmetric cuts-only policy ✅ (2026-04-20)
+Liability rule: never recommend adding hours. A cut that's too aggressive still saves money; an add-suggestion that doesn't pay off makes the customer worse off. Enforced in three places:
+- `/api/scheduling/ai-suggestion` — `targetHours = min(currentHours, modelTarget)`, delta ≤ 0
+- `/scheduling/ai` table — KPI becomes "Saving" (never "extra cost"); note-days show soft language
+- Memo prompt — "all actions must be cost-saves / mix shifts / pricing / supplier asks, never staff up"
+
+Also merged `/scheduling/ai` into `/scheduling` (one page, prominent indigo CTA banner + inline AI-suggested schedule card below the pattern grid). Legacy route → redirect.
+
+### Dashboard overview chart rebuilt ✅ (2026-04-20)
+Three iterations in one session:
+1. Added predictions + weather + margin info on top of the existing stacked bar → "table is broken"
+2. Rebuilt as day-card grid → "use a line, not cards; make month work too"
+3. Final: `components/dashboard/OverviewChart.tsx` — SVG bars (revenue actuals + indigo-striped predictions, labour bars below zero line, green margin polyline), period dropdown (7 weeks + 7 months), W/M toggle, calendar day-filter (click-to-toggle + shift-click-range), compare toggle (None/Prev/AI) with per-day whiskers, 4 KPI strip recomputing from visible days, floating tooltip with coloured-border sections. URL params sync `view/offset/cmp/days` for shareable links. Click-to-drill scaffolded for future `/dashboard/day/[date]`.
+
+### Session 10 open threads
+- `/dashboard/day/[date]` drill-down page (OverviewChart's `onDayClick` is a no-op today)
+- Feature 2 — Conversational P&L with receipts (blocked on `pk_products` price history + Fortnox food-cost detail)
+- Feature 3 — Cash runway MVP (unblocked — manual bank-balance entry + recurring costs + payroll forecast)
+- Anomaly detection: ship a daily detector so weather-suppression can plug in
+
+### Original UX redesign (deferred)
+Full spec at `docs/ux-redesign-spec.md`, mockup at `docs/commandcenter-v2.html`. Recon preserved in memory. Do not start until Paul explicitly says so.
 
 ---
 
@@ -348,6 +395,6 @@ ALTER TABLE ai_usage_daily ENABLE ROW LEVEL SECURITY;
 
 ---
 
-*Last updated: Session 9 — 2026-04-17*
-*Next action: Session 10 UX redesign (docs/ux-redesign-spec.md) page-by-page from page 1 (Overview)*
+*Last updated: Session 10 — 2026-04-20*
+*Next action: `/dashboard/day/[date]` drill-down, then Feature 3 cash-runway MVP, then Feature 2 conversational P&L (blocked on Fortnox)*
 

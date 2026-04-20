@@ -1,8 +1,56 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-19
+Last updated: 2026-04-20
 
 This file documents recurring problems and their confirmed fixes.
 Before trying anything new, check here first.
+
+---
+
+## 0e. `weather_daily` forecast rows go stale; read live for forward-looking UI
+
+**Symptom:** 2026-04-20 — the scheduling page only showed weather icons for Mon/Tue/Wed of next week, then nothing. The dashboard outlook behaved the same way. No error in logs. `weather_daily` table had rows but only for the first few days.
+
+**Root cause (two layered issues):**
+1. The scheduling API pulled forecast weather from `weather_daily`, but that table is only populated by the one-shot `/api/admin/weather/backfill` endpoint. It's not on a cron — forecasts written during backfill go out of date as the horizon moves. If the backfill ran more than a few days before the render, next-week rows simply don't exist.
+2. Even when backfill was fresh, Open-Meteo's default `forecast_days=10` (in `lib/weather/forecast.ts::getForecast`) doesn't reach next-week Thu–Sun when you run it on a Monday. Today + 10 days = through +9, but "next week" starts at +7 and ends at +13, so only 3 days overlap.
+
+**Fix:**
+- `lib/weather/forecast.ts` — bumped `forecast_days` from 10 to 16 (Open-Meteo max).
+- `app/api/scheduling/ai-suggestion/route.ts` — stopped reading forecasts from `weather_daily`. It now calls `getForecast(lat, lon)` live (1-hour in-process cache already exists) and filters to the target week range. Historical weather still comes from `weather_daily` for the correlation pattern — that data is past, so it doesn't go stale.
+- The weekly memo (`lib/ai/weekly-manager.ts`) was already doing this correctly via `getForecast()` — that's where I copied the pattern.
+
+**Applies to:** any forward-looking UI that needs weather. Don't query `weather_daily` for future rows unless you have a cron refreshing them; hit `getForecast()` live. Historical (`is_forecast = false`) rows are fine from the table.
+
+---
+
+## 0d. Next 14: `useSearchParams()` in a client component must sit inside `<Suspense>`
+
+**Symptom:** Build passes compile/typecheck but fails at the "generating static pages" step with:
+```
+useSearchParams() should be wrapped in a suspense boundary at page "/X"
+```
+`export const dynamic = 'force-dynamic'` does not fix it for client components.
+
+**Root cause:** Next 14 bails out of static prerendering if a client component reads `useSearchParams()` without a Suspense boundary in the tree. The directive only affects server-side dynamic behaviour.
+
+**Fix:** split the page into an outer default export that renders `<Suspense>` and an inner component that actually calls `useSearchParams()`:
+
+```tsx
+export default function Page() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <Inner />
+    </Suspense>
+  )
+}
+
+function Inner() {
+  const params = useSearchParams()
+  // ...
+}
+```
+
+**Bit us at:** `/admin/memo-preview` (2026-04-20) and `/dashboard` (2026-04-20). Both fixed via the split pattern above. Any future page that reads URL query params client-side should start with this wrapper.
 
 ---
 
