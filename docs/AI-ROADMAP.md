@@ -14,12 +14,12 @@
 
 | Component | Status |
 |-----------|--------|
-| Context packer (4 weeks daily_metrics + dept + alerts + budget) | 🔄 |
-| Claude prompt with strict constraints (<200 words, 3 actions, SEK cited) | 🔄 |
-| Swap template HTML for AI narrative in weekly-digest | 🔄 |
-| Feedback loop — "was this useful?" thumbs | ⏳ |
-| Schedule comparison page (replaces PK write-back idea) | 🔄 |
-| PK schedule vs AI-suggested — side-by-side tabs | 🔄 |
+| Context packer (4 weeks daily_metrics + dept + alerts + budget) | ✅ |
+| Claude prompt with strict constraints (<200 words, 3 actions, SEK cited) | ✅ |
+| Swap template HTML for AI narrative in weekly-digest | ✅ |
+| Feedback loop — "was this useful?" thumbs | ✅ (2026-04-20) — signed-token links in email → `/api/memo-feedback` → `memo_feedback` table (M016); rollup in `/admin/agents` |
+| Schedule comparison page (replaces PK write-back idea) | ✅ |
+| PK schedule vs AI-suggested — side-by-side tabs | ✅ |
 
 **Blockers:** none critical. Prior-year comparisons limited to 5 months until more data accumulates.
 
@@ -72,10 +72,11 @@
 | City → lat/lon lookup for 16 Swedish towns (no schema migration yet) | ✅ |
 | Daily weather summary (temp min/max, precip, wind, WMO code + label) | ✅ |
 | Weather injected into `buildWeeklyContext` — AI memo references upcoming weather | ✅ |
-| Weather-adjusted scheduling suggestion (weather_multiplier on rev-per-hour target) | ⏳ |
-| Dashboard 7-day forecast strip | ⏳ |
-| Revenue/weather regression (after 3 months of correlated data) | ⏳ |
-| False-positive suppression in anomaly detection ("rainy Thursday, matches pattern") | ⏳ |
+| Weather-adjusted scheduling suggestion (weather_multiplier on rev-per-hour target) | ✅ (commit 949f5dd) |
+| Dashboard 7-day forecast strip | ✅ (commit bb45138) |
+| Historical weather backfill + `/weather` correlation page | ✅ (commit b3a9c30) |
+| Revenue/weather regression (after 3 months of correlated data) | ⏳ Gating on data volume |
+| False-positive suppression in anomaly detection ("rainy Thursday, matches pattern") | ⏳ Needs a daily anomaly detector first (current one is monthly) |
 
 **MVP effort:** 1 day (just fetcher + context injection). **Full version:** 3–4 days.
 **Compound value:** after 3 months, we have `(day, revenue, weather)` tuples. Claude can answer "why was March 14 slow?" with "3°C with rain — your rainy sub-10°C Saturdays average 42k, you did 38k, above that segment's mean." No POS/accounting vendor can give that answer.

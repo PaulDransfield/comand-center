@@ -87,6 +87,27 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Memo feedback — count thumbs up / down across all memos in the last 30d.
+  // Attached to the monday_briefing agent card below.
+  const monthAgoIso = new Date(now - 30 * 86_400_000).toISOString()
+  const feedbackCounts = { up: 0, down: 0, last_comment: null as string | null, last_comment_at: null as string | null }
+  try {
+    const [upRes, downRes, commentRes] = await Promise.all([
+      db.from('memo_feedback').select('briefing_id', { count: 'exact', head: true })
+        .eq('rating', 'up').gte('submitted_at', monthAgoIso),
+      db.from('memo_feedback').select('briefing_id', { count: 'exact', head: true })
+        .eq('rating', 'down').gte('submitted_at', monthAgoIso),
+      db.from('memo_feedback').select('comment, submitted_at')
+        .not('comment', 'is', null).order('submitted_at', { ascending: false }).limit(1),
+    ])
+    feedbackCounts.up   = upRes.count   ?? 0
+    feedbackCounts.down = downRes.count ?? 0
+    if (commentRes.data?.[0]) {
+      feedbackCounts.last_comment    = commentRes.data[0].comment
+      feedbackCounts.last_comment_at = commentRes.data[0].submitted_at
+    }
+  } catch { /* table may not exist yet pre-M016 — leave zeros */ }
+
   // For each agent, fetch last 10 runs + count in last 7 days
   const agents = await Promise.all(AGENT_SOURCES.map(async (a) => {
     if (!a.table) {
@@ -121,6 +142,7 @@ export async function GET(req: NextRequest) {
         total_runs: countTotalRes.count ?? 0,
         last_run:   recent[0]?.at ?? null,
         disabled_for: disabledCounts[a.key] ?? 0,
+        feedback:   a.key === 'monday_briefing' ? feedbackCounts : undefined,
       }
     } catch (err: any) {
       return {

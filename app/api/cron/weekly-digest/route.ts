@@ -111,8 +111,43 @@ export async function POST(req: NextRequest) {
 
       if (!bizMemos.length) continue
 
-      // Build the email — one memo per business, stacked.
-      const htmlSections = bizMemos.map(b => memoEmailHtml(b.ctx, b.memo, appUrl, org.id))
+      // Persist briefings FIRST so we have stable IDs to embed in the email's
+      // feedback links. If the persist fails we still send the email, just
+      // without the thumbs-up/down block. (Prior to 2026-04-20 briefings were
+      // upserted AFTER send — that meant feedback links had no target.)
+      const briefRows = bizMemos.map(b => ({
+        org_id:      org.id,
+        business_id: b.biz.id,
+        week_start:  fromDate,
+        content:     b.memo.narrative,
+        key_metrics: {
+          actions:     b.memo.actions,
+          facts_cited: b.memo.facts_cited,
+          week:        weekLabel,
+          revenue:     b.ctx.thisWeek.revenue,
+          staff_cost:  b.ctx.thisWeek.staff_cost,
+          labour_pct:  b.ctx.thisWeek.labour_pct,
+        },
+      }))
+
+      let briefingIdByBusiness: Record<string, string> = {}
+      try {
+        const { data: persisted } = await db
+          .from('briefings')
+          .upsert(briefRows, { onConflict: 'business_id,week_start' })
+          .select('id, business_id')
+        for (const row of persisted ?? []) {
+          briefingIdByBusiness[row.business_id] = row.id
+        }
+      } catch (bErr: any) {
+        console.warn(`[digest] briefings persist failed for ${org.name}:`, bErr.message)
+      }
+
+      // Build the email — one memo per business, stacked. Each section's
+      // feedback links are signed against that business's briefing id.
+      const htmlSections = bizMemos.map(b =>
+        memoEmailHtml(b.ctx, b.memo, appUrl, org.id, briefingIdByBusiness[b.biz.id] ?? null),
+      )
       const combinedHtml = bizMemos.length === 1
         ? htmlSections[0]
         : `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f0;">${htmlSections.join('<div style="height:12px;background:#f5f5f0;"></div>')}</body></html>`
@@ -138,29 +173,8 @@ export async function POST(req: NextRequest) {
           const err = await emailRes.text()
           errors.push(`${org.name}: ${err}`)
           console.error(`[digest] email failed for ${org.name}:`, err)
-          continue  // don't persist briefings if email didn't land
+          continue
         }
-      }
-
-      // Persist each memo to briefings for history + future "resend" capability.
-      try {
-        const briefRows = bizMemos.map(b => ({
-          org_id:      org.id,
-          business_id: b.biz.id,
-          week_start:  fromDate,
-          content:     b.memo.narrative,
-          key_metrics: {
-            actions:     b.memo.actions,
-            facts_cited: b.memo.facts_cited,
-            week:        weekLabel,
-            revenue:     b.ctx.thisWeek.revenue,
-            staff_cost:  b.ctx.thisWeek.staff_cost,
-            labour_pct:  b.ctx.thisWeek.labour_pct,
-          },
-        }))
-        await db.from('briefings').upsert(briefRows, { onConflict: 'business_id,week_start' })
-      } catch (bErr: any) {
-        console.warn(`[digest] briefings persist failed for ${org.name}:`, bErr.message)
       }
 
     } catch (err: any) {

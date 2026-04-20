@@ -1,5 +1,5 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-19 | M015 (weather_daily) pending
+> Last updated: 2026-04-20 | M015 (weather_daily) + M016 (memo_feedback) pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
@@ -10,6 +10,11 @@
 **File:** `sql/M015-weather-daily.sql`
 **Purpose:** store observed + forecast weather per business per day. Feeds AI memo, scheduling suggestion, and `/weather` correlation page.
 **To apply:** open Supabase SQL Editor, paste file contents, run. Then hit `POST /api/admin/weather/backfill?secret=ADMIN_SECRET` once to populate historical rows. After that, daily sync keeps it current.
+
+### M016 — memo_feedback
+**File:** `sql/M016-memo-feedback.sql`
+**Purpose:** stores thumbs up / thumbs down + optional comment on each Monday memo. Populated via the public `/api/memo-feedback` endpoint, secured by HMAC-signed tokens (key: `CRON_SECRET`) embedded in the email buttons.
+**To apply:** open Supabase SQL Editor, paste file contents, run. No backfill needed — new memos from the next cron tick onward will include the feedback block. Requires M003 `briefings` already applied (FK target).
 
 ---
 

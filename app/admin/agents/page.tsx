@@ -115,6 +115,22 @@ export default function AgentsDashboard() {
                   <MiniStat label="Disabled for" value={a.disabled_for} tone={a.disabled_for > 0 ? 'warn' : 'default'} />
                 </div>
 
+                {/* Feedback strip — only rendered for Monday briefing */}
+                {a.feedback && (a.feedback.up + a.feedback.down > 0) && (
+                  <div style={{ marginBottom: 12, padding: '8px 10px', background: '#fdfcf6', border: '1px solid #f0eddf', borderRadius: 7, fontSize: 12, color: '#4b5563' }}>
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+                      <span style={{ color: '#059669', fontWeight: 700 }}>👍 {a.feedback.up}</span>
+                      <span style={{ color: '#dc2626', fontWeight: 700 }}>👎 {a.feedback.down}</span>
+                      <span style={{ fontSize: 10, color: '#9ca3af', letterSpacing: '.06em', textTransform: 'uppercase' as const }}>last 30d</span>
+                    </div>
+                    {a.feedback.last_comment && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: '#374151', fontStyle: 'italic' as const, borderLeft: '2px solid #d4d4d0', paddingLeft: 8 }}>
+                        &ldquo;{a.feedback.last_comment.slice(0, 200)}{a.feedback.last_comment.length > 200 ? '…' : ''}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Recent runs */}
                 {a.recent_runs.length === 0 ? (
                   <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>

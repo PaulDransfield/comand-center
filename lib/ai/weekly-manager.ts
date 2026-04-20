@@ -12,6 +12,7 @@
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest }          from '@/lib/ai/usage'
 import { getForecast, coordsFor, DailyWeather, weatherBucket } from '@/lib/weather/forecast'
+import { signFeedback }          from '@/lib/email/feedback-token'
 
 type Db = any
 
@@ -465,8 +466,32 @@ export async function generateWeeklyMemo(
 // ─────────────────────────────────────────────────────────────────────────────
 // Email HTML — minimal, reads like a letter, not a dashboard.
 // ─────────────────────────────────────────────────────────────────────────────
-export function memoEmailHtml(ctx: WeeklyContext, memo: ManagerMemo, appUrl: string, orgId: string): string {
+export function memoEmailHtml(
+  ctx: WeeklyContext,
+  memo: ManagerMemo,
+  appUrl: string,
+  orgId: string,
+  briefingId: string | null = null,
+): string {
   const safe = (s: string) => (s ?? '').replace(/[<>]/g, c => c === '<' ? '&lt;' : '&gt;')
+  // Feedback links — only rendered if we have a briefing id (generated after
+  // the briefings row is persisted). CRON_SECRET must be set in the env that
+  // runs the digest cron for signFeedback to work.
+  let feedbackBlock = ''
+  if (briefingId) {
+    try {
+      const upToken   = signFeedback(briefingId, 'up')
+      const downToken = signFeedback(briefingId, 'down')
+      const upUrl     = `${appUrl}/api/memo-feedback?briefing=${briefingId}&rating=up&token=${upToken}`
+      const downUrl   = `${appUrl}/api/memo-feedback?briefing=${briefingId}&rating=down&token=${downToken}`
+      feedbackBlock = `
+        <div style="border-top:1px solid #d4d4d0;padding-top:20px;margin-bottom:20px;font-family:-apple-system,Segoe UI,sans-serif;text-align:center;">
+          <div style="font-size:11px;color:#6b7280;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px;">Was this memo useful?</div>
+          <a href="${upUrl}" style="display:inline-block;margin:0 6px;padding:8px 18px;background:#ffffff;border:1px solid #d4d4d0;border-radius:8px;color:#059669;font-weight:600;font-size:13px;text-decoration:none;">👍 Useful</a>
+          <a href="${downUrl}" style="display:inline-block;margin:0 6px;padding:8px 18px;background:#ffffff;border:1px solid #d4d4d0;border-radius:8px;color:#dc2626;font-weight:600;font-size:13px;text-decoration:none;">👎 Not useful</a>
+        </div>`
+    } catch { /* CRON_SECRET missing in dry-run mode — skip feedback block */ }
+  }
   return `<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f5f5f0;font-family:Georgia,serif;color:#1a1f2e;">
@@ -494,6 +519,7 @@ export function memoEmailHtml(ctx: WeeklyContext, memo: ManagerMemo, appUrl: str
         `).join('')}
       </div>
     ` : ''}
+    ${feedbackBlock}
     <div style="border-top:1px solid #d4d4d0;padding-top:16px;font-size:12px;color:#6b7280;font-family:-apple-system,Segoe UI,sans-serif;">
       <a href="${appUrl}/scheduling" style="color:#1e3a5f;text-decoration:none;margin-right:12px;">View schedule comparison →</a>
       <a href="${appUrl}/tracker" style="color:#1e3a5f;text-decoration:none;">P&amp;L detail →</a>
