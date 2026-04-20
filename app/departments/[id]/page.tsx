@@ -40,7 +40,11 @@ export default function DepartmentDetailPage() {
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
+  // Default to month — week view lands on the current week which, early in
+  // the week, has no synced revenue/labour data yet and shows all dashes.
+  // Month matches the dept list's default and gives the user useful numbers
+  // on first load. They can flip to week once they're exploring.
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
   const [data,        setData]        = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
   const [tooltip,     setTooltip]     = useState<any>(null)
@@ -120,6 +124,33 @@ export default function DepartmentDetailPage() {
 
         {loading ? (
           <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading...</div>
+        ) : (summary.revenue ?? 0) === 0 && (summary.staff_cost ?? 0) === 0 ? (
+          <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '40px 24px', textAlign: 'center' as const }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 6 }}>
+              No data for {deptName} in {periodLabel}
+            </div>
+            <div style={{ fontSize: 13, color: '#6b7280', maxWidth: 420, margin: '0 auto 14px' }}>
+              {viewMode === 'week' && weekOffset === 0
+                ? 'This week has only just started — the daily sync runs at 06:00 UTC so today\'s numbers land tomorrow morning. Try the previous week or switch to Month.'
+                : 'Nothing synced for this period yet. Try a different week/month, or run a sync from the admin panel if you\'re waiting on data.'}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+              {viewMode === 'week' ? (
+                <>
+                  <button onClick={() => setWeekOffset(o => o - 1)} style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                    ← Previous week
+                  </button>
+                  <button onClick={() => setViewMode('month')} style={{ padding: '8px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    View this month
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => setMonthOffset(o => o - 1)} style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
+                  ← Previous month
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             {/* KPI cards */}
