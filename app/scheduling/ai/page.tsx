@@ -132,6 +132,7 @@ export default function ScheduleAIComparison() {
           <thead>
             <tr>
               <th style={th}>Day</th>
+              <th style={th}>Weather</th>
               <th style={{ ...th, textAlign: 'right' }}>Current h</th>
               <th style={{ ...th, textAlign: 'right' }}>Suggested h</th>
               <th style={{ ...th, textAlign: 'right' }}>Δ hours</th>
@@ -142,14 +143,27 @@ export default function ScheduleAIComparison() {
           <tbody>
             {data.current.map((c: any, i: number) => {
               const s = data.suggested[i]
-              // Days the model would have added are informational only — render
-              // deltas as "—" to avoid implying a recommendation.
               const isNote = s.under_staffed_note
+              const w = s.weather
               return (
                 <tr key={c.date} style={isNote ? { background: '#f8fafc' } : undefined}>
                   <td style={td}>
                     <strong>{c.weekday}</strong> · {c.date.slice(5)}
                     {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 10, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>note</span>}
+                  </td>
+                  <td style={{ ...td, fontSize: 12, color: '#4b5563', minWidth: 140 }}>
+                    {w ? (
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#1a1f2e' }}>{w.summary}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280' }}>
+                          {w.temp_min != null ? `${Math.round(w.temp_min)}–${Math.round(w.temp_max)}°C` : ''}
+                          {Number(w.precip_mm) > 0.5 ? ` · ${w.precip_mm}mm` : ''}
+                        </div>
+                        {s.bucket_days_seen >= 3 && (
+                          <div style={{ fontSize: 10, color: '#059669', marginTop: 2 }}>✓ {s.bucket_days_seen} matching days</div>
+                        )}
+                      </div>
+                    ) : <span style={{ color: '#9ca3af' }}>—</span>}
                   </td>
                   <td style={{ ...td, textAlign: 'right' }}>{c.hours}h ({c.shifts} shifts)</td>
                   <td style={{ ...td, textAlign: 'right' }}>{isNote ? '—' : `${s.hours}h`}</td>
@@ -159,7 +173,7 @@ export default function ScheduleAIComparison() {
                   <td style={{ ...td, textAlign: 'right', color: deltaHrsColor(s.delta_hours), fontWeight: 600 }}>
                     {isNote ? '—' : `${fmt(s.delta_cost)} kr`}
                   </td>
-                  <td style={{ ...td, fontSize: 12, color: '#4b5563', maxWidth: 380 }}>{s.reasoning}</td>
+                  <td style={{ ...td, fontSize: 12, color: '#4b5563', maxWidth: 340, lineHeight: 1.45 }}>{s.reasoning}</td>
                 </tr>
               )
             })}

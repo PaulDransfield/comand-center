@@ -238,29 +238,39 @@ export async function GET(req: NextRequest) {
     const deltaCost = Math.round(deltaHrs * avgCostPerHour)  // ≤ 0 by construction
     const modelWouldAdd = modelTarget > current.hours + 2 && sourceRev.length >= 3
 
-    const weatherNote = fcast ? `${fcast.summary}, ${fcast.temp_min ?? '?'}–${fcast.temp_max ?? '?'}°C${Number(fcast.precip_mm) > 0.5 ? `, ${fcast.precip_mm}mm` : ''}` : null
+    // Plain-language weather labels — "wet" / "cold_dry" etc. are internal
+    // tags and leak jargon into the rationale if used raw.
+    const BUCKET_LABEL: Record<string, string> = {
+      clear:   'clear days',
+      mild:    'mild days',
+      cold_dry:'cold days',
+      wet:     'rainy days',
+      snow:    'snowy days',
+      freezing:'freezing days',
+      hot:     'hot days',
+      thunder: 'stormy days',
+    }
+    const weatherLabel = bucket ? (BUCKET_LABEL[bucket] ?? `${bucket} days`) : null
+    const dayName = DAYS[dow]
+    const cutKr = Math.abs(deltaCost)
 
     const rationale = (() => {
       if (sourceRev.length < 3) {
-        return useBucket
-          ? `Forecast: ${weatherNote}. Not enough matching ${DAYS[dow]} history for this weather yet — holding as-scheduled.`
-          : 'Not enough history for this weekday yet — holding as-scheduled.'
+        return `Only ${sourceRev.length} ${dayName}${sourceRev.length === 1 ? '' : 's'} of history yet — not enough signal. Holding your schedule.`
       }
       if (modelWouldAdd) {
         // Informational only. No monetary claim. Owner judgment call.
-        const weatherPrefix = useBucket ? `Forecast: ${weatherNote}. ` : ''
-        return `${weatherPrefix}Your ${useBucket ? `${bucket} ` : ''}${DAYS[dow]}s (${sourceRev.length} days) average ${fmtKr(avgRev)} rev at ${avgHours}h. Current schedule (${current.hours}h) is on the lighter side — but we don't recommend adding hours. An add only pays off if the extra demand actually shows up, and you know the current booking outlook better than we do.`
+        const ctxLabel = useBucket ? `${dayName}s with similar weather` : `${dayName}s`
+        return `${dayName}: your ${ctxLabel} average ${fmtKr(avgRev)} on ${avgHours}h. You've scheduled ${current.hours}h — lighter than your pattern. Not suggesting an add: only you know the booking outlook.`
       }
       if (Math.abs(deltaHrs) < 2) {
-        return useBucket
-          ? `Forecast: ${weatherNote}. Current schedule matches your ${bucket} ${DAYS[dow]} pattern — no change recommended.`
-          : `Current schedule roughly matches your ${DAYS[dow]} pattern — no change recommended.`
+        return `${dayName}: your ${current.hours}h matches the ${useBucket ? `${weatherLabel} ` : ''}pattern. No change.`
       }
       // deltaHrs is negative here — a cut.
-      if (useBucket) {
-        return `Forecast: ${weatherNote}. Your ${bucket} ${DAYS[dow]}s (${sourceRev.length} days) averaged ${fmtKr(avgRev)} rev; top-quartile ran ${Math.round(p75Rph)} kr/hour → ${targetHours}h is enough cover. Trim ${Math.abs(deltaHrs)}h.`
-      }
-      return `Your best ${DAYS[dow]}s in the last 12 weeks ran ${Math.round(p75Rph)} kr/hour. At the day's average revenue (${fmtKr(avgRev)}), ${targetHours}h covers it. Trim ${Math.abs(deltaHrs)}h.`
+      const ctxLabel = useBucket
+        ? `${weatherLabel} on a ${dayName} (${sourceRev.length} in your history)`
+        : `${dayName}s (${sourceRev.length} in your history)`
+      return `${ctxLabel} average ${fmtKr(avgRev)} rev and only need about ${targetHours}h of cover at your top pace. You have ${current.hours}h — trim ${Math.abs(deltaHrs)}h to save ~${fmtKr(cutKr)}.`
     })()
 
     suggested.push({
