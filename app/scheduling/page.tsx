@@ -624,11 +624,12 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
         </div>
       )}
 
-      {/* Diff table */}
+      {/* Diff table — planned (PK) vs AI + predicted sales + margin indicator */}
+      <div style={{ overflowX: 'auto' as const }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-            {['Day','Weather','Current','Suggested','Δ hrs','Δ cost','Why'].map((h, i) => (
+            {['Day','Weather','Your plan','AI suggestion','Predicted sales','Margin','Why'].map((h, i) => (
               <th key={h} style={{ padding: '6px 8px', textAlign: i >= 2 && i <= 5 ? 'right' : 'left', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>
                 {h}
               </th>
@@ -640,12 +641,24 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
             const s = suggested[i]
             const isNote = s.under_staffed_note
             const w = s.weather
+            // Margin uses the AI-suggested cost (closer to what we'd advise)
+            // when a cut is available, else the current planned cost. If the
+            // day's predicted revenue is zero we can't compute a margin.
+            const predictedRev   = s.est_revenue ?? 0
+            const effectiveCost  = isNote ? c.est_cost : s.est_cost
+            const margin         = predictedRev > 0 ? ((predictedRev - effectiveCost) / predictedRev) * 100 : null
+            const marginColour   = margin === null ? '#9ca3af'
+                                 : margin >= 70 ? '#15803d'
+                                 : margin >= 55 ? '#d97706'
+                                                : '#dc2626'
             return (
               <tr key={c.date} style={{ borderBottom: '1px solid #f3f4f6', background: isNote ? '#f8fafc' : undefined }}>
+                {/* Day */}
                 <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500, whiteSpace: 'nowrap' as const }}>
                   <strong>{c.weekday}</strong> · {c.date.slice(5)}
                   {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>note</span>}
                 </td>
+                {/* Weather */}
                 <td style={{ padding: '8px 8px', color: '#4b5563', minWidth: 130 }}>
                   {w ? (
                     <>
@@ -660,14 +673,47 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
                     </>
                   ) : <span style={{ color: '#d1d5db' }}>—</span>}
                 </td>
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151' }}>{fmtHrs(c.hours)}</td>
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', fontWeight: 600 }}>{isNote ? '—' : fmtHrs(s.hours)}</td>
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: deltaColor(s.delta_hours), fontWeight: 600, whiteSpace: 'nowrap' as const }}>
-                  {isNote ? '—' : `${s.delta_hours}h`}
+                {/* Your plan — hours + planned cost */}
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151', whiteSpace: 'nowrap' as const }}>
+                  <div style={{ fontWeight: 600, color: '#111' }}>{fmtHrs(c.hours)}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? `${fmt(c.est_cost)} kr` : '—'}</div>
                 </td>
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: deltaColor(s.delta_hours), fontWeight: 600, whiteSpace: 'nowrap' as const }}>
-                  {isNote ? '—' : `${fmt(s.delta_cost)} kr`}
+                {/* AI suggestion — hours + cost + saving */}
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
+                  {isNote ? (
+                    <span style={{ color: '#6b7280' }}>no change</span>
+                  ) : (
+                    <>
+                      <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? `${fmt(s.est_cost)} kr` : '—'}</div>
+                      {s.delta_cost < 0 && (
+                        <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>save {fmt(Math.abs(s.delta_cost))} kr</div>
+                      )}
+                    </>
+                  )}
                 </td>
+                {/* Predicted sales — est_revenue from the historical pattern */}
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', whiteSpace: 'nowrap' as const }}>
+                  {predictedRev > 0 ? (
+                    <>
+                      <div style={{ fontWeight: 600 }}>{fmt(predictedRev)} kr</div>
+                      <div style={{ fontSize: 10, color: '#9ca3af' }}>pattern avg</div>
+                    </>
+                  ) : <span style={{ color: '#d1d5db' }}>—</span>}
+                </td>
+                {/* Margin % indicator */}
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
+                  {margin === null ? <span style={{ color: '#d1d5db' }}>—</span> : (
+                    <span style={{
+                      display: 'inline-block',
+                      fontSize: 12, fontWeight: 700,
+                      padding: '2px 8px', borderRadius: 20,
+                      background: margin >= 70 ? '#dcfce7' : margin >= 55 ? '#fef3c7' : '#fee2e2',
+                      color: marginColour,
+                    }}>{margin.toFixed(0)}%</span>
+                  )}
+                </td>
+                {/* Why */}
                 <td style={{ padding: '8px 8px', fontSize: 12, color: '#4b5563', maxWidth: 340, lineHeight: 1.5 }}>
                   {s.reasoning}
                 </td>
@@ -676,6 +722,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
           })}
         </tbody>
       </table>
+      </div>
 
       {/* Method footer */}
       <div style={{ marginTop: 12, fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
