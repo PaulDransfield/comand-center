@@ -66,6 +66,13 @@ export default function SchedulingPage() {
   const [drillData,   setDrillData]   = useState<any>(null)
   const [drillLoading,setDrillLoading] = useState(false)
 
+  // AI-suggested schedule (next week) — independent of the view selector
+  // because the suggestion always targets the next Mon-Sun regardless of
+  // whether the user is looking at this month or last week.
+  const [aiSched,      setAiSched]      = useState<any>(null)
+  const [aiLoading,    setAiLoading]    = useState(false)
+  const [aiError,      setAiError]      = useState('')
+
   useEffect(() => {
     const sync = () => {
       const saved = localStorage.getItem('cc_selected_biz')
@@ -95,6 +102,18 @@ export default function SchedulingPage() {
   }, [selectedBiz, fromDate, toDate])
 
   useEffect(() => { if (selectedBiz) load() }, [selectedBiz, viewMode, weekOffset, monthOffset])
+
+  useEffect(() => {
+    if (!selectedBiz) return
+    let cancelled = false
+    setAiLoading(true); setAiError('')
+    fetch(`/api/scheduling/ai-suggestion?business_id=${selectedBiz}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => { if (!cancelled) { if (j.error) setAiError(j.error); else setAiSched(j) } })
+      .catch(e => { if (!cancelled) setAiError(e.message) })
+      .finally(() => { if (!cancelled) setAiLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedBiz])
 
   async function openDayDrill(weekday: number) {
     setDrillDay(weekday)
@@ -155,8 +174,7 @@ export default function SchedulingPage() {
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Scheduling Efficiency</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-              Labour cost vs revenue · weekly patterns ·{' '}
-              <a href="/scheduling/ai" style={{ color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>AI suggested schedule →</a>
+              Labour cost vs revenue · weekly patterns · AI-suggested next-week schedule below.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -406,6 +424,19 @@ export default function SchedulingPage() {
                 </div>
               </div>
             )}
+
+            {/* ═══════════════════════════════════════════════════════
+                AI-SUGGESTED SCHEDULE (next week) — forward-looking,
+                always shown regardless of the W/M period selector.
+                Cuts-only policy: never recommends adding hours.
+            ═══════════════════════════════════════════════════════ */}
+            <AiSuggestedSchedule
+              loading={aiLoading}
+              error={aiError}
+              data={aiSched}
+              fmt={fmtKr}
+              fmtHrs={fmtH}
+            />
           </>
         )}
       </div>
@@ -533,5 +564,128 @@ export default function SchedulingPage() {
         ].filter(Boolean).join('\n') : 'No scheduling data loaded yet'}
       />
     </AppShell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI-suggested schedule card — renders inline below the past-week analysis.
+// Cuts-only: delta is always ≤0, days the model would have added show as a
+// soft "note" row with no numeric recommendation.
+// ─────────────────────────────────────────────────────────────────────────────
+function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
+  const deltaColor = (d: number) => d < -0.5 ? '#15803d' : '#6b7280'
+  const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }
+
+  if (loading) {
+    return <div style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestion…</div></div>
+  }
+  if (error) {
+    return <div style={cardStyle}><div style={{ color: '#dc2626', fontSize: 13 }}>AI suggestion: {error}</div></div>
+  }
+  if (!data) return null
+
+  const { summary, suggested, current, week_from, week_to, pk_shifts_found } = data
+  const shortRange = `${week_from.slice(8)}–${week_to.slice(8)} ${new Date(week_from).toLocaleDateString('en-GB', { month: 'short' })}`
+
+  return (
+    <div style={cardStyle}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12, flexWrap: 'wrap' as const }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>AI-suggested schedule</span>
+            <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600, letterSpacing: '.03em' }}>AI</span>
+          </div>
+          <div style={{ fontSize: 11, color: '#9ca3af' }}>
+            Next week · {shortRange} · {pk_shifts_found > 0 ? `${pk_shifts_found} shifts in PK` : 'no PK schedule yet'}
+          </div>
+        </div>
+        {/* Inline summary */}
+        <div style={{ display: 'flex', gap: 18, alignItems: 'flex-end' }}>
+          <Stat label="Scheduled"  value={`${summary.current_hours}h`} />
+          <Stat label="Suggested"  value={`${summary.suggested_hours}h`} tone={summary.suggested_hours < summary.current_hours ? 'good' : 'neutral'} />
+          <Stat
+            label="Saving"
+            value={summary.saving_kr > 0 ? `−${fmt(summary.saving_kr)} kr` : '—'}
+            tone={summary.saving_kr > 0 ? 'good' : 'neutral'}
+          />
+        </div>
+      </div>
+
+      {/* Under-staffed notice */}
+      {summary.under_staffed_days > 0 && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#1e3a5f' }}>
+          <strong>{summary.under_staffed_days}</strong> day{summary.under_staffed_days > 1 ? 's' : ''} look lighter than your 12-week pattern. We don't recommend adding hours — it's a judgment call based on booking outlook only you can see.
+        </div>
+      )}
+
+      {/* Diff table */}
+      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+            {['Day','Weather','Current','Suggested','Δ hrs','Δ cost','Why'].map((h, i) => (
+              <th key={h} style={{ padding: '6px 8px', textAlign: i >= 2 && i <= 5 ? 'right' : 'left', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {current.map((c: any, i: number) => {
+            const s = suggested[i]
+            const isNote = s.under_staffed_note
+            const w = s.weather
+            return (
+              <tr key={c.date} style={{ borderBottom: '1px solid #f3f4f6', background: isNote ? '#f8fafc' : undefined }}>
+                <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500, whiteSpace: 'nowrap' as const }}>
+                  <strong>{c.weekday}</strong> · {c.date.slice(5)}
+                  {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>note</span>}
+                </td>
+                <td style={{ padding: '8px 8px', color: '#4b5563', minWidth: 130 }}>
+                  {w ? (
+                    <>
+                      <div style={{ fontWeight: 600, color: '#1a1f2e' }}>{w.summary}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>
+                        {w.temp_min != null ? `${Math.round(w.temp_min)}–${Math.round(w.temp_max)}°C` : ''}
+                        {Number(w.precip_mm) > 0.5 ? ` · ${w.precip_mm}mm` : ''}
+                      </div>
+                      {s.bucket_days_seen >= 3 && (
+                        <div style={{ fontSize: 10, color: '#15803d', marginTop: 1 }}>✓ {s.bucket_days_seen} matching days</div>
+                      )}
+                    </>
+                  ) : <span style={{ color: '#d1d5db' }}>—</span>}
+                </td>
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151' }}>{fmtHrs(c.hours)}</td>
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', fontWeight: 600 }}>{isNote ? '—' : fmtHrs(s.hours)}</td>
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: deltaColor(s.delta_hours), fontWeight: 600, whiteSpace: 'nowrap' as const }}>
+                  {isNote ? '—' : `${s.delta_hours}h`}
+                </td>
+                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: deltaColor(s.delta_hours), fontWeight: 600, whiteSpace: 'nowrap' as const }}>
+                  {isNote ? '—' : `${fmt(s.delta_cost)} kr`}
+                </td>
+                <td style={{ padding: '8px 8px', fontSize: 12, color: '#4b5563', maxWidth: 340, lineHeight: 1.5 }}>
+                  {s.reasoning}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+
+      {/* Method footer */}
+      <div style={{ marginTop: 12, fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
+        <strong style={{ color: '#6b7280' }}>Method.</strong> {summary.rationale}
+      </div>
+    </div>
+  )
+}
+
+function Stat({ label, value, tone = 'neutral' }: any) {
+  const colour = tone === 'good' ? '#15803d' : '#111'
+  return (
+    <div style={{ textAlign: 'right' as const }}>
+      <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af' }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: colour, marginTop: 1 }}>{value}</div>
+    </div>
   )
 }
