@@ -31,14 +31,31 @@ function checkAuth(req: NextRequest): boolean {
 
 // Every tenanted table with org_id. Children first so FK constraints stay happy.
 // Anything not listed here either has no org_id (global) or is inferred via business_id.
+//
+// ── DELIBERATELY RETAINED (not in this list) ──────────────────────────────────
+// These tables carry data we are legally required to keep past erasure, or
+// that records the erasure itself. See LEGAL-OBLIGATIONS.md §9 + Art. 17(3)(b).
+//
+//   billing_events     7-year retention under Bokföringslagen (Swedish
+//                      Bookkeeping Act). Mirrors Stripe subscription/payment
+//                      events — these are our own accounting records (we are
+//                      controller). PII is limited to the org_id reference; no
+//                      names/emails live in this table. Keep.
+//   admin_audit_log    2-year retention — our security evidence of who did
+//                      what to this customer. Critical for incident analysis
+//                      after a deletion complaint. Keep.
+//   deletion_requests  Tamper-evident record of the deletion itself. Written
+//                      by THIS endpoint; erasing it would destroy the audit
+//                      trail we depend on. Keep.
+//
+// If you're tempted to add any of the above back to TENANT_TABLES, read the
+// legal file first and talk to Paul. Do not bypass.
 const TENANT_TABLES = [
   // Logs / usage
   'sync_log',
   'ai_usage_daily',
   'ai_usage',
   'ai_request_log',
-  'admin_log',
-  'billing_events',
   // Feature data
   'anomaly_alerts',
   'scheduling_recommendations',

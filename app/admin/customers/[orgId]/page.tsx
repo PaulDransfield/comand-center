@@ -932,10 +932,21 @@ export default function CustomerDetail() {
               You're about to permanently erase <strong>{org.name}</strong>. This will remove:
               <ul style={{ margin: '8px 0 0 18px', padding: 0, color: '#6b7280', fontSize: 12 }}>
                 <li>The organisation and all {businesses.length} business(es)</li>
-                <li>All integrations, revenue logs, staff logs, tracker entries, alerts, AI logs</li>
+                <li>All integrations, revenue logs, staff logs, tracker entries, alerts, AI logs, forecasts, budgets, feature flags</li>
                 <li>{members.length} user(s) if this is their only org</li>
-                <li>Stripe customer record is KEPT (7-year bokföringslagen retention)</li>
               </ul>
+              <div style={{ marginTop: 10, padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Retained by law — NOT deleted:</div>
+                <ul style={{ margin: '0 0 0 18px', padding: 0 }}>
+                  <li><strong>billing_events</strong> — Stripe payment/subscription history. 7-year retention under Bokföringslagen (Swedish Bookkeeping Act).</li>
+                  <li><strong>admin_audit_log</strong> — record of admin actions on this customer. 2-year retention for security evidence.</li>
+                  <li><strong>deletion_requests</strong> — tamper-evident record of this deletion itself.</li>
+                  <li><strong>Stripe customer record</strong> at Stripe — kept by Stripe per their standard retention.</li>
+                </ul>
+                <div style={{ marginTop: 6, fontSize: 10, opacity: 0.85 }}>
+                  Retention justified under GDPR Art. 17(3)(b) — compliance with legal obligation. See LEGAL-OBLIGATIONS.md §9.
+                </div>
+              </div>
             </div>
 
             {!deleteResult && (
