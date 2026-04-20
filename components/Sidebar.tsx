@@ -16,6 +16,7 @@ interface Business {
 
 const NAV = [
   { label: 'Overview', href: '/dashboard', section: null },
+  { label: 'Group',    href: '/group',     section: null },
   { section: 'Financials' },
   { label: 'P&L Tracker',     href: '/tracker'        },
   { label: 'Budget vs Actual', href: '/budget'         },
