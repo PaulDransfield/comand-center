@@ -54,17 +54,26 @@ export default function ScheduleAIComparison() {
         {data.business_name} · Week of {data.week_from} to {data.week_to}
       </div>
 
-      {/* Summary */}
+      {/* Summary — cuts-only: "Net impact" only ever shows a saving or zero. */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
         <KPI label="Scheduled hours" value={`${data.summary.current_hours}h`} sub="in PK now" />
-        <KPI label="AI-suggested" value={`${data.summary.suggested_hours}h`} sub={data.summary.suggested_hours < data.summary.current_hours ? 'trim' : 'add'} />
         <KPI
-          label="Net weekly impact"
-          value={`${data.summary.net_saving_kr > 0 ? '−' : '+'}${fmt(Math.abs(data.summary.net_saving_kr))} kr`}
-          sub={data.summary.net_saving_kr > 0 ? 'saved' : 'extra cost'}
-          colour={data.summary.net_saving_kr > 0 ? '#059669' : '#b91c1c'}
+          label="AI-suggested"
+          value={`${data.summary.suggested_hours}h`}
+          sub={data.summary.suggested_hours < data.summary.current_hours ? 'trim' : 'hold'}
+        />
+        <KPI
+          label="Weekly saving"
+          value={data.summary.saving_kr > 0 ? `−${fmt(data.summary.saving_kr)} kr` : '—'}
+          sub={data.summary.saving_kr > 0 ? 'if cuts applied' : 'no cuts suggested'}
+          colour={data.summary.saving_kr > 0 ? '#059669' : '#6b7280'}
         />
       </div>
+      {data.summary.under_staffed_days > 0 && (
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#1e3a5f' }}>
+          <strong>{data.summary.under_staffed_days}</strong> day{data.summary.under_staffed_days > 1 ? 's' : ''} look lighter than your 12-week pattern. We don't recommend adding hours — it's a judgment call based on booking outlook you have and we don't. See "Why" in the day row.
+        </div>
+      )}
 
       {/* Weather forecast strip */}
       {data.suggested.some((s: any) => s.weather) && (
@@ -133,16 +142,22 @@ export default function ScheduleAIComparison() {
           <tbody>
             {data.current.map((c: any, i: number) => {
               const s = data.suggested[i]
+              // Days the model would have added are informational only — render
+              // deltas as "—" to avoid implying a recommendation.
+              const isNote = s.under_staffed_note
               return (
-                <tr key={c.date}>
-                  <td style={td}><strong>{c.weekday}</strong> · {c.date.slice(5)}</td>
+                <tr key={c.date} style={isNote ? { background: '#f8fafc' } : undefined}>
+                  <td style={td}>
+                    <strong>{c.weekday}</strong> · {c.date.slice(5)}
+                    {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 10, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>note</span>}
+                  </td>
                   <td style={{ ...td, textAlign: 'right' }}>{c.hours}h ({c.shifts} shifts)</td>
-                  <td style={{ ...td, textAlign: 'right' }}>{s.hours}h</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{isNote ? '—' : `${s.hours}h`}</td>
                   <td style={{ ...td, textAlign: 'right', color: deltaHrsColor(s.delta_hours), fontWeight: 600 }}>
-                    {s.delta_hours > 0 ? '+' : ''}{s.delta_hours}h
+                    {isNote ? '—' : `${s.delta_hours}h`}
                   </td>
                   <td style={{ ...td, textAlign: 'right', color: deltaHrsColor(s.delta_hours), fontWeight: 600 }}>
-                    {s.delta_cost > 0 ? '+' : ''}{fmt(s.delta_cost)} kr
+                    {isNote ? '—' : `${fmt(s.delta_cost)} kr`}
                   </td>
                   <td style={{ ...td, fontSize: 12, color: '#4b5563', maxWidth: 380 }}>{s.reasoning}</td>
                 </tr>

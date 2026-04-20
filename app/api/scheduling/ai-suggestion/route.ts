@@ -194,6 +194,16 @@ export async function GET(req: NextRequest) {
   // Choice of P75 rev-per-hour as target: aggressive enough to save hours, not
   // so aggressive that service suffers. P50 would be "match average" = no
   // gain. P90 would risk understaffing on high-demand days.
+  //
+  // ── Policy: asymmetric toward cuts ─────────────────────────────────────────
+  // We never recommend *adding* hours. Reasoning: if we suggest a cut and the
+  // day is slower than expected, the customer saves more than we predicted
+  // (still strictly a win). If we suggest an add and the extra demand doesn't
+  // materialise, the customer spends real money on labour against our advice.
+  // The asymmetric liability means the safe default is: model target is used
+  // only to trim, never to pad. Where the model *would* have added, we emit
+  // an informational note ("your schedule looks lighter than the 12-week
+  // pattern — no recommendation, judgment call") instead of a numeric delta.
   const suggested: any[] = []
   for (const date of Object.keys(currentByDate).sort()) {
     const dow = (new Date(date).getUTCDay() + 6) % 7
@@ -217,27 +227,40 @@ export async function GET(req: NextRequest) {
     const avgHours  = Math.round(avg(sourceHours) * 10) / 10
     const sortedRph = [...sourceRph].sort((a, b) => a - b)
     const p75Rph    = sortedRph.length ? sortedRph[Math.floor(sortedRph.length * 0.75)] : 0
-    const targetHours = avgRev > 0 && p75Rph > 0 ? Math.round((avgRev / p75Rph) * 10) / 10 : avgHours
+    const modelTarget = avgRev > 0 && p75Rph > 0 ? Math.round((avgRev / p75Rph) * 10) / 10 : avgHours
 
     const current   = currentByDate[date]
+    // Cap the recommendation at the currently-scheduled hours — we never
+    // propose adding. "Under-staffed vs model" surfaces as a soft note below.
+    const targetHours = Math.min(current.hours, modelTarget)
     const deltaHrs  = Math.round((targetHours - current.hours) * 10) / 10
     const avgCostPerHour = current.hours > 0 ? current.est_cost / current.hours : 0
-    const deltaCost = Math.round(deltaHrs * avgCostPerHour)
+    const deltaCost = Math.round(deltaHrs * avgCostPerHour)  // ≤ 0 by construction
+    const modelWouldAdd = modelTarget > current.hours + 2 && sourceRev.length >= 3
 
     const weatherNote = fcast ? `${fcast.summary}, ${fcast.temp_min ?? '?'}–${fcast.temp_max ?? '?'}°C${Number(fcast.precip_mm) > 0.5 ? `, ${fcast.precip_mm}mm` : ''}` : null
 
     const rationale = (() => {
       if (sourceRev.length < 3) {
         return useBucket
-          ? `Forecast: ${weatherNote}. Not enough matching ${DAYS[dow]} history for this weather yet — using all-weather weekday average (${avgHours}h).`
+          ? `Forecast: ${weatherNote}. Not enough matching ${DAYS[dow]} history for this weather yet — holding as-scheduled.`
           : 'Not enough history for this weekday yet — holding as-scheduled.'
       }
-      if (useBucket) {
-        return `Forecast: ${weatherNote}. Your ${bucket} ${DAYS[dow]}s (${sourceRev.length} days) averaged ${fmtKr(avgRev)} rev; top-quartile ran ${Math.round(p75Rph)} kr/hour → ${targetHours}h target.`
+      if (modelWouldAdd) {
+        // Informational only. No monetary claim. Owner judgment call.
+        const weatherPrefix = useBucket ? `Forecast: ${weatherNote}. ` : ''
+        return `${weatherPrefix}Your ${useBucket ? `${bucket} ` : ''}${DAYS[dow]}s (${sourceRev.length} days) average ${fmtKr(avgRev)} rev at ${avgHours}h. Current schedule (${current.hours}h) is on the lighter side — but we don't recommend adding hours. An add only pays off if the extra demand actually shows up, and you know the current booking outlook better than we do.`
       }
-      if (Math.abs(deltaHrs) < 2) return 'Current schedule roughly matches historical optimum.'
-      if (deltaHrs < 0)           return `Your best ${DAYS[dow]}s in the last 12 weeks ran ${Math.round(p75Rph)} kr/hour. At the day's average revenue (${fmtKr(avgRev)}), that's ${targetHours}h.`
-      return `Historical average on ${DAYS[dow]} is ${avgHours}h worked; current schedule is ${current.hours}h — consider adding hours if demand rising.`
+      if (Math.abs(deltaHrs) < 2) {
+        return useBucket
+          ? `Forecast: ${weatherNote}. Current schedule matches your ${bucket} ${DAYS[dow]} pattern — no change recommended.`
+          : `Current schedule roughly matches your ${DAYS[dow]} pattern — no change recommended.`
+      }
+      // deltaHrs is negative here — a cut.
+      if (useBucket) {
+        return `Forecast: ${weatherNote}. Your ${bucket} ${DAYS[dow]}s (${sourceRev.length} days) averaged ${fmtKr(avgRev)} rev; top-quartile ran ${Math.round(p75Rph)} kr/hour → ${targetHours}h is enough cover. Trim ${Math.abs(deltaHrs)}h.`
+      }
+      return `Your best ${DAYS[dow]}s in the last 12 weeks ran ${Math.round(p75Rph)} kr/hour. At the day's average revenue (${fmtKr(avgRev)}), ${targetHours}h covers it. Trim ${Math.abs(deltaHrs)}h.`
     })()
 
     suggested.push({
@@ -247,8 +270,10 @@ export async function GET(req: NextRequest) {
       est_cost:      Math.round(current.est_cost + deltaCost),
       est_revenue:   avgRev,
       rev_per_hour:  Math.round(p75Rph),
-      delta_hours:   deltaHrs,
-      delta_cost:    deltaCost,
+      model_target_hours: modelTarget,  // what the model would have picked un-capped
+      under_staffed_note: modelWouldAdd, // UI hint: show informational style
+      delta_hours:   deltaHrs,          // always ≤ 0
+      delta_cost:    deltaCost,         // always ≤ 0
       weather:       fcast ? {
         summary:  fcast.summary,
         temp_min: fcast.temp_min, temp_max: fcast.temp_max,
@@ -262,8 +287,10 @@ export async function GET(req: NextRequest) {
 
   const curHours = Object.values(currentByDate).reduce((s: number, r: any) => s + r.hours, 0)
   const sugHours = suggested.reduce((s: number, r: any) => s + r.hours, 0)
+  // Savings only — deltaCost is ≤0 by construction, so savings are the
+  // absolute sum. Kept `added_cost_kr: 0` + `net_saving_kr` for API stability.
   const savingKr = Math.round(suggested.reduce((s: number, r: any) => s + (r.delta_cost < 0 ? -r.delta_cost : 0), 0))
-  const addCost  = Math.round(suggested.reduce((s: number, r: any) => s + (r.delta_cost > 0 ?  r.delta_cost : 0), 0))
+  const underStaffedDays = suggested.filter((s: any) => s.under_staffed_note).length
 
   return NextResponse.json({
     week_from:       weekFrom,
@@ -277,9 +304,10 @@ export async function GET(req: NextRequest) {
       current_hours:    Math.round(curHours * 10) / 10,
       suggested_hours:  Math.round(sugHours * 10) / 10,
       saving_kr:        savingKr,
-      added_cost_kr:    addCost,
-      net_saving_kr:    savingKr - addCost,
-      rationale:        'Hours sized to match 75th-percentile rev-per-hour from last 12 weeks. Where the forecast matches ≥3 historical days of the same weekday+weather combination (e.g. rainy Friday), that subset is used — otherwise all-weather weekday average.',
+      added_cost_kr:    0,
+      net_saving_kr:    savingKr,
+      under_staffed_days: underStaffedDays,
+      rationale:        'Cuts only — we never recommend adding hours. Adding exposes the business to labour cost on days where the extra demand may not show up; trimming only risks slightly more savings than projected. Target rev-per-hour is the 75th-percentile of your last 12 weeks; where the forecast matches ≥3 days of the same weekday+weather combination (e.g. rainy Friday), that subset drives the target. Days where the model would have added are shown with an informational note — a judgment call for you, not a recommendation from us.',
     },
   }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
 }

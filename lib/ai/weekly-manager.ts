@@ -370,6 +370,7 @@ Constraints — NON-NEGOTIABLE:
 - No generic advice. Every action must reference numbers from the data above.
 - Tone: direct, conversational, Swedish owner-to-owner. Assume technical literacy.
 - No "I recommend", no "You should consider" — just say it. "Drop X. Saves Y."
+- NEVER recommend adding staff hours or extra shifts. Cuts only. Our scheduling guidance is intentionally asymmetric: a cut that's slightly too aggressive just saves less than hoped (still a win), but an "add hours" recommendation that doesn't pay off costs the owner real money for no reason. If the schedule looks light vs the pattern, note it as an observation — never as an action. All 3 numbered actions must be cost-saves, revenue-mix shifts, pricing moves, or supplier asks — not "staff up".
 - Weather matters for footfall. Two layers of weather data are provided:
   1. UPCOMING WEATHER — raw forecast for next 7 days
   2. HISTORICAL WEATHER EFFECT + NEXT WEEK ANALOGUES — what YOUR OWN trading days show at each weather pattern (when a backfill has run; may be empty on first weeks)
