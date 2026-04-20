@@ -3,10 +3,12 @@
 // app/dashboard/page.tsx — CommandCenter main dashboard
 // Week-first layout inspired by Personalkollen: KPIs → chart → dept table + P&L
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
 import WeatherStrip from '@/components/WeatherStrip'
+import OverviewChart, { PeriodOption } from '@/components/dashboard/OverviewChart'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
@@ -92,7 +94,17 @@ function KpiCard({ label, value, sub, deltaVal, ok, href }: any) {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
+// Next 14 requires any client component using useSearchParams to sit inside a
+// <Suspense> boundary or the static prerender bails out at build time.
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>}>
+      <DashboardInner />
+    </Suspense>
+  )
+}
+
+function DashboardInner() {
   const [businesses,  setBusinesses]  = useState<any[]>([])
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
@@ -103,10 +115,20 @@ export default function DashboardPage() {
   const [depts,       setDepts]       = useState<any>(null)
   const [alerts,      setAlerts]      = useState<any[]>([])
   const [loading,     setLoading]     = useState(true)
-  const [tooltip,     setTooltip]     = useState<any>(null)
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [upgradePlan, setUpgradePlan] = useState('')
   const [aiSched,     setAiSched]     = useState<any>(null)
+  // Previous-period daily_metrics rows — used for per-day "Prev" whiskers
+  // + per-day deltas in the OverviewChart.
+  const [prevDailyRows, setPrevDailyRows] = useState<any[]>([])
+
+  // URL-param-controlled chart state. OverviewChart reads these and calls
+  // back when the user interacts; we persist into the URL so refreshes and
+  // shared links keep the same view. Kept in state too for instant render.
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const [selectedDates, setSelectedDates] = useState<string[]>([])
+  const [compareMode,   setCompareMode]   = useState<'none'|'prev'|'ai'>('ai')
 
   // Upgrade banner on Stripe redirect
   useEffect(() => {
@@ -117,6 +139,40 @@ export default function DashboardPage() {
       setTimeout(() => setShowUpgrade(false), 8000)
     }
   }, [])
+
+  // ── Hydrate chart controls from URL on first render ──────────────────────
+  useEffect(() => {
+    const v   = searchParams?.get('view')   as 'week' | 'month' | null
+    const off = searchParams?.get('offset')
+    const cmp = searchParams?.get('cmp')    as 'none' | 'prev' | 'ai' | null
+    const d   = searchParams?.get('days')
+    if (v === 'week' || v === 'month') setViewMode(v)
+    if (off != null && !Number.isNaN(Number(off))) {
+      if (v === 'month') setMonthOffset(Number(off))
+      else               setWeekOffset(Number(off))
+    }
+    if (cmp === 'none' || cmp === 'prev' || cmp === 'ai') setCompareMode(cmp)
+    if (d) setSelectedDates(d.split(',').filter(Boolean))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Helper — write the current control set back to the URL without dropping
+  // the user at the top of the page. Uses history.replaceState so the URL
+  // updates but Next.js doesn't trigger a full rerender.
+  function writeUrl(next: { view?: string; offset?: number; cmp?: string; days?: string[] }) {
+    const p = new URLSearchParams()
+    const v   = next.view   ?? viewMode
+    const off = next.offset ?? (v === 'month' ? monthOffset : weekOffset)
+    const cmp = next.cmp    ?? compareMode
+    const d   = next.days   ?? selectedDates
+    if (v !== 'week') p.set('view', v)
+    if (off !== 0)    p.set('offset', String(off))
+    if (cmp !== 'ai') p.set('cmp', cmp)
+    if (d.length)     p.set('days', d.join(','))
+    const qs = p.toString()
+    const path = window.location.pathname + (qs ? `?${qs}` : '')
+    window.history.replaceState(null, '', path)
+  }
 
   // Load businesses + restore selection
   useEffect(() => {
@@ -181,6 +237,7 @@ export default function DashboardPage() {
       const rows = (curr_.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct }))
       setDailyRows(rows)
       setPrevSummary(prev_.summary ?? null)
+      setPrevDailyRows(prev_.rows ?? [])
       setDepts(deptRes ?? null)
       setAlerts(Array.isArray(alertRes) ? alertRes : [])
       setLoading(false)
@@ -239,6 +296,9 @@ export default function DashboardPage() {
   }
 
   // ── Build day grid — 7 days (week) or full month ───────────────────────────
+  // Each day gets a matching `prevDay` — same weekday-index offset in the
+  // previous period. Lets the chart render per-day "Prev" whiskers / deltas
+  // without another fetch.
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d   = new Date(curr.mon)
     d.setDate(curr.mon.getDate() + i)
@@ -247,7 +307,13 @@ export default function DashboardPage() {
     const isToday   = ds === localDate(now)
     const isFuture  = d > now
     const pred      = predByDate[ds] ?? null
-    return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture, pred }
+    // Matching day one week earlier
+    const prev = getWeekBounds(weekOffset - 1)
+    const pd   = new Date(prev.mon); pd.setDate(prev.mon.getDate() + i)
+    const pds  = localDate(pd)
+    const pRow = prevDailyRows.find(r => r.date === pds)
+    const prevDay = pRow ? { revenue: pRow.revenue ?? 0, staff_cost: pRow.staff_cost ?? 0 } : null
+    return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture, pred, prevDay }
   })
 
   const monthDays = Array.from({ length: currM.daysInMonth }, (_, i) => {
@@ -259,8 +325,62 @@ export default function DashboardPage() {
     const isFuture = d > now
     const dayIdx   = (d.getDay() + 6) % 7 // 0=Mon
     const pred     = predByDate[ds] ?? null
-    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, dayIdx, pred }
+    // Matching day in previous month (same calendar day; last day if prev is shorter)
+    const prevM  = getMonthBounds(monthOffset - 1)
+    const prevLastDom = new Date(prevM.firstDay.getFullYear(), prevM.firstDay.getMonth() + 1, 0).getDate()
+    const prevDom = Math.min(i + 1, prevLastDom)
+    const prevDate = `${prevM.year}-${String(prevM.month).padStart(2, '0')}-${String(prevDom).padStart(2, '0')}`
+    const pRow = prevDailyRows.find(r => r.date === prevDate)
+    const prevDay = pRow ? { revenue: pRow.revenue ?? 0, staff_cost: pRow.staff_cost ?? 0 } : null
+    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, dayIdx, pred, prevDay }
   })
+
+  // ── Available periods for the chart's dropdown ──────────────────────────
+  // 6 past + current = 7 weeks, and 6 past + current = 7 months. Offsets
+  // captured in the key so onPeriodChange can restore exact state.
+  const availablePeriods: PeriodOption[] = useMemo(() => {
+    const out: PeriodOption[] = []
+    for (let off = 0; off >= -6; off--) {
+      const w = getWeekBounds(off)
+      out.push({ key: `w:${off}`, label: `Week ${w.weekNum} · ${w.label}`, view: 'week', dateFrom: w.from, dateTo: w.to })
+    }
+    for (let off = 0; off >= -6; off--) {
+      const m = getMonthBounds(off)
+      out.push({ key: `m:${off}`, label: m.label, view: 'month', dateFrom: m.from, dateTo: m.to })
+    }
+    return out
+  }, [/* only needs stable fn refs — dates computed from `now` at render */])
+
+  function handlePeriodChange(key: string) {
+    const [kind, offStr] = key.split(':')
+    const off = Number(offStr)
+    if (kind === 'w') {
+      setViewMode('week')
+      setWeekOffset(off)
+      writeUrl({ view: 'week', offset: off })
+    } else if (kind === 'm') {
+      setViewMode('month')
+      setMonthOffset(off)
+      writeUrl({ view: 'month', offset: off })
+    }
+  }
+  function handleViewModeChange(v: 'week'|'month') {
+    setViewMode(v)
+    writeUrl({ view: v, offset: v === 'month' ? monthOffset : weekOffset })
+  }
+  function handleCompareChange(m: 'none'|'prev'|'ai') {
+    setCompareMode(m)
+    writeUrl({ cmp: m })
+  }
+  function handleSelectedDatesChange(next: string[]) {
+    setSelectedDates(next)
+    writeUrl({ days: next })
+  }
+  // Scaffold for future click-to-drill — route doesn't exist yet, so no-op
+  // until /dashboard/day/[date] ships.
+  function handleDayClick(day: any) {
+    // router.push(`/dashboard/day/${day.date}`)  // enable when route exists
+  }
 
   const selectedBiz = businesses.find(b => b.id === bizId)
   const targetPct   = (selectedBiz as any)?.target_staff_pct ?? 35
@@ -381,18 +501,23 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* ── Weekly chart: bars + margin line overlay ──────────────── */}
-            <RevenueMarginChart
+            {/* ── Interactive overview chart (week view) ───────────────── */}
+            <OverviewChart
               days={weekDays}
               viewMode="week"
-              weekNum={curr.weekNum}
-              label={curr.label}
+              onViewModeChange={handleViewModeChange}
+              periodLabel={`Week ${curr.weekNum} · ${curr.label}`}
+              businessName={selectedBiz?.name ?? ''}
+              targetLabourPct={targetPct}
+              availablePeriods={availablePeriods}
+              onPeriodChange={handlePeriodChange}
+              onDayClick={handleDayClick}
+              selectedDates={selectedDates}
+              onSelectedDatesChange={handleSelectedDatesChange}
+              compareMode={compareMode}
+              onCompareChange={handleCompareChange}
               fmtKr={fmtKr}
               fmtPct={fmtPct}
-              weatherIcon={weatherIcon}
-              targetPct={targetPct}
-              tooltip={tooltip}
-              setTooltip={setTooltip}
             />
 
             {/* ── Dept table + P&L ───────────────────────────────────────── */}
@@ -569,18 +694,23 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* ── Daily chart for the month: bars + gross-margin line ───── */}
-            <RevenueMarginChart
+            {/* ── Interactive overview chart (month view) ──────────────── */}
+            <OverviewChart
               days={monthDays}
               viewMode="month"
-              weekNum={0}
-              label={`${currM.label} — Daily breakdown`}
+              onViewModeChange={handleViewModeChange}
+              periodLabel={currM.label}
+              businessName={selectedBiz?.name ?? ''}
+              targetLabourPct={targetPct}
+              availablePeriods={availablePeriods}
+              onPeriodChange={handlePeriodChange}
+              onDayClick={handleDayClick}
+              selectedDates={selectedDates}
+              onSelectedDatesChange={handleSelectedDatesChange}
+              compareMode={compareMode}
+              onCompareChange={handleCompareChange}
               fmtKr={fmtKr}
               fmtPct={fmtPct}
-              weatherIcon={weatherIcon}
-              targetPct={targetPct}
-              tooltip={tooltip}
-              setTooltip={setTooltip}
             />
 
             {/* ── Dept table + P&L ───────────────────────────────────────── */}
@@ -730,248 +860,5 @@ export default function DashboardPage() {
         ].filter(Boolean).join('\n') : 'No business selected'}
       />
     </AppShell>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RevenueMarginChart — bars for revenue + line overlay for gross margin %,
-// works for both the 7-day week view and the 28–31-day month view. Bars for
-// future dates render with an indigo stripe pattern so they read as forecasts
-// at a glance, using data from the AI scheduling suggestion (weather +
-// predicted revenue + planned/AI cost). Hover reveals the full detail.
-// ─────────────────────────────────────────────────────────────────────────────
-function RevenueMarginChart({ days, viewMode, weekNum, label, fmtKr, fmtPct, weatherIcon, targetPct, tooltip, setTooltip }: any) {
-  const CHART_H = 200
-  const isWeek  = viewMode === 'week'
-
-  // Max revenue across actual + predicted so future-week bars scale fairly.
-  const maxRev = Math.max(
-    ...days.map((d: any) => Math.max(d.revenue, d.pred?.est_revenue ?? 0)),
-    1,
-  )
-
-  // Compute each day's margin for the overlay line. Actuals use
-  // (rev - staff_cost) / rev; predicted days use (est_rev - effective_cost) / est_rev
-  // where effective_cost honours the "cuts only" policy.
-  const points = days.map((d: any, i: number) => {
-    const hasActual = d.revenue > 0
-    const hasPred   = !hasActual && d.pred?.est_revenue > 0
-    let margin: number | null = null
-    if (hasActual && d.staff_cost > 0) {
-      margin = ((d.revenue - d.staff_cost) / d.revenue) * 100
-    } else if (hasPred) {
-      const eff = d.pred.under_staffed_note ? d.pred.planned_cost : d.pred.ai_cost
-      margin = d.pred.est_revenue > 0 ? ((d.pred.est_revenue - eff) / d.pred.est_revenue) * 100 : null
-    }
-    return { i, margin, hasActual, hasPred }
-  })
-
-  // Build the SVG polyline from consecutive points that have a margin value.
-  // Missing points break the line rather than getting interpolated — cleaner
-  // and more honest when a weekday has no data either side.
-  const segments: Array<Array<{ x: number; y: number }>> = []
-  let current: Array<{ x: number; y: number }> = []
-  points.forEach((p: any, idx: number) => {
-    if (p.margin == null) {
-      if (current.length) { segments.push(current); current = [] }
-      return
-    }
-    const xPct = ((idx + 0.5) / days.length) * 100
-    const yPct = 100 - Math.max(0, Math.min(100, p.margin))  // invert: 100% at top
-    current.push({ x: xPct, y: yPct })
-  })
-  if (current.length) segments.push(current)
-
-  const hasAnyPred = days.some((d: any) => d.pred?.est_revenue > 0 && d.revenue === 0)
-
-  return (
-    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const, gap: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-          {isWeek ? `Week ${weekNum} — ${label}` : label}
-        </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const, alignItems: 'center' }}>
-          <LegendSwatch color="#1a1f2e" label="Revenue (actual)" />
-          {hasAnyPred && (
-            <LegendSwatch striped label="Revenue (predicted)" />
-          )}
-          <LegendSwatch color="#15803d" line label="Gross margin %" />
-        </div>
-      </div>
-
-      {/* Chart area — bars + SVG overlay */}
-      <div style={{ position: 'relative' as const, height: CHART_H + (isWeek ? 28 : 18), marginBottom: isWeek ? 2 : 2 }}>
-        {/* Bars */}
-        <div style={{
-          display: 'flex', gap: isWeek ? 8 : 2,
-          height: CHART_H, alignItems: 'flex-end',
-          position: 'absolute' as const, left: 0, right: 0, top: 0,
-        }}>
-          {days.map((day: any) => {
-            const hasActual = day.revenue > 0
-            const hasPred   = !hasActual && day.pred?.est_revenue > 0
-            const shownRev  = hasActual ? day.revenue : (day.pred?.est_revenue ?? 0)
-            const h         = shownRev > 0 ? Math.max((shownRev / maxRev) * (CHART_H - 20), isWeek ? 4 : 3) : 0
-            const isHover   = tooltip?.dateStr === day.dateStr
-            const canHover  = hasActual || hasPred
-            const isWeekend = !isWeek && day.dayIdx >= 5
-
-            const labPct   = hasActual && day.staff_cost > 0 ? (day.staff_cost / day.revenue) * 100 : null
-            const predEff  = day.pred ? (day.pred.under_staffed_note ? day.pred.planned_cost : day.pred.ai_cost) : 0
-            const predMarg = hasPred && shownRev > 0 ? ((shownRev - predEff) / shownRev) * 100 : null
-
-            return (
-              <div
-                key={day.dateStr}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: isWeek ? 6 : 3, cursor: canHover ? 'pointer' : 'default' }}
-                onMouseEnter={() => canHover && setTooltip({ ...day, labPct, predMargin: predMarg, hasActual, hasPred })}
-                onMouseLeave={() => setTooltip(null)}
-              >
-                {/* Weather icon above the bar (only where we have a forecast) */}
-                {isWeek && day.pred?.weather && (
-                  <div style={{ fontSize: 14, lineHeight: 1, marginTop: 0 }}>
-                    {weatherIcon(day.pred.weather.weather_code)}
-                  </div>
-                )}
-                {/* Bar */}
-                <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' as const, justifyContent: 'flex-end' }}>
-                  {hasActual ? (
-                    <div style={{
-                      height: h,
-                      borderRadius: isWeek ? '5px 5px 0 0' : '3px 3px 0 0',
-                      background: '#1a1f2e',
-                      opacity: isHover ? 1 : 0.9,
-                      transition: 'opacity 0.15s',
-                      boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                    }} />
-                  ) : hasPred ? (
-                    <div style={{
-                      height: h,
-                      borderRadius: isWeek ? '5px 5px 0 0' : '3px 3px 0 0',
-                      background: 'repeating-linear-gradient(135deg, #6366f1 0 6px, #a5b4fc 6px 12px)',
-                      opacity: isHover ? 1 : 0.75,
-                      transition: 'opacity 0.15s',
-                      boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                    }} />
-                  ) : (
-                    <div style={{ height: 2, background: '#e5e7eb', borderRadius: 2 }} />
-                  )}
-                </div>
-                {/* Day label */}
-                <div style={{
-                  fontSize: isWeek ? 11 : 8, fontWeight: day.isToday ? 700 : 400,
-                  color: day.isToday ? '#6366f1' : isWeekend ? '#d1d5db' : '#9ca3af',
-                }}>
-                  {day.dayName}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        {/* SVG line overlay — gross margin %. 100% is at the top of the bar
-            area; 0% at the bottom. Non-contiguous segments render as separate
-            paths so gaps in data don't interpolate phantom margin. */}
-        <svg
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          style={{ position: 'absolute' as const, left: 0, right: 0, top: 0, width: '100%', height: CHART_H, pointerEvents: 'none' as const }}
-        >
-          {/* 70% margin reference line (gentle) */}
-          <line x1="0" y1="30" x2="100" y2="30" stroke="#e5e7eb" strokeWidth="0.3" strokeDasharray="1 1.5" />
-          {/* Margin path */}
-          {segments.map((seg, i) => {
-            if (seg.length < 2) return null
-            const d = seg.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-            return <path key={i} d={d} stroke="#15803d" strokeWidth="0.8" fill="none" vectorEffect="non-scaling-stroke" />
-          })}
-          {/* Margin dots */}
-          {segments.flat().map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r="0.9" fill="#15803d" vectorEffect="non-scaling-stroke" />
-          ))}
-        </svg>
-      </div>
-
-      {/* Tooltip */}
-      {tooltip && (
-        <div style={{ marginTop: 12, padding: '12px 16px', background: '#1a1f2e', borderRadius: 10, display: 'flex', gap: 24, flexWrap: 'wrap' as const }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
-            {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
-            {!tooltip.hasActual && tooltip.hasPred && (
-              <div style={{ fontSize: 10, color: '#a5b4fc', fontWeight: 700, marginTop: 2 }}>AI PREDICTED</div>
-            )}
-          </div>
-          {tooltip.hasActual ? (
-            [
-              { label: 'Revenue',     value: fmtKr(tooltip.revenue),    color: 'white' },
-              { label: 'Labour Cost', value: fmtKr(tooltip.staff_cost), color: '#f59e0b' },
-              { label: 'Labour %',    value: fmtPct(tooltip.labPct ?? 0), color: (tooltip.labPct ?? 0) > targetPct ? '#f87171' : '#86efac' },
-              { label: 'Margin %',    value: tooltip.revenue > 0 ? fmtPct(((tooltip.revenue - (tooltip.staff_cost ?? 0)) / tooltip.revenue) * 100) : '—', color: '#86efac' },
-            ].map(col => (
-              <div key={col.label}>
-                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.value}</div>
-              </div>
-            ))
-          ) : tooltip.hasPred && tooltip.pred ? (
-            <>
-              {tooltip.pred.weather && (
-                <div>
-                  <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Weather</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>
-                    {weatherIcon(tooltip.pred.weather.weather_code)} {tooltip.pred.weather.summary}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>
-                    {tooltip.pred.weather.temp_min != null ? `${Math.round(tooltip.pred.weather.temp_min)}–${Math.round(tooltip.pred.weather.temp_max)}°C` : ''}
-                    {Number(tooltip.pred.weather.precip_mm) > 0.5 ? ` · ${tooltip.pred.weather.precip_mm}mm` : ''}
-                  </div>
-                </div>
-              )}
-              <div>
-                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Predicted sales</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{fmtKr(tooltip.pred.est_revenue)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Your plan cost</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#f59e0b' }}>{fmtKr(tooltip.pred.planned_cost)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>AI suggestion</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#a5b4fc' }}>
-                  {fmtKr(tooltip.pred.ai_cost)}
-                  {tooltip.pred.delta_cost < 0 && (
-                    <span style={{ fontSize: 11, color: '#86efac', fontWeight: 600, marginLeft: 6 }}>
-                      save {fmtKr(Math.abs(tooltip.pred.delta_cost))}
-                    </span>
-                  )}
-                </div>
-              </div>
-              {tooltip.predMargin != null && (
-                <div>
-                  <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Margin %</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: tooltip.predMargin >= 70 ? '#86efac' : tooltip.predMargin >= 55 ? '#fbbf24' : '#f87171' }}>
-                    {Math.round(tooltip.predMargin)}%
-                  </div>
-                </div>
-              )}
-            </>
-          ) : null}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function LegendSwatch({ color, striped, line, label }: any) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      {line ? (
-        <div style={{ width: 14, height: 0, borderTop: `2px solid ${color}`, borderRadius: 2 }} />
-      ) : striped ? (
-        <div style={{ width: 12, height: 10, borderRadius: 2, background: 'repeating-linear-gradient(135deg, #6366f1 0 4px, #a5b4fc 4px 8px)' }} />
-      ) : (
-        <div style={{ width: 12, height: 10, borderRadius: 2, background: color }} />
-      )}
-      <span style={{ fontSize: 11, color: '#9ca3af' }}>{label}</span>
-    </div>
   )
 }
