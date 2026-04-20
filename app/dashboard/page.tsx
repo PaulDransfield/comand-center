@@ -134,17 +134,23 @@ export default function DashboardPage() {
     })
   }, [])
 
-  // Next-week AI prediction — fetched once per biz. Used to enrich future days
-  // on the weekly chart with predicted revenue + weather instead of empty stubs.
+  // AI prediction for the selected period — fills future days on the chart
+  // (this-week remainder, or a future week/month). Skipped entirely for past
+  // periods since we already have actuals for every day.
   useEffect(() => {
     if (!bizId) { setAiSched(null); return }
+    const period = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+    const todayIso = localDate(new Date())
+    // No predictions needed if the entire period is in the past.
+    if (period.to < todayIso) { setAiSched(null); return }
     let cancelled = false
-    fetch(`/api/scheduling/ai-suggestion?business_id=${bizId}`, { cache: 'no-store' })
+    const qs = `business_id=${bizId}&from=${period.from}&to=${period.to}`
+    fetch(`/api/scheduling/ai-suggestion?${qs}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
       .then(j => { if (!cancelled && j && !j.error) setAiSched(j) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [bizId])
+  }, [bizId, viewMode, weekOffset, monthOffset])
 
   // Load data whenever biz, period, or view changes
   useEffect(() => {

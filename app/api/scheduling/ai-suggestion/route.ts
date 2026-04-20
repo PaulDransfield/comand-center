@@ -41,13 +41,25 @@ export async function GET(req: NextRequest) {
   const { data: biz } = await db.from('businesses').select('id,org_id,name,city').eq('id', bizId).maybeSingle()
   if (!biz || biz.org_id !== auth.orgId) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
-  // Target week = next calendar Monday → Sunday
+  // Target range — defaults to "next calendar Monday → Sunday" but callers
+  // (e.g. dashboard current-week chart) can override with explicit from/to to
+  // get predictions for the remainder of the current week or any arbitrary
+  // date range. History window, forecast fetch, and PK live fetch all use the
+  // resolved range.
+  const qFrom = req.nextUrl.searchParams.get('from')
+  const qTo   = req.nextUrl.searchParams.get('to')
   const now = new Date()
-  const daysUntilMon = ((1 - now.getDay() + 7) % 7) || 7
-  const nextMon = new Date(now); nextMon.setDate(now.getDate() + daysUntilMon); nextMon.setHours(0,0,0,0)
-  const nextSun = new Date(nextMon); nextSun.setDate(nextMon.getDate() + 6)
-  const weekFrom = nextMon.toISOString().slice(0,10)
-  const weekTo   = nextSun.toISOString().slice(0,10)
+  let weekFrom: string, weekTo: string
+  if (qFrom && qTo && /^\d{4}-\d{2}-\d{2}$/.test(qFrom) && /^\d{4}-\d{2}-\d{2}$/.test(qTo)) {
+    weekFrom = qFrom
+    weekTo   = qTo
+  } else {
+    const daysUntilMon = ((1 - now.getDay() + 7) % 7) || 7
+    const nextMon = new Date(now); nextMon.setDate(now.getDate() + daysUntilMon); nextMon.setHours(0,0,0,0)
+    const nextSun = new Date(nextMon); nextSun.setDate(nextMon.getDate() + 6)
+    weekFrom = nextMon.toISOString().slice(0,10)
+    weekTo   = nextSun.toISOString().slice(0,10)
+  }
 
   // ── Current PK schedule for next week ──────────────────────────────────────
   // Fetch LIVE from PK — staff_logs only holds past+sync-window data, but next
@@ -103,7 +115,9 @@ export async function GET(req: NextRequest) {
   }
 
   const currentByDate: Record<string, any> = {}
-  for (let d = new Date(nextMon); d <= nextSun; d.setDate(d.getDate() + 1)) {
+  const rangeStart = new Date(weekFrom + 'T00:00:00')
+  const rangeEnd   = new Date(weekTo   + 'T00:00:00')
+  for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
     const iso = d.toISOString().slice(0, 10)
     currentByDate[iso] = {
       date:            iso,
@@ -129,7 +143,9 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Historical pattern: last 12 complete weeks of daily_metrics + weather ─
-  const histEnd = new Date(nextMon); histEnd.setDate(nextMon.getDate() - 1)
+  // The history window ends the day before the target range starts, so a
+  // prediction never peeks at data from within the period it's predicting.
+  const histEnd = new Date(rangeStart); histEnd.setDate(rangeStart.getDate() - 1)
   const histStart = new Date(histEnd); histStart.setDate(histEnd.getDate() - 7 * 12)
   const histStartIso = histStart.toISOString().slice(0, 10)
   const histEndIso   = histEnd.toISOString().slice(0, 10)
