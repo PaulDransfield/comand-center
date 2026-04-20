@@ -381,187 +381,134 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* ── Main chart ─────────────────────────────────────────────── */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            {/* ── 7-day card grid ─────────────────────────────────────────
+                Replaces the stacked bar chart. Each day is a self-contained
+                card showing everything that matters for that day: weather,
+                revenue (actual or predicted), labour, and margin. Predicted
+                days use an indigo accent + "AI" chip so they can't be
+                confused with actuals.
+            ────────────────────────────────────────────────────────────── */}
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' as const, gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
                   Week {curr.weekNum} — {curr.label}
                 </div>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  {[
-                    { color: '#1a1f2e', label: 'Revenue' },
-                    { color: '#f59e0b', label: 'Labour Cost' },
-                  ].map(l => (
-                    <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
-                      <span style={{ fontSize: 11, color: '#9ca3af' }}>{l.label}</span>
-                    </div>
-                  ))}
-                </div>
+                {weekDays.some(d => d.pred?.est_revenue > 0 && d.revenue === 0) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#6b7280' }}>
+                    <span style={{ width: 10, height: 10, borderRadius: 3, background: '#ede9fe', border: '1px solid #c4b5fd' }} />
+                    AI predicted — based on 12-week pattern + weather
+                  </div>
+                )}
               </div>
 
-              {/* Bars — actuals when we have them, AI prediction for future days.
-                  Predicted bars render with a striped pattern + indigo colour so
-                  they're visually distinct from actuals. */}
-              <div style={{ display: 'flex', gap: 8, height: 200, alignItems: 'flex-end', position: 'relative' }}>
-                {weekDays.map((day, i) => {
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 8 }}>
+                {weekDays.map(day => {
                   const hasActual = day.revenue > 0
                   const hasPred   = !hasActual && day.pred?.est_revenue > 0
                   const shownRev  = hasActual ? day.revenue : (day.pred?.est_revenue ?? 0)
-                  const revH      = shownRev > 0 ? Math.max((shownRev / maxDayRev) * 180, 4) : 0
-                  const labPct    = hasActual && day.staff_cost > 0 ? (day.staff_cost / day.revenue) * 100 : 0
-                  // For predicted days, derive margin % from predicted revenue
-                  // minus effective labour cost (use AI cost if it improves on
-                  // planned, else planned). Matches the scheduling table logic.
+                  const labPct    = hasActual && day.staff_cost > 0 ? (day.staff_cost / day.revenue) * 100 : null
                   const predEffCost = day.pred ? (day.pred.under_staffed_note ? day.pred.planned_cost : day.pred.ai_cost) : 0
                   const predMargin  = hasPred && shownRev > 0 ? ((shownRev - predEffCost) / shownRev) * 100 : null
-                  const isHover     = tooltip?.dateStr === day.dateStr
-                  const canHover    = hasActual || hasPred
+                  const dateNum     = new Date(day.dateStr + 'T12:00:00').getDate()
+
+                  // Card tone — predicted cards get a subtle indigo wash + dashed border.
+                  const cardBg = hasPred ? '#faf9ff' : hasActual ? '#ffffff' : '#fafafa'
+                  const cardBr = hasPred ? '1px dashed #c4b5fd' : '1px solid #eef0f4'
+                  const cardOp = !hasActual && !hasPred ? 0.6 : 1
+
+                  // Figure colour based on labour % (actuals) or margin % (predicted)
+                  const kpiColor = hasActual && labPct != null
+                      ? (labPct > targetPct ? '#dc2626' : '#16a34a')
+                    : hasPred && predMargin != null
+                      ? (predMargin >= 70 ? '#15803d' : predMargin >= 55 ? '#d97706' : '#dc2626')
+                    : '#9ca3af'
 
                   return (
                     <div
                       key={day.dateStr}
-                      style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, cursor: canHover ? 'pointer' : 'default' }}
-                      onMouseEnter={() => canHover && setTooltip({ ...day, labPct, predMargin, hasActual, hasPred })}
-                      onMouseLeave={() => setTooltip(null)}
+                      style={{
+                        background: cardBg,
+                        border: cardBr,
+                        borderRadius: 10,
+                        padding: '11px 10px 10px',
+                        opacity: cardOp,
+                        display: 'flex', flexDirection: 'column' as const, gap: 4,
+                        minHeight: 130,
+                      }}
                     >
-                      {/* Bar */}
-                      <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', position: 'relative' }}>
-                        {/* Weather icon — sits just above the bar on any day we have a forecast */}
-                        {day.pred?.weather && (
-                          <div style={{ textAlign: 'center' as const, fontSize: 16, lineHeight: 1, marginBottom: 3, opacity: 0.9 }}>
-                            {weatherIcon(day.pred.weather.weather_code ?? (day.pred.weather.summary ? 0 : undefined))}
+                      {/* Header — day + date + optional "AI" chip */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                        <div>
+                          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: day.isToday ? '#6366f1' : '#9ca3af' }}>
+                            {day.dayName}
+                          </span>
+                          <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>{dateNum}</span>
+                        </div>
+                        {hasPred && (
+                          <span style={{ fontSize: 9, background: '#ede9fe', color: '#6d28d9', padding: '1px 5px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>AI</span>
+                        )}
+                      </div>
+
+                      {/* Weather row */}
+                      {day.pred?.weather ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#6b7280', minHeight: 14 }}>
+                          <span style={{ fontSize: 13 }}>{weatherIcon(day.pred.weather.weather_code)}</span>
+                          <span>{day.pred.weather.temp_min != null ? `${Math.round(day.pred.weather.temp_min)}–${Math.round(day.pred.weather.temp_max)}°` : ''}</span>
+                          {Number(day.pred.weather.precip_mm) > 0.5 && (
+                            <span style={{ color: '#3b82f6' }}>· {day.pred.weather.precip_mm}mm</span>
+                          )}
+                        </div>
+                      ) : <div style={{ minHeight: 14 }} />}
+
+                      {/* Revenue — the headline number */}
+                      <div style={{ marginTop: 2 }}>
+                        <div style={{ fontSize: 17, fontWeight: 700, color: hasActual || hasPred ? '#111' : '#d1d5db', letterSpacing: '-.02em', lineHeight: 1.1 }}>
+                          {shownRev > 0 ? fmtKr(shownRev) : '—'}
+                        </div>
+                        <div style={{ fontSize: 9, color: '#9ca3af', letterSpacing: '.04em', textTransform: 'uppercase' as const, marginTop: 1 }}>
+                          {hasActual ? 'actual' : hasPred ? 'predicted' : day.isFuture ? 'upcoming' : 'no data'}
+                        </div>
+                      </div>
+
+                      {/* Footer — KPI (labour% or margin%) + labour cost / saving */}
+                      <div style={{ marginTop: 'auto', paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
+                        {hasActual ? (
+                          <>
+                            <div style={{ fontSize: 11, color: '#374151' }}>
+                              Labour {day.staff_cost > 0 ? fmtKr(day.staff_cost) : '—'}
+                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: kpiColor, marginTop: 1 }}>
+                              {labPct != null ? fmtPct(labPct) : '—'} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 10 }}>labour</span>
+                            </div>
+                          </>
+                        ) : hasPred ? (
+                          <>
+                            <div style={{ fontSize: 11, color: '#374151' }}>
+                              Plan {fmtKr(day.pred.planned_cost)}
+                            </div>
+                            {day.pred.delta_cost < 0 ? (
+                              <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>
+                                AI: {fmtKr(day.pred.ai_cost)} · save {fmtKr(Math.abs(day.pred.delta_cost))}
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 1 }}>
+                                AI: no change
+                              </div>
+                            )}
+                            <div style={{ fontSize: 11, fontWeight: 700, color: kpiColor, marginTop: 3 }}>
+                              {predMargin != null ? `${Math.round(predMargin)}%` : '—'} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 10 }}>margin</span>
+                            </div>
+                          </>
+                        ) : (
+                          <div style={{ fontSize: 10, color: '#d1d5db' }}>
+                            {day.isFuture ? 'Check back closer to the day' : '—'}
                           </div>
                         )}
-                        {hasActual ? (
-                          <div style={{
-                            height: revH,
-                            borderRadius: '5px 5px 0 0',
-                            background: `linear-gradient(to top, #f59e0b ${Math.min(labPct, 100)}%, #1a1f2e ${Math.min(labPct, 100)}%)`,
-                            opacity: isHover ? 1 : 0.9,
-                            transition: 'opacity 0.15s',
-                            boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                          }} />
-                        ) : hasPred ? (
-                          // Striped indigo bar — signals "forecast" at a glance
-                          <div style={{
-                            height: revH,
-                            borderRadius: '5px 5px 0 0',
-                            background: 'repeating-linear-gradient(135deg, #6366f1 0 6px, #a5b4fc 6px 12px)',
-                            opacity: isHover ? 1 : 0.75,
-                            transition: 'opacity 0.15s',
-                            boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                          }} />
-                        ) : day.isFuture ? (
-                          <div style={{ height: 3, background: '#f3f4f6', borderRadius: 2 }} />
-                        ) : (
-                          <div style={{ height: 3, background: '#e5e7eb', borderRadius: 2 }} />
-                        )}
-                      </div>
-
-                      {/* Labour % (actual) or Margin % (predicted) */}
-                      <div style={{ fontSize: 10, fontWeight: 600 }}>
-                        {hasActual ? (
-                          <span style={{ color: day.staff_pct !== null ? (day.staff_pct > targetPct ? '#dc2626' : '#16a34a') : '#d1d5db' }}>
-                            {day.staff_pct !== null ? fmtPct(day.staff_pct) : '–'}
-                          </span>
-                        ) : predMargin !== null ? (
-                          <span style={{ color: predMargin >= 70 ? '#15803d' : predMargin >= 55 ? '#d97706' : '#dc2626' }} title="Predicted margin %">
-                            {Math.round(predMargin)}%*
-                          </span>
-                        ) : (
-                          <span style={{ color: '#d1d5db' }}>–</span>
-                        )}
-                      </div>
-
-                      {/* Day label */}
-                      <div style={{ fontSize: 11, color: day.isToday ? '#6366f1' : '#9ca3af', fontWeight: day.isToday ? 700 : 400 }}>
-                        {day.dayName}
                       </div>
                     </div>
                   )
                 })}
               </div>
-
-              {/* Legend — clarifies the striped bar + asterisk */}
-              {weekDays.some(d => d.pred?.est_revenue > 0 && d.revenue === 0) && (
-                <div style={{ marginTop: 10, display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' as const, fontSize: 11, color: '#6b7280' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 14, height: 10, background: 'repeating-linear-gradient(135deg, #6366f1 0 4px, #a5b4fc 4px 8px)', borderRadius: 2 }} />
-                    AI predicted (based on your 12-week pattern + weather)
-                  </span>
-                  <span>* = predicted margin using AI-suggested cost</span>
-                </div>
-              )}
-
-              {/* Tooltip */}
-              {tooltip && (
-                <div style={{
-                  marginTop: 12, padding: '12px 16px', background: '#1a1f2e', borderRadius: 10,
-                  display: 'flex', gap: 24, flexWrap: 'wrap'
-                }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
-                    {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
-                    {tooltip.hasPred && (
-                      <div style={{ fontSize: 10, color: '#a5b4fc', fontWeight: 700, marginTop: 2 }}>PREDICTED</div>
-                    )}
-                  </div>
-                  {tooltip.hasActual ? (
-                    [
-                      { label: 'Revenue',     value: fmtKr(tooltip.revenue),    color: 'white' },
-                      { label: 'Labour Cost', value: fmtKr(tooltip.staff_cost), color: '#f59e0b' },
-                      { label: 'Labour %',    value: fmtPct(tooltip.labPct),    color: tooltip.labPct > targetPct ? '#f87171' : '#86efac' },
-                    ].map(col => (
-                      <div key={col.label}>
-                        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.value}</div>
-                      </div>
-                    ))
-                  ) : tooltip.hasPred && tooltip.pred ? (
-                    <>
-                      {tooltip.pred.weather && (
-                        <div>
-                          <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Weather</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>
-                            {weatherIcon(tooltip.pred.weather.weather_code)} {tooltip.pred.weather.summary}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#9ca3af' }}>
-                            {tooltip.pred.weather.temp_min != null ? `${Math.round(tooltip.pred.weather.temp_min)}–${Math.round(tooltip.pred.weather.temp_max)}°C` : ''}
-                            {Number(tooltip.pred.weather.precip_mm) > 0.5 ? ` · ${tooltip.pred.weather.precip_mm}mm` : ''}
-                          </div>
-                        </div>
-                      )}
-                      <div>
-                        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Predicted sales</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{fmtKr(tooltip.pred.est_revenue)}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Your plan cost</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#f59e0b' }}>{fmtKr(tooltip.pred.planned_cost)}</div>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>AI suggestion</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: '#a5b4fc' }}>
-                          {fmtKr(tooltip.pred.ai_cost)}
-                          {tooltip.pred.delta_cost < 0 && (
-                            <span style={{ fontSize: 11, color: '#86efac', fontWeight: 600, marginLeft: 6 }}>
-                              save {fmtKr(Math.abs(tooltip.pred.delta_cost))}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {tooltip.predMargin !== null && (
-                        <div>
-                          <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Predicted margin</div>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: tooltip.predMargin >= 70 ? '#86efac' : tooltip.predMargin >= 55 ? '#fbbf24' : '#f87171' }}>
-                            {Math.round(tooltip.predMargin)}%
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : null}
-                </div>
-              )}
             </div>
 
             {/* ── Dept table + P&L ───────────────────────────────────────── */}
