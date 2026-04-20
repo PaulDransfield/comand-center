@@ -8,11 +8,21 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AdminNav } from '@/components/admin/AdminNav'
 
-export default function MemoPreview() {
+// Next 14 requires any client component using useSearchParams to be wrapped
+// in a <Suspense> boundary or the static prerender bails out at build time.
+export default function MemoPreviewPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>}>
+      <MemoPreview />
+    </Suspense>
+  )
+}
+
+function MemoPreview() {
   const router   = useRouter()
   const params   = useSearchParams()
   const [html,    setHtml]    = useState('')
