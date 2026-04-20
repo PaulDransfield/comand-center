@@ -128,8 +128,20 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
   const memberIds: string[] = [...new Set((memberRows ?? []).map((r: any) => r.user_id).filter(Boolean))]
 
   // 4. Purge every tenanted table. Collect counts for the response.
+  // Tables that don't exist in this environment are skipped — not every
+  // migration has shipped on every deploy, and the list is intentionally
+  // broad so we don't leave orphan rows in future. A missing table is a
+  // no-op, not a failure.
   const deleted: Record<string, number> = {}
   const errors:  Record<string, string> = {}
+  const skipped: string[] = []
+
+  const isMissingTable = (err: any) => {
+    if (!err) return false
+    if (err.code === '42P01' || err.code === 'PGRST205') return true
+    const msg = String(err.message ?? '').toLowerCase()
+    return msg.includes('does not exist') || msg.includes('could not find the table')
+  }
 
   for (const table of TENANT_TABLES) {
     try {
@@ -137,10 +149,15 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
         .from(table)
         .delete({ count: 'exact' })
         .eq('org_id', orgId)
-      if (error) errors[table] = error.message
-      else       deleted[table] = count ?? 0
+      if (error) {
+        if (isMissingTable(error)) skipped.push(table)
+        else errors[table] = error.message
+      } else {
+        deleted[table] = count ?? 0
+      }
     } catch (e: any) {
-      errors[table] = e.message || String(e)
+      if (isMissingTable(e)) skipped.push(table)
+      else errors[table] = e.message || String(e)
     }
   }
 
@@ -196,11 +213,12 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
   })
 
   return NextResponse.json({
-    ok:           Object.keys(errors).length === 0,
-    org_id:       orgId,
-    org_name:     org.name,
-    rows_deleted: deleted,
+    ok:            Object.keys(errors).length === 0,
+    org_id:        orgId,
+    org_name:      org.name,
+    rows_deleted:  deleted,
     users_deleted: usersDeleted,
-    errors:       Object.keys(errors).length ? errors : undefined,
+    skipped_tables: skipped.length ? skipped : undefined,
+    errors:        Object.keys(errors).length ? errors : undefined,
   })
 }

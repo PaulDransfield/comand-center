@@ -983,8 +983,18 @@ export default function CustomerDetail() {
                   </div>
                 )}
                 {deleteResult.errors && (
-                  <div style={{ color: '#dc2626', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
-                    Errors: {JSON.stringify(deleteResult.errors)}
+                  <div style={{ color: '#dc2626', fontFamily: 'ui-monospace, monospace', fontSize: 11, maxHeight: 200, overflowY: 'auto' as const, marginTop: 4 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>Errors:</div>
+                    {Object.entries(deleteResult.errors).map(([table, msg]: any) => (
+                      <div key={table} style={{ marginBottom: 2 }}>
+                        <span style={{ fontWeight: 600 }}>{table}:</span> {msg}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {deleteResult.skipped_tables && deleteResult.skipped_tables.length > 0 && (
+                  <div style={{ color: '#9ca3af', fontFamily: 'ui-monospace, monospace', fontSize: 10, marginTop: 4 }}>
+                    Skipped (missing table): {deleteResult.skipped_tables.join(', ')}
                   </div>
                 )}
                 {deleteResult.ok && <div style={{ color: '#15803d', marginTop: 6 }}>Redirecting to customer list…</div>}
