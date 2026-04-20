@@ -11,7 +11,7 @@
 
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest }          from '@/lib/ai/usage'
-import { getForecast, coordsFor, DailyWeather } from '@/lib/weather/forecast'
+import { getForecast, coordsFor, DailyWeather, weatherBucket } from '@/lib/weather/forecast'
 
 type Db = any
 
@@ -36,7 +36,25 @@ export interface WeeklyContext {
   budget:       { revenue_target: number; food_cost_pct_target: number; staff_cost_pct_target: number } | null
   departments:  Array<{ name: string; revenue: number; labour_pct: number | null }>
   weekdayPattern: Array<{ weekday: string; avg_rev: number; avg_hours: number; avg_labour_pct: number | null }>
-  upcomingWeather: DailyWeather[]  // next 7 days from SMHI — empty array if fetch failed
+  upcomingWeather: DailyWeather[]  // next 7 days — empty array if fetch failed
+  // Historical weather↔sales correlation. Only populated after backfill has run.
+  weatherPattern: Array<{
+    bucket:     string           // 'clear' | 'wet' | 'snow' | ...
+    days:       number
+    avg_rev:    number
+    avg_labour: number | null
+    rev_delta_pct: number        // vs overall avg for this business
+  }>
+  // Next-week forecast matched to the best historical analogue (e.g. "wet Fri")
+  nextWeekAnalogues: Array<{
+    date:            string
+    weekday:         string
+    forecast_summary: string     // "Rain, 4-9°C, 0.6mm"
+    bucket:          string
+    analogue_days:   number      // how many matching (weekday, bucket) days we've seen
+    analogue_avg_rev: number | null
+    all_weather_avg_rev: number   // for comparison
+  }>
 }
 
 interface WeekBlock {
@@ -188,8 +206,7 @@ export async function buildWeeklyContext(
   const weekLabel = `${lastMonday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${lastSunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
 
   // ── Upcoming weather (next 7 days) ─────────────────────────────────────────
-  // Failure is non-fatal — AI memo renders fine without weather. SMHI is free
-  // and reliable, but we tolerate the occasional outage.
+  // Failure is non-fatal — AI memo renders fine without weather.
   let upcomingWeather: DailyWeather[] = []
   try {
     const { lat, lon } = coordsFor(businessCity)
@@ -198,6 +215,85 @@ export async function buildWeeklyContext(
     upcomingWeather = forecast.filter(d => d.date >= todayIso).slice(0, 7)
   } catch (e: any) {
     console.warn('[weekly-manager] weather fetch failed:', e.message)
+  }
+
+  // ── Historical weather × sales (only if weather_daily has been backfilled) ─
+  // Join observed weather to daily_metrics, group by bucket, compute deltas.
+  // Also compute "analogue" match for each upcoming day — the historical
+  // (weekday, bucket) sample that most closely matches next week's forecast.
+  let weatherPattern: WeeklyContext['weatherPattern'] = []
+  let nextWeekAnalogues: WeeklyContext['nextWeekAnalogues'] = []
+  try {
+    const priorStartIso = priorStart.toISOString().slice(0, 10)
+    const lastSundayIso = lastSunday.toISOString().slice(0, 10)
+    const { data: wx } = await db
+      .from('weather_daily')
+      .select('date, temp_avg, precip_mm, weather_code, summary, is_forecast')
+      .eq('business_id', businessId)
+      .gte('date', priorStartIso)
+      .lte('date', lastSundayIso)
+      .eq('is_forecast', false)
+
+    if (wx && wx.length) {
+      const wxByDate: Record<string, any> = {}
+      for (const w of wx) wxByDate[w.date] = w
+
+      // Bucket aggregation
+      const byBucket: Record<string, { rev: number[]; labour: number[] }> = {}
+      // (weekday, bucket) analogue aggregation
+      const byDowBucket: Record<string, { rev: number[] }> = {}
+      let overallRev = 0, overallN = 0
+
+      for (const r of (dailies ?? [])) {
+        if (!r.date || Number(r.revenue ?? 0) <= 0) continue
+        const w = wxByDate[r.date]; if (!w) continue
+        const bucket = weatherBucket(w)
+        const dow = (new Date(r.date).getUTCDay() + 6) % 7
+        if (!byBucket[bucket]) byBucket[bucket] = { rev: [], labour: [] }
+        byBucket[bucket].rev.push(Number(r.revenue))
+        if (r.labour_pct != null) byBucket[bucket].labour.push(Number(r.labour_pct))
+        const k = `${dow}|${bucket}`
+        if (!byDowBucket[k]) byDowBucket[k] = { rev: [] }
+        byDowBucket[k].rev.push(Number(r.revenue))
+        overallRev += Number(r.revenue); overallN++
+      }
+      const overallAvg = overallN > 0 ? overallRev / overallN : 0
+
+      weatherPattern = Object.entries(byBucket)
+        .map(([bucket, b]) => {
+          const avgRev = avg(b.rev)
+          return {
+            bucket,
+            days:          b.rev.length,
+            avg_rev:       Math.round(avgRev),
+            avg_labour:    b.labour.length ? Math.round(avg(b.labour) * 10) / 10 : null,
+            rev_delta_pct: overallAvg > 0 ? Math.round(((avgRev - overallAvg) / overallAvg) * 1000) / 10 : 0,
+          }
+        })
+        .filter(p => p.days >= 2)
+        .sort((a, b) => b.rev_delta_pct - a.rev_delta_pct)
+
+      // For each forecast day next week, find matching analogue
+      nextWeekAnalogues = upcomingWeather.map(f => {
+        const dow = (new Date(f.date).getUTCDay() + 6) % 7
+        const bucket = weatherBucket(f)
+        const matches = byDowBucket[`${dow}|${bucket}`]?.rev ?? []
+        const allDow  = (dailies ?? [])
+          .filter((r: any) => r.date && Number(r.revenue ?? 0) > 0 && ((new Date(r.date).getUTCDay() + 6) % 7) === dow)
+          .map((r: any) => Number(r.revenue))
+        return {
+          date:               f.date,
+          weekday:            DAYS[dow],
+          forecast_summary:   `${f.summary}, ${f.temp_min}–${f.temp_max}°C${f.precip_mm > 0.5 ? `, ${f.precip_mm}mm` : ''}`,
+          bucket,
+          analogue_days:      matches.length,
+          analogue_avg_rev:   matches.length >= 2 ? Math.round(avg(matches)) : null,
+          all_weather_avg_rev: allDow.length ? Math.round(avg(allDow)) : 0,
+        }
+      })
+    }
+  } catch (e: any) {
+    console.warn('[weekly-manager] weather correlation skipped:', e.message)
   }
 
   return {
@@ -218,6 +314,8 @@ export async function buildWeeklyContext(
     departments,
     weekdayPattern,
     upcomingWeather,
+    weatherPattern,
+    nextWeekAnalogues,
   }
 }
 
@@ -251,8 +349,14 @@ ${ctx.prior4Weeks.map((w, i) => `  Week -${4 - i}: ${fmt(w.revenue)}`).join('\n'
 
 ${ctx.openAlerts.length ? `OPEN ALERTS\n${ctx.openAlerts.map(a => `  [${a.severity}] ${a.title} — ${a.description}`).join('\n')}` : 'OPEN ALERTS\n  None.'}
 
-${ctx.upcomingWeather.length ? `UPCOMING WEATHER (next 7 days — from SMHI)
+${ctx.upcomingWeather.length ? `UPCOMING WEATHER (next 7 days)
 ${ctx.upcomingWeather.map(w => `  ${w.date} ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(w.date).getUTCDay()]}: ${w.summary}, ${w.temp_min}-${w.temp_max}°C${w.precip_mm > 0.5 ? `, ${w.precip_mm}mm rain` : ''}${w.wind_max > 12 ? `, wind ${w.wind_max}m/s` : ''}`).join('\n')}` : 'UPCOMING WEATHER: not available'}
+
+${ctx.weatherPattern.length ? `HISTORICAL WEATHER EFFECT (your own trading days, last 12 weeks)
+${ctx.weatherPattern.map(p => `  ${p.bucket.padEnd(10)}  ${p.days} days  avg ${fmt(p.avg_rev)}  ${p.rev_delta_pct >= 0 ? '+' : ''}${p.rev_delta_pct}% vs overall${p.avg_labour != null ? ` · labour ${p.avg_labour}%` : ''}`).join('\n')}` : ''}
+
+${ctx.nextWeekAnalogues.length ? `NEXT WEEK ANALOGUES (forecast matched to your own history)
+${ctx.nextWeekAnalogues.map(a => `  ${a.date} ${a.weekday}: forecast ${a.forecast_summary} → bucket=${a.bucket}. ${a.analogue_days >= 2 ? `Matching historicals: ${a.analogue_days} days, avg rev ${fmt(a.analogue_avg_rev ?? 0)} (vs all-${a.weekday} avg ${fmt(a.all_weather_avg_rev)})` : `Only ${a.analogue_days} matching historicals — not enough to be confident.`}`).join('\n')}` : ''}
 
 WRITE YOUR MEMO
 Constraints — NON-NEGOTIABLE:
@@ -265,7 +369,11 @@ Constraints — NON-NEGOTIABLE:
 - No generic advice. Every action must reference numbers from the data above.
 - Tone: direct, conversational, Swedish owner-to-owner. Assume technical literacy.
 - No "I recommend", no "You should consider" — just say it. "Drop X. Saves Y."
-- Weather matters for footfall. If the forecast above shows rain / extreme temp / high wind on specific days, FACTOR IT into one of your 3 actions ("Wednesday rain forecast + historical wet-Wed pattern = cut 6 hours from dinner shift, saves 1 800 kr"). Only mention weather if it's actually notable — don't force it.
+- Weather matters for footfall. Two layers of weather data are provided:
+  1. UPCOMING WEATHER — raw forecast for next 7 days
+  2. HISTORICAL WEATHER EFFECT + NEXT WEEK ANALOGUES — what YOUR OWN trading days show at each weather pattern (when a backfill has run; may be empty on first weeks)
+- When the analogues show a concrete delta ("matching historicals avg 142k vs all-Friday avg 168k"), USE THAT SPECIFIC NUMBER in one of your actions rather than a generic "rain might reduce footfall" statement. That specificity is what makes this feel like a real manager's advice.
+- Only mention weather if it's actually notable for that week's forecast — don't force it when the week looks neutral.
 - End with ONE sentence flagging the biggest risk for next week if it exists.
 - Output JSON ONLY in this exact shape:
 

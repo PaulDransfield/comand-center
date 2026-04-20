@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
         const businessInfo = {
           name: businessData.name,
           city: businessData.city,
+          org_id: integration.org_id,
           integration_type: integration.provider,
           first_sync_date: integration.last_sync_at,
           days_of_data: recentRevenue?.length || 0,
@@ -171,11 +172,25 @@ Keep it concise (3-4 paragraphs max). Use a warm, helpful tone. Include specific
 
 Format as plain text email body (no HTML).`
 
+          const _started = Date.now()
           const response = await claude.messages.create({
             model: AI_MODELS.AGENT, // Uses Haiku 4.5
             max_tokens: MAX_TOKENS.AGENT_SUMMARY,
             messages: [{ role: 'user', content: prompt }],
           })
+
+          // Log cost so agent spend shows up in the ai_request_log dashboard.
+          try {
+            const { logAiRequest } = await import('@/lib/ai/usage')
+            await logAiRequest(db, {
+              org_id:        businessInfo.org_id,
+              request_type:  'onboarding_welcome',
+              model:         AI_MODELS.AGENT,
+              input_tokens:  response.usage?.input_tokens ?? 0,
+              output_tokens: response.usage?.output_tokens ?? 0,
+              duration_ms:   Date.now() - _started,
+            })
+          } catch { /* non-fatal */ }
 
           const emailBody = (response.content?.[0] as any)?.text?.trim()
           

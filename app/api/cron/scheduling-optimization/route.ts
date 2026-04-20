@@ -180,11 +180,25 @@ Provide 3-5 specific scheduling optimization recommendations. Focus on:
 
 Format as bullet points with concrete actions.`
 
+              const _started = Date.now()
               const response = await claude.messages.create({
                 model: AI_MODELS.ANALYSIS, // Uses Sonnet 4-6 for scheduling optimization
                 max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
                 messages: [{ role: 'user', content: prompt }],
               })
+
+              // Log cost (Sonnet is 3× Haiku — visibility matters here)
+              try {
+                const { logAiRequest } = await import('@/lib/ai/usage')
+                await logAiRequest(db, {
+                  org_id:        org.id,
+                  request_type:  'scheduling_optimization',
+                  model:         AI_MODELS.ANALYSIS,
+                  input_tokens:  response.usage?.input_tokens ?? 0,
+                  output_tokens: response.usage?.output_tokens ?? 0,
+                  duration_ms:   Date.now() - _started,
+                })
+              } catch { /* non-fatal */ }
 
               const text = (response.content?.[0] as any)?.text?.trim()
               

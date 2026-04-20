@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
+import WeatherStrip from '@/components/WeatherStrip'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
@@ -293,6 +294,7 @@ export default function DashboardPage() {
              WEEK VIEW
           ══════════════════════════════════════════════════════════════════ */
           <>
+            <WeatherStrip businessId={bizId ?? undefined} />
             {/* ── 4 KPI cards ────────────────────────────────────────────── */}
             <div className="kpi-row" style={{ marginBottom: 16 }}>
               <KpiCard
@@ -554,6 +556,7 @@ export default function DashboardPage() {
              MONTH VIEW — same data sources as week, wider date range
           ══════════════════════════════════════════════════════════════════ */
           <>
+            <WeatherStrip businessId={bizId ?? undefined} />
             {/* ── 4 KPI cards ────────────────────────────────────────────── */}
             <div className="kpi-row" style={{ marginBottom: 16 }}>
               <KpiCard

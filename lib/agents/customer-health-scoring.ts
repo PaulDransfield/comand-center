@@ -71,14 +71,27 @@ export async function analyzeCustomerHealth(specificOrgId?: string): Promise<Cus
       const prompt = buildHealthAnalysisPrompt(org, orgData)
 
       // Call Claude — route both model and max_tokens through the shared constants.
+      const _started = Date.now()
       const response = await anthropic.messages.create({
         model:      AI_MODELS.AGENT,
         max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
         messages:   [{ role: 'user', content: prompt }],
       })
 
-      // Increment usage before parsing — we consumed the tokens regardless.
+      // Increment usage + log cost. Separate tables: usage is daily quota
+      // bookkeeping, request log is per-call cost attribution.
       try { await incrementAiUsage(db, org.id) } catch { /* non-fatal */ }
+      try {
+        const { logAiRequest } = await import('@/lib/ai/usage')
+        await logAiRequest(db, {
+          org_id:        org.id,
+          request_type:  'customer_health_scoring',
+          model:         AI_MODELS.AGENT,
+          input_tokens:  response.usage?.input_tokens ?? 0,
+          output_tokens: response.usage?.output_tokens ?? 0,
+          duration_ms:   Date.now() - _started,
+        })
+      } catch { /* non-fatal */ }
 
       // Parse response
       const content = response.content[0]
