@@ -35,6 +35,8 @@ export default function TrackerPage() {
   const [expanded,     setExpanded]     = useState<number | null>(null)
   const [dailyData,    setDailyData]    = useState<Record<number, DailyRow[]>>({})
   const [loadingDaily, setLoadingDaily] = useState<number | null>(null)
+  const [narrative,    setNarrative]    = useState<any>(null)
+  const [loadingNarr,  setLoadingNarr]  = useState(false)
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
@@ -73,6 +75,21 @@ export default function TrackerPage() {
   }, [selected, year])
 
   useEffect(() => { if (selected) load() }, [selected])
+
+  // Fetch the AI P&L narrative whenever the selected business or year changes.
+  // Auto-targets the latest month with revenue — keeps the top of the page
+  // explaining "why is this month the way it is?" without the user clicking.
+  useEffect(() => {
+    if (!selected) return
+    let cancelled = false
+    setLoadingNarr(true); setNarrative(null)
+    fetch(`/api/tracker/narrative?business_id=${selected}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j && !j.error) setNarrative(j) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingNarr(false) })
+    return () => { cancelled = true }
+  }, [selected, year])
 
   async function save() {
     if (!form.period_month) return
@@ -167,6 +184,30 @@ export default function TrackerPage() {
             </div>
           ))}
         </div>
+
+        {/* AI narrative panel — explains the most recent month's P&L in plain
+            language. Sits between KPIs and the month-by-month table so the
+            owner sees "why is this month the way it is?" without clicking. */}
+        {(loadingNarr || narrative?.narrative) && (
+          <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #312e81)', borderRadius: 14, padding: '22px 26px', marginBottom: 16, color: 'white' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 26, height: 26, background: 'rgba(99,102,241,0.35)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>✦</div>
+              <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700, letterSpacing: '.05em' }}>
+                AI P&L — {narrative ? `${MONTHS_SHORT[(narrative.month ?? 1) - 1]} ${narrative.year}` : 'latest month'}
+              </span>
+            </div>
+            {loadingNarr && !narrative ? (
+              <div style={{ fontSize: 14, color: 'rgba(199,210,254,0.85)', fontStyle: 'italic' as const }}>Reading your month's numbers…</div>
+            ) : (
+              <div style={{ fontSize: 15, fontWeight: 400, lineHeight: 1.65, fontFamily: 'Georgia, serif', whiteSpace: 'pre-wrap' as const }}>
+                {narrative.narrative}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.7)', marginTop: 12, letterSpacing: '.04em', textTransform: 'uppercase' as const }}>
+              Management view — not a regulated financial statement
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
