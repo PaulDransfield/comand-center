@@ -43,7 +43,11 @@ export async function getForecast(lat: number, lon: number): Promise<DailyWeathe
   const hit = cache.get(key)
   if (hit && Date.now() - hit.fetched < TTL_MS) return hit.data
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,wind_speed_10m_max&timezone=Europe/Stockholm&forecast_days=10&wind_speed_unit=ms`
+  // 16 days of forecast — Open-Meteo's max. The default 10 is just barely
+  // short: on a Monday, "next week" (Mon-Sun) runs +7 through +13 days, so
+  // a 10-day horizon only covers the first 3 days of next week. 16 gives us
+  // the whole of next week plus a 2-day buffer.
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code,wind_speed_10m_max&timezone=Europe/Stockholm&forecast_days=16&wind_speed_unit=ms`
   const res = await fetch(url, { headers: { Accept: 'application/json' } })
   if (!res.ok) throw new Error(`Open-Meteo ${res.status}: ${await res.text().catch(() => '')}`)
   const json = await res.json()
