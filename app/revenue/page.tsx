@@ -135,11 +135,13 @@ export default function RevenuePage() {
     return {
       dateStr: ds, isToday, isFuture, dayIdx,
       dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
-      revenue: row?.revenue ?? 0,
-      covers: row?.covers ?? 0,
-      tips: row?.tip_revenue ?? 0,
-      food: row?.food_revenue ?? 0,
-      bev: row?.bev_revenue ?? 0,
+      revenue:  row?.revenue ?? 0,
+      covers:   row?.covers ?? 0,
+      tips:     row?.tip_revenue ?? 0,
+      food:     row?.food_revenue ?? 0,
+      bev:      row?.bev_revenue ?? 0,
+      takeaway: row?.takeaway_revenue ?? 0,
+      dine_in:  row?.dine_in_revenue ?? 0,
     }
   })
   const maxDayRev = Math.max(...chartDays.map(d => d.revenue), 1)
@@ -190,6 +192,12 @@ export default function RevenuePage() {
             {/* ── 4 KPI cards ────────────────────────────────────────── */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <KpiCard label="Revenue" value={totalRev > 0 ? fmtKr(totalRev) : '—'} deltaVal={delta(totalRev, prevSum.total_revenue ?? 0)} sub={`vs prev ${viewMode === 'week' ? 'week' : 'month'}`} />
+              <KpiCard
+                label="Takeaway"
+                value={takeaway > 0 ? fmtKr(takeaway) : '—'}
+                deltaVal={delta(takeaway, prevSum.total_takeaway ?? 0)}
+                sub={takeaway > 0 && totalRev > 0 ? `${fmtPct((takeaway / totalRev) * 100)} of revenue · 6% VAT` : 'No takeaway data'}
+              />
               <KpiCard label="Covers" value={totalCovers > 0 ? totalCovers.toLocaleString('en-GB') : '—'} deltaVal={delta(totalCovers, prevSum.total_covers ?? 0)} sub={`${sum.days_with_data ?? 0} days with data`} />
               <KpiCard label="Avg per Cover" value={avgRpc > 0 ? fmtKr(avgRpc) : '—'} sub={totalCovers > 0 ? `${totalCovers} covers` : 'No cover data'} />
               <KpiCard label="Tips" value={totalTips > 0 ? fmtKr(totalTips) : '—'} deltaVal={delta(totalTips, prevSum.total_tips ?? 0)} sub={totalTips > 0 && totalRev > 0 ? `${fmtPct((totalTips / totalRev) * 100)} of revenue` : 'No tip data'} />
@@ -246,11 +254,13 @@ export default function RevenuePage() {
                     {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
                   </div>
                   {[
-                    { label: 'Revenue', value: fmtKr(tooltip.revenue), color: 'white' },
-                    { label: 'Covers',  value: tooltip.covers > 0 ? String(tooltip.covers) : '—', color: '#86efac' },
-                    { label: 'Tips',    value: tooltip.tips > 0 ? fmtKr(tooltip.tips) : '—', color: '#10b981' },
-                    { label: 'Food',    value: tooltip.food > 0 ? fmtKr(tooltip.food) : '—', color: '#f59e0b' },
-                    { label: 'Bev',     value: tooltip.bev > 0 ? fmtKr(tooltip.bev) : '—', color: '#06b6d4' },
+                    { label: 'Revenue',  value: fmtKr(tooltip.revenue), color: 'white' },
+                    { label: 'Takeaway', value: tooltip.takeaway > 0 ? fmtKr(tooltip.takeaway) : '—', color: '#a5b4fc' },
+                    { label: 'Dine-in',  value: tooltip.dine_in  > 0 ? fmtKr(tooltip.dine_in)  : '—', color: '#e5e7eb' },
+                    { label: 'Covers',   value: tooltip.covers > 0 ? String(tooltip.covers) : '—', color: '#86efac' },
+                    { label: 'Tips',     value: tooltip.tips > 0 ? fmtKr(tooltip.tips) : '—', color: '#10b981' },
+                    { label: 'Food',     value: tooltip.food > 0 ? fmtKr(tooltip.food) : '—', color: '#f59e0b' },
+                    { label: 'Bev',      value: tooltip.bev > 0 ? fmtKr(tooltip.bev) : '—', color: '#06b6d4' },
                   ].map(col => (
                     <div key={col.label}>
                       <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
@@ -262,7 +272,7 @@ export default function RevenuePage() {
             </div>
 
             {/* ── Revenue splits + table ──────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: (dineIn > 0 || foodRev > 0) ? '3fr 1fr' : '1fr', gap: 12, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: (dineIn > 0 || takeaway > 0 || foodRev > 0 || bevRev > 0) ? '3fr 1fr' : '1fr', gap: 12, marginBottom: 16 }}>
 
               {/* Revenue table */}
               <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
@@ -289,40 +299,55 @@ export default function RevenuePage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#f9fafb' }}>
-                      {['Date', 'Revenue', 'Covers', 'Per Cover', 'Tips', 'Source'].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Date' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                      {['Date', 'Revenue', 'Takeaway', 'Dine-in', 'Covers', 'Per Cover', 'Tips', 'Source'].map(h => (
+                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Date' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.filter((r: any) => !r.is_closed).length === 0 ? (
-                      <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No revenue data for this period</td></tr>
-                    ) : rows.filter((r: any) => !r.is_closed).map((r: any) => (
-                      <tr key={r.date} style={{ borderBottom: '1px solid #f9fafb' }}>
-                        <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500, color: '#111' }}>
-                          {new Date(r.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                        </td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>{r.revenue > 0 ? fmtKr(r.revenue) : '—'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>{r.covers > 0 ? r.covers : '—'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>{r.revenue_per_cover > 0 ? fmtKr(r.revenue_per_cover) : '—'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, color: r.tip_revenue > 0 ? '#10b981' : '#d1d5db' }}>{r.tip_revenue > 0 ? fmtKr(r.tip_revenue) : '—'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                          <span style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280', padding: '2px 6px', borderRadius: 3 }}>{r.providers?.length ? r.providers.join(', ') : 'manual'}</span>
-                        </td>
-                      </tr>
-                    ))}
+                      <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>No revenue data for this period</td></tr>
+                    ) : rows.filter((r: any) => !r.is_closed).map((r: any) => {
+                      const takePct = r.revenue > 0 && r.takeaway_revenue > 0 ? Math.round((r.takeaway_revenue / r.revenue) * 100) : 0
+                      return (
+                        <tr key={r.date} style={{ borderBottom: '1px solid #f9fafb' }}>
+                          <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500, color: '#111' }}>
+                            {new Date(r.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, fontWeight: 600, color: '#111' }}>{r.revenue > 0 ? fmtKr(r.revenue) : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: r.takeaway_revenue > 0 ? '#4338ca' : '#d1d5db' }}>
+                            {r.takeaway_revenue > 0
+                              ? <>{fmtKr(r.takeaway_revenue)} <span style={{ fontSize: 10, color: '#9ca3af' }}>({takePct}%)</span></>
+                              : '—'}
+                          </td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: r.dine_in_revenue > 0 ? '#374151' : '#d1d5db' }}>{r.dine_in_revenue > 0 ? fmtKr(r.dine_in_revenue) : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#374151' }}>{r.covers > 0 ? r.covers : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#6b7280' }}>{r.revenue_per_cover > 0 ? fmtKr(r.revenue_per_cover) : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 12, color: r.tip_revenue > 0 ? '#10b981' : '#d1d5db' }}>{r.tip_revenue > 0 ? fmtKr(r.tip_revenue) : '—'}</td>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' as const }}>
+                            <span style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280', padding: '2px 6px', borderRadius: 3 }}>{r.providers?.length ? r.providers.join(', ') : 'manual'}</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
+
               </div>
 
               {/* Breakdown sidebar */}
-              {(dineIn > 0 || foodRev > 0) && (
+              {(dineIn > 0 || takeaway > 0 || foodRev > 0 || bevRev > 0) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-                  {/* Dine-in vs takeaway */}
+                  {/* Dine-in vs takeaway — tax-treatment matters: Swedish
+                      takeaway food sits at 6% VAT vs dine-in at 12%, so the
+                      channel mix directly affects how much VAT we owe. */}
                   {(dineIn > 0 || takeaway > 0) && (
                     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>Channel Split</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af' }}>Channel Split</div>
+                        <div style={{ fontSize: 10, color: '#9ca3af' }}>VAT-weighted</div>
+                      </div>
                       <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', marginBottom: 10, background: '#f3f4f6' }}>
                         {totalRev > 0 && (<>
                           {dineIn > 0 && <div style={{ width: `${(dineIn / totalRev) * 100}%`, background: '#1a1f2e' }} />}
@@ -330,17 +355,26 @@ export default function RevenuePage() {
                         </>)}
                       </div>
                       {[
-                        { label: 'Dine-in',  value: fmtKr(dineIn),  color: '#1a1f2e' },
-                        { label: 'Takeaway', value: fmtKr(takeaway), color: '#6366f1' },
+                        { label: 'Dine-in',  value: dineIn,   color: '#1a1f2e', vat: '12%' },
+                        { label: 'Takeaway', value: takeaway, color: '#6366f1', vat: '6%'  },
                       ].map(r => (
-                        <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f3f4f6' }}>
+                        <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '5px 0', fontSize: 12, borderBottom: '1px solid #f3f4f6' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                             <div style={{ width: 8, height: 8, borderRadius: 2, background: r.color }} />
                             <span style={{ color: '#6b7280' }}>{r.label}</span>
+                            <span style={{ fontSize: 10, color: '#9ca3af', padding: '1px 5px', background: '#f9fafb', borderRadius: 3 }}>{r.vat} VAT</span>
                           </div>
-                          <span style={{ fontWeight: 600, color: '#111' }}>{r.value}</span>
+                          <span style={{ fontWeight: 600, color: '#111' }}>
+                            {r.value > 0 ? fmtKr(r.value) : '—'}{' '}
+                            {r.value > 0 && totalRev > 0 && <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }}>({Math.round((r.value / totalRev) * 100)}%)</span>}
+                          </span>
                         </div>
                       ))}
+                      {dineIn === 0 && takeaway > 0 && (
+                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>
+                          No dine-in flag from POS — all revenue here is tagged takeaway.
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -387,6 +421,7 @@ export default function RevenuePage() {
       <AskAI page="revenue" context={[
         `Period: ${curr.from} to ${curr.to}`,
         totalRev > 0 ? `Revenue: ${fmtKr(totalRev)}, Covers: ${totalCovers}, Avg/cover: ${fmtKr(avgRpc)}` : 'No revenue data',
+        takeaway > 0 && totalRev > 0 ? `Takeaway: ${fmtKr(takeaway)} (${fmtPct((takeaway / totalRev) * 100)} of revenue, 6% VAT), Dine-in: ${fmtKr(dineIn)} (12% VAT)` : '',
         totalTips > 0 ? `Tips: ${fmtKr(totalTips)}` : '',
         foodRev > 0 ? `Food: ${fmtKr(foodRev)}, Beverage: ${fmtKr(bevRev)}` : '',
       ].filter(Boolean).join('\n')} />
