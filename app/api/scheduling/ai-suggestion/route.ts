@@ -20,7 +20,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { fetchAllPaged } from '@/lib/supabase/page'
 import { decrypt }                    from '@/lib/integrations/encryption'
 import { getWorkPeriods }              from '@/lib/pos/personalkollen'
-import { weatherBucket }               from '@/lib/weather/forecast'
+import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,8 +36,9 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // Confirm the caller owns this business.
-  const { data: biz } = await db.from('businesses').select('id,org_id,name').eq('id', bizId).maybeSingle()
+  // Confirm the caller owns this business. Pulling `city` here so we can
+  // drive the live weather fetch off the business's location.
+  const { data: biz } = await db.from('businesses').select('id,org_id,name,city').eq('id', bizId).maybeSingle()
   if (!biz || biz.org_id !== auth.orgId) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   // Target week = next calendar Monday → Sunday
@@ -132,7 +133,12 @@ export async function GET(req: NextRequest) {
   const histStart = new Date(histEnd); histStart.setDate(histEnd.getDate() - 7 * 12)
   const histStartIso = histStart.toISOString().slice(0, 10)
   const histEndIso   = histEnd.toISOString().slice(0, 10)
-  const [dailyRes, wxHistRes, wxFcastRes] = await Promise.all([
+  // Historical weather comes from weather_daily (populated by the one-shot
+  // backfill). Forecasts come live from Open-Meteo so we're never stale —
+  // weather_daily's future rows go out of date whenever the backfill hasn't
+  // run recently, which was the root cause of "weather not loading".
+  const { lat, lon } = coordsFor(biz.city)
+  const [dailyRes, wxHistRes, fcastResult] = await Promise.all([
     db.from('daily_metrics')
       .select('date, revenue, staff_cost, hours_worked, labour_pct')
       .eq('business_id', bizId)
@@ -143,15 +149,15 @@ export async function GET(req: NextRequest) {
       .eq('business_id', bizId)
       .gte('date', histStartIso).lte('date', histEndIso)
       .eq('is_forecast', false),
-    // Forecast for the target week (to pick the matching bucket per day)
-    db.from('weather_daily')
-      .select('date, temp_avg, precip_mm, weather_code, summary, temp_min, temp_max, wind_max')
-      .eq('business_id', bizId)
-      .gte('date', weekFrom).lte('date', weekTo),
+    // Live 10-day forecast (cached 1h in-process by getForecast).
+    getForecast(lat, lon).catch((e: any) => {
+      console.warn('[ai-suggestion] live weather fetch failed:', e?.message)
+      return []
+    }),
   ])
   const daily   = dailyRes.data ?? []
   const wxHist  = wxHistRes.data ?? []
-  const wxNext  = wxFcastRes.data ?? []
+  const wxNext  = (fcastResult ?? []).filter(w => w.date >= weekFrom && w.date <= weekTo)
   const wxNextByDate: Record<string, any> = {}
   for (const w of wxNext) wxNextByDate[w.date] = w
   const wxHistByDate: Record<string, any> = {}
