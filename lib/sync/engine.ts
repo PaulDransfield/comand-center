@@ -507,7 +507,17 @@ async function syncCaspeco(db: any, integ: any, fromDate: string, toDate: string
 }
 
 // ── Inzii sync ────────────────────────────────────────────────────────────────
+// Disabled 2026-04-20 — the Swess/Inzii direct API (api.swess.se) has no
+// working documented endpoints. We probed 30+ path/auth combinations and none
+// returned revenue data. Per-department revenue already flows through
+// Personalkollen's per-workplace sales endpoint (`pk_<dept>` provider), which
+// is live and accurate. Existing Inzii integration rows are preserved for
+// future re-enable but the sync is a no-op.
 async function syncInzii(db: any, integ: any, fromDate: string, toDate: string) {
+  return { rows: 0, skipped: 'inzii_disabled_use_pk' }
+
+  // ── Unreachable — retained for future re-enable once Swess publishes docs ──
+  // eslint-disable-next-line no-unreachable
   const { getInziiDailySummary } = await import('@/lib/pos/inzii')
   const token = decrypt(integ.credentials_enc)
   if (!token) throw new Error('Invalid credentials')
@@ -661,7 +671,13 @@ async function syncAncon(db: any, integ: any, fromDate: string, toDate: string) 
 }
 
 // ── Swess sync ────────────────────────────────────────────────────────────────
+// Disabled 2026-04-20 — same as Inzii above. api.swess.se's direct endpoints
+// aren't published, all probes 404/429. PK-per-workplace covers the same POS
+// data reliably. Kept as a no-op until Swess exposes a documented API.
 async function syncSwess(db: any, integ: any, fromDate: string, toDate: string) {
+  return { rows: 0, skipped: 'swess_disabled_use_pk' }
+
+  // eslint-disable-next-line no-unreachable
   const { getSwessDailySummary } = await import('@/lib/pos/swess')
   const token = decrypt(integ.credentials_enc)
   if (!token) throw new Error('Invalid credentials')

@@ -68,15 +68,13 @@ export async function getInziiDailySummary(apiKey: string, fromDate: string, toD
 }
 
 export async function testInziiConnection(apiKey: string): Promise<{ ok: boolean; message: string; days_found: number }> {
-  const today    = new Date().toISOString().slice(0, 10)
-  const lastWeek = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10)
-
-  const rows = await getInziiDailySummary(apiKey, lastWeek, today)
+  // As of 2026-04-20 Swess has no published API docs and every probed endpoint
+  // returns 404 or 429. We no longer claim "Connected" just because a key was
+  // saved. Per-department revenue flows through PK's per-workplace endpoint
+  // (`pk_<dept>` provider) instead, which is fully operational.
   return {
-    ok:        true,  // Always ok — key saved, sync retries automatically
-    days_found: rows.length,
-    message:   rows.length > 0
-      ? `Connected — ${rows.length} days of data found`
-      : 'Key saved — will sync when Swess API endpoint is confirmed',
+    ok:         false,
+    days_found: 0,
+    message:    'Swess/Inzii direct API is not currently supported. Your POS data is pulled via Personalkollen — no separate Inzii connection needed. If PK is already connected, department revenue will appear automatically.',
   }
 }
