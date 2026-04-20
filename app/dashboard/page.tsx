@@ -244,13 +244,6 @@ export default function DashboardPage() {
     return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture, pred }
   })
 
-  // Chart max needs to include predicted revenue so future-week bars don't
-  // dwarf the actuals or vice-versa.
-  const maxDayRev = Math.max(
-    ...weekDays.map(d => Math.max(d.revenue, d.pred?.est_revenue ?? 0)),
-    1,
-  )
-
   const monthDays = Array.from({ length: currM.daysInMonth }, (_, i) => {
     const d   = new Date(currM.firstDay)
     d.setDate(i + 1)
@@ -259,7 +252,8 @@ export default function DashboardPage() {
     const isToday  = ds === localDate(now)
     const isFuture = d > now
     const dayIdx   = (d.getDay() + 6) % 7 // 0=Mon
-    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, dayIdx }
+    const pred     = predByDate[ds] ?? null
+    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, dayIdx, pred }
   })
 
   const selectedBiz = businesses.find(b => b.id === bizId)
@@ -381,135 +375,19 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* ── 7-day card grid ─────────────────────────────────────────
-                Replaces the stacked bar chart. Each day is a self-contained
-                card showing everything that matters for that day: weather,
-                revenue (actual or predicted), labour, and margin. Predicted
-                days use an indigo accent + "AI" chip so they can't be
-                confused with actuals.
-            ────────────────────────────────────────────────────────────── */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' as const, gap: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                  Week {curr.weekNum} — {curr.label}
-                </div>
-                {weekDays.some(d => d.pred?.est_revenue > 0 && d.revenue === 0) && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#6b7280' }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 3, background: '#ede9fe', border: '1px solid #c4b5fd' }} />
-                    AI predicted — based on 12-week pattern + weather
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 8 }}>
-                {weekDays.map(day => {
-                  const hasActual = day.revenue > 0
-                  const hasPred   = !hasActual && day.pred?.est_revenue > 0
-                  const shownRev  = hasActual ? day.revenue : (day.pred?.est_revenue ?? 0)
-                  const labPct    = hasActual && day.staff_cost > 0 ? (day.staff_cost / day.revenue) * 100 : null
-                  const predEffCost = day.pred ? (day.pred.under_staffed_note ? day.pred.planned_cost : day.pred.ai_cost) : 0
-                  const predMargin  = hasPred && shownRev > 0 ? ((shownRev - predEffCost) / shownRev) * 100 : null
-                  const dateNum     = new Date(day.dateStr + 'T12:00:00').getDate()
-
-                  // Card tone — predicted cards get a subtle indigo wash + dashed border.
-                  const cardBg = hasPred ? '#faf9ff' : hasActual ? '#ffffff' : '#fafafa'
-                  const cardBr = hasPred ? '1px dashed #c4b5fd' : '1px solid #eef0f4'
-                  const cardOp = !hasActual && !hasPred ? 0.6 : 1
-
-                  // Figure colour based on labour % (actuals) or margin % (predicted)
-                  const kpiColor = hasActual && labPct != null
-                      ? (labPct > targetPct ? '#dc2626' : '#16a34a')
-                    : hasPred && predMargin != null
-                      ? (predMargin >= 70 ? '#15803d' : predMargin >= 55 ? '#d97706' : '#dc2626')
-                    : '#9ca3af'
-
-                  return (
-                    <div
-                      key={day.dateStr}
-                      style={{
-                        background: cardBg,
-                        border: cardBr,
-                        borderRadius: 10,
-                        padding: '11px 10px 10px',
-                        opacity: cardOp,
-                        display: 'flex', flexDirection: 'column' as const, gap: 4,
-                        minHeight: 130,
-                      }}
-                    >
-                      {/* Header — day + date + optional "AI" chip */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <div>
-                          <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: day.isToday ? '#6366f1' : '#9ca3af' }}>
-                            {day.dayName}
-                          </span>
-                          <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>{dateNum}</span>
-                        </div>
-                        {hasPred && (
-                          <span style={{ fontSize: 9, background: '#ede9fe', color: '#6d28d9', padding: '1px 5px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>AI</span>
-                        )}
-                      </div>
-
-                      {/* Weather row */}
-                      {day.pred?.weather ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#6b7280', minHeight: 14 }}>
-                          <span style={{ fontSize: 13 }}>{weatherIcon(day.pred.weather.weather_code)}</span>
-                          <span>{day.pred.weather.temp_min != null ? `${Math.round(day.pred.weather.temp_min)}–${Math.round(day.pred.weather.temp_max)}°` : ''}</span>
-                          {Number(day.pred.weather.precip_mm) > 0.5 && (
-                            <span style={{ color: '#3b82f6' }}>· {day.pred.weather.precip_mm}mm</span>
-                          )}
-                        </div>
-                      ) : <div style={{ minHeight: 14 }} />}
-
-                      {/* Revenue — the headline number */}
-                      <div style={{ marginTop: 2 }}>
-                        <div style={{ fontSize: 17, fontWeight: 700, color: hasActual || hasPred ? '#111' : '#d1d5db', letterSpacing: '-.02em', lineHeight: 1.1 }}>
-                          {shownRev > 0 ? fmtKr(shownRev) : '—'}
-                        </div>
-                        <div style={{ fontSize: 9, color: '#9ca3af', letterSpacing: '.04em', textTransform: 'uppercase' as const, marginTop: 1 }}>
-                          {hasActual ? 'actual' : hasPred ? 'predicted' : day.isFuture ? 'upcoming' : 'no data'}
-                        </div>
-                      </div>
-
-                      {/* Footer — KPI (labour% or margin%) + labour cost / saving */}
-                      <div style={{ marginTop: 'auto', paddingTop: 6, borderTop: '1px solid #f3f4f6' }}>
-                        {hasActual ? (
-                          <>
-                            <div style={{ fontSize: 11, color: '#374151' }}>
-                              Labour {day.staff_cost > 0 ? fmtKr(day.staff_cost) : '—'}
-                            </div>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: kpiColor, marginTop: 1 }}>
-                              {labPct != null ? fmtPct(labPct) : '—'} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 10 }}>labour</span>
-                            </div>
-                          </>
-                        ) : hasPred ? (
-                          <>
-                            <div style={{ fontSize: 11, color: '#374151' }}>
-                              Plan {fmtKr(day.pred.planned_cost)}
-                            </div>
-                            {day.pred.delta_cost < 0 ? (
-                              <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>
-                                AI: {fmtKr(day.pred.ai_cost)} · save {fmtKr(Math.abs(day.pred.delta_cost))}
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 1 }}>
-                                AI: no change
-                              </div>
-                            )}
-                            <div style={{ fontSize: 11, fontWeight: 700, color: kpiColor, marginTop: 3 }}>
-                              {predMargin != null ? `${Math.round(predMargin)}%` : '—'} <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: 10 }}>margin</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div style={{ fontSize: 10, color: '#d1d5db' }}>
-                            {day.isFuture ? 'Check back closer to the day' : '—'}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
+            {/* ── Weekly chart: bars + margin line overlay ──────────────── */}
+            <RevenueMarginChart
+              days={weekDays}
+              viewMode="week"
+              weekNum={curr.weekNum}
+              label={curr.label}
+              fmtKr={fmtKr}
+              fmtPct={fmtPct}
+              weatherIcon={weatherIcon}
+              targetPct={targetPct}
+              tooltip={tooltip}
+              setTooltip={setTooltip}
+            />
 
             {/* ── Dept table + P&L ───────────────────────────────────────── */}
             <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, marginBottom: 16 }}>
@@ -685,92 +563,19 @@ export default function DashboardPage() {
               />
             </div>
 
-            {/* ── Daily bar chart for the month ─────────────────────────── */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                  {currM.label} — Daily breakdown
-                </div>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  {[
-                    { color: '#1a1f2e', label: 'Revenue' },
-                    { color: '#f59e0b', label: 'Labour Cost' },
-                  ].map(l => (
-                    <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
-                      <span style={{ fontSize: 11, color: '#9ca3af' }}>{l.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Bars — one per day of the month */}
-              <div style={{ display: 'flex', gap: 2, height: 200, alignItems: 'flex-end', position: 'relative' }}>
-                {monthDays.map((day) => {
-                  const revH    = day.revenue > 0 ? Math.max((day.revenue / maxDayRev) * 180, 3) : 0
-                  const labPct  = day.revenue > 0 && day.staff_cost > 0 ? (day.staff_cost / day.revenue) * 100 : 0
-                  const isHover = tooltip?.dateStr === day.dateStr
-                  const isWeekend = day.dayIdx >= 5
-
-                  return (
-                    <div
-                      key={day.dateStr}
-                      style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: day.revenue > 0 ? 'pointer' : 'default' }}
-                      onMouseEnter={() => day.revenue > 0 && setTooltip({ ...day, labPct })}
-                      onMouseLeave={() => setTooltip(null)}
-                    >
-                      {/* Bar */}
-                      <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        {day.revenue > 0 ? (
-                          <div style={{
-                            height: revH,
-                            borderRadius: '3px 3px 0 0',
-                            background: `linear-gradient(to top, #f59e0b ${Math.min(labPct, 100)}%, #1a1f2e ${Math.min(labPct, 100)}%)`,
-                            opacity: isHover ? 1 : day.isFuture ? 0.3 : 0.85,
-                            transition: 'opacity 0.15s',
-                            boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                          }} />
-                        ) : day.isFuture ? (
-                          <div style={{ height: 2, background: '#f3f4f6', borderRadius: 2 }} />
-                        ) : (
-                          <div style={{ height: 2, background: '#e5e7eb', borderRadius: 2 }} />
-                        )}
-                      </div>
-
-                      {/* Day label — show every day but smaller text */}
-                      <div style={{
-                        fontSize: 8, fontWeight: day.isToday ? 700 : 400,
-                        color: day.isToday ? '#6366f1' : isWeekend ? '#d1d5db' : '#9ca3af',
-                      }}>
-                        {day.dayName}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Tooltip */}
-              {tooltip && (
-                <div style={{
-                  marginTop: 12, padding: '12px 16px', background: '#1a1f2e', borderRadius: 10,
-                  display: 'flex', gap: 24, flexWrap: 'wrap'
-                }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
-                    {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
-                  </div>
-                  {[
-                    { label: 'Revenue',     value: fmtKr(tooltip.revenue),    color: 'white' },
-                    { label: 'Labour Cost', value: fmtKr(tooltip.staff_cost), color: '#f59e0b' },
-                    { label: 'Labour %',    value: fmtPct(tooltip.labPct),    color: tooltip.labPct > targetPct ? '#f87171' : '#86efac' },
-                  ].map(col => (
-                    <div key={col.label}>
-                      <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.value}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* ── Daily chart for the month: bars + gross-margin line ───── */}
+            <RevenueMarginChart
+              days={monthDays}
+              viewMode="month"
+              weekNum={0}
+              label={`${currM.label} — Daily breakdown`}
+              fmtKr={fmtKr}
+              fmtPct={fmtPct}
+              weatherIcon={weatherIcon}
+              targetPct={targetPct}
+              tooltip={tooltip}
+              setTooltip={setTooltip}
+            />
 
             {/* ── Dept table + P&L ───────────────────────────────────────── */}
             <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, marginBottom: 16 }}>
@@ -919,5 +724,248 @@ export default function DashboardPage() {
         ].filter(Boolean).join('\n') : 'No business selected'}
       />
     </AppShell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RevenueMarginChart — bars for revenue + line overlay for gross margin %,
+// works for both the 7-day week view and the 28–31-day month view. Bars for
+// future dates render with an indigo stripe pattern so they read as forecasts
+// at a glance, using data from the AI scheduling suggestion (weather +
+// predicted revenue + planned/AI cost). Hover reveals the full detail.
+// ─────────────────────────────────────────────────────────────────────────────
+function RevenueMarginChart({ days, viewMode, weekNum, label, fmtKr, fmtPct, weatherIcon, targetPct, tooltip, setTooltip }: any) {
+  const CHART_H = 200
+  const isWeek  = viewMode === 'week'
+
+  // Max revenue across actual + predicted so future-week bars scale fairly.
+  const maxRev = Math.max(
+    ...days.map((d: any) => Math.max(d.revenue, d.pred?.est_revenue ?? 0)),
+    1,
+  )
+
+  // Compute each day's margin for the overlay line. Actuals use
+  // (rev - staff_cost) / rev; predicted days use (est_rev - effective_cost) / est_rev
+  // where effective_cost honours the "cuts only" policy.
+  const points = days.map((d: any, i: number) => {
+    const hasActual = d.revenue > 0
+    const hasPred   = !hasActual && d.pred?.est_revenue > 0
+    let margin: number | null = null
+    if (hasActual && d.staff_cost > 0) {
+      margin = ((d.revenue - d.staff_cost) / d.revenue) * 100
+    } else if (hasPred) {
+      const eff = d.pred.under_staffed_note ? d.pred.planned_cost : d.pred.ai_cost
+      margin = d.pred.est_revenue > 0 ? ((d.pred.est_revenue - eff) / d.pred.est_revenue) * 100 : null
+    }
+    return { i, margin, hasActual, hasPred }
+  })
+
+  // Build the SVG polyline from consecutive points that have a margin value.
+  // Missing points break the line rather than getting interpolated — cleaner
+  // and more honest when a weekday has no data either side.
+  const segments: Array<Array<{ x: number; y: number }>> = []
+  let current: Array<{ x: number; y: number }> = []
+  points.forEach((p: any, idx: number) => {
+    if (p.margin == null) {
+      if (current.length) { segments.push(current); current = [] }
+      return
+    }
+    const xPct = ((idx + 0.5) / days.length) * 100
+    const yPct = 100 - Math.max(0, Math.min(100, p.margin))  // invert: 100% at top
+    current.push({ x: xPct, y: yPct })
+  })
+  if (current.length) segments.push(current)
+
+  const hasAnyPred = days.some((d: any) => d.pred?.est_revenue > 0 && d.revenue === 0)
+
+  return (
+    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' as const, gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+          {isWeek ? `Week ${weekNum} — ${label}` : label}
+        </div>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+          <LegendSwatch color="#1a1f2e" label="Revenue (actual)" />
+          {hasAnyPred && (
+            <LegendSwatch striped label="Revenue (predicted)" />
+          )}
+          <LegendSwatch color="#15803d" line label="Gross margin %" />
+        </div>
+      </div>
+
+      {/* Chart area — bars + SVG overlay */}
+      <div style={{ position: 'relative' as const, height: CHART_H + (isWeek ? 28 : 18), marginBottom: isWeek ? 2 : 2 }}>
+        {/* Bars */}
+        <div style={{
+          display: 'flex', gap: isWeek ? 8 : 2,
+          height: CHART_H, alignItems: 'flex-end',
+          position: 'absolute' as const, left: 0, right: 0, top: 0,
+        }}>
+          {days.map((day: any) => {
+            const hasActual = day.revenue > 0
+            const hasPred   = !hasActual && day.pred?.est_revenue > 0
+            const shownRev  = hasActual ? day.revenue : (day.pred?.est_revenue ?? 0)
+            const h         = shownRev > 0 ? Math.max((shownRev / maxRev) * (CHART_H - 20), isWeek ? 4 : 3) : 0
+            const isHover   = tooltip?.dateStr === day.dateStr
+            const canHover  = hasActual || hasPred
+            const isWeekend = !isWeek && day.dayIdx >= 5
+
+            const labPct   = hasActual && day.staff_cost > 0 ? (day.staff_cost / day.revenue) * 100 : null
+            const predEff  = day.pred ? (day.pred.under_staffed_note ? day.pred.planned_cost : day.pred.ai_cost) : 0
+            const predMarg = hasPred && shownRev > 0 ? ((shownRev - predEff) / shownRev) * 100 : null
+
+            return (
+              <div
+                key={day.dateStr}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: isWeek ? 6 : 3, cursor: canHover ? 'pointer' : 'default' }}
+                onMouseEnter={() => canHover && setTooltip({ ...day, labPct, predMargin: predMarg, hasActual, hasPred })}
+                onMouseLeave={() => setTooltip(null)}
+              >
+                {/* Weather icon above the bar (only where we have a forecast) */}
+                {isWeek && day.pred?.weather && (
+                  <div style={{ fontSize: 14, lineHeight: 1, marginTop: 0 }}>
+                    {weatherIcon(day.pred.weather.weather_code)}
+                  </div>
+                )}
+                {/* Bar */}
+                <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column' as const, justifyContent: 'flex-end' }}>
+                  {hasActual ? (
+                    <div style={{
+                      height: h,
+                      borderRadius: isWeek ? '5px 5px 0 0' : '3px 3px 0 0',
+                      background: '#1a1f2e',
+                      opacity: isHover ? 1 : 0.9,
+                      transition: 'opacity 0.15s',
+                      boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
+                    }} />
+                  ) : hasPred ? (
+                    <div style={{
+                      height: h,
+                      borderRadius: isWeek ? '5px 5px 0 0' : '3px 3px 0 0',
+                      background: 'repeating-linear-gradient(135deg, #6366f1 0 6px, #a5b4fc 6px 12px)',
+                      opacity: isHover ? 1 : 0.75,
+                      transition: 'opacity 0.15s',
+                      boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
+                    }} />
+                  ) : (
+                    <div style={{ height: 2, background: '#e5e7eb', borderRadius: 2 }} />
+                  )}
+                </div>
+                {/* Day label */}
+                <div style={{
+                  fontSize: isWeek ? 11 : 8, fontWeight: day.isToday ? 700 : 400,
+                  color: day.isToday ? '#6366f1' : isWeekend ? '#d1d5db' : '#9ca3af',
+                }}>
+                  {day.dayName}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* SVG line overlay — gross margin %. 100% is at the top of the bar
+            area; 0% at the bottom. Non-contiguous segments render as separate
+            paths so gaps in data don't interpolate phantom margin. */}
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          style={{ position: 'absolute' as const, left: 0, right: 0, top: 0, width: '100%', height: CHART_H, pointerEvents: 'none' as const }}
+        >
+          {/* 70% margin reference line (gentle) */}
+          <line x1="0" y1="30" x2="100" y2="30" stroke="#e5e7eb" strokeWidth="0.3" strokeDasharray="1 1.5" />
+          {/* Margin path */}
+          {segments.map((seg, i) => {
+            if (seg.length < 2) return null
+            const d = seg.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+            return <path key={i} d={d} stroke="#15803d" strokeWidth="0.8" fill="none" vectorEffect="non-scaling-stroke" />
+          })}
+          {/* Margin dots */}
+          {segments.flat().map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r="0.9" fill="#15803d" vectorEffect="non-scaling-stroke" />
+          ))}
+        </svg>
+      </div>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div style={{ marginTop: 12, padding: '12px 16px', background: '#1a1f2e', borderRadius: 10, display: 'flex', gap: 24, flexWrap: 'wrap' as const }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
+            {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
+            {!tooltip.hasActual && tooltip.hasPred && (
+              <div style={{ fontSize: 10, color: '#a5b4fc', fontWeight: 700, marginTop: 2 }}>AI PREDICTED</div>
+            )}
+          </div>
+          {tooltip.hasActual ? (
+            [
+              { label: 'Revenue',     value: fmtKr(tooltip.revenue),    color: 'white' },
+              { label: 'Labour Cost', value: fmtKr(tooltip.staff_cost), color: '#f59e0b' },
+              { label: 'Labour %',    value: fmtPct(tooltip.labPct ?? 0), color: (tooltip.labPct ?? 0) > targetPct ? '#f87171' : '#86efac' },
+              { label: 'Margin %',    value: tooltip.revenue > 0 ? fmtPct(((tooltip.revenue - (tooltip.staff_cost ?? 0)) / tooltip.revenue) * 100) : '—', color: '#86efac' },
+            ].map(col => (
+              <div key={col.label}>
+                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.value}</div>
+              </div>
+            ))
+          ) : tooltip.hasPred && tooltip.pred ? (
+            <>
+              {tooltip.pred.weather && (
+                <div>
+                  <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Weather</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'white' }}>
+                    {weatherIcon(tooltip.pred.weather.weather_code)} {tooltip.pred.weather.summary}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                    {tooltip.pred.weather.temp_min != null ? `${Math.round(tooltip.pred.weather.temp_min)}–${Math.round(tooltip.pred.weather.temp_max)}°C` : ''}
+                    {Number(tooltip.pred.weather.precip_mm) > 0.5 ? ` · ${tooltip.pred.weather.precip_mm}mm` : ''}
+                  </div>
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Predicted sales</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{fmtKr(tooltip.pred.est_revenue)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Your plan cost</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#f59e0b' }}>{fmtKr(tooltip.pred.planned_cost)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>AI suggestion</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#a5b4fc' }}>
+                  {fmtKr(tooltip.pred.ai_cost)}
+                  {tooltip.pred.delta_cost < 0 && (
+                    <span style={{ fontSize: 11, color: '#86efac', fontWeight: 600, marginLeft: 6 }}>
+                      save {fmtKr(Math.abs(tooltip.pred.delta_cost))}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {tooltip.predMargin != null && (
+                <div>
+                  <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>Margin %</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: tooltip.predMargin >= 70 ? '#86efac' : tooltip.predMargin >= 55 ? '#fbbf24' : '#f87171' }}>
+                    {Math.round(tooltip.predMargin)}%
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LegendSwatch({ color, striped, line, label }: any) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {line ? (
+        <div style={{ width: 14, height: 0, borderTop: `2px solid ${color}`, borderRadius: 2 }} />
+      ) : striped ? (
+        <div style={{ width: 12, height: 10, borderRadius: 2, background: 'repeating-linear-gradient(135deg, #6366f1 0 4px, #a5b4fc 4px 8px)' }} />
+      ) : (
+        <div style={{ width: 12, height: 10, borderRadius: 2, background: color }} />
+      )}
+      <span style={{ fontSize: 11, color: '#9ca3af' }}>{label}</span>
+    </div>
   )
 }
