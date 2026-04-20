@@ -174,7 +174,7 @@ export default function SchedulingPage() {
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Scheduling Efficiency</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-              Labour cost vs revenue · weekly patterns · AI-suggested next-week schedule below.
+              Labour cost vs revenue · weekly patterns
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -203,6 +203,11 @@ export default function SchedulingPage() {
             </div>
           </div>
         </div>
+
+        {/* AI-schedule CTA — surfaced prominently so the tool doesn't get
+            lost at the bottom of a dense page. Label is dynamic: teases the
+            saving once loaded so the click is rewarded with a real number. */}
+        <AiScheduleCTA data={aiSched} loading={aiLoading} fmt={fmtKr} />
 
         {error && (
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#dc2626' }}>
@@ -574,13 +579,13 @@ export default function SchedulingPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
   const deltaColor = (d: number) => d < -0.5 ? '#15803d' : '#6b7280'
-  const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }
+  const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16, scrollMarginTop: 16 }
 
   if (loading) {
-    return <div style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestion…</div></div>
+    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestion…</div></div>
   }
   if (error) {
-    return <div style={cardStyle}><div style={{ color: '#dc2626', fontSize: 13 }}>AI suggestion: {error}</div></div>
+    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#dc2626', fontSize: 13 }}>AI suggestion: {error}</div></div>
   }
   if (!data) return null
 
@@ -588,7 +593,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
   const shortRange = `${week_from.slice(8)}–${week_to.slice(8)} ${new Date(week_from).toLocaleDateString('en-GB', { month: 'short' })}`
 
   return (
-    <div style={cardStyle}>
+    <div id="ai-schedule" style={cardStyle}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12, flexWrap: 'wrap' as const }}>
         <div>
@@ -687,5 +692,71 @@ function Stat({ label, value, tone = 'neutral' }: any) {
       <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af' }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 700, color: colour, marginTop: 1 }}>{value}</div>
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Top-of-page CTA that teases the AI schedule's value and scrolls to the card.
+// Dynamic labelling: once the suggestion loads, if there's a saving we say so
+// in SEK — nothing converts like a concrete number. Otherwise we still show a
+// clear button so customers don't miss that the tool exists.
+// ─────────────────────────────────────────────────────────────────────────────
+function AiScheduleCTA({ data, loading, fmt }: any) {
+  function scrollToAi() {
+    const el = document.getElementById('ai-schedule')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const saving   = data?.summary?.saving_kr ?? 0
+  const hoursCut = data?.summary ? Math.max(0, (data.summary.current_hours ?? 0) - (data.summary.suggested_hours ?? 0)) : 0
+  const weekFrom = data?.week_from
+  const weekTo   = data?.week_to
+  const rangeLabel = weekFrom && weekTo
+    ? `${weekFrom.slice(8)}–${weekTo.slice(8)} ${new Date(weekFrom).toLocaleDateString('en-GB', { month: 'short' })}`
+    : 'next week'
+
+  const primary =
+    loading       ? 'Loading…' :
+    saving > 0    ? `Save ~${fmt(saving)} kr next week` :
+    hoursCut > 0  ? `Trim ${hoursCut.toFixed(1)}h next week` :
+                    'View next week\'s AI schedule'
+
+  const secondary =
+    loading      ? 'Reviewing 12 weeks of data, weather, and your shift patterns.' :
+    saving > 0   ? `Based on your ${rangeLabel} forecast — ${data.suggested.length} days analysed against your 12-week pattern.` :
+    hoursCut > 0 ? `Lean cuts suggested for ${rangeLabel}. Weather-aware.` :
+                   `Your schedule matches the 12-week pattern — nothing to trim for ${rangeLabel}.`
+
+  return (
+    <button
+      onClick={scrollToAi}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+        background: 'linear-gradient(135deg, #312e81, #1e1b4b)',
+        border: '0.5px solid rgba(99,102,241,0.35)', borderRadius: 14,
+        padding: '14px 18px', marginBottom: 16, cursor: 'pointer',
+        textAlign: 'left' as const, color: 'white',
+        boxShadow: '0 2px 10px rgba(49,46,129,0.15)',
+        transition: 'transform .15s, box-shadow .15s',
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
+        ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 18px rgba(49,46,129,0.25)'
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLButtonElement).style.transform = 'none'
+        ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 2px 10px rgba(49,46,129,0.15)'
+      }}
+    >
+      <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✦</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' as const }}>
+          <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '1px 7px', borderRadius: 4, fontWeight: 700, letterSpacing: '.04em' }}>AI</span>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>{primary}</span>
+        </div>
+        <div style={{ fontSize: 12, color: 'rgba(199,210,254,0.8)', lineHeight: 1.4 }}>{secondary}</div>
+      </div>
+      <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap' as const }}>View →</div>
+    </button>
   )
 }
