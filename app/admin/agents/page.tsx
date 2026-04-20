@@ -115,13 +115,20 @@ export default function AgentsDashboard() {
                   <MiniStat label="Disabled for" value={a.disabled_for} tone={a.disabled_for > 0 ? 'warn' : 'default'} />
                 </div>
 
-                {/* Feedback strip — only rendered for Monday briefing */}
-                {a.feedback && (a.feedback.up + a.feedback.down > 0) && (
+                {/* Feedback strip + preview link — only rendered for Monday briefing */}
+                {a.feedback && (
                   <div style={{ marginBottom: 12, padding: '8px 10px', background: '#fdfcf6', border: '1px solid #f0eddf', borderRadius: 7, fontSize: 12, color: '#4b5563' }}>
                     <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-                      <span style={{ color: '#059669', fontWeight: 700 }}>👍 {a.feedback.up}</span>
-                      <span style={{ color: '#dc2626', fontWeight: 700 }}>👎 {a.feedback.down}</span>
-                      <span style={{ fontSize: 10, color: '#9ca3af', letterSpacing: '.06em', textTransform: 'uppercase' as const }}>last 30d</span>
+                      {(a.feedback.up + a.feedback.down > 0) ? (
+                        <>
+                          <span style={{ color: '#059669', fontWeight: 700 }}>👍 {a.feedback.up}</span>
+                          <span style={{ color: '#dc2626', fontWeight: 700 }}>👎 {a.feedback.down}</span>
+                          <span style={{ fontSize: 10, color: '#9ca3af', letterSpacing: '.06em', textTransform: 'uppercase' as const }}>last 30d</span>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#9ca3af' }}>No feedback yet</span>
+                      )}
+                      <a href="/admin/memo-preview" style={{ marginLeft: 'auto', fontSize: 11, color: '#1e3a5f', textDecoration: 'none', fontWeight: 600 }}>Preview memo →</a>
                     </div>
                     {a.feedback.last_comment && (
                       <div style={{ marginTop: 6, fontSize: 12, color: '#374151', fontStyle: 'italic' as const, borderLeft: '2px solid #d4d4d0', paddingLeft: 8 }}>

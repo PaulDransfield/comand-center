@@ -22,13 +22,23 @@ export async function GET(req: NextRequest) {
 
   if (action === 'dashboard') {
     // Overview stats
-    const [orgs, users, integrations, alerts, invoices] = await Promise.all([
+    const [orgs, users, integrations, alerts, invoices, businesses] = await Promise.all([
       db.from('organisations').select('id, name, is_active, created_at, billing_email').order('created_at', { ascending: false }),
       db.from('organisation_members').select('org_id, user_id, role'),
       db.from('integrations').select('org_id, provider, status, last_sync_at, last_error'),
       db.from('anomaly_alerts').select('org_id, severity, is_read, created_at').eq('is_dismissed', false).order('created_at', { ascending: false }).limit(20),
       db.from('invoices').select('org_id, status, amount, created_at').order('created_at', { ascending: false }).limit(20),
+      db.from('businesses').select('id, org_id, name, is_active').eq('is_active', true),
     ])
+
+    // Attach businesses to each org so tools that need the full tree (like
+    // /admin/memo-preview) don't need a second round-trip per org.
+    const bizByOrg: Record<string, any[]> = {}
+    for (const b of businesses.data ?? []) {
+      if (!bizByOrg[b.org_id]) bizByOrg[b.org_id] = []
+      bizByOrg[b.org_id].push(b)
+    }
+    const orgsWithBiz = (orgs.data ?? []).map((o: any) => ({ ...o, businesses: bizByOrg[o.id] ?? [] }))
 
     return NextResponse.json({
       stats: {
@@ -39,7 +49,7 @@ export async function GET(req: NextRequest) {
         unread_alerts:      alerts.data?.filter((a: any) => !a.is_read).length ?? 0,
         critical_alerts:    alerts.data?.filter((a: any) => a.severity === 'critical').length ?? 0,
       },
-      orgs:        orgs.data ?? [],
+      orgs:        orgsWithBiz,
       recent_alerts: alerts.data ?? [],
       recent_invoices: invoices.data ?? [],
       integrations: integrations.data ?? [],
