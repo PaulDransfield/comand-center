@@ -40,12 +40,13 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // ── 2. Parse body ──────────────────────────────────────────────
-  let question: string, context: string, page: string, tier: 'light' | 'full'
+  let question: string, context: string, page: string, tier: 'light' | 'full', businessId: string | null
   try {
     const body = await req.json()
     question   = (body.question ?? '').trim()
     context    = (body.context  ?? '').trim()
     page       = (body.page     ?? 'dashboard').trim()
+    businessId = body.business_id ? String(body.business_id) : null
     // Tier selects model + token budget. 'light' = Haiku + shorter output,
     // used by /notebook and other low-stakes surfaces to keep cost per query
     // to ~$0.002 instead of Sonnet's ~$0.012. 'full' is the default for
@@ -58,12 +59,56 @@ export async function POST(req: NextRequest) {
   if (!question) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
   if (question.length > 1000) return NextResponse.json({ error: 'Question too long' }, { status: 400 })
 
+  // Cost-aware enrichment runs AFTER the truncation step below so the
+  // line items fit inside their own reserved budget.
+  const COST_KEYWORDS = /\b(cost|overhead|overheads|subscription|subscribe|bank|fees|fee|rent|software|saas|bokio|fortnox|insurance|utilit|electric|marketing|accounting|audit|margin|other[_\s]cost|line[_\s]item)s?\b/i
+
   // Hard cap on context size. Caps input tokens roughly at ~2 500 tokens (4 chars ≈ 1 token),
   // keeping a single call below ~$0.04 on Sonnet and ~$0.007 on Haiku.
+  // Reserve the last 1500 chars for the cost enrichment (when relevant)
+  // so Fortnox line items don't get cropped when the base context is big.
   const MAX_CONTEXT_CHARS = 6000
-  if (context.length > MAX_CONTEXT_CHARS) {
-    console.warn(`[ask] context truncated — was ${context.length} chars, capped at ${MAX_CONTEXT_CHARS}`)
-    context = context.slice(0, MAX_CONTEXT_CHARS) + '\n\n[context truncated for cost]'
+  const COST_BUDGET       = 1500
+  const originalBudget    = MAX_CONTEXT_CHARS - COST_BUDGET
+  if (context.length > originalBudget) {
+    console.warn(`[ask] context truncated — was ${context.length} chars, capped at ${originalBudget}`)
+    context = context.slice(0, originalBudget) + '\n\n[context truncated for cost]'
+  }
+
+  // Now append cost detail if the question asks for it.
+  if (businessId && COST_KEYWORDS.test(question)) {
+    try {
+      const supabase = createAdminClient()
+      const yearFrom = new Date().getFullYear() - 1
+      const { data: lines } = await supabase
+        .from('tracker_line_items')
+        .select('period_year, period_month, category, subcategory, label_sv, amount')
+        .eq('org_id', auth.orgId)
+        .eq('business_id', businessId)
+        .eq('category', 'other_cost')
+        .gte('period_year', yearFrom)
+        .order('period_year', { ascending: false })
+        .order('period_month', { ascending: false })
+        .order('amount', { ascending: false })
+        .limit(60)
+
+      if (lines && lines.length) {
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+        const formatted = lines
+          .map((l: any) => {
+            const period = l.period_month && l.period_month > 0
+              ? `${MONTHS[l.period_month - 1]} ${l.period_year}`
+              : `${l.period_year} (annual)`
+            const sub = l.subcategory ? ` [${l.subcategory}]` : ''
+            return `  - ${period}: ${l.label_sv}${sub} — ${Math.round(l.amount).toLocaleString('en-GB').replace(/,/g, ' ')} kr`
+          })
+          .join('\n')
+        const block = `\n\nOverhead line items (other_cost, from Fortnox PDFs):\n${formatted}`
+        context += block.length > COST_BUDGET ? block.slice(0, COST_BUDGET) + '\n[line items truncated]' : block
+      }
+    } catch (e: any) {
+      console.warn('[ask] overhead enrichment failed:', e?.message)
+    }
   }
 
   // ── 3. Check daily query limit (shared helper in lib/ai/usage.ts) ────────

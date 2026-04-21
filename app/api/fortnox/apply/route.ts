@@ -157,6 +157,15 @@ export async function POST(req: NextRequest) {
     applied_by: auth.userId,
   }).eq('id', upload.id)
 
+  // Fire cost-intel agent in the background — don't block the apply
+  // response.  Agent writes into cost_insights which the /overheads
+  // AttentionPanel picks up on next load.
+  try {
+    const { runCostIntel } = await import('@/lib/agents/cost-intelligence')
+    runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
+      .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
+  } catch { /* non-fatal */ }
+
   return NextResponse.json({
     ok: true,
     applied: {

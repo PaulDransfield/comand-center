@@ -103,13 +103,17 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
 
+      // Pass the currently-selected business so the server can enrich
+      // the context with Fortnox line items when the question is about
+      // costs / overheads / subscriptions / etc.
+      const bizId = typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null
       const res  = await fetch('/api/ask', {
         method:  'POST',
         headers: {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${session?.access_token ?? ''}`,
         },
-        body:    JSON.stringify({ question, context, page, tier }),
+        body:    JSON.stringify({ question, context, page, tier, business_id: bizId }),
       })
       const data = await res.json()
 
