@@ -65,18 +65,27 @@ export default function OverheadsPage() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  // initialLoadDone prevents the table from flickering through the
+  // "Loading uploads…" placeholder on every 3-second poll while an
+  // extraction is in flight. Only the first load shows the spinner;
+  // subsequent polls mutate state silently.
+  const initialLoadDone = useRef(false)
   const load = useCallback(async () => {
     if (!bizId) return
-    setLoading(true)
+    if (!initialLoadDone.current) setLoading(true)
     try {
       const r = await fetch(`/api/fortnox/uploads?business_id=${bizId}`, { cache: 'no-store' })
       const j = await r.json()
       if (Array.isArray(j.uploads)) setUploads(j.uploads)
     } catch {}
+    initialLoadDone.current = true
     setLoading(false)
   }, [bizId])
 
-  useEffect(() => { if (bizId) load() }, [bizId, load])
+  // Reset initialLoadDone when the business switches so the spinner
+  // shows once for the new business rather than a flash of the old
+  // business's table.
+  useEffect(() => { initialLoadDone.current = false; if (bizId) load() }, [bizId, load])
 
   // Poll while anything is extracting so the status chip updates live.
   useEffect(() => {
