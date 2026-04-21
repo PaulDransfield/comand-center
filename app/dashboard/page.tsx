@@ -15,7 +15,7 @@ import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
 // Format a Date as YYYY-MM-DD using local timezone (NOT UTC — avoids off-by-one in CET/CEST)
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'

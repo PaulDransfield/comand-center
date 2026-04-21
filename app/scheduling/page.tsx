@@ -9,10 +9,7 @@ import PageHero from '@/components/ui/PageHero'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
-
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
-const fmtH   = (n: number) => (Math.round(n * 10) / 10) + 'h'
-const fmtPct = (n: number) => (Math.round(n * 10) / 10) + '%'
+import { fmtKr, fmtPct, fmtHrs as fmtH } from '@/lib/format'
 
 // Local-date helpers matching departments/dashboard pages
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -77,11 +74,9 @@ export default function SchedulingPage() {
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiError,      setAiError]      = useState('')
 
-  // Progressive disclosure — AI observations start collapsed so the page
-  // leads with the prescriptive AI schedule only. (The historical
-  // scorecard used to be collapsible too but was removed in favour of the
-  // always-visible By day of week grid.)
-  const [showObservations, setShowObservations] = useState(false)
+  // (Observations + historical scorecard expanders were removed per
+  // SCHEDULING-FIX §§ 3, 5 — hero + always-visible by-day grid cover
+  // what those used to.)
 
   useEffect(() => {
     const sync = () => {
@@ -230,26 +225,10 @@ export default function SchedulingPage() {
           <>
 
             {/* ═══════════════════════════════════════════════════════
-                AI-SUGGESTED SCHEDULE (next week) — promoted to the top.
-                This is the most valuable, most decisive output of the
-                page. Owner reads: save X kr / trim Y hours, done.
-            ═══════════════════════════════════════════════════════ */}
-            <AiSuggestedSchedule
-              loading={aiLoading}
-              error={aiError}
-              data={aiSched}
-              fmt={fmtKr}
-              fmtHrs={fmtH}
-            />
-
-            {/* ═══════════════════════════════════════════════════════
-                7-DAY GRID — primary visual between hero and the AI
-                schedule table (FIX-PROMPT § Phase 8 Q5). Lifted out of
-                the old "How this period performed" collapsible + scorecard
-                because:
-                  - hero already carries labour % / saving
-                  - 4-up scorecard duplicated hero numbers
-                  - "How this period performed" footer was redundant
+                BY DAY OF WEEK — 2-second overview (primary visual).
+                Answers "what's the overall pattern this week?".
+                Rendered ABOVE the detailed AI schedule per DESIGN.md § 8
+                and SCHEDULING-FIX § 3.
             ═══════════════════════════════════════════════════════ */}
             <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '18px 22px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap' as const, gap: 10 }}>
@@ -348,76 +327,28 @@ export default function SchedulingPage() {
                 </span>
               </div>
             </div>
-            {/* By-day grid is always visible now; collapsible wrapper removed. */}
 
             {/* ═══════════════════════════════════════════════════════
-                OBSERVATIONS — AI-generated specifics. Collapsed by
-                default (secondary to the AI schedule above). Falls back
-                to the upgrade card when no recommendations exist yet.
+                AI-SUGGESTED SCHEDULE — detailed drill-in, rendered
+                AFTER the by-day overview per DESIGN.md § 8 /
+                SCHEDULING-FIX § 3.
             ═══════════════════════════════════════════════════════ */}
-            <button
-              onClick={() => setShowObservations(s => !s)}
-              style={{
-                width: '100%', padding: '10px 16px', marginBottom: showObservations ? 12 : 16,
-                background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12,
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#111', textAlign: 'left' as const,
-              }}
-            >
-              <span>
-                {recommendation ? 'AI observations from the last 90 days' : 'Weekly AI observations'}
-                <span style={{ fontWeight: 400, color: '#9ca3af', marginLeft: 8, fontSize: 12 }}>
-                  {recommendation
-                    ? `· generated ${new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                    : '· available on Group plan'}
-                </span>
-              </span>
-              <span style={{ color: '#6b7280', fontSize: 14 }}>{showObservations ? '▾' : '▸'}</span>
-            </button>
+            <AiSuggestedSchedule
+              loading={aiLoading}
+              error={aiError}
+              data={aiSched}
+              fmt={fmtKr}
+              fmtHrs={fmtH}
+            />
 
-            {showObservations && (
-              recommendation ? (
-              <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>Observations</span>
-                      <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600, letterSpacing: '.03em' }}>AI</span>
-                    </div>
-                    <div style={{ fontSize: 11, color: '#9ca3af' }}>
-                      Generated {new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                      {recommendation.analysis_period && ` · based on ${recommendation.analysis_period}`}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap' as const, background: '#fafbff', borderRadius: 10, padding: '14px 16px', borderLeft: '3px solid #6366f1' }}>
-                  {recommendation.recommendations}
-                </div>
-                {recommendation.metadata && (
-                  <div style={{ marginTop: 12, display: 'flex', gap: 20, fontSize: 11, color: '#9ca3af', flexWrap: 'wrap' as const }}>
-                    {recommendation.metadata.staff_shifts && <span>Shifts analysed: <strong style={{ color: '#374151' }}>{recommendation.metadata.staff_shifts}</strong></span>}
-                    {recommendation.metadata.total_hours && <span>Hours: <strong style={{ color: '#374151' }}>{Math.round(recommendation.metadata.total_hours)}h</strong></span>}
-                    {recommendation.metadata.labor_cost && <span>Labour cost: <strong style={{ color: '#374151' }}>{fmtKr(recommendation.metadata.labor_cost)}</strong></span>}
-                    {recommendation.metadata.late_shifts && <span>Late shifts: <strong style={{ color: '#374151' }}>{recommendation.metadata.late_shifts}</strong></span>}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ background: 'linear-gradient(135deg, #312e81, #1e1b4b)', border: '0.5px solid rgba(99,102,241,0.3)', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-                  <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: 'white' }}>✦</div>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'white', marginBottom: 4 }}>Weekly AI observations</div>
-                    <div style={{ fontSize: 12, color: 'rgba(199,210,254,0.7)', lineHeight: 1.6, marginBottom: 14 }}>
-                      Available on the Group plan. Every Monday at 07:00, Claude Sonnet reviews your last 90 days of shifts and revenue and writes specific observations — which days are trending lean, where lateness is costing you, which shifts to trim or add.
-                    </div>
-                    <a href="/upgrade" style={{ display: 'inline-block', padding: '8px 16px', background: '#6366f1', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
-                      Upgrade to Group →
-                    </a>
-                  </div>
-                </div>
-              </div>
-            ))}
+            {/* ═══════════════════════════════════════════════════════
+                Observations — removed from the page.
+                SCHEDULING-FIX § 5 called the collapsed "Weekly AI
+                observations" row "dead UI" (click didn't do anything
+                visible). The hero already carries the actionable insight.
+                The per-period AI recommendation feature can return as a
+                help-icon popover once the feature ships as promised.
+            ═══════════════════════════════════════════════════════ */}
           </>
         )}
       </div>
@@ -609,7 +540,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
           <Stat label="Suggested"  value={`${summary.suggested_hours}h`} tone={summary.suggested_hours < summary.current_hours ? 'good' : 'neutral'} />
           <Stat
             label="Saving"
-            value={summary.saving_kr > 0 ? `−${fmt(summary.saving_kr)} kr` : '—'}
+            value={summary.saving_kr > 0 ? `−${fmt(summary.saving_kr)}` : '—'}
             tone={summary.saving_kr > 0 ? 'good' : 'neutral'}
           />
         </div>
@@ -659,14 +590,16 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
                   <strong>{c.weekday}</strong> · {c.date.slice(5)}
                   {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>note</span>}
                 </td>
-                {/* Weather */}
+                {/* Weather — temp always "{min}–{max}°C" with en-dash;
+                    precip only shown above 0.3 mm, formatted "{n} mm" with
+                    a space and " · " separator (SCHEDULING-FIX § 6). */}
                 <td style={{ padding: '8px 8px', color: '#4b5563', minWidth: 130 }}>
                   {w ? (
                     <>
                       <div style={{ fontWeight: 600, color: '#1a1f2e' }}>{w.summary}</div>
                       <div style={{ fontSize: 11, color: '#6b7280' }}>
-                        {w.temp_min != null ? `${Math.round(w.temp_min)}–${Math.round(w.temp_max)}°C` : ''}
-                        {Number(w.precip_mm) > 0.5 ? ` · ${w.precip_mm}mm` : ''}
+                        {w.temp_min != null ? `${Math.round(w.temp_min)}\u2013${Math.round(w.temp_max)}°C` : ''}
+                        {Number(w.precip_mm) > 0.3 ? ` · ${Number(w.precip_mm).toFixed(1)} mm` : ''}
                       </div>
                       {s.bucket_days_seen >= 3 && (
                         <div style={{ fontSize: 10, color: '#15803d', marginTop: 1 }}>✓ {s.bucket_days_seen} matching days</div>
@@ -677,27 +610,34 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
                 {/* Your plan — hours + planned cost */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151', whiteSpace: 'nowrap' as const }}>
                   <div style={{ fontWeight: 600, color: '#111' }}>{fmtHrs(c.hours)}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? `${fmt(c.est_cost)} kr` : '—'}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? fmt(c.est_cost) : '—'}</div>
                 </td>
-                {/* AI suggestion — hours + cost + saving */}
+                {/* AI suggestion — hours + cost + saving.  When the AI's
+                    hours match the plan we render italic "no change" with
+                    no numbers (SCHEDULING-FIX § 8); when they differ we
+                    show the new hours/cost/delta. */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
-                  {isNote ? (
-                    <span style={{ color: '#6b7280' }}>no change</span>
-                  ) : (
-                    <>
-                      <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? `${fmt(s.est_cost)} kr` : '—'}</div>
-                      {s.delta_cost < 0 && (
-                        <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>save {fmt(Math.abs(s.delta_cost))} kr</div>
-                      )}
-                    </>
-                  )}
+                  {(() => {
+                    const noChange = isNote || Math.abs((c.hours ?? 0) - (s.hours ?? 0)) < 0.05
+                    if (noChange) {
+                      return <span style={{ color: '#6b7280', fontStyle: 'italic' as const }}>no change</span>
+                    }
+                    return (
+                      <>
+                        <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? fmt(s.est_cost) : '—'}</div>
+                        {s.delta_cost < 0 && (
+                          <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>save {fmt(Math.abs(s.delta_cost))}</div>
+                        )}
+                      </>
+                    )
+                  })()}
                 </td>
                 {/* Predicted sales — est_revenue from the historical pattern */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', whiteSpace: 'nowrap' as const }}>
                   {predictedRev > 0 ? (
                     <>
-                      <div style={{ fontWeight: 600 }}>{fmt(predictedRev)} kr</div>
+                      <div style={{ fontWeight: 600 }}>{fmt(predictedRev)}</div>
                       <div style={{ fontSize: 10, color: '#9ca3af' }}>pattern avg</div>
                     </>
                   ) : <span style={{ color: '#d1d5db' }}>—</span>}
@@ -759,7 +699,7 @@ function AiScheduleCTA({ data, loading, fmt }: any) {
 
   const primary =
     loading       ? 'Loading…' :
-    saving > 0    ? `Save ~${fmt(saving)} kr next week` :
+    saving > 0    ? `Save ~${fmt(saving)} next week` :
     hoursCut > 0  ? `Trim ${hoursCut.toFixed(1)}h next week` :
                     'View next week\'s AI schedule'
 

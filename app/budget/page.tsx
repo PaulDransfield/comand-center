@@ -19,7 +19,7 @@ interface BudgetRow {
   actual: { revenue: number; food_cost: number; staff_cost: number; net_profit: number; food_pct: number; staff_pct: number } | null
 }
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
 const fmtPct = (n: number) => n.toFixed(1) + '%'
 
 function QuickStat({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' }) {
