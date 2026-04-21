@@ -72,8 +72,14 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  const today  = new Date().toISOString().slice(0, 10)
-  const cutoff = Date.now() - THROTTLE_MS
+  const today     = new Date().toISOString().slice(0, 10)
+  // Window = today + yesterday. "Today only" was lossy: if the morning cron
+  // hit PK before yesterday's evening sales finalised, we'd never backfill
+  // until the NEXT morning's master-sync. A 2-day window keeps page-load
+  // triggers self-healing — worst case is yesterday's late data is picked
+  // up within minutes of the owner opening the app.
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const cutoff    = Date.now() - THROTTLE_MS
 
   const results: any[] = []
   for (const integ of integrations) {
@@ -85,7 +91,7 @@ export async function POST(req: NextRequest) {
     const start = Date.now()
     try {
       const out = await withTimeout(
-        runSync(auth.orgId, integ.provider, today, today, integ.id),
+        runSync(auth.orgId, integ.provider, yesterday, today, integ.id),
         PER_INTEGRATION_TIMEOUT_MS,
         `${integ.provider}/${integ.id}`,
       )

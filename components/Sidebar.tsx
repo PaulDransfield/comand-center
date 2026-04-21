@@ -192,9 +192,11 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Sync status — hot-sync runs every 15 min so "just now" is the common case. */}
+      {/* Sync status — hot-sync runs every 15 min so "just now" is the common case.
+          Includes a "Sync now" button that calls /api/resync (last 7 days)
+          so the owner can self-heal when data looks stale. */}
       {syncStatus?.last_sync_at && (
-        <div style={{ padding: '6px 14px', borderBottom: '0.5px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ padding: '6px 14px', borderBottom: '0.5px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{
               width: 5, height: 5, borderRadius: '50%',
@@ -213,6 +215,7 @@ export default function Sidebar() {
               return `Synced ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
             })()}
           </div>
+          <ResyncButton businessId={selected?.id ?? null} onDone={() => selected && fetchSyncStatus(selected.id)} />
         </div>
       )}
 
@@ -311,5 +314,61 @@ export default function Sidebar() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Small manual "Sync now" control — calls /api/resync which re-pulls the
+// last 7 days for this business. Throttled to once per 3 minutes server-side.
+// Lives in the sidebar so the owner can always self-heal when data looks stale.
+function ResyncButton({ businessId, onDone }: { businessId: string | null; onDone?: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<string>('')
+
+  async function run() {
+    if (!businessId || busy) return
+    setBusy(true); setToast('')
+    try {
+      const r = await fetch('/api/resync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId }),
+      })
+      const j = await r.json()
+      if (!r.ok) {
+        setToast(j.error ?? `Failed (${r.status})`)
+      } else if (j.errors > 0) {
+        setToast(`Synced with ${j.errors} error${j.errors === 1 ? '' : 's'}`)
+      } else {
+        setToast(`Synced ${j.synced} integration${j.synced === 1 ? '' : 's'}`)
+      }
+      onDone?.()
+    } catch (e: any) {
+      setToast('Sync failed — ' + (e?.message ?? 'network'))
+    }
+    setBusy(false)
+    setTimeout(() => setToast(''), 4000)
+  }
+
+  return (
+    <>
+      <button
+        onClick={run}
+        disabled={busy || !businessId}
+        title="Re-sync the last 7 days for this business"
+        style={{
+          fontSize: 10, fontWeight: 600, color: busy ? 'rgba(255,255,255,0.35)' : '#a5b4fc',
+          background: 'transparent', border: '1px solid rgba(165,180,252,0.3)',
+          borderRadius: 5, padding: '2px 8px', cursor: busy || !businessId ? 'not-allowed' : 'pointer',
+          letterSpacing: '.02em', whiteSpace: 'nowrap' as const,
+        }}
+      >
+        {busy ? 'syncing…' : 'Sync now'}
+      </button>
+      {toast && (
+        <div style={{ position: 'fixed' as const, bottom: 24, left: 24, background: '#1a1f2e', color: 'white', padding: '10px 14px', borderRadius: 8, fontSize: 12, boxShadow: '0 6px 18px rgba(0,0,0,.3)', zIndex: 1000 }}>
+          {toast}
+        </div>
+      )}
+    </>
   )
 }
