@@ -1,67 +1,52 @@
 'use client'
 // @ts-nocheck
+// app/forecast/page.tsx — Phase 5 of the UX redesign, per DESIGN.md § 5.
+//
+// Structure:
+//   PageHero    eyebrow + projected-revenue / weak-spot headline + YTD profit
+//               block in the right slot.
+//   Primary     one full-year line chart: navy solid line for actual months
+//               (Jan–current), indigo dashed for forecast months (current+1–
+//               Dec), light-grey band over the forecast region, vertical
+//               "today" line at the boundary, dots coloured by tone.
+//   Supporting  Forecast flags card — months that missed or are at risk.
+//
+// Data source is unchanged (/api/forecast + /api/departments). Dept drill-down
+// is available on /departments/[id]?year=&month=, which is already wired.
+
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import AppShell from '@/components/AppShell'
-import { deptColor, deptBg, DEPT_COLORS, KPI_CARD, CC_DARK, CC_PURPLE } from '@/lib/constants/colors'
+import AskAI from '@/components/AskAI'
+import PageHero from '@/components/ui/PageHero'
+import StatusPill from '@/components/ui/StatusPill'
+import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
+import Sparkline from '@/components/ui/Sparkline'
+import { UX } from '@/lib/constants/tokens'
 
-const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
-const fmtPct = (n: number) => Number(n).toFixed(1) + '%'
-
-// Colour scheme
-const C = {
-  actual:   { bg: '#1a1f2e', text: 'white',   label: 'Actual' },
-  forecast: { bg: '#6366f1', text: 'white',   label: 'Forecast' },
-  good:     '#15803d',
-  bad:      '#dc2626',
-  neutral:  '#6b7280',
-}
-
-function Badge({ type }: { type: 'actual' | 'forecast' }) {
-  return (
-    <span style={{ fontSize: 9, padding: '2px 6px', borderRadius: 3, background: C[type].bg, color: C[type].text, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>
-      {C[type].label}
-    </span>
-  )
-}
-
-function VarBadge({ actual, forecast, lowerIsBetter = false }: { actual: number; forecast: number; lowerIsBetter?: boolean }) {
-  if (!actual || !forecast || forecast === 0) return null
-  const diff = actual - forecast
-  const pct  = Math.round((diff / forecast) * 100)
-  const good = lowerIsBetter ? diff <= 0 : diff >= 0
-  return (
-    <span style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, marginLeft: 4,
-      background: good ? '#f0fdf4' : '#fef2f2',
-      color: good ? C.good : C.bad }}>
-      {diff >= 0 ? '+' : ''}{pct}%
-    </span>
-  )
-}
+const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
+const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
 
 export default function ForecastPage() {
-  const now  = new Date()
-  const currentYear  = now.getFullYear()
-  const currentMonth = now.getMonth() + 1
+  const now           = new Date()
+  const currentYear   = now.getFullYear()
+  const currentMonth  = now.getMonth() + 1
+  const daysInMonth   = new Date(currentYear, currentMonth, 0).getDate()
+  const todayProgress = now.getDate() / daysInMonth
 
-  const [businesses,   setBusinesses]   = useState<any[]>([])
-  const [selected,     setSelected]     = useState('')
-  const [data,         setData]         = useState<any>(null)
-  const [deptData,     setDeptData]     = useState<any>(null)
-  const [loading,      setLoading]      = useState(true)
-  const [error,        setError]        = useState('')
-  const [expandedMonth, setExpandedMonth] = useState<any>(null)
-  const [syncing,      setSyncing]      = useState(false)
+  const [businesses, setBusinesses] = useState<any[]>([])
+  const [selected,   setSelected]   = useState('')
+  const [data,       setData]       = useState<any>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [error,      setError]      = useState('')
+  const [syncing,    setSyncing]    = useState(false)
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
-      if (!Array.isArray(data) || !data.length) {
-        setLoading(false)
-        return
-      }
+      if (!Array.isArray(data) || !data.length) { setLoading(false); return }
       setBusinesses(data)
       const sync = () => {
         const saved = localStorage.getItem('cc_selected_biz')
@@ -75,75 +60,15 @@ export default function ForecastPage() {
 
   const load = useCallback(async () => {
     if (!selected) return
-    setLoading(true)
-    setError('')
+    setLoading(true); setError('')
     try {
-      const [forecastRes, deptRes] = await Promise.all([
-        fetch(`/api/forecast?business_id=${selected}`),
-        fetch(`/api/departments?year=${currentYear}`),
-      ])
-      if (forecastRes.ok) setData(await forecastRes.json())
-      if (deptRes.ok)     setDeptData(await deptRes.json())
+      const res = await fetch(`/api/forecast?business_id=${selected}`)
+      if (res.ok) setData(await res.json())
     } catch (e: any) { setError(e.message) }
     setLoading(false)
   }, [selected])
 
-  useEffect(() => { if (selected) load() }, [selected])
-
-  // Empty state — no business selected (the earlier version tried to return this
-  // JSX from inside the useCallback load() function, which silently did nothing).
-  if (!loading && !selected && businesses.length === 0) {
-    return (
-      <AppShell>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
-          <div style={{ textAlign: 'center' as const, maxWidth: 360 }}>
-            <div style={{ fontSize: 32, marginBottom: 16 }}>📈</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1f2e', marginBottom: 8 }}>No restaurant yet</div>
-            <div style={{ fontSize: 13, color: '#6b7280' }}>Add a restaurant in <a href="/settings" style={{ color: '#6366f1', textDecoration: 'none' }}>Settings</a> to start generating forecasts.</div>
-          </div>
-        </div>
-      </AppShell>
-    )
-  }
-
-  const forecasts: any[]    = data?.forecasts    ?? []
-  const actuals: any[]      = data?.actuals      ?? []
-  const pkForecasts: any[]  = data?.pk_forecasts ?? []
-
-  // Build 15-month view (Jan-Dec current year + Jan-Mar next year)
-  const months = Array.from({ length: 15 }, (_, i) => {
-    const yr = i < 12 ? currentYear : currentYear + 1
-    const m  = i < 12 ? i + 1 : i - 11
-    const f  = forecasts.find(r => r.period_year === yr && r.period_month === m)
-    const a  = actuals.find(r => r.period_year === yr && r.period_month === m)
-    const pkRev = pkForecasts.filter(r => {
-      const d = new Date(r.date)
-      return d.getFullYear() === yr && d.getMonth() + 1 === m
-    }).reduce((s, r) => s + r.amount, 0)
-    const isPast    = yr < currentYear || (yr === currentYear && m < currentMonth)
-    const isCurrent = yr === currentYear && m === currentMonth
-    const isFuture  = yr > currentYear || (yr === currentYear && m > currentMonth)
-    return { yr, m, f, a, pkRev: Math.round(pkRev), isPast, isCurrent, isFuture }
-  })
-
-  // Next month forecast for highlight card
-  const nextMonthForecast = months.find(r => r.isFuture && r.f)
-
-  // YTD totals
-  const ytdActualRev    = actuals.filter(r => r.period_year === currentYear).reduce((s,r) => s + Number(r.revenue    ?? 0), 0)
-  const ytdForecastRev  = forecasts.filter(r => r.period_year === currentYear && r.period_month <= currentMonth).reduce((s,r) => s + Number(r.revenue_forecast ?? 0), 0)
-  const ytdActualStaff  = actuals.filter(r => r.period_year === currentYear).reduce((s,r) => s + Number(r.staff_cost ?? 0), 0)
-  const ytdActualProfit = actuals.filter(r => r.period_year === currentYear).reduce((s,r) => s + Number(r.net_profit ?? 0), 0)
-
-  // Dept monthly data for drill-down
-  const deptMonthly = deptData?.monthly ?? []
-  // /api/departments now returns departments as objects {name, color, ...}; older
-  // shape was string[]. Normalise to string[] so the drill-down row lookups
-  // (deptRow[deptName]) work regardless of which version responded.
-  const depts: string[] = (deptData?.departments ?? []).map((d: any) =>
-    typeof d === 'string' ? d : d?.name
-  ).filter(Boolean)
-  // deptColor() imported from @/lib/constants/colors
+  useEffect(() => { if (selected) load() }, [selected, load])
 
   async function triggerSync() {
     setSyncing(true)
@@ -152,305 +77,337 @@ export default function ForecastPage() {
     setSyncing(false)
   }
 
+  // ── Shape the 12 months of this year ──────────────────────────────────────
+  const monthly = useMemo(() => {
+    const forecasts = data?.forecasts ?? []
+    const actuals   = data?.actuals   ?? []
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1
+      const f = forecasts.find((r: any) => r.period_year === currentYear && r.period_month === m)
+      const a = actuals.find((r: any) => r.period_year === currentYear && r.period_month === m)
+      const isPast    = m < currentMonth
+      const isCurrent = m === currentMonth
+      const isFuture  = m > currentMonth
+      const actualRev   = a ? Number(a.revenue ?? 0) : 0
+      const forecastRev = f ? Number(f.revenue_forecast ?? 0) : 0
+      // Primary Y-value for the line:
+      //   past / current month → actual (if any) falling back to forecast
+      //   future month → forecast
+      const value = isFuture ? forecastRev
+                   : (actualRev > 0 ? actualRev : forecastRev)
+      // Tone for the marker dot
+      let tone: 'good' | 'bad' | 'warning' | 'neutral' = 'neutral'
+      if (isPast && actualRev > 0 && forecastRev > 0) {
+        const pct = (actualRev - forecastRev) / forecastRev
+        tone = pct >= 0 ? 'good' : pct <= -0.10 ? 'bad' : 'warning'
+      } else if (isFuture && forecastRev > 0) {
+        tone = 'neutral'
+      }
+      return {
+        m, f, a,
+        isPast, isCurrent, isFuture,
+        actualRev, forecastRev,
+        value, tone,
+        margin:       a?.margin_pct != null ? Number(a.margin_pct) : null,
+        marginForecast: f?.margin_forecast != null ? Number(f.margin_forecast) : null,
+      }
+    })
+  }, [data, currentYear, currentMonth])
+
+  // YTD actual profit
+  const ytdActualProfit = (data?.actuals ?? [])
+    .filter((r: any) => r.period_year === currentYear)
+    .reduce((s: number, r: any) => s + Number(r.net_profit ?? 0), 0)
+
+  // Projected full-year revenue = actual past + forecast future
+  const projectedFullYear = monthly.reduce((s, r) => {
+    if (r.isPast || r.isCurrent) return s + Math.max(r.actualRev, r.forecastRev)
+    return s + r.forecastRev
+  }, 0)
+
+  // Weak spot = future month with lowest margin forecast (or biggest past miss if none).
+  const weakFuture = monthly
+    .filter(r => r.isFuture && r.marginForecast != null)
+    .sort((a, b) => (a.marginForecast ?? 1e9) - (b.marginForecast ?? 1e9))[0] ?? null
+  const biggestMiss = monthly
+    .filter(r => r.isPast && r.actualRev > 0 && r.forecastRev > 0 && r.tone === 'bad')
+    .sort((a, b) => ((a.actualRev - a.forecastRev) - (b.actualRev - b.forecastRev)))[0] ?? null
+
+  // ── Hero headline ─────────────────────────────────────────────────────────
+  const headline = (() => {
+    if (loading) return <>Loading forecast…</>
+    if (!data) return <>Forecast not available yet.</>
+    if (weakFuture && weakFuture.marginForecast != null && weakFuture.marginForecast < 12) {
+      return (
+        <>
+          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear)}</span> revenue
+          {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[weakFuture.m - 1]} weak at {fmtPct(weakFuture.marginForecast)} margin</span>.
+        </>
+      )
+    }
+    if (biggestMiss) {
+      const pct = ((biggestMiss.actualRev - biggestMiss.forecastRev) / biggestMiss.forecastRev) * 100
+      return (
+        <>
+          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear)}</span>
+          {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[biggestMiss.m - 1]} missed by {fmtPct(Math.abs(pct))}</span>.
+        </>
+      )
+    }
+    return (
+      <>
+        Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear)}</span> revenue this year.
+      </>
+    )
+  })()
+
+  // ── Flags list (supporting row) ───────────────────────────────────────────
+  const flags: AttentionItem[] = monthly.flatMap(r => {
+    if (r.isPast && r.tone === 'bad' && r.actualRev > 0 && r.forecastRev > 0) {
+      const pct = ((r.actualRev - r.forecastRev) / r.forecastRev) * 100
+      return [{
+        tone: 'bad',
+        entity: MONTHS_SHORT[r.m - 1],
+        message: `missed forecast by ${fmtPct(Math.abs(pct))} — ${fmtKr(r.actualRev)} vs ${fmtKr(r.forecastRev)}.`,
+      } as AttentionItem]
+    }
+    if (r.isFuture && r.marginForecast != null && r.marginForecast < 12) {
+      return [{
+        tone: 'warning',
+        entity: MONTHS_SHORT[r.m - 1],
+        message: `at-risk forecast — projected ${fmtPct(r.marginForecast)} margin on ${fmtKr(r.forecastRev)} revenue.`,
+      } as AttentionItem]
+    }
+    return []
+  })
+
   return (
     <AppShell>
-      <div style={{ padding: '28px', maxWidth: 1100, width: '100%' }}>
+      <div style={{ maxWidth: 1100 }}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Forecast</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-              Full year view · click any month to see department breakdown
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', background: '#f9fafb', borderRadius: 8, fontSize: 12 }}>
-              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: C.actual.bg }} /> Actual
-              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: C.forecast.bg }} /> Forecast
-            </div>
-            <select value={selected} onChange={e => setSelected(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, background: 'white' }}>
-              {businesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <button onClick={triggerSync} disabled={syncing}
-              style={{ padding: '8px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
-              {syncing ? 'Syncing...' : 'Sync now'}
-            </button>
-          </div>
+        {/* Local selectors + sync */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
+          <button
+            onClick={triggerSync}
+            disabled={syncing || !selected}
+            style={{
+              padding: '6px 12px', background: 'transparent', color: UX.ink2,
+              border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md,
+              fontSize: UX.fsBody, fontWeight: UX.fwMedium,
+              cursor: syncing || !selected ? 'not-allowed' : 'pointer',
+              opacity: syncing || !selected ? 0.6 : 1,
+            }}
+          >
+            {syncing ? 'Syncing…' : 'Refresh forecast'}
+          </button>
+          <select value={selected} onChange={e => setSelected(e.target.value)}
+            style={{ padding: '6px 10px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
+            {businesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
         </div>
 
-        {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#dc2626' }}>{error}</div>}
-
-        {loading ? (
-          <div style={{ padding: 60, textAlign: 'center', color: '#9ca3af' }}>Loading forecasts...</div>
-        ) : months.every((m: any) => !m.f && !m.a) ? (
-          <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '48px 32px', textAlign: 'center' as const }}>
-            <div style={{ fontSize: 32, marginBottom: 16 }}>📈</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1f2e', marginBottom: 8 }}>No forecast data yet</div>
-            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20, maxWidth: 320, margin: '0 auto 20px' }}>
-              Connect your staff system and revenue source to start seeing forecasts and predictions.
+        {/* ─── PageHero ──────────────────────────────────────────────────── */}
+        <PageHero
+          eyebrow={`${currentYear} FORECAST`}
+          headline={headline}
+          context={`${currentMonth - 1} months actual · ${12 - currentMonth + 1} months forecast`}
+          right={
+            <div style={{ minWidth: 160, textAlign: 'right' as const }}>
+              <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: '0.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>
+                YTD net profit
+              </div>
+              <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: ytdActualProfit >= 0 ? UX.ink1 : UX.redInk, fontVariantNumeric: 'tabular-nums' as const, letterSpacing: '-0.02em' }}>
+                {fmtKr(ytdActualProfit)}
+              </div>
+              <div style={{ fontSize: UX.fsMicro, color: UX.ink3, marginTop: 3 }}>
+                {currentMonth - 1} months actual
+              </div>
             </div>
-            <a href="/integrations" style={{ display: 'inline-block', padding: '9px 20px', background: '#1a1f2e', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>
-              Connect integrations →
-            </a>
+          }
+        />
+
+        {error && (
+          <div style={{ background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: UX.r_lg, padding: '10px 14px', fontSize: UX.fsBody, color: UX.redInk, marginBottom: 12 }}>
+            {error}
           </div>
-        ) : (
-          <>
-            {/* Summary cards */}
-            <div className="grid-4" style={{ marginBottom: 20 }}>
-              {[
-                {
-                  label: 'YTD Revenue (actual)',
-                  value: fmtKr(ytdActualRev),
-                  badge: 'actual' as const,
-                  sub: `vs ${fmtKr(ytdForecastRev)} forecast`,
-                  highlight: ytdActualRev >= ytdForecastRev ? 'good' : ytdForecastRev > 0 ? 'bad' : null,
-                },
-                {
-                  label: 'YTD Net profit',
-                  value: fmtKr(ytdActualProfit),
-                  badge: 'actual' as const,
-                  sub: ytdActualRev > 0 ? fmtPct(ytdActualProfit / ytdActualRev * 100) + ' margin' : '—',
-                  highlight: ytdActualProfit > 0 ? 'good' : ytdActualProfit < 0 ? 'bad' : null,
-                },
-                {
-                  label: 'YTD Staff cost',
-                  value: fmtKr(ytdActualStaff),
-                  badge: 'actual' as const,
-                  sub: ytdActualRev > 0 ? fmtPct(ytdActualStaff / ytdActualRev * 100) + ' of revenue' : '—',
-                  highlight: ytdActualRev > 0 && (ytdActualStaff / ytdActualRev) < 0.35 ? 'good' : ytdActualRev > 0 && (ytdActualStaff / ytdActualRev) > 0.35 ? 'bad' : null,
-                },
-                nextMonthForecast?.f ? {
-                  label: `${MONTHS_SHORT[nextMonthForecast.m - 1]} forecast`,
-                  value: fmtKr(nextMonthForecast.f.revenue_forecast),
-                  badge: 'forecast' as const,
-                  sub: `Staff ${fmtKr(nextMonthForecast.f.staff_cost_forecast)} · ${fmtPct(nextMonthForecast.f.margin_forecast)} margin`,
-                  highlight: Number(nextMonthForecast.f.margin_forecast) > 0 ? 'good' : Number(nextMonthForecast.f.margin_forecast) < 0 ? 'bad' : null,
-                } : { label: 'Next month', value: '—', badge: 'forecast' as const, sub: 'Run sync to generate', highlight: null },
-              ].map((card: any) => (
-                <div key={card.label} style={{
-                  background: card.highlight === 'good' ? '#f0fdf4' : card.highlight === 'bad' ? '#fef2f2' : 'white',
-                  border: `0.5px solid ${card.highlight === 'good' ? '#bbf7d0' : card.highlight === 'bad' ? '#fecaca' : '#e5e7eb'}`,
-                  borderRadius: 12, padding: '16px 18px'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af' }}>{card.label}</div>
-                    <Badge type={card.badge} />
-                  </div>
-                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 3,
-                    color: card.highlight === 'good' ? '#15803d' : card.highlight === 'bad' ? '#dc2626' : '#111'
-                  }}>{card.value}</div>
-                  <div style={{ fontSize: 11, color: card.highlight === 'good' ? '#15803d' : card.highlight === 'bad' ? '#dc2626' : '#9ca3af' }}>{card.sub}</div>
-                </div>
-              ))}
+        )}
+
+        {/* ─── Primary: full-year line chart ──────────────────────────── */}
+        <div style={{
+          background:   UX.cardBg,
+          border:       `0.5px solid ${UX.border}`,
+          borderRadius: UX.r_lg,
+          padding:      '18px 20px',
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>Full-year revenue</div>
+            <div style={{ display: 'flex', gap: 14, fontSize: UX.fsMicro, color: UX.ink3 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 14, height: 2, background: UX.navy, borderRadius: 1 }} /> Actual
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 14, height: 0, borderTop: `2px dashed ${UX.indigo}` }} /> Forecast
+              </span>
             </div>
+          </div>
+          <ForecastChart
+            monthly={monthly}
+            currentMonth={currentMonth}
+            todayProgress={todayProgress}
+            loading={loading}
+          />
+        </div>
 
-            {/* Main forecast table */}
-            <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
-              <div style={{ padding: '14px 20px', borderBottom: '0.5px solid #f3f4f6', display: 'flex', justifyContent: 'space-between' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>Month by month — {currentYear}</div>
-                <div style={{ fontSize: 11, color: '#9ca3af' }}>Click a row to see department breakdown</div>
-              </div>
-
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: '#fafafa' }}>
-                    <th style={{ width: 32 }} />
-                    <th style={{ textAlign: 'left', padding: '9px 16px', color: '#9ca3af', fontWeight: 600, fontSize: 11, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Month</th>
-                    <th style={{ textAlign: 'right', padding: '9px 12px', color: C.actual.bg, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' as const }}>Revenue actual</th>
-                    <th style={{ textAlign: 'right', padding: '9px 12px', color: C.forecast.bg, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' as const }}>Revenue forecast</th>
-                    <th style={{ textAlign: 'right', padding: '9px 12px', color: C.actual.bg, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' as const }}>Staff actual</th>
-                    <th style={{ textAlign: 'right', padding: '9px 12px', color: C.forecast.bg, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' as const }}>Staff forecast</th>
-                    <th style={{ textAlign: 'right', padding: '9px 12px', color: C.actual.bg, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' as const }}>Margin actual</th>
-                    <th style={{ textAlign: 'right', padding: '9px 16px', color: C.forecast.bg, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' as const }}>Margin forecast</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {months.map(row => {
-                    const { yr, m, f, a, isCurrent, isFuture, isPast } = row
-                    const isExpanded = expandedMonth === `${yr}-${m}`
-                    const hasData    = a || f
-                    const deptRow    = deptMonthly.find((d: any) => d.year === yr && d.month === m)
-
-                    return (
-                      <>
-                        <tr key={`${yr}-${m}`}
-                          onClick={() => hasData && setExpandedMonth(isExpanded ? null : `${yr}-${m}`)}
-                          style={{
-                            borderTop: '0.5px solid #f3f4f6',
-                            cursor: hasData ? 'pointer' : 'default',
-                            background: isExpanded ? '#fafbff' : isCurrent ? '#fffbf0' : 'white',
-                            opacity: isFuture && !f ? 0.5 : 1,
-                          }}>
-                          {/* Expand arrow */}
-                          <td style={{ padding: '11px 8px 11px 16px', color: '#9ca3af', fontSize: 11, textAlign: 'center' }}>
-                            {hasData ? (isExpanded ? 'v' : '>') : ''}
-                          </td>
-
-                          {/* Month */}
-                          <td style={{ padding: '11px 16px', fontWeight: 600, color: '#111' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {MONTHS_SHORT[m - 1]}
-                              {yr !== currentYear && <span style={{ fontSize: 10, color: '#9ca3af' }}>{yr}</span>}
-                              {isCurrent && <span style={{ fontSize: 9, background: '#fef3c7', color: '#d97706', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }}>NOW</span>}
-                              {isFuture && f && <span style={{ fontSize: 9, background: '#f9fafb', color: '#3b82f6', padding: '1px 5px', borderRadius: 3 }}>forecast</span>}
-                            </div>
-                          </td>
-
-                          {/* Revenue actual */}
-                          <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                            {a && Number(a.revenue) > 0 ? (
-                              <span style={{ fontWeight: 700, color: C.actual.bg, background: '#f9fafb', padding: '3px 8px', borderRadius: 4 }}>
-                                {fmtKr(a.revenue)}
-                                {f && Number(f.revenue_forecast) > 0 && <VarBadge actual={a.revenue} forecast={f.revenue_forecast} />}
-                              </span>
-                            ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                          </td>
-
-                          {/* Revenue forecast */}
-                          <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                            {f && Number(f.revenue_forecast) > 0 ? (
-                              <span style={{ color: C.forecast.bg, fontWeight: 600 }}>
-                                {fmtKr(f.revenue_forecast)}
-                              </span>
-                            ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                          </td>
-
-                          {/* Staff actual */}
-                          <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                            {a && Number(a.staff_cost) > 0 ? (
-                              <span style={{ fontWeight: 700, color: C.actual.bg, background: '#f9fafb', padding: '3px 8px', borderRadius: 4 }}>
-                                {fmtKr(a.staff_cost)}
-                                {f && Number(f.staff_cost_forecast) > 0 && <VarBadge actual={a.staff_cost} forecast={f.staff_cost_forecast} lowerIsBetter />}
-                              </span>
-                            ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                          </td>
-
-                          {/* Staff forecast */}
-                          <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                            {f && Number(f.staff_cost_forecast) > 0 ? (
-                              <span style={{ color: C.forecast.bg, fontWeight: 600 }}>
-                                {fmtKr(f.staff_cost_forecast)}
-                              </span>
-                            ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                          </td>
-
-                          {/* Margin actual */}
-                          <td style={{ padding: '11px 12px', textAlign: 'right' }}>
-                            {a && Number(a.margin_pct) !== 0 ? (
-                              <span style={{
-                                fontWeight: 700, padding: '3px 8px', borderRadius: 4,
-                                background: Number(a.margin_pct) >= (f?.margin_forecast ?? 10) ? '#f0fdf4' : '#fef2f2',
-                                color: Number(a.margin_pct) >= (f?.margin_forecast ?? 10) ? C.good : C.bad,
-                              }}>
-                                {fmtPct(a.margin_pct)}
-                              </span>
-                            ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                          </td>
-
-                          {/* Margin forecast */}
-                          <td style={{ padding: '11px 16px', textAlign: 'right' }}>
-                            {f && Number(f.margin_forecast) !== 0 ? (
-                              <span style={{ color: C.forecast.bg, fontWeight: 600 }}>
-                                {fmtPct(f.margin_forecast)}
-                              </span>
-                            ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                          </td>
-                        </tr>
-
-                        {/* Department drill-down */}
-                        {isExpanded && (
-                          <tr key={`dept-${yr}-${m}`}>
-                            <td colSpan={8} style={{ padding: 0, background: 'white', borderBottom: '1px solid #e5e7eb' }}>
-                              <div style={{ padding: '14px 20px 14px 56px' }}>
-                                <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>
-                                  Department breakdown — {MONTHS[m - 1]} {yr}
-                                </div>
-                                {deptRow && depts.length > 0 ? (
-                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                                    <thead>
-                                      <tr style={{ borderBottom: '0.5px solid #e5e7eb' }}>
-                                        {['Department', 'Staff', 'Hours', 'Cost (actual)', 'Cost/h'].map(h => (
-                                          <th key={h} style={{ textAlign: h === 'Department' ? 'left' : 'right', padding: '5px 10px', color: '#9ca3af', fontWeight: 600, fontSize: 10, textTransform: 'uppercase' as const }}>{h}</th>
-                                        ))}
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {depts.filter((d: string) => deptRow[d]?.cost > 0).map((dept: string) => {
-                                        const d = deptRow[dept] ?? { cost: 0, hours: 0 }
-                                        const total = depts.reduce((s: number, dep: string) => s + (deptRow[dep]?.cost ?? 0), 0)
-                                        const pct   = total > 0 ? (d.cost / total) * 100 : 0
-                                        const staffCount = deptData?.totals?.[dept]?.staff ?? 0
-                                        const deptHref = `/departments/${encodeURIComponent(dept)}?year=${yr}&month=${m}`
-                                        return (
-                                          <tr
-                                            key={dept}
-                                            onClick={(e) => { e.stopPropagation(); window.location.href = deptHref }}
-                                            style={{
-                                              borderBottom: '0.5px solid #f3f4f6',
-                                              cursor: 'pointer',
-                                              transition: 'background .1s',
-                                            }}
-                                            onMouseEnter={e => (e.currentTarget.style.background = '#fafbff')}
-                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                                          >
-                                            <td style={{ padding: '7px 10px' }}>
-                                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                <div style={{ width: 8, height: 8, borderRadius: '50%', background: DEPT_COLORS[dept] ?? '#9ca3af', flexShrink: 0 }} />
-                                                <span style={{ fontWeight: 500, color: '#111' }}>{dept}</span>
-                                                <span style={{ fontSize: 10, color: '#9ca3af' }}>{pct.toFixed(0)}% of total</span>
-                                                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#6366f1', fontWeight: 600 }}>open →</span>
-                                              </div>
-                                            </td>
-                                            <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6b7280' }}>{staffCount}</td>
-                                            <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6b7280' }}>{(Math.round(d.hours * 10) / 10)}h</td>
-                                            <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#111' }}>{fmtKr(d.cost)}</td>
-                                            <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6b7280' }}>{d.hours > 0 ? fmtKr(Math.round(d.cost / d.hours)) : '—'}</td>
-                                          </tr>
-                                        )
-                                      })}
-                                      {/* Total row */}
-                                      <tr style={{ borderTop: '1px solid #e5e7eb', background: '#f3f4f6' }}>
-                                        <td style={{ padding: '7px 10px', fontWeight: 700, color: '#111' }}>Total</td>
-                                        <td />
-                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#111' }}>
-                                          {Math.round(depts.reduce((s: number, d: string) => s + (deptRow[d]?.hours ?? 0), 0) * 10) / 10}h
-                                        </td>
-                                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: '#111' }}>
-                                          {fmtKr(depts.reduce((s: number, d: string) => s + (deptRow[d]?.cost ?? 0), 0))}
-                                        </td>
-                                        <td />
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                ) : (
-                                  <div style={{ fontSize: 12, color: '#9ca3af', padding: '10px 0' }}>
-                                    No department data for this month. Staff logs are synced from Personalkollen daily.
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </>
-                    )
-                  })}
-                </tbody>
-              </table>
-
-              {/* Legend footer */}
-              <div style={{ padding: '12px 20px', borderTop: '0.5px solid #f3f4f6', display: 'flex', gap: 20, fontSize: 11, color: '#9ca3af' }}>
-                <span style={{ background: '#fef3c7', padding: '1px 6px', borderRadius: 3, color: '#d97706' }}>NOW</span> Current month
-                <span style={{ background: '#f9fafb', padding: '1px 6px', borderRadius: 3, color: C.actual.bg, fontWeight: 700 }}>123 kr</span> Actual values
-                <span style={{ color: C.forecast.bg, fontWeight: 600 }}>123 kr</span> Forecast values
-                <span style={{ background: '#f0fdf4', color: C.good, padding: '1px 6px', borderRadius: 3 }}>+5%</span> Beat forecast
-                <span style={{ background: '#fef2f2', color: C.bad, padding: '1px 6px', borderRadius: 3 }}>-5%</span> Missed forecast
-              </div>
-            </div>
-          </>
+        {/* ─── Supporting: forecast flags ─────────────────────────────── */}
+        {flags.length > 0 && (
+          <AttentionPanel
+            title="Forecast flags"
+            items={flags}
+            maxItems={6}
+          />
         )}
       </div>
+
+      <AskAI
+        page="forecast"
+        context={data ? `Year: ${currentYear}. YTD profit: ${fmtKr(ytdActualProfit)}. Projected full year: ${fmtKr(projectedFullYear)}. ${flags.length} flagged months.` : 'No forecast data yet'}
+      />
     </AppShell>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ForecastChart — inline SVG. Navy solid for actual months, indigo dashed for
+// forecast months, light-grey rectangle over the forecast region, vertical
+// "today" dashed line at the month boundary, coloured dots at each point.
+// ─────────────────────────────────────────────────────────────────────────────
+function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
+  const W   = 720
+  const H   = 240
+  const PL  = 46
+  const PR  = 14
+  const PT  = 14
+  const PB  = 30
+  const plotW = W - PL - PR
+  const plotH = H - PT - PB
+
+  const values = monthly.map((m: any) => m.value ?? 0)
+  const maxV = Math.max(1, ...values)
+  const yMax = Math.ceil(maxV / 100_000) * 100_000
+
+  const xAt = (i: number) => PL + (plotW * (i + 0.5)) / 12
+  const yAt = (v: number) => PT + plotH * (1 - v / yMax)
+
+  const actualPoints   = monthly.filter((m: any) => !m.isFuture && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: true }))
+  const forecastPoints = monthly.filter((m: any) => (m.isFuture || m.isCurrent) && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: false }))
+
+  const actualPath = actualPoints.length >= 2
+    ? actualPoints.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+    : ''
+  const forecastPath = forecastPoints.length >= 2
+    ? forecastPoints.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+    : ''
+
+  // Connect actual → forecast at the boundary
+  const connectPath = actualPoints.length > 0 && forecastPoints.length > 0
+    ? `M${actualPoints[actualPoints.length - 1].x},${actualPoints[actualPoints.length - 1].y} L${forecastPoints[0].x},${forecastPoints[0].y}`
+    : ''
+
+  // Today line — sits inside current month's cell at month-progress %
+  const todayX = xAt(currentMonth - 1) - (plotW / 12) / 2 + (plotW / 12) * todayProgress
+
+  // Y-axis ticks
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ v: yMax * f, y: yAt(yMax * f) }))
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      width="100%"
+      height={H}
+      role="img"
+      aria-label="Full-year revenue forecast — actual solid navy, forecast dashed indigo"
+      style={{ display: 'block' as const }}
+    >
+      {/* Forecast band */}
+      <rect
+        x={xAt(currentMonth - 1) - (plotW / 12) / 2}
+        y={PT}
+        width={(W - PR) - (xAt(currentMonth - 1) - (plotW / 12) / 2)}
+        height={plotH}
+        fill={UX.indigoBg}
+        opacity={0.5}
+      />
+
+      {/* Gridlines */}
+      {ticks.map(t => (
+        <g key={t.v}>
+          <line x1={PL} x2={W - PR} y1={t.y} y2={t.y} stroke={UX.borderSoft} strokeWidth={0.5} />
+          <text x={PL - 6} y={t.y + 3} textAnchor="end" fontSize={UX.fsNano} fill={UX.ink4}>
+            {t.v === 0 ? '0' : formatKShort(t.v)}
+          </text>
+        </g>
+      ))}
+
+      {/* Today marker */}
+      <line x1={todayX} x2={todayX} y1={PT} y2={H - PB} stroke={UX.ink3} strokeWidth={0.8} strokeDasharray="2 2" />
+      <text x={todayX} y={PT - 2} textAnchor="middle" fontSize={UX.fsNano} fill={UX.ink3}>today</text>
+
+      {/* Actual line */}
+      {actualPath && (
+        <path d={actualPath} stroke={UX.navy} strokeWidth={2} fill="none" strokeLinejoin="round" />
+      )}
+      {/* Connector */}
+      {connectPath && (
+        <path d={connectPath} stroke={UX.indigo} strokeWidth={2} strokeDasharray="4 3" fill="none" />
+      )}
+      {/* Forecast line */}
+      {forecastPath && (
+        <path d={forecastPath} stroke={UX.indigo} strokeWidth={2} strokeDasharray="4 3" fill="none" strokeLinejoin="round" />
+      )}
+
+      {/* Dots */}
+      {[...actualPoints, ...forecastPoints].map((p: any) => (
+        <circle
+          key={`${p.actual ? 'a' : 'f'}-${p.m}`}
+          cx={p.x}
+          cy={p.y}
+          r={2.6}
+          fill={
+            p.tone === 'bad'     ? UX.redInk :
+            p.tone === 'warning' ? UX.amberInk :
+            p.tone === 'good'    ? UX.greenInk :
+            p.actual             ? UX.navy : UX.indigo
+          }
+        />
+      ))}
+
+      {/* Month labels */}
+      {monthly.map((m: any, i: number) => (
+        <text
+          key={m.m}
+          x={xAt(i)}
+          y={H - PB + 14}
+          textAnchor="middle"
+          fontSize={UX.fsNano}
+          fill={m.isCurrent ? UX.ink1 : UX.ink4}
+          fontWeight={m.isCurrent ? UX.fwMedium : UX.fwRegular}
+        >
+          {MONTHS_SHORT[m.m - 1]}
+        </text>
+      ))}
+
+      {/* Loading overlay */}
+      {loading && (
+        <text x={W / 2} y={H / 2} textAnchor="middle" fill={UX.ink4} fontSize={UX.fsBody}>Loading…</text>
+      )}
+    </svg>
+  )
+}
+
+function formatKShort(n: number): string {
+  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`
+  if (n >= 1_000)     return `${Math.round(n / 100) / 10}k`
+  return String(n)
 }
