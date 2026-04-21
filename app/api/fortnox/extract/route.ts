@@ -124,6 +124,63 @@ export async function POST(req: NextRequest) {
   const arrayBuffer = await blob.arrayBuffer()
   const base64      = Buffer.from(arrayBuffer).toString('base64')
 
+  // ── Peek call ─────────────────────────────────────────────────────────
+  // Small (<500 tokens out) Haiku call that only has to detect the scale,
+  // doc_type, and the list of (year, month) periods covered. Primes the
+  // prompt cache for the PDF so the per-period fill calls that follow can
+  // hit the cache at 10% cost. Typical wall time: 2–4s.
+  //
+  // When the PDF covers a single period, we skip the fill fan-out and
+  // fall through to the one-shot prompt path below (legacy behaviour).
+  const peekPrompt = `You are scanning a Swedish accounting PDF (Fortnox Resultatrapport / invoice / VAT report) to identify WHAT it covers. DO NOT extract line items.
+
+Detect:
+  • scale_detected — the unit the amounts are printed in: "sek" | "ksek" | "msek". Look for "(kr)" vs "(tkr)" / "Belopp i kkr" / "MSEK". If none is labelled, guess from the magnitudes (a restaurant's monthly revenue is 200k–3M SEK).
+  • doc_type       — "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat".
+  • business_hint  — legal name of the company if visible, else null.
+  • periods        — list every distinct (year, month) column/period present. For a multi-column Resultatrapport with Jan–Dec 2025, emit 12 entries. For a single-month P&L, emit one. For a year-only summary with no monthly split, emit one entry with month=0. Do NOT include "Ack."/"Totalt"/"Året" summary columns — only the individual period columns.
+
+Return ONLY JSON, nothing else:
+{
+  "doc_type":       "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
+  "scale_detected": "sek" | "ksek" | "msek",
+  "business_hint":  "string" | null,
+  "confidence":     "high" | "medium" | "low",
+  "warnings":       [],
+  "periods":        [{ "year": 2025, "month": 1 }]
+}`
+
+  async function runClaude(args: {
+    prompt:     string
+    maxTokens:  number
+    cachePdf?:  boolean   // tag the document with cache_control so parallel calls share it
+  }) {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    const doc: any  = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
+    if (args.cachePdf) doc.cache_control = { type: 'ephemeral' }
+    return client.messages.create({
+      model:      AI_MODELS.AGENT,
+      max_tokens: args.maxTokens,
+      messages: [{
+        role: 'user',
+        content: [ doc, { type: 'text', text: args.prompt } ],
+      }],
+    })
+  }
+
+  function parseJsonFromResponse(resp: any): any | null {
+    const raw = (resp?.content ?? [])
+      .map((b: any) => (b?.type === 'text' ? b.text : ''))
+      .join('')
+      .trim()
+    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace  = cleaned.lastIndexOf('}')
+    if (firstBrace >= 0 && lastBrace > firstBrace) cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+    try { return JSON.parse(cleaned) } catch { return null }
+  }
+
   const prompt = `You are extracting a Swedish accounting report (Fortnox export) into structured JSON.
 
 CRITICAL RULE #1 — SCALE / UNIT.  Swedish accounting reports are printed in one of three scales:
@@ -189,66 +246,114 @@ Rules:
 Return ONLY the JSON object.`
 
   const started = Date.now()
+  let totalInputTokens  = 0
+  let totalOutputTokens = 0
+
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    // ── Peek first ─────────────────────────────────────────────────────
+    // Identify periods + scale + confidence in one small call. The PDF
+    // is marked cache_control=ephemeral so the follow-up fill calls (if
+    // any) read it from cache at 10% cost and much lower latency.
+    const peekResp = await runClaude({ prompt: peekPrompt, maxTokens: 600, cachePdf: true })
+    totalInputTokens  += (peekResp as any).usage?.input_tokens  ?? 0
+    totalOutputTokens += (peekResp as any).usage?.output_tokens ?? 0
+    const peek = parseJsonFromResponse(peekResp)
+    const peekPeriods: Array<{ year: number; month: number }> = Array.isArray(peek?.periods)
+      ? peek.periods
+          .map((p: any) => ({ year: Number(p?.year), month: Number(p?.month) }))
+          .filter((p: { year: number; month: number }) => Number.isFinite(p.year))
+      : []
+    const detectedScale   = String(peek?.scale_detected ?? 'sek').toLowerCase()
+    const peekDocType     = String(peek?.doc_type ?? 'pnl_monthly')
+    const peekBizHint     = peek?.business_hint ?? null
+    const peekConfidence  = String(peek?.confidence ?? 'medium')
+    const peekWarnings    = Array.isArray(peek?.warnings) ? peek.warnings : []
 
-    const response = await client.messages.create({
-      // Haiku 4.5 instead of Sonnet. Sonnet took 3–6 minutes to emit the
-      // 25k output tokens of a 12-column Resultatrapport; Haiku runs the
-      // same extraction in under a minute and costs ~5x less. Structured
-      // JSON extraction from a clean PDF table doesn't need Sonnet's
-      // reasoning lift — the heavy lifting is the scale rule and the
-      // BAS account mapping, both of which Haiku handles reliably.
-      model:      AI_MODELS.AGENT,
-      // Multi-month Resultatrapports (12 columns × ~40 line items) run to
-      // ~25k output tokens. 32 000 leaves headroom under Haiku's 64k
-      // output ceiling.
-      max_tokens: 32000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } } as any,
-          { type: 'text', text: prompt },
-        ],
-      }],
-    })
-
-    // Concatenate every text block (multi-block responses leave structured
-    // output spread across blocks) and strip code fences.
-    const raw = (response.content ?? [])
-      .map((b: any) => (b?.type === 'text' ? b.text : ''))
-      .join('')
-      .trim()
-
-    // Robust JSON extraction — Claude occasionally prepends "Here is the
-    // extracted data:" or similar despite the "Return ONLY the JSON
-    // object" instruction.  Find the first { and the last } and parse
-    // the slice between them.
-    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace  = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      cleaned = cleaned.slice(firstBrace, lastBrace + 1)
-    }
-
-    // Detect truncation — stop_reason=max_tokens means Claude ran out
-    // mid-response, so JSON will be unparseable.  Report explicitly.
-    const truncated = (response as any).stop_reason === 'max_tokens'
-
+    // ── Decide single-call vs parallel fill ────────────────────────────
+    // If the peek call failed to return periods, or only a single period
+    // was detected, fall through to the one-shot path (existing prompt)
+    // because the overhead of fanning out isn't worth it.
     let parsed: any
-    try { parsed = JSON.parse(cleaned) }
-    catch (parseErr: any) {
-      const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
-      const errMsg  = truncated
-        ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
-        : `Claude returned non-JSON output. Parse error: ${parseErr?.message}. Sample: ${snippet}`
-      console.error('[fortnox/extract]', errMsg)
-      await db.from('fortnox_uploads').update({
-        status:        'failed',
-        error_message: errMsg.slice(0, 500),
-      }).eq('id', upload_id)
-      return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
+    const useParallel = peekPeriods.length > 1
+
+    if (useParallel) {
+      // Parallel per-month fill calls. Each Haiku call extracts ONE month
+      // only so its output runs ~1.5–2k tokens — fast. They run
+      // concurrently and all hit the cached PDF primed by the peek call.
+      const scaleHint = detectedScale === 'ksek'
+        ? 'PDF values are printed in KSEK (thousands of kr) — multiply every number by 1000 before returning.'
+        : detectedScale === 'msek'
+          ? 'PDF values are printed in MSEK (millions of kr) — multiply every number by 1000000 before returning.'
+          : 'PDF values are in full SEK — return them as-is.'
+
+      const fillPromises = peekPeriods.map((p: { year: number; month: number }) => {
+        const monthPrompt = `You are extracting ONE month's column from a Swedish Fortnox Resultatrapport.
+
+Extract ONLY the ${p.year}-${String(p.month).padStart(2, '0')} column (month = ${p.month}). Ignore every other month column, ignore the "Ack." and year-total columns, ignore prior-year comparison columns.
+
+${scaleHint}  ALL amounts you return MUST be in FULL SEK.
+
+Every cost amount is POSITIVE. Revenue is positive. Financial items keep their sign (interest expense negative).
+
+Return ONLY JSON:
+{
+  "rollup": {
+    "revenue":      0,
+    "food_cost":    0,
+    "staff_cost":   0,
+    "other_cost":   0,
+    "depreciation": 0,
+    "financial":    0,
+    "net_profit":   0
+  },
+  "lines": [
+    { "label": "Bankavgifter", "category": "other_cost", "amount": 340, "fortnox_account": 6570 }
+  ]
+}`
+        return runClaude({ prompt: monthPrompt, maxTokens: 4000, cachePdf: true })
+      })
+
+      const fillResps = await Promise.all(fillPromises)
+      const filled: any[] = fillResps.map((resp: any, i: number) => {
+        totalInputTokens  += resp.usage?.input_tokens  ?? 0
+        totalOutputTokens += resp.usage?.output_tokens ?? 0
+        const data = parseJsonFromResponse(resp) ?? { rollup: {}, lines: [] }
+        return { year: peekPeriods[i].year, month: peekPeriods[i].month, ...data }
+      })
+
+      parsed = {
+        doc_type:       peekDocType,
+        scale_detected: detectedScale,
+        business_hint:  peekBizHint,
+        confidence:     peekConfidence,
+        warnings:       peekWarnings,
+        periods:        filled,
+      }
+    } else {
+      // Single-shot fallback path — the original prompt, for single-period
+      // PDFs or when peek failed to enumerate periods.
+      const response = await runClaude({ prompt, maxTokens: 32000, cachePdf: false })
+      totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
+      totalOutputTokens += (response as any).usage?.output_tokens ?? 0
+
+      const truncated = (response as any).stop_reason === 'max_tokens'
+      parsed = parseJsonFromResponse(response)
+      if (!parsed) {
+        const raw = ((response as any).content ?? [])
+          .map((b: any) => (b?.type === 'text' ? b.text : ''))
+          .join('')
+          .trim()
+        const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
+        const errMsg  = truncated
+          ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
+          : `Claude returned non-JSON output. Sample: ${snippet}`
+        console.error('[fortnox/extract]', errMsg)
+        await db.from('fortnox_uploads').update({
+          status:        'failed',
+          error_message: errMsg.slice(0, 500),
+        }).eq('id', upload_id)
+        return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
+      }
     }
 
     // Helper — normalise + enrich lines with our subcategory lookup.
@@ -350,17 +455,19 @@ Return ONLY the JSON object.`
       warnings:      Array.isArray(parsed?.warnings) ? parsed.warnings : [],
     }
 
-    // Rough cost logging (Sonnet 4.6: $3/M input, $15/M output).  Kept as
-    // a record in ai_usage_daily like other agents.
-    const inputTokens  = response.usage?.input_tokens  ?? 0
-    const outputTokens = response.usage?.output_tokens ?? 0
-    const costKr = (inputTokens * 3e-6 + outputTokens * 15e-6) * 11  // rough USD→SEK
+    // Rough cost logging (Haiku 4.5: $1/M input, $5/M output). Sum across
+    // peek + per-month fill calls. Prompt caching on the document reduces
+    // the real input cost below this estimate but the usage numbers we
+    // log here are the uncached ones Anthropic returned.
+    const inputTokens  = totalInputTokens
+    const outputTokens = totalOutputTokens
+    const costKr = (inputTokens * 1e-6 + outputTokens * 5e-6) * 11  // rough USD→SEK
 
     try {
       await logAiRequest(db, {
         org_id:        auth.orgId,
         request_type:  'fortnox_extract',
-        model:         AI_MODELS.ANALYSIS,
+        model:         AI_MODELS.AGENT,
         input_tokens:  inputTokens,
         output_tokens: outputTokens,
         duration_ms:   Date.now() - started,
@@ -382,7 +489,7 @@ Return ONLY the JSON object.`
       period_year:        pYear,
       period_month:       pMonth,
       extracted_json:     extraction,
-      extraction_model:   AI_MODELS.ANALYSIS,
+      extraction_model:   AI_MODELS.AGENT,
       extraction_cost_kr: Math.round(costKr * 100) / 100,
       status:             'extracted',
       extracted_at:       new Date().toISOString(),
