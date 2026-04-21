@@ -209,7 +209,24 @@ export async function aggregateMetrics(
   }
 
   // ── 3. Build monthly_metrics ──────────────────────────────────────────────
-  // Group daily data by month
+  // Two data sources: POS-derived daily rows + Fortnox tracker_data rows.
+  // We previously only created a monthly row when POS had data for that
+  // month — which meant months with ONLY Fortnox data (e.g. a business
+  // without Personalkollen coverage that uploaded Fortnox P&L PDFs)
+  // produced no monthly_metrics row at all, and every downstream
+  // consumer (budget generator, forecast calibration, weekly memo,
+  // tracker page, cashflow, coach) saw an empty year.
+  //
+  // Now the month set is the UNION of months present in either source.
+  // For each month:
+  //   Revenue     = POS if any, else tracker_data.revenue
+  //   Staff cost  = PK cost (existing), fall back to tracker_data.staff_cost
+  //   Food cost   = tracker_data.food_cost
+  //   Other cost  = tracker_data.other_cost
+  //   Rent cost   = tracker_data.rent_cost
+  // rev_source / cost_source fields record which feeder won for this month
+  // so the UI can tell operators which numbers are accountant-authoritative.
+
   const monthlyAcc: Record<string, any> = {}
   for (const row of dailyRows) {
     const y = parseInt(row.date.slice(0, 4))
@@ -231,37 +248,61 @@ export async function aggregateMetrics(
     if (row.staff_cost > 0) a.hasStaff = true
   }
 
-  // Merge with tracker_data for food_cost, rent, other
   const trackerByMonth: Record<string, any> = {}
-  for (const t of trackerRows) trackerByMonth[`${t.period_year}-${t.period_month}`] = t
+  for (const t of trackerRows) {
+    // period_month=0 is the legacy annual-rollup convention; keep it in
+    // tracker_data for display but don't inject into monthly_metrics.
+    if (!t.period_month || t.period_month < 1 || t.period_month > 12) continue
+    trackerByMonth[`${t.period_year}-${t.period_month}`] = t
+  }
+
+  // Seed accumulator with Fortnox-only months that have no POS data.
+  for (const [key, t] of Object.entries(trackerByMonth)) {
+    if (monthlyAcc[key]) continue
+    monthlyAcc[key] = {
+      year:         t.period_year,
+      month:        t.period_month,
+      revenue:      0, covers: 0, tips: 0, food_revenue: 0, bev_revenue: 0,
+      staff_cost:   0, hours: 0, shifts: 0, late: 0, ob: 0,
+      hasRev:       false,
+      hasStaff:     false,
+    }
+  }
 
   const monthlyRows = Object.values(monthlyAcc).map((a: any) => {
-    const tracker    = trackerByMonth[`${a.year}-${a.month}`]
-    const food_cost  = Number(tracker?.food_cost ?? 0)
-    const rent_cost  = Number(tracker?.rent_cost ?? 0)
-    // other_cost comes from Fortnox PDFs via /api/fortnox/apply — the apply
-    // endpoint upserts tracker_data.other_cost, so rolling it into
-    // monthly_metrics.total_cost here means the anomaly detector, Monday
-    // briefing agent, forecast calibration cron and every read of
-    // /api/metrics/monthly.total_cost all see the true figure.
+    const tracker = trackerByMonth[`${a.year}-${a.month}`]
+
+    // Revenue: POS wins if it saw anything (daily granularity > monthly rollup);
+    //          otherwise fall back to Fortnox rollup.
+    const trackerRev = Number(tracker?.revenue ?? 0)
+    const revenue    = a.hasRev ? a.revenue : trackerRev
+    const rev_source = a.hasRev ? 'pos' : (trackerRev > 0 ? 'fortnox' : 'none')
+
+    // Staff cost: PK wins if present; otherwise Fortnox rollup.
+    const trackerStaff = Number(tracker?.staff_cost ?? 0)
+    const staff_cost   = a.hasStaff ? a.staff_cost : trackerStaff
+    const cost_source  = a.hasStaff ? 'pk' : (trackerStaff > 0 ? 'fortnox' : 'none')
+
+    const food_cost  = Number(tracker?.food_cost  ?? 0)
+    const rent_cost  = Number(tracker?.rent_cost  ?? 0)
     const other_cost = Number(tracker?.other_cost ?? 0)
-    const total_cost = a.staff_cost + food_cost + rent_cost + other_cost
-    const net_profit = a.revenue - total_cost
-    const margin_pct = a.revenue > 0 ? Math.round((net_profit / a.revenue) * 1000) / 10 : 0
-    const labour_pct = a.revenue > 0 && a.staff_cost > 0 ? Math.round((a.staff_cost / a.revenue) * 1000) / 10 : null
-    const food_pct   = a.revenue > 0 && food_cost > 0 ? Math.round((food_cost / a.revenue) * 1000) / 10 : null
+    const total_cost = staff_cost + food_cost + rent_cost + other_cost
+    const net_profit = revenue - total_cost
+    const margin_pct = revenue > 0 ? Math.round((net_profit / revenue) * 1000) / 10 : 0
+    const labour_pct = revenue > 0 && staff_cost > 0 ? Math.round((staff_cost / revenue) * 1000) / 10 : null
+    const food_pct   = revenue > 0 && food_cost  > 0 ? Math.round((food_cost  / revenue) * 1000) / 10 : null
 
     return {
       org_id:       orgId,
       business_id:  businessId,
       year:         a.year,
       month:        a.month,
-      revenue:      Math.round(a.revenue),
+      revenue:      Math.round(revenue),
       covers:       Math.round(a.covers),
       tips:         Math.round(a.tips),
       food_revenue: Math.round(a.food_revenue),
       bev_revenue:  Math.round(a.bev_revenue),
-      staff_cost:   Math.round(a.staff_cost),
+      staff_cost:   Math.round(staff_cost),
       food_cost:    Math.round(food_cost),
       rent_cost:    Math.round(rent_cost),
       other_cost:   Math.round(other_cost),
@@ -274,8 +315,8 @@ export async function aggregateMetrics(
       margin_pct,
       labour_pct,
       food_pct,
-      rev_source:   a.hasRev ? 'pos' : 'none',
-      cost_source:  a.hasStaff ? 'pk' : 'none',
+      rev_source,
+      cost_source,
       updated_at:   new Date().toISOString(),
     }
   })

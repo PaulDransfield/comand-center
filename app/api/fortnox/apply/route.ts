@@ -105,7 +105,24 @@ export async function POST(req: NextRequest) {
       error_message: null,
     }).eq('id', upload.id)
 
-    // Fire cost-intel once after all months land
+    // Re-aggregate monthly_metrics for the full period covered so
+    // downstream consumers (budgets, forecast, weekly memo, tracker,
+    // cashflow) see the Fortnox data immediately instead of waiting
+    // for the nightly master-sync. Spans the earliest to latest month
+    // touched by the apply.
+    try {
+      const years  = periodsArr.map((p: any) => Number(p.year)).filter((y: number) => y > 0)
+      const months = periodsArr.map((p: any) => Number(p.month)).filter((m: number) => m > 0)
+      if (years.length && months.length) {
+        const minYear = Math.min(...years), maxYear = Math.max(...years)
+        const fromD = `${minYear}-01-01`
+        const toD   = `${maxYear}-12-31`
+        const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+        aggregateMetrics(auth.orgId, upload.business_id, fromD, toD)
+          .catch((e: any) => console.warn('[fortnox/apply] re-aggregate failed:', e?.message))
+      }
+    } catch { /* non-fatal */ }
+
     try {
       const { runCostIntel } = await import('@/lib/agents/cost-intelligence')
       runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
@@ -204,9 +221,16 @@ export async function POST(req: NextRequest) {
     applied_by: auth.userId,
   }).eq('id', upload.id)
 
-  // Fire cost-intel agent in the background — don't block the apply
-  // response.  Agent writes into cost_insights which the /overheads
-  // AttentionPanel picks up on next load.
+  // Re-aggregate the affected year so monthly_metrics picks up the
+  // Fortnox data immediately (see the multi-month branch for rationale).
+  try {
+    const fromD = `${year}-01-01`
+    const toD   = `${year}-12-31`
+    const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+    aggregateMetrics(auth.orgId, upload.business_id, fromD, toD)
+      .catch((e: any) => console.warn('[fortnox/apply] re-aggregate failed:', e?.message))
+  } catch { /* non-fatal */ }
+
   try {
     const { runCostIntel } = await import('@/lib/agents/cost-intelligence')
     runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
