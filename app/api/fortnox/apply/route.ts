@@ -40,6 +40,52 @@ export async function POST(req: NextRequest) {
   const extraction = (overrides ?? upload.extracted_json) as any
   if (!extraction) return NextResponse.json({ error: 'No extraction data' }, { status: 400 })
 
+  // ── Multi-period branch ───────────────────────────────────────────────
+  // When extraction.periods[] has more than one entry, the PDF was a
+  // Fortnox multi-month Resultatrapport — apply each month separately.
+  // The unique index on tracker_data (org, biz, year, month) means each
+  // month becomes its own row; tracker_line_items get their real
+  // period_month instead of the 0-convention annual dump.
+  const periodsArr = Array.isArray(extraction.periods) ? extraction.periods : []
+  if (periodsArr.length > 1) {
+    const results: any[] = []
+    for (const p of periodsArr) {
+      const y = Number(p.year), m = Number(p.month)
+      if (!y || !m) { results.push({ year: y, month: m, skipped: 'invalid period' }); continue }
+      const res = await applyMonthly(db, {
+        orgId:      auth.orgId,
+        businessId: upload.business_id,
+        uploadId:   upload.id,
+        year:       y,
+        month:      m,
+        rollup:     p.rollup,
+        lines:      p.lines,
+      })
+      results.push({ year: y, month: m, ...res })
+    }
+    await db.from('fortnox_uploads').update({
+      status:     'applied',
+      doc_type:   'pnl_multi_month',
+      applied_at: new Date().toISOString(),
+      applied_by: auth.userId,
+    }).eq('id', upload.id)
+
+    // Fire cost-intel once after all months land
+    try {
+      const { runCostIntel } = await import('@/lib/agents/cost-intelligence')
+      runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
+        .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
+    } catch { /* non-fatal */ }
+
+    return NextResponse.json({
+      ok: true,
+      applied: {
+        kind:    'multi_month',
+        periods: results,
+      },
+    })
+  }
+
   const year  = upload.period_year  ?? extraction?.period?.year
   const month = upload.period_month ?? extraction?.period?.month
   const isAnnual = upload.doc_type === 'pnl_annual'
@@ -91,65 +137,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, applied: { kind: 'annual', year, line_count: lines.length } })
   }
 
-  // ── Monthly: upsert tracker_data + replace line items ──────────────────
-  const rollup = extraction.rollup ?? {}
-  const revenue     = Number(rollup.revenue     ?? 0) || 0
-  const food_cost   = Number(rollup.food_cost   ?? 0) || 0
-  const staff_cost  = Number(rollup.staff_cost  ?? 0) || 0
-  const other_cost  = Number(rollup.other_cost  ?? 0) || 0
-  const depreciation= Number(rollup.depreciation?? 0) || 0
-  const financial   = Number(rollup.financial   ?? 0) || 0
-  const net_profit  = Number.isFinite(Number(rollup.net_profit))
-    ? Number(rollup.net_profit)
-    : (revenue - food_cost - staff_cost - other_cost - depreciation + financial)
-  const margin_pct  = revenue > 0 ? Math.round(((net_profit / revenue) * 100) * 10) / 10 : 0
-
-  // Upsert via unique index — one row per (org, biz, year, month).
-  const { data: upserted, error: upErr } = await db
-    .from('tracker_data')
-    .upsert({
-      org_id:            auth.orgId,
-      business_id:       upload.business_id,
-      period_year:       year,
-      period_month:      month,
-      revenue, food_cost, staff_cost, net_profit, margin_pct,
-      other_cost,
-      source:            'fortnox_pdf',
-      fortnox_upload_id: upload.id,
-    }, { onConflict: 'org_id,business_id,period_year,period_month' })
-    .select('id')
-    .single()
-  if (upErr || !upserted) {
-    return NextResponse.json({ error: `tracker_data upsert failed: ${upErr?.message}` }, { status: 500 })
+  // ── Single monthly apply (also reused by the multi-period branch above)
+  const singleResult = await applyMonthly(db, {
+    orgId:      auth.orgId,
+    businessId: upload.business_id,
+    uploadId:   upload.id,
+    year:       year,
+    month:      month!,
+    rollup:     extraction.rollup,
+    lines:      extraction.lines,
+  })
+  if (singleResult.error) {
+    return NextResponse.json({ error: singleResult.error }, { status: 500 })
   }
-
-  // Replace line items for this period.
-  await db.from('tracker_line_items')
-    .delete()
-    .eq('org_id', auth.orgId)
-    .eq('business_id', upload.business_id)
-    .eq('period_year', year)
-    .eq('period_month', month)
-
-  const lines = Array.isArray(extraction.lines) ? extraction.lines : []
-  if (lines.length) {
-    const rows = lines.map((l: any) => ({
-      org_id:           auth.orgId,
-      business_id:      upload.business_id,
-      tracker_data_id:  upserted.id,
-      period_year:      year,
-      period_month:     month,
-      label_sv:         l.label_sv ?? l.label ?? '',
-      label_en:         l.label_en ?? null,
-      category:         l.category ?? 'other_cost',
-      subcategory:      l.subcategory ?? null,
-      amount:           Number(l.amount) || 0,
-      fortnox_account:  l.fortnox_account ?? null,
-      source_upload_id: upload.id,
-    }))
-    const { error: liErr } = await db.from('tracker_line_items').insert(rows)
-    if (liErr) return NextResponse.json({ error: `line items insert failed: ${liErr.message}` }, { status: 500 })
-  }
+  const upsertedId = singleResult.tracker_data_id
 
   await db.from('fortnox_uploads').update({
     status:     'applied',
@@ -169,11 +170,87 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     applied: {
-      kind:           'monthly',
+      kind:            'monthly',
       year, month,
-      tracker_data_id: upserted.id,
-      line_count:      lines.length,
-      rollup:          { revenue, food_cost, staff_cost, other_cost, net_profit, margin_pct },
+      tracker_data_id: upsertedId,
+      line_count:      singleResult.line_count,
+      rollup:          singleResult.rollup,
     },
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyMonthly — shared helper used by both the single-period path and the
+// new multi-period branch. Upserts the tracker_data row and replaces line
+// items for that specific (biz, year, month).  Safe to re-run.
+// ─────────────────────────────────────────────────────────────────────────────
+async function applyMonthly(db: any, args: {
+  orgId: string; businessId: string; uploadId: string;
+  year: number; month: number;
+  rollup: any; lines: any;
+}): Promise<{ error?: string; tracker_data_id?: string; line_count?: number; rollup?: any }> {
+  const { orgId, businessId, uploadId, year, month } = args
+  const rollup = args.rollup ?? {}
+  const revenue      = Number(rollup.revenue      ?? 0) || 0
+  const food_cost    = Number(rollup.food_cost    ?? 0) || 0
+  const staff_cost   = Number(rollup.staff_cost   ?? 0) || 0
+  const other_cost   = Number(rollup.other_cost   ?? 0) || 0
+  const depreciation = Number(rollup.depreciation ?? 0) || 0
+  const financial    = Number(rollup.financial    ?? 0) || 0
+  const net_profit   = Number.isFinite(Number(rollup.net_profit))
+    ? Number(rollup.net_profit)
+    : (revenue - food_cost - staff_cost - other_cost - depreciation + financial)
+  const margin_pct   = revenue > 0 ? Math.round(((net_profit / revenue) * 100) * 10) / 10 : 0
+
+  const { data: upserted, error: upErr } = await db
+    .from('tracker_data')
+    .upsert({
+      org_id:            orgId,
+      business_id:       businessId,
+      period_year:       year,
+      period_month:      month,
+      revenue, food_cost, staff_cost, net_profit, margin_pct,
+      other_cost,
+      source:            'fortnox_pdf',
+      fortnox_upload_id: uploadId,
+    }, { onConflict: 'org_id,business_id,period_year,period_month' })
+    .select('id')
+    .single()
+  if (upErr || !upserted) {
+    return { error: `tracker_data upsert failed (${year}-${month}): ${upErr?.message}` }
+  }
+
+  // Replace line items for this specific period
+  await db.from('tracker_line_items')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('business_id', businessId)
+    .eq('period_year', year)
+    .eq('period_month', month)
+
+  const lines = Array.isArray(args.lines) ? args.lines : []
+  if (lines.length) {
+    const rows = lines.map((l: any) => ({
+      org_id:           orgId,
+      business_id:      businessId,
+      tracker_data_id:  upserted.id,
+      period_year:      year,
+      period_month:     month,
+      label_sv:         l.label_sv ?? l.label ?? '',
+      label_en:         l.label_en ?? null,
+      category:         l.category ?? 'other_cost',
+      subcategory:      l.subcategory ?? null,
+      amount:           Number(l.amount) || 0,
+      fortnox_account:  l.fortnox_account ?? null,
+      source_upload_id: uploadId,
+    }))
+    const { error: liErr } = await db.from('tracker_line_items').insert(rows)
+    if (liErr) return { error: `line items insert failed (${year}-${month}): ${liErr.message}` }
+  }
+
+  return {
+    tracker_data_id: upserted.id,
+    line_count:      lines.length,
+    rollup:          { revenue, food_cost, staff_cost, other_cost, net_profit, margin_pct },
+  }
 }

@@ -123,41 +123,52 @@ export async function POST(req: NextRequest) {
 
   const prompt = `You are extracting a Swedish accounting report (Fortnox export) into structured JSON.
 
+IMPORTANT: Many Fortnox "Resultatrapport" exports are MULTI-PERIOD — they show one row per BAS account with multiple monthly columns (Jan, Feb, Mar, ...) plus a year-total column.  Detect this and emit one extraction per month rather than collapsing everything into an annual rollup.
+
 Return ONLY valid JSON with this exact shape and nothing else:
 
 {
-  "doc_type": "pnl_monthly" | "pnl_annual" | "invoice" | "sales" | "vat",
-  "period": { "year": 2025, "month": 5 },           // month null for pnl_annual
-  "business_hint": "Vero Italiano" | null,          // name on the report if any
-  "rollup": {
-    "revenue":     0,                                // sum of all revenue lines, positive
-    "food_cost":   0,                                // raw materials, goods for resale — positive number (we store as cost)
-    "staff_cost":  0,                                // salaries + social contributions + pension — positive
-    "other_cost":  0,                                // övriga externa kostnader — positive
-    "depreciation":0,                                // avskrivningar — positive
-    "financial":   0,                                // interest net — signed
-    "net_profit":  0                                 // revenue − all costs − depreciation ± financial — signed
-  },
-  "lines": [
-    {
-      "label":           "Bankavgifter",             // exact label on the Fortnox row
-      "category":        "revenue" | "food_cost" | "staff_cost" | "other_cost" | "depreciation" | "financial",
-      "amount":          340,                        // always POSITIVE for cost lines; positive for revenue lines
-      "fortnox_account": 6570,                       // BAS kontoplan code if printed (3xxx=revenue, 4xxx=food, 5xxx/6xxx=other, 7xxx=staff, 8xxx=financial). null otherwise.
-      "note":            null
-    }
-  ],
+  "doc_type": "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
+  "business_hint": "Vero Italiano" | null,
   "confidence": "high" | "medium" | "low",
-  "warnings":   []
+  "warnings":   [],
+
+  // ── Populate EITHER "periods" (preferred, handles multi-month) OR
+  //    "period" + "rollup" + "lines" (single period, legacy).  Pick one.
+
+  "periods": [
+    {
+      "year":  2025,
+      "month": 5,                                    // 1..12; use 0 for a year-total column only
+      "rollup": {
+        "revenue":      0,                           // sum of all revenue lines, positive
+        "food_cost":    0,                           // raw materials, goods for resale — positive
+        "staff_cost":   0,                           // salaries + social + pension — positive
+        "other_cost":   0,                           // övriga externa kostnader — positive
+        "depreciation": 0,
+        "financial":    0,                           // interest net — signed
+        "net_profit":   0
+      },
+      "lines": [
+        {
+          "label":           "Bankavgifter",
+          "category":        "revenue" | "food_cost" | "staff_cost" | "other_cost" | "depreciation" | "financial",
+          "amount":          340,                    // POSITIVE for cost lines; positive for revenue
+          "fortnox_account": 6570,
+          "note":            null
+        }
+      ]
+    }
+  ]
 }
 
 Rules:
-- Store all cost amounts as POSITIVE numbers.  The rollup already separates them by category.
-- Include EVERY line item on the report, even small ones.  Do not roll up subtotals.
-- "doc_type": if the report is "Resultaträkning" covering a single month → "pnl_monthly".  If it covers a full year (or year-to-date with no monthly detail) → "pnl_annual".  If it's a "Leverantörsfaktura" → "invoice".  If it's "Försäljningsrapport" → "sales".  If "Momsrapport" → "vat".
-- "period": take the period stated on the report.  If the range is a full year, set year and month=null.  If the range is e.g. "2025-05-01 to 2025-05-31", use year=2025, month=5.
-- Be exhaustive on line items — this is the primary signal the AI uses to find hidden costs.
-- If a line looks like a subtotal ("Summa…", "Total…"), skip it.  We re-derive the rollup from the line items.
+- When the PDF is clearly a single period (one month or a single year-end summary), emit ONE entry in "periods".  Set month=1..12 for a monthly report, or month=0 for a true year-only annual summary with no monthly breakdown.
+- When the PDF shows monthly columns across the page (common in Fortnox "Resultatrapport" with "Denna period" / "Föregående period" / "Ack." columns, OR a table where each row has 12 monthly values), emit ONE entry in "periods" PER MONTH.  Extract line items per month — do not collapse.  Do not invent months that aren't in the report.
+- Include EVERY line item per period.  Skip subtotals ("Summa…", "Total…") — we re-derive the rollup from lines.
+- Store all cost amounts as POSITIVE numbers.
+- "doc_type": "pnl_multi_month" when the report shows multiple months in one file; "pnl_monthly" for single-month; "pnl_annual" for single-year with no monthly split; "invoice" / "sales" / "vat" for the other formats.
+- Swedish decimal marker is comma; treat "1,234.56" and "1 234,56" as the same number.  Negative values in Fortnox are often shown in parentheses or with a leading minus — include the sign correctly.
 
 Return ONLY the JSON object.`
 
@@ -218,44 +229,103 @@ Return ONLY the JSON object.`
       return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
     }
 
-    // Normalise + enrich lines with our subcategory lookup.
-    const lines = Array.isArray(parsed?.lines) ? parsed.lines : []
-    const enriched = lines.map((l: any) => {
-      const label   = String(l?.label ?? '').trim()
-      const fromAI  = String(l?.category ?? '').trim()
-      const amount  = Number(l?.amount ?? 0)
-      const looked  = classifyLabel(label)
-      // Trust Claude's category when it's one of our enum values; otherwise use lookup.
-      const category = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
-        ? fromAI
-        : looked.category
-      const subcategory = looked.subcategory                      // always via lookup for stable naming
-      const fortnoxAccount = Number.isFinite(Number(l?.fortnox_account)) ? Number(l.fortnox_account) : null
-      return { label_sv: label, category, subcategory, amount, fortnox_account: fortnoxAccount }
-    }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))
+    // Helper — normalise + enrich lines with our subcategory lookup.
+    function enrichLines(raw: any[]): any[] {
+      return (Array.isArray(raw) ? raw : []).map((l: any) => {
+        const label   = String(l?.label ?? '').trim()
+        const fromAI  = String(l?.category ?? '').trim()
+        const amount  = Number(l?.amount ?? 0)
+        const looked  = classifyLabel(label)
+        const category = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
+          ? fromAI
+          : looked.category
+        const subcategory = looked.subcategory
+        const fortnoxAccount = Number.isFinite(Number(l?.fortnox_account)) ? Number(l.fortnox_account) : null
+        return { label_sv: label, category, subcategory, amount, fortnox_account: fortnoxAccount }
+      }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))
+    }
 
-    const docType = ['pnl_monthly','pnl_annual','invoice','sales','vat'].includes(parsed?.doc_type)
-      ? parsed.doc_type
-      : 'pnl_monthly'
-    const pYear  = Number(parsed?.period?.year)  || null
-    const pMonth = docType === 'pnl_annual' ? null : (Number(parsed?.period?.month) || null)
+    function emptyRollup() {
+      return { revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, net_profit: 0 }
+    }
+
+    // Build a consistent periods[] array regardless of which shape Claude
+    // returned.  Newer prompt asks for "periods": [...].  Legacy shape is
+    // a single "period" + "rollup" + "lines".  Wrap legacy into a single-
+    // entry periods array so downstream code only has to handle one shape.
+    let periodsRaw: any[] = []
+    if (Array.isArray(parsed?.periods) && parsed.periods.length) {
+      periodsRaw = parsed.periods
+    } else {
+      periodsRaw = [{
+        year:   parsed?.period?.year,
+        month:  parsed?.period?.month,
+        rollup: parsed?.rollup ?? {},
+        lines:  parsed?.lines  ?? [],
+      }]
+    }
+
+    const periods = periodsRaw
+      .map((p: any) => {
+        const year  = Number(p?.year)  || null
+        const month = p?.month == null ? null : (Number.isFinite(Number(p.month)) ? Number(p.month) : null)
+        const lines = enrichLines(p?.lines)
+        const rollupRaw = p?.rollup ?? {}
+        const rollup = {
+          revenue:      Number(rollupRaw.revenue     ?? 0) || 0,
+          food_cost:    Number(rollupRaw.food_cost   ?? 0) || 0,
+          staff_cost:   Number(rollupRaw.staff_cost  ?? 0) || 0,
+          other_cost:   Number(rollupRaw.other_cost  ?? 0) || 0,
+          depreciation: Number(rollupRaw.depreciation?? 0) || 0,
+          financial:    Number(rollupRaw.financial   ?? 0) || 0,
+          net_profit:   Number(rollupRaw.net_profit  ?? 0) || 0,
+        }
+        return { year, month, rollup, lines }
+      })
+      .filter((p: any) => p.year != null)
+      .sort((a: any, b: any) => (a.year - b.year) || ((a.month ?? 0) - (b.month ?? 0)))
+
+    // Derive doc_type if Claude didn't set it, or promote to multi-month.
+    let docType: string = parsed?.doc_type ?? 'pnl_monthly'
+    if (periods.length > 1) docType = 'pnl_multi_month'
+    else if (periods.length === 1 && (periods[0].month == null || periods[0].month === 0)) docType = 'pnl_annual'
+    if (!['pnl_monthly','pnl_annual','pnl_multi_month','invoice','sales','vat'].includes(docType)) {
+      docType = 'pnl_monthly'
+    }
+
+    // Back-compat: also emit the legacy single-period fields so any
+    // existing consumer that reads extraction.rollup / extraction.lines
+    // still works during rollout.  Pick the "main" period — for
+    // multi-month reports, a synthesised year-total; otherwise the only
+    // period.
+    const mainRollup = periods.length === 1
+      ? periods[0].rollup
+      : periods.reduce((acc: any, p: any) => ({
+          revenue:      acc.revenue      + p.rollup.revenue,
+          food_cost:    acc.food_cost    + p.rollup.food_cost,
+          staff_cost:   acc.staff_cost   + p.rollup.staff_cost,
+          other_cost:   acc.other_cost   + p.rollup.other_cost,
+          depreciation: acc.depreciation + p.rollup.depreciation,
+          financial:    acc.financial    + p.rollup.financial,
+          net_profit:   acc.net_profit   + p.rollup.net_profit,
+        }), emptyRollup())
+    const mainLines = periods.length === 1 ? periods[0].lines : []   // multi-month lines live only inside periods[]
+
+    // Top-level period reflects the earliest month we saw — used for the
+    // fortnox_uploads.period_year / period_month columns which drive the
+    // display label in the uploads list.
+    const pYear  = periods[0]?.year  ?? null
+    const pMonth = periods.length > 1 ? null : (periods[0]?.month ?? null)
 
     const extraction = {
       doc_type:      docType,
       period:        { year: pYear, month: pMonth },
+      periods,                                              // ← new canonical shape
       business_hint: parsed?.business_hint ?? null,
-      rollup:        {
-        revenue:      Number(parsed?.rollup?.revenue     ?? 0) || 0,
-        food_cost:    Number(parsed?.rollup?.food_cost   ?? 0) || 0,
-        staff_cost:   Number(parsed?.rollup?.staff_cost  ?? 0) || 0,
-        other_cost:   Number(parsed?.rollup?.other_cost  ?? 0) || 0,
-        depreciation: Number(parsed?.rollup?.depreciation?? 0) || 0,
-        financial:    Number(parsed?.rollup?.financial   ?? 0) || 0,
-        net_profit:   Number(parsed?.rollup?.net_profit  ?? 0) || 0,
-      },
-      lines:        enriched,
-      confidence:   parsed?.confidence ?? 'medium',
-      warnings:     Array.isArray(parsed?.warnings) ? parsed.warnings : [],
+      rollup:        mainRollup,
+      lines:         mainLines,
+      confidence:    parsed?.confidence ?? 'medium',
+      warnings:      Array.isArray(parsed?.warnings) ? parsed.warnings : [],
     }
 
     // Rough cost logging (Sonnet 4.6: $3/M input, $15/M output).  Kept as

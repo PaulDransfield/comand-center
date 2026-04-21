@@ -44,6 +44,15 @@ create index if not exists reconciliation_active_idx
   on reconciliation_findings (business_id, generated_at desc)
   where dismissed_at is null;
 
+-- Expand fortnox_uploads.doc_type to accept multi-month Resultatrapports.
+-- Fortnox commonly exports a single PDF with 12 monthly columns — we now
+-- split those into per-month tracker_data rows, so the upload-level
+-- doc_type gets a new value.
+alter table fortnox_uploads drop constraint if exists fortnox_uploads_doc_type_check;
+alter table fortnox_uploads
+  add constraint fortnox_uploads_doc_type_check
+  check (doc_type in ('pnl_monthly','pnl_annual','pnl_multi_month','invoice','sales','vat'));
+
 alter table reconciliation_findings enable row level security;
 drop policy if exists reconciliation_read on reconciliation_findings;
 drop policy if exists reconciliation_upd  on reconciliation_findings;
