@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
+import { SCOPE_NOTE }                from '@/lib/ai/scope'
 
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
@@ -29,7 +30,9 @@ Guidelines:
 - Typical healthy targets: food cost 28-35%, staff cost 30-40%, net margin 10-20%
 - Flag anything that looks like a problem
 - Never make up numbers not in the context provided
-- If you cannot answer from the context, say so clearly`
+- If you cannot answer from the context, say so clearly
+
+${SCOPE_NOTE}`
 
 export async function POST(req: NextRequest) {
   // ── 1. Auth ────────────────────────────────────────────────────

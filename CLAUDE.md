@@ -293,6 +293,32 @@ Applies to: `/api/metrics/*`, `/api/tracker`, `/api/forecast`, `/api/budgets`, `
 
 ---
 
+## 10c. AI scope — business-wide vs department-level
+
+Some data lives at the **business** level (Fortnox P&L, whole-business PK totals) and some lives at the **department** level (POS providers tagged per-dept, staff assigned to a department). AI answers must never attribute business-wide numbers to a single department — the figures do not support that split and the owner will act on the answer.
+
+**Rule:** every AI prompt that could see both scopes must include the shared `SCOPE_NOTE` from `lib/ai/scope.ts` in its system prompt or prompt preamble.
+
+```typescript
+import { SCOPE_NOTE } from '@/lib/ai/scope'
+
+const SYSTEM_PROMPT = `You are ... ${SCOPE_NOTE}`
+```
+
+Business-wide (from `SCOPE_NOTE`):
+- `tracker_data` fields: `revenue` (Fortnox), `food_cost`, `staff_cost`, `other_cost`, `depreciation`, `financial`, `net_profit`, `margin_pct`
+- every row in `tracker_line_items`
+- `monthly_metrics`, `daily_metrics` aggregates
+
+Department-level:
+- department-tagged revenue from POS (`pk_bella`, `pk_carne`, …)
+- `staff_logs` rows assigned to a dept
+- `/api/departments` aggregates
+
+Department margin is `dept_revenue − dept_staff_cost`. It does NOT include food_cost or overheads (those only exist at the business level). When writing AI surfaces, if a question needs a business-wide number to answer a department-scoped question, the AI must say so explicitly instead of pretending.
+
+---
+
 ## 11. AI Model Routing — always follow this
 
 Never hardcode model strings. Always import from `lib/ai/models.ts`.
