@@ -33,35 +33,57 @@ export async function POST(req: NextRequest) {
 
   // ── 1. Gather context: last year actuals, this year's forecasts, YTD actuals ──
   // Every tenanted read filters org_id first — service role bypasses RLS.
-  const [lyRes, fcRes, ytdRes, bizRes, annualRes] = await Promise.all([
-    // Last year actuals from monthly_metrics
+  //
+  // Two sources of "last year actuals" must be merged:
+  //   1. monthly_metrics — POS-sourced (Personalkollen revenue + staff aggregation).
+  //   2. tracker_data    — accountant-sourced (Fortnox P&L extraction via /api/fortnox/apply).
+  //
+  // Fortnox is the authoritative source where it exists (books close on
+  // real bank + ledger data, POS can miss cash/tips/adjustments). So we
+  // read both and prefer tracker_data row-for-row, falling back to
+  // monthly_metrics for months where no Fortnox PDF has been applied.
+  //
+  // Previous behaviour: only monthly_metrics was consulted, so uploading
+  // Vero's Apr–Aug 2025 Fortnox PDFs had no effect on the 2026 budget —
+  // the AI saw "no 2025 data" for Vero because Vero doesn't have
+  // Personalkollen coverage for 2025. Hence Jan 2026 budget of 410k
+  // against 1.6M actual.
+  const [lyMetricsRes, lyTrackerRes, fcRes, ytdMetricsRes, ytdTrackerRes, bizRes, annualRes] = await Promise.all([
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('year', year - 1)
       .order('month'),
-    // Calibrated forecasts for this year
+    db.from('tracker_data')
+      .select('period_month, revenue, staff_cost, food_cost, other_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .eq('period_year', year - 1)
+      .gt('period_month', 0)
+      .order('period_month'),
     db.from('forecasts')
       .select('period_month, revenue_forecast, staff_cost_forecast, food_cost_forecast, net_profit_forecast, margin_forecast')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('period_year', year)
       .order('period_month'),
-    // Current year actuals so far
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('year', year)
       .order('month'),
+    db.from('tracker_data')
+      .select('period_month, revenue, staff_cost, food_cost, other_cost, net_profit, margin_pct')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .eq('period_year', year)
+      .gt('period_month', 0)
+      .order('period_month'),
     db.from('businesses').select('name, city').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
-    // Annual Fortnox reports for the previous two years (applied with
-    // period_month=0 — the annual rollup convention). When monthly_metrics
-    // is empty for last year (e.g. Rosali 2025 — only an annual PDF applied)
-    // the AI was concluding "Rosali started from zero in 2025" which is
-    // wrong. Feeding the annual totals in as a separate reference block
-    // fixes that.
+    // Annual-summary fallback — older uploads stored a single annual
+    // rollup with period_month=0. Kept so legacy data still contributes.
     db.from('tracker_line_items')
       .select('period_year, category, amount')
       .eq('org_id', auth.orgId)
@@ -70,10 +92,38 @@ export async function POST(req: NextRequest) {
       .in('period_year', [year - 1, year - 2]),
   ])
 
-  const lastYear = lyRes.data ?? []
-  const forecasts = fcRes.data ?? []
-  const ytd       = ytdRes.data ?? []
-  const biz       = bizRes.data
+  // Merge: prefer tracker_data (Fortnox) over monthly_metrics (POS).
+  const mergeMonths = (metricsRows: any[], trackerRows: any[]) => {
+    const merged = new Map<number, any>()
+    for (const r of metricsRows ?? []) {
+      merged.set(Number(r.month), {
+        month:       Number(r.month),
+        revenue:     Number(r.revenue ?? 0),
+        staff_cost:  Number(r.staff_cost ?? 0),
+        food_cost:   Number(r.food_cost ?? 0),
+        net_profit:  Number(r.net_profit ?? 0),
+        margin_pct:  r.margin_pct == null ? null : Number(r.margin_pct),
+        source:      'pos',
+      })
+    }
+    for (const r of trackerRows ?? []) {
+      merged.set(Number(r.period_month), {
+        month:       Number(r.period_month),
+        revenue:     Number(r.revenue ?? 0),
+        staff_cost:  Number(r.staff_cost ?? 0),
+        food_cost:   Number(r.food_cost ?? 0),
+        net_profit:  Number(r.net_profit ?? 0),
+        margin_pct:  r.margin_pct == null ? null : Number(r.margin_pct),
+        source:      'fortnox',
+      })
+    }
+    return Array.from(merged.values()).sort((a, b) => a.month - b.month)
+  }
+
+  const lastYear   = mergeMonths(lyMetricsRes.data ?? [], lyTrackerRes.data ?? [])
+  const forecasts  = fcRes.data ?? []
+  const ytd        = mergeMonths(ytdMetricsRes.data ?? [], ytdTrackerRes.data ?? [])
+  const biz        = bizRes.data
   const annualRows = annualRes.data ?? []
 
   // ── 2. Format the data into a compact context for Claude ─────────────────────
@@ -105,7 +155,7 @@ export async function POST(req: NextRequest) {
   const lyAnnual = annualSummary(year - 1)
   const lyTable = lastYear.length
     ? lastYear.map(r =>
-        `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}%`
+        `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}% (src: ${r.source})`
       ).join('\n')
     : lyAnnual
       ? `  (no monthly breakdown — using annual Fortnox report instead, see block below)`
@@ -113,7 +163,7 @@ export async function POST(req: NextRequest) {
 
   const ytdTable = ytd.length
     ? ytd.map(r =>
-        `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}%`
+        `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}% (src: ${r.source})`
       ).join('\n')
     : '  (no current-year actuals yet)'
 
