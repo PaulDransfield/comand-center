@@ -34,18 +34,29 @@ const ACTION_COLOR: Record<string, string> = {
 
 export default function AuditLogPage() {
   const router = useRouter()
-  const [rows,    setRows]    = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
-  const [filter,  setFilter]  = useState({ action: '', org: '' })
+  const [rows,         setRows]         = useState<any[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState('')
+  const [tableMissing, setTableMissing] = useState(false)
+  const [tableHint,    setTableHint]    = useState('')
+  const [filter,       setFilter]       = useState({ action: '', org: '' })
 
   useEffect(() => {
     const secret = sessionStorage.getItem('admin_auth') ?? ''
     if (!secret) { router.push('/admin/login?next=/admin/audit'); return }
     fetch('/api/admin/audit-log?limit=300', { headers: { 'x-admin-secret': secret } })
-      .then(r => r.ok ? r.json() : Promise.reject(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`))
-      .then(d => setRows(d.rows ?? []))
-      .catch(e => setError(typeof e === 'string' ? e : e.message))
+      .then(async r => {
+        const body = await r.json().catch(() => ({}))
+        if (r.ok) return body
+        if (r.status === 401) throw 'Unauthorized'
+        const msg = body?.error ? `${body.error}${body.code ? ` (${body.code})` : ''}` : `HTTP ${r.status}`
+        throw msg
+      })
+      .then(d => {
+        setRows(d.rows ?? [])
+        if (d._table_missing) { setTableMissing(true); setTableHint(d._hint ?? '') }
+      })
+      .catch(e => setError(typeof e === 'string' ? e : (e?.message ?? 'Unknown error')))
       .finally(() => setLoading(false))
   }, [router])
 
@@ -93,6 +104,14 @@ export default function AuditLogPage() {
           <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>
         ) : error ? (
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 18px', fontSize: 13, color: '#dc2626' }}>{error}</div>
+        ) : tableMissing ? (
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '20px 22px', fontSize: 13, color: '#92400e' }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Audit log table not installed</div>
+            <div style={{ marginBottom: 8 }}>{tableHint || 'Migration M010 hasn\'t been applied to this Supabase instance. Until then, no admin actions are being recorded — the audit log will be empty.'}</div>
+            <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 12, background: 'white', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px', color: '#374151' }}>
+              Run: sql/M010-admin-audit-log.sql
+            </div>
+          </div>
         ) : filtered.length === 0 ? (
           <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 48, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>
             No audit events match your filter.

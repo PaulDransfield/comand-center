@@ -12,6 +12,13 @@ function checkAuth(req: NextRequest): boolean {
   return checkAdminSecret(req)
 }
 
+const isMissingTable = (err: any) => {
+  if (!err) return false
+  if (err.code === '42P01' || err.code === 'PGRST205') return true
+  const msg = String(err.message ?? '').toLowerCase()
+  return msg.includes('does not exist') || msg.includes('could not find the table')
+}
+
 export async function GET(req: NextRequest) {
   if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -26,13 +33,28 @@ export async function GET(req: NextRequest) {
   if (action) q = q.eq('action', action)
 
   const { data: rows, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    // Missing table = migration not run. Return a friendly empty response so
+    // the admin UI can render a helpful message instead of a raw 500.
+    if (isMissingTable(error)) {
+      return NextResponse.json({
+        rows: [],
+        _table_missing: true,
+        _hint: 'Run sql/M010-admin-audit-log.sql in Supabase SQL Editor to enable the audit log.',
+      })
+    }
+    return NextResponse.json({ error: error.message, code: error.code ?? null }, { status: 500 })
+  }
 
-  // Enrich with org names
+  // Enrich with org names — skip the lookup entirely if no rows reference an org
+  // (the `.in('id', [])` call on an empty array can itself throw on some
+  // PostgREST versions, and would waste a round trip anyway).
   const orgIds = [...new Set((rows ?? []).map((r: any) => r.org_id).filter(Boolean))]
-  const { data: orgs } = await db.from('organisations').select('id, name').in('id', orgIds)
   const orgMap: Record<string, string> = {}
-  for (const o of orgs ?? []) orgMap[o.id] = o.name
+  if (orgIds.length > 0) {
+    const { data: orgs } = await db.from('organisations').select('id, name').in('id', orgIds)
+    for (const o of orgs ?? []) orgMap[o.id] = o.name
+  }
 
   const enriched = (rows ?? []).map((r: any) => ({
     ...r,
