@@ -45,20 +45,24 @@ export default function TopBar({ crumbs, rightSlot }: TopBarProps) {
       >
         {crumbs.map((c, i) => {
           const isLast = i === crumbs.length - 1
+          // Active / last crumb = bold ink1.  Parent crumbs = regular ink3.
+          const isActive = c.active || isLast
           const style  = {
             fontSize:   UX.fsBody,
-            fontWeight: (c.active || isLast) ? UX.fwMedium : UX.fwRegular,
-            color:      (c.active || isLast) ? UX.ink1     : UX.ink3,
+            fontWeight: isActive ? UX.fwMedium : UX.fwRegular,
+            color:      isActive ? UX.ink1     : UX.ink3,
             textDecoration: 'none' as const,
             whiteSpace: 'nowrap' as const,
           }
           return (
-            <span key={`${c.label}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              {c.href && !c.active && !isLast
+            <span key={`${c.label}-${i}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              {c.href && !isActive
                 ? <a href={c.href} style={style}>{c.label}</a>
                 : <span style={style}>{c.label}</span>}
+              {/* Separator — bumped to ink3 so the "·" actually reads as
+                  a divider rather than a faded artefact. */}
               {!isLast && (
-                <span aria-hidden style={{ color: UX.ink5, fontSize: UX.fsBody }}>·</span>
+                <span aria-hidden style={{ color: UX.ink3, fontSize: UX.fsBody, userSelect: 'none' as const }}>·</span>
               )}
             </span>
           )

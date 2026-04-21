@@ -139,6 +139,37 @@ export default function ForecastPage() {
       }, 0)
     : null
 
+  // Projected full-year margin — same horizon, weighted by revenue. Needed
+  // for the hero context (FORECAST-FIX § 5) so we can say
+  //   "tracking to X kr · forecast margin Y%"
+  // instead of just quoting revenue.
+  const projectedMarginPct = (() => {
+    if (!hasProjection) return null
+    let rev = 0, profit = 0
+    for (const r of monthly) {
+      if (r.isPast || r.isCurrent) {
+        const revV = Math.max(r.actualRev, r.forecastRev)
+        rev    += revV
+        profit += Number(r.a?.net_profit ?? 0)
+      } else {
+        rev    += r.forecastRev
+        // Prefer margin_forecast when present, fall back to the year's
+        // average; zero-pad missing so the ratio stays stable.
+        const mpct = r.marginForecast
+        profit += mpct != null ? (r.forecastRev * mpct / 100) : 0
+      }
+    }
+    return rev > 0 ? (profit / rev) * 100 : null
+  })()
+
+  // Year-average forecast margin — used to flag at-risk months (FORECAST-FIX § 3).
+  const forecastMargins = monthly
+    .filter(r => (r.isFuture || r.isCurrent) && r.marginForecast != null)
+    .map(r => r.marginForecast!)
+  const avgForecastMargin = forecastMargins.length
+    ? forecastMargins.reduce((s, v) => s + v, 0) / forecastMargins.length
+    : null
+
   // Weak spot = future month with lowest margin forecast (or biggest past miss if none).
   const weakFuture = monthly
     .filter(r => r.isFuture && r.marginForecast != null)
@@ -196,25 +227,43 @@ export default function ForecastPage() {
     if (!hasProjection) {
       return `${actualMonths} month${actualMonths === 1 ? '' : 's'} of actuals · forecasts regenerate on the 1st of each month`
     }
-    return `${currentMonth - 1} months actual · ${12 - currentMonth + 1} months forecast`
+    // Full sentence with margin and YTD profit context (FORECAST-FIX § 5).
+    const parts: string[] = []
+    if (projectedMarginPct != null) {
+      parts.push(`forecast margin ${fmtPct(projectedMarginPct)}`)
+    }
+    parts.push(`${actualMonths} month${actualMonths === 1 ? '' : 's'} actual (${fmtKr(ytdActualProfit)} profit)`)
+    return parts.join(' · ')
   })()
 
   // ── Flags list (supporting row) ───────────────────────────────────────────
+  // Rules per FORECAST-FIX § 3:
+  //   MISSED — past/current actual is > 15% below forecast
+  //   AT RISK — future margin_forecast is > 10pp below year-avg forecast
+  //             margin (or, fallback, below 12% absolute when no avg).
   const flags: AttentionItem[] = monthly.flatMap(r => {
-    if (r.isPast && r.tone === 'bad' && r.actualRev > 0 && r.forecastRev > 0) {
+    if (!r.isFuture && r.actualRev > 0 && r.forecastRev > 0) {
       const pct = ((r.actualRev - r.forecastRev) / r.forecastRev) * 100
-      return [{
-        tone: 'bad',
-        entity: MONTHS_SHORT[r.m - 1],
-        message: `missed forecast by ${fmtPct(Math.abs(pct))} — ${fmtKr(r.actualRev)} vs ${fmtKr(r.forecastRev)}.`,
-      } as AttentionItem]
+      if (pct <= -15) {
+        return [{
+          tone: 'bad',
+          entity: MONTHS_SHORT[r.m - 1],
+          message: `missed forecast by ${fmtPct(Math.abs(pct))} — ${fmtKr(r.actualRev)} vs ${fmtKr(r.forecastRev)}.`,
+        } as AttentionItem]
+      }
     }
-    if (r.isFuture && r.marginForecast != null && r.marginForecast < 12) {
-      return [{
-        tone: 'warning',
-        entity: MONTHS_SHORT[r.m - 1],
-        message: `at-risk forecast — projected ${fmtPct(r.marginForecast)} margin on ${fmtKr(r.forecastRev)} revenue.`,
-      } as AttentionItem]
+    if (r.isFuture && r.marginForecast != null) {
+      const threshold = avgForecastMargin != null ? avgForecastMargin - 10 : 12
+      if (r.marginForecast < threshold) {
+        const rel = avgForecastMargin != null
+          ? `${(Math.round((avgForecastMargin - r.marginForecast) * 10) / 10).toFixed(1)}pp below year avg`
+          : `below 12% floor`
+        return [{
+          tone: 'warning',
+          entity: MONTHS_SHORT[r.m - 1],
+          message: `margin forecast ${fmtPct(r.marginForecast)} — ${rel} on ${fmtKr(r.forecastRev)} revenue.`,
+        } as AttentionItem]
+      }
     }
     return []
   })
@@ -232,23 +281,40 @@ export default function ForecastPage() {
           ]}
           rightSlot={
             <>
-              <button
-                onClick={triggerSync}
-                disabled={syncing || !selected}
-                style={{
-                  padding: '5px 11px', background: 'transparent', color: UX.ink2,
-                  border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md,
-                  fontSize: UX.fsBody, fontWeight: UX.fwMedium,
-                  cursor: syncing || !selected ? 'not-allowed' : 'pointer',
-                  opacity: syncing || !selected ? 0.6 : 1,
-                }}
-              >
-                {syncing ? 'Syncing…' : 'Refresh forecast'}
-              </button>
               <select value={selected} onChange={e => setSelected(e.target.value)}
                 style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
                 {businesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
+              {/* Icon-ified refresh (FORECAST-FIX § 4). The full-width
+                  "Refresh forecast" button competed with the dropdown for
+                  the same corner — a 24 px circular icon is enough. */}
+              <button
+                onClick={triggerSync}
+                disabled={syncing || !selected}
+                title={syncing ? 'Syncing…' : 'Refresh forecast'}
+                aria-label="Refresh forecast"
+                style={{
+                  width:        28,
+                  height:       28,
+                  borderRadius: '50%',
+                  background:   'transparent',
+                  border:       `0.5px solid ${UX.border}`,
+                  color:        UX.ink3,
+                  cursor:       syncing || !selected ? 'not-allowed' : 'pointer',
+                  opacity:      syncing || !selected ? 0.5 : 1,
+                  display:      'flex',
+                  alignItems:   'center',
+                  justifyContent: 'center',
+                  fontSize:     14,
+                  padding:      0,
+                }}
+              >
+                <span className={syncing ? 'cc-fc-spin' : undefined} style={{ display: 'inline-block', lineHeight: 1 }}>↻</span>
+              </button>
+              <style>{`
+                @keyframes cc-fc-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+                .cc-fc-spin { animation: cc-fc-spin 1s linear infinite; display: inline-block; }
+              `}</style>
             </>
           }
         />
@@ -365,23 +431,28 @@ function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
   const xAt = (i: number) => PL + (plotW * (i + 0.5)) / 12
   const yAt = (v: number) => PT + plotH * (1 - v / yMax)
 
-  // Actual line — connects Jan → current through every past month.
-  // Earlier versions filtered on `m.value > 0` which meant a single
-  // data month drew a single floating dot with nothing to connect to.
-  // FIX-PROMPT § Phase 5 explicitly asks for the line to span all
-  // past months, even if some are zero. Only skip months in the
-  // future (not yet happened). Zero months sit on the baseline so the
-  // line is honest: zero literally means zero.
-  const firstActualIdx = monthly.findIndex((m: any) => !m.isFuture && m.actualRev > 0)
-  const lastActualIdx  = monthly.length - 1 - [...monthly].reverse().findIndex((m: any) => !m.isFuture && m.actualRev > 0)
+  // Actual line — connects Jan → last COMPLETED month.  The current
+  // month is rendered separately as a hollow "in progress" circle and is
+  // NOT connected into the solid navy line — part-month actuals drop
+  // dramatically from the previous month's total and would otherwise
+  // read as "April collapsed" (FORECAST-FIX § 2).
+  const pastMonthly = monthly.filter((m: any) => m.isPast)
+  const firstActualIdx = pastMonthly.findIndex((m: any) => m.actualRev > 0)
+  const lastActualIdx  = pastMonthly.length - 1 - [...pastMonthly].reverse().findIndex((m: any) => m.actualRev > 0)
   const actualPoints = firstActualIdx < 0
     ? []
-    : monthly
+    : pastMonthly
         .slice(firstActualIdx, lastActualIdx + 1)
-        .filter((m: any) => !m.isFuture)
         .map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.actualRev), tone: m.tone, m: m.m, value: m.actualRev, actual: true }))
 
-  const forecastPoints = monthly.filter((m: any) => (m.isFuture || m.isCurrent) && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: false }))
+  // Current month treated specially.  Hollow ring with "in progress"
+  // label instead of a solid dot — it's not a final value.
+  const currentRow = monthly.find((m: any) => m.isCurrent)
+  const currentInProgress = currentRow && currentRow.actualRev > 0
+    ? { x: xAt(currentRow.m - 1), y: yAt(currentRow.actualRev), m: currentRow.m, value: currentRow.actualRev }
+    : null
+
+  const forecastPoints = monthly.filter((m: any) => m.isFuture && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: false }))
 
   const actualPath = actualPoints.length >= 2
     ? actualPoints.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
@@ -390,10 +461,20 @@ function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
     ? forecastPoints.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
     : ''
 
-  // Connect actual → forecast at the boundary
-  const connectPath = actualPoints.length > 0 && forecastPoints.length > 0
-    ? `M${actualPoints[actualPoints.length - 1].x},${actualPoints[actualPoints.length - 1].y} L${forecastPoints[0].x},${forecastPoints[0].y}`
-    : ''
+  // Connect last-completed actual → first forecast (dashed).  If the
+  // current month is in progress we still connect from its hollow point,
+  // so the eye has one continuous dashed trail from the last solid dot
+  // through "in progress" to the forecast.
+  const lastActual = actualPoints[actualPoints.length - 1] ?? null
+  const firstForecast = forecastPoints[0] ?? null
+  const connectPath = (() => {
+    const anchors: Array<{ x: number; y: number }> = []
+    if (lastActual)        anchors.push(lastActual)
+    if (currentInProgress) anchors.push(currentInProgress)
+    if (firstForecast)     anchors.push(firstForecast)
+    if (anchors.length < 2) return ''
+    return anchors.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+  })()
 
   // Today line — sits inside current month's cell at month-progress %
   const todayX = xAt(currentMonth - 1) - (plotW / 12) / 2 + (plotW / 12) * todayProgress
@@ -448,7 +529,8 @@ function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
         <path d={forecastPath} stroke={UX.indigo} strokeWidth={2} strokeDasharray="4 3" fill="none" strokeLinejoin="round" />
       )}
 
-      {/* Dots */}
+      {/* Dots — tone-coloured per FORECAST-FIX § 6 (green ≥ forecast,
+          amber within 10% under, red > 10% under; navy default). */}
       {[...actualPoints, ...forecastPoints].map((p: any) => (
         <circle
           key={`${p.actual ? 'a' : 'f'}-${p.m}`}
@@ -463,6 +545,30 @@ function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
           }
         />
       ))}
+
+      {/* Current month — hollow ring + tiny "(in progress)" label so the
+          part-month actual isn't misread as "Apr collapsed". */}
+      {currentInProgress && (
+        <g>
+          <circle
+            cx={currentInProgress.x}
+            cy={currentInProgress.y}
+            r={4}
+            fill="white"
+            stroke={UX.navy}
+            strokeWidth={1.4}
+          />
+          <text
+            x={currentInProgress.x}
+            y={currentInProgress.y - 8}
+            textAnchor="middle"
+            fontSize={UX.fsNano}
+            fill={UX.ink3}
+          >
+            in progress
+          </text>
+        </g>
+      )}
 
       {/* Month labels */}
       {monthly.map((m: any, i: number) => (
