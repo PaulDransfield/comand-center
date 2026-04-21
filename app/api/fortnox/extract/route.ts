@@ -194,12 +194,16 @@ Return ONLY the JSON object.`
     const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
     const response = await client.messages.create({
-      model:      AI_MODELS.ANALYSIS,
+      // Haiku 4.5 instead of Sonnet. Sonnet took 3–6 minutes to emit the
+      // 25k output tokens of a 12-column Resultatrapport; Haiku runs the
+      // same extraction in under a minute and costs ~5x less. Structured
+      // JSON extraction from a clean PDF table doesn't need Sonnet's
+      // reasoning lift — the heavy lifting is the scale rule and the
+      // BAS account mapping, both of which Haiku handles reliably.
+      model:      AI_MODELS.AGENT,
       // Multi-month Resultatrapports (12 columns × ~40 line items) run to
-      // ~25k output tokens. 8 000 truncated mid-JSON on a Rosali 2025
-      // sample. 32 000 is still half of Sonnet's 64k ceiling and costs
-      // ≈ $0.12 per call in the worst case — acceptable for the handful
-      // of multi-month PDFs a customer uploads per year.
+      // ~25k output tokens. 32 000 leaves headroom under Haiku's 64k
+      // output ceiling.
       max_tokens: 32000,
       messages: [{
         role: 'user',
