@@ -130,26 +130,26 @@ Every long-running path uses the queue. The HTTP request from the browser is alw
 
 **Ship order matters: RLS before admin-bypass fixes, so tightening code doesn't rely on yet-to-exist policies.**
 
-1. ☐ **RLS migration** — create `M018-rls-gaps.sql` enabling RLS on the 5 missing tables + policies. Run after review.
-2. ☐ **`current_user_org_ids()` migration** — create new array-returning function; update policies that used `current_org_id()` to use `ANY(current_user_org_ids())`. Keep old function as alias for backwards compat for one release.
-3. ☐ **Admin org-scope helper** — `lib/admin/require-admin-for-org.ts`. Replace body-trusted `org_id` reads in `/api/admin/connect`, `/api/admin/sync`, `/api/admin/customers/[orgId]/impersonate`. Audit log BEFORE the action, not after.
-4. ☐ **Stripe webhook correctness** — return 5xx on DB errors so Stripe retries. Add `stripe_processed_events` table + dedup check. Wrap org updates in a transaction via RPC.
-5. ☐ **Stripe checkout org-rate-limit** — 5 checkout session creates per org per hour; daily cap of 20.
-6. ☐ **Fortnox token auto-refresh in sync engine** — `lib/sync/engine.ts` checks expiry before every Fortnox call; refreshes if <5 min remaining.
+1. ☑ **RLS migration** — `M018-RLS-GAPS-MIGRATION.sql` enables RLS on the 5 missing tables + policies. Ran successfully 2026-04-21.
+2. ☑ **`current_user_org_ids()` migration** — array-returning function shipped; `current_org_id()` kept as backwards-compat alias.
+3. ☑ **Admin org-scope helper** — `lib/admin/require-admin.ts`. `/api/admin/connect`, `/api/admin/customers/[orgId]/impersonate`, and `/api/admin/customers/[orgId]/integrations/[integId]` migrated.
+4. ☑ **Stripe webhook correctness** — returns 5xx on DB errors + `stripe_processed_events` dedup table. Shipped.
+5. ☑ **Stripe checkout org-rate-limit** — 5/hr + 20/day via `org_rate_limits` table. Shipped.
+6. ☑ **Fortnox token auto-refresh in sync engine** — `ensureFreshFortnoxToken()` called before every sync.
 
 ### Phase 2 — HIGH (next 2 weeks)
 
-7. ☐ **Async jobs for AI-heavy routes** — `/api/ask` (for long questions), `/api/invoices/extract`, `/api/budgets/generate` move to the queue pattern that's already live for Fortnox PDF extract.
-8. ☐ **`cost-intelligence` agent gated** — wrap with `checkAiLimit()`, fall back to "cached insight from last run" on limit hit.
-9. ☐ **Per-integration timeout** in `/api/cron/personalkollen-sync` using the `withTimeout` helper already present in master-sync.
-10. ☐ **Multi-month Fortnox apply transactional** — wrap in RPC `apply_multi_month(upload_id)`; all 12 months commit or none.
-11. ☐ **`/api/ask` business-id verification** — check `business_id` belongs to `auth.orgId` before building context.
-12. ☐ **`maxDuration` on every route** that calls an external API (sweep via grep; add in one PR).
+7. ☐ **Async jobs for AI-heavy routes** — deferred. `/api/ask`, `/api/invoices/extract`, `/api/budgets/generate` all run fine under their current `maxDuration` ceilings. Revisit when a specific route actually trips 300 s.
+8. ☑ **`cost-intelligence` agent gated** — `checkAiLimit()` wrap in place; returns `{ insights: [], reason: 'ai_limit_blocked' }` on quota hit.
+9. ☑ **Per-integration timeout** in `/api/cron/personalkollen-sync` via shared `lib/sync/with-timeout.ts`. 60 s per integration.
+10. ☑ **Multi-month Fortnox apply correctness** — pragmatic fix (check per-period errors, abort before marking applied, leave idempotent upserts for retry). Full transactional RPC deferred; retry path already works.
+11. ☑ **`/api/ask` business-id verification** — 403s if `business_id` isn't in `auth.orgId`.
+12. ☑ **`maxDuration` on every external-call route** — swept 10 routes touching Claude/Stripe/Personalkollen/Open-Meteo. DB-only routes left on defaults (noise reduction).
 
 ### Phase 3 — MEDIUM / scaling (next month)
 
-13. ☐ **Standardise cron auth** — dual-check `x-vercel-cron` OR `Authorization: Bearer CRON_SECRET`; never query string. Helper: `requireCronAuth(req)`.
-14. ☐ **Sentry-tag every silent catch** — `catch(e => { captureException(e, { tags: { route, op } }); /* non-fatal */ })`.
+13. ☑ **Standardise cron auth** — `checkCronSecret()` now accepts `x-vercel-cron=1` as authoritative; 5 routes with custom checks migrated to the helper.
+14. ◐ **Sentry-tag every silent catch** — worst offenders done (`businesses/delete`, `onboarding/setup-request`, `admin/integrations/delete`). Remaining silent catches are mostly safe body-parsers and intentional fetch-null-on-network-error. Ongoing sweep recommended.
 15. ☐ **Supabase Realtime** for `/overheads/upload`, `/tracker`, `/dashboard` — replace 3s polling with push subscriptions. Stops 20 req/min/user when product scales.
 16. ☐ **Structured logging helper** — `lib/log/structured.ts` wrapping console.log in JSON. Every cron/worker uses it.
 17. ☐ **`/admin/health` live dashboard** — queue depth, sweeper stats, AI burn rate, last-sync-age per integration.
