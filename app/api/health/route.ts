@@ -9,6 +9,14 @@
 import { NextResponse }    from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 
+// Force dynamic so Vercel doesn't serve a cached response. A health
+// check that returns a 2-hour-stale timestamp is worse than no health
+// check — it silently says 'ok' even when the DB is down, because the
+// prerender happened when things were fine.
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const revalidate  = 0
+
 export async function GET() {
   // DEVELOPMENT MODE: Return mock response for local development
   if (process.env.NODE_ENV === 'development' || 
@@ -37,7 +45,7 @@ export async function GET() {
     console.error('Health check failed:', error.message)
     return NextResponse.json(
       { status: 'error', database: 'disconnected', detail: error.message },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } },
     )
   }
 
@@ -47,5 +55,5 @@ export async function GET() {
     orgs:      count ?? 0,
     timestamp: new Date().toISOString(),
     version:   process.env.npm_package_version ?? '0.1.0',
-  })
+  }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
 }
