@@ -150,10 +150,14 @@ Every long-running path uses the queue. The HTTP request from the browser is alw
 
 13. ☑ **Standardise cron auth** — `checkCronSecret()` now accepts `x-vercel-cron=1` as authoritative; 5 routes with custom checks migrated to the helper.
 14. ◐ **Sentry-tag every silent catch** — worst offenders done (`businesses/delete`, `onboarding/setup-request`, `admin/integrations/delete`). Remaining silent catches are mostly safe body-parsers and intentional fetch-null-on-network-error. Ongoing sweep recommended.
-15. ☐ **Supabase Realtime** for `/overheads/upload`, `/tracker`, `/dashboard` — replace 3s polling with push subscriptions. Stops 20 req/min/user when product scales.
-16. ☐ **Structured logging helper** — `lib/log/structured.ts` wrapping console.log in JSON. Every cron/worker uses it.
-17. ☐ **`/admin/health` live dashboard** — queue depth, sweeper stats, AI burn rate, last-sync-age per integration.
-18. ☐ **Test harness** — one integration test for tenant isolation (user A can't read org B), one for Stripe webhook idempotency, one for Fortnox extraction end-to-end with a real PDF.
+15. ☑ **Supabase Realtime** for `/overheads/upload` (fortnox_uploads + extraction_jobs subscription). Remaining: `/tracker`, `/dashboard` — low urgency because neither polls aggressively today.
+16. ☑ **Structured logging helper** — `lib/log/structured.ts` with `log.{debug,info,warn,error}()` and `timed()` wrapper. `/api/cron/extraction-sweeper` is the first consumer. Roll out to other crons incrementally.
+17. ☑ **`/admin/health` live dashboard** — extraction queue counters, Stripe webhook dedup activity, org rate-limit hits surfaced alongside existing cron/sync/AI-cost panels.
+18. ☑ **Validation runbook** — `VALIDATION-RUNBOOK.sql` with nine read-only checks for RLS, dedup, queue health, AI burn, sync freshness, token expiry, rate-limit counters, and stuck-work detection. Run periodically; replaces the heavier integration-test-framework approach for current scale.
+
+### Phase 2 / H3 — intentionally deferred after review
+
+The audit flagged `/api/ask`, `/api/invoices/extract`, `/api/budgets/generate` for async-queue treatment. On reflection these are all interactive (user waits for the response), and async-ifying them would be a UX regression — the user has to navigate away and come back, with no net latency improvement. All three fit comfortably under their `maxDuration` ceilings with the current architecture. Revisit only if a specific route starts tripping 300 s in production.
 
 ### Phase 4 — beyond 10 customers
 
