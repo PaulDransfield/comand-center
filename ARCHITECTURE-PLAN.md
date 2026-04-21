@@ -155,6 +155,17 @@ Every long-running path uses the queue. The HTTP request from the browser is alw
 17. ☑ **`/admin/health` live dashboard** — extraction queue counters, Stripe webhook dedup activity, org rate-limit hits surfaced alongside existing cron/sync/AI-cost panels.
 18. ☑ **Validation runbook** — `VALIDATION-RUNBOOK.sql` with nine read-only checks for RLS, dedup, queue health, AI burn, sync freshness, token expiry, rate-limit counters, and stuck-work detection. Run periodically; replaces the heavier integration-test-framework approach for current scale.
 
+### Post-session follow-ups (2026-04-22)
+
+Surfaced during live use of the queue + Realtime architecture:
+
+- ☑ **Fortnox revenue flow into monthly_metrics** — aggregator only merged cost fields from tracker_data; revenue sat in tracker_data but never reached monthly_metrics. Every downstream surface (budgets, forecast, memo, cashflow, tracker, anomaly detector) went blind for Fortnox-only months. Fix in `92f41a1`: aggregator now merges revenue + staff + food + rent + other, and `rev_source`/`cost_source` mark which feeder won.
+- ☑ **Apply triggers aggregation** — `/api/fortnox/apply` now fires `aggregateMetrics()` for the affected year. No 24h wait for master-sync. `92f41a1`.
+- ☑ **Budget generator belt-and-braces merge** — reads both monthly_metrics AND tracker_data, prefers Fortnox row-for-row. `6b1d301`. Defense-in-depth if aggregation lags.
+- ☑ **Historical backfill endpoint** — `POST /api/admin/reaggregate { business_id, from_year, to_year }` forces the aggregator for pre-fix uploads that never saw the corrected merge. `503c57c`.
+- ☑ **Queue lifecycle conflict** — old 5-min stale-reset in `/api/fortnox/uploads` was fighting the new queue (which uses 10-min sweeper resets + up to 12-min retry backoff). Removed; queue now owns lifecycle. `317a1d0`.
+- ☑ **Smarter retry guard** — dispatcher's concurrency check now treats a 'processing' job >10 min as stale so user-triggered retry unblocks without waiting for the sweeper. `317a1d0`.
+
 ### Phase 2 / H3 — intentionally deferred after review
 
 The audit flagged `/api/ask`, `/api/invoices/extract`, `/api/budgets/generate` for async-queue treatment. On reflection these are all interactive (user waits for the response), and async-ifying them would be a UX regression — the user has to navigate away and come back, with no net latency improvement. All three fit comfortably under their `maxDuration` ceilings with the current architecture. Revisit only if a specific route starts tripping 300 s in production.

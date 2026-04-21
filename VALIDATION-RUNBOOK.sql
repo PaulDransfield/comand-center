@@ -147,3 +147,32 @@ select 'integrations.with_error', count(*)           from integrations where las
 union all
 select 'uploads.stuck_extracting', count(*)          from fortnox_uploads where status='extracting' and created_at < now() - interval '10 minutes';
 -- Expected: ideally all zeros. Nonzero = look at /admin/health for details.
+
+-- =====================================================================
+-- §10 — Fortnox→monthly_metrics flow-through (added 2026-04-22)
+-- =====================================================================
+-- For every business with Fortnox P&L data in tracker_data, verify
+-- monthly_metrics has the corresponding rows with rev_source in
+-- ('pos','fortnox') — NOT 'none'. If 'none' appears on a Fortnox
+-- month it means the aggregator never merged revenue for that month.
+-- Fix: POST /api/admin/reaggregate { business_id, from_year, to_year }.
+with fortnox_months as (
+  select business_id, period_year as y, period_month as m
+  from tracker_data
+  where source = 'fortnox_pdf' and period_month between 1 and 12
+)
+select fm.business_id,
+       fm.y                                as year,
+       fm.m                                as month,
+       coalesce(mm.rev_source, 'MISSING_ROW') as rev_source,
+       coalesce(mm.revenue, 0)              as revenue
+from fortnox_months fm
+left join monthly_metrics mm
+  on mm.business_id = fm.business_id
+ and mm.year        = fm.y
+ and mm.month       = fm.m
+where coalesce(mm.rev_source, '') in ('none', 'MISSING_ROW', '')
+   or coalesce(mm.revenue, 0) = 0
+order by fm.business_id, fm.y, fm.m;
+-- Expected: zero rows. Any row means a Fortnox month didn't make it
+-- into monthly_metrics correctly.
