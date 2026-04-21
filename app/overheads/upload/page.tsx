@@ -385,7 +385,10 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
   const [ackConflict, setAckConflict] = useState(false)
 
   useEffect(() => {
-    fetch(`/api/fortnox/uploads?include_json=1&limit=1`, { cache: 'no-store' })
+    // Fetch the full list (default 50) and find the specific upload by id.
+    // The older limit=1 hack only ever worked for the most recent upload —
+    // reviewing any older one left the modal stuck on "Loading…".
+    fetch(`/api/fortnox/uploads?include_json=1`, { cache: 'no-store' })
       .then(r => r.json())
       .then(j => {
         const row = (j.uploads ?? []).find((u: any) => u.id === uploadId)
