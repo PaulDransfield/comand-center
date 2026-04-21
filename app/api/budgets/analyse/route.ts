@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
+import { SCOPE_NOTE } from '@/lib/ai/scope'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
@@ -154,6 +155,8 @@ export async function POST(req: NextRequest) {
   if (hasMargin) metricsAvailable.push('margin')
 
   const prompt = `You are analysing a single month's performance for a Swedish restaurant.
+
+${SCOPE_NOTE}
 
 ${lines.join('\n')}
 

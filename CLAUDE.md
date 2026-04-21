@@ -317,6 +317,10 @@ Department-level:
 
 Department margin is `dept_revenue − dept_staff_cost`. It does NOT include food_cost or overheads (those only exist at the business level). When writing AI surfaces, if a question needs a business-wide number to answer a department-scoped question, the AI must say so explicitly instead of pretending.
 
+**Business-wide data IS encouraged for predictive modelling at the business scope** — forecasts, budgets, seasonality, cost-trend analysis, benchmarking against industry norms. Fortnox history is the richest signal we have for whole-business prediction; lean into it. The ban is on misattributing business-wide figures to a specific department, not on using them where they genuinely apply.
+
+Predictive endpoints that now carry `SCOPE_NOTE`:  `/api/ask`, `/api/budgets/generate`, `/api/budgets/analyse`, `/api/budgets/coach`, `/api/tracker/narrative`, `lib/agents/cost-intelligence.ts`. Any new predictive or generative AI surface must do the same.
+
 ---
 
 ## 11. AI Model Routing — always follow this

@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { logAiRequest } from '@/lib/ai/usage'
 
 export const dynamic    = 'force-dynamic'
@@ -175,7 +176,11 @@ async function generateNarrative(db: any, orgId: string, ctx: any): Promise<stri
     return `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`
   }
 
-  const prompt = `You are the owner-operator of ${ctx.businessName} reading your own P&L. Write ONE short paragraph (80-120 words) that explains what happened in ${monthName} ${ctx.year}. You must:
+  const prompt = `You are the owner-operator of ${ctx.businessName} reading your own P&L.
+
+${SCOPE_NOTE}
+
+Write ONE short paragraph (80-120 words) that explains what happened in ${monthName} ${ctx.year}. You must:
 
 1. Open with a one-sentence verdict on margin — hit or missed target, direction vs last month.
 2. Call out the 1-2 biggest drivers (labour %, food %, or a specific cost) with concrete numbers.

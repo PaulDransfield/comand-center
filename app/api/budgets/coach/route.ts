@@ -18,6 +18,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
+import { SCOPE_NOTE } from '@/lib/ai/scope'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -147,7 +148,11 @@ async function generateNarrative(db: any, orgId: string, ctx: any): Promise<stri
   const fmtKr = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
   const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
 
-  const prompt = `You are the budget coach for ${ctx.businessName}. It's day ${ctx.dayOfMonth} of ${MONTHS[ctx.month - 1]} ${ctx.year} (${Math.round(ctx.mtd.pctElapsed * 100)}% through). Write ONE short paragraph (70-110 words) that:
+  const prompt = `You are the budget coach for ${ctx.businessName}. It's day ${ctx.dayOfMonth} of ${MONTHS[ctx.month - 1]} ${ctx.year} (${Math.round(ctx.mtd.pctElapsed * 100)}% through).
+
+${SCOPE_NOTE}
+
+Write ONE short paragraph (70-110 words) that:
 
 1. Open with a one-sentence verdict — on pace, ahead, or behind revenue target.
 2. Call out the biggest lever for the rest of the month with a specific action. If labour % is running over target, the action should reference the /scheduling page ("trim next week's hours — the scheduling page shows the specific cuts").

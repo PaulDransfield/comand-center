@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
+import { SCOPE_NOTE } from '@/lib/ai/scope'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -84,6 +85,8 @@ export async function POST(req: NextRequest) {
     : '  (no forecasts yet)'
 
   const prompt = `You are helping set monthly budget targets for a Swedish restaurant: "${biz?.name ?? 'Unknown'}"${biz?.city ? ` in ${biz.city}` : ''}.
+
+${SCOPE_NOTE}
 
 Your job: return 12 monthly budgets for ${year} that are realistic, slightly ambitious, and usable as stretch targets. These become operational goals the team will be measured against.
 
