@@ -49,6 +49,7 @@ const NAV: NavItem[] = [
   { kind: 'link',    key: 'financials/budget',       label: 'Budget vs Actual',  href: '/budget',       icon: 'budget',   sub: true },
   { kind: 'link',    key: 'financials/forecast',     label: 'Forecast',          href: '/forecast',     icon: 'forecast', sub: true },
   { kind: 'link',    key: 'financials/overheads',    label: 'Overheads',         href: '/overheads',    icon: 'budget',   sub: true },
+  { kind: 'link',    key: 'financials/cashflow',     label: 'Cashflow',          href: '/cashflow',     icon: 'forecast', sub: true },
   { kind: 'section', label: 'Operations' },
   { kind: 'link',    key: 'operations/revenue',      label: 'Revenue',           href: '/revenue',      icon: 'revenue',     sub: true },
   { kind: 'link',    key: 'operations/staff',        label: 'Staff',             href: '/staff',        icon: 'staff',       sub: true },

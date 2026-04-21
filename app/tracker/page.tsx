@@ -254,6 +254,33 @@ export default function TrackerPage() {
           ]}
           rightSlot={
             <>
+              {/* Accountant one-pager — opens the latest-with-revenue
+                  month in a new tab. Print / save-as-PDF / forward to
+                  the bookkeeper. */}
+              {withData.length > 0 && (() => {
+                const latest = [...withData].sort((a, b) => b.period_month - a.period_month)[0]
+                return (
+                  <a
+                    href={`/api/tracker/accountant-summary?business_id=${selected}&year=${year}&month=${latest.period_month}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Export ${MONTHS_SHORT[latest.period_month - 1]} ${year} to accountant`}
+                    style={{
+                      padding:      '5px 11px',
+                      background:   'transparent',
+                      color:        UX.ink2,
+                      border:       `0.5px solid ${UX.border}`,
+                      borderRadius: UX.r_md,
+                      fontSize:     UX.fsBody,
+                      fontWeight:   UX.fwMedium,
+                      textDecoration: 'none',
+                      whiteSpace:   'nowrap' as const,
+                    }}
+                  >
+                    📧 Accountant
+                  </a>
+                )
+              })()}
               <select value={selected} onChange={e => setSelected(e.target.value)} style={selectStyle}>
                 {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
