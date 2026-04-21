@@ -132,6 +132,8 @@ export default function SyncIndicator({
           cursor:         busy || !businessId ? 'default' : 'pointer',
           color:          labelColour,
           fontSize:       UX.fsMicro,
+          fontFamily:     'inherit',       // prevent Windows substitution that was rendering "Spued"
+          lineHeight:     1.4,
           textAlign:      'left' as const,
           overflow:       'hidden' as const,
         }}

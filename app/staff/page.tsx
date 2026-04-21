@@ -290,43 +290,82 @@ export default function StaffPage() {
                   </div>
                 </div>
 
-                {/* Vertical bars — one per day */}
-                <div style={{ display: 'flex', gap: viewMode === 'week' ? 8 : 2, height: 180, alignItems: 'flex-end', position: 'relative' }}>
+                {/* Vertical bars — one per day.  Colour tiers (STAFF-FIX § 2):
+                    green (≤ target), amber (target < pct ≤ 70), red (> 70).
+                    Bars > 100 % render the value above the bar so offenders
+                    are self-explanatory without hovering (STAFF-FIX § 3). */}
+                <div style={{ display: 'flex', gap: viewMode === 'week' ? 8 : 2, height: 200, alignItems: 'flex-end', position: 'relative', paddingTop: 16 }}>
                   {/* Target line */}
-                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${(targetPct / maxDayPct) * 180}px`, height: 1, borderTop: '2px dashed #fcd34d', zIndex: 1 }} />
+                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${(targetPct / maxDayPct) * 170}px`, height: 1, borderTop: '2px dashed #fcd34d', zIndex: 1 }} />
 
-                  {chartDays.map((day) => {
+                  {chartDays.map((day, i) => {
                     const barH   = day.pct !== null ? Math.max((day.pct / maxDayPct) * 170, 3) : 0
-                    const isOver = day.pct !== null && day.pct > targetPct
-                    const color  = day.pct === null ? '#e5e7eb' : isOver ? '#dc2626' : '#16a34a'
+                    const color  =
+                      day.pct === null       ? '#e5e7eb'
+                      : day.pct <= targetPct ? '#16a34a'     // green
+                      : day.pct <= 70        ? UX.amberInk   // amber
+                      :                        '#dc2626'     // red
                     const isHover = tooltip?.dateStr === day.dateStr
+
+                    // X-axis label visibility — week view labels every day;
+                    // month view labels every 5th day + day 1 + today
+                    // (STAFF-FIX § 4).
+                    const dayNum = Number(day.dayName)
+                    const showLabel = viewMode === 'week'
+                      ? true
+                      : (day.isToday || dayNum === 1 || (!Number.isNaN(dayNum) && dayNum % 5 === 0))
 
                     return (
                       <div
                         key={day.dateStr}
-                        style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: day.pct !== null ? 'pointer' : 'default' }}
+                        style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: day.pct !== null ? 'pointer' : 'default', position: 'relative' as const }}
                         onMouseEnter={() => day.pct !== null && setTooltip(day)}
                         onMouseLeave={() => setTooltip(null)}
                       >
-                        <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                        <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', position: 'relative' as const }}>
                           {day.pct !== null ? (
-                            <div style={{
-                              height: barH, borderRadius: '4px 4px 0 0',
-                              background: color, opacity: isHover ? 1 : day.isFuture ? 0.3 : 0.8,
-                              transition: 'opacity 0.15s',
-                              boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                            }} />
+                            <>
+                              {/* Value label above the bar when it dwarfs the
+                                  target — a 162% bar without a number is
+                                  useless at a glance. */}
+                              {day.pct > 100 && (
+                                <div style={{
+                                  position:   'absolute' as const,
+                                  left:       0,
+                                  right:      0,
+                                  bottom:     `${barH + 2}px`,
+                                  textAlign:  'center' as const,
+                                  fontSize:   10,
+                                  fontWeight: 500,
+                                  color:      UX.redInk,
+                                  pointerEvents: 'none' as const,
+                                }}>
+                                  {Math.round(day.pct)}%
+                                </div>
+                              )}
+                              <div style={{
+                                height: barH, borderRadius: '4px 4px 0 0',
+                                background: color, opacity: isHover ? 1 : day.isFuture ? 0.3 : 0.85,
+                                transition: 'opacity 0.15s',
+                                boxShadow: isHover ? '0 0 0 2px #6366f1' : (day.isToday ? '0 0 0 1.5px #6366f1' : 'none'),
+                              }} />
+                            </>
                           ) : (
                             <div style={{ height: 2, background: day.isFuture ? '#f3f4f6' : '#e5e7eb', borderRadius: 2 }} />
                           )}
                         </div>
 
-                        {/* Day label */}
+                        {/* Day label — sparse in month view */}
                         <div style={{
-                          fontSize: viewMode === 'week' ? 11 : 8,
+                          fontSize: viewMode === 'week' ? 11 : 9,
                           fontWeight: day.isToday ? 700 : 400,
                           color: day.isToday ? '#6366f1' : day.dayIdx >= 5 ? '#d1d5db' : '#9ca3af',
-                        }}>{day.dayName}</div>
+                          minHeight: 14,
+                        }}>
+                          {showLabel
+                            ? (day.isToday ? `${day.dayName} ↑` : day.dayName)
+                            : ''}
+                        </div>
                       </div>
                     )
                   })}
@@ -425,18 +464,14 @@ export default function StaffPage() {
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
                     {showingFull ? `${sorted.length} staff members` : `Top ${visible.length} by cost`}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {sorted.length > 5 && !search && (
-                      <button
-                        onClick={() => setTableExpanded(t => !t)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: UX.indigo, fontSize: UX.fsLabel, fontWeight: UX.fwMedium, padding: '4px 8px' }}
-                      >
-                        {tableExpanded ? 'Show top 5' : `All ${sorted.length} staff →`}
-                      </button>
-                    )}
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+                  {/* Search only shown in full-list mode — typing "Joakim"
+                      in the top-5 view is misleading, you can't find someone
+                      outside the visible rows (STAFF-FIX § 6). The expand
+                      link is kept at the card footer only (STAFF-FIX § 5). */}
+                  {showingFull && (
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
                       style={{ padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, width: 180, fontFamily: 'inherit' }} />
-                  </div>
+                  )}
                 </div>
 
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -451,6 +486,13 @@ export default function StaffPage() {
                     {visible.map((s: any) => {
                       const isExp = expanded === s.id
                       const cost  = s.cost_actual > 0 ? s.cost_actual : s.estimated_salary
+                      // Compute cost-per-hour locally when the API value is
+                      // missing — both inputs already exist on the row, so
+                      // the previous "—" display was wasted space
+                      // (STAFF-FIX § 7).
+                      const costPerHour = (s.cost_per_hour && s.cost_per_hour > 0)
+                        ? s.cost_per_hour
+                        : (cost > 0 && s.hours_logged > 0 ? cost / s.hours_logged : 0)
                       return (
                         <>
                           <tr key={s.id} onClick={() => setExpanded(isExp ? null : s.id)}
@@ -459,18 +501,22 @@ export default function StaffPage() {
                               {s.name}
                             </td>
                             <td style={{ padding: '10px 14px', fontSize: 12, color: '#6b7280' }}>{s.group ?? '—'}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#111' }}>{s.hours_logged > 0 ? `${Math.round(s.hours_logged * 10) / 10}h` : '—'}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>
+                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#111' }}>{s.hours_logged > 0 ? `${Math.round(s.hours_logged * 10) / 10}h` : '—'}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, fontWeight: 600, color: '#111' }}>
                               {cost > 0 ? fmtKr(cost) : '—'}
                               {s.cost_actual === 0 && s.estimated_salary > 0 && <span style={{ fontSize: 9, color: '#d97706', marginLeft: 4 }}>est</span>}
                             </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>{s.cost_per_hour > 0 ? fmtKr(s.cost_per_hour) : '—'}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#6b7280' }}>{costPerHour > 0 ? fmtKr(costPerHour) : '—'}</td>
+                            <td style={{ padding: '10px 14px', textAlign: 'right' as const }}>
                               {(s.late_shifts ?? 0) > 0 ? (
                                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fef3c7', color: '#d97706' }}>{s.late_shifts}</span>
                               ) : <span style={{ color: '#d1d5db', fontSize: 12 }}>—</span>}
                             </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 12, color: s.ob_supplement_kr > 0 ? '#6366f1' : '#d1d5db' }}>
+                            {/* OB — plain ink2, no indigo.  Reads as a number,
+                                not a link (STAFF-FIX § 8).  Expanded row
+                                already shows the OB type breakdown for anyone
+                                who wants detail. */}
+                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 12, color: s.ob_supplement_kr > 0 ? UX.ink2 : '#d1d5db' }}>
                               {s.ob_supplement_kr > 0 ? fmtKr(s.ob_supplement_kr) : '—'}
                             </td>
                           </tr>
