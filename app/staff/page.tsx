@@ -8,6 +8,10 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
+import PageHero from '@/components/ui/PageHero'
+import SupportingStats from '@/components/ui/SupportingStats'
+import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
@@ -187,65 +191,77 @@ export default function StaffPage() {
     <AppShell>
       <div className="page-wrap">
 
-        {/* ── Header ──────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#111' }}>Staff</h1>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: '#9ca3af' }}>Hours, costs, lateness & OB supplements</p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {/* Period navigator */}
-            {viewMode === 'week' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {(curr as any).weekNum}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
-                </div>
-                <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
+        {/* Local period nav + W/M — sits above the hero */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          {viewMode === 'week' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => setWeekOffset(o => o - 1)} style={staffNavBtn}>‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+                Week {(curr as any).weekNum} · {curr.label}
               </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setMonthOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{curr.label}</div>
-                </div>
-                <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: monthOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-              </div>
-            )}
-
-            {/* W / M toggle */}
-            <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
-              {(['week', 'month'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)} style={{
-                  padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  background: viewMode === m ? 'white' : 'transparent',
-                  color:      viewMode === m ? '#111'   : '#9ca3af',
-                  boxShadow:  viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
-                }}>{m === 'week' ? 'W' : 'M'}</button>
-              ))}
+              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...staffNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => setMonthOffset(o => o - 1)} style={staffNavBtn}>‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
+              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...staffNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+            </div>
+          )}
+          <SegmentedToggle
+            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'week' | 'month')}
+          />
         </div>
 
+        {/* ─── PageHero ─────────────────────────────────────────────── */}
+        <PageHero
+          eyebrow={`LABOUR — ${viewMode === 'week' ? `WEEK ${(curr as any).weekNum} ${curr.label}` : curr.label}`.toUpperCase()}
+          headline={
+            <StaffHeadline
+              labourPct={labourPct}
+              targetPct={targetPct}
+              curRev={curRev}
+              lateShifts={lateShifts}
+            />
+          }
+          context={staffContext(summary, totalCost, totalHours)}
+          right={
+            <SupportingStats
+              items={[
+                {
+                  label: 'Labour',
+                  value: totalCost > 0 ? fmtKr(totalCost) : '—',
+                  delta: staffDeltaLabel(totalCost, prevTotalCost),
+                  deltaTone: prevTotalCost > 0 ? (totalCost <= prevTotalCost ? 'good' : 'bad') : 'neutral',
+                },
+                {
+                  label: 'Hours',
+                  value: totalHours > 0 ? `${Math.round(totalHours)}h` : '—',
+                  sub:   summary?.shifts_logged ? `${summary.shifts_logged} shifts` : undefined,
+                },
+                {
+                  label: 'Late arrivals',
+                  value: lateShifts > 0 ? String(lateShifts) : '0',
+                  sub:   lateShifts > 0 ? 'flagged shifts' : 'all on time',
+                  deltaTone: lateShifts === 0 ? 'good' : lateShifts > 5 ? 'bad' : 'neutral',
+                },
+              ]}
+            />
+          }
+        />
+
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading...</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
         ) : !connected ? (
-          <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 48, textAlign: 'center' }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 8 }}>Personalkollen not connected</div>
-            <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 20 }}>Connect to see staff hours, costs and punctuality.</div>
-            <a href="/integrations" style={{ padding: '10px 20px', background: '#1a1f2e', color: 'white', borderRadius: 8, fontSize: 13, fontWeight: 600, textDecoration: 'none' }}>Connect now</a>
+          <div style={{ background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg, padding: 48, textAlign: 'center' as const }}>
+            <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>Personalkollen not connected</div>
+            <div style={{ fontSize: UX.fsBody, color: UX.ink3, marginBottom: 20 }}>Connect to see staff hours, costs and punctuality.</div>
+            <a href="/integrations" style={{ padding: '10px 20px', background: UX.navy, color: 'white', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium, textDecoration: 'none' }}>Connect now</a>
           </div>
         ) : (
           <>
-            {/* ── 4 KPI cards ────────────────────────────────────────── */}
-            <div className="kpi-row" style={{ marginBottom: 16 }}>
-              <KpiCard label="Labour Cost" value={fmtKr(totalCost)} deltaVal={delta(totalCost, prevTotalCost)} sub={`vs prev ${viewMode === 'week' ? 'week' : 'month'}`} />
-              <KpiCard label="Labour %" value={curRev > 0 ? fmtPct(labourPct) : '—'} sub={`Target ${targetPct}%`} ok={curRev > 0 ? labourPct <= targetPct : null} />
-              <KpiCard label="Hours Worked" value={totalHours > 0 ? `${Math.round(totalHours)}h` : '—'} sub={`${summary?.shifts_logged ?? 0} shifts`} />
-              <KpiCard label="Late Arrivals" value={lateShifts > 0 ? String(lateShifts) : '0'} sub={lateShifts > 0 ? `avg ${Math.round((staffData?.dept_lateness ?? []).reduce((s: number, d: any) => s + d.total_late_minutes, 0) / Math.max(lateShifts, 1))} min late` : 'All on time'} ok={lateShifts === 0 ? true : lateShifts > 5 ? false : null} />
-            </div>
 
             {/* ── Daily labour % chart ────────────────────────────────── */}
             {srRows.length > 0 && (
@@ -499,3 +515,49 @@ export default function StaffPage() {
     </AppShell>
   )
 }
+
+// ─── Staff hero headline + helpers ──────────────────────────────────────────
+function StaffHeadline({ labourPct, targetPct, curRev, lateShifts }: any) {
+  if (curRev <= 0) return <>No staff data in this period yet.</>
+  const over = labourPct - targetPct
+  if (over > 10) {
+    return (
+      <>
+        Labour ran <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{(Math.round(labourPct * 10) / 10).toFixed(1)}%</span> of revenue — <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{(Math.round(over * 10) / 10).toFixed(1)}pp over target</span>.
+      </>
+    )
+  }
+  if (over > 3) {
+    return (
+      <>
+        Labour at <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{(Math.round(labourPct * 10) / 10).toFixed(1)}%</span> — trending over the {targetPct}% target.
+      </>
+    )
+  }
+  return (
+    <>
+      Labour at <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{(Math.round(labourPct * 10) / 10).toFixed(1)}%</span> — in range{lateShifts > 0 ? `, ${lateShifts} late arrival${lateShifts === 1 ? '' : 's'}` : ''}.
+    </>
+  )
+}
+
+function staffContext(summary: any, totalCost: number, totalHours: number): string | undefined {
+  const parts: string[] = []
+  if (totalCost > 0) parts.push(`${Math.round(totalCost).toLocaleString('en-GB').replace(/,/g, ' ')} kr labour`)
+  if (totalHours > 0) parts.push(`${Math.round(totalHours)}h worked`)
+  if (summary?.shifts_logged) parts.push(`${summary.shifts_logged} shifts`)
+  if (!parts.length) return undefined
+  return parts.join(' · ')
+}
+
+function staffDeltaLabel(cur: number, prev: number): string | undefined {
+  if (!prev) return undefined
+  const pct = ((cur - prev) / prev) * 100
+  return `${pct >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(pct * 10) / 10).toFixed(1)}%`
+}
+
+const staffNavBtn = {
+  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
+  background: UX.cardBg, cursor: 'pointer', fontSize: 14,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', color: UX.ink2,
+} as const
