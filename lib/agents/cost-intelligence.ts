@@ -87,6 +87,8 @@ export async function runCostIntel({ orgId, businessId, db }: CostIntelInput) {
 
   const prompt = `You are analysing 6 months of Swedish restaurant overhead line items to find cost-saving opportunities.
 
+Data scope: BUSINESS-WIDE. Fortnox reports these line items at the whole-business level — do NOT attribute them to any department or location within the business.
+
 Data window: ${monthsInWindow.join(', ')}
 Business overhead total across window: ${totalOther} kr
 Top subcategories: ${subcatSummary.slice(0, 8).map(s => `${s.subcategory}=${s.total_kr}`).join(', ')}

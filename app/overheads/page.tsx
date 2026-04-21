@@ -203,7 +203,7 @@ export default function OverheadsPage() {
           eyebrow={`OVERHEADS — ${year}${selectedBiz ? ` · ${selectedBiz.name.toUpperCase()}` : ''}`}
           headline={hero}
           context={rows.length > 0
-            ? `${rows.length} line item${rows.length === 1 ? '' : 's'} · ${monthsCovered.size} month${monthsCovered.size === 1 ? '' : 's'} of detail · Fortnox-sourced`
+            ? `${rows.length} line item${rows.length === 1 ? '' : 's'} · ${monthsCovered.size} month${monthsCovered.size === 1 ? '' : 's'} of detail · business-wide, not split by department`
             : undefined
           }
           right={rows.length > 0 ? (

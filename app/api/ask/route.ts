@@ -103,7 +103,11 @@ export async function POST(req: NextRequest) {
             return `  - ${period}: ${l.label_sv}${sub} — ${Math.round(l.amount).toLocaleString('en-GB').replace(/,/g, ' ')} kr`
           })
           .join('\n')
-        const block = `\n\nOverhead line items (other_cost, from Fortnox PDFs):\n${formatted}`
+        // Flag the scope explicitly so Claude doesn't attribute these to a
+        // single department when the user asks a dept-scoped question.
+        // Fortnox P&L is always whole-business; any per-dept attribution
+        // would be invented.
+        const block = `\n\nOverhead line items (other_cost, from Fortnox PDFs — BUSINESS-WIDE, not split by department):\n${formatted}`
         context += block.length > COST_BUDGET ? block.slice(0, COST_BUDGET) + '\n[line items truncated]' : block
       }
     } catch (e: any) {
