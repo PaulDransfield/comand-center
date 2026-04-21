@@ -146,13 +146,24 @@ export default function OverheadsPage() {
 
   async function extractOne(uploadId: string) {
     try {
-      await fetch('/api/fortnox/extract', {
+      const r = await fetch('/api/fortnox/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ upload_id: uploadId }),
       })
+      // 409 = job already in-flight. Not an error — a worker is
+      // already handling it. UI will see the status update when it
+      // finishes. Surface a gentle toast so the user knows nothing
+      // was lost.
+      if (r.status === 409) {
+        const j = await r.json().catch(() => ({}))
+        setToast(j.error ?? 'Already extracting — wait for it to finish.')
+        setTimeout(() => setToast(''), 5000)
+      }
     } catch (e: any) {
-      // Errors flip the row to 'failed' server-side; UI picks that up on next poll.
+      // Network errors flip the row to 'failed' server-side when the
+      // worker detects the trigger never landed; UI picks that up on
+      // next poll.
     }
   }
 

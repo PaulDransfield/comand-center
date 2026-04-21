@@ -46,9 +46,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Already applied — extraction not re-runnable' }, { status: 400 })
   }
 
-  // Upsert the job. If a pending or failed job already exists for this
-  // upload, reset it (upload_id is UNIQUE). A retry click lands here
-  // and re-arms the job regardless of prior state.
+  // Insert-or-re-arm the job. Concurrency-safe flow:
+  //   1. Look up any existing job for this upload.
+  //   2. If it's currently 'processing' or 'pending', reject the
+  //      re-queue with 409 — a worker is either running it or
+  //      about to. Clobbering the row would start a second worker
+  //      and double-process (double AI cost, potential race in
+  //      the fortnox_uploads write).
+  //   3. Otherwise (failed / dead / completed / no row), upsert
+  //      with status=pending and reset attempts/progress.
+  const { data: existingJob } = await db
+    .from('extraction_jobs')
+    .select('id, status, attempts, started_at')
+    .eq('upload_id', upload.id)
+    .maybeSingle()
+
+  if (existingJob && (existingJob.status === 'processing' || existingJob.status === 'pending')) {
+    return NextResponse.json({
+      ok:     false,
+      status: 'in_flight',
+      error:  'Extraction is already in progress — wait for it to finish or click Cancel first.',
+      job:    existingJob,
+    }, { status: 409 })
+  }
+
   const { error: upErr } = await db.from('extraction_jobs').upsert({
     org_id:        upload.org_id,
     business_id:   upload.business_id,
