@@ -4,6 +4,10 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import AiLimitReached from '@/components/AiLimitReached'
+import PageHero from '@/components/ui/PageHero'
+import SupportingStats from '@/components/ui/SupportingStats'
+import StatusPill from '@/components/ui/StatusPill'
+import { UX } from '@/lib/constants/tokens'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 
 interface Business { id: string; name: string }
@@ -171,44 +175,95 @@ export default function BudgetPage() {
     setApplying(false)
   }
 
+  // ── Derived status tallies + outlier for hero ──────────────────────────
+  const now2 = new Date()
+  const monthsInYearSoFar = year === now2.getFullYear() ? now2.getMonth() + 1
+                          : year < now2.getFullYear() ? 12
+                          : 0
   const withActual = rows.filter(r => r.actual && r.actual.revenue > 0)
   const totalRev   = withActual.reduce((s, r) => s + (r.actual?.revenue ?? 0), 0)
   const totalBudg  = withActual.reduce((s, r) => s + (r.budget?.revenue_target ?? 0), 0)
   const onTrack    = withActual.filter(r => r.actual && r.budget && r.actual.revenue >= r.budget.revenue_target).length
+  const offTrack   = withActual.filter(r => r.actual && r.budget && r.actual.revenue < r.budget.revenue_target).length
+  const notStarted = rows.filter(r => !r.budget && (!r.actual || r.actual.revenue === 0)).length
+
+  // Biggest miss = month with largest negative variance on rev_target
+  let biggestMiss: { month: number; kr: number } | null = null
+  for (const r of withActual) {
+    if (!r.budget) continue
+    const miss = (r.actual?.revenue ?? 0) - r.budget.revenue_target
+    if (miss < 0 && (biggestMiss == null || miss < biggestMiss.kr)) {
+      biggestMiss = { month: r.month, kr: miss }
+    }
+  }
+
+  const headline = (() => {
+    if (withActual.length === 0) return <>No actuals logged yet for <span style={{ fontWeight: UX.fwMedium }}>{year}</span>.</>
+    if (biggestMiss) {
+      return (
+        <>
+          <span style={{ color: onTrack > offTrack ? UX.greenInk : UX.redInk, fontWeight: UX.fwMedium }}>
+            {onTrack} of {withActual.length} months on track
+          </span>
+          {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS[biggestMiss.month - 1]} missed by {fmtKr(Math.abs(biggestMiss.kr))}</span>.
+        </>
+      )
+    }
+    return (
+      <>
+        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>All {withActual.length} logged month{withActual.length === 1 ? '' : 's'} on track.</span>
+      </>
+    )
+  })()
+
+  const heroContext = totalBudg > 0
+    ? `${Math.round((totalRev / totalBudg) * 100)}% of YTD revenue target delivered · ${withActual.length} of ${monthsInYearSoFar} months logged`
+    : undefined
 
   return (
     <AppShell>
-      <div className="page-wrap" style={{ maxWidth: 1000 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Budget vs Actual</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Your plan for the year: expected revenue + cost % targets. Each month shows actual vs plan with AI pacing advice.</p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-            <button
-              onClick={generateWithAI}
-              disabled={generating || !selected}
-              style={{
-                padding: '8px 14px',
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                cursor: generating || !selected ? 'not-allowed' : 'pointer',
-                opacity: generating || !selected ? 0.6 : 1,
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}
-              title="Let AI suggest budgets based on your last year + forecasts"
-            >
-              <span>✦</span>
-              {generating ? 'Generating…' : 'Generate with AI'}
-            </button>
-            <select value={selected} onChange={e => setSelected(e.target.value)} style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, background: 'white' }}>
-              {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, background: 'white' }}>
-              {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
+      <div style={{ maxWidth: 1000 }}>
+
+        {/* Local selectors + "Generate with AI" action — small row above the hero */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
+          <button
+            onClick={generateWithAI}
+            disabled={generating || !selected}
+            style={{
+              padding: '6px 12px', background: UX.indigo, color: 'white',
+              border: 'none', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium,
+              cursor: generating || !selected ? 'not-allowed' : 'pointer',
+              opacity: generating || !selected ? 0.6 : 1,
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+            }}
+            title="Let AI suggest budgets from your last year + forecasts"
+          >
+            <span>✦</span>
+            {generating ? 'Generating…' : 'Generate with AI'}
+          </button>
+          <select value={selected} onChange={e => setSelected(e.target.value)}
+            style={{ padding: '6px 10px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
+            {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <select value={year} onChange={e => setYear(parseInt(e.target.value))}
+            style={{ padding: '6px 10px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
+            {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
+
+        {/* PageHero — replaces the big header + KPI row */}
+        <PageHero
+          eyebrow={`${year} BUDGET`}
+          headline={headline}
+          context={heroContext}
+          right={
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+              <TallyDot tone="good"    count={onTrack}    label="On track" />
+              <TallyDot tone="bad"     count={offTrack}   label="Off track" />
+              <TallyDot tone="neutral" count={notStarted} label="Not started" />
+            </div>
+          }
+        />
 
         {/* ───────────────────────────────────────────────────────────
             AI Budget Coach — current-month pacing + one prescription.
@@ -323,111 +378,186 @@ export default function BudgetPage() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 12, marginBottom: 20 }}>
-          {[
-            { label: 'Revenue vs budget', value: totalBudg > 0 ? ((totalRev/totalBudg-1)*100).toFixed(1)+'%' : '--', ok: totalRev >= totalBudg, sub: 'YTD' },
-            { label: 'Months on track',   value: `${onTrack} / ${withActual.length}`, ok: onTrack >= withActual.length/2, sub: 'Revenue target met' },
-            { label: 'Actual revenue',    value: fmtKr(totalRev), ok: true, sub: `${withActual.length} months of data` },
-          ].map(k => (
-            <div key={k.label} style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
-              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{k.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 600, color: k.ok ? '#15803d' : '#dc2626' }}>{k.value}</div>
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{k.sub}</div>
-            </div>
-          ))}
-        </div>
+        {/* ─── 12-row progress-bar list ─────────────────────────────────── */}
+        <div style={{
+          background:   UX.cardBg,
+          border:       `0.5px solid ${UX.border}`,
+          borderRadius: UX.r_lg,
+          overflow:     'hidden' as const,
+        }}>
+          <div style={{
+            padding:      '10px 16px',
+            background:   UX.subtleBg,
+            borderBottom: `0.5px solid ${UX.borderSoft}`,
+            display:      'grid',
+            gridTemplateColumns: '60px 1fr 90px 90px 90px',
+            gap:          12,
+            fontSize:     UX.fsMicro,
+            fontWeight:   UX.fwMedium,
+            color:        UX.ink4,
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase' as const,
+          }}>
+            <span>Month</span>
+            <span>Progress vs budget</span>
+            <span style={{ textAlign: 'right' as const }}>Variance</span>
+            <span style={{ textAlign: 'right' as const }}>Status</span>
+            <span style={{ textAlign: 'right' as const }}></span>
+          </div>
 
-        <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-          <div className="table-scroll"><table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 600 }}>
-            <thead>
-              <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e7eb' }}>
-                {['Month','Budget','Actual','Variance','Food cost','Staff cost','Status',''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '10px 12px', fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={8} style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>Loading...</td></tr>
-              ) : rows.map((row, i) => {
-                const a = row.actual; const b = row.budget
-                const hasActual = a && a.revenue > 0
-                const variance  = hasActual && b ? a.revenue - b.revenue_target : null
-                const onTrack   = variance !== null ? variance >= 0 : null
-                const isEdit    = editing === row.month
+          {loading ? (
+            <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+          ) : (
+            rows.map((row, i) => {
+              const a = row.actual
+              const b = row.budget
+              const hasActual = a && a.revenue > 0
+              const variance  = hasActual && b ? a.revenue - b.revenue_target : null
+              const onTrackFlag = variance !== null ? variance >= 0 : null
+              const isEdit    = editing === row.month
 
-                if (isEdit) return (
-                  <tr key={i} style={{ background: 'white', borderBottom: '0.5px solid #e5e7eb' }}>
-                    <td style={{ padding: '8px 12px', fontWeight: 600 }}>{MONTHS[row.month-1].slice(0,3)}</td>
-                    {[
-                      { key: 'revenue_target',        label: 'Revenue target', placeholder: '300000' },
-                      { key: 'food_cost_pct_target',  label: 'Food cost %',    placeholder: '31' },
-                      { key: 'staff_cost_pct_target', label: 'Staff cost %',   placeholder: '40' },
-                      { key: 'net_profit_target',     label: 'Profit target',  placeholder: '45000' },
-                    ].map(f => (
-                      <td key={f.key} style={{ padding: '6px 6px' }}>
-                        <input type="number" placeholder={f.placeholder} value={form[f.key] ?? ''}
-                          onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: parseFloat(e.target.value) || 0 }))}
-                          style={{ width: '100%', padding: '6px 8px', border: '1px solid #6366f1', borderRadius: 6, fontSize: 12 }} />
-                      </td>
-                    ))}
-                    <td colSpan={3} />
-                    <td style={{ padding: '6px 8px' }}>
-                      <div style={{ display: 'flex', gap: 4 }}>
+              // Progress bar math — actual fill scaled against target, capped at 140% for visibility.
+              const pct = b && b.revenue_target > 0 && hasActual
+                ? Math.max(0, Math.min(140, (a!.revenue / b.revenue_target) * 100))
+                : 0
+              const barColour = pct >= 100 ? UX.greenInk : pct >= 85 ? UX.amberInk : pct > 0 ? UX.redInk : UX.ink5
+              const statusLabel: string =
+                !b                           ? 'NOT SET'
+                : !hasActual                 ? 'NO ACTUALS'
+                : onTrackFlag                ? 'ON TRACK'
+                :                              'OFF TRACK'
+              const statusTone: 'good' | 'warning' | 'bad' | 'neutral' =
+                statusLabel === 'ON TRACK'   ? 'good'
+                : statusLabel === 'OFF TRACK' ? 'bad'
+                :                               'neutral'
+
+              return (
+                <div key={row.month}>
+                  {isEdit ? (
+                    <div style={{
+                      display:             'grid',
+                      gridTemplateColumns: '60px 1fr 90px 90px 90px',
+                      gap:                 12,
+                      padding:             '10px 16px',
+                      alignItems:          'center',
+                      borderBottom:        `0.5px solid ${UX.borderSoft}`,
+                      background:          UX.cardBg,
+                    }}>
+                      <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
+                        {[
+                          { key: 'revenue_target',        placeholder: 'rev' },
+                          { key: 'food_cost_pct_target',  placeholder: 'food %' },
+                          { key: 'staff_cost_pct_target', placeholder: 'staff %' },
+                          { key: 'net_profit_target',     placeholder: 'profit' },
+                        ].map(f => (
+                          <input
+                            key={f.key}
+                            type="number" placeholder={f.placeholder}
+                            value={(form as any)[f.key] ?? ''}
+                            onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: parseFloat(e.target.value) || 0 }))}
+                            style={{ padding: '5px 8px', border: `1px solid ${UX.indigo}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro }}
+                          />
+                        ))}
+                      </div>
+                      <span />
+                      <span />
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <button onClick={() => save(row.month)} disabled={saving}
-                          style={{ padding: '5px 10px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>
-                          {saving ? '...' : 'Save'}
+                          style={{ padding: '4px 10px', background: UX.navy, color: 'white', border: 'none', borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', fontWeight: UX.fwMedium }}>
+                          {saving ? '…' : 'Save'}
                         </button>
                         <button onClick={() => setEditing(null)}
-                          style={{ padding: '5px 8px', background: '#f3f4f6', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer' }}>X</button>
+                          style={{ padding: '4px 8px', background: UX.borderSoft, border: 'none', borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', color: UX.ink2 }}>
+                          Cancel
+                        </button>
                       </div>
-                    </td>
-                  </tr>
-                )
+                    </div>
+                  ) : (
+                    <div style={{
+                      display:             'grid',
+                      gridTemplateColumns: '60px 1fr 90px 90px 90px',
+                      gap:                 12,
+                      padding:             '11px 16px',
+                      alignItems:          'center',
+                      borderBottom:        i === rows.length - 1 ? 'none' : `0.5px solid ${UX.borderSoft}`,
+                      opacity:             !b && !hasActual ? 0.6 : 1,
+                    }}>
+                      <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
 
-                return (
-                  <tr key={i} style={{ borderBottom: '0.5px solid #f3f4f6', opacity: hasActual ? 1 : 0.6 }}>
-                    <td style={{ padding: '11px 12px', fontWeight: 600, color: '#111' }}>{MONTHS[row.month-1].slice(0,3)}</td>
-                    <td style={{ padding: '11px 12px', color: '#6b7280' }}>{b ? fmtKr(b.revenue_target) : '--'}</td>
-                    <td style={{ padding: '11px 12px', fontWeight: 600 }}>{hasActual ? fmtKr(a!.revenue) : '--'}</td>
-                    <td style={{ padding: '11px 12px', fontWeight: 600, color: variance === null ? '#9ca3af' : variance >= 0 ? '#15803d' : '#dc2626' }}>
-                      {variance !== null ? (variance >= 0 ? '+' : '') + fmtKr(variance) : '--'}
-                    </td>
-                    <td style={{ padding: '11px 12px', color: a && b && a.food_pct <= b.food_cost_pct_target ? '#15803d' : '#dc2626' }}>
-                      {hasActual ? `${fmtPct(a!.food_pct)} / ${b ? fmtPct(b.food_cost_pct_target) : '--'}` : '--'}
-                    </td>
-                    <td style={{ padding: '11px 12px', color: a && b && a.staff_pct <= b.staff_cost_pct_target ? '#15803d' : '#dc2626' }}>
-                      {hasActual ? `${fmtPct(a!.staff_pct)} / ${b ? fmtPct(b.staff_cost_pct_target) : '--'}` : '--'}
-                    </td>
-                    <td style={{ padding: '11px 12px' }}>
-                      {onTrack !== null && <span style={{ background: onTrack ? '#f0fdf4' : '#fef2f2', color: onTrack ? '#15803d' : '#dc2626', padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
-                        {onTrack ? 'On track' : 'Off track'}
-                      </span>}
-                    </td>
-                    <td style={{ padding: '11px 12px' }}>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                      {/* Progress bar with tick at 100% budget */}
+                      <div style={{ position: 'relative' as const, height: 20, display: 'flex', alignItems: 'center' }}>
+                        <div style={{ position: 'absolute' as const, inset: 0, top: 7, bottom: 7, background: UX.borderSoft, borderRadius: 2 }}>
+                          {hasActual && b && b.revenue_target > 0 && (
+                            <div style={{
+                              position:   'absolute' as const,
+                              left:       0,
+                              top:        0,
+                              bottom:     0,
+                              // Compress overflow past 100% visually — show full width when ≥100%
+                              width:      `${Math.min(100, pct)}%`,
+                              background: barColour,
+                              borderRadius: 2,
+                              opacity:    0.9,
+                            }} />
+                          )}
+                          {b && (
+                            <div
+                              title={`Target: ${fmtKr(b.revenue_target)}`}
+                              style={{
+                                position:   'absolute' as const,
+                                left:       'calc(100% - 1px)',
+                                top:        -2,
+                                bottom:     -2,
+                                width:      2,
+                                background: UX.ink2,
+                              }}
+                            />
+                          )}
+                        </div>
+                        <div style={{ position: 'relative' as const, width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: 9, color: UX.ink4, fontVariantNumeric: 'tabular-nums' as const }}>
+                          <span style={{ background: UX.cardBg, padding: '0 4px' }}>
+                            {hasActual ? `act ${fmtKr(a!.revenue)}` : b ? `no actuals yet` : 'budget not set'}
+                          </span>
+                          <span style={{ background: UX.cardBg, padding: '0 4px' }}>{b ? `bud ${fmtKr(b.revenue_target)}` : ''}</span>
+                        </div>
+                      </div>
+
+                      <span style={{ textAlign: 'right' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: variance == null ? UX.ink5 : variance >= 0 ? UX.greenInk : UX.redInk, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const }}>
+                        {variance != null ? (variance >= 0 ? '+' : '−') + fmtKr(Math.abs(variance)) : '—'}
+                      </span>
+
+                      <div style={{ textAlign: 'right' as const }}>
+                        <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
+                      </div>
+
+                      <div style={{ textAlign: 'right' as const, display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <button onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
-                          style={{ padding: '4px 10px', background: '#f3f4f6', border: 'none', borderRadius: 6, fontSize: 11, cursor: 'pointer', color: '#374151' }}>
-                          {b ? 'Edit' : 'Set budget'}
+                          style={{ padding: '3px 10px', background: 'transparent', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', color: UX.ink3 }}>
+                          {b ? 'Edit' : 'Set'}
                         </button>
                         {hasActual && (
                           <button
                             onClick={() => analyseMonth(row.month)}
                             disabled={analysingMonth === row.month}
-                            style={{ padding: '4px 10px', background: '#eef2ff', border: '1px solid #e0e7ff', borderRadius: 6, fontSize: 11, cursor: analysingMonth === row.month ? 'wait' : 'pointer', color: '#4f46e5', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+                            style={{
+                              padding: '3px 10px', background: UX.indigoBg, border: `0.5px solid ${UX.indigo}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro,
+                              cursor: analysingMonth === row.month ? 'wait' : 'pointer',
+                              color: UX.indigo, fontWeight: UX.fwMedium, display: 'inline-flex', alignItems: 'center', gap: 3,
+                            }}
                             title="AI review of this month vs budget / last year"
                           >
                             <span>✦</span>
-                            {analysingMonth === row.month ? 'Analysing…' : 'Analyse'}
+                            {analysingMonth === row.month ? '…' : 'Analyse'}
                           </button>
                         )}
                       </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table></div>
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
         </div>
 
         {/* Per-month analysis modal */}
@@ -522,5 +652,20 @@ export default function BudgetPage() {
         )}
       </div>
     </AppShell>
+  )
+}
+
+// Small dot + count + label tally used in the PageHero right slot.
+function TallyDot({ tone, count, label }: { tone: 'good' | 'bad' | 'neutral'; count: number; label: string }) {
+  const dot =
+    tone === 'good' ? UX.greenInk :
+    tone === 'bad'  ? UX.redInk   :
+                      UX.ink4
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, display: 'inline-block' }} />
+      <span style={{ fontSize: 17, fontWeight: UX.fwMedium, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>{count}</span>
+      <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>{label}</span>
+    </div>
   )
 }
