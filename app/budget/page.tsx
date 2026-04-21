@@ -187,6 +187,10 @@ export default function BudgetPage() {
   const totalBudg  = withActual.reduce((s, r) => s + (r.budget?.revenue_target ?? 0), 0)
   const onTrack    = withActual.filter(r => r.actual && r.budget && r.actual.revenue >= r.budget.revenue_target).length
   const offTrack   = withActual.filter(r => r.actual && r.budget && r.actual.revenue < r.budget.revenue_target).length
+  // 4th bucket per BUDGET-FIX § 6 — months with real revenue but no budget
+  // set. Previously these were mis-counted as "Not started" (wrong —
+  // April HAD started) or silently dropped. Now they show up explicitly.
+  const loggedNoBudget = withActual.filter(r => !r.budget).length
   const notStarted = rows.filter(r => !r.budget && (!r.actual || r.actual.revenue === 0)).length
 
   // Biggest miss = month with largest negative variance on rev_target
@@ -200,7 +204,20 @@ export default function BudgetPage() {
   }
 
   const headline = (() => {
-    if (withActual.length === 0) return <>No actuals logged yet for <span style={{ fontWeight: UX.fwMedium }}>{year}</span>.</>
+    if (withActual.length === 0) {
+      return <>No actuals logged yet for <span style={{ fontWeight: UX.fwMedium }}>{year}</span>.</>
+    }
+    // Single logged month, no budget to compare against — awkward to
+    // say "1 month on track", per BUDGET-FIX "One more thing". Natural
+    // English: name the month and acknowledge no budget.
+    if (withActual.length === 1 && loggedNoBudget === 1) {
+      const m = withActual[0]
+      return (
+        <>
+          {MONTHS[m.month - 1]} logged ({fmtKr(Number(m.actual?.revenue ?? 0))}) — <span style={{ color: UX.ink3 }}>no budget set yet</span>.
+        </>
+      )
+    }
     if (biggestMiss) {
       return (
         <>
@@ -213,14 +230,20 @@ export default function BudgetPage() {
     }
     return (
       <>
-        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>All {withActual.length} logged month{withActual.length === 1 ? '' : 's'} on track.</span>
+        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>
+          {withActual.length === 1
+            ? `${MONTHS[withActual[0].month - 1]} on budget.`
+            : `All ${withActual.length} logged months on track.`}
+        </span>
       </>
     )
   })()
 
   const heroContext = totalBudg > 0
     ? `${Math.round((totalRev / totalBudg) * 100)}% of YTD revenue target delivered · ${withActual.length} of ${monthsInYearSoFar} months logged`
-    : undefined
+    : withActual.length
+      ? `${withActual.length} of ${monthsInYearSoFar} months logged — budgets not set yet`
+      : undefined
 
   // ── AI Budget Coach → AttentionPanel items  (no more purple gradient).
   //    Phase 4 collapses the banner into regular content: a short white
@@ -314,40 +337,33 @@ export default function BudgetPage() {
           headline={headline}
           context={heroContext}
           right={
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-              <TallyDot tone="good"    count={onTrack}    label="On track" />
-              <TallyDot tone="bad"     count={offTrack}   label="Off track" />
-              <TallyDot tone="neutral" count={notStarted} label="Not started" />
+            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' as const }}>
+              <TallyDot tone="good"    count={onTrack}         label="On track" />
+              <TallyDot tone="bad"     count={offTrack}        label="Off track" />
+              {loggedNoBudget > 0 && (
+                <TallyDot tone="info"  count={loggedNoBudget}  label="No budget" />
+              )}
+              <TallyDot tone="neutral" count={notStarted}      label="Not started" />
             </div>
           }
         />
 
-        {/* AI Budget Coach — collapsed into a regular AttentionPanel.
-            No purple gradient, no decorative pill, no separate card style.
-            PNL-FIX/FIX-PROMPT § Phase 4. */}
-        {(coachLoading || coachItems.length || coach?.has_budget === false) && (
+        {/* AI Budget Coach — only rendered when Claude has real, actionable
+            output. Empty states (no budget set, still loading) show NOTHING
+            here (BUDGET-FIX § 1). The hero / tally / NOT SET pills already
+            carry the "you haven't set a budget yet" signal; a banner
+            repeating it is noise. */}
+        {coachItems.length > 0 && (
           <div style={{ marginBottom: 12 }}>
-            {coachLoading ? (
-              <AttentionPanel
-                title="AI Budget Coach"
-                items={[{ tone: 'warning', entity: 'Checking', message: 'pacing this month…' }]}
-              />
-            ) : coach?.has_budget === false ? (
-              <AttentionPanel
-                title="AI Budget Coach"
-                items={[{ tone: 'warning', entity: 'No budget', message: coach.hint || 'Set a budget for this month to see pacing and AI advice.' }]}
-              />
-            ) : (
-              <AttentionPanel
-                title="AI Budget Coach"
-                items={coachItems}
-                rightSlot={coach?.labour_is_the_lever ? (
-                  <a href="/scheduling" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
-                    Open scheduling →
-                  </a>
-                ) : undefined}
-              />
-            )}
+            <AttentionPanel
+              title="AI Budget Coach"
+              items={coachItems}
+              rightSlot={coach?.labour_is_the_lever ? (
+                <a href="/scheduling" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
+                  Open scheduling →
+                </a>
+              ) : undefined}
+            />
           </div>
         )}
 
@@ -456,45 +472,48 @@ export default function BudgetPage() {
           {loading ? (
             <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
           ) : (() => {
-            // Year-max budget drives the horizontal scale so every month's
-            // bar is honestly proportional to the biggest budgeted month.
-            // Spec (DESIGN.md § 4):
-            //   - grey track full-width
-            //   - tick at budget / yearMaxBudget
-            //   - fill from 0 to actual / yearMaxBudget
-            //   - green when actual ≥ budget, red when below
-            const yearMaxBudget = rows.reduce(
-              (m, r) => Math.max(m, Number(r.budget?.revenue_target ?? 0)),
-              0,
+            // Year-max drives the horizontal scale so every month's bar is
+            // honestly proportional to the biggest month on the page — whether
+            // that max comes from a budget or an actual. BUDGET-FIX § 4 fixes
+            // the earlier bug where rows with actuals-but-no-budget rendered
+            // as empty tracks because yearMax only looked at budgets.
+            const yearMax = Math.max(
+              1,
+              ...rows.map(r => Number(r.budget?.revenue_target ?? 0)),
+              ...rows.map(r => Number(r.actual?.revenue         ?? 0)),
             )
             return rows.map((row, i) => {
               const a = row.actual
               const b = row.budget
-              const hasActual = a && a.revenue > 0
-              const variance  = hasActual && b ? a.revenue - b.revenue_target : null
+              const hasActual = !!(a && a.revenue > 0)
+              const variance  = hasActual && b ? a!.revenue - b.revenue_target : null
               const onTrackFlag = variance !== null ? variance >= 0 : null
               const isEdit    = editing === row.month
 
-              // Bar geometry — both values as a % of the year-max budget.
-              // When yearMaxBudget is 0 (no budgets set at all) we skip the
-              // bar entirely and just render the "budget not set" text.
-              const tickPct = b && yearMaxBudget > 0
-                ? (b.revenue_target / yearMaxBudget) * 100
+              // Bar geometry — both values as a % of the year max.
+              const tickPct = b && b.revenue_target > 0
+                ? (b.revenue_target / yearMax) * 100
                 : null
-              const fillPct = hasActual && yearMaxBudget > 0
-                ? Math.min(120, (a!.revenue / yearMaxBudget) * 100)
+              const fillPct = hasActual
+                ? Math.min(120, (a!.revenue / yearMax) * 100)
                 : null
-              const fillColour = onTrackFlag === true  ? UX.greenInk
-                               : onTrackFlag === false ? UX.redInk
-                               :                         UX.ink5
+              // Green when actual ≥ budget (or there's no budget to fail
+              // against — actual is the only data we have). Red only when
+              // the user has set a budget and actual came in under.
+              const fillColour = !b                      ? UX.greenInk
+                               : onTrackFlag === true    ? UX.greenInk
+                               : onTrackFlag === false   ? UX.redInk
+                               :                           UX.ink5
               const statusLabel: string =
-                !b                           ? 'NOT SET'
+                !b && !hasActual             ? 'NOT SET'
+                : !b && hasActual            ? 'NO BUDGET'
                 : !hasActual                 ? 'NO ACTUALS'
                 : onTrackFlag                ? 'ON TRACK'
                 :                              'OFF TRACK'
-              const statusTone: 'good' | 'warning' | 'bad' | 'neutral' =
+              const statusTone: 'good' | 'warning' | 'bad' | 'neutral' | 'info' =
                 statusLabel === 'ON TRACK'   ? 'good'
                 : statusLabel === 'OFF TRACK' ? 'bad'
+                : statusLabel === 'NO BUDGET' ? 'info'
                 :                               'neutral'
 
               return (
@@ -554,14 +573,22 @@ export default function BudgetPage() {
                     >
                       <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
 
-                      {/* Progress bar — track = grey, tick at budget position
-                          (as a % of year-max budget), fill from 0 to actual
-                          position (same scale). Green when actual ≥ budget,
-                          red when below. Spec DESIGN.md § 4. */}
-                      {b ? (
-                        <div style={{ position: 'relative' as const, height: 24, display: 'flex', alignItems: 'center' }}>
-                          <div style={{ position: 'absolute' as const, inset: 0, top: 8, bottom: 8, background: UX.borderSoft, borderRadius: 2 }}>
-                            {fillPct != null && (
+                      {/* Progress bar per DESIGN.md § 4.  Rendered whenever
+                          there's EITHER a budget or an actual, so an
+                          actual-only month (April) now shows a full green
+                          fill instead of the empty track that BUDGET-FIX § 4
+                          called out. */}
+                      {(b || hasActual) ? (
+                        <div style={{ position: 'relative' as const, height: 26 }}>
+                          {/* Grey track */}
+                          <div style={{
+                            position:     'absolute' as const,
+                            left: 0, right: 0,
+                            top: 10, height: 8,
+                            background:   UX.borderSoft,
+                            borderRadius: 3,
+                          }}>
+                            {fillPct != null && fillPct > 0 && (
                               <div style={{
                                 position:     'absolute' as const,
                                 left:         0,
@@ -569,56 +596,68 @@ export default function BudgetPage() {
                                 bottom:       0,
                                 width:        `${Math.max(1, fillPct)}%`,
                                 background:   fillColour,
-                                borderRadius: 2,
+                                borderRadius: fillPct >= 99.5 ? 3 : '3px 0 0 3px',
+                                opacity:      0.92,
                               }} />
                             )}
                             {tickPct != null && (
                               <div
-                                title={`Target: ${fmtKr(b.revenue_target)}`}
+                                title={`Target: ${fmtKr(b!.revenue_target)}`}
                                 style={{
-                                  position:   'absolute' as const,
-                                  left:       `calc(${tickPct}% - 1px)`,
-                                  top:        -3,
-                                  bottom:     -3,
-                                  width:      2,
-                                  background: UX.ink1,
+                                  position:     'absolute' as const,
+                                  left:         `calc(${tickPct}% - 1px)`,
+                                  top:          -3,
+                                  bottom:       -3,
+                                  width:        2,
+                                  background:   UX.ink1,
                                   borderRadius: 1,
                                 }}
                               />
                             )}
                           </div>
-                          {/* Labels — "act {kr}" anchored to the fill end,
-                              "bud {kr}" anchored to the tick. Both rendered
-                              above the track so they don't sit on the bar. */}
-                          <div style={{ position: 'absolute' as const, inset: 0, pointerEvents: 'none' as const }}>
-                            {fillPct != null && (
-                              <span style={{
-                                position:   'absolute' as const,
-                                left:       `calc(${Math.min(85, fillPct)}% + 4px)`,
-                                top:        -1,
-                                fontSize:   9,
-                                color:      fillColour,
-                                fontWeight: UX.fwMedium,
-                                fontVariantNumeric: 'tabular-nums' as const,
-                                whiteSpace: 'nowrap' as const,
-                              }}>
-                                act {fmtKr(a!.revenue)}
-                              </span>
-                            )}
-                            {tickPct != null && (
-                              <span style={{
-                                position:   'absolute' as const,
-                                left:       `calc(${tickPct}% + 4px)`,
-                                bottom:     -1,
-                                fontSize:   9,
-                                color:      UX.ink3,
-                                fontVariantNumeric: 'tabular-nums' as const,
-                                whiteSpace: 'nowrap' as const,
-                              }}>
-                                bud {fmtKr(b.revenue_target)}
-                              </span>
-                            )}
-                          </div>
+
+                          {/* Labels — "act" above the bar at the fill end,
+                              "bud" below at the tick. If the two are within
+                              10pp of each other they'd collide; drop the
+                              label on the shorter one (BUDGET-FIX § 5). */}
+                          {(() => {
+                            const showAct = fillPct != null
+                            const showBud = tickPct != null
+                            const tooClose = showAct && showBud && Math.abs(fillPct! - tickPct!) < 10
+                            const hideAct = tooClose && fillPct! < tickPct!
+                            const hideBud = tooClose && tickPct! <= fillPct!
+                            return (
+                              <>
+                                {showAct && !hideAct && (
+                                  <span style={{
+                                    position:     'absolute' as const,
+                                    left:         `clamp(0%, calc(${Math.min(95, fillPct!)}% - 6px), calc(100% - 80px))`,
+                                    top:          -2,
+                                    fontSize:     9,
+                                    color:        fillColour,
+                                    fontWeight:   UX.fwMedium,
+                                    fontVariantNumeric: 'tabular-nums' as const,
+                                    whiteSpace:   'nowrap' as const,
+                                  }}>
+                                    act {fmtKr(a!.revenue)}
+                                  </span>
+                                )}
+                                {showBud && !hideBud && (
+                                  <span style={{
+                                    position:     'absolute' as const,
+                                    left:         `clamp(0%, calc(${tickPct!}% + 4px), calc(100% - 70px))`,
+                                    bottom:       -2,
+                                    fontSize:     9,
+                                    color:        UX.ink3,
+                                    fontVariantNumeric: 'tabular-nums' as const,
+                                    whiteSpace:   'nowrap' as const,
+                                  }}>
+                                    bud {fmtKr(b!.revenue_target)}
+                                  </span>
+                                )}
+                              </>
+                            )
+                          })()}
                         </div>
                       ) : (
                         <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontStyle: 'italic' as const }}>
@@ -767,10 +806,11 @@ export default function BudgetPage() {
 }
 
 // Small dot + count + label tally used in the PageHero right slot.
-function TallyDot({ tone, count, label }: { tone: 'good' | 'bad' | 'neutral'; count: number; label: string }) {
+function TallyDot({ tone, count, label }: { tone: 'good' | 'bad' | 'neutral' | 'info'; count: number; label: string }) {
   const dot =
     tone === 'good' ? UX.greenInk :
     tone === 'bad'  ? UX.redInk   :
+    tone === 'info' ? UX.indigo   :
                       UX.ink4
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
