@@ -168,7 +168,10 @@ Return ONLY the JSON object.`
 
     const response = await client.messages.create({
       model:      AI_MODELS.ANALYSIS,
-      max_tokens: 4000,
+      // Annual reports have 50+ line items + the rollup — 4 000 tokens
+      // sometimes truncates mid-JSON.  8 000 is still well under Sonnet's
+      // 64k ceiling and costs ≈ $0.03 per call in the worst case.
+      max_tokens: 8000,
       messages: [{
         role: 'user',
         content: [
@@ -178,17 +181,41 @@ Return ONLY the JSON object.`
       }],
     })
 
-    const raw = (response.content?.[0] as any)?.text?.trim() ?? ''
-    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    // Concatenate every text block (multi-block responses leave structured
+    // output spread across blocks) and strip code fences.
+    const raw = (response.content ?? [])
+      .map((b: any) => (b?.type === 'text' ? b.text : ''))
+      .join('')
+      .trim()
+
+    // Robust JSON extraction — Claude occasionally prepends "Here is the
+    // extracted data:" or similar despite the "Return ONLY the JSON
+    // object" instruction.  Find the first { and the last } and parse
+    // the slice between them.
+    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace  = cleaned.lastIndexOf('}')
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+    }
+
+    // Detect truncation — stop_reason=max_tokens means Claude ran out
+    // mid-response, so JSON will be unparseable.  Report explicitly.
+    const truncated = (response as any).stop_reason === 'max_tokens'
 
     let parsed: any
-    try { parsed = JSON.parse(clean) }
-    catch {
+    try { parsed = JSON.parse(cleaned) }
+    catch (parseErr: any) {
+      const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
+      const errMsg  = truncated
+        ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
+        : `Claude returned non-JSON output. Parse error: ${parseErr?.message}. Sample: ${snippet}`
+      console.error('[fortnox/extract]', errMsg)
       await db.from('fortnox_uploads').update({
         status:        'failed',
-        error_message: 'Claude returned non-JSON output',
+        error_message: errMsg.slice(0, 500),
       }).eq('id', upload_id)
-      return NextResponse.json({ error: 'Extraction returned invalid JSON', raw: clean.slice(0, 500) }, { status: 500 })
+      return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
     }
 
     // Normalise + enrich lines with our subcategory lookup.
