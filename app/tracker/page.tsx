@@ -25,6 +25,8 @@ import PageHero from '@/components/ui/PageHero'
 import AttentionPanel from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'
 import StatusPill from '@/components/ui/StatusPill'
+import TopBar from '@/components/ui/TopBar'
+import SupportingStats from '@/components/ui/SupportingStats'
 import { UX } from '@/lib/constants/tokens'
 
 interface Business { id: string; name: string; city: string | null }
@@ -176,10 +178,29 @@ export default function TrackerPage() {
     return existing ?? { period_month: i + 1, period_year: year, revenue: 0, food_cost: 0, staff_cost: 0, net_profit: 0, margin_pct: 0 }
   })
 
+  // ── Honesty check — if any logged month has revenue>0 but food_cost=0
+  //    the displayed "margin" is inflated. PNL-FIX § 2 calls this out.
+  const foodGapMonth = withData.find(r => Number(r.food_cost ?? 0) === 0) ?? null
+  const hasFoodGap   = !!foodGapMonth
+
+  // ── Labour % of revenue (YTD) — for the hero context ───────────────────
+  const totLabour    = withData.reduce((s, r) => s + Number(r.staff_cost ?? 0), 0)
+  const labourPctYtd = totRev > 0 ? (totLabour / totRev) * 100 : null
+
   // ── Hero headline ─────────────────────────────────────────────────────────
   const heroHeadline = (() => {
     if (withData.length === 0) {
       return <>Nothing logged for <span style={{ fontWeight: UX.fwMedium }}>{year}</span> yet.</>
+    }
+    // Single month + food gap → the 50.3% margin is synthetic, say so.
+    if (withData.length === 1 && hasFoodGap) {
+      const m = withData[0]
+      return (
+        <>
+          {MONTHS_SHORT[m.period_month - 1]} margin <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{fmtPct(Number(m.margin_pct))}</span>
+          {' '}— but food cost is missing, so this isn't the real number.
+        </>
+      )
     }
     if (bestMargin && worstMargin && bestMargin !== worstMargin && Math.abs(Number(bestMargin.margin_pct) - Number(worstMargin.margin_pct)) > 5) {
       const bestPct  = fmtPct(Number(bestMargin.margin_pct))
@@ -202,11 +223,13 @@ export default function TrackerPage() {
   const heroContext = (() => {
     if (withData.length === 0) return undefined
     const parts: string[] = []
-    if (worstMargin && bestMargin && worstMargin !== bestMargin) {
+    parts.push(`${withData.length} month${withData.length === 1 ? '' : 's'} of data out of 12`)
+    if (labourPctYtd != null) parts.push(`Labour ate ${fmtPct(labourPctYtd)} of revenue (target 35%)`)
+    if (hasFoodGap)           parts.push(`Food cost shows 0 kr — likely a sync gap, not a win`)
+    if (!hasFoodGap && worstMargin && bestMargin && worstMargin !== bestMargin) {
       const diff = Math.round(Math.abs(Number(bestMargin.margin_pct) - Number(worstMargin.margin_pct)) * 10) / 10
       parts.push(`${diff}pp swing between best and worst month`)
     }
-    parts.push(`${withData.length}/12 months logged`)
     return parts.join(' · ')
   })()
 
@@ -222,28 +245,29 @@ export default function TrackerPage() {
           .cc-pnl-row:focus-within .cc-pnl-action { opacity: 1; }
         `}</style>
 
-        {/* Minimal period selectors (business picker is in sidebar now but
-            retained here as a quick local override; year picker stays). */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
-          <select
-            value={selected}
-            onChange={e => setSelected(e.target.value)}
-            style={selectStyle}
-          >
-            {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <select
-            value={year}
-            onChange={e => setYear(parseInt(e.target.value))}
-            style={selectStyle}
-          >
-            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
+        {/* TopBar — breadcrumb + business/year pickers. Stops the selectors
+            floating in the top-right corner with no visual anchor.
+            PNL-FIX § 7. */}
+        <TopBar
+          crumbs={[
+            { label: 'Financials' },
+            { label: 'P&L Tracker', active: true },
+          ]}
+          rightSlot={
+            <>
+              <select value={selected} onChange={e => setSelected(e.target.value)} style={selectStyle}>
+                {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <select value={year} onChange={e => setYear(parseInt(e.target.value))} style={selectStyle}>
+                {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </>
+          }
+        />
 
         {/* ─── PageHero ──────────────────────────────────────────────────── */}
         <PageHero
-          eyebrow={`YTD — ${year}`}
+          eyebrow={`YTD — ${year}${withData.length ? ` · ${withData.length} MONTH${withData.length === 1 ? '' : 'S'} LOGGED` : ''}`}
           headline={heroHeadline}
           context={heroContext}
           right={
@@ -254,28 +278,34 @@ export default function TrackerPage() {
               <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: totProfit >= 0 ? UX.ink1 : UX.redInk, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' as const }}>
                 {fmtKr(totProfit)}
               </div>
-              <div style={{ marginTop: 5 }}>
-                <Sparkline
-                  points={profitPoints}
-                  tone={totProfit >= 0 ? 'good' : 'bad'}
-                  width={160}
-                  height={20}
-                />
-              </div>
+              {/* Sparkline only renders once there's a real trend to draw
+                  (≥3 months with revenue). A 1-point line is noise — PNL-FIX § 2. */}
+              {withData.length >= 3 && (
+                <div style={{ marginTop: 5 }}>
+                  <Sparkline
+                    points={profitPoints}
+                    tone={totProfit >= 0 ? 'good' : 'bad'}
+                    width={160}
+                    height={20}
+                  />
+                </div>
+              )}
             </div>
           }
         />
 
-        {/* AI narrative — compact AttentionPanel, not a big purple banner */}
+        {/* AI narrative — compact AttentionPanel, not a big purple banner.
+            Full text renders (PNL-FIX § 4 Option A) — no mid-word truncation.
+            Card title already says "AI P&L", so the "AI" pill was redundant
+            and has been removed. */}
         {narrative?.narrative && (
           <div style={{ marginBottom: 12 }}>
             <AttentionPanel
               title={`AI P&L — ${narrative.month ? MONTHS_SHORT[(narrative.month ?? 1) - 1] : ''} ${narrative.year ?? ''}`.trim()}
-              rightSlot={<StatusPill tone="info">AI</StatusPill>}
               items={[{
                 tone:    'warning',
                 entity:  'Claude',
-                message: narrative.narrative.length > 320 ? narrative.narrative.slice(0, 320) + '…' : narrative.narrative,
+                message: narrative.narrative,
               }]}
             />
           </div>
@@ -413,36 +443,36 @@ export default function TrackerPage() {
                           {MONTHS_SHORT[row.period_month - 1]}
                         </span>
                         {isCurrent && <StatusPill tone="info">NOW</StatusPill>}
-                        {isFuture && <span style={{ fontSize: 9, color: UX.ink4 }}>forecast</span>}
+                        {/* No `forecast` label on future months — PNL-FIX § 6.
+                            Forecast data is not wired in; the label was
+                            writing a cheque the data couldn't cash. Grey
+                            month name is signal enough. */}
                       </div>
                       {/* Revenue vs cost bar.
-                          - hasData (real revenue): solid navy width=revPct with
-                            burnt-orange slice at the LEFT spanning costPct of
-                            the total track (= staff_cost/revenue × revPct).
-                          - no revenue: dashed grey placeholder so zero months
-                            don't render as empty grey tracks that look live. */}
+                          - hasData (real revenue): navy width scaled to year
+                            max revenue, with a burnt-orange overlay at the
+                            LEFT covering staff_cost/revenue × revPct of the
+                            total track.
+                          - no revenue: empty cell (PNL-FIX § 8). No dashed
+                            line — an empty cell is clearer than a drawn line
+                            that implies data. */}
                       {hasData ? (
-                        <div style={{ position: 'relative' as const, height: 8, background: UX.borderSoft, borderRadius: 2 }}>
+                        <div style={{ position: 'relative' as const, height: 10, background: UX.borderSoft, borderRadius: 2 }}>
                           <div style={{
                             position: 'absolute' as const, left: 0, top: 0, bottom: 0,
-                            width: `${revPct}%`, background: UX.navy, borderRadius: 2,
+                            width: `${revPct}%`, background: UX.navy,
+                            borderRadius: revPct >= 99.5 ? '2px' : '2px 0 0 2px',
                           }} />
                           {costPct > 0 && (
                             <div style={{
                               position: 'absolute' as const, left: 0, top: 0, bottom: 0,
-                              width: `${costPct}%`, background: UX.burnt, borderRadius: 2,
-                              opacity: 0.9,
+                              width: `${costPct}%`, background: UX.burnt,
+                              borderRadius: '2px 0 0 2px',
                             }} />
                           )}
                         </div>
                       ) : (
-                        <div style={{ height: 8, display: 'flex', alignItems: 'center' }}>
-                          <div style={{
-                            flex:    1,
-                            borderTop: `1px dashed ${UX.ink5}`,
-                            opacity: 0.6,
-                          }} />
-                        </div>
+                        <span aria-hidden />
                       )}
                       <span style={{ textAlign: 'right' as const, color: hasData ? UX.ink1 : UX.ink5, fontVariantNumeric: 'tabular-nums' as const, fontSize: UX.fsBody }}>
                         {hasData ? fmtKr(Number(row.revenue)) : '—'}
