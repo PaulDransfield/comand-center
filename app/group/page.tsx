@@ -68,7 +68,6 @@ export default function GroupPage() {
 
   const businesses = data?.businesses ?? []
   const summary    = data?.summary ?? null
-  const narrative  = data?.narrative ?? null
 
   // Outlier detection for hero framing + per-card pills.
   const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
@@ -248,13 +247,13 @@ export default function GroupPage() {
 
             {/* ─── AI Group Manager as AttentionPanel-style card ──────── */}
             <AttentionPanel
-              title="AI Group Manager"
+              title="Needs your attention"
               rightSlot={
                 <span style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
-                  Based on {businesses.length} locations · {period.label}
+                  Synthesised from {businesses.length} locations · {period.label}
                 </span>
               }
-              items={narrativeToItems(narrative, businesses)}
+              items={buildGroupAttention(businesses, summary)}
             />
           </>
         )}
@@ -321,23 +320,73 @@ function buildContext(summary: any, businesses: any[], worst: any): string {
   return parts.join(' · ')
 }
 
-// Split the Claude-written narrative into a few short AttentionPanel items.
-// If the narrative is structured as sentences, take the first 2–3; otherwise
-// collapse it to a single bullet.
-function narrativeToItems(narrative: string | null, businesses: any[]): AttentionItem[] {
-  if (!narrative) return []
-  const sentences = narrative
-    .split(/(?<=[.!?])\s+(?=[A-ZÅÄÖ])/)
-    .map(s => s.trim())
-    .filter(s => s.length > 5)
-    .slice(0, 3)
-  if (!sentences.length) return [{ tone: 'warning', entity: 'AI', message: narrative.slice(0, 200) }]
-  return sentences.map((msg, i) => ({
-    // First sentence = verdict (warning/bad), following = supporting/actions (good).
-    tone:    (i === 0 ? 'warning' : 'good') as 'good' | 'warning' | 'bad',
-    entity:  i === 0 ? 'Verdict' : i === 1 ? 'Why' : 'Do this',
-    message: msg,
-  }))
+// Deterministic English bullets synthesised from the business data itself.
+// Replaces the old narrative-splitter which (a) rendered prose as a "bullet"
+// and (b) inherited Swedish from the AI output, breaking English consistency.
+// Rules per FIX-PROMPT § Phase 2:
+//  - max 3 bullets
+//  - each starts with the entity name
+//  - each ≤ 120 chars
+//  - tone dots: red for outlier/close, amber for warnings, green for praise
+function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
+  const items: AttentionItem[] = []
+  if (!businesses || !businesses.length) return items
+
+  const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
+
+  // 1. Draining locations — staff hours burning with zero revenue. Hard red.
+  const draining = withRev.filter((b: any) => Number(b.revenue ?? 0) === 0 && Number(b.staff_cost ?? 0) > 0)
+  for (const b of draining) {
+    if (items.length >= 3) break
+    const hrs = Math.round(Number(b.hours ?? 0))
+    const kr  = fmtKr(Number(b.staff_cost ?? 0))
+    items.push({
+      tone:    'bad',
+      entity:  b.name,
+      message: `burning ${hrs}h (${kr}) with no revenue — close, restructure, or pause scheduling.`,
+    })
+  }
+
+  // 2. Outlier margin — single worst positive-revenue location if it's well
+  //    below the group average. Red if <30%, amber if <45%.
+  const ranked = withRev
+    .filter((b: any) => Number(b.revenue ?? 0) > 0 && b.margin_pct != null)
+    .sort((a: any, b: any) => a.margin_pct - b.margin_pct)
+
+  if (items.length < 3 && ranked.length) {
+    const worst = ranked[0]
+    if (worst.margin_pct < 45 && !draining.find((d: any) => d.id === worst.id)) {
+      items.push({
+        tone:    worst.margin_pct < 30 ? 'bad' : 'warning',
+        entity:  worst.name,
+        message: `margin ${fmtPct(worst.margin_pct)} on ${fmtKr(worst.revenue)} — labour ${fmtPct(worst.labour_pct)} is the swing factor.`,
+      })
+    }
+  }
+
+  // 3. Best location — green praise if clearly ahead of the group average.
+  if (items.length < 3 && ranked.length >= 2) {
+    const best = ranked[ranked.length - 1]
+    const groupAvg = summary?.group_margin_pct ?? null
+    if (best.margin_pct >= 45 && (groupAvg == null || best.margin_pct > groupAvg + 5)) {
+      items.push({
+        tone:    'good',
+        entity:  best.name,
+        message: `leading at ${fmtPct(best.margin_pct)} margin — worth modelling the schedule onto other sites.`,
+      })
+    }
+  }
+
+  // 4. Fallback — if nothing flagged, surface a single neutral status line.
+  if (items.length === 0 && summary) {
+    items.push({
+      tone:    'good',
+      entity:  'Group',
+      message: `${fmtPct(summary.group_margin_pct)} margin across ${businesses.length} locations — no outliers this month.`,
+    })
+  }
+
+  return items
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
