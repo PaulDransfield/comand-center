@@ -209,61 +209,47 @@ Return ONLY JSON, nothing else:
     try { return JSON.parse(cleaned) } catch { return null }
   }
 
-  const prompt = `You are extracting a Swedish accounting report (Fortnox export) into structured JSON.
+  const prompt = `You are extracting a Swedish Fortnox accounting report into structured JSON.
 
-CRITICAL RULE #1 — SCALE / UNIT.  Swedish accounting reports are printed in one of three scales:
-  • SEK    — full kronor, e.g. "1 234 567"
-  • KSEK / tkr   — thousands of kronor, e.g. "1 234" means 1 234 000 SEK
-  • MSEK / mkr   — millions of kronor, e.g. "1,234" means 1 234 000 SEK
+SCALE / UNIT.  Swedish reports are printed in SEK, KSEK (tkr / thousands) or MSEK (mkr / millions). Detect it from the header. Then convert EVERYTHING to full SEK:
+  • SEK: as-is
+  • KSEK / tkr: × 1 000
+  • MSEK / mkr: × 1 000 000
 
-Before you extract anything, DETECT THE SCALE.  Look at the header, column headings, or a note near the top — it will usually say "(tkr)", "(ksek)", "(kr)", "Belopp i kkr", "Alla belopp i tusentals kronor", "Mkr", etc.  A Swedish restaurant doing 50k covers/year will have monthly revenue in the 600 000 – 1 500 000 kr range.  If the numbers you are seeing would be absurd in SEK (revenue of 1 023 for a restaurant with 3 staff is impossible), the scale is NOT SEK — look again for the unit label.
+A restaurant's monthly revenue is typically 200 000 – 3 000 000 SEK. If the numbers would be absurd in SEK (e.g. revenue 1 023 for a restaurant), the scale is NOT SEK — reconvert.
 
-ALL AMOUNTS YOU RETURN MUST BE IN FULL SEK (no thousands, no millions).  Convert internally:
-  • SEK values: return as-is
-  • KSEK / tkr: multiply every number by 1 000
-  • MSEK / mkr: multiply every number by 1 000 000
+MULTI-PERIOD.  If the PDF has one row per BAS account with multiple monthly columns (Jan–Dec), emit ONE "periods" entry per month with JUST a rollup (no lines per month — line-item detail goes into the single "annual_lines" array at the top level from the year-total / "Ack." column). This keeps the output compact.
 
-Put the detected scale into the "scale_detected" field ("sek" | "ksek" | "msek").  If the scale is genuinely ambiguous, set scale_detected="sek" AND add a warning string "Scale ambiguous — verify numbers against the source PDF before applying."
+If the PDF is a single-month or single-year report, emit ONE period with the rollup AND put all its line items into "annual_lines".
 
-CRITICAL RULE #2 — MULTI-PERIOD.  Many Fortnox "Resultatrapport" exports show one row per BAS account with multiple monthly columns (Jan, Feb, Mar, …) plus a year-total column.  Detect this and emit ONE entry in "periods" per month.  Do NOT collapse monthly columns into a single annual rollup.
-
-Return ONLY valid JSON with this exact shape and nothing else:
+Return ONLY valid JSON with this shape, nothing else:
 
 {
-  "doc_type": "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
-  "business_hint":   "Vero Italiano" | null,
-  "scale_detected":  "sek" | "ksek" | "msek",
-  "confidence":      "high" | "medium" | "low",
-  "warnings":        [],
+  "doc_type":       "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
+  "business_hint":  "Company name" | null,
+  "scale_detected": "sek" | "ksek" | "msek",
+  "confidence":     "high" | "medium" | "low",
+  "warnings":       [],
 
   "periods": [
     {
       "year":  2025,
-      "month": 5,                                    // 1..12; use 0 for a year-total column only
-      "rollup": {
-        "revenue":      0,                           // IN FULL SEK — already converted if source was ksek/msek
-        "food_cost":    0,
-        "staff_cost":   0,
-        "other_cost":   0,
-        "depreciation": 0,
-        "financial":    0,                           // signed
-        "net_profit":   0
-      },
-      "lines": [
-        { "label": "Bankavgifter", "amount": 340, "account": 6570 }
-      ]
+      "month": 1,                         // 1..12 for monthly; 0 only for a year-only summary with no monthly breakdown
+      "rollup": { "revenue": 0, "food_cost": 0, "staff_cost": 0, "other_cost": 0, "depreciation": 0, "financial": 0, "net_profit": 0 }
     }
+  ],
+
+  "annual_lines": [
+    { "label": "Bankavgifter", "amount": 4080, "account": 6570 }
   ]
 }
 
 Rules:
-- When the PDF is clearly a single period (one month or one year-end summary), emit ONE entry in "periods".  Use month=1..12 for monthly, or month=0 for an annual summary with no monthly split.
-- When the PDF shows monthly columns (common Fortnox "Resultatrapport" with "Denna period / Föregående / Ack.", or a row-per-account × 12-month grid), emit ONE period per month.
-- Include EVERY line item per period.  Skip subtotals ("Summa…", "Total…") — the rollup is re-derived from the lines.
-- Store ALL cost amounts as POSITIVE numbers in FULL SEK.
-- Swedish decimal marker is comma.  "1,234" in a KSEK report = 1 234 × 1 000 = 1 234 000 SEK (not 1.234).  "1,5" in an MSEK report = 1 500 000 SEK.
-- Negatives in Fortnox are shown in parentheses or with a leading minus — preserve the sign on financial items, flip to positive for cost lines, keep positive for revenue.
-- SANITY CHECK before you return:  a restaurant's MONTHLY revenue is typically 200 000 – 3 000 000 SEK.  If any month's revenue is under 10 000 or over 100 000 000, you've almost certainly missed the scale — re-check the unit in the PDF header and convert.
+- Monthly revenue ranges per-business 200 000 – 3 000 000 SEK — sanity-check before returning.
+- All costs positive; revenue positive; financial items signed.
+- Swedish decimal marker is comma. "1,5" in an MSEK report = 1 500 000 SEK.
+- Skip "Summa…" / "Total…" subtotal rows.
+- annual_lines contains the year-total amounts for every line account (not per-month lines — that would be 12× redundant and blow the output budget).
 
 Return ONLY the JSON object.`
 
@@ -281,99 +267,49 @@ Return ONLY the JSON object.`
   }
 
   try {
-    // ── Peek (~3s) ─────────────────────────────────────────────────────
-    // Tiny call that only enumerates periods and detects scale. Prompt-
-    // caches the PDF so fill calls hit cache at 10% cost.
-    await writeProgress('Peeking at PDF…')
-    const peekResp = await runClaude({ prompt: peekPrompt, maxTokens: 800, cachePdf: true })
-    totalInputTokens  += (peekResp as any).usage?.input_tokens  ?? 0
-    totalOutputTokens += (peekResp as any).usage?.output_tokens ?? 0
-    const peek = parseJsonFromResponse(peekResp) ?? {}
-    const peekPeriods: Array<{ year: number; month: number }> = Array.isArray(peek?.periods)
-      ? peek.periods
-          .map((p: any) => ({ year: Number(p?.year), month: Number(p?.month) }))
-          .filter((p: { year: number; month: number }) => Number.isFinite(p.year))
-      : []
-    console.log('[fortnox/extract] peek:', {
-      periods:    peekPeriods.length,
-      scale:      peek?.scale_detected,
-      doc_type:   peek?.doc_type,
-      confidence: peek?.confidence,
-    })
+    // ── Single-shot Haiku, compact schema ─────────────────────────────
+    // Monthly rollups (12 × ~150 tokens) + one annual_lines list (40 ×
+    // ~30 tokens) = ~3 000 output tokens. Completes in ~20–30 s on
+    // Haiku — comfortably under Vercel's 300 s timeout regardless of
+    // how many monthly columns the PDF has.
+    //
+    // Per-month line detail is intentionally NOT extracted: it would
+    // multiply the output 12x for minimal analytical value (overheads
+    // analysis works off annual line totals, monthly trends work off
+    // rollups). If a customer later wants monthly line detail, they
+    // upload individual monthly PDFs — each of those fits easily.
+    await writeProgress('Extracting with Haiku…')
+    const response = await runClaude({ prompt, maxTokens: 8000, cachePdf: false })
+    totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
+    totalOutputTokens += (response as any).usage?.output_tokens ?? 0
 
-    let parsed: any
-    if (peekPeriods.length > 1) {
-      // ── Multi-month: parallel fills @ concurrency=2 ──────────────────
-      // Concurrency=2 is conservative enough for Anthropic's lower tier
-      // rate limit (5 concurrent connections) while still halving the
-      // wall time vs serial. 12 months / 2 × ~15s per call ≈ 90s.
-      const scaleHint = peek?.scale_detected === 'ksek' ? 'Values are in KSEK — multiply by 1 000 → full SEK.'
-                     : peek?.scale_detected === 'msek' ? 'Values are in MSEK — multiply by 1 000 000 → full SEK.'
-                     : 'Values are in full SEK.'
+    const truncated = (response as any).stop_reason === 'max_tokens'
+    const parsed = parseJsonFromResponse(response)
+    if (!parsed) {
+      const raw = ((response as any).content ?? [])
+        .map((b: any) => (b?.type === 'text' ? b.text : ''))
+        .join('')
+        .trim()
+      const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
+      const errMsg  = truncated
+        ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
+        : `Claude returned non-JSON output. Sample: ${snippet}`
+      console.error('[fortnox/extract]', errMsg)
+      await db.from('fortnox_uploads').update({
+        status:        'failed',
+        error_message: errMsg.slice(0, 500),
+      }).eq('id', upload_id)
+      return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
+    }
 
-      await writeProgress(`Extracting 0/${peekPeriods.length} months…`)
-      let done = 0
-      const fills = await runPooled(peekPeriods, 2, async (p) => {
-        const r = await runClaude({
-          prompt: `Extract ONLY the ${p.year}-${String(p.month).padStart(2, '0')} column (month=${p.month}) from this Fortnox Resultatrapport. Ignore every other month, the "Ack."/year-total columns, and prior-year comparison columns.
-
-${scaleHint}  ALL amounts in FULL SEK. Every cost is POSITIVE. Revenue POSITIVE. Interest expense keeps its sign.
-
-Return ONLY JSON:
-{
-  "rollup": { "revenue": 0, "food_cost": 0, "staff_cost": 0, "other_cost": 0, "depreciation": 0, "financial": 0, "net_profit": 0 },
-  "lines":  [ { "label": "Bankavgifter", "amount": 340, "account": 6570 } ]
-}`,
-          maxTokens: 4000,
-          cachePdf:  true,
-        })
-        done++
-        writeProgress(`Extracting ${done}/${peekPeriods.length} months…`).catch(() => {})
-        return r
-      })
-
-      const filled = fills.map((resp: any, i: number) => {
-        totalInputTokens  += resp.usage?.input_tokens  ?? 0
-        totalOutputTokens += resp.usage?.output_tokens ?? 0
-        const data = parseJsonFromResponse(resp) ?? { rollup: {}, lines: [] }
-        return { year: peekPeriods[i].year, month: peekPeriods[i].month, ...data }
-      })
-
-      parsed = {
-        doc_type:       peek?.doc_type ?? 'pnl_multi_month',
-        scale_detected: peek?.scale_detected ?? 'sek',
-        business_hint:  peek?.business_hint ?? null,
-        confidence:     peek?.confidence ?? 'medium',
-        warnings:       Array.isArray(peek?.warnings) ? peek.warnings : [],
-        periods:        filled,
-      }
-    } else {
-      // ── Single-period fallback (~30s) ────────────────────────────────
-      // Single-month or annual summary — one Haiku call with enough
-      // budget. Slim schema keeps the output under Vercel's timeout.
-      await writeProgress('Extracting single period…')
-      const response = await runClaude({ prompt, maxTokens: 16000, cachePdf: true })
-      totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
-      totalOutputTokens += (response as any).usage?.output_tokens ?? 0
-
-      const truncated = (response as any).stop_reason === 'max_tokens'
-      parsed = parseJsonFromResponse(response)
-      if (!parsed) {
-        const raw = ((response as any).content ?? [])
-          .map((b: any) => (b?.type === 'text' ? b.text : ''))
-          .join('')
-          .trim()
-        const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
-        const errMsg  = truncated
-          ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
-          : `Claude returned non-JSON output. Sample: ${snippet}`
-        console.error('[fortnox/extract]', errMsg)
-        await db.from('fortnox_uploads').update({
-          status:        'failed',
-          error_message: errMsg.slice(0, 500),
-        }).eq('id', upload_id)
-        return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
-      }
+    // Attach annual_lines to the last (or only) period so the existing
+    // periods[]-based apply route writes them into tracker_line_items.
+    // For multi-month PDFs we put them on the latest month; for single-
+    // period PDFs they go on the only period as before.
+    const annualLines = Array.isArray(parsed?.annual_lines) ? parsed.annual_lines : []
+    if (annualLines.length && Array.isArray(parsed?.periods) && parsed.periods.length) {
+      const target = parsed.periods[parsed.periods.length - 1]
+      target.lines = Array.isArray(target.lines) && target.lines.length ? target.lines : annualLines
     }
 
     // Helper — normalise + enrich lines with our subcategory lookup.
