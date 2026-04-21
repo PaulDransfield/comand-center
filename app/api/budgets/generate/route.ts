@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   // ── 1. Gather context: last year actuals, this year's forecasts, YTD actuals ──
   // Every tenanted read filters org_id first — service role bypasses RLS.
-  const [lyRes, fcRes, ytdRes, bizRes] = await Promise.all([
+  const [lyRes, fcRes, ytdRes, bizRes, annualRes] = await Promise.all([
     // Last year actuals from monthly_metrics
     db.from('monthly_metrics')
       .select('month, revenue, staff_cost, food_cost, net_profit, margin_pct')
@@ -56,21 +56,60 @@ export async function POST(req: NextRequest) {
       .eq('year', year)
       .order('month'),
     db.from('businesses').select('name, city').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
+    // Annual Fortnox reports for the previous two years (applied with
+    // period_month=0 — the annual rollup convention). When monthly_metrics
+    // is empty for last year (e.g. Rosali 2025 — only an annual PDF applied)
+    // the AI was concluding "Rosali started from zero in 2025" which is
+    // wrong. Feeding the annual totals in as a separate reference block
+    // fixes that.
+    db.from('tracker_line_items')
+      .select('period_year, category, amount')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .eq('period_month', 0)
+      .in('period_year', [year - 1, year - 2]),
   ])
 
   const lastYear = lyRes.data ?? []
   const forecasts = fcRes.data ?? []
   const ytd       = ytdRes.data ?? []
   const biz       = bizRes.data
+  const annualRows = annualRes.data ?? []
 
   // ── 2. Format the data into a compact context for Claude ─────────────────────
   const fmt = (n: any) => (n === null || n === undefined) ? '?' : Math.round(Number(n)).toLocaleString('en-GB')
 
+  // Collapse annual Fortnox line items into per-year category totals so
+  // we can feed Claude a clean "Annual reference" block.
+  const annualByYear: Record<number, Record<string, number>> = {}
+  for (const r of annualRows) {
+    const y = r.period_year as number
+    if (!annualByYear[y]) annualByYear[y] = {}
+    const c = r.category as string
+    annualByYear[y][c] = (annualByYear[y][c] ?? 0) + Number(r.amount ?? 0)
+  }
+  const annualSummary = (y: number) => {
+    const t = annualByYear[y]
+    if (!t) return null
+    const revenue    = t.revenue     ?? 0
+    const food       = t.food_cost   ?? 0
+    const staff      = t.staff_cost  ?? 0
+    const other      = t.other_cost  ?? 0
+    const depr       = t.depreciation?? 0
+    const fin        = t.financial   ?? 0
+    const netProfit  = revenue - food - staff - other - depr + fin
+    const marginPct  = revenue > 0 ? (netProfit / revenue) * 100 : 0
+    return { revenue, food, staff, other, depr, fin, netProfit, marginPct }
+  }
+
+  const lyAnnual = annualSummary(year - 1)
   const lyTable = lastYear.length
     ? lastYear.map(r =>
         `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}%`
       ).join('\n')
-    : '  (no prior-year data)'
+    : lyAnnual
+      ? `  (no monthly breakdown — using annual Fortnox report instead, see block below)`
+      : '  (no prior-year data)'
 
   const ytdTable = ytd.length
     ? ytd.map(r =>
@@ -92,7 +131,11 @@ Your job: return 12 monthly budgets for ${year} that are realistic, slightly amb
 
 All figures in Swedish kronor (kr). All percentages in 0-100 (e.g. 31 for 31%).
 
-LAST YEAR (${year - 1}) ACTUALS:
+${lyAnnual ? `LAST YEAR (${year - 1}) FORTNOX ANNUAL REPORT — whole-year totals, no monthly split available:
+  revenue=${fmt(lyAnnual.revenue)}  food_cost=${fmt(lyAnnual.food)}  staff_cost=${fmt(lyAnnual.staff)}  other_cost=${fmt(lyAnnual.other)}  net_profit=${fmt(lyAnnual.netProfit)}  margin=${lyAnnual.marginPct.toFixed(1)}%
+  This is the authoritative year total. Do NOT say the business had "zero revenue" — the annual report has the full-year figure above. Use it as the year anchor and distribute across months using seasonality norms for a Swedish mid-market restaurant (summer peak Jun–Aug, holiday peak Nov–Dec, trough Jan–Feb).
+
+` : ''}LAST YEAR (${year - 1}) ACTUALS:
 ${lyTable}
 
 ${year} CURRENT-YEAR ACTUALS SO FAR:

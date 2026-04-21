@@ -70,6 +70,10 @@ export default function TrackerPage() {
   const [dailyData,    setDailyData]    = useState<Record<number, DailyRow[]>>({})
   const [loadingDaily, setLoadingDaily] = useState<number | null>(null)
   const [narrative,    setNarrative]    = useState<any>(null)
+  // Annual Fortnox rollup for the year — lets us surface the year total
+  // even when no monthly PDFs have been applied (e.g. Rosali 2025 with
+  // only the annual report).
+  const [annualRollup, setAnnualRollup] = useState<any>(null)
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
@@ -88,8 +92,12 @@ export default function TrackerPage() {
   const load = useCallback(async () => {
     if (!selected) return
     setLoading(true)
-    const res = await fetch(`/api/metrics/monthly?business_id=${selected}&year=${year}`, { cache: 'no-store' })
-    const data = await res.json()
+    const [metricsRes, annualRes] = await Promise.all([
+      fetch(`/api/metrics/monthly?business_id=${selected}&year=${year}`, { cache: 'no-store' }),
+      // Annual Fortnox rollup — period_month=0 convention.
+      fetch(`/api/overheads/line-items?business_id=${selected}&year_from=${year}&year_to=${year}&month=0`, { cache: 'no-store' }),
+    ])
+    const data = await metricsRes.json()
     if (data.rows) {
       setRows(data.rows.map((r: any) => ({
         period_month: r.month, period_year: r.year,
@@ -99,6 +107,28 @@ export default function TrackerPage() {
     } else if (Array.isArray(data)) {
       setRows(data)
     }
+    // Collapse annual line items into a single rollup {revenue, food, staff, other, net}
+    try {
+      const aj = await annualRes.json()
+      const lines = Array.isArray(aj.rows) ? aj.rows : []
+      if (lines.length) {
+        const totals: Record<string, number> = {}
+        for (const l of lines) totals[l.category] = (totals[l.category] ?? 0) + Number(l.amount ?? 0)
+        const revenue = totals.revenue ?? 0
+        const netProfit = revenue - (totals.food_cost ?? 0) - (totals.staff_cost ?? 0) - (totals.other_cost ?? 0) - (totals.depreciation ?? 0) + (totals.financial ?? 0)
+        setAnnualRollup({
+          revenue,
+          food_cost:   totals.food_cost  ?? 0,
+          staff_cost:  totals.staff_cost ?? 0,
+          other_cost:  totals.other_cost ?? 0,
+          net_profit:  netProfit,
+          margin_pct:  revenue > 0 ? (netProfit / revenue) * 100 : 0,
+          line_count:  lines.length,
+        })
+      } else {
+        setAnnualRollup(null)
+      }
+    } catch { setAnnualRollup(null) }
     setLoading(false)
   }, [selected, year])
 
@@ -319,6 +349,51 @@ export default function TrackerPage() {
             </div>
           }
         />
+
+        {/* Annual Fortnox rollup banner — shows year-total when the user
+            has applied the annual P&L PDF but not individual monthly ones.
+            Without this banner the monthly list reads as "empty year" even
+            though we have the authoritative year figure. */}
+        {annualRollup && (
+          <div style={{
+            background:   UX.indigoBg,
+            border:       `0.5px solid ${UX.indigo}`,
+            borderRadius: UX.r_lg,
+            padding:      '12px 16px',
+            marginBottom: 12,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.indigo, letterSpacing: '.05em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+              Annual Fortnox report · {year}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: UX.fsBody }}>
+              <div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Revenue</div>
+                <div style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.revenue)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Food cost</div>
+                <div style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.food_cost)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Staff cost</div>
+                <div style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.staff_cost)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Other costs</div>
+                <div style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.other_cost)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Net profit</div>
+                <div style={{ fontWeight: UX.fwMedium, color: annualRollup.net_profit >= 0 ? UX.greenInk : UX.redInk, fontVariantNumeric: 'tabular-nums' as const }}>
+                  {fmtKr(annualRollup.net_profit)} <span style={{ color: UX.ink4, fontWeight: UX.fwRegular, fontSize: UX.fsMicro }}>({fmtPct(annualRollup.margin_pct)})</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ fontSize: UX.fsNano, color: UX.ink4, marginTop: 6 }}>
+              {annualRollup.line_count} line items from the Fortnox annual report. No monthly breakdown available — upload the monthly PDFs to see each month individually.
+            </div>
+          </div>
+        )}
 
         {/* AI narrative — compact AttentionPanel, not a big purple banner.
             Full text renders (PNL-FIX § 4 Option A) — no mid-word truncation.
