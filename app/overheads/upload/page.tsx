@@ -331,6 +331,9 @@ function UploadsTable({ uploads, onReview, onRetry, onDelete }: any) {
               {u.status === 'failed' && (
                 <button onClick={() => onRetry(u.id)} style={actionBtn('ghost')}>Retry</button>
               )}
+              {(u.status === 'extracting' || u.status === 'pending') && (
+                <button onClick={() => onDelete(u.id)} style={{ ...actionBtn('ghost'), color: UX.redInk }}>Cancel</button>
+              )}
             </span>
             <span style={{ textAlign: 'right' as const }}>
               {u.status !== 'applied' && (
