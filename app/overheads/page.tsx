@@ -88,6 +88,10 @@ export default function OverheadsPage() {
   const [prevSubs,   setPrevSubs]   = useState<Subcategory[]>([])
   // Industry benchmarks — anonymised cross-tenant medians per subcategory
   const [benchmarks, setBenchmarks] = useState<Record<string, { sample_size: number; median_kr: number }>>({})
+  // Invoice ↔ Fortnox reconciliation findings
+  const [recon,      setRecon]      = useState<AttentionItem[]>([])
+  // VAT projection — next filing estimate
+  const [vat,        setVat]        = useState<any>(null)
 
   // Hydrate selected business from sidebar
   useEffect(() => {
@@ -111,23 +115,29 @@ export default function OverheadsPage() {
     if (!bizId) return
     setLoading(true)
     try {
-      const [liRes, prevRes, mmRes, ciRes, bRes] = await Promise.all([
+      const [liRes, prevRes, mmRes, ciRes, bRes, rRes, vRes] = await Promise.all([
         fetch(`/api/overheads/line-items?business_id=${bizId}&year_from=${year}&year_to=${year}&category=other_cost`, { cache: 'no-store' }),
         fetch(`/api/overheads/line-items?business_id=${bizId}&year_from=${year - 1}&year_to=${year - 1}&category=other_cost`, { cache: 'no-store' }),
         fetch(`/api/metrics/monthly?business_id=${bizId}&year=${year}`, { cache: 'no-store' }),
         fetch(`/api/cost-insights?business_id=${bizId}`, { cache: 'no-store' }),
         fetch(`/api/overheads/benchmarks`, { cache: 'no-store' }),
+        fetch(`/api/overheads/reconciliation?business_id=${bizId}`, { cache: 'no-store' }),
+        fetch(`/api/overheads/vat-projection?business_id=${bizId}`, { cache: 'no-store' }),
       ])
       const lj = await liRes.json().catch(() => ({}))
       const pj = await prevRes.json().catch(() => ({}))
       const mj = await mmRes.json().catch(() => ({}))
       const cj = await ciRes.json().catch(() => ({}))
       const bj = await bRes.json().catch(() => ({}))
+      const rj = await rRes.json().catch(() => ({}))
+      const vj = await vRes.json().catch(() => ({}))
+      setVat(vj && !vj.error ? vj : null)
       setRows(Array.isArray(lj.rows) ? lj.rows : [])
       setSubs(Array.isArray(lj.subcategories) ? lj.subcategories : [])
       setPrevSubs(Array.isArray(pj.subcategories) ? pj.subcategories : [])
       setMetrics(Array.isArray(mj.rows) ? mj.rows : [])
       setInsights(Array.isArray(cj.items) ? cj.items : [])
+      setRecon(Array.isArray(rj.items) ? rj.items : [])
       const bm: Record<string, { sample_size: number; median_kr: number }> = {}
       for (const b of (bj.benchmarks ?? [])) bm[b.subcategory] = { sample_size: b.sample_size, median_kr: b.median_kr }
       setBenchmarks(bm)
@@ -281,12 +291,29 @@ export default function OverheadsPage() {
               <YoyDrift thisYear={subs} prevYear={prevSubs} year={year} />
             )}
 
-            {/* AI insights — filled by cost-intel agent (Phase 7) */}
+            {/* VAT projection — estimate for the current quarter */}
+            {vat && vat.projected_quarter_payable != null && (
+              <VatCard vat={vat} />
+            )}
+
+            {/* AI insights — filled by cost-intel agent */}
             {insights.length > 0 && (
               <div style={{ marginTop: 12 }}>
                 <AttentionPanel
                   title="AI cost insights"
                   items={insights}
+                />
+              </div>
+            )}
+
+            {/* Invoice ↔ Fortnox reconciliation findings */}
+            {recon.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <AttentionPanel
+                  title="Invoice reconciliation"
+                  items={recon}
+                  maxItems={6}
+                  moreHref="/invoices"
                 />
               </div>
             )}
@@ -461,6 +488,51 @@ function YoyDrift({ thisYear, prevYear, year }: { thisYear: Subcategory[]; prevY
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// ─── VAT projection card ──────────────────────────────────────────────
+function VatCard({ vat }: { vat: any }) {
+  const urgent = vat.days_to_due <= 14 && vat.days_to_due >= 0
+  return (
+    <div style={{
+      marginTop:    12,
+      background:   urgent ? UX.amberBg : UX.cardBg,
+      border:       `0.5px solid ${urgent ? UX.amberInk : UX.border}`,
+      borderRadius: UX.r_lg,
+      padding:      '14px 16px',
+      display:      'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+      gap:          14,
+    }}>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Next VAT filing</div>
+        <div style={{ fontSize: 16, fontWeight: UX.fwMedium, color: UX.ink1, marginTop: 3 }}>Q{vat.period.quarter} {vat.period.year}</div>
+        <div style={{ fontSize: 10, color: UX.ink4, marginTop: 2 }}>{vat.period.from} → {vat.period.to}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Due date</div>
+        <div style={{ fontSize: 16, fontWeight: UX.fwMedium, color: urgent ? UX.redInk : UX.ink1, marginTop: 3 }}>{vat.due_date}</div>
+        <div style={{ fontSize: 10, color: urgent ? UX.redInk : UX.ink4, marginTop: 2 }}>
+          {vat.days_to_due > 0 ? `${vat.days_to_due} days away` : vat.days_to_due === 0 ? 'Due today' : `${Math.abs(vat.days_to_due)} days overdue`}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Projected payable</div>
+        <div style={{ fontSize: 18, fontWeight: UX.fwMedium, color: UX.redInk, marginTop: 3, fontVariantNumeric: 'tabular-nums' as const }}>
+          {fmtKr(vat.projected_quarter_payable)}
+        </div>
+        <div style={{ fontSize: 10, color: UX.ink4, marginTop: 2 }}>estimate — verify with your accountant</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Breakdown</div>
+        <div style={{ fontSize: 12, color: UX.ink2, marginTop: 3, lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' as const }}>
+          Output {fmtKr(vat.output_vat)}<br />
+          Input {fmtKr(vat.input_vat)}<br />
+          So far {fmtKr(vat.payable_mtd)}
+        </div>
+      </div>
     </div>
   )
 }

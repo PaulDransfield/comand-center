@@ -24,3 +24,30 @@ alter table industry_benchmarks enable row level security;
 drop policy if exists benchmarks_read on industry_benchmarks;
 create policy benchmarks_read on industry_benchmarks for select
   using (auth.role() = 'authenticated');
+
+-- Reconciliation findings — invoice ↔ Fortnox line-item mismatches.
+create table if not exists reconciliation_findings (
+  id           uuid primary key default gen_random_uuid(),
+  org_id       uuid not null references organisations(id) on delete cascade,
+  business_id  uuid not null references businesses(id)    on delete cascade,
+  kind         text not null
+    check (kind in ('invoice_not_in_fortnox','line_without_invoice','amount_mismatch')),
+  tone         text not null default 'warning'
+    check (tone in ('good','warning','bad')),
+  entity       text not null,
+  message      text not null,
+  evidence     jsonb,
+  generated_at timestamptz not null default now(),
+  dismissed_at timestamptz
+);
+create index if not exists reconciliation_active_idx
+  on reconciliation_findings (business_id, generated_at desc)
+  where dismissed_at is null;
+
+alter table reconciliation_findings enable row level security;
+drop policy if exists reconciliation_read on reconciliation_findings;
+drop policy if exists reconciliation_upd  on reconciliation_findings;
+create policy reconciliation_read on reconciliation_findings for select
+  using (org_id in (select org_id from organisation_members where user_id = auth.uid()));
+create policy reconciliation_upd on reconciliation_findings for update
+  using (org_id in (select org_id from organisation_members where user_id = auth.uid()));
