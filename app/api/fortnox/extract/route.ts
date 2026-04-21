@@ -281,39 +281,99 @@ Return ONLY the JSON object.`
   }
 
   try {
-    // ── Single-shot Haiku extraction ───────────────────────────────────
-    // Reverted the peek+parallel pipeline after real-world tests showed
-    // Anthropic's concurrent-connection tier cap made parallel fills
-    // unreliable on multi-month PDFs. A single Haiku call handles any
-    // Fortnox report within Vercel's 300 s function timeout.
-    //
-    // max_tokens 48 000 fits a 12-month × ~40-line Resultatrapport —
-    // prior 24 000 truncated mid-month on Rosali 2025. Well under
-    // Haiku 4.5's 64k output ceiling. The slim line schema below (no
-    // `category`/`subcategory`/`note` fields — server enriches from the
-    // Swedish label lookup) keeps the output tokens manageable.
-    await writeProgress('Extracting with Haiku…')
-    const response = await runClaude({ prompt, maxTokens: 48000, cachePdf: false })
-    totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
-    totalOutputTokens += (response as any).usage?.output_tokens ?? 0
+    // ── Peek (~3s) ─────────────────────────────────────────────────────
+    // Tiny call that only enumerates periods and detects scale. Prompt-
+    // caches the PDF so fill calls hit cache at 10% cost.
+    await writeProgress('Peeking at PDF…')
+    const peekResp = await runClaude({ prompt: peekPrompt, maxTokens: 800, cachePdf: true })
+    totalInputTokens  += (peekResp as any).usage?.input_tokens  ?? 0
+    totalOutputTokens += (peekResp as any).usage?.output_tokens ?? 0
+    const peek = parseJsonFromResponse(peekResp) ?? {}
+    const peekPeriods: Array<{ year: number; month: number }> = Array.isArray(peek?.periods)
+      ? peek.periods
+          .map((p: any) => ({ year: Number(p?.year), month: Number(p?.month) }))
+          .filter((p: { year: number; month: number }) => Number.isFinite(p.year))
+      : []
+    console.log('[fortnox/extract] peek:', {
+      periods:    peekPeriods.length,
+      scale:      peek?.scale_detected,
+      doc_type:   peek?.doc_type,
+      confidence: peek?.confidence,
+    })
 
-    const truncated = (response as any).stop_reason === 'max_tokens'
-    const parsed = parseJsonFromResponse(response)
-    if (!parsed) {
-      const raw = ((response as any).content ?? [])
-        .map((b: any) => (b?.type === 'text' ? b.text : ''))
-        .join('')
-        .trim()
-      const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
-      const errMsg  = truncated
-        ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
-        : `Claude returned non-JSON output. Sample: ${snippet}`
-      console.error('[fortnox/extract]', errMsg)
-      await db.from('fortnox_uploads').update({
-        status:        'failed',
-        error_message: errMsg.slice(0, 500),
-      }).eq('id', upload_id)
-      return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
+    let parsed: any
+    if (peekPeriods.length > 1) {
+      // ── Multi-month: parallel fills @ concurrency=2 ──────────────────
+      // Concurrency=2 is conservative enough for Anthropic's lower tier
+      // rate limit (5 concurrent connections) while still halving the
+      // wall time vs serial. 12 months / 2 × ~15s per call ≈ 90s.
+      const scaleHint = peek?.scale_detected === 'ksek' ? 'Values are in KSEK — multiply by 1 000 → full SEK.'
+                     : peek?.scale_detected === 'msek' ? 'Values are in MSEK — multiply by 1 000 000 → full SEK.'
+                     : 'Values are in full SEK.'
+
+      await writeProgress(`Extracting 0/${peekPeriods.length} months…`)
+      let done = 0
+      const fills = await runPooled(peekPeriods, 2, async (p) => {
+        const r = await runClaude({
+          prompt: `Extract ONLY the ${p.year}-${String(p.month).padStart(2, '0')} column (month=${p.month}) from this Fortnox Resultatrapport. Ignore every other month, the "Ack."/year-total columns, and prior-year comparison columns.
+
+${scaleHint}  ALL amounts in FULL SEK. Every cost is POSITIVE. Revenue POSITIVE. Interest expense keeps its sign.
+
+Return ONLY JSON:
+{
+  "rollup": { "revenue": 0, "food_cost": 0, "staff_cost": 0, "other_cost": 0, "depreciation": 0, "financial": 0, "net_profit": 0 },
+  "lines":  [ { "label": "Bankavgifter", "amount": 340, "account": 6570 } ]
+}`,
+          maxTokens: 4000,
+          cachePdf:  true,
+        })
+        done++
+        writeProgress(`Extracting ${done}/${peekPeriods.length} months…`).catch(() => {})
+        return r
+      })
+
+      const filled = fills.map((resp: any, i: number) => {
+        totalInputTokens  += resp.usage?.input_tokens  ?? 0
+        totalOutputTokens += resp.usage?.output_tokens ?? 0
+        const data = parseJsonFromResponse(resp) ?? { rollup: {}, lines: [] }
+        return { year: peekPeriods[i].year, month: peekPeriods[i].month, ...data }
+      })
+
+      parsed = {
+        doc_type:       peek?.doc_type ?? 'pnl_multi_month',
+        scale_detected: peek?.scale_detected ?? 'sek',
+        business_hint:  peek?.business_hint ?? null,
+        confidence:     peek?.confidence ?? 'medium',
+        warnings:       Array.isArray(peek?.warnings) ? peek.warnings : [],
+        periods:        filled,
+      }
+    } else {
+      // ── Single-period fallback (~30s) ────────────────────────────────
+      // Single-month or annual summary — one Haiku call with enough
+      // budget. Slim schema keeps the output under Vercel's timeout.
+      await writeProgress('Extracting single period…')
+      const response = await runClaude({ prompt, maxTokens: 16000, cachePdf: true })
+      totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
+      totalOutputTokens += (response as any).usage?.output_tokens ?? 0
+
+      const truncated = (response as any).stop_reason === 'max_tokens'
+      parsed = parseJsonFromResponse(response)
+      if (!parsed) {
+        const raw = ((response as any).content ?? [])
+          .map((b: any) => (b?.type === 'text' ? b.text : ''))
+          .join('')
+          .trim()
+        const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
+        const errMsg  = truncated
+          ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
+          : `Claude returned non-JSON output. Sample: ${snippet}`
+        console.error('[fortnox/extract]', errMsg)
+        await db.from('fortnox_uploads').update({
+          status:        'failed',
+          error_message: errMsg.slice(0, 500),
+        }).eq('id', upload_id)
+        return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
+      }
     }
 
     // Helper — normalise + enrich lines with our subcategory lookup.
