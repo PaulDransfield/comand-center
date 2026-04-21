@@ -19,6 +19,7 @@ import Stripe                        from 'stripe'
 import { getOrgFromRequest }         from '@/lib/auth/get-org'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
+import { orgRateLimit }              from '@/lib/middleware/org-rate-limit'
 import { PLANS }                     from '@/lib/stripe/config'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -30,10 +31,30 @@ export async function POST(req: NextRequest) {
   const auth = await getOrgFromRequest(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  // ── 2. Rate limit (general — not AI) ──────────────────────────
-  // max 20 checkout attempts per user per hour
+  // ── 2. Rate limits ────────────────────────────────────────────
+  // Two layers:
+  //   - Per-user, in-memory: 20 attempts/hour. Guards against a UI bug
+  //     or a single user hammering the button. Resets on cold start.
+  //   - Per-org, persistent (DB-backed): 5 checkout sessions/hour and
+  //     20/day. Guards against a compromised session or rogue script
+  //     burning real money on stripe.customers.create + checkout.sessions.create.
   const limit = rateLimit(auth.userId, { windowMs: 60 * 60_000, max: 20 })
   if (!limit.allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+
+  const orgHour = await orgRateLimit({ orgId: auth.orgId, bucket: 'stripe_checkout_hour', windowMs: 60 * 60_000, max: 5 })
+  if (!orgHour.ok) {
+    return NextResponse.json({
+      error: 'Checkout attempt limit reached for this organisation. Try again in a few minutes.',
+      retry_after_seconds: Math.ceil((orgHour.retryAfterMs ?? 0) / 1000),
+    }, { status: 429 })
+  }
+  const orgDay = await orgRateLimit({ orgId: auth.orgId, bucket: 'stripe_checkout_day', windowMs: 24 * 60 * 60_000, max: 20 })
+  if (!orgDay.ok) {
+    return NextResponse.json({
+      error: 'Daily checkout attempt limit reached for this organisation.',
+      retry_after_seconds: Math.ceil((orgDay.retryAfterMs ?? 0) / 1000),
+    }, { status: 429 })
+  }
 
   // ── 3. Parse + validate plan ───────────────────────────────────
   const { plan, annual = false } = await req.json()

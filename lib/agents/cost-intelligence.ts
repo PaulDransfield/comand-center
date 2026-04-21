@@ -11,9 +11,9 @@
 //   renegotiation — stable monthly amount worth putting out to tender
 //   one_off       — single-month spike that may be miscategorised
 
-import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
-import { logAiRequest } from '@/lib/ai/usage'
-import { SCOPE_NOTE }    from '@/lib/ai/scope'
+import { AI_MODELS, MAX_TOKENS }           from '@/lib/ai/models'
+import { logAiRequest, checkAiLimit }      from '@/lib/ai/usage'
+import { SCOPE_NOTE }                      from '@/lib/ai/scope'
 
 export interface CostIntelInput {
   orgId:      string
@@ -22,6 +22,13 @@ export interface CostIntelInput {
 }
 
 export async function runCostIntel({ orgId, businessId, db }: CostIntelInput) {
+  // Gate against the org's AI quota before burning tokens. Previously
+  // this agent fired unconditionally after every Fortnox apply — a
+  // batch-apply of 50 PDFs would burn 50 Haiku calls with no
+  // per-org visibility or budget check.
+  const gate = await checkAiLimit(db, orgId)
+  if (!gate.ok) return { insights: [], reason: 'ai_limit_blocked' }
+
   // Pull the last 6 months of OTHER_COST line items
   const now = new Date()
   const sixMonthsAgoYear  = now.getFullYear()

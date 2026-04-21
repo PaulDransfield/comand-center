@@ -1,22 +1,37 @@
 // @ts-nocheck
+// app/api/admin/connect/route.ts
+//
+// Admin-only connect of an integration (API key + provider) to a
+// business. Two layers of auth:
+//   1. ADMIN_SECRET must be valid (checkAdminSecret)
+//   2. The supplied (org_id, business_id) pair is verified against the
+//      DB before we store credentials — blocks the attack where an
+//      admin-secret holder swaps org_id to write to another tenant.
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { encrypt } from '@/lib/integrations/encryption'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
-import { checkAdminSecret } from '@/lib/admin/check-secret'
-export const dynamic = 'force-dynamic'
+import { requireAdmin } from '@/lib/admin/require-admin'
 
-function checkAuth(req: NextRequest): boolean {
-  return checkAdminSecret(req)
-}
+export const dynamic     = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const maxDuration = 10
 
 export async function POST(req: NextRequest) {
-  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  try {
-    const { provider, api_key, org_id, business_id, department } = await req.json()
-    if (!provider || !api_key || !org_id) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  const body = await req.json().catch(() => ({} as any))
+  const { provider, api_key, org_id, business_id, department } = body
+  if (!provider || !api_key || !org_id || !business_id) {
+    return NextResponse.json({ error: 'Missing required fields (provider, api_key, org_id, business_id)' }, { status: 400 })
+  }
 
-    const db = createAdminClient()
+  // Admin secret + (org, business) scope check. Returns a NextResponse
+  // on failure; otherwise { ok, orgId, businessId }.
+  const guard = await requireAdmin(req, { orgId: org_id, businessId: business_id })
+  if ('ok' in guard === false) return guard as NextResponse
+
+  try {
+    const db        = createAdminClient()
     const encrypted = encrypt(api_key)
 
     // Inzii: one row per department — upsert on org+provider+business+department

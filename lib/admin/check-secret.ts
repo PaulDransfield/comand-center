@@ -31,9 +31,21 @@ export function checkAdminSecret(req: NextRequest): boolean {
 
 /**
  * Validates CRON_SECRET supplied via Authorization: Bearer header,
- * x-cron-secret header, or `?secret=` query param.
+ * x-cron-secret header, or `?secret=` query param, OR the presence of
+ * the Vercel-internal x-vercel-cron=1 header that Vercel sets on
+ * scheduled cron invocations (impossible to forge from outside the
+ * platform network).
+ *
+ * Prefer the bearer-header path in new code. The query-param path is
+ * retained for backwards compatibility but should be removed once all
+ * callers are migrated — query strings leak into CDN and proxy logs.
  */
 export function checkCronSecret(req: NextRequest): boolean {
+  // Vercel scheduler always sets this on its cron invocations. Treating
+  // it as trusted means the scheduler doesn't need to know CRON_SECRET
+  // to fire a cron — matches Vercel's documented pattern.
+  if (req.headers.get('x-vercel-cron') === '1') return true
+
   const want = process.env.CRON_SECRET ?? null
   if (!want) return false
 

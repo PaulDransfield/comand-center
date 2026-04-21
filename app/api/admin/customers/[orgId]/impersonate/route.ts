@@ -17,19 +17,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
-import { checkAdminSecret } from '@/lib/admin/check-secret'
+import { requireAdmin } from '@/lib/admin/require-admin'
 
-export const dynamic = 'force-dynamic'
-
-function checkAuth(req: NextRequest): boolean {
-  return checkAdminSecret(req)
-}
+export const dynamic     = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const maxDuration = 10
 
 export async function POST(req: NextRequest, { params }: { params: { orgId: string } }) {
-  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const orgId = params.orgId
+  // Dual guard: admin secret + the target org exists. requireAdmin
+  // logs the attempt/org pair to Sentry if it fails, so impersonation
+  // attempts against non-existent orgs are visible.
+  const guard = await requireAdmin(req, { orgId })
+  if ('ok' in guard === false) return guard as NextResponse
+
   const db = createAdminClient()
+
+  // Record the attempt BEFORE generating the link so a failure to
+  // generate still leaves a trail — previously we logged only after
+  // the link succeeded, so aborted impersonations were invisible.
+  const auditTs = new Date().toISOString()
 
   // Find the first org member's user_id
   const { data: member } = await db
