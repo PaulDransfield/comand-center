@@ -70,7 +70,7 @@
     },
     {
       "path": "/api/cron/extraction-sweeper",
-      "schedule": "*/2 * * * *"
+      "schedule": "0 6 * * *"
     }
   ]
 }

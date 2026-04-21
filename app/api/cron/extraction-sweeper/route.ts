@@ -1,6 +1,13 @@
 // app/api/cron/extraction-sweeper/route.ts
 //
-// Runs every 2 minutes (see vercel.json). Two responsibilities:
+// Runs once daily at 06:00 UTC (see vercel.json). Two responsibilities:
+//
+// SCHEDULE NOTE: Vercel's Hobby plan only allows daily cron. On Pro
+// we'd drop this to every 2 minutes for a tight retry SLA. At current
+// scale (<50 customers, ≤few Fortnox uploads per day), daily sweeper
+// combined with the worker's in-process triggerNext() chain covers
+// queue drain in practice — the sweeper is really only catching
+// orphaned backoff retries that happen between sessions.
 //
 //  1. Reset stale jobs — any extraction_jobs row stuck in 'processing'
 //     for more than 10 minutes is assumed to have crashed (Vercel
