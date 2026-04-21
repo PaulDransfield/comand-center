@@ -461,10 +461,36 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         </div>
 
         <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 0 }}>
-          {/* PDF preview */}
-          <div style={{ background: '#f3f4f6', borderRight: `1px solid ${UX.borderSoft}`, minHeight: 0 }}>
+          {/* PDF preview — <object> renders PDFs more reliably than <iframe>
+              in Chrome/Safari when the source is a signed Supabase URL.  We
+              also always surface an "Open in new tab" link so the owner has
+              a fallback path when the inline preview is blocked (some
+              browsers or networks refuse to embed cross-origin PDFs). */}
+          <div style={{ background: '#f3f4f6', borderRight: `1px solid ${UX.borderSoft}`, minHeight: 0, display: 'flex', flexDirection: 'column' as const }}>
             {pdfUrl ? (
-              <iframe src={pdfUrl} style={{ width: '100%', height: '100%', border: 0 }} title="PDF" />
+              <>
+                <div style={{ padding: '6px 10px', background: 'white', borderBottom: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: UX.fsMicro }}>
+                  <span style={{ color: UX.ink4 }}>PDF preview</span>
+                  <a
+                    href={pdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}
+                  >
+                    Open in new tab ↗
+                  </a>
+                </div>
+                <object data={pdfUrl} type="application/pdf" style={{ flex: 1, width: '100%', border: 0 }}>
+                  {/* Fallback when inline PDF rendering is blocked */}
+                  <div style={{ padding: 30, textAlign: 'center' as const, color: UX.ink3, fontSize: UX.fsBody }}>
+                    Your browser can't embed this PDF.{' '}
+                    <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: UX.indigo }}>
+                      Open it in a new tab
+                    </a>
+                    {' '}to cross-reference while you review.
+                  </div>
+                </object>
+              </>
             ) : (
               <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading PDF…</div>
             )}
