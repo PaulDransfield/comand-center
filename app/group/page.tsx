@@ -2,10 +2,15 @@
 'use client'
 // app/group/page.tsx
 //
-// Group-level overview — one row per business, AI insight paragraph at top
-// comparing them and proposing a cross-business action. Closes the competitor
-// "Compare workplaces / Draw lessons between workplaces" bullets with a
-// differentiator they can't match: the AI actually prescribes the action.
+// Phase 2 of the UX redesign — per DESIGN.md § 2 Group.
+// Structure:
+//   PageHero   → eyebrow + outlier-framed headline + group margin right
+//   Primary    → location-card grid (name · status pill · revenue · delta ·
+//                sparkline · 2×2 meta)
+//   Supporting → AI Group Manager card styled as an AttentionPanel with
+//                bullets (parsed from the narrative paragraph).
+//
+// Data untouched — same /api/group/overview endpoint, same shape.
 
 export const dynamic = 'force-dynamic'
 
@@ -13,9 +18,15 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
+import PageHero from '@/components/ui/PageHero'
+import SupportingStats from '@/components/ui/SupportingStats'
+import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
+import StatusPill from '@/components/ui/StatusPill'
+import Sparkline from '@/components/ui/Sparkline'
+import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct = (n: number | null) => n == null ? '—' : n.toFixed(1) + '%'
+const fmtPct = (n: number | null) => n == null ? '—' : (Math.round(n * 10) / 10).toFixed(1) + '%'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -51,7 +62,6 @@ export default function GroupPage() {
 
   function openBusiness(id: string) {
     localStorage.setItem('cc_selected_biz', id)
-    // Broadcast to other tabs / components that react to storage
     window.dispatchEvent(new Event('storage'))
     router.push('/dashboard')
   }
@@ -60,164 +70,192 @@ export default function GroupPage() {
   const summary    = data?.summary ?? null
   const narrative  = data?.narrative ?? null
 
-  // Rank helpers for the table — mark best / worst in each metric
-  const revVals    = businesses.map(b => b.revenue)
-  const labVals    = businesses.map(b => b.labour_pct).filter(x => x != null)
-  const marVals    = businesses.map(b => b.margin_pct).filter(x => x != null)
-  const best = {
-    revenue: businesses.find(b => b.revenue === Math.max(...revVals, 0))?.id,
-    labour:  businesses.find(b => b.labour_pct === Math.min(...labVals))?.id,
-    margin:  businesses.find(b => b.margin_pct === Math.max(...marVals))?.id,
-  }
+  // Outlier detection for hero framing + per-card pills.
+  const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
+  const byMargin = [...withRev].sort((a, b) => (a.margin_pct ?? 1e9) - (b.margin_pct ?? 1e9))
+  const worst = byMargin[0] ?? null
+  const best  = byMargin[byMargin.length - 1] ?? null
+  const draining = worst && worst.revenue === 0 && worst.staff_cost > 0  // hours with no revenue
 
   return (
     <AppShell>
-      <div className="page-wrap" style={{ maxWidth: 1100 }}>
+      <div style={{ maxWidth: 1100 }}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' as const }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Group Overview</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-              Side-by-side across all your locations · AI identifies the outlier and suggests one cross-location action.
-            </p>
+        {/* Minimal period navigator above the hero (page-local, not a TopBar
+            since there's only one crumb).  */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, gap: 4, alignItems: 'center' }}>
+          <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn} aria-label="Previous month">‹</button>
+          <div style={{ minWidth: 140, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+            {period.label}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn}>‹</button>
-            <div style={{ minWidth: 140, textAlign: 'center' as const }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{period.label}</div>
-            </div>
-            <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...navBtn, color: monthOffset === 0 ? '#d1d5db' : '#374151', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-          </div>
+          <button
+            onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
+            disabled={monthOffset === 0}
+            aria-label="Next month"
+            style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}
+          >›</button>
         </div>
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>Loading group data…</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading group data…</div>
         ) : error ? (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#dc2626' }}>{error}</div>
+          <div style={{ background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: UX.r_lg, padding: '12px 16px', fontSize: UX.fsBody, color: UX.redInk }}>{error}</div>
         ) : businesses.length === 0 ? (
-          <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 48, textAlign: 'center' as const }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 8 }}>No businesses yet</div>
-            <div style={{ fontSize: 13, color: '#9ca3af' }}>Add businesses from Settings — the group view lights up as soon as you have two or more.</div>
-          </div>
+          <EmptyCard
+            title="No businesses yet"
+            body="Add businesses from Settings — the group view lights up as soon as you have two or more."
+          />
         ) : businesses.length === 1 ? (
-          <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 48, textAlign: 'center' as const }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 8 }}>Only one business</div>
-            <div style={{ fontSize: 13, color: '#9ca3af', maxWidth: 440, margin: '0 auto' }}>
-              The group view is for comparing multiple locations. You have one — use <a href="/dashboard" style={{ color: '#6366f1' }}>Dashboard</a> for single-business detail.
-            </div>
-          </div>
+          <EmptyCard
+            title="Only one business"
+            body={<>The group view is for comparing multiple locations. You have one — use <a href="/dashboard" style={{ color: UX.indigo }}>Dashboard</a> for single-business detail.</>}
+          />
         ) : (
           <>
-            {/* AI narrative panel — the headline differentiator */}
-            {narrative && (
-              <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #312e81)', borderRadius: 14, padding: '24px 28px', marginBottom: 16, color: 'white', position: 'relative' as const }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                  <div style={{ width: 26, height: 26, background: 'rgba(99,102,241,0.35)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>✦</div>
-                  <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700, letterSpacing: '.05em' }}>AI GROUP MANAGER</span>
-                </div>
-                <div style={{ fontSize: 15, fontWeight: 400, lineHeight: 1.65, fontFamily: 'Georgia, serif', whiteSpace: 'pre-wrap' as const }}>
-                  {narrative}
-                </div>
-                <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.7)', marginTop: 12, letterSpacing: '.04em', textTransform: 'uppercase' as const }}>
-                  Based on {businesses.length} locations · {period.label} · Claude Haiku
-                </div>
-              </div>
-            )}
+            {/* ─── PageHero ────────────────────────────────────────────── */}
+            <PageHero
+              eyebrow={`GROUP STATUS — ${period.label.toUpperCase()}`}
+              headline={<HeroHeadline worst={worst} best={best} draining={draining} />}
+              context={buildContext(summary, businesses, worst)}
+              right={summary ? (
+                <SupportingStats
+                  items={[
+                    {
+                      label: 'Revenue',
+                      value: fmtKr(summary.total_revenue),
+                      sub:   `${businesses.length} locations`,
+                    },
+                    {
+                      label: 'Labour %',
+                      value: fmtPct(summary.group_labour_pct),
+                      sub:   'group avg',
+                      deltaTone: summary.group_labour_pct != null && summary.group_labour_pct <= 40 ? 'good' : 'bad' as const,
+                    },
+                    {
+                      label: 'Margin',
+                      value: fmtPct(summary.group_margin_pct),
+                      sub:   'after labour',
+                      deltaTone: summary.group_margin_pct != null && summary.group_margin_pct >= 45 ? 'good' : 'bad' as const,
+                    },
+                  ]}
+                />
+              ) : undefined}
+            />
 
-            {/* Summary row */}
-            {summary && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
-                <Kpi label="Revenue"       value={fmtKr(summary.total_revenue)}    sub={`${summary.total_covers || 0} covers`} />
-                <Kpi label="Labour cost"   value={fmtKr(summary.total_staff_cost)} sub={`${summary.total_hours}h total`} />
-                <Kpi label="Labour %"      value={fmtPct(summary.group_labour_pct)} sub="group average" />
-                <Kpi label="Margin %"      value={fmtPct(summary.group_margin_pct)} sub="after labour" />
-              </div>
-            )}
+            {/* ─── Location card grid (primary) ─────────────────────────── */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 10,
+              marginBottom: 14,
+            }}>
+              {businesses.map((b: any) => {
+                const margin     = Number(b.revenue ?? 0) - Number(b.staff_cost ?? 0)
+                const marginPct  = b.margin_pct
+                const isBest     = best && b.id === best.id && marginPct != null && marginPct >= 45
+                const isWorst    = worst && b.id === worst.id && (marginPct != null && marginPct < 30 || draining)
+                const noData     = !Number(b.revenue ?? 0) && !Number(b.staff_cost ?? 0)
 
-            {/* Per-business table */}
-            <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' as const }}>
-              <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Per location</div>
-                <div style={{ fontSize: 11, color: '#9ca3af' }}>Click a row to open its dashboard</div>
-              </div>
-              <div style={{ overflowX: 'auto' as const }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
-                <thead>
-                  <tr style={{ background: '#f9fafb' }}>
-                    {['Location', 'Revenue', 'Δ vs prev', 'Labour cost', 'Labour %', 'Margin %', 'Rev/hour', 'Covers'].map((h, i) => (
-                      <th key={h} style={{ padding: '9px 14px', textAlign: i === 0 ? 'left' as const : 'right' as const, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {businesses.map((b: any) => {
-                    const isBestRev = b.id === best.revenue
-                    const isBestLab = b.id === best.labour
-                    const isBestMar = b.id === best.margin
-                    const labColour = b.labour_pct == null ? '#d1d5db'
-                                    : b.labour_pct <= b.target_staff_pct ? '#15803d' : '#dc2626'
-                    const marColour = b.margin_pct == null ? '#d1d5db'
-                                    : b.margin_pct >= 60 ? '#15803d' : b.margin_pct >= 45 ? '#d97706' : '#dc2626'
-                    return (
-                      <tr
-                        key={b.id}
-                        onClick={() => openBusiness(b.id)}
-                        style={{ borderBottom: '1px solid #f9fafb', cursor: 'pointer' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = '#f9fafb')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ width: 8, height: 8, borderRadius: '50%', background: b.colour ?? '#9ca3af', flexShrink: 0 }} />
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{b.name}</div>
-                              {b.city && <div style={{ fontSize: 11, color: '#9ca3af' }}>{b.city}</div>}
-                            </div>
+                const pill:
+                  | { tone: 'good' | 'warning' | 'bad' | 'neutral' | 'info'; label: string }
+                  | null =
+                    isWorst ? { tone: 'bad',  label: 'OUTLIER' }
+                  : isBest  ? { tone: 'good', label: 'BEST' }
+                  : noData  ? { tone: 'neutral', label: 'NO DATA' }
+                  : null
+
+                const tone: 'good' | 'bad' | 'warning' | 'neutral' =
+                    marginPct == null ? 'neutral'
+                  : marginPct >= 55   ? 'good'
+                  : marginPct >= 30   ? 'warning'
+                  :                     'bad'
+
+                // Card surface shading — worst gets a subtle red wash, best a green border
+                const cardBg = isWorst ? UX.redSoft   : UX.cardBg
+                const cardBr = isWorst ? UX.redBorder : isBest ? UX.greenBorder : UX.border
+
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => openBusiness(b.id)}
+                    style={{
+                      background:   cardBg,
+                      border:       `0.5px solid ${cardBr}`,
+                      borderRadius: UX.r_lg,
+                      padding:      '14px 14px 12px',
+                      textAlign:    'left' as const,
+                      cursor:       'pointer',
+                      transition:   'transform .12s ease, box-shadow .12s ease',
+                      minWidth:     0,
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
+                      ;(e.currentTarget as HTMLButtonElement).style.boxShadow = UX.shadowPop
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.transform = 'none'
+                      ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
+                    }}
+                  >
+                    {/* Card header — name + status */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.colour ?? UX.ink4, flexShrink: 0, display: 'inline-block' }} />
+                          <div style={{ fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                            {b.name}
                           </div>
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const, color: '#111', fontWeight: 600 }}>
-                          {b.revenue > 0 ? fmtKr(b.revenue) : '—'}
-                          {isBestRev && <Leader />}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const }}>
-                          {b.revenue_delta_pct == null ? <span style={{ color: '#d1d5db' }}>—</span> : (
-                            <span style={{ fontSize: 12, fontWeight: 700, color: b.revenue_delta_pct >= 0 ? '#15803d' : '#dc2626' }}>
-                              {b.revenue_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(b.revenue_delta_pct)}%
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const, color: '#374151' }}>
-                          {b.staff_cost > 0 ? fmtKr(b.staff_cost) : '—'}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const }}>
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: labColour === '#15803d' ? '#dcfce7' : labColour === '#dc2626' ? '#fee2e2' : '#f3f4f6', color: labColour }}>
-                            {fmtPct(b.labour_pct)}
-                          </span>
-                          {isBestLab && <Leader />}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const, fontWeight: 600, color: marColour }}>
-                          {fmtPct(b.margin_pct)}
-                          {isBestMar && <Leader />}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const, color: '#6b7280' }}>
-                          {b.rev_per_hour ? fmtKr(b.rev_per_hour) : '—'}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' as const, color: '#6b7280' }}>
-                          {b.covers > 0 ? b.covers.toLocaleString('en-GB') : '—'}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              </div>
-              {/* Legend */}
-              <div style={{ padding: '10px 20px', fontSize: 11, color: '#9ca3af', borderTop: '1px solid #f3f4f6', display: 'flex', gap: 18, flexWrap: 'wrap' as const }}>
-                <span><Leader inline /> = best in group</span>
-                <span>Targets are per-location and set in Settings</span>
-              </div>
+                        </div>
+                        {b.city && <div style={{ fontSize: UX.fsMicro, color: UX.ink4, marginLeft: 12 }}>{b.city}</div>}
+                      </div>
+                      {pill && <StatusPill tone={pill.tone}>{pill.label}</StatusPill>}
+                    </div>
+
+                    {/* Revenue headline + delta */}
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
+                      <div style={{ fontSize: 18, fontWeight: UX.fwMedium, color: UX.ink1, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' as const }}>
+                        {b.revenue > 0 ? fmtKr(b.revenue) : '—'}
+                      </div>
+                      {b.revenue_delta_pct != null && (
+                        <div style={{ fontSize: UX.fsMicro, fontWeight: UX.fwMedium, color: b.revenue_delta_pct >= 0 ? UX.greenInk : UX.redInk }}>
+                          {b.revenue_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(b.revenue_delta_pct)}%
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Sparkline — dashed placeholder (no per-biz time series fetched here) */}
+                    <div style={{ margin: '6px 0 8px' }}>
+                      <Sparkline points={[]} tone={tone} dashed width={160} height={14} />
+                    </div>
+
+                    {/* 2×2 meta grid */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '6px 10px',
+                      fontSize: UX.fsMicro,
+                      color: UX.ink3,
+                    }}>
+                      <Meta label="Labour"    value={b.staff_cost > 0 ? fmtKr(b.staff_cost) : '—'} />
+                      <Meta label="Labour %"  value={fmtPct(b.labour_pct)} tone={b.labour_pct != null && b.labour_pct > (b.target_staff_pct ?? 40) ? 'bad' : 'good'} />
+                      <Meta label="Margin"    value={fmtPct(marginPct)}    tone={tone} />
+                      <Meta label="Rev/hour"  value={b.rev_per_hour ? fmtKr(b.rev_per_hour) : '—'} />
+                    </div>
+                  </button>
+                )
+              })}
             </div>
+
+            {/* ─── AI Group Manager as AttentionPanel-style card ──────── */}
+            <AttentionPanel
+              title="AI Group Manager"
+              rightSlot={
+                <span style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
+                  Based on {businesses.length} locations · {period.label}
+                </span>
+              }
+              items={narrativeToItems(narrative, businesses)}
+            />
           </>
         )}
       </div>
@@ -234,29 +272,102 @@ export default function GroupPage() {
   )
 }
 
-function Kpi({ label, value, sub }: any) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Hero headline — names the worst outlier if one exists, else the best.
+// Kept to one sentence under the 14-word spec where possible.
+// ─────────────────────────────────────────────────────────────────────────────
+function HeroHeadline({ worst, best, draining }: any) {
+  if (!worst && !best) {
+    return <>No group data yet for this period.</>
+  }
+  if (draining && worst) {
+    return (
+      <>
+        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{worst.name} is draining the group</span>
+        {' '}— {Math.round(Number(worst.hours ?? 0))} labour hours on zero revenue.
+      </>
+    )
+  }
+  if (worst && worst.margin_pct != null && worst.margin_pct < 30) {
+    return (
+      <>
+        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{worst.name} off target</span>
+        {' '}at {fmtPct(worst.margin_pct)} margin
+        {best && best.id !== worst.id && best.margin_pct != null && (
+          <> — <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{best.name} carrying at {fmtPct(best.margin_pct)}</span>.</>
+        )}
+        {(!best || best.id === worst.id || best.margin_pct == null) && '.'}
+      </>
+    )
+  }
+  if (best && best.margin_pct != null) {
+    return (
+      <>
+        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{best.name} leading the group</span>
+        {' '}at {fmtPct(best.margin_pct)} margin.
+      </>
+    )
+  }
+  return <>Group running across all locations.</>
+}
+
+function buildContext(summary: any, businesses: any[], worst: any): string {
+  if (!summary) return ''
+  const parts: string[] = []
+  parts.push(`${businesses.length} locations · ${fmtKr(summary.total_revenue)} total · labour ${fmtPct(summary.group_labour_pct)}`)
+  if (worst && Number(worst.revenue ?? 0) > 0 && worst.margin_pct != null && worst.margin_pct < 45) {
+    parts.push(`${worst.name} margin ${fmtPct(worst.margin_pct)}`)
+  }
+  return parts.join(' · ')
+}
+
+// Split the Claude-written narrative into a few short AttentionPanel items.
+// If the narrative is structured as sentences, take the first 2–3; otherwise
+// collapse it to a single bullet.
+function narrativeToItems(narrative: string | null, businesses: any[]): AttentionItem[] {
+  if (!narrative) return []
+  const sentences = narrative
+    .split(/(?<=[.!?])\s+(?=[A-ZÅÄÖ])/)
+    .map(s => s.trim())
+    .filter(s => s.length > 5)
+    .slice(0, 3)
+  if (!sentences.length) return [{ tone: 'warning', entity: 'AI', message: narrative.slice(0, 200) }]
+  return sentences.map((msg, i) => ({
+    // First sentence = verdict (warning/bad), following = supporting/actions (good).
+    tone:    (i === 0 ? 'warning' : 'good') as 'good' | 'warning' | 'bad',
+    entity:  i === 0 ? 'Verdict' : i === 1 ? 'Why' : 'Do this',
+    message: msg,
+  }))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inline helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function Meta({ label, value, tone }: any) {
+  const color =
+    tone === 'good'    ? UX.greenInk :
+    tone === 'bad'     ? UX.redInk   :
+    tone === 'warning' ? UX.amberInk :
+                         UX.ink2
   return (
-    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '14px 18px' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{sub}</div>}
+    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 1, minWidth: 0 }}>
+      <span style={{ fontSize: 9, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium }}>{label}</span>
+      <span style={{ fontSize: UX.fsLabel, color, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>{value}</span>
     </div>
   )
 }
 
-function Leader({ inline }: any) {
+function EmptyCard({ title, body }: any) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      marginLeft: 6, width: inline ? 14 : 16, height: inline ? 14 : 16,
-      background: '#fef3c7', color: '#b45309', borderRadius: '50%',
-      fontSize: 9, fontWeight: 700, verticalAlign: 'middle' as const,
-    }} title="Best in group">★</span>
+    <div style={{ background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg, padding: 48, textAlign: 'center' as const }}>
+      <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: UX.fsBody, color: UX.ink3, maxWidth: 440, margin: '0 auto' }}>{body}</div>
+    </div>
   )
 }
 
 const navBtn = {
-  width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb',
-  background: 'white', cursor: 'pointer', fontSize: 16,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151',
+  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
+  background: UX.cardBg, cursor: 'pointer', fontSize: 14,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', color: UX.ink2,
 } as const
