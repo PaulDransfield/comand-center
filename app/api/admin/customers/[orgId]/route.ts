@@ -34,7 +34,17 @@ export async function GET(req: NextRequest, { params }: { params: { orgId: strin
     db.from('revenue_logs').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
   ])
 
-  if (!org.data) return NextResponse.json({ error: 'Organisation not found' }, { status: 404 })
+  if (!org.data) {
+    // Diagnostic: include the raw org query error + echo the id we looked up.
+    // This has caught weird cases where the list view had a stale row while
+    // the DB was fresh, and a few where the orgId param was malformed.
+    return NextResponse.json({
+      error: 'Organisation not found',
+      org_id: orgId,
+      org_id_length: orgId?.length ?? 0,
+      query_error: org.error ?? null,
+    }, { status: 404 })
+  }
 
   // Fetch emails for each member via auth admin API
   const memberRows: any[] = []

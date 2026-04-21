@@ -71,7 +71,13 @@ export default function CustomerDetail() {
         fetch(`/api/admin/customers/${orgId}/timeline`, { headers: { 'x-admin-secret': secret } }),
         fetch(`/api/admin/ai-usage?org_id=${orgId}`, { headers: { 'x-admin-secret': secret } }),
       ])
-      if (r1.status === 404) { setError('__NOT_FOUND__'); return }
+      if (r1.status === 404) {
+        const body = await r1.json().catch(() => ({}))
+        setError('__NOT_FOUND__')
+        // Stash diag so the UI can render it
+        setData({ _diag: body })
+        return
+      }
       if (!r1.ok) {
         const body = await r1.json().catch(() => ({}))
         throw new Error(r1.status === 401 ? 'Unauthorized' : (body?.error ?? `HTTP ${r1.status}`))
@@ -286,8 +292,14 @@ export default function CustomerDetail() {
               Refresh list
             </button>
           </div>
-          <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'ui-monospace, monospace', marginTop: 16 }}>
-            org_id: {orgId}
+          <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'ui-monospace, monospace', marginTop: 16, textAlign: 'left' as const, background: '#f9fafb', padding: '10px 12px', borderRadius: 6 }}>
+            <div>org_id (from URL): {orgId}</div>
+            <div>length: {orgId?.length ?? 0}</div>
+            {data?._diag?.query_error && (
+              <div style={{ color: '#dc2626', marginTop: 4 }}>
+                query_error: {JSON.stringify(data._diag.query_error)}
+              </div>
+            )}
           </div>
         </div>
       </div>
