@@ -16,6 +16,12 @@
 **Purpose:** stores thumbs up / thumbs down + optional comment on each Monday memo. Populated via the public `/api/memo-feedback` endpoint, secured by HMAC-signed tokens (key: `CRON_SECRET`) embedded in the email buttons.
 **To apply:** open Supabase SQL Editor, paste file contents, run. No backfill needed — new memos from the next cron tick onward will include the feedback block. Requires M003 `briefings` already applied (FK target).
 
+### M017 — extraction_jobs queue
+**File:** `FORTNOX-JOBS-MIGRATION.sql` (repo root)
+**Purpose:** job queue for async Fortnox PDF extraction. Replaces the request-bound extraction path with dispatcher → worker → sweeper architecture: dispatcher upserts a row, worker atomically claims jobs via `FOR UPDATE SKIP LOCKED`, sweeper cron resets stale 'processing' rows and fires workers for ready 'pending' rows. Retries with exponential backoff (30s / 2m / 10m), dead-letter after 3 attempts.
+**Creates:** `extraction_jobs` table (one row per upload_id, UNIQUE), three RPCs (`claim_next_extraction_job`, `reset_stale_extraction_jobs`, `list_ready_extraction_jobs`), indexes for dispatch + stale detection, RLS read policy.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Idempotent. After applying, the `/api/cron/extraction-sweeper` endpoint starts serving traffic (cron schedule `*/2 * * * *`).
+
 ---
 
 ## How to use this file

@@ -1,16 +1,13 @@
 // app/api/fortnox/extract/route.ts
 //
-// Thin dispatcher. Flips the upload row to status='extracting', kicks
-// off the actual Anthropic extraction as a background Vercel function
-// invocation (/api/fortnox/extract-worker with CRON_SECRET auth), and
-// returns immediately to the browser. The worker writes its result
-// straight into fortnox_uploads; the UI polls /api/fortnox/uploads to
-// see the status flip to 'extracted' or 'failed'.
+// Dispatcher. Upserts an extraction_jobs row (status='pending'), fires
+// the worker endpoint via waitUntil so the outbound HTTP leaves even
+// after we've returned, and responds to the browser in <100 ms.
 //
-// Why a separate worker: Sonnet/Haiku on a 12-month Fortnox PDF can
-// push past Vercel's 300s function timeout when it's tied to the
-// browser request cycle. Splitting dispatcher and worker gives each
-// its own time budget and lets the user close the tab mid-extraction.
+// The worker has its own Vercel function invocation with its own 300 s
+// budget. The sweeper cron (/api/cron/extraction-sweeper) retries any
+// jobs the direct-invocation path misses. The browser polls to see the
+// status change; it never blocks on the extraction itself.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
@@ -18,7 +15,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { rateLimit } from '@/lib/middleware/rate-limit'
 
 export const runtime     = 'nodejs'
-export const maxDuration = 30     // dispatcher is fast — auth + DB flip + fire fetch
+export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
@@ -30,11 +27,17 @@ export async function POST(req: NextRequest) {
   const { upload_id } = await req.json().catch(() => ({} as any))
   if (!upload_id) return NextResponse.json({ error: 'upload_id required' }, { status: 400 })
 
+  if (!process.env.CRON_SECRET) {
+    return NextResponse.json({ error: 'Server misconfigured: CRON_SECRET not set' }, { status: 500 })
+  }
+
   const db = createAdminClient()
 
+  // Verify the upload exists, belongs to the caller's org, and isn't
+  // already applied (applied rows are immutable for audit).
   const { data: upload, error: getErr } = await db
     .from('fortnox_uploads')
-    .select('id, org_id, status')
+    .select('id, org_id, business_id, status')
     .eq('id', upload_id)
     .eq('org_id', auth.orgId)
     .maybeSingle()
@@ -43,49 +46,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Already applied — extraction not re-runnable' }, { status: 400 })
   }
 
-  // Flip to 'extracting' so the UI chip + progress text update immediately.
+  // Upsert the job. If a pending or failed job already exists for this
+  // upload, reset it (upload_id is UNIQUE). A retry click lands here
+  // and re-arms the job regardless of prior state.
+  const { error: upErr } = await db.from('extraction_jobs').upsert({
+    org_id:        upload.org_id,
+    business_id:   upload.business_id,
+    upload_id:     upload.id,
+    status:        'pending',
+    attempts:      0,
+    scheduled_for: new Date().toISOString(),
+    started_at:    null,
+    completed_at:  null,
+    error_message: null,
+    progress:      { phase: 'queued', message: 'Queued for background extraction…' },
+    updated_at:    new Date().toISOString(),
+  }, { onConflict: 'upload_id' })
+  if (upErr) return NextResponse.json({ error: `Queue insert failed: ${upErr.message}` }, { status: 500 })
+
+  // Mirror the status onto the upload row so the existing UI chip
+  // already knows the extraction is queued. The worker/sweeper will
+  // flip it through extracting → extracted/failed.
   await db.from('fortnox_uploads').update({
     status:        'extracting',
     error_message: 'Queued for background extraction…',
   }).eq('id', upload_id)
 
-  // Resolve the absolute URL we call the worker at. VERCEL_URL is set on
-  // every deployment; NEXT_PUBLIC_APP_URL works for local dev. The
-  // fallback to req headers covers preview deploys without VERCEL_URL.
+  // Fire the worker in the background. waitUntil keeps the function
+  // alive long enough to send the outbound request, but the browser
+  // has already received our 200.
   const base = process.env.NEXT_PUBLIC_APP_URL
-    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-    ?? `https://${req.headers.get('host')}`
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `https://${req.headers.get('host')}`)
   const workerUrl = `${base}/api/fortnox/extract-worker`
 
-  if (!process.env.CRON_SECRET) {
-    console.error('[fortnox/extract] CRON_SECRET missing — cannot trigger worker')
-    await db.from('fortnox_uploads').update({
-      status: 'failed',
-      error_message: 'Server misconfigured: CRON_SECRET not set.',
-    }).eq('id', upload_id)
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-
-  // Fire-and-forget. waitUntil keeps the function process alive long
-  // enough for the outbound HTTP request to leave, even though the
-  // response to the browser has already been sent.
   const trigger = fetch(workerUrl, {
     method:  'POST',
     headers: {
-      'Content-Type':   'application/json',
-      'Authorization':  `Bearer ${process.env.CRON_SECRET}`,
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
     },
-    body: JSON.stringify({ upload_id, org_id: auth.orgId }),
+    body: JSON.stringify({ trigger: 'dispatcher' }),
   }).then(async (r) => {
-    // If the worker immediately failed (e.g. 500 before doing any work),
-    // surface that so the row doesn't sit in 'extracting' until stale.
-    if (!r.ok) {
-      console.error('[fortnox/extract] worker returned', r.status, await r.text().catch(() => ''))
-    }
+    if (!r.ok) console.error('[fortnox/extract] worker returned', r.status, await r.text().catch(() => ''))
   }).catch((e: any) => {
     console.error('[fortnox/extract] worker trigger failed:', e?.message ?? e)
   })
-
   waitUntil(trigger)
 
   return NextResponse.json({ ok: true, status: 'queued' })

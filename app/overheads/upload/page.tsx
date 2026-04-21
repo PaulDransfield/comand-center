@@ -20,6 +20,14 @@ import { UX } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 
 interface Business { id: string; name: string; city: string | null }
+interface ExtractionJob {
+  status:        string
+  attempts:      number
+  max_attempts:  number
+  scheduled_for: string | null
+  progress:      { phase?: string; message?: string; percent?: number } | null
+  error_message: string | null
+}
 interface Upload {
   id:                string
   business_id:       string
@@ -34,6 +42,10 @@ interface Upload {
   applied_at:        string | null
   created_at:        string
   extracted_json?:   any
+  // Embedded 1:1 via the unique foreign key. Supabase returns an array
+  // when the FK target is non-unique and an object when it's unique —
+  // our FK is UNIQUE so we get an object. Typed loosely for safety.
+  extraction_jobs?:  ExtractionJob | ExtractionJob[] | null
 }
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -340,17 +352,23 @@ function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
           }}>
             <span style={{ color: UX.ink1, fontWeight: UX.fwMedium, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
               {u.pdf_filename}
-              {u.error_message && (
-                <div style={{
-                  fontSize:  UX.fsMicro,
-                  // While extracting, error_message is a live progress
-                  // indicator ("Extracting 4/12 months…") — render it
-                  // in indigo, not red. Red only when status='failed'.
-                  color:     (u.status === 'extracting' || u.status === 'pending') ? UX.indigo : UX.redInk,
-                  marginTop: 2,
-                  whiteSpace: 'normal' as const,
-                }}>{u.error_message}</div>
-              )}
+              {(() => {
+                // Prefer live job progress over the upload's error_message.
+                const job = Array.isArray(u.extraction_jobs) ? u.extraction_jobs[0] : u.extraction_jobs
+                const isExtracting = u.status === 'extracting' || u.status === 'pending'
+                const progressMsg = isExtracting && job?.progress?.message ? job.progress.message : null
+                const errorMsg    = !isExtracting ? (u.error_message ?? job?.error_message ?? null) : null
+                const text = progressMsg ?? errorMsg
+                if (!text) return null
+                return (
+                  <div style={{
+                    fontSize:  UX.fsMicro,
+                    color:     isExtracting ? UX.indigo : UX.redInk,
+                    marginTop: 2,
+                    whiteSpace: 'normal' as const,
+                  }}>{text}</div>
+                )
+              })()}
             </span>
             <span style={{ color: UX.ink3, fontSize: UX.fsMicro }}>{periodLabel}</span>
             <span style={{ textAlign: 'right' as const, color: UX.ink4, fontSize: UX.fsMicro, fontVariantNumeric: 'tabular-nums' as const }}>

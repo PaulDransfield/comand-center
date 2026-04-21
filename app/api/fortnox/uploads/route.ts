@@ -21,9 +21,11 @@ export async function GET(req: NextRequest) {
   const limit      = Math.min(Number(u.searchParams.get('limit') ?? 50), 200)
 
   const db = createAdminClient()
+  // Join the extraction_jobs queue row so the UI sees the live progress
+  // JSON (phase, message, percent) alongside the upload status chip.
   let q = db
     .from('fortnox_uploads')
-    .select('id, business_id, doc_type, period_year, period_month, pdf_filename, pdf_size_bytes, status, error_message, extracted_at, applied_at, created_at, extracted_json')
+    .select('id, business_id, doc_type, period_year, period_month, pdf_filename, pdf_size_bytes, status, error_message, extracted_at, applied_at, created_at, extracted_json, extraction_jobs(status, attempts, max_attempts, scheduled_for, progress, error_message)')
     .eq('org_id', auth.orgId)
     .order('created_at', { ascending: false })
     .limit(limit)

@@ -1,46 +1,52 @@
 // app/api/fortnox/extract-worker/route.ts
 //
-// Background worker for Fortnox PDF extraction. Called server-to-server
-// from /api/fortnox/extract (the dispatcher) with a CRON_SECRET bearer
-// token — runs as its own Vercel function invocation with its own 300 s
-// budget, independent of the browser's HTTP request.
+// Background worker for Fortnox extraction jobs.
 //
-// The dispatcher returns to the browser immediately; this worker writes
-// the extraction result (or failure) directly into fortnox_uploads,
-// which the UI polls for. Close the tab, come back later — it's done.
+// Invoked by either the dispatcher (/api/fortnox/extract) for fast-path
+// processing, or the sweeper cron (/api/cron/extraction-sweeper) for
+// retry/resilience. Authed via CRON_SECRET bearer token — not exposed
+// to the browser.
+//
+// Lifecycle:
+//   1. claim_next_extraction_job() — atomic FOR UPDATE SKIP LOCKED,
+//      safe against concurrent worker invocations (two workers get
+//      two different jobs, never the same one).
+//   2. Load the PDF from Supabase storage.
+//   3. Call Haiku with the compact schema (monthly rollups + annual
+//      line-item list).
+//   4. On success: write extraction_json + rollup rows on
+//      fortnox_uploads, mark job completed.
+//   5. On failure: reschedule with exponential backoff (30s, 2min,
+//      10min), or mark job 'dead' if we've exhausted max_attempts.
+//
+// After finishing, if there are more pending jobs waiting it fires
+// another worker invocation so the queue drains without waiting for
+// the sweeper cron.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
 
 export const runtime     = 'nodejs'
-// Sonnet reading a dense multi-month Resultatrapport (12 columns × ~40
-// line items) with max_tokens=8000 can push past 90s. Vercel's 300s
-// default gives comfortable headroom without changing model behaviour.
-export const maxDuration = 300
+export const maxDuration = 300      // Haiku on a 12-month PDF fits in 300 s with the compact schema
 
-// Swedish label → internal subcategory lookup.  Bootstrap list covering
-// the common Fortnox BAS chart rows seen in restaurant P&Ls.  Anything
-// outside the lookup lands with subcategory=null for manual tagging.
+// ── Swedish label → internal subcategory lookup ──────────────────────
 const SV_SUB = new Map<string, { category: string; subcategory: string }>([
-  // Revenue / intäkter
   ['försäljning',             { category: 'revenue', subcategory: 'food' }],
   ['försäljning livsmedel',   { category: 'revenue', subcategory: 'food' }],
   ['försäljning dryck',       { category: 'revenue', subcategory: 'beverage' }],
   ['försäljning alkohol',     { category: 'revenue', subcategory: 'alcohol' }],
   ['övriga intäkter',         { category: 'revenue', subcategory: 'other' }],
-  // Food costs
   ['råvaror',                 { category: 'food_cost', subcategory: 'raw_materials' }],
   ['handelsvaror',            { category: 'food_cost', subcategory: 'goods_for_resale' }],
   ['råvaror och förnödenheter', { category: 'food_cost', subcategory: 'raw_materials' }],
-  // Staff
   ['personalkostnader',       { category: 'staff_cost', subcategory: 'salaries' }],
   ['löner',                   { category: 'staff_cost', subcategory: 'salaries' }],
   ['sociala avgifter',        { category: 'staff_cost', subcategory: 'payroll_tax' }],
   ['arbetsgivaravgifter',     { category: 'staff_cost', subcategory: 'payroll_tax' }],
   ['pensionskostnader',       { category: 'staff_cost', subcategory: 'pension' }],
-  // Other external costs — the "hidden costs" bucket the AI hunts
   ['lokalhyra',               { category: 'other_cost', subcategory: 'rent' }],
   ['lokalkostnader',          { category: 'other_cost', subcategory: 'rent' }],
   ['el',                      { category: 'other_cost', subcategory: 'utilities' }],
@@ -68,7 +74,6 @@ const SV_SUB = new Map<string, { category: string; subcategory: string }>([
   ['frakter',                 { category: 'other_cost', subcategory: 'shipping' }],
   ['bilkostnader',            { category: 'other_cost', subcategory: 'vehicles' }],
   ['övriga externa kostnader',{ category: 'other_cost', subcategory: 'other' }],
-  // Depreciation + financial
   ['avskrivningar',           { category: 'depreciation', subcategory: 'depreciation' }],
   ['räntekostnader',          { category: 'financial', subcategory: 'interest' }],
   ['ränteintäkter',           { category: 'financial', subcategory: 'interest_income' }],
@@ -77,144 +82,146 @@ const SV_SUB = new Map<string, { category: string; subcategory: string }>([
 
 function classifyLabel(label: string): { category: string; subcategory: string | null } {
   const key = label.trim().toLowerCase()
-  // Direct hit
   if (SV_SUB.has(key)) return SV_SUB.get(key)!
-  // Partial match — "Lokalhyra Gröndal" still maps to rent
-  for (const [k, v] of SV_SUB.entries()) {
-    if (key.includes(k)) return v
-  }
+  for (const [k, v] of SV_SUB.entries()) if (key.includes(k)) return v
   return { category: 'other_cost', subcategory: null }
 }
 
+// Backoff schedule — 30 s, 2 min, 10 min. Keeps failing-fast behaviour
+// visible (user sees 'failed' quickly for bad input) without burning
+// through retries when Anthropic is having a moment.
+const BACKOFF_MS = [30_000, 120_000, 600_000]
+
 export async function POST(req: NextRequest) {
-  // Server-to-server auth. The dispatcher signs its call with CRON_SECRET;
-  // nothing else should be able to reach this endpoint.
   const authHeader = req.headers.get('authorization') ?? ''
-  const expected   = `Bearer ${process.env.CRON_SECRET}`
-  if (!process.env.CRON_SECRET || authHeader !== expected) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const body = await req.json().catch(() => ({} as any))
-  const upload_id = body?.upload_id
-  const orgId     = body?.org_id
-  if (!upload_id || !orgId) return NextResponse.json({ error: 'upload_id and org_id required' }, { status: 400 })
-
   const db = createAdminClient()
 
-  const { data: upload, error: getErr } = await db
+  // Atomic claim — RPC uses FOR UPDATE SKIP LOCKED so concurrent worker
+  // invocations never grab the same job.
+  const { data: claimed, error: claimErr } = await db.rpc('claim_next_extraction_job')
+  if (claimErr) {
+    console.error('[extract-worker] claim failed:', claimErr.message)
+    return NextResponse.json({ error: claimErr.message }, { status: 500 })
+  }
+  const job = Array.isArray(claimed) ? claimed[0] : claimed
+  if (!job) return NextResponse.json({ ok: true, empty: true }, { status: 200 })
+
+  // Helper — progress writer. Each call updates the job's progress JSON
+  // so the UI polling /api/fortnox/uploads (which joins this row) sees
+  // live phase changes.
+  const writeProgress = async (progress: Record<string, any>) => {
+    try {
+      await db.from('extraction_jobs')
+        .update({ progress, updated_at: new Date().toISOString() })
+        .eq('id', job.id)
+      await db.from('fortnox_uploads')
+        .update({ error_message: progress.message ?? null })
+        .eq('id', job.upload_id)
+    } catch (e: any) {
+      console.warn('[extract-worker] writeProgress error:', e?.message)
+    }
+  }
+
+  // Trigger another worker in parallel if more pending jobs are waiting,
+  // so the queue drains without waiting for the sweeper tick.
+  const triggerNext = async () => {
+    const { data: more } = await db.rpc('list_ready_extraction_jobs', { max_jobs: 1 })
+    if (!Array.isArray(more) || !more.length) return
+    const base = process.env.NEXT_PUBLIC_APP_URL
+      ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    if (!base) return
+    fetch(`${base}/api/fortnox/extract-worker`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+      },
+      body: JSON.stringify({ trigger: 'chain' }),
+    }).catch(() => {})
+  }
+
+  try {
+    const result = await runExtraction(db, job, writeProgress)
+
+    // Success — mark job completed + finalize upload row
+    await db.from('extraction_jobs').update({
+      status:       'completed',
+      completed_at: new Date().toISOString(),
+      progress:     { phase: 'completed', message: 'Extraction ready for review', percent: 100 },
+      updated_at:   new Date().toISOString(),
+    }).eq('id', job.id)
+
+    waitUntil(triggerNext())
+    return NextResponse.json({ ok: true, job_id: job.id, ...result })
+  } catch (e: any) {
+    const msg = String(e?.message ?? e)
+    console.error('[extract-worker] job failed:', { job_id: job.id, upload_id: job.upload_id, msg })
+
+    const attempt = Number(job.attempts ?? 0)      // already incremented by claim RPC
+    const maxAttempts = Number(job.max_attempts ?? 3)
+    const hasRetries = attempt < maxAttempts
+
+    if (hasRetries) {
+      const backoff = BACKOFF_MS[Math.min(attempt - 1, BACKOFF_MS.length - 1)] ?? BACKOFF_MS[BACKOFF_MS.length - 1]
+      const scheduledFor = new Date(Date.now() + backoff).toISOString()
+      await db.from('extraction_jobs').update({
+        status:        'pending',
+        started_at:    null,
+        scheduled_for: scheduledFor,
+        error_message: msg.slice(0, 500),
+        progress:      { phase: 'retry', message: `Attempt ${attempt} failed — retrying in ${Math.round(backoff / 1000)}s`, percent: 0 },
+        updated_at:    new Date().toISOString(),
+      }).eq('id', job.id)
+      // Keep the upload row in 'extracting' so the UI still shows it as in-flight.
+      await db.from('fortnox_uploads').update({
+        error_message: `Attempt ${attempt} failed — auto-retry in ${Math.round(backoff / 1000)}s: ${msg.slice(0, 200)}`,
+      }).eq('id', job.upload_id)
+    } else {
+      // Exhausted — mark dead, flip upload to failed so the user sees Retry.
+      await db.from('extraction_jobs').update({
+        status:        'dead',
+        completed_at:  new Date().toISOString(),
+        error_message: msg.slice(0, 500),
+        progress:      { phase: 'dead', message: `Failed after ${maxAttempts} attempts`, percent: 0 },
+        updated_at:    new Date().toISOString(),
+      }).eq('id', job.id)
+      await db.from('fortnox_uploads').update({
+        status:        'failed',
+        error_message: `Extraction failed after ${maxAttempts} attempts: ${msg.slice(0, 400)}`,
+      }).eq('id', job.upload_id)
+    }
+
+    waitUntil(triggerNext())
+    return NextResponse.json({ ok: false, job_id: job.id, error: msg }, { status: 200 })
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// runExtraction — does one PDF. Pure business logic; the caller
+// handles status transitions and retry. Throws on failure.
+// ─────────────────────────────────────────────────────────────────────
+async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promise<void>) {
+  await writeProgress({ phase: 'loading', message: 'Loading PDF…', percent: 5 })
+
+  const { data: upload, error: uErr } = await db
     .from('fortnox_uploads')
     .select('id, org_id, business_id, pdf_storage_path, status')
-    .eq('id', upload_id)
-    .eq('org_id', orgId)
+    .eq('id', job.upload_id)
     .maybeSingle()
-  if (getErr || !upload) return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
-  if (upload.status === 'applied') {
-    return NextResponse.json({ error: 'Already applied — extraction not re-runnable' }, { status: 400 })
-  }
+  if (uErr || !upload) throw new Error(`Upload not found: ${uErr?.message ?? 'missing row'}`)
+  if (upload.status === 'applied') throw new Error('Upload is already applied — not re-runnable')
 
-  // Dispatcher has already flipped status to 'extracting', but set it
-  // again defensively in case this worker was invoked directly.
-  await db.from('fortnox_uploads').update({ status: 'extracting', error_message: 'Worker started…' }).eq('id', upload_id)
-
-  // Synthesize `auth` for the rest of the function so we don't have to
-  // touch every downstream reference. Only orgId is actually used.
-  const auth = { orgId, userId: null as any }
-
-  // Pull the PDF bytes from private storage.
   const { data: blob, error: dlErr } = await db.storage.from('fortnox-pdfs').download(upload.pdf_storage_path)
-  if (dlErr || !blob) {
-    await db.from('fortnox_uploads').update({ status: 'failed', error_message: `Storage download failed: ${dlErr?.message ?? 'no blob'}` }).eq('id', upload_id)
-    return NextResponse.json({ error: 'Download failed' }, { status: 500 })
-  }
+  if (dlErr || !blob) throw new Error(`Storage download failed: ${dlErr?.message ?? 'no blob'}`)
 
   const arrayBuffer = await blob.arrayBuffer()
   const base64      = Buffer.from(arrayBuffer).toString('base64')
 
-  // ── Peek call ─────────────────────────────────────────────────────────
-  // Small (<500 tokens out) Haiku call that only has to detect the scale,
-  // doc_type, and the list of (year, month) periods covered. Primes the
-  // prompt cache for the PDF so the per-period fill calls that follow can
-  // hit the cache at 10% cost. Typical wall time: 2–4s.
-  //
-  // When the PDF covers a single period, we skip the fill fan-out and
-  // fall through to the one-shot prompt path below (legacy behaviour).
-  const peekPrompt = `You are scanning a Swedish accounting PDF (Fortnox Resultatrapport / invoice / VAT report) to identify WHAT it covers. DO NOT extract line items.
-
-Detect:
-  • scale_detected — the unit the amounts are printed in: "sek" | "ksek" | "msek". Look for "(kr)" vs "(tkr)" / "Belopp i kkr" / "MSEK". If none is labelled, guess from the magnitudes (a restaurant's monthly revenue is 200k–3M SEK).
-  • doc_type       — "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat".
-  • business_hint  — legal name of the company if visible, else null.
-  • periods        — list every distinct (year, month) column/period present. For a multi-column Resultatrapport with Jan–Dec 2025, emit 12 entries. For a single-month P&L, emit one. For a year-only summary with no monthly split, emit one entry with month=0. Do NOT include "Ack."/"Totalt"/"Året" summary columns — only the individual period columns.
-
-Return ONLY JSON, nothing else:
-{
-  "doc_type":       "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
-  "scale_detected": "sek" | "ksek" | "msek",
-  "business_hint":  "string" | null,
-  "confidence":     "high" | "medium" | "low",
-  "warnings":       [],
-  "periods":        [{ "year": 2025, "month": 1 }]
-}`
-
-  async function runClaude(args: {
-    prompt:     string
-    maxTokens:  number
-    cachePdf?:  boolean   // tag the document with cache_control so parallel calls share it
-  }) {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-    const doc: any  = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
-    if (args.cachePdf) doc.cache_control = { type: 'ephemeral' }
-    // Retry once on 429 with a 3-second backoff — Anthropic's concurrent-
-    // connection ceiling trips the whole fan-out if we fire too many at
-    // once.  The concurrency limiter below caps this at 4, but a retry
-    // here protects against transient spikes.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        return await client.messages.create({
-          model:      AI_MODELS.AGENT,
-          max_tokens: args.maxTokens,
-          messages: [{ role: 'user', content: [ doc, { type: 'text', text: args.prompt } ] }],
-        })
-      } catch (e: any) {
-        const is429 = e?.status === 429 || /rate_limit|concurrent/i.test(e?.message ?? '')
-        if (is429 && attempt === 0) { await new Promise(r => setTimeout(r, 3000)); continue }
-        throw e
-      }
-    }
-    throw new Error('unreachable')
-  }
-
-  // Concurrency pool — caps the number of simultaneous Anthropic calls so
-  // we don't trip the concurrent-connection rate limit.  4 seems to be a
-  // safe number on lower Anthropic tiers; it can be tuned up later when
-  // we upgrade plans.
-  async function runPooled<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
-    const out: R[] = new Array(items.length)
-    let cursor = 0
-    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (true) {
-        const i = cursor++
-        if (i >= items.length) return
-        out[i] = await fn(items[i], i)
-      }
-    })
-    await Promise.all(workers)
-    return out
-  }
-
-  function parseJsonFromResponse(resp: any): any | null {
-    const raw = (resp?.content ?? [])
-      .map((b: any) => (b?.type === 'text' ? b.text : ''))
-      .join('')
-      .trim()
-    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace  = cleaned.lastIndexOf('}')
-    if (firstBrace >= 0 && lastBrace > firstBrace) cleaned = cleaned.slice(firstBrace, lastBrace + 1)
-    try { return JSON.parse(cleaned) } catch { return null }
-  }
+  await writeProgress({ phase: 'extracting', message: 'Extracting with Haiku…', percent: 20 })
 
   const prompt = `You are extracting a Swedish Fortnox accounting report into structured JSON.
 
@@ -241,7 +248,7 @@ Return ONLY valid JSON with this shape, nothing else:
   "periods": [
     {
       "year":  2025,
-      "month": 1,                         // 1..12 for monthly; 0 only for a year-only summary with no monthly breakdown
+      "month": 1,
       "rollup": { "revenue": 0, "food_cost": 0, "staff_cost": 0, "other_cost": 0, "depreciation": 0, "financial": 0, "net_profit": 0 }
     }
   ],
@@ -256,116 +263,88 @@ Rules:
 - All costs positive; revenue positive; financial items signed.
 - Swedish decimal marker is comma. "1,5" in an MSEK report = 1 500 000 SEK.
 - Skip "Summa…" / "Total…" subtotal rows.
-- annual_lines contains the year-total amounts for every line account (not per-month lines — that would be 12× redundant and blow the output budget).
+- annual_lines contains the year-total amounts for every line account (not per-month lines).
 
 Return ONLY the JSON object.`
 
   const started = Date.now()
-  let totalInputTokens  = 0
-  let totalOutputTokens = 0
+  const Anthropic = (await import('@anthropic-ai/sdk')).default
+  const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-  // Progress writer — updates error_message with a phase string so the
-  // UI can show "Peeking…" → "Extracting month 4/12…" → success. Using
-  // error_message because it's already a text column and not semantically
-  // load-bearing while status='extracting'.
-  const writeProgress = async (msg: string) => {
-    try { await db.from('fortnox_uploads').update({ error_message: msg }).eq('id', upload_id) }
-    catch { /* non-fatal */ }
+  const response = await client.messages.create({
+    model:      AI_MODELS.AGENT,
+    max_tokens: 8000,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } } as any,
+        { type: 'text', text: prompt },
+      ],
+    }],
+  })
+
+  await writeProgress({ phase: 'parsing', message: 'Parsing Haiku output…', percent: 70 })
+
+  const raw = (response.content ?? []).map((b: any) => b?.type === 'text' ? b.text : '').join('').trim()
+  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+  const firstBrace = cleaned.indexOf('{')
+  const lastBrace  = cleaned.lastIndexOf('}')
+  if (firstBrace >= 0 && lastBrace > firstBrace) cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+
+  let parsed: any
+  try { parsed = JSON.parse(cleaned) }
+  catch (e: any) {
+    const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
+    const truncated = (response as any).stop_reason === 'max_tokens'
+    throw new Error(truncated
+      ? `Haiku ran out of tokens before finishing JSON. Sample: ${snippet}`
+      : `Haiku returned non-JSON output (${e.message}). Sample: ${snippet}`)
   }
 
-  try {
-    // ── Single-shot Haiku, compact schema ─────────────────────────────
-    // Monthly rollups (12 × ~150 tokens) + one annual_lines list (40 ×
-    // ~30 tokens) = ~3 000 output tokens. Completes in ~20–30 s on
-    // Haiku — comfortably under Vercel's 300 s timeout regardless of
-    // how many monthly columns the PDF has.
-    //
-    // Per-month line detail is intentionally NOT extracted: it would
-    // multiply the output 12x for minimal analytical value (overheads
-    // analysis works off annual line totals, monthly trends work off
-    // rollups). If a customer later wants monthly line detail, they
-    // upload individual monthly PDFs — each of those fits easily.
-    await writeProgress('Extracting with Haiku…')
-    const response = await runClaude({ prompt, maxTokens: 8000, cachePdf: false })
-    totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
-    totalOutputTokens += (response as any).usage?.output_tokens ?? 0
+  // Attach annual_lines to the latest period so the apply route can
+  // write them into tracker_line_items via the existing annual path.
+  const annualLines = Array.isArray(parsed?.annual_lines) ? parsed.annual_lines : []
+  if (annualLines.length && Array.isArray(parsed?.periods) && parsed.periods.length) {
+    const target = parsed.periods[parsed.periods.length - 1]
+    target.lines = Array.isArray(target.lines) && target.lines.length ? target.lines : annualLines
+  }
 
-    const truncated = (response as any).stop_reason === 'max_tokens'
-    const parsed = parseJsonFromResponse(response)
-    if (!parsed) {
-      const raw = ((response as any).content ?? [])
-        .map((b: any) => (b?.type === 'text' ? b.text : ''))
-        .join('')
-        .trim()
-      const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
-      const errMsg  = truncated
-        ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
-        : `Claude returned non-JSON output. Sample: ${snippet}`
-      console.error('[fortnox/extract]', errMsg)
-      await db.from('fortnox_uploads').update({
-        status:        'failed',
-        error_message: errMsg.slice(0, 500),
-      }).eq('id', upload_id)
-      return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
-    }
+  await writeProgress({ phase: 'normalising', message: 'Normalising line items…', percent: 85 })
 
-    // Attach annual_lines to the last (or only) period so the existing
-    // periods[]-based apply route writes them into tracker_line_items.
-    // For multi-month PDFs we put them on the latest month; for single-
-    // period PDFs they go on the only period as before.
-    const annualLines = Array.isArray(parsed?.annual_lines) ? parsed.annual_lines : []
-    if (annualLines.length && Array.isArray(parsed?.periods) && parsed.periods.length) {
-      const target = parsed.periods[parsed.periods.length - 1]
-      target.lines = Array.isArray(target.lines) && target.lines.length ? target.lines : annualLines
-    }
+  function enrichLines(raw: any[]): any[] {
+    return (Array.isArray(raw) ? raw : []).map((l: any) => {
+      const label   = String(l?.label ?? '').trim()
+      const fromAI  = String(l?.category ?? '').trim()
+      const amount  = Number(l?.amount ?? 0)
+      const looked  = classifyLabel(label)
+      const category = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
+        ? fromAI : looked.category
+      const acctRaw = l?.fortnox_account ?? l?.account
+      const fortnoxAccount = Number.isFinite(Number(acctRaw)) ? Number(acctRaw) : null
+      return { label_sv: label, category, subcategory: looked.subcategory, amount, fortnox_account: fortnoxAccount }
+    }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))
+  }
 
-    // Helper — normalise + enrich lines with our subcategory lookup.
-    function enrichLines(raw: any[]): any[] {
-      return (Array.isArray(raw) ? raw : []).map((l: any) => {
-        const label   = String(l?.label ?? '').trim()
-        const fromAI  = String(l?.category ?? '').trim()
-        const amount  = Number(l?.amount ?? 0)
-        const looked  = classifyLabel(label)
-        const category = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
-          ? fromAI
-          : looked.category
-        const subcategory = looked.subcategory
-        // Accept both the old "fortnox_account" field and the new slim
-        // "account" field — the prompt schema was shortened to save
-        // output tokens on multi-month PDFs.
-        const acctRaw = l?.fortnox_account ?? l?.account
-        const fortnoxAccount = Number.isFinite(Number(acctRaw)) ? Number(acctRaw) : null
-        return { label_sv: label, category, subcategory, amount, fortnox_account: fortnoxAccount }
-      }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))
-    }
+  function emptyRollup() {
+    return { revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, net_profit: 0 }
+  }
 
-    function emptyRollup() {
-      return { revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, net_profit: 0 }
-    }
+  let periodsRaw: any[] = []
+  if (Array.isArray(parsed?.periods) && parsed.periods.length) {
+    periodsRaw = parsed.periods
+  } else {
+    periodsRaw = [{ year: parsed?.period?.year, month: parsed?.period?.month, rollup: parsed?.rollup ?? {}, lines: parsed?.lines ?? [] }]
+  }
 
-    // Build a consistent periods[] array regardless of which shape Claude
-    // returned.  Newer prompt asks for "periods": [...].  Legacy shape is
-    // a single "period" + "rollup" + "lines".  Wrap legacy into a single-
-    // entry periods array so downstream code only has to handle one shape.
-    let periodsRaw: any[] = []
-    if (Array.isArray(parsed?.periods) && parsed.periods.length) {
-      periodsRaw = parsed.periods
-    } else {
-      periodsRaw = [{
-        year:   parsed?.period?.year,
-        month:  parsed?.period?.month,
-        rollup: parsed?.rollup ?? {},
-        lines:  parsed?.lines  ?? [],
-      }]
-    }
-
-    const periods = periodsRaw
-      .map((p: any) => {
-        const year  = Number(p?.year)  || null
-        const month = p?.month == null ? null : (Number.isFinite(Number(p.month)) ? Number(p.month) : null)
-        const lines = enrichLines(p?.lines)
-        const rollupRaw = p?.rollup ?? {}
-        const rollup = {
+  const periods = periodsRaw
+    .map((p: any) => {
+      const year  = Number(p?.year) || null
+      const month = p?.month == null ? null : (Number.isFinite(Number(p.month)) ? Number(p.month) : null)
+      const lines = enrichLines(p?.lines)
+      const rollupRaw = p?.rollup ?? {}
+      return {
+        year, month, lines,
+        rollup: {
           revenue:      Number(rollupRaw.revenue     ?? 0) || 0,
           food_cost:    Number(rollupRaw.food_cost   ?? 0) || 0,
           staff_cost:   Number(rollupRaw.staff_cost  ?? 0) || 0,
@@ -373,103 +352,85 @@ Return ONLY the JSON object.`
           depreciation: Number(rollupRaw.depreciation?? 0) || 0,
           financial:    Number(rollupRaw.financial   ?? 0) || 0,
           net_profit:   Number(rollupRaw.net_profit  ?? 0) || 0,
-        }
-        return { year, month, rollup, lines }
-      })
-      .filter((p: any) => p.year != null)
-      .sort((a: any, b: any) => (a.year - b.year) || ((a.month ?? 0) - (b.month ?? 0)))
+        },
+      }
+    })
+    .filter((p: any) => p.year != null)
+    .sort((a: any, b: any) => (a.year - b.year) || ((a.month ?? 0) - (b.month ?? 0)))
 
-    // Derive doc_type if Claude didn't set it, or promote to multi-month.
-    let docType: string = parsed?.doc_type ?? 'pnl_monthly'
-    if (periods.length > 1) docType = 'pnl_multi_month'
-    else if (periods.length === 1 && (periods[0].month == null || periods[0].month === 0)) docType = 'pnl_annual'
-    if (!['pnl_monthly','pnl_annual','pnl_multi_month','invoice','sales','vat'].includes(docType)) {
-      docType = 'pnl_monthly'
-    }
+  let docType: string = parsed?.doc_type ?? 'pnl_monthly'
+  if (periods.length > 1) docType = 'pnl_multi_month'
+  else if (periods.length === 1 && (periods[0].month == null || periods[0].month === 0)) docType = 'pnl_annual'
+  if (!['pnl_monthly','pnl_annual','pnl_multi_month','invoice','sales','vat'].includes(docType)) {
+    docType = 'pnl_monthly'
+  }
 
-    // Back-compat: also emit the legacy single-period fields so any
-    // existing consumer that reads extraction.rollup / extraction.lines
-    // still works during rollout.  Pick the "main" period — for
-    // multi-month reports, a synthesised year-total; otherwise the only
-    // period.
-    const mainRollup = periods.length === 1
-      ? periods[0].rollup
-      : periods.reduce((acc: any, p: any) => ({
-          revenue:      acc.revenue      + p.rollup.revenue,
-          food_cost:    acc.food_cost    + p.rollup.food_cost,
-          staff_cost:   acc.staff_cost   + p.rollup.staff_cost,
-          other_cost:   acc.other_cost   + p.rollup.other_cost,
-          depreciation: acc.depreciation + p.rollup.depreciation,
-          financial:    acc.financial    + p.rollup.financial,
-          net_profit:   acc.net_profit   + p.rollup.net_profit,
-        }), emptyRollup())
-    const mainLines = periods.length === 1 ? periods[0].lines : []   // multi-month lines live only inside periods[]
+  const mainRollup = periods.length === 1
+    ? periods[0].rollup
+    : periods.reduce((acc: any, p: any) => ({
+        revenue:      acc.revenue      + p.rollup.revenue,
+        food_cost:    acc.food_cost    + p.rollup.food_cost,
+        staff_cost:   acc.staff_cost   + p.rollup.staff_cost,
+        other_cost:   acc.other_cost   + p.rollup.other_cost,
+        depreciation: acc.depreciation + p.rollup.depreciation,
+        financial:    acc.financial    + p.rollup.financial,
+        net_profit:   acc.net_profit   + p.rollup.net_profit,
+      }), emptyRollup())
+  const mainLines = periods.length === 1 ? periods[0].lines : []
 
-    // Top-level period reflects the earliest month we saw — used for the
-    // fortnox_uploads.period_year / period_month columns which drive the
-    // display label in the uploads list.
-    const pYear  = periods[0]?.year  ?? null
-    const pMonth = periods.length > 1 ? null : (periods[0]?.month ?? null)
+  const pYear  = periods[0]?.year  ?? null
+  const pMonth = periods.length > 1 ? null : (periods[0]?.month ?? null)
 
-    const extraction = {
-      doc_type:      docType,
-      period:        { year: pYear, month: pMonth },
-      periods,                                              // ← new canonical shape
-      business_hint: parsed?.business_hint ?? null,
-      rollup:        mainRollup,
-      lines:         mainLines,
-      confidence:    parsed?.confidence ?? 'medium',
-      warnings:      Array.isArray(parsed?.warnings) ? parsed.warnings : [],
-    }
+  const warnings = Array.isArray(parsed?.warnings) ? [...parsed.warnings] : []
+  if (parsed?.confidence === 'low') warnings.unshift('Low-confidence extraction — double-check every row before applying.')
 
-    // Rough cost logging (Haiku 4.5: $1/M input, $5/M output). Sum across
-    // peek + per-month fill calls. Prompt caching on the document reduces
-    // the real input cost below this estimate but the usage numbers we
-    // log here are the uncached ones Anthropic returned.
-    const inputTokens  = totalInputTokens
-    const outputTokens = totalOutputTokens
-    const costKr = (inputTokens * 1e-6 + outputTokens * 5e-6) * 11  // rough USD→SEK
+  const extraction = {
+    doc_type:      docType,
+    period:        { year: pYear, month: pMonth },
+    periods,
+    business_hint: parsed?.business_hint ?? null,
+    rollup:        mainRollup,
+    lines:         mainLines,
+    confidence:    parsed?.confidence ?? 'medium',
+    warnings,
+    scale_detected: parsed?.scale_detected ?? 'sek',
+  }
 
-    try {
-      await logAiRequest(db, {
-        org_id:        auth.orgId,
-        request_type:  'fortnox_extract',
-        model:         AI_MODELS.AGENT,
-        input_tokens:  inputTokens,
-        output_tokens: outputTokens,
-        duration_ms:   Date.now() - started,
-      })
-    } catch { /* non-fatal */ }
+  const inputTokens  = (response as any).usage?.input_tokens  ?? 0
+  const outputTokens = (response as any).usage?.output_tokens ?? 0
+  const costKr = (inputTokens * 1e-6 + outputTokens * 5e-6) * 11
 
-    // Attach an explicit warning when Claude reports low confidence so the
-    // review UI can refuse auto-apply and surface it clearly.  We don't
-    // block the extracted_json — low-confidence data still beats no data
-    // and a human reviewer can fix it.
-    const warnings = Array.isArray(extraction.warnings) ? [...extraction.warnings] : []
-    if (extraction.confidence === 'low') {
-      warnings.unshift('Low-confidence extraction — double-check every row before applying.')
-    }
-    extraction.warnings = warnings
+  try {
+    await logAiRequest(db, {
+      org_id:        job.org_id,
+      request_type:  'fortnox_extract',
+      model:         AI_MODELS.AGENT,
+      input_tokens:  inputTokens,
+      output_tokens: outputTokens,
+      duration_ms:   Date.now() - started,
+    })
+  } catch { /* non-fatal */ }
 
-    await db.from('fortnox_uploads').update({
-      doc_type:           docType,
-      period_year:        pYear,
-      period_month:       pMonth,
-      extracted_json:     extraction,
-      extraction_model:   AI_MODELS.AGENT,
-      extraction_cost_kr: Math.round(costKr * 100) / 100,
-      status:             'extracted',
-      extracted_at:       new Date().toISOString(),
-      error_message:      extraction.confidence === 'low' ? 'Low confidence — review carefully' : null,
-    }).eq('id', upload_id)
+  await writeProgress({ phase: 'finalising', message: 'Writing to database…', percent: 95 })
 
-    return NextResponse.json({ ok: true, extraction })
-  } catch (e: any) {
-    console.error('[fortnox/extract] Claude call failed:', e.message)
-    await db.from('fortnox_uploads').update({
-      status:        'failed',
-      error_message: `Extraction failed: ${e.message}`,
-    }).eq('id', upload_id)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  await db.from('fortnox_uploads').update({
+    doc_type:           docType,
+    period_year:        pYear,
+    period_month:       pMonth,
+    extracted_json:     extraction,
+    extraction_model:   AI_MODELS.AGENT,
+    extraction_cost_kr: Math.round(costKr * 100) / 100,
+    status:             'extracted',
+    extracted_at:       new Date().toISOString(),
+    error_message:      extraction.confidence === 'low' ? 'Low confidence — review carefully' : null,
+  }).eq('id', job.upload_id)
+
+  return {
+    upload_id:      job.upload_id,
+    doc_type:       docType,
+    period:         { year: pYear, month: pMonth },
+    line_count:     periods.reduce((n: number, p: any) => n + (p.lines?.length ?? 0), 0),
+    input_tokens:   inputTokens,
+    output_tokens:  outputTokens,
   }
 }
