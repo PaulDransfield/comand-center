@@ -29,26 +29,26 @@ function getWeekBounds(offset = 0) {
   const mon = new Date(today); mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7); mon.setHours(0,0,0,0)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
   const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
-  return { from: localDate(mon), to: localDate(sun), weekNum: getISOWeek(mon), label: mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}` }
+  return { from: localDate(mon), to: localDate(sun), weekNum: getISOWeek(mon), label: mM === sM ? `${mon.getDate()}â€${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} â€ ${sun.getDate()} ${sM}` }
 }
 function getMonthBounds(offset = 0) {
   const now = new Date(), d = new Date(now.getFullYear(), now.getMonth() + offset, 1), last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
   return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}` }
 }
 
-// Status meta — note: we remap the API's 'understaffed' status to 'lean' (it's actually
+// Status meta â€ note: we remap the API's 'understaffed' status to 'lean' (it's actually
 // the GOOD state: high revenue per labour hour means you're getting a lot out of every
 // scheduled hour, i.e. lean efficient staffing. The old label/colour were misleading.)
 //
-// API → UI:  understaffed → lean (green)  ·  efficient → on_target (neutral)  ·  overstaffed → overstaffed (amber)
+// API â UI:  understaffed â lean (green)  Â·  efficient â on_target (neutral)  Â·  overstaffed â overstaffed (amber)
 const STATUS_META: Record<string, any> = {
-  lean:        { label: 'Lean',        bg: '#f0fdf4', border: '#bbf7d0', dot: '#15803d', text: '#15803d', hint: 'High revenue per hour — you\'re doing a lot with the hours scheduled.' },
-  on_target:   { label: 'On target',   bg: '#eff6ff', border: '#bfdbfe', dot: '#2563eb', text: '#2563eb', hint: 'Revenue per labour hour within ±20% of your weekly average.' },
-  overstaffed: { label: 'Overstaffed', bg: '#fffbeb', border: '#fde68a', dot: '#d97706', text: '#d97706', hint: 'Revenue per hour is low — more hours scheduled than demand needs. Consider trimming.' },
+  lean:        { label: 'Lean',        bg: '#f0fdf4', border: '#bbf7d0', dot: '#15803d', text: '#15803d', hint: 'High revenue per hour â€ you\'re doing a lot with the hours scheduled.' },
+  on_target:   { label: 'On target',   bg: '#eff6ff', border: '#bfdbfe', dot: '#2563eb', text: '#2563eb', hint: 'Revenue per labour hour within Â±20% of your weekly average.' },
+  overstaffed: { label: 'Overstaffed', bg: '#fffbeb', border: '#fde68a', dot: '#d97706', text: '#d97706', hint: 'Revenue per hour is low â€ more hours scheduled than demand needs. Consider trimming.' },
   no_data:     { label: 'No data',     bg: '#f9fafb', border: '#e5e7eb', dot: '#9ca3af', text: '#9ca3af', hint: 'Fewer than 2 days of joined data for this weekday.' },
 }
 
-// Map API status → UI status
+// Map API status â UI status
 const mapStatus = (s: string) =>
   s === 'understaffed' ? 'lean'
   : s === 'efficient'  ? 'on_target'
@@ -60,7 +60,7 @@ export default function SchedulingPage() {
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
   const [selectedBiz, setSelectedBiz] = useState('')
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')   // default to month — more data on the scorecard
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')   // default to month â€ more data on the scorecard
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
 
@@ -69,14 +69,14 @@ export default function SchedulingPage() {
   const [drillData,   setDrillData]   = useState<any>(null)
   const [drillLoading,setDrillLoading] = useState(false)
 
-  // AI-suggested schedule (next week) — independent of the view selector
+  // AI-suggested schedule (next week) â€ independent of the view selector
   // because the suggestion always targets the next Mon-Sun regardless of
   // whether the user is looking at this month or last week.
   const [aiSched,      setAiSched]      = useState<any>(null)
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiError,      setAiError]      = useState('')
 
-  // Progressive disclosure — historical pattern + AI observations start
+  // Progressive disclosure â€ historical pattern + AI observations start
   // collapsed so the page lead with the prescriptive AI schedule only.
   const [showHistory,      setShowHistory]      = useState(false)
   const [showObservations, setShowObservations] = useState(false)
@@ -92,7 +92,7 @@ export default function SchedulingPage() {
   }, [])
 
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum} · ${curr.label}` : curr.label
+  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum} Â· ${curr.label}` : curr.label
   const fromDate = curr.from
   const toDate   = curr.to
 
@@ -144,8 +144,8 @@ export default function SchedulingPage() {
   const recommendation   = data?.latest_recommendation ?? null
 
   // Normalise weekday rows. In month mode we trust the API's status (which requires
-  // ≥2 data points for a weekday to be classified). In week mode each weekday only
-  // has 1 day of data so we recompute status locally from rev/hour vs weekly average —
+  // â¥2 data points for a weekday to be classified). In week mode each weekday only
+  // has 1 day of data so we recompute status locally from rev/hour vs weekly average â€
   // otherwise every card would be greyed out "no_data".
   const weekdays = weekdaysRaw.map((w: any) => {
     if (w.days_with_data < 1 || !w.avg_rev_per_hour || !summary?.avg_rev_per_hour) {
@@ -181,23 +181,23 @@ export default function SchedulingPage() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           {viewMode === 'week' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setWeekOffset(o => o - 1)} style={schNavBtn}>‹</button>
+              <button onClick={() => setWeekOffset(o => o - 1)} style={schNavBtn}>â€¹</button>
               <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: 12, fontWeight: 500, color: '#111' }}>
-                Week {(curr as any).weekNum} · {curr.label}
+                Week {(curr as any).weekNum} Â· {curr.label}
               </div>
-              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...schNavBtn, color: weekOffset === 0 ? '#d1d5db' : '#374151', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...schNavBtn, color: weekOffset === 0 ? '#d1d5db' : '#374151', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>â€º</button>
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={schNavBtn}>‹</button>
+              <button onClick={() => setMonthOffset(o => o - 1)} style={schNavBtn}>â€¹</button>
               <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: 12, fontWeight: 500, color: '#111' }}>{curr.label}</div>
-              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...schNavBtn, color: monthOffset === 0 ? '#d1d5db' : '#374151', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...schNavBtn, color: monthOffset === 0 ? '#d1d5db' : '#374151', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>â€º</button>
             </div>
           )}
           <SchSegmentedToggle value={viewMode} onChange={setViewMode} />
         </div>
 
-        {/* ─── PageHero (replaces big header + old AI CTA banner) ─────── */}
+        {/* â€â€â€ PageHero (replaces big header + old AI CTA banner) â€â€â€â€â€â€â€ */}
         <SchPageHero aiSched={aiSched} aiLoading={aiLoading} fmtKr={fmtKr} />
 
         {error && (
@@ -218,11 +218,11 @@ export default function SchedulingPage() {
         ) : (
           <>
 
-            {/* ═══════════════════════════════════════════════════════
-                AI-SUGGESTED SCHEDULE (next week) — promoted to the top.
+            {/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+                AI-SUGGESTED SCHEDULE (next week) â€ promoted to the top.
                 This is the most valuable, most decisive output of the
                 page. Owner reads: save X kr / trim Y hours, done.
-            ═══════════════════════════════════════════════════════ */}
+            âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
             <AiSuggestedSchedule
               loading={aiLoading}
               error={aiError}
@@ -231,7 +231,7 @@ export default function SchedulingPage() {
               fmtHrs={fmtH}
             />
 
-            {/* Progressive disclosure — historical pattern is supporting
+            {/* Progressive disclosure â€ historical pattern is supporting
                 context for the prescription above, not the lead. Click to
                 expand; keeps the page scannable. */}
             <button
@@ -246,19 +246,19 @@ export default function SchedulingPage() {
               <span>
                 How this period performed
                 <span style={{ fontWeight: 400, color: '#9ca3af', marginLeft: 8, fontSize: 12 }}>
-                  · labour {labourPct !== null ? fmtPct(labourPct) : '—'} · rev/hr {summary?.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : '—'}
-                  {leanCount > 0 && ` · ${leanCount} lean day${leanCount !== 1 ? 's' : ''}`}
-                  {overstaffedList.length > 0 && ` · ${overstaffedList.length} overstaffed`}
+                  Â· labour {labourPct !== null ? fmtPct(labourPct) : 'â€'} Â· rev/hr {summary?.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : 'â€'}
+                  {leanCount > 0 && ` Â· ${leanCount} lean day${leanCount !== 1 ? 's' : ''}`}
+                  {overstaffedList.length > 0 && ` Â· ${overstaffedList.length} overstaffed`}
                 </span>
               </span>
-              <span style={{ color: '#6b7280', fontSize: 14 }}>{showHistory ? '▾' : '▸'}</span>
+              <span style={{ color: '#6b7280', fontSize: 14 }}>{showHistory ? 'â–¾' : 'â–¸'}</span>
             </button>
 
             {showHistory && (<>
-            {/* ═══════════════════════════════════════════════════════
-                HERO SCORECARD — labour % vs target is the one number
+            {/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+                HERO SCORECARD â€ labour % vs target is the one number
                 that tells the operator whether this period worked.
-            ═══════════════════════════════════════════════════════ */}
+            âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
             <div style={{
               background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14,
               padding: '22px 28px', marginBottom: 16,
@@ -271,26 +271,26 @@ export default function SchedulingPage() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                   <div style={{ fontSize: 38, fontWeight: 800, color: labourColor, letterSpacing: '-.03em', lineHeight: 1 }}>
-                    {labourPct !== null ? fmtPct(labourPct) : '—'}
+                    {labourPct !== null ? fmtPct(labourPct) : 'â€'}
                   </div>
                   {labourPct !== null && (
                     <div style={{ fontSize: 12, fontWeight: 600, color: labourStatus === 'good' ? '#15803d' : labourStatus === 'bad' ? '#dc2626' : '#d97706' }}>
-                      {labourStatus === 'good' ? `✓ under ${labourTarget}% target`
+                      {labourStatus === 'good' ? `â under ${labourTarget}% target`
                        : labourStatus === 'warn' ? `${fmtPct(labourPct - labourTarget)} over target`
-                       : labourStatus === 'bad'  ? `${fmtPct(labourPct - labourTarget)} over — attention needed`
+                       : labourStatus === 'bad'  ? `${fmtPct(labourPct - labourTarget)} over â€ attention needed`
                        : ''}
                     </div>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-                  {summary.days_analyzed} days analysed · target {labourTarget}% (Swedish mid-market)
+                  {summary.days_analyzed} days analysed Â· target {labourTarget}% (Swedish mid-market)
                 </div>
               </div>
 
               {/* Sub-stat: revenue per hour */}
               <div style={{ borderLeft: '1px solid #f3f4f6', paddingLeft: 24 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>Rev / labour hr</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#111' }}>{summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : '—'}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#111' }}>{summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : 'â€'}</div>
                 <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>period average</div>
               </div>
 
@@ -309,16 +309,16 @@ export default function SchedulingPage() {
               </div>
             </div>
 
-            {/* ═══════════════════════════════════════════════════════
-                7-DAY GRID — each day is a small scorecard with a
+            {/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+                7-DAY GRID â€ each day is a small scorecard with a
                 traffic light. Replaces the old bar chart entirely.
-            ═══════════════════════════════════════════════════════ */}
+            âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
             <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '18px 22px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap' as const, gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>By day of week</div>
                   <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                    Compared against {summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : '—'}/hr weekly average · ±20% band = on target
+                    Compared against {summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : 'â€'}/hr weekly average Â· Â±20% band = on target
                   </div>
                 </div>
                 {/* Summary tags */}
@@ -345,7 +345,7 @@ export default function SchedulingPage() {
                     <div
                       key={w.weekday}
                       onClick={() => has && openDayDrill(w.weekday)}
-                      title={has ? `${meta.hint} · click for staff details` : meta.hint}
+                      title={has ? `${meta.hint} Â· click for staff details` : meta.hint}
                       style={{
                         background: has ? meta.bg : '#fafafa',
                         border: `1px solid ${has ? meta.border : '#f3f4f6'}`,
@@ -367,9 +367,9 @@ export default function SchedulingPage() {
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
                       </div>
 
-                      {/* Rev/hr — the headline metric for this day */}
+                      {/* Rev/hr â€ the headline metric for this day */}
                       <div style={{ fontSize: 18, fontWeight: 700, color: has ? '#111' : '#d1d5db', letterSpacing: '-.02em', lineHeight: 1.1 }}>
-                        {has && w.avg_rev_per_hour ? fmtKr(w.avg_rev_per_hour) : '—'}
+                        {has && w.avg_rev_per_hour ? fmtKr(w.avg_rev_per_hour) : 'â€'}
                       </div>
 
                       {/* Supporting figures */}
@@ -377,7 +377,7 @@ export default function SchedulingPage() {
                         {has ? (
                           <>
                             {fmtKr(w.avg_revenue ?? 0)} rev<br />
-                            {fmtH(w.avg_hours ?? 0)} · {w.days_with_data} days
+                            {fmtH(w.avg_hours ?? 0)} Â· {w.days_with_data} days
                           </>
                         ) : (
                           <>
@@ -400,23 +400,23 @@ export default function SchedulingPage() {
               {/* Legend */}
               <div style={{ marginTop: 14, paddingTop: 12, borderTop: '0.5px solid #f3f4f6', display: 'flex', gap: 18, flexWrap: 'wrap' as const, fontSize: 11, color: '#6b7280' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.lean.dot }} /> Lean — high output per hour (good)
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.lean.dot }} /> Lean â€ high output per hour (good)
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.on_target.dot }} /> On target — within ±20% of average
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.on_target.dot }} /> On target â€ within Â±20% of average
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.overstaffed.dot }} /> Overstaffed — more hours than demand
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.overstaffed.dot }} /> Overstaffed â€ more hours than demand
                 </span>
               </div>
             </div>
             </>)}{/* end showHistory */}
 
-            {/* ═══════════════════════════════════════════════════════
-                OBSERVATIONS — AI-generated specifics. Collapsed by
+            {/* âââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+                OBSERVATIONS â€ AI-generated specifics. Collapsed by
                 default (secondary to the AI schedule above). Falls back
                 to the upgrade card when no recommendations exist yet.
-            ═══════════════════════════════════════════════════════ */}
+            âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
             <button
               onClick={() => setShowObservations(s => !s)}
               style={{
@@ -430,11 +430,11 @@ export default function SchedulingPage() {
                 {recommendation ? 'AI observations from the last 90 days' : 'Weekly AI observations'}
                 <span style={{ fontWeight: 400, color: '#9ca3af', marginLeft: 8, fontSize: 12 }}>
                   {recommendation
-                    ? `· generated ${new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                    : '· available on Group plan'}
+                    ? `Â· generated ${new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                    : 'Â· available on Group plan'}
                 </span>
               </span>
-              <span style={{ color: '#6b7280', fontSize: 14 }}>{showObservations ? '▾' : '▸'}</span>
+              <span style={{ color: '#6b7280', fontSize: 14 }}>{showObservations ? 'â–¾' : 'â–¸'}</span>
             </button>
 
             {showObservations && (
@@ -448,7 +448,7 @@ export default function SchedulingPage() {
                     </div>
                     <div style={{ fontSize: 11, color: '#9ca3af' }}>
                       Generated {new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                      {recommendation.analysis_period && ` · based on ${recommendation.analysis_period}`}
+                      {recommendation.analysis_period && ` Â· based on ${recommendation.analysis_period}`}
                     </div>
                   </div>
                 </div>
@@ -467,14 +467,14 @@ export default function SchedulingPage() {
             ) : (
               <div style={{ background: 'linear-gradient(135deg, #312e81, #1e1b4b)', border: '0.5px solid rgba(99,102,241,0.3)', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-                  <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: 'white' }}>✦</div>
+                  <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: 'white' }}>â¦</div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'white', marginBottom: 4 }}>Weekly AI observations</div>
                     <div style={{ fontSize: 12, color: 'rgba(199,210,254,0.7)', lineHeight: 1.6, marginBottom: 14 }}>
-                      Available on the Group plan. Every Monday at 07:00, Claude Sonnet reviews your last 90 days of shifts and revenue and writes specific observations — which days are trending lean, where lateness is costing you, which shifts to trim or add.
+                      Available on the Group plan. Every Monday at 07:00, Claude Sonnet reviews your last 90 days of shifts and revenue and writes specific observations â€ which days are trending lean, where lateness is costing you, which shifts to trim or add.
                     </div>
                     <a href="/upgrade" style={{ display: 'inline-block', padding: '8px 16px', background: '#6366f1', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
-                      Upgrade to Group →
+                      Upgrade to Group â
                     </a>
                   </div>
                 </div>
@@ -495,27 +495,27 @@ export default function SchedulingPage() {
                   {WEEKDAY_NAMES[drillDay]}s in {periodLabel}
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>
-                  {drillLoading ? 'Loading…'
+                  {drillLoading ? 'Loadingâ€¦'
                     : drillData?.error ? 'Error'
                     : drillData ? (
                       <>
-                        {fmtKr(drillData.totals.revenue)} rev · {fmtKr(drillData.totals.cost)} labour · {drillData.totals.rev_per_hour ? fmtKr(drillData.totals.rev_per_hour) + '/hr' : '—/hr'}
+                        {fmtKr(drillData.totals.revenue)} rev Â· {fmtKr(drillData.totals.cost)} labour Â· {drillData.totals.rev_per_hour ? fmtKr(drillData.totals.rev_per_hour) + '/hr' : 'â€/hr'}
                       </>
                     ) : ''}
                 </div>
                 {!drillLoading && drillData && !drillData.error && (
                   <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                    {drillData.dates.length} day{drillData.dates.length !== 1 ? 's' : ''} · {drillData.totals.staff_count} staff · {drillData.totals.shifts} shifts · {fmtH(drillData.totals.hours)}
+                    {drillData.dates.length} day{drillData.dates.length !== 1 ? 's' : ''} Â· {drillData.totals.staff_count} staff Â· {drillData.totals.shifts} shifts Â· {fmtH(drillData.totals.hours)}
                   </div>
                 )}
               </div>
-              <button onClick={() => setDrillDay(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
+              <button onClick={() => setDrillDay(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>Ã—</button>
             </div>
 
             {/* Body */}
             <div style={{ overflowY: 'auto', flex: 1, padding: '14px 24px 18px' }}>
               {drillLoading ? (
-                <div style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>Loading day details…</div>
+                <div style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>Loading day detailsâ€¦</div>
               ) : drillData?.error ? (
                 <div style={{ fontSize: 13, color: '#dc2626' }}>{drillData.error}</div>
               ) : drillData && drillData.dates.length > 0 ? (
@@ -541,7 +541,7 @@ export default function SchedulingPage() {
                             <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151' }}>{fmtKr(d.cost)}</td>
                             <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{fmtH(d.hours)}</td>
                             <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{d.staff_count}</td>
-                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, fontWeight: 600, color: '#111' }}>{d.rev_per_hour ? fmtKr(d.rev_per_hour) : '—'}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, fontWeight: 600, color: '#111' }}>{d.rev_per_hour ? fmtKr(d.rev_per_hour) : 'â€'}</td>
                           </tr>
                         )
                       })}
@@ -571,7 +571,7 @@ export default function SchedulingPage() {
                             <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{s.shifts}</td>
                             <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{fmtH(s.hours)}</td>
                             <td style={{ padding: '8px 8px', textAlign: 'right' as const, fontWeight: 600, color: '#111' }}>{fmtKr(s.cost)}</td>
-                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{s.avg_cost_per_hour ? fmtKr(s.avg_cost_per_hour) : '—'}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#6b7280' }}>{s.avg_cost_per_hour ? fmtKr(s.avg_cost_per_hour) : 'â€'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -586,7 +586,7 @@ export default function SchedulingPage() {
         </div>
       )}
 
-      {/* Contextual AI — updated wording to match new terminology */}
+      {/* Contextual AI â€ updated wording to match new terminology */}
       <AskAI
         page="scheduling"
         context={summary ? [
@@ -610,17 +610,17 @@ export default function SchedulingPage() {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AI-suggested schedule card — renders inline below the past-week analysis.
-// Cuts-only: delta is always ≤0, days the model would have added show as a
+// â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€
+// AI-suggested schedule card â€ renders inline below the past-week analysis.
+// Cuts-only: delta is always â¤0, days the model would have added show as a
 // soft "note" row with no numeric recommendation.
-// ─────────────────────────────────────────────────────────────────────────────
+// â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€
 function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
   const deltaColor = (d: number) => d < -0.5 ? '#15803d' : '#6b7280'
   const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16, scrollMarginTop: 16 }
 
   if (loading) {
-    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestion…</div></div>
+    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestionâ€¦</div></div>
   }
   if (error) {
     return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#dc2626', fontSize: 13 }}>AI suggestion: {error}</div></div>
@@ -628,7 +628,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
   if (!data) return null
 
   const { summary, suggested, current, week_from, week_to, pk_shifts_found } = data
-  const shortRange = `${week_from.slice(8)}–${week_to.slice(8)} ${new Date(week_from).toLocaleDateString('en-GB', { month: 'short' })}`
+  const shortRange = `${week_from.slice(8)}â€${week_to.slice(8)} ${new Date(week_from).toLocaleDateString('en-GB', { month: 'short' })}`
 
   return (
     <div id="ai-schedule" style={cardStyle}>
@@ -640,7 +640,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
             <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600, letterSpacing: '.03em' }}>AI</span>
           </div>
           <div style={{ fontSize: 11, color: '#9ca3af' }}>
-            Next week · {shortRange} · {pk_shifts_found > 0 ? `${pk_shifts_found} shifts in PK` : 'no PK schedule yet'}
+            Next week Â· {shortRange} Â· {pk_shifts_found > 0 ? `${pk_shifts_found} shifts in PK` : 'no PK schedule yet'}
           </div>
         </div>
         {/* Inline summary */}
@@ -649,7 +649,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
           <Stat label="Suggested"  value={`${summary.suggested_hours}h`} tone={summary.suggested_hours < summary.current_hours ? 'good' : 'neutral'} />
           <Stat
             label="Saving"
-            value={summary.saving_kr > 0 ? `−${fmt(summary.saving_kr)} kr` : '—'}
+            value={summary.saving_kr > 0 ? `â${fmt(summary.saving_kr)} kr` : 'â€'}
             tone={summary.saving_kr > 0 ? 'good' : 'neutral'}
           />
         </div>
@@ -658,11 +658,11 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
       {/* Under-staffed notice */}
       {summary.under_staffed_days > 0 && (
         <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#1e3a5f' }}>
-          <strong>{summary.under_staffed_days}</strong> day{summary.under_staffed_days > 1 ? 's' : ''} look lighter than your 12-week pattern. We don't recommend adding hours — it's a judgment call based on booking outlook only you can see.
+          <strong>{summary.under_staffed_days}</strong> day{summary.under_staffed_days > 1 ? 's' : ''} look lighter than your 12-week pattern. We don't recommend adding hours â€ it's a judgment call based on booking outlook only you can see.
         </div>
       )}
 
-      {/* Diff table — planned (PK) vs AI + predicted sales + margin indicator */}
+      {/* Diff table â€ planned (PK) vs AI + predicted sales + margin indicator */}
       <div style={{ overflowX: 'auto' as const }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
         <thead>
@@ -693,7 +693,7 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
               <tr key={c.date} style={{ borderBottom: '1px solid #f3f4f6', background: isNote ? '#f8fafc' : undefined }}>
                 {/* Day */}
                 <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500, whiteSpace: 'nowrap' as const }}>
-                  <strong>{c.weekday}</strong> · {c.date.slice(5)}
+                  <strong>{c.weekday}</strong> Â· {c.date.slice(5)}
                   {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>note</span>}
                 </td>
                 {/* Weather */}
@@ -702,46 +702,46 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
                     <>
                       <div style={{ fontWeight: 600, color: '#1a1f2e' }}>{w.summary}</div>
                       <div style={{ fontSize: 11, color: '#6b7280' }}>
-                        {w.temp_min != null ? `${Math.round(w.temp_min)}–${Math.round(w.temp_max)}°C` : ''}
-                        {Number(w.precip_mm) > 0.5 ? ` · ${w.precip_mm}mm` : ''}
+                        {w.temp_min != null ? `${Math.round(w.temp_min)}â€${Math.round(w.temp_max)}Â°C` : ''}
+                        {Number(w.precip_mm) > 0.5 ? ` Â· ${w.precip_mm}mm` : ''}
                       </div>
                       {s.bucket_days_seen >= 3 && (
-                        <div style={{ fontSize: 10, color: '#15803d', marginTop: 1 }}>✓ {s.bucket_days_seen} matching days</div>
+                        <div style={{ fontSize: 10, color: '#15803d', marginTop: 1 }}>â {s.bucket_days_seen} matching days</div>
                       )}
                     </>
-                  ) : <span style={{ color: '#d1d5db' }}>—</span>}
+                  ) : <span style={{ color: '#d1d5db' }}>â€</span>}
                 </td>
-                {/* Your plan — hours + planned cost */}
+                {/* Your plan â€ hours + planned cost */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151', whiteSpace: 'nowrap' as const }}>
                   <div style={{ fontWeight: 600, color: '#111' }}>{fmtHrs(c.hours)}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? `${fmt(c.est_cost)} kr` : '—'}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? `${fmt(c.est_cost)} kr` : 'â€'}</div>
                 </td>
-                {/* AI suggestion — hours + cost + saving */}
+                {/* AI suggestion â€ hours + cost + saving */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
                   {isNote ? (
                     <span style={{ color: '#6b7280' }}>no change</span>
                   ) : (
                     <>
                       <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? `${fmt(s.est_cost)} kr` : '—'}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? `${fmt(s.est_cost)} kr` : 'â€'}</div>
                       {s.delta_cost < 0 && (
                         <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>save {fmt(Math.abs(s.delta_cost))} kr</div>
                       )}
                     </>
                   )}
                 </td>
-                {/* Predicted sales — est_revenue from the historical pattern */}
+                {/* Predicted sales â€ est_revenue from the historical pattern */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', whiteSpace: 'nowrap' as const }}>
                   {predictedRev > 0 ? (
                     <>
                       <div style={{ fontWeight: 600 }}>{fmt(predictedRev)} kr</div>
                       <div style={{ fontSize: 10, color: '#9ca3af' }}>pattern avg</div>
                     </>
-                  ) : <span style={{ color: '#d1d5db' }}>—</span>}
+                  ) : <span style={{ color: '#d1d5db' }}>â€</span>}
                 </td>
                 {/* Margin % indicator */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
-                  {margin === null ? <span style={{ color: '#d1d5db' }}>—</span> : (
+                  {margin === null ? <span style={{ color: '#d1d5db' }}>â€</span> : (
                     <span style={{
                       display: 'inline-block',
                       fontSize: 12, fontWeight: 700,
@@ -780,12 +780,12 @@ function Stat({ label, value, tone = 'neutral' }: any) {
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€
 // Top-of-page CTA that teases the AI schedule's value and scrolls to the card.
 // Dynamic labelling: once the suggestion loads, if there's a saving we say so
-// in SEK — nothing converts like a concrete number. Otherwise we still show a
+// in SEK â€ nothing converts like a concrete number. Otherwise we still show a
 // clear button so customers don't miss that the tool exists.
-// ─────────────────────────────────────────────────────────────────────────────
+// â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€
 function AiScheduleCTA({ data, loading, fmt }: any) {
   function scrollToAi() {
     const el = document.getElementById('ai-schedule')
@@ -797,20 +797,20 @@ function AiScheduleCTA({ data, loading, fmt }: any) {
   const weekFrom = data?.week_from
   const weekTo   = data?.week_to
   const rangeLabel = weekFrom && weekTo
-    ? `${weekFrom.slice(8)}–${weekTo.slice(8)} ${new Date(weekFrom).toLocaleDateString('en-GB', { month: 'short' })}`
+    ? `${weekFrom.slice(8)}â€${weekTo.slice(8)} ${new Date(weekFrom).toLocaleDateString('en-GB', { month: 'short' })}`
     : 'next week'
 
   const primary =
-    loading       ? 'Loading…' :
+    loading       ? 'Loadingâ€¦' :
     saving > 0    ? `Save ~${fmt(saving)} kr next week` :
     hoursCut > 0  ? `Trim ${hoursCut.toFixed(1)}h next week` :
                     'View next week\'s AI schedule'
 
   const secondary =
     loading      ? 'Reviewing 12 weeks of data, weather, and your shift patterns.' :
-    saving > 0   ? `Based on your ${rangeLabel} forecast — ${data.suggested.length} days analysed against your 12-week pattern.` :
+    saving > 0   ? `Based on your ${rangeLabel} forecast â€ ${data.suggested.length} days analysed against your 12-week pattern.` :
     hoursCut > 0 ? `Lean cuts suggested for ${rangeLabel}. Weather-aware.` :
-                   `Your schedule matches the 12-week pattern — nothing to trim for ${rangeLabel}.`
+                   `Your schedule matches the 12-week pattern â€ nothing to trim for ${rangeLabel}.`
 
   return (
     <button
@@ -833,7 +833,7 @@ function AiScheduleCTA({ data, loading, fmt }: any) {
         ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 2px 10px rgba(49,46,129,0.15)'
       }}
     >
-      <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✦</div>
+      <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>â¦</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' as const }}>
           <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '1px 7px', borderRadius: 4, fontWeight: 700, letterSpacing: '.04em' }}>AI</span>
@@ -841,12 +841,12 @@ function AiScheduleCTA({ data, loading, fmt }: any) {
         </div>
         <div style={{ fontSize: 12, color: 'rgba(199,210,254,0.8)', lineHeight: 1.4 }}>{secondary}</div>
       </div>
-      <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap' as const }}>View →</div>
+      <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap' as const }}>View â</div>
     </button>
   )
 }
 
-// ─── Phase 8 UX helpers — PageHero, compact toggle, navBtn ───────────────
+// â€â€â€ Phase 8 UX helpers â€ PageHero, compact toggle, navBtn â€â€â€â€â€â€â€â€â€â€â€â€â€â€â€
 function SchPageHero({ aiSched, aiLoading, fmtKr }: any) {
   const saving   = aiSched?.summary?.saving_kr ?? 0
   const trimDays = (aiSched?.suggested ?? []).filter((s: any) => (s.delta_hours ?? 0) < 0).length
@@ -856,19 +856,19 @@ function SchPageHero({ aiSched, aiLoading, fmtKr }: any) {
   const headline = aiLoading
     ? <>Crunching next week...</>
     : saving > 0
-    ? <>AI can save <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(saving)}</span> — trim {trimDays} day{trimDays === 1 ? "" : "s"}, keep {keepDays}.</>
-    : <>Schedule is on target for next week — no cuts recommended.</>
+    ? <>AI can save <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(saving)}</span> â€ trim {trimDays} day{trimDays === 1 ? "" : "s"}, keep {keepDays}.</>
+    : <>Schedule is on target for next week â€ no cuts recommended.</>
 
   return (
     <PageHero
-      eyebrow={`NEXT WEEK${weekRange ? ` � ${weekRange}` : ""}`}
+      eyebrow={`NEXT WEEK${weekRange ? ` · ${weekRange}` : ""}`}
       headline={headline}
-      context={aiSched ? `${aiSched.suggested?.length ?? 0} days analysed � cuts only, never adds` : undefined}
+      context={aiSched ? `${aiSched.suggested?.length ?? 0} days analysed · cuts only, never adds` : undefined}
       right={saving > 0 ? (
         <div style={{ minWidth: 180, textAlign: "right" as const }}>
           <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: "0.05em", textTransform: "uppercase" as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>Potential save</div>
           <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: UX.greenInk, fontVariantNumeric: "tabular-nums" as const, letterSpacing: "-0.02em" }}>{fmtKr(saving)}</div>
-          <a href="#ai-schedule" style={{ display: "inline-block", marginTop: 6, padding: "6px 12px", background: UX.navy, color: "white", textDecoration: "none", borderRadius: UX.r_md, fontSize: UX.fsMicro, fontWeight: UX.fwMedium }}>Apply to schedule →</a>
+          <a href="#ai-schedule" style={{ display: "inline-block", marginTop: 6, padding: "6px 12px", background: UX.navy, color: "white", textDecoration: "none", borderRadius: UX.r_md, fontSize: UX.fsMicro, fontWeight: UX.fwMedium }}>Apply to schedule â</a>
         </div>
       ) : undefined}
     />
