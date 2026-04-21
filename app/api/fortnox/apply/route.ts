@@ -48,10 +48,21 @@ export async function POST(req: NextRequest) {
   // period_month instead of the 0-convention annual dump.
   const periodsArr = Array.isArray(extraction.periods) ? extraction.periods : []
   if (periodsArr.length > 1) {
-    const results: any[] = []
+    // All-or-nothing apply. If any period fails, we do NOT mark the
+    // upload applied — the idempotent upserts in applyMonthly mean a
+    // retry picks up where we left off and commits the missing months.
+    // Previously the loop continued silently and the upload got flipped
+    // to 'applied' even with 4/12 months written, stranding the user
+    // with no retry path.
+    const results: Array<{ year?: number; month?: number; error?: string; skipped?: string; tracker_data_id?: string; line_count?: number }> = []
+    const failures: string[] = []
+
     for (const p of periodsArr) {
       const y = Number(p.year), m = Number(p.month)
-      if (!y || !m) { results.push({ year: y, month: m, skipped: 'invalid period' }); continue }
+      if (!y || !m) {
+        results.push({ year: y, month: m, skipped: 'invalid period' })
+        continue
+      }
       const res = await applyMonthly(db, {
         orgId:      auth.orgId,
         businessId: upload.business_id,
@@ -62,12 +73,32 @@ export async function POST(req: NextRequest) {
         lines:      p.lines,
       })
       results.push({ year: y, month: m, ...res })
+      if (res.error) failures.push(`${y}-${String(m).padStart(2,'0')}: ${res.error}`)
     }
+
+    if (failures.length) {
+      // Keep the partially-applied months in place (upserts are
+      // idempotent, so retrying the same PDF converges to full state).
+      // Mark the upload row back to 'extracted' with a descriptive
+      // error so the UI offers Retry, not Apply-again-maybe.
+      const errMsg = `Partial apply: ${failures.length}/${periodsArr.length} periods failed. ` + failures.join(' | ')
+      await db.from('fortnox_uploads').update({
+        status:        'extracted',
+        error_message: errMsg.slice(0, 500),
+      }).eq('id', upload.id)
+      return NextResponse.json({
+        ok: false,
+        error: errMsg,
+        applied: { kind: 'multi_month_partial', periods: results },
+      }, { status: 500 })
+    }
+
     await db.from('fortnox_uploads').update({
       status:     'applied',
       doc_type:   'pnl_multi_month',
       applied_at: new Date().toISOString(),
       applied_by: auth.userId,
+      error_message: null,
     }).eq('id', upload.id)
 
     // Fire cost-intel once after all months land
