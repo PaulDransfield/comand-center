@@ -7,7 +7,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { runSync }                   from '@/lib/sync/engine'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
+import { log }                       from '@/lib/log/structured'
 
+export const runtime    = 'nodejs'
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 300
 
@@ -19,6 +21,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const runStarted = Date.now()
   const db = createAdminClient()
 
   // Get all connected integrations across all orgs
@@ -29,8 +32,14 @@ export async function GET(req: NextRequest) {
     .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco', 'inzii'])
 
   if (!integrations?.length) {
+    log.info('master-sync: no active integrations', { route: 'cron/master-sync' })
     return NextResponse.json({ ok: true, message: 'No active integrations' })
   }
+
+  log.info('master-sync start', {
+    route:        'cron/master-sync',
+    integrations: integrations.length,
+  })
 
   // Sync last 90 days for daily runs
   const now      = new Date()
@@ -79,6 +88,15 @@ export async function GET(req: NextRequest) {
 
   const errors    = results.filter(r => r.error)
   const timedOut  = errors.filter(r => /^timeout:/.test(r.error ?? ''))
+
+  log.info('master-sync complete', {
+    route:        'cron/master-sync',
+    duration_ms:  Date.now() - runStarted,
+    integrations: integrations.length,
+    errors:       errors.length,
+    timed_out:    timedOut.length,
+    status:       errors.length === 0 ? 'success' : 'partial',
+  })
 
   return NextResponse.json({
     ok: errors.length === 0,

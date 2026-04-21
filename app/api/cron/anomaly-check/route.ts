@@ -7,15 +7,18 @@ import { runAnomalyDetection }       from '@/lib/alerts/detector'
 import { runLineItemAnomalies }      from '@/lib/alerts/line-item-anomalies'
 import { createAdminClient }          from '@/lib/supabase/server'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
+import { log }                       from '@/lib/log/structured'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 60  // Allow up to 60 seconds for processing
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
   try {
     const orgId = req.nextUrl.searchParams.get('org_id') ?? undefined
     const alerts = await runAnomalyDetection(orgId)
@@ -46,20 +49,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const lineItemInserted = lineItemResults.reduce((s: number, r: any) => s + (r.inserted ?? 0), 0)
+    log.info('anomaly-check complete', {
+      route:              'cron/anomaly-check',
+      duration_ms:        Date.now() - started,
+      alerts_created:     alerts.length,
+      line_item_scans:    lineItemResults.length,
+      line_item_inserted: lineItemInserted,
+      status:             'success',
+    })
+
     return NextResponse.json({
       ok:                true,
       alerts_created:    alerts.length,
       alerts,
       line_item_scans:   lineItemResults.length,
-      line_item_inserted: lineItemResults.reduce((s: number, r: any) => s + (r.inserted ?? 0), 0),
+      line_item_inserted: lineItemInserted,
       timestamp:         new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error('Anomaly detection cron failed:', error)
-    return NextResponse.json({ 
-      ok: false, 
+    log.error('anomaly-check failed', {
+      route:       'cron/anomaly-check',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      ok: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
 }
