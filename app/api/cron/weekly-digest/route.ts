@@ -11,7 +11,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
 import { buildWeeklyContext, generateWeeklyMemo, memoEmailHtml } from '@/lib/ai/weekly-manager'
+import { log }                       from '@/lib/log/structured'
 
+export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 120
 
@@ -20,6 +22,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
+  log.info('weekly-digest start', { route: 'cron/weekly-digest' })
   const db  = createAdminClient()
   const now = new Date()
 
@@ -182,6 +186,15 @@ export async function POST(req: NextRequest) {
       console.error(`[digest] Error for ${org.name}:`, err)
     }
   }
+
+  log.info('weekly-digest complete', {
+    route:           'cron/weekly-digest',
+    duration_ms:     Date.now() - started,
+    emails_sent:     sent,
+    memos_generated: memosGenerated,
+    errors:          errors.length,
+    status:          errors.length === 0 ? 'success' : 'partial',
+  })
 
   return NextResponse.json({
     ok:              true,

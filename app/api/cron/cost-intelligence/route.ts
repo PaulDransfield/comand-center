@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { runCostIntel } from '@/lib/agents/cost-intelligence'
 import { checkCronSecret } from '@/lib/admin/check-secret'
+import { log }             from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
+  const started = Date.now()
   const db = createAdminClient()
 
   // Find businesses with at least some other_cost lines.  Cheap query —
@@ -53,6 +55,15 @@ export async function POST(req: NextRequest) {
       results.push({ ...t, ok: false, error: e?.message })
     }
   }
+
+  const failed = results.filter(r => !r.ok).length
+  log.info('cost-intelligence complete', {
+    route:       'cron/cost-intelligence',
+    duration_ms: Date.now() - started,
+    businesses:  unique.length,
+    failed,
+    status:      failed === 0 ? 'success' : 'partial',
+  })
 
   return NextResponse.json({ ran: unique.length, results })
 }

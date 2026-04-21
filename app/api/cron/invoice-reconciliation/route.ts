@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { checkCronSecret } from '@/lib/admin/check-secret'
+import { log }             from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
+  const started = Date.now()
   const db = createAdminClient()
   const windowYear = new Date().getFullYear() - 1   // last 12 months of data
 
@@ -156,6 +158,16 @@ export async function POST(req: NextRequest) {
     }
     if (!error) inserted = findings.length
   }
+
+  log.info('invoice-reconciliation complete', {
+    route:              'cron/invoice-reconciliation',
+    duration_ms:        Date.now() - started,
+    matches:            matches.length,
+    unmatched_invoices: unmatchedInv.length,
+    unmatched_lines:    unmatchedLines.length,
+    inserted,
+    status:             'success',
+  })
 
   return NextResponse.json({
     matches: matches.length,

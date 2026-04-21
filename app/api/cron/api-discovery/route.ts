@@ -8,15 +8,19 @@ import { analyzeFortnoxAPI } from '@/lib/api-discovery/fortnox'
 import { analyzePersonalkollenAPI } from '@/lib/api-discovery/personalkollen'
 import { analyzeSwessInziiAPI } from '@/lib/api-discovery/swess-inzii'
 import { checkCronSecret } from '@/lib/admin/check-secret'
+import { log }             from '@/lib/log/structured'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 300  // 5 minutes for deep API exploration
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
+  log.info('api-discovery start', { route: 'cron/api-discovery' })
   const supabase = await createClient()
   
   try {
@@ -95,19 +99,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      ok: true, 
+    log.info('api-discovery complete', {
+      route:                  'cron/api-discovery',
+      duration_ms:            Date.now() - started,
+      integrations_processed: results.length,
+      status:                 'success',
+    })
+    return NextResponse.json({
+      ok: true,
       integrations_processed: results.length,
       results,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
-    
+
   } catch (error: any) {
-    console.error('API discovery cron failed:', error)
-    return NextResponse.json({ 
-      ok: false, 
+    log.error('api-discovery failed', {
+      route:       'cron/api-discovery',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      ok: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
 }

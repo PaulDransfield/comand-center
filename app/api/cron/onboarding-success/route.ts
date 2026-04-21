@@ -8,18 +8,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { checkCronSecret }    from '@/lib/admin/check-secret'
+import { log }                from '@/lib/log/structured'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 60  // Allow up to 60 seconds for processing
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
+  log.info('onboarding-success start', { route: 'cron/onboarding-success' })
   const db = createAdminClient()
-  
-  console.log(`[onboarding-success] Checking for new businesses needing welcome`)
 
   try {
     // Only process integrations that:
@@ -267,6 +269,15 @@ Format as plain text email body (no HTML).`
       }
     }
 
+    log.info('onboarding-success complete', {
+      route:       'cron/onboarding-success',
+      duration_ms: Date.now() - started,
+      welcomed,
+      emails_sent: emailsSent.length,
+      errors:      errors.length,
+      status:      errors.length === 0 ? 'success' : 'partial',
+    })
+
     return NextResponse.json({
       ok: true,
       welcomed,
@@ -277,9 +288,14 @@ Format as plain text email body (no HTML).`
     })
 
   } catch (error: any) {
-    console.error('[onboarding-success] Failed:', error)
-    return NextResponse.json({ 
-      ok: false, 
+    log.error('onboarding-success failed', {
+      route:       'cron/onboarding-success',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      ok: false,
       error: error.message,
       timestamp: new Date().toISOString(),
     }, { status: 500 })

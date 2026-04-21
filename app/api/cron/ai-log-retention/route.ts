@@ -12,7 +12,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
+import { log }                       from '@/lib/log/structured'
 
+export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
 
@@ -28,6 +30,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function run() {
+  const started = Date.now()
   const db = createAdminClient()
   const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
 
@@ -37,11 +40,22 @@ async function run() {
     .lt('created_at', cutoff)
 
   if (error) {
-    console.error('[retention] ai_request_log delete failed:', error.message)
+    log.error('ai-log-retention failed', {
+      route:       'cron/ai-log-retention',
+      duration_ms: Date.now() - started,
+      error:       error.message,
+      status:      'error',
+    })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   const deleted = count ?? 0
-  console.log('[retention] ai_request_log pruned', { deleted, cutoff, retention_days: RETENTION_DAYS })
+  log.info('ai-log-retention complete', {
+    route:          'cron/ai-log-retention',
+    duration_ms:    Date.now() - started,
+    deleted,
+    retention_days: RETENTION_DAYS,
+    status:         'success',
+  })
   return NextResponse.json({ ok: true, deleted, cutoff: cutoff.slice(0, 10) })
 }

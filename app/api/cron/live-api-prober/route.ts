@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { probeAPIs } from '@/lib/agents/live-api-prober'
 import { checkCronSecret } from '@/lib/admin/check-secret'
+import { log }             from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 300 // 5 minutes for extensive probing
@@ -15,57 +16,61 @@ export async function GET(request: NextRequest) {
   if (!checkCronSecret(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  
+
+  const started = Date.now()
   try {
-    console.log('Starting Live API Prober cron job...')
-    
-    // Get provider from query param if specified
     const url = new URL(request.url)
     const provider = url.searchParams.get('provider') || undefined
-    
-    // Run the probe
+
     const { results, analysis } = await probeAPIs(provider)
-    
-    // Generate summary
+
     const summary = {
-      total_providers: analysis.length,
-      total_requests: results.length,
+      total_providers:     analysis.length,
+      total_requests:      results.length,
       successful_requests: results.filter(r => r.success).length,
-      success_rate: results.length > 0 
-        ? (results.filter(r => r.success).length / results.length) * 100 
+      success_rate: results.length > 0
+        ? (results.filter(r => r.success).length / results.length) * 100
         : 0,
       providers: analysis.map(a => ({
-        provider: a.provider,
+        provider:          a.provider,
         working_endpoints: a.working_endpoints.length,
-        success_rate: a.auth_patterns.length > 0 
+        success_rate: a.auth_patterns.length > 0
           ? Math.max(...a.auth_patterns.map(p => p.success_rate))
-          : 0
-      }))
+          : 0,
+      })),
     }
-    
-    console.log('Live API Prober completed:', summary)
-    
+
+    log.info('live-api-prober complete', {
+      route:            'cron/live-api-prober',
+      duration_ms:      Date.now() - started,
+      providers_probed: analysis.length,
+      total_requests:   results.length,
+      success_rate:     Math.round(summary.success_rate),
+      status:           'success',
+    })
+
     return NextResponse.json({
       status: 'success',
       message: 'Live API Prober completed',
       summary,
       analysis_count: analysis.length,
       results_count: results.length,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
-    
+
   } catch (error: any) {
-    console.error('Live API Prober failed:', error)
-    
-    return NextResponse.json(
-      {
-        status: 'error',
-        message: 'Live API Prober failed',
-        error: error.message,
-        timestamp: new Date().toISOString()
-      },
-      { status: 500 }
-    )
+    log.error('live-api-prober failed', {
+      route:       'cron/live-api-prober',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      status:   'error',
+      message:  'Live API Prober failed',
+      error:    error.message,
+      timestamp: new Date().toISOString(),
+    }, { status: 500 })
   }
 }
 

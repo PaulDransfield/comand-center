@@ -11,7 +11,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
+import { log }                       from '@/lib/log/structured'
 
+export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
 
@@ -29,6 +31,7 @@ export async function GET(req: NextRequest) {
 }
 
 async function run() {
+  const started = Date.now()
   const db = createAdminClient()
   const now      = new Date()
   const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString()
@@ -140,10 +143,25 @@ async function run() {
 
   if (!sendRes.ok) {
     const err = await sendRes.text()
-    console.error('[ai-daily-report] Resend error:', sendRes.status, err)
+    log.error('ai-daily-report resend failed', {
+      route:        'cron/ai-daily-report',
+      duration_ms:  Date.now() - started,
+      resend_status: sendRes.status,
+      error:        err,
+      status:       'error',
+    })
     return NextResponse.json({ ok: false, sent: false, reason: 'resend_failed', status: sendRes.status }, { status: 502 })
   }
 
+  log.info('ai-daily-report sent', {
+    route:       'cron/ai-daily-report',
+    duration_ms: Date.now() - started,
+    queries:     sumDay.queries,
+    cost_sek:    Math.round(sumDay.cost_sek * 100) / 100,
+    global_pct:  globalPct,
+    anomalies:   anomalies.length,
+    status:      'success',
+  })
   return NextResponse.json({
     ok:         true,
     sent:       true,

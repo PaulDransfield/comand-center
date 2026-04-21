@@ -9,6 +9,7 @@ import { decrypt }                   from '@/lib/integrations/encryption'
 import { getStaff, getLoggedTimes, getSales } from '@/lib/pos/personalkollen'
 import { withTimeout }               from '@/lib/sync/with-timeout'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
+import { log }                       from '@/lib/log/structured'
 
 export const dynamic     = 'force-dynamic'
 export const runtime     = 'nodejs'
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
   // Allow historical sync with ?from=2025-01-01
   const url      = new URL(req.url)
   const fromParam = url.searchParams.get('from')
@@ -212,6 +214,15 @@ export async function GET(req: NextRequest) {
       results.push({ org_id: integ.org_id, error: e.message })
     }
   }
+
+  const errors = results.filter((r: any) => r.error).length
+  log.info('personalkollen-sync complete', {
+    route:       'cron/personalkollen-sync',
+    duration_ms: Date.now() - started,
+    synced:      results.length,
+    errors,
+    status:      errors === 0 ? 'success' : 'partial',
+  })
 
   return NextResponse.json({ ok: true, synced: results.length, results })
 }

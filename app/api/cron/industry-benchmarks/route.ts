@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { checkCronSecret } from '@/lib/admin/check-secret'
+import { log }             from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
+
+  const started = Date.now()
 
   const db = createAdminClient()
   // Assumes industry_benchmarks table exists (created via migration).
@@ -91,6 +94,15 @@ export async function POST(req: NextRequest) {
 
     published.push({ subcategory: sub, cohort: agg.businesses.size, median })
   }
+
+  log.info('industry-benchmarks complete', {
+    route:       'cron/industry-benchmarks',
+    duration_ms: Date.now() - started,
+    ran:         Object.keys(bySub).length,
+    published:   published.length,
+    skipped:     skipped.length,
+    status:      'success',
+  })
 
   return NextResponse.json({
     ran:       Object.keys(bySub).length,

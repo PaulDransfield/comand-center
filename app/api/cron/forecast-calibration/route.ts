@@ -7,15 +7,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { checkCronSecret }   from '@/lib/admin/check-secret'
+import { log }               from '@/lib/log/structured'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 60  // Allow up to 60 seconds for processing
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
   const db = createAdminClient()
   const today = new Date()
   const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1)
@@ -201,6 +204,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    log.info('forecast-calibration complete', {
+      route:       'cron/forecast-calibration',
+      duration_ms: Date.now() - started,
+      calibrated,
+      errors:      errors.length,
+      month:       `${year}-${String(month).padStart(2, '0')}`,
+      status:      errors.length === 0 ? 'success' : 'partial',
+    })
+
     return NextResponse.json({
       ok: true,
       calibrated,
@@ -210,11 +222,16 @@ export async function POST(req: NextRequest) {
     })
 
   } catch (error: any) {
-    console.error('[forecast-calibration] Failed:', error)
-    return NextResponse.json({ 
-      ok: false, 
+    log.error('forecast-calibration failed', {
+      route:       'cron/forecast-calibration',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      ok: false,
       error: error.message,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
 }

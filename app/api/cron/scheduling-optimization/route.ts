@@ -8,19 +8,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { checkCronSecret }    from '@/lib/admin/check-secret'
+import { log }                from '@/lib/log/structured'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 120  // Allow up to 2 minutes for AI processing
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 120
 
 export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
+  log.info('scheduling-optimization start', { route: 'cron/scheduling-optimization' })
   const db = createAdminClient()
   const today = new Date()
-  
-  console.log(`[scheduling-optimization] Running weekly optimization`)
 
   try {
     // Get all Group plan customers (orgs with Group subscription).
@@ -247,6 +249,14 @@ Format as bullet points with concrete actions.`
       }
     }
 
+    log.info('scheduling-optimization complete', {
+      route:       'cron/scheduling-optimization',
+      duration_ms: Date.now() - started,
+      optimized,
+      errors:      errors.length,
+      status:      errors.length === 0 ? 'success' : 'partial',
+    })
+
     return NextResponse.json({
       ok: true,
       optimized,
@@ -257,9 +267,14 @@ Format as bullet points with concrete actions.`
     })
 
   } catch (error: any) {
-    console.error('[scheduling-optimization] Failed:', error)
-    return NextResponse.json({ 
-      ok: false, 
+    log.error('scheduling-optimization failed', {
+      route:       'cron/scheduling-optimization',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      ok: false,
       error: error.message,
       timestamp: new Date().toISOString(),
     }, { status: 500 })

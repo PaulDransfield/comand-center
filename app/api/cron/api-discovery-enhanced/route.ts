@@ -9,9 +9,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { analyzeGenericAPIEnhanced, analyzeProviderEndpoints, generateImplementationPlan, APIAnalysisRequest } from '@/lib/api-discovery/enhanced-analyzer'
 import { checkCronSecret } from '@/lib/admin/check-secret'
+import { log }             from '@/lib/log/structured'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 300  // 5 minutes max for Vercel Hobby plan
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 300
 
 // Common POS/staffing systems in Sweden
 const KNOWN_PROVIDERS = {
@@ -26,6 +28,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const started = Date.now()
+  log.info('api-discovery-enhanced start', { route: 'cron/api-discovery-enhanced' })
   const supabase = await createClient()
   
   try {
@@ -173,28 +177,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ 
-      ok: true, 
+    const completed = results.filter(r => r.status === 'completed').length
+    const errs      = results.filter(r => r.status === 'error').length
+    log.info('api-discovery-enhanced complete', {
+      route:                  'cron/api-discovery-enhanced',
+      duration_ms:            Date.now() - started,
+      integrations_processed: results.length,
+      completed,
+      errors:                 errs,
+      status:                 errs === 0 ? 'success' : 'partial',
+    })
+
+    return NextResponse.json({
+      ok: true,
       integrations_processed: results.length,
       results,
       timestamp: new Date().toISOString(),
       summary: {
-        completed: results.filter(r => r.status === 'completed').length,
+        completed,
         skipped: results.filter(r => r.status === 'skipped').length,
-        errors: results.filter(r => r.status === 'error').length,
-        average_confidence: results.filter(r => r.confidence_score !== undefined).length > 0 
+        errors:  errs,
+        average_confidence: results.filter(r => r.confidence_score !== undefined).length > 0
           ? Math.round(results.filter(r => r.confidence_score !== undefined).reduce((sum, r) => sum + (r.confidence_score || 0), 0) / results.filter(r => r.confidence_score !== undefined).length)
-          : 0
-      }
+          : 0,
+      },
     })
-    
+
   } catch (error: any) {
-    console.error('Enhanced API discovery cron failed:', error)
-    return NextResponse.json({ 
-      ok: false, 
+    log.error('api-discovery-enhanced failed', {
+      route:       'cron/api-discovery-enhanced',
+      duration_ms: Date.now() - started,
+      error:       error?.message ?? String(error),
+      status:      'error',
+    })
+    return NextResponse.json({
+      ok: false,
       error: error.message,
       stack: error.stack,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
 }
