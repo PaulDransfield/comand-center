@@ -11,6 +11,7 @@ import AskAI from '@/components/AskAI'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
@@ -87,6 +88,8 @@ export default function StaffPage() {
   const [search,      setSearch]      = useState('')
   const [expanded,    setExpanded]    = useState<any>(null)
   const [tooltip,     setTooltip]     = useState<any>(null)
+  // Top-5 vs full table mode (FIX-PROMPT § Phase 7)
+  const [tableExpanded, setTableExpanded] = useState(false)
 
   // Sync with sidebar business switcher
   useEffect(() => {
@@ -191,29 +194,37 @@ export default function StaffPage() {
     <AppShell>
       <div className="page-wrap">
 
-        {/* Local period nav + W/M — sits above the hero */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          {viewMode === 'week' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setWeekOffset(o => o - 1)} style={staffNavBtn}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                Week {(curr as any).weekNum} · {curr.label}
-              </div>
-              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...staffNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={staffNavBtn}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
-              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...staffNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-            </div>
-          )}
-          <SegmentedToggle
-            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'week' | 'month')}
-          />
-        </div>
+        {/* TopBar — breadcrumb + period nav + W/M toggle in the right slot. */}
+        <TopBar
+          crumbs={[
+            { label: 'Operations' },
+            { label: 'Staff', active: true },
+          ]}
+          rightSlot={
+            <>
+              {viewMode === 'week' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => setWeekOffset(o => o - 1)} style={staffNavBtn}>‹</button>
+                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+                    Week {(curr as any).weekNum} · {curr.label}
+                  </div>
+                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...staffNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => setMonthOffset(o => o - 1)} style={staffNavBtn}>‹</button>
+                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
+                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...staffNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+                </div>
+              )}
+              <SegmentedToggle
+                options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+                value={viewMode}
+                onChange={(v) => setViewMode(v as 'week' | 'month')}
+              />
+            </>
+          }
+        />
 
         {/* ─── PageHero ─────────────────────────────────────────────── */}
         <PageHero
@@ -223,6 +234,7 @@ export default function StaffPage() {
               labourPct={labourPct}
               targetPct={targetPct}
               curRev={curRev}
+              totalCost={totalCost}
               lateShifts={lateShifts}
             />
           }
@@ -339,53 +351,104 @@ export default function StaffPage() {
                   </div>
                 )}
 
-                {/* Best / worst day */}
-                {(srSum?.best_day || srSum?.worst_day) && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-                    {srSum.best_day && (
-                      <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                        <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>Best day</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                          {new Date(srSum.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                          <span style={{ marginLeft: 8, color: '#15803d' }}>{fmtPct(srSum.best_day.pct)}</span>
+                {/* Best / worst day — when we only have one day of data they
+                    both point at the same date, which reads bizarre. Collapse
+                    to a single neutral "Only day" card in that case
+                    (FIX-PROMPT § Phase 7 Q1). */}
+                {(() => {
+                  const daysWithPct = srRows.filter((r: any) => r.staff_pct != null).length
+                  if (daysWithPct === 0) return null
+                  if (daysWithPct === 1) {
+                    const only = srRows.find((r: any) => r.staff_pct != null)
+                    if (!only) return null
+                    return (
+                      <div style={{
+                        marginTop: 12,
+                        padding: '8px 12px',
+                        background: UX.subtleBg,
+                        borderRadius: 8,
+                        border: `1px solid ${UX.borderSoft}`,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'baseline',
+                      }}>
+                        <div style={{ fontSize: 10, color: UX.ink4, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Only day with data</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
+                          {new Date(only.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          <span style={{ marginLeft: 8, color: only.staff_pct > targetPct ? UX.redInk : UX.greenInk }}>
+                            {fmtPct(only.staff_pct)}
+                          </span>
                         </div>
                       </div>
-                    )}
-                    {srSum.worst_day && (
-                      <div style={{ padding: '8px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
-                        <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em' }}>Highest cost day</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                          {new Date(srSum.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                          <span style={{ marginLeft: 8, color: '#dc2626' }}>{fmtPct(srSum.worst_day.pct)}</span>
+                    )
+                  }
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                      {srSum?.best_day && (
+                        <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                          <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Best day</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                            {new Date(srSum.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            <span style={{ marginLeft: 8, color: '#15803d' }}>{fmtPct(srSum.best_day.pct)}</span>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
+                      {srSum?.worst_day && (
+                        <div style={{ padding: '8px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+                          <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Highest cost day</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                            {new Date(srSum.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            <span style={{ marginLeft: 8, color: '#dc2626' }}>{fmtPct(srSum.worst_day.pct)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
             {/* ── Staff table + Insights ──────────────────────────────── */}
             <div style={{ display: 'grid', gridTemplateColumns: insights.length > 0 ? '3fr 1fr' : '1fr', gap: 12 }}>
 
-              {/* Staff table */}
+              {/* Staff table — default to top-5 by cost, with
+                  "All N staff →" expander in the card header
+                  (FIX-PROMPT § Phase 7 Q2). Search bar always opens
+                  the full list (narrowed by query). */}
+              {(() => {
+                const showingFull = tableExpanded || !!search
+                const visible = showingFull ? sorted : sorted.slice(0, 5)
+                const hiddenCount = sorted.length - visible.length
+                return (
               <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{sorted.length} staff members</div>
-                  <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
-                    style={{ padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, width: 180, fontFamily: 'inherit' }} />
+                <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                    {showingFull ? `${sorted.length} staff members` : `Top ${visible.length} by cost`}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {sorted.length > 5 && !search && (
+                      <button
+                        onClick={() => setTableExpanded(t => !t)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: UX.indigo, fontSize: UX.fsLabel, fontWeight: UX.fwMedium, padding: '4px 8px' }}
+                      >
+                        {tableExpanded ? 'Show top 5' : `All ${sorted.length} staff →`}
+                      </button>
+                    )}
+                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+                      style={{ padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, width: 180, fontFamily: 'inherit' }} />
+                  </div>
                 </div>
 
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#f9fafb' }}>
                       {['Name', 'Dept', 'Hours', 'Cost', 'Cost/hr', 'Late', 'OB'].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Name' || h === 'Dept' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Name' || h === 'Dept' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {sorted.map((s: any) => {
+                    {visible.map((s: any) => {
                       const isExp = expanded === s.id
                       const cost  = s.cost_actual > 0 ? s.cost_actual : s.estimated_salary
                       return (
@@ -452,14 +515,28 @@ export default function StaffPage() {
                         </>
                       )
                     })}
-                    {sorted.length === 0 && (
-                      <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>
+                    {visible.length === 0 && (
+                      <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>
                         {search ? `No staff matching "${search}"` : 'No staff data for this period'}
                       </td></tr>
                     )}
                   </tbody>
                 </table>
+
+                {/* Bottom expander — mirrors the header one for long scrolls. */}
+                {hiddenCount > 0 && !search && (
+                  <div style={{ padding: '10px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'center' as const }}>
+                    <button
+                      onClick={() => setTableExpanded(true)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: UX.indigo, fontSize: UX.fsLabel, fontWeight: UX.fwMedium, padding: 0 }}
+                    >
+                      All {sorted.length} staff →
+                    </button>
+                  </div>
+                )}
               </div>
+                )
+              })()}
 
               {/* Insights sidebar */}
               {insights.length > 0 && (
@@ -517,9 +594,23 @@ export default function StaffPage() {
 }
 
 // ─── Staff hero headline + helpers ──────────────────────────────────────────
-function StaffHeadline({ labourPct, targetPct, curRev, lateShifts }: any) {
+function StaffHeadline({ labourPct, targetPct, curRev, totalCost, lateShifts }: any) {
   if (curRev <= 0) return <>No staff data in this period yet.</>
   const over = labourPct - targetPct
+
+  // Plain-language framing when labour crosses revenue (FIX-PROMPT § Phase 7 Q3).
+  // A four-digit % reads as a typo more than a useful metric; say what it
+  // means in words + absolute numbers instead.
+  if (labourPct >= 100) {
+    const kLab = Math.round(totalCost / 1000)
+    const kRev = Math.round(curRev    / 1000)
+    return (
+      <>
+        Labour spent <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>exceeds revenue</span>
+        {' '}— {kLab}k kr on {kRev}k kr sales.
+      </>
+    )
+  }
   if (over > 10) {
     return (
       <>
