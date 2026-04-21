@@ -13,12 +13,11 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
 // Format a Date as YYYY-MM-DD using local timezone (NOT UTC — avoids off-by-one in CET/CEST)
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 

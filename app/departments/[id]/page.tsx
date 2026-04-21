@@ -8,9 +8,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { deptColor } from '@/lib/constants/colors'
 import OverviewChart from '@/components/dashboard/OverviewChart'
-
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct = (n: number | null) => n != null ? n.toFixed(1) + '%' : '—'
+import { fmtKr, fmtPct } from '@/lib/format'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('en-GB') + 'h'
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']

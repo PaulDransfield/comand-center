@@ -211,9 +211,6 @@ export default function OverviewChart({
     [days, hasFilter, selected],
   )
 
-  // ── KPI aggregates (from visible days only) ────────────────────────────────
-  const kpi = useMemo(() => computeKpis(visibleDays, compareMode), [visibleDays, compareMode])
-
   // ── Controls: dropdowns ────────────────────────────────────────────────────
   const [periodOpen,   setPeriodOpen]   = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(false)
@@ -794,59 +791,9 @@ function CalQuick({ label, onClick }: any) {
   )
 }
 
-function KpiBlock({ label, value, compareMode, compareLabel, fcast, fmtKr, higherBetter, isPct }: any) {
-  const hasCompare = compareMode !== 'none' && fcast != null && Number.isFinite(fcast)
-  // For pct KPI, fmtKr is actually fmtPct — unify formatting
-  const fcastStr = isPct ? (fcast != null ? fmtKr(fcast) : '—') : (fcast != null ? fmtKr(fcast) : '—')
-
-  let deltaText = ''
-  let good = true
-  if (hasCompare) {
-    // Parse numeric value back — value is a formatted string. To avoid a
-    // parse step, recompute delta from raw where possible. Simpler: pass both
-    // current and fcast as numbers into the comparison.
-    // The value string is descriptive; delta is relative to the numeric
-    // `fcast`. We embed the current-raw in the caller when needed.
-    // Here we fall back to showing no arrow if we can't compute.
-  }
-
-  // We already have current and fcast numeric — see caller; keep this block
-  // lightweight. Re-render delta only if caller passed both via convention:
-  // value string starts with the raw sign.
-  return (
-    <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px' }}>
-      <div style={{ fontSize: 11, color: '#9ca3af', fontWeight: 500 }}>{label}</div>
-      <div style={{ fontSize: 19, fontWeight: 500, color: '#111', marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>{value}</div>
-      <KpiDelta
-        value={value}
-        fcast={fcast}
-        compareMode={compareMode}
-        compareLabel={compareLabel}
-        fmt={fmtKr}
-        higherBetter={higherBetter}
-      />
-    </div>
-  )
-}
-
-function KpiDelta({ value, fcast, compareMode, compareLabel, fmt, higherBetter }: any) {
-  if (compareMode === 'none' || fcast == null || !Number.isFinite(fcast)) {
-    return <div style={{ fontSize: 11, visibility: 'hidden' as const }}>—</div>
-  }
-  // Parse numeric back from the formatted value — crude but works for our
-  // formatters which produce "12 345 kr" or "45.2%".
-  const num = Number(String(value).replace(/[^\d.-]/g, ''))
-  if (!Number.isFinite(num)) return <div style={{ fontSize: 11, visibility: 'hidden' as const }}>—</div>
-  const diff = num - fcast
-  const better = higherBetter ? diff >= 0 : diff <= 0
-  const arrow  = diff >= 0 ? '↑' : '↓'
-  return (
-    <div style={{ fontSize: 11, color: better ? '#15803d' : '#b91c1c', marginTop: 2, display: 'flex', alignItems: 'baseline', gap: 4, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
-      <span>{arrow} {Math.abs(Math.round(diff * 10) / 10)}{String(value).includes('%') ? 'pp' : ''}</span>
-      <span style={{ color: '#9ca3af' }}>vs {compareLabel} {fmt(fcast)}</span>
-    </div>
-  )
-}
+// KpiBlock / KpiDelta / computeKpis removed — the 4-up KPI strip they
+// powered was deleted in the Phase 1 redesign. The hero's SupportingStats
+// renders the same numbers above the chart.
 
 function LegendItem({ kind, color, label }: any) {
   let swatch: any = null
@@ -974,34 +921,6 @@ function TooltipSection({ color, label, actualText, fcast, fmt, compareMode, com
 }
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
-
-function computeKpis(days: DayRow[], compareMode: 'none'|'prev'|'ai') {
-  let rev = 0, lab = 0
-  let revF = 0, labF = 0, hasF = false
-  for (const d of days) {
-    rev += shownRev(d)
-    lab += shownLabour(d)
-    const f = dayForecast(d, compareMode)
-    if (f.rev != null) { revF += f.rev; hasF = true }
-    if (f.lab != null) { labF += f.lab }
-  }
-  const margin = rev - lab
-  const labourPct = rev > 0 ? (lab / rev) * 100 : 0
-
-  const labPctF = revF > 0 ? (labF / revF) * 100 : 0
-  const marginF = revF - labF
-
-  return {
-    revenue: rev,
-    labour:  lab,
-    labourPct,
-    margin,
-    revenueFcast:   hasF ? revF : null,
-    labourFcast:    hasF ? labF : null,
-    labourPctFcast: hasF ? labPctF : null,
-    marginFcast:    hasF ? marginF : null,
-  }
-}
 
 function buildScale(days: DayRow[]) {
   let maxRev = 0, maxLab = 0

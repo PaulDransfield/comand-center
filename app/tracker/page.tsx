@@ -28,6 +28,7 @@ import StatusPill from '@/components/ui/StatusPill'
 import TopBar from '@/components/ui/TopBar'
 import SupportingStats from '@/components/ui/SupportingStats'
 import { UX } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
 
 interface Business { id: string; name: string; city: string | null }
 interface TrackerRow {
@@ -51,8 +52,6 @@ interface DailyRow {
 
 const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct = (n: number | null) => n == null ? '—' : (Math.round(n * 10) / 10).toFixed(1) + '%'
 
 export default function TrackerPage() {
   const now = new Date()

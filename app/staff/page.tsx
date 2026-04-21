@@ -13,9 +13,7 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
-
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
+import { fmtKr, fmtPct } from '@/lib/format'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']

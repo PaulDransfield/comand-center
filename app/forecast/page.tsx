@@ -25,11 +25,10 @@ import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
 
 const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
 
 export default function ForecastPage() {
   const now           = new Date()

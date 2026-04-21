@@ -5,13 +5,13 @@
 import { useState, useRef, useEffect } from 'react'
 import AppShell from '@/components/AppShell'
 import { createClient } from '@/lib/supabase/client'
+import { fmtKr } from '@/lib/format'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
 }
 
-const fmtKr = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // Compact summary — one line per business per month. Aim for <800 tokens total

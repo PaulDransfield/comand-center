@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
+import { fmtKr } from '@/lib/format'
 
 interface Invoice {
   id: string; vendor: string; amount: number; date: string
@@ -13,7 +14,6 @@ interface Invoice {
 }
 interface Business { id: string; name: string }
 
-const fmtKr   = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {

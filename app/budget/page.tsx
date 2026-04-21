@@ -11,6 +11,7 @@ import TopBar from '@/components/ui/TopBar'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import { UX } from '@/lib/constants/tokens'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
+import { fmtKr, fmtPct } from '@/lib/format'
 
 interface Business { id: string; name: string }
 interface BudgetRow {
@@ -19,8 +20,6 @@ interface BudgetRow {
   actual: { revenue: number; food_cost: number; staff_cost: number; net_profit: number; food_pct: number; staff_pct: number } | null
 }
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct = (n: number) => n.toFixed(1) + '%'
 
 function QuickStat({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' }) {
   const valueColour = tone === 'bad' ? '#fca5a5' : tone === 'ok' ? '#86efac' : 'white'

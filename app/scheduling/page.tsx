@@ -337,6 +337,7 @@ export default function SchedulingPage() {
               loading={aiLoading}
               error={aiError}
               data={aiSched}
+              recommendation={recommendation}
               fmt={fmtKr}
               fmtHrs={fmtH}
             />
@@ -484,9 +485,10 @@ export default function SchedulingPage() {
 // Cuts-only: delta is always ≤0, days the model would have added show as a
 // soft "note" row with no numeric recommendation.
 // ─────────────────────────────────────────────────────────────────────────────
-function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
+function AiSuggestedSchedule({ loading, error, data, recommendation, fmt, fmtHrs }: any) {
   const deltaColor = (d: number) => d < -0.5 ? '#15803d' : '#6b7280'
   const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16, scrollMarginTop: 16 }
+  const [obsOpen, setObsOpen] = useState(false)
 
   if (loading) {
     return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestion…</div></div>
@@ -528,6 +530,34 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
                   cursor:       'help',
                 }}
               >?</span>
+            )}
+            {/* Weekly AI observations — surfaces latest_recommendation
+                (Group-plan Monday 07:00 run) in a click-to-open popover
+                next to the title. Supersedes the old collapsed footer
+                row that got stripped in the redesign. */}
+            {recommendation && (
+              <button
+                onClick={() => setObsOpen(true)}
+                title="Weekly AI observations from the last 90 days"
+                aria-label="Open weekly AI observations"
+                style={{
+                  display:      'inline-flex',
+                  alignItems:   'center',
+                  gap:          4,
+                  padding:      '2px 8px',
+                  marginLeft:   2,
+                  borderRadius: 999,
+                  background:   '#ede9fe',
+                  color:        '#6d28d9',
+                  border:       'none',
+                  fontSize:     10,
+                  fontWeight:   600,
+                  letterSpacing: '.03em',
+                  cursor:       'pointer',
+                }}
+              >
+                <span style={{ fontSize: 11, lineHeight: 1 }}>ⓘ</span> Observations
+              </button>
             )}
           </div>
           <div style={{ fontSize: 11, color: '#9ca3af' }}>
@@ -663,6 +693,48 @@ function AiSuggestedSchedule({ loading, error, data, fmt, fmtHrs }: any) {
 
       {/* Method footer removed — now behind the ? help icon next to the
           card title (FIX-PROMPT § Phase 8 Q4). */}
+
+      {/* Weekly AI observations modal — opens from the ⓘ Observations
+          button next to the card title. Reuses the same content that
+          used to live in the deleted collapsed row. */}
+      {obsOpen && recommendation && (
+        <div
+          onClick={() => setObsOpen(false)}
+          style={{ position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' as const }}
+          >
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>Weekly AI observations</span>
+                  <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600, letterSpacing: '.03em' }}>AI</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af' }}>
+                  Generated {new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  {recommendation.analysis_period && ` · based on ${recommendation.analysis_period}`}
+                </div>
+              </div>
+              <button onClick={() => setObsOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto' as const, flex: 1, padding: '16px 24px' }}>
+              <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap' as const, background: '#fafbff', borderRadius: 10, padding: '14px 16px', borderLeft: '3px solid #6366f1' }}>
+                {recommendation.recommendations}
+              </div>
+              {recommendation.metadata && (
+                <div style={{ marginTop: 12, display: 'flex', gap: 20, fontSize: 11, color: '#9ca3af', flexWrap: 'wrap' as const }}>
+                  {recommendation.metadata.staff_shifts && <span>Shifts analysed: <strong style={{ color: '#374151' }}>{recommendation.metadata.staff_shifts}</strong></span>}
+                  {recommendation.metadata.total_hours && <span>Hours: <strong style={{ color: '#374151' }}>{Math.round(recommendation.metadata.total_hours)}h</strong></span>}
+                  {recommendation.metadata.labor_cost && <span>Labour cost: <strong style={{ color: '#374151' }}>{fmt(recommendation.metadata.labor_cost)}</strong></span>}
+                  {recommendation.metadata.late_shifts && <span>Late shifts: <strong style={{ color: '#374151' }}>{recommendation.metadata.late_shifts}</strong></span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
