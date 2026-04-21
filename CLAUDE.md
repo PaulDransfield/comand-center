@@ -1,5 +1,14 @@
 # CLAUDE.md — Working Guidelines
-> Last updated: 2026-04-20 | Session 10 in progress (AI differentiation)
+> Last updated: 2026-04-21 | Session 11 shipped the architecture-hardening pass
+> See ARCHITECTURE-PLAN.md for the full audit + phased roadmap.
+>
+> Key architecture additions (2026-04-21):
+>   • Job queue: extraction_jobs + dispatcher/worker/sweeper pattern (M017)
+>   • Tenant isolation: RLS on 5 previously-exposed tables + current_user_org_ids() (M018)
+>   • Realtime: fortnox_uploads + extraction_jobs pushed via supabase_realtime (M019)
+>   • Billing correctness: stripe_processed_events dedup + org_rate_limits persistence
+>   • Reusable helpers: requireAdmin(), orgRateLimit(), withTimeout(), log (structured)
+>   • Observability: structured JSON logs across every scheduled cron + hot API route
 
 ---
 
