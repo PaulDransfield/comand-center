@@ -71,7 +71,11 @@ export default function CustomerDetail() {
         fetch(`/api/admin/customers/${orgId}/timeline`, { headers: { 'x-admin-secret': secret } }),
         fetch(`/api/admin/ai-usage?org_id=${orgId}`, { headers: { 'x-admin-secret': secret } }),
       ])
-      if (!r1.ok) throw new Error(r1.status === 401 ? 'Unauthorized' : `HTTP ${r1.status}`)
+      if (r1.status === 404) { setError('__NOT_FOUND__'); return }
+      if (!r1.ok) {
+        const body = await r1.json().catch(() => ({}))
+        throw new Error(r1.status === 401 ? 'Unauthorized' : (body?.error ?? `HTTP ${r1.status}`))
+      }
       setData(await r1.json())
       if (r2.ok) setAgents((await r2.json()).agents ?? [])
       if (r3.ok) setTimeline((await r3.json()).events ?? [])
@@ -265,6 +269,30 @@ export default function CustomerDetail() {
   }
 
   if (loading) return <div><AdminNav /><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div></div>
+  if (error === '__NOT_FOUND__') return (
+    <div>
+      <AdminNav />
+      <div style={{ padding: 48, maxWidth: 560, margin: '0 auto' }}>
+        <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: '28px 32px', textAlign: 'center' as const }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#111', marginBottom: 8 }}>This organisation no longer exists</div>
+          <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 18 }}>
+            It may have been hard-deleted, or the URL is stale. The customer list page may still be showing a cached entry — refresh it to clear.
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+            <button onClick={() => router.push('/admin/customers')} style={{ padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Back to customer list
+            </button>
+            <button onClick={() => { router.push('/admin/customers'); setTimeout(() => window.location.reload(), 50) }} style={{ padding: '9px 18px', background: 'white', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Refresh list
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'ui-monospace, monospace', marginTop: 16 }}>
+            org_id: {orgId}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
   if (error) return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data) return null
 
