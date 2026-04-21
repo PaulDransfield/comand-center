@@ -123,37 +123,49 @@ export async function POST(req: NextRequest) {
 
   const prompt = `You are extracting a Swedish accounting report (Fortnox export) into structured JSON.
 
-IMPORTANT: Many Fortnox "Resultatrapport" exports are MULTI-PERIOD — they show one row per BAS account with multiple monthly columns (Jan, Feb, Mar, ...) plus a year-total column.  Detect this and emit one extraction per month rather than collapsing everything into an annual rollup.
+CRITICAL RULE #1 — SCALE / UNIT.  Swedish accounting reports are printed in one of three scales:
+  • SEK    — full kronor, e.g. "1 234 567"
+  • KSEK / tkr   — thousands of kronor, e.g. "1 234" means 1 234 000 SEK
+  • MSEK / mkr   — millions of kronor, e.g. "1,234" means 1 234 000 SEK
+
+Before you extract anything, DETECT THE SCALE.  Look at the header, column headings, or a note near the top — it will usually say "(tkr)", "(ksek)", "(kr)", "Belopp i kkr", "Alla belopp i tusentals kronor", "Mkr", etc.  A Swedish restaurant doing 50k covers/year will have monthly revenue in the 600 000 – 1 500 000 kr range.  If the numbers you are seeing would be absurd in SEK (revenue of 1 023 for a restaurant with 3 staff is impossible), the scale is NOT SEK — look again for the unit label.
+
+ALL AMOUNTS YOU RETURN MUST BE IN FULL SEK (no thousands, no millions).  Convert internally:
+  • SEK values: return as-is
+  • KSEK / tkr: multiply every number by 1 000
+  • MSEK / mkr: multiply every number by 1 000 000
+
+Put the detected scale into the "scale_detected" field ("sek" | "ksek" | "msek").  If the scale is genuinely ambiguous, set scale_detected="sek" AND add a warning string "Scale ambiguous — verify numbers against the source PDF before applying."
+
+CRITICAL RULE #2 — MULTI-PERIOD.  Many Fortnox "Resultatrapport" exports show one row per BAS account with multiple monthly columns (Jan, Feb, Mar, …) plus a year-total column.  Detect this and emit ONE entry in "periods" per month.  Do NOT collapse monthly columns into a single annual rollup.
 
 Return ONLY valid JSON with this exact shape and nothing else:
 
 {
   "doc_type": "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
-  "business_hint": "Vero Italiano" | null,
-  "confidence": "high" | "medium" | "low",
-  "warnings":   [],
-
-  // ── Populate EITHER "periods" (preferred, handles multi-month) OR
-  //    "period" + "rollup" + "lines" (single period, legacy).  Pick one.
+  "business_hint":   "Vero Italiano" | null,
+  "scale_detected":  "sek" | "ksek" | "msek",
+  "confidence":      "high" | "medium" | "low",
+  "warnings":        [],
 
   "periods": [
     {
       "year":  2025,
       "month": 5,                                    // 1..12; use 0 for a year-total column only
       "rollup": {
-        "revenue":      0,                           // sum of all revenue lines, positive
-        "food_cost":    0,                           // raw materials, goods for resale — positive
-        "staff_cost":   0,                           // salaries + social + pension — positive
-        "other_cost":   0,                           // övriga externa kostnader — positive
+        "revenue":      0,                           // IN FULL SEK — already converted if source was ksek/msek
+        "food_cost":    0,
+        "staff_cost":   0,
+        "other_cost":   0,
         "depreciation": 0,
-        "financial":    0,                           // interest net — signed
+        "financial":    0,                           // signed
         "net_profit":   0
       },
       "lines": [
         {
           "label":           "Bankavgifter",
           "category":        "revenue" | "food_cost" | "staff_cost" | "other_cost" | "depreciation" | "financial",
-          "amount":          340,                    // POSITIVE for cost lines; positive for revenue
+          "amount":          340,                    // FULL SEK — positive for cost lines and revenue
           "fortnox_account": 6570,
           "note":            null
         }
@@ -163,12 +175,13 @@ Return ONLY valid JSON with this exact shape and nothing else:
 }
 
 Rules:
-- When the PDF is clearly a single period (one month or a single year-end summary), emit ONE entry in "periods".  Set month=1..12 for a monthly report, or month=0 for a true year-only annual summary with no monthly breakdown.
-- When the PDF shows monthly columns across the page (common in Fortnox "Resultatrapport" with "Denna period" / "Föregående period" / "Ack." columns, OR a table where each row has 12 monthly values), emit ONE entry in "periods" PER MONTH.  Extract line items per month — do not collapse.  Do not invent months that aren't in the report.
-- Include EVERY line item per period.  Skip subtotals ("Summa…", "Total…") — we re-derive the rollup from lines.
-- Store all cost amounts as POSITIVE numbers.
-- "doc_type": "pnl_multi_month" when the report shows multiple months in one file; "pnl_monthly" for single-month; "pnl_annual" for single-year with no monthly split; "invoice" / "sales" / "vat" for the other formats.
-- Swedish decimal marker is comma; treat "1,234.56" and "1 234,56" as the same number.  Negative values in Fortnox are often shown in parentheses or with a leading minus — include the sign correctly.
+- When the PDF is clearly a single period (one month or one year-end summary), emit ONE entry in "periods".  Use month=1..12 for monthly, or month=0 for an annual summary with no monthly split.
+- When the PDF shows monthly columns (common Fortnox "Resultatrapport" with "Denna period / Föregående / Ack.", or a row-per-account × 12-month grid), emit ONE period per month.
+- Include EVERY line item per period.  Skip subtotals ("Summa…", "Total…") — the rollup is re-derived from the lines.
+- Store ALL cost amounts as POSITIVE numbers in FULL SEK.
+- Swedish decimal marker is comma.  "1,234" in a KSEK report = 1 234 × 1 000 = 1 234 000 SEK (not 1.234).  "1,5" in an MSEK report = 1 500 000 SEK.
+- Negatives in Fortnox are shown in parentheses or with a leading minus — preserve the sign on financial items, flip to positive for cost lines, keep positive for revenue.
+- SANITY CHECK before you return:  a restaurant's MONTHLY revenue is typically 200 000 – 3 000 000 SEK.  If any month's revenue is under 10 000 or over 100 000 000, you've almost certainly missed the scale — re-check the unit in the PDF header and convert.
 
 Return ONLY the JSON object.`
 
