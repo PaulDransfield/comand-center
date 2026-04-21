@@ -36,24 +36,13 @@ export async function GET(req: NextRequest) {
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Stale-extraction auto-reset. If a row has been stuck in extracting/
-  // pending for more than 5 minutes, the extract function almost certainly
-  // died (Vercel 504, cold-start OOM, network blip) and will never write
-  // back. Flip it to 'failed' so the UI unblocks and the user can Retry
-  // or Discard instead of polling forever.
-  const STALE_MS = 5 * 60 * 1000
-  const now      = Date.now()
-  const stale    = (data ?? []).filter(r =>
-    (r.status === 'extracting' || r.status === 'pending') &&
-    r.created_at && (now - new Date(r.created_at).getTime()) > STALE_MS,
-  )
-  if (stale.length) {
-    await db.from('fortnox_uploads').update({
-      status:        'failed',
-      error_message: 'Extraction timed out — the server did not respond within 5 minutes. Click Retry to try again.',
-    }).in('id', stale.map(r => r.id))
-    for (const r of stale) { r.status = 'failed'; r.error_message = 'Extraction timed out — the server did not respond within 5 minutes. Click Retry to try again.' }
-  }
+  // Stale-reset removed: the old 5-minute timeout here fought with the
+  // queue architecture (M017). Retry backoffs + the sweeper cron's
+  // 10-minute stale-processing reset in reset_stale_extraction_jobs()
+  // now own the lifecycle. A row is 'extracting' means the queue is
+  // doing its job — even if that takes 8 minutes across retries.
+  // The dead-letter state (status='dead' on the job + 'failed' on the
+  // upload) kicks in only after all retry attempts are exhausted.
 
   // Strip the heavy extracted_json unless explicitly requested.  The listing
   // UI only needs the summary fields to render status chips.

@@ -61,13 +61,28 @@ export async function POST(req: NextRequest) {
     .eq('upload_id', upload.id)
     .maybeSingle()
 
-  if (existingJob && (existingJob.status === 'processing' || existingJob.status === 'pending')) {
-    return NextResponse.json({
-      ok:     false,
-      status: 'in_flight',
-      error:  'Extraction is already in progress — wait for it to finish or click Cancel first.',
-      job:    existingJob,
-    }, { status: 409 })
+  if (existingJob) {
+    const startedAgo = existingJob.started_at
+      ? Date.now() - new Date(existingJob.started_at).getTime()
+      : Infinity
+    const STALE_MS = 10 * 60 * 1000
+
+    // Only block if a worker is genuinely still running this job. A job
+    // that's been 'processing' for more than 10 minutes is almost
+    // certainly stuck (Vercel killed the function, cold-start crash,
+    // Anthropic hang). The user's retry click is a valid signal to
+    // reset — we'd rather over-run than leave a retry silently blocked.
+    if (existingJob.status === 'processing' && startedAgo < STALE_MS) {
+      return NextResponse.json({
+        ok:     false,
+        status: 'in_flight',
+        error:  'Extraction is already in progress — wait for it to finish or click Cancel first.',
+        job:    existingJob,
+      }, { status: 409 })
+    }
+    // 'pending' jobs don't block the retry either — we upsert below and
+    // the scheduled_for gets reset to now, so whatever backoff was in
+    // play collapses and the worker picks it up immediately.
   }
 
   const { error: upErr } = await db.from('extraction_jobs').upsert({
