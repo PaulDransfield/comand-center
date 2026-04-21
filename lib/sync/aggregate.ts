@@ -75,7 +75,7 @@ export async function aggregateMetrics(
         .range(lo, hi)
     ),
     db.from('tracker_data')
-      .select('period_year, period_month, revenue, food_cost, staff_cost, net_profit')
+      .select('period_year, period_month, revenue, food_cost, staff_cost, rent_cost, other_cost, net_profit, source')
       .eq('business_id', businessId)
       .gte('period_year', parseInt(fromDate.slice(0, 4)))
       .lte('period_year', parseInt(toDate.slice(0, 4))),
@@ -238,8 +238,13 @@ export async function aggregateMetrics(
   const monthlyRows = Object.values(monthlyAcc).map((a: any) => {
     const tracker    = trackerByMonth[`${a.year}-${a.month}`]
     const food_cost  = Number(tracker?.food_cost ?? 0)
-    const rent_cost  = 0  // will come from Fortnox
-    const other_cost = 0  // will come from Fortnox
+    const rent_cost  = Number(tracker?.rent_cost ?? 0)
+    // other_cost comes from Fortnox PDFs via /api/fortnox/apply — the apply
+    // endpoint upserts tracker_data.other_cost, so rolling it into
+    // monthly_metrics.total_cost here means the anomaly detector, Monday
+    // briefing agent, forecast calibration cron and every read of
+    // /api/metrics/monthly.total_cost all see the true figure.
+    const other_cost = Number(tracker?.other_cost ?? 0)
     const total_cost = a.staff_cost + food_cost + rent_cost + other_cost
     const net_profit = a.revenue - total_cost
     const margin_pct = a.revenue > 0 ? Math.round((net_profit / a.revenue) * 1000) / 10 : 0

@@ -77,6 +77,10 @@ const TENANT_TABLES = [
   'support_tickets',
   'onboarding_progress',
   'gdpr_consents',
+  // Fortnox ingestion (Art. 17 — PDFs contain personal + accounting data)
+  'cost_insights',
+  'tracker_line_items',
+  'fortnox_uploads',
   // Summary tables
   'monthly_metrics',
   'daily_metrics',
@@ -178,6 +182,48 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
     }
   }
 
+  // 4b. Purge tenanted storage blobs BEFORE we drop the org row.
+  // The DB cascades remove pointers but storage files are independent —
+  // if we skip this step every deleted org leaves PDFs behind, which is
+  // the exact failure Art. 17 forbids. Files live under {orgId}/... in
+  // every tenanted bucket; list + batch-remove.
+  const STORAGE_BUCKETS = ['fortnox-pdfs', 'documents'] as const
+  const storagePurged: Record<string, number> = {}
+  for (const bucket of STORAGE_BUCKETS) {
+    try {
+      // Recursive list — Supabase .list is single-level, so we walk
+      // prefixes up to 3 deep (org → business → period → file) which
+      // covers the current bucket layouts.
+      const pathsToDelete: string[] = []
+      async function walk(prefix: string, depth: number) {
+        if (depth > 4) return
+        const { data: items, error: listErr } = await db.storage.from(bucket).list(prefix, { limit: 1000 })
+        if (listErr) return
+        for (const it of items ?? []) {
+          const full = prefix ? `${prefix}/${it.name}` : it.name
+          // Files have an id; folders are metadataless entries in Supabase
+          if ((it as any).id) {
+            pathsToDelete.push(full)
+          } else {
+            await walk(full, depth + 1)
+          }
+        }
+      }
+      await walk(orgId, 0)
+
+      // Remove in chunks of 100 — Supabase storage remove accepts arrays.
+      let removed = 0
+      for (let i = 0; i < pathsToDelete.length; i += 100) {
+        const chunk = pathsToDelete.slice(i, i + 100)
+        const { error: rmErr } = await db.storage.from(bucket).remove(chunk)
+        if (!rmErr) removed += chunk.length
+      }
+      storagePurged[bucket] = removed
+    } catch (e: any) {
+      errors[`storage:${bucket}`] = e?.message ?? String(e)
+    }
+  }
+
   // 5. Delete the organisation row.
   try {
     const { error } = await db.from('organisations').delete().eq('id', orgId)
@@ -219,23 +265,25 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
     targetType: 'org',
     targetId:   orgId,
     payload:    {
-      org_name:      org.name,
+      org_name:        org.name,
       reason,
-      rows_deleted:  deleted,
-      users_deleted: usersDeleted,
-      errors:        Object.keys(errors).length ? errors : null,
+      rows_deleted:    deleted,
+      storage_purged:  storagePurged,
+      users_deleted:   usersDeleted,
+      errors:          Object.keys(errors).length ? errors : null,
     },
     actor: actor,
     req,
   })
 
   return NextResponse.json({
-    ok:            Object.keys(errors).length === 0,
-    org_id:        orgId,
-    org_name:      org.name,
-    rows_deleted:  deleted,
-    users_deleted: usersDeleted,
+    ok:             Object.keys(errors).length === 0,
+    org_id:         orgId,
+    org_name:       org.name,
+    rows_deleted:   deleted,
+    storage_purged: storagePurged,
+    users_deleted:  usersDeleted,
     skipped_tables: skipped.length ? skipped : undefined,
-    errors:        Object.keys(errors).length ? errors : undefined,
+    errors:         Object.keys(errors).length ? errors : undefined,
   })
 }

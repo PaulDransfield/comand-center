@@ -125,6 +125,10 @@ Rules:
 Output ONLY the JSON object.`
 
   const started = Date.now()
+  // Hard cap on the Claude call — if it hangs, don't keep the parent
+  // Vercel invocation alive.  AbortController is honoured by the SDK.
+  const abort = new AbortController()
+  const timeout = setTimeout(() => abort.abort(), 45_000)
   try {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
@@ -132,7 +136,7 @@ Output ONLY the JSON object.`
       model:      AI_MODELS.AGENT,
       max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
       messages:   [{ role: 'user', content: prompt }],
-    })
+    }, { signal: abort.signal as any })
     const raw   = (response.content?.[0] as any)?.text?.trim() ?? ''
     const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
 
@@ -182,7 +186,10 @@ Output ONLY the JSON object.`
 
     return { insights: items, reason: 'ok' }
   } catch (e: any) {
-    console.error('[cost-intel] Claude call failed:', e?.message)
-    return { insights: [], reason: 'error', error: e?.message }
+    const aborted = abort.signal.aborted
+    console.error('[cost-intel] Claude call failed:', aborted ? 'aborted (45s timeout)' : e?.message)
+    return { insights: [], reason: aborted ? 'timeout' : 'error', error: e?.message }
+  } finally {
+    clearTimeout(timeout)
   }
 }

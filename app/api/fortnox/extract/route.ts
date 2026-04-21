@@ -248,6 +248,16 @@ Return ONLY the JSON object.`
       })
     } catch { /* non-fatal */ }
 
+    // Attach an explicit warning when Claude reports low confidence so the
+    // review UI can refuse auto-apply and surface it clearly.  We don't
+    // block the extracted_json — low-confidence data still beats no data
+    // and a human reviewer can fix it.
+    const warnings = Array.isArray(extraction.warnings) ? [...extraction.warnings] : []
+    if (extraction.confidence === 'low') {
+      warnings.unshift('Low-confidence extraction — double-check every row before applying.')
+    }
+    extraction.warnings = warnings
+
     await db.from('fortnox_uploads').update({
       doc_type:           docType,
       period_year:        pYear,
@@ -257,7 +267,7 @@ Return ONLY the JSON object.`
       extraction_cost_kr: Math.round(costKr * 100) / 100,
       status:             'extracted',
       extracted_at:       new Date().toISOString(),
-      error_message:      null,
+      error_message:      extraction.confidence === 'low' ? 'Low confidence — review carefully' : null,
     }).eq('id', upload_id)
 
     return NextResponse.json({ ok: true, extraction })

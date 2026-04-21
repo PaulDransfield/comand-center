@@ -281,13 +281,20 @@ function UploadsTable({ uploads, onReview, onRetry, onDelete }: any) {
         <span />
       </div>
       {uploads.map((u: Upload) => {
+        // Low-confidence extractions get an amber chip even though the
+        // status is "extracted", so the row visually screams "review me".
+        const lowConfidence = u.status === 'extracted'
+          && typeof u.error_message === 'string'
+          && /low.?confidence/i.test(u.error_message)
         const tone: 'good' | 'bad' | 'warning' | 'neutral' | 'info' =
             u.status === 'applied'    ? 'good'
           : u.status === 'failed'     ? 'bad'
           : u.status === 'rejected'   ? 'bad'
+          : lowConfidence             ? 'warning'
           : u.status === 'extracted'  ? 'info'
           : u.status === 'extracting' ? 'warning'
           :                             'neutral'
+        const statusLabel = lowConfidence ? 'LOW CONFIDENCE' : u.status.toUpperCase()
         const periodLabel = u.period_year && u.period_month
           ? `${MONTHS[u.period_month - 1]} ${u.period_year}`
           : u.period_year
@@ -312,7 +319,7 @@ function UploadsTable({ uploads, onReview, onRetry, onDelete }: any) {
               {u.pdf_size_bytes ? `${(u.pdf_size_bytes / 1024).toFixed(0)} KB` : '—'}
             </span>
             <span style={{ textAlign: 'center' as const }}>
-              <StatusPill tone={tone as any}>{u.status.toUpperCase()}</StatusPill>
+              <StatusPill tone={tone as any}>{statusLabel}</StatusPill>
             </span>
             <span style={{ textAlign: 'right' as const }}>
               {u.status === 'extracted' && (
@@ -373,6 +380,9 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
   const [applying, setApplying] = useState(false)
   const [rejecting, setRejecting] = useState(false)
   const [err, setErr] = useState('')
+  // Conflict state — if an existing tracker_data row would be replaced.
+  const [conflict, setConflict] = useState<any>(null)
+  const [ackConflict, setAckConflict] = useState(false)
 
   useEffect(() => {
     fetch(`/api/fortnox/uploads?include_json=1&limit=1`, { cache: 'no-store' })
@@ -384,11 +394,19 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
     fetch(`/api/fortnox/signed-url?id=${uploadId}`)
       .then(r => r.ok ? r.json() : null)
       .then(j => { if (j?.url) setPdfUrl(j.url) })
+    // Check whether a non-Fortnox entry exists for this period.
+    fetch(`/api/fortnox/conflict-check?upload_id=${uploadId}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.has_conflict) setConflict(j) })
   }, [uploadId])
 
   const extraction = upload?.extracted_json ?? null
 
   async function apply() {
+    if (conflict && !ackConflict) {
+      setErr('Please acknowledge the conflict before applying.')
+      return
+    }
     setApplying(true); setErr('')
     try {
       const r = await fetch('/api/fortnox/apply', {
@@ -462,6 +480,16 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                   />
                 )}
 
+                {conflict?.has_conflict && (
+                  <ConflictPanel
+                    existing={conflict.existing}
+                    existingSource={conflict.existing_source}
+                    incoming={extraction.rollup}
+                    ack={ackConflict}
+                    onAck={setAckConflict}
+                  />
+                )}
+
                 <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 10, marginBottom: 8 }}>
                   Rollup
                 </div>
@@ -497,6 +525,68 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Conflict diff panel ──────────────────────────────────────────────
+function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) {
+  if (!existing) return null
+  const rows = [
+    { label: 'Revenue',    existing: Number(existing.revenue     ?? 0), incoming: Number(incoming.revenue     ?? 0) },
+    { label: 'Food cost',  existing: Number(existing.food_cost   ?? 0), incoming: Number(incoming.food_cost   ?? 0) },
+    { label: 'Staff cost', existing: Number(existing.staff_cost  ?? 0), incoming: Number(incoming.staff_cost  ?? 0) },
+    { label: 'Other cost', existing: Number(existing.other_cost  ?? 0), incoming: Number(incoming.other_cost  ?? 0) },
+    { label: 'Net profit', existing: Number(existing.net_profit  ?? 0), incoming: Number(incoming.net_profit  ?? 0) },
+  ]
+  const sourceLabel = existingSource === 'manual'       ? 'a manual entry you typed'
+                    : existingSource === 'fortnox_api'  ? 'a Fortnox API sync'
+                    : existingSource === 'pos_sync'     ? 'a POS auto-sync'
+                    :                                     `source: ${existingSource}`
+  return (
+    <div style={{
+      marginBottom: 14,
+      background:   '#fffbeb',
+      border:       '1px solid #fde68a',
+      borderRadius: 10,
+      padding:      '12px 14px',
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+        Existing data for this period
+      </div>
+      <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10, lineHeight: 1.55 }}>
+        Applying this PDF will replace {sourceLabel} for the same month. Compare the numbers below and acknowledge before continuing — the old values are preserved in the audit log (<code>fortnox_upload_id</code>) but will no longer drive the P&amp;L.
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #fde68a' }}>
+            <th style={{ textAlign: 'left' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Metric</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Existing</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Fortnox PDF</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Δ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => {
+            const diff = r.incoming - r.existing
+            const bothZero = r.existing === 0 && r.incoming === 0
+            return (
+              <tr key={r.label}>
+                <td style={{ padding: '4px 8px', color: '#374151' }}>{r.label}</td>
+                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: '#374151', fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.existing)}</td>
+                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: '#111', fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.incoming)}</td>
+                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: bothZero ? '#9ca3af' : (diff === 0 ? '#6b7280' : (diff > 0 ? '#15803d' : '#b91c1c')), fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>
+                  {bothZero ? '—' : diff === 0 ? '0 kr' : `${diff > 0 ? '+' : '−'}${fmtKr(Math.abs(diff))}`}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, cursor: 'pointer', fontSize: 12, color: '#78350f' }}>
+        <input type="checkbox" checked={ack} onChange={e => onAck(e.target.checked)} />
+        Yes, replace the existing entry with the Fortnox values.
+      </label>
     </div>
   )
 }
