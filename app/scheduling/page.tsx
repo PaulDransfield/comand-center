@@ -5,6 +5,9 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
+import PageHero from '@/components/ui/PageHero'
+import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtH   = (n: number) => (Math.round(n * 10) / 10) + 'h'
@@ -174,45 +177,28 @@ export default function SchedulingPage() {
     <AppShell>
       <div className="page-wrap" style={{ maxWidth: 1100 }}>
 
-        {/* Header */}
-        <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Scheduling Efficiency</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>
-              Labour cost vs revenue · weekly patterns
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {viewMode === 'week' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 160, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {(curr as any).weekNum}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
-                </div>
-                <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
+        {/* Period nav + W/M above the hero */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          {viewMode === 'week' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => setWeekOffset(o => o - 1)} style={schNavBtn}>‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: 12, fontWeight: 500, color: '#111' }}>
+                Week {(curr as any).weekNum} · {curr.label}
               </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setMonthOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{curr.label}</div>
-                </div>
-                <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: monthOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-              </div>
-            )}
-            <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
-              {(['week', 'month'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: viewMode === m ? 'white' : 'transparent', color: viewMode === m ? '#111' : '#9ca3af', boxShadow: viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{m === 'week' ? 'W' : 'M'}</button>
-              ))}
+              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...schNavBtn, color: weekOffset === 0 ? '#d1d5db' : '#374151', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => setMonthOffset(o => o - 1)} style={schNavBtn}>‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: 12, fontWeight: 500, color: '#111' }}>{curr.label}</div>
+              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...schNavBtn, color: monthOffset === 0 ? '#d1d5db' : '#374151', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+            </div>
+          )}
+          <SchSegmentedToggle value={viewMode} onChange={setViewMode} />
         </div>
 
-        {/* AI-schedule CTA — surfaced prominently so the tool doesn't get
-            lost at the bottom of a dense page. Label is dynamic: teases the
-            saving once loaded so the click is rewarded with a real number. */}
-        <AiScheduleCTA data={aiSched} loading={aiLoading} fmt={fmtKr} />
+        {/* ─── PageHero (replaces big header + old AI CTA banner) ─────── */}
+        <SchPageHero aiSched={aiSched} aiLoading={aiLoading} fmtKr={fmtKr} />
 
         {error && (
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#dc2626' }}>
@@ -859,3 +845,48 @@ function AiScheduleCTA({ data, loading, fmt }: any) {
     </button>
   )
 }
+
+// ─── Phase 8 UX helpers — PageHero, compact toggle, navBtn ───────────────
+function SchPageHero({ aiSched, aiLoading, fmtKr }: any) {
+  const saving   = aiSched?.summary?.saving_kr ?? 0
+  const trimDays = (aiSched?.suggested ?? []).filter((s: any) => (s.delta_hours ?? 0) < 0).length
+  const keepDays = (aiSched?.suggested ?? []).filter((s: any) => !s.under_staffed_note && (s.delta_hours ?? 0) === 0).length
+  const weekRange = aiSched ? `${aiSched.week_from?.slice(8)}\u2013${aiSched.week_to?.slice(8)} ${new Date(aiSched.week_from + "T00:00:00").toLocaleDateString("en-GB", { month: "short" })}` : ""
+
+  const headline = aiLoading
+    ? <>Crunching next week...</>
+    : saving > 0
+    ? <>AI can save <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(saving)}</span> — trim {trimDays} day{trimDays === 1 ? "" : "s"}, keep {keepDays}.</>
+    : <>Schedule is on target for next week — no cuts recommended.</>
+
+  return (
+    <PageHero
+      eyebrow={`NEXT WEEK${weekRange ? ` � ${weekRange}` : ""}`}
+      headline={headline}
+      context={aiSched ? `${aiSched.suggested?.length ?? 0} days analysed � cuts only, never adds` : undefined}
+      right={saving > 0 ? (
+        <div style={{ minWidth: 180, textAlign: "right" as const }}>
+          <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: "0.05em", textTransform: "uppercase" as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>Potential save</div>
+          <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: UX.greenInk, fontVariantNumeric: "tabular-nums" as const, letterSpacing: "-0.02em" }}>{fmtKr(saving)}</div>
+          <a href="#ai-schedule" style={{ display: "inline-block", marginTop: 6, padding: "6px 12px", background: UX.navy, color: "white", textDecoration: "none", borderRadius: UX.r_md, fontSize: UX.fsMicro, fontWeight: UX.fwMedium }}>Apply to schedule →</a>
+        </div>
+      ) : undefined}
+    />
+  )
+}
+
+function SchSegmentedToggle({ value, onChange }: any) {
+  return (
+    <SegmentedToggle
+      options={[{ value: "week", label: "W" }, { value: "month", label: "M" }]}
+      value={value}
+      onChange={(v: any) => onChange(v)}
+    />
+  )
+}
+
+const schNavBtn = {
+  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
+  background: UX.cardBg, cursor: "pointer", fontSize: 14,
+  display: "flex", alignItems: "center", justifyContent: "center", color: UX.ink2,
+} as const
