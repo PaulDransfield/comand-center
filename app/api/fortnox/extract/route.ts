@@ -287,133 +287,35 @@ Return ONLY the JSON object.`
   }
 
   try {
-    await writeProgress('Peeking at PDF structure…')
-    // ── Peek first ─────────────────────────────────────────────────────
-    // Identify periods + scale + confidence in one small call. The PDF
-    // is marked cache_control=ephemeral so the follow-up fill calls (if
-    // any) read it from cache at 10% cost and much lower latency.
-    const peekResp = await runClaude({ prompt: peekPrompt, maxTokens: 600, cachePdf: true })
-    totalInputTokens  += (peekResp as any).usage?.input_tokens  ?? 0
-    totalOutputTokens += (peekResp as any).usage?.output_tokens ?? 0
-    const peek = parseJsonFromResponse(peekResp)
-    const peekPeriods: Array<{ year: number; month: number }> = Array.isArray(peek?.periods)
-      ? peek.periods
-          .map((p: any) => ({ year: Number(p?.year), month: Number(p?.month) }))
-          .filter((p: { year: number; month: number }) => Number.isFinite(p.year))
-      : []
-    console.log('[fortnox/extract] peek result:', {
-      periods:       peekPeriods.length,
-      scale:         peek?.scale_detected,
-      doc_type:      peek?.doc_type,
-      confidence:    peek?.confidence,
-      raw_length:    JSON.stringify(peek ?? {}).length,
-    })
-    const detectedScale   = String(peek?.scale_detected ?? 'sek').toLowerCase()
-    const peekDocType     = String(peek?.doc_type ?? 'pnl_monthly')
-    const peekBizHint     = peek?.business_hint ?? null
-    const peekConfidence  = String(peek?.confidence ?? 'medium')
-    const peekWarnings    = Array.isArray(peek?.warnings) ? peek.warnings : []
+    // ── Single-shot Haiku extraction ───────────────────────────────────
+    // Reverted the peek+parallel pipeline after real-world tests showed
+    // Anthropic's concurrent-connection tier cap made parallel fills
+    // unreliable on multi-month PDFs. A single Haiku call with 24 000
+    // output tokens handles any Fortnox report within Vercel's 300 s
+    // function timeout. Slower on 12-month PDFs (~2 min) but reliably
+    // completes — "slow and done" beats "fast and stuck".
+    await writeProgress('Extracting with Haiku…')
+    const response = await runClaude({ prompt, maxTokens: 24000, cachePdf: false })
+    totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
+    totalOutputTokens += (response as any).usage?.output_tokens ?? 0
 
-    // ── Decide single-call vs parallel fill ────────────────────────────
-    // If the peek call failed to return periods, or only a single period
-    // was detected, fall through to the one-shot path (existing prompt)
-    // because the overhead of fanning out isn't worth it.
-    let parsed: any
-    const useParallel = peekPeriods.length > 1
-
-    if (useParallel) {
-      // Parallel per-month fill calls. Each Haiku call extracts ONE month
-      // only so its output runs ~1.5–2k tokens — fast. They run
-      // concurrently and all hit the cached PDF primed by the peek call.
-      const scaleHint = detectedScale === 'ksek'
-        ? 'PDF values are printed in KSEK (thousands of kr) — multiply every number by 1000 before returning.'
-        : detectedScale === 'msek'
-          ? 'PDF values are printed in MSEK (millions of kr) — multiply every number by 1000000 before returning.'
-          : 'PDF values are in full SEK — return them as-is.'
-
-      const monthPromptFor = (p: { year: number; month: number }) =>
-        `You are extracting ONE month's column from a Swedish Fortnox Resultatrapport.
-
-Extract ONLY the ${p.year}-${String(p.month).padStart(2, '0')} column (month = ${p.month}). Ignore every other month column, ignore the "Ack." and year-total columns, ignore prior-year comparison columns.
-
-${scaleHint}  ALL amounts you return MUST be in FULL SEK.
-
-Every cost amount is POSITIVE. Revenue is positive. Financial items keep their sign (interest expense negative).
-
-Return ONLY JSON:
-{
-  "rollup": {
-    "revenue":      0,
-    "food_cost":    0,
-    "staff_cost":   0,
-    "other_cost":   0,
-    "depreciation": 0,
-    "financial":    0,
-    "net_profit":   0
-  },
-  "lines": [
-    { "label": "Bankavgifter", "category": "other_cost", "amount": 340, "fortnox_account": 6570 }
-  ]
-}`
-
-      await writeProgress(`Peek detected ${peekPeriods.length} months — extracting 0/${peekPeriods.length}…`)
-      let completed = 0
-      // Cap concurrency at 4 — Anthropic's concurrent-connection ceiling
-      // trips at 5+ on lower tiers.  12 months / 4 concurrent × ~15 s
-      // per call ≈ 45 s wall time, still a 3x win over the serial path.
-      const fillResps = await runPooled(peekPeriods, 4, async (p) => {
-        const r = await runClaude({ prompt: monthPromptFor(p), maxTokens: 4000, cachePdf: true })
-        completed++
-        writeProgress(`Extracting ${completed}/${peekPeriods.length} months…`).catch(() => {})
-        return r
-      })
-      const filled: any[] = fillResps.map((resp: any, i: number) => {
-        totalInputTokens  += resp.usage?.input_tokens  ?? 0
-        totalOutputTokens += resp.usage?.output_tokens ?? 0
-        const data = parseJsonFromResponse(resp) ?? { rollup: {}, lines: [] }
-        return { year: peekPeriods[i].year, month: peekPeriods[i].month, ...data }
-      })
-
-      parsed = {
-        doc_type:       peekDocType,
-        scale_detected: detectedScale,
-        business_hint:  peekBizHint,
-        confidence:     peekConfidence,
-        warnings:       peekWarnings,
-        periods:        filled,
-      }
-    } else {
-      // Single-shot fallback path — the original prompt, for single-period
-      // PDFs or when peek failed to enumerate periods.
-      //
-      // Capped at 10 000 output tokens. The peek should catch multi-month
-      // PDFs and route them to the parallel path; if it didn't, Haiku
-      // trying to emit a full 12-month extraction here would grind for 3+
-      // minutes. 10 000 covers a single-month or annual-summary PDF
-      // comfortably and fails fast if we're in the wrong regime.
-      await writeProgress('Extracting single period (peek found no multi-month split)…')
-      const response = await runClaude({ prompt, maxTokens: 10000, cachePdf: false })
-      totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
-      totalOutputTokens += (response as any).usage?.output_tokens ?? 0
-
-      const truncated = (response as any).stop_reason === 'max_tokens'
-      parsed = parseJsonFromResponse(response)
-      if (!parsed) {
-        const raw = ((response as any).content ?? [])
-          .map((b: any) => (b?.type === 'text' ? b.text : ''))
-          .join('')
-          .trim()
-        const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
-        const errMsg  = truncated
-          ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
-          : `Claude returned non-JSON output. Sample: ${snippet}`
-        console.error('[fortnox/extract]', errMsg)
-        await db.from('fortnox_uploads').update({
-          status:        'failed',
-          error_message: errMsg.slice(0, 500),
-        }).eq('id', upload_id)
-        return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
-      }
+    const truncated = (response as any).stop_reason === 'max_tokens'
+    const parsed = parseJsonFromResponse(response)
+    if (!parsed) {
+      const raw = ((response as any).content ?? [])
+        .map((b: any) => (b?.type === 'text' ? b.text : ''))
+        .join('')
+        .trim()
+      const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
+      const errMsg  = truncated
+        ? `Claude ran out of tokens on a long PDF — reached max_tokens before finishing JSON. Sample: ${snippet}`
+        : `Claude returned non-JSON output. Sample: ${snippet}`
+      console.error('[fortnox/extract]', errMsg)
+      await db.from('fortnox_uploads').update({
+        status:        'failed',
+        error_message: errMsg.slice(0, 500),
+      }).eq('id', upload_id)
+      return NextResponse.json({ error: errMsg, raw: snippet }, { status: 500 })
     }
 
     // Helper — normalise + enrich lines with our subcategory lookup.
