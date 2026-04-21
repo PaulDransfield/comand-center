@@ -7,6 +7,8 @@ import AiLimitReached from '@/components/AiLimitReached'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import StatusPill from '@/components/ui/StatusPill'
+import TopBar from '@/components/ui/TopBar'
+import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import { UX } from '@/lib/constants/tokens'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 
@@ -220,36 +222,91 @@ export default function BudgetPage() {
     ? `${Math.round((totalRev / totalBudg) * 100)}% of YTD revenue target delivered · ${withActual.length} of ${monthsInYearSoFar} months logged`
     : undefined
 
+  // ── AI Budget Coach → AttentionPanel items  (no more purple gradient).
+  //    Phase 4 collapses the banner into regular content: a short white
+  //    AttentionPanel with up to 3 bullets (pacing verdict, labour lever,
+  //    scheduling jump). Narrative prose that's too long to fit in a
+  //    bullet falls back to a single bullet with the full line.
+  const coachItems: AttentionItem[] = (() => {
+    if (!coach || coach.has_budget === false || !coach.narrative) return []
+    const out: AttentionItem[] = []
+    // Overall pacing — tone from projected vs budget revenue.
+    const onPace = coach.projected && coach.budget
+      ? Number(coach.projected.revenue ?? 0) >= Number(coach.budget.revenue_target ?? 0)
+      : null
+    out.push({
+      tone:    onPace == null ? 'warning' : onPace ? 'good' : 'bad',
+      entity:  'Pacing',
+      message: `MTD ${fmtKr(Number(coach.mtd?.revenue ?? 0))} → projected ${fmtKr(Number(coach.projected?.revenue ?? 0))}${coach.budget?.revenue_target ? ` vs ${fmtKr(Number(coach.budget.revenue_target))} target` : ''}.`,
+    })
+    // Labour lever, if flagged by the server.
+    if (coach.labour_is_the_lever && coach.projected?.labour_pct != null) {
+      out.push({
+        tone:    'bad',
+        entity:  'Labour',
+        message: `projected at ${fmtPct(Number(coach.projected.labour_pct))} — open Scheduling and trim next week's hours.`,
+      })
+    }
+    // Narrative first-sentence as the "do this next" bullet.
+    const firstSentence = String(coach.narrative).split(/(?<=[.!?])\s+/).filter(Boolean)[0]
+    if (firstSentence) {
+      out.push({
+        tone:    'warning',
+        entity:  'Coach',
+        message: firstSentence.slice(0, 180),
+      })
+    }
+    return out.slice(0, 3)
+  })()
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1000 }}>
 
-        {/* Local selectors + "Generate with AI" action — small row above the hero */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
-          <button
-            onClick={generateWithAI}
-            disabled={generating || !selected}
-            style={{
-              padding: '6px 12px', background: UX.indigo, color: 'white',
-              border: 'none', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium,
-              cursor: generating || !selected ? 'not-allowed' : 'pointer',
-              opacity: generating || !selected ? 0.6 : 1,
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-            }}
-            title="Let AI suggest budgets from your last year + forecasts"
-          >
-            <span>✦</span>
-            {generating ? 'Generating…' : 'Generate with AI'}
-          </button>
-          <select value={selected} onChange={e => setSelected(e.target.value)}
-            style={{ padding: '6px 10px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-            {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <select value={year} onChange={e => setYear(parseInt(e.target.value))}
-            style={{ padding: '6px 10px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-            {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
+        {/* Row-hover reveal for the pencil action — same pattern as the
+            P&L tracker.  Keeps the row visually clean; ✎ shows on hover
+            or focus (FIX-PROMPT § Phase 4 "remove per-row buttons"). */}
+        <style>{`
+          .cc-bud-action { opacity: 0; transition: opacity .12s ease; }
+          .cc-bud-row:hover .cc-bud-action,
+          .cc-bud-row:focus-within .cc-bud-action { opacity: 1; }
+        `}</style>
+
+        {/* TopBar — breadcrumb + business/year selectors + top-level AI
+            action. Replaces the floating "Generate with AI" row. */}
+        <TopBar
+          crumbs={[
+            { label: 'Financials' },
+            { label: 'Budget vs Actual', active: true },
+          ]}
+          rightSlot={
+            <>
+              <button
+                onClick={generateWithAI}
+                disabled={generating || !selected}
+                title="Let AI suggest budgets from your last year + forecasts"
+                style={{
+                  padding: '5px 11px', background: UX.indigo, color: 'white',
+                  border: 'none', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium,
+                  cursor: generating || !selected ? 'not-allowed' : 'pointer',
+                  opacity: generating || !selected ? 0.6 : 1,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                }}
+              >
+                <span>✦</span>
+                {generating ? 'Generating…' : 'Generate with AI'}
+              </button>
+              <select value={selected} onChange={e => setSelected(e.target.value)}
+                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
+                {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <select value={year} onChange={e => setYear(parseInt(e.target.value))}
+                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
+                {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </>
+          }
+        />
 
         {/* PageHero — replaces the big header + KPI row */}
         <PageHero
@@ -265,41 +322,32 @@ export default function BudgetPage() {
           }
         />
 
-        {/* ───────────────────────────────────────────────────────────
-            AI Budget Coach — current-month pacing + one prescription.
-            Answers "am I on track + what do I do next week?". Always at
-            the top so the page leads with action, not with a table.
-        ─────────────────────────────────────────────────────────── */}
-        {(coachLoading || coach?.narrative || coach?.has_budget === false) && (
-          <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #312e81)', borderRadius: 14, padding: '22px 26px', marginBottom: 16, color: 'white' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 26, height: 26, background: 'rgba(99,102,241,0.35)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>✦</div>
-              <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700, letterSpacing: '.05em' }}>AI BUDGET COACH</span>
-            </div>
+        {/* AI Budget Coach — collapsed into a regular AttentionPanel.
+            No purple gradient, no decorative pill, no separate card style.
+            PNL-FIX/FIX-PROMPT § Phase 4. */}
+        {(coachLoading || coachItems.length || coach?.has_budget === false) && (
+          <div style={{ marginBottom: 12 }}>
             {coachLoading ? (
-              <div style={{ fontSize: 14, color: 'rgba(199,210,254,0.85)', fontStyle: 'italic' as const }}>Checking this month's pace…</div>
+              <AttentionPanel
+                title="AI Budget Coach"
+                items={[{ tone: 'warning', entity: 'Checking', message: 'pacing this month…' }]}
+              />
             ) : coach?.has_budget === false ? (
-              <div style={{ fontSize: 14, color: 'rgba(199,210,254,0.9)', lineHeight: 1.6 }}>
-                {coach.hint || 'Set a budget for this month to see pacing and AI advice.'}
-              </div>
-            ) : coach?.narrative ? (
-              <>
-                <div style={{ fontSize: 15, fontWeight: 400, lineHeight: 1.65, fontFamily: 'Georgia, serif', whiteSpace: 'pre-wrap' as const }}>
-                  {coach.narrative}
-                </div>
-                {/* Quick-stat row + scheduling jump when labour is the lever */}
-                <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap' as const, gap: 16, alignItems: 'center' }}>
-                  <QuickStat label="Revenue MTD"    value={fmtKr(coach.mtd.revenue)} />
-                  <QuickStat label="Projected"      value={fmtKr(coach.projected.revenue)} />
-                  <QuickStat label="Labour %"       value={fmtPct(coach.projected.labour_pct)} tone={coach.labour_is_the_lever ? 'bad' : 'ok'} />
-                  {coach.labour_is_the_lever && (
-                    <a href="/scheduling" style={{ marginLeft: 'auto', padding: '8px 16px', background: '#6366f1', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' as const }}>
-                      Open scheduling → trim next week
-                    </a>
-                  )}
-                </div>
-              </>
-            ) : null}
+              <AttentionPanel
+                title="AI Budget Coach"
+                items={[{ tone: 'warning', entity: 'No budget', message: coach.hint || 'Set a budget for this month to see pacing and AI advice.' }]}
+              />
+            ) : (
+              <AttentionPanel
+                title="AI Budget Coach"
+                items={coachItems}
+                rightSlot={coach?.labour_is_the_lever ? (
+                  <a href="/scheduling" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
+                    Open scheduling →
+                  </a>
+                ) : undefined}
+              />
+            )}
           </div>
         )}
 
@@ -407,8 +455,19 @@ export default function BudgetPage() {
 
           {loading ? (
             <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
-          ) : (
-            rows.map((row, i) => {
+          ) : (() => {
+            // Year-max budget drives the horizontal scale so every month's
+            // bar is honestly proportional to the biggest budgeted month.
+            // Spec (DESIGN.md § 4):
+            //   - grey track full-width
+            //   - tick at budget / yearMaxBudget
+            //   - fill from 0 to actual / yearMaxBudget
+            //   - green when actual ≥ budget, red when below
+            const yearMaxBudget = rows.reduce(
+              (m, r) => Math.max(m, Number(r.budget?.revenue_target ?? 0)),
+              0,
+            )
+            return rows.map((row, i) => {
               const a = row.actual
               const b = row.budget
               const hasActual = a && a.revenue > 0
@@ -416,11 +475,18 @@ export default function BudgetPage() {
               const onTrackFlag = variance !== null ? variance >= 0 : null
               const isEdit    = editing === row.month
 
-              // Progress bar math — actual fill scaled against target, capped at 140% for visibility.
-              const pct = b && b.revenue_target > 0 && hasActual
-                ? Math.max(0, Math.min(140, (a!.revenue / b.revenue_target) * 100))
-                : 0
-              const barColour = pct >= 100 ? UX.greenInk : pct >= 85 ? UX.amberInk : pct > 0 ? UX.redInk : UX.ink5
+              // Bar geometry — both values as a % of the year-max budget.
+              // When yearMaxBudget is 0 (no budgets set at all) we skip the
+              // bar entirely and just render the "budget not set" text.
+              const tickPct = b && yearMaxBudget > 0
+                ? (b.revenue_target / yearMaxBudget) * 100
+                : null
+              const fillPct = hasActual && yearMaxBudget > 0
+                ? Math.min(120, (a!.revenue / yearMaxBudget) * 100)
+                : null
+              const fillColour = onTrackFlag === true  ? UX.greenInk
+                               : onTrackFlag === false ? UX.redInk
+                               :                         UX.ink5
               const statusLabel: string =
                 !b                           ? 'NOT SET'
                 : !hasActual                 ? 'NO ACTUALS'
@@ -474,54 +540,91 @@ export default function BudgetPage() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{
-                      display:             'grid',
-                      gridTemplateColumns: '60px 1fr 90px 90px 90px',
-                      gap:                 12,
-                      padding:             '11px 16px',
-                      alignItems:          'center',
-                      borderBottom:        i === rows.length - 1 ? 'none' : `0.5px solid ${UX.borderSoft}`,
-                      opacity:             !b && !hasActual ? 0.6 : 1,
-                    }}>
+                    <div
+                      className="cc-bud-row"
+                      style={{
+                        display:             'grid',
+                        gridTemplateColumns: '60px 1fr 90px 90px 90px',
+                        gap:                 12,
+                        padding:             '11px 16px',
+                        alignItems:          'center',
+                        borderBottom:        i === rows.length - 1 ? 'none' : `0.5px solid ${UX.borderSoft}`,
+                        opacity:             !b && !hasActual ? 0.6 : 1,
+                      }}
+                    >
                       <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
 
-                      {/* Progress bar with tick at 100% budget */}
-                      <div style={{ position: 'relative' as const, height: 20, display: 'flex', alignItems: 'center' }}>
-                        <div style={{ position: 'absolute' as const, inset: 0, top: 7, bottom: 7, background: UX.borderSoft, borderRadius: 2 }}>
-                          {hasActual && b && b.revenue_target > 0 && (
-                            <div style={{
-                              position:   'absolute' as const,
-                              left:       0,
-                              top:        0,
-                              bottom:     0,
-                              // Compress overflow past 100% visually — show full width when ≥100%
-                              width:      `${Math.min(100, pct)}%`,
-                              background: barColour,
-                              borderRadius: 2,
-                              opacity:    0.9,
-                            }} />
-                          )}
-                          {b && (
-                            <div
-                              title={`Target: ${fmtKr(b.revenue_target)}`}
-                              style={{
+                      {/* Progress bar — track = grey, tick at budget position
+                          (as a % of year-max budget), fill from 0 to actual
+                          position (same scale). Green when actual ≥ budget,
+                          red when below. Spec DESIGN.md § 4. */}
+                      {b ? (
+                        <div style={{ position: 'relative' as const, height: 24, display: 'flex', alignItems: 'center' }}>
+                          <div style={{ position: 'absolute' as const, inset: 0, top: 8, bottom: 8, background: UX.borderSoft, borderRadius: 2 }}>
+                            {fillPct != null && (
+                              <div style={{
+                                position:     'absolute' as const,
+                                left:         0,
+                                top:          0,
+                                bottom:       0,
+                                width:        `${Math.max(1, fillPct)}%`,
+                                background:   fillColour,
+                                borderRadius: 2,
+                              }} />
+                            )}
+                            {tickPct != null && (
+                              <div
+                                title={`Target: ${fmtKr(b.revenue_target)}`}
+                                style={{
+                                  position:   'absolute' as const,
+                                  left:       `calc(${tickPct}% - 1px)`,
+                                  top:        -3,
+                                  bottom:     -3,
+                                  width:      2,
+                                  background: UX.ink1,
+                                  borderRadius: 1,
+                                }}
+                              />
+                            )}
+                          </div>
+                          {/* Labels — "act {kr}" anchored to the fill end,
+                              "bud {kr}" anchored to the tick. Both rendered
+                              above the track so they don't sit on the bar. */}
+                          <div style={{ position: 'absolute' as const, inset: 0, pointerEvents: 'none' as const }}>
+                            {fillPct != null && (
+                              <span style={{
                                 position:   'absolute' as const,
-                                left:       'calc(100% - 1px)',
-                                top:        -2,
-                                bottom:     -2,
-                                width:      2,
-                                background: UX.ink2,
-                              }}
-                            />
-                          )}
+                                left:       `calc(${Math.min(85, fillPct)}% + 4px)`,
+                                top:        -1,
+                                fontSize:   9,
+                                color:      fillColour,
+                                fontWeight: UX.fwMedium,
+                                fontVariantNumeric: 'tabular-nums' as const,
+                                whiteSpace: 'nowrap' as const,
+                              }}>
+                                act {fmtKr(a!.revenue)}
+                              </span>
+                            )}
+                            {tickPct != null && (
+                              <span style={{
+                                position:   'absolute' as const,
+                                left:       `calc(${tickPct}% + 4px)`,
+                                bottom:     -1,
+                                fontSize:   9,
+                                color:      UX.ink3,
+                                fontVariantNumeric: 'tabular-nums' as const,
+                                whiteSpace: 'nowrap' as const,
+                              }}>
+                                bud {fmtKr(b.revenue_target)}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div style={{ position: 'relative' as const, width: '100%', display: 'flex', justifyContent: 'space-between', fontSize: 9, color: UX.ink4, fontVariantNumeric: 'tabular-nums' as const }}>
-                          <span style={{ background: UX.cardBg, padding: '0 4px' }}>
-                            {hasActual ? `act ${fmtKr(a!.revenue)}` : b ? `no actuals yet` : 'budget not set'}
-                          </span>
-                          <span style={{ background: UX.cardBg, padding: '0 4px' }}>{b ? `bud ${fmtKr(b.revenue_target)}` : ''}</span>
-                        </div>
-                      </div>
+                      ) : (
+                        <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontStyle: 'italic' as const }}>
+                          budget not set
+                        </span>
+                      )}
 
                       <span style={{ textAlign: 'right' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: variance == null ? UX.ink5 : variance >= 0 ? UX.greenInk : UX.redInk, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const }}>
                         {variance != null ? (variance >= 0 ? '+' : '−') + fmtKr(Math.abs(variance)) : '—'}
@@ -531,33 +634,41 @@ export default function BudgetPage() {
                         <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
                       </div>
 
-                      <div style={{ textAlign: 'right' as const, display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                        <button onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
-                          style={{ padding: '3px 10px', background: 'transparent', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', color: UX.ink3 }}>
-                          {b ? 'Edit' : 'Set'}
+                      {/* Hover-only pencil — single affordance.  No per-row
+                          Set / +Analyse buttons cluttering the table. The
+                          top-right "+ Generate with AI" handles bulk
+                          setting.  A future iteration could bring the
+                          per-month "Analyse" back as a right-click menu or
+                          keyboard shortcut; it doesn't belong on every row.
+                          FIX-PROMPT § Phase 4. */}
+                      <div
+                        className="cc-bud-action"
+                        style={{ textAlign: 'right' as const }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <button
+                          aria-label={b ? `Edit ${MONTHS[row.month - 1]} budget` : `Set ${MONTHS[row.month - 1]} budget`}
+                          onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
+                          style={{
+                            padding:      '3px 8px',
+                            background:   'transparent',
+                            border:       'none',
+                            borderRadius: UX.r_sm,
+                            fontSize:     13,
+                            cursor:       'pointer',
+                            color:        UX.ink4,
+                            lineHeight:   1,
+                          }}
+                        >
+                          ✎
                         </button>
-                        {hasActual && (
-                          <button
-                            onClick={() => analyseMonth(row.month)}
-                            disabled={analysingMonth === row.month}
-                            style={{
-                              padding: '3px 10px', background: UX.indigoBg, border: `0.5px solid ${UX.indigo}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro,
-                              cursor: analysingMonth === row.month ? 'wait' : 'pointer',
-                              color: UX.indigo, fontWeight: UX.fwMedium, display: 'inline-flex', alignItems: 'center', gap: 3,
-                            }}
-                            title="AI review of this month vs budget / last year"
-                          >
-                            <span>✦</span>
-                            {analysingMonth === row.month ? '…' : 'Analyse'}
-                          </button>
-                        )}
                       </div>
                     </div>
                   )}
                 </div>
               )
             })
-          )}
+          })()}
         </div>
 
         {/* Per-month analysis modal */}
