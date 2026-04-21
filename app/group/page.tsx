@@ -23,6 +23,7 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import StatusPill from '@/components/ui/StatusPill'
 import Sparkline from '@/components/ui/Sparkline'
+import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
@@ -68,6 +69,7 @@ export default function GroupPage() {
 
   const businesses = data?.businesses ?? []
   const summary    = data?.summary ?? null
+  const aiItems    = Array.isArray(data?.items) ? data.items : null
 
   // Outlier detection for hero framing + per-card pills.
   const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
@@ -80,20 +82,27 @@ export default function GroupPage() {
     <AppShell>
       <div style={{ maxWidth: 1100 }}>
 
-        {/* Minimal period navigator above the hero (page-local, not a TopBar
-            since there's only one crumb).  */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, gap: 4, alignItems: 'center' }}>
-          <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn} aria-label="Previous month">‹</button>
-          <div style={{ minWidth: 140, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-            {period.label}
-          </div>
-          <button
-            onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
-            disabled={monthOffset === 0}
-            aria-label="Next month"
-            style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}
-          >›</button>
-        </div>
+        {/* TopBar — breadcrumb + period picker on the right slot.  Using
+            TopBar keeps the period control on the same visual line as the
+            page crumb, so it stops colliding with the hero's SupportingStats
+            below (GROUP-FIX § 5).  */}
+        <TopBar
+          crumbs={[{ label: 'Group', active: true }]}
+          rightSlot={
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn} aria-label="Previous month">‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+                {period.label}
+              </div>
+              <button
+                onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
+                disabled={monthOffset === 0}
+                aria-label="Next month"
+                style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}
+              >›</button>
+            </div>
+          }
+        />
 
         {loading ? (
           <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading group data…</div>
@@ -122,7 +131,6 @@ export default function GroupPage() {
                     {
                       label: 'Revenue',
                       value: fmtKr(summary.total_revenue),
-                      sub:   `${businesses.length} locations`,
                     },
                     {
                       label: 'Labour %',
@@ -173,6 +181,43 @@ export default function GroupPage() {
                 const cardBg = isWorst ? UX.redSoft   : UX.cardBg
                 const cardBr = isWorst ? UX.redBorder : isBest ? UX.greenBorder : UX.border
 
+                // Sparkline points — last 7 entries from daily_revenue. Tone
+                // derives from 1st-half vs 2nd-half mean (up = good, down = bad).
+                const series = Array.isArray(b.daily_revenue) ? b.daily_revenue : []
+                const last7  = series.slice(-7).map((x: any) => Number(x.revenue ?? 0))
+                const hasSpark = last7.length >= 2 && last7.some((v: number) => v > 0)
+                const sparkTone: 'good' | 'bad' | 'warning' | 'neutral' = (() => {
+                  if (!hasSpark) return 'neutral'
+                  const half = Math.floor(last7.length / 2)
+                  const a = last7.slice(0, half)
+                  const c = last7.slice(-half)
+                  const mA = a.reduce((s: number, x: number) => s + x, 0) / Math.max(a.length, 1)
+                  const mC = c.reduce((s: number, x: number) => s + x, 0) / Math.max(c.length, 1)
+                  if (mC > mA * 1.05) return 'good'
+                  if (mC < mA * 0.95) return 'bad'
+                  return 'neutral'
+                })()
+
+                // Explicit delta rendering — always show something on every
+                // card (GROUP-FIX § 2). Handles prev=0 and extreme values.
+                const deltaNode = (() => {
+                  if (b.revenue === 0 && b.prev_revenue === 0) {
+                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>—</span>
+                  }
+                  if ((b.prev_revenue ?? 0) === 0 && b.revenue > 0) {
+                    return <span style={{ fontSize: UX.fsMicro, color: UX.greenInk, fontWeight: UX.fwMedium }}>↑ new</span>
+                  }
+                  if (b.revenue_delta_pct == null) {
+                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>—</span>
+                  }
+                  const up = b.revenue_delta_pct >= 0
+                  return (
+                    <span style={{ fontSize: UX.fsMicro, color: up ? UX.greenInk : UX.redInk, fontWeight: UX.fwMedium }}>
+                      {up ? '↑' : '↓'} {Math.abs(b.revenue_delta_pct)}%
+                    </span>
+                  )
+                })()
+
                 return (
                   <button
                     key={b.id}
@@ -196,9 +241,11 @@ export default function GroupPage() {
                       ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
                     }}
                   >
-                    {/* Card header — name + status */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-                      <div style={{ minWidth: 0 }}>
+                    {/* Card header — name + status. alignItems:center keeps
+                        the pill tight against the row instead of stretching
+                        to the sub-line (GROUP-FIX § 3). */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.colour ?? UX.ink4, flexShrink: 0, display: 'inline-block' }} />
                           <div style={{ fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
@@ -207,24 +254,27 @@ export default function GroupPage() {
                         </div>
                         {b.city && <div style={{ fontSize: UX.fsMicro, color: UX.ink4, marginLeft: 12 }}>{b.city}</div>}
                       </div>
-                      {pill && <StatusPill tone={pill.tone}>{pill.label}</StatusPill>}
+                      {pill && <div style={{ flexShrink: 0 }}><StatusPill tone={pill.tone}>{pill.label}</StatusPill></div>}
                     </div>
 
-                    {/* Revenue headline + delta */}
+                    {/* Revenue headline + delta — always renders a delta node */}
                     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
                       <div style={{ fontSize: 18, fontWeight: UX.fwMedium, color: UX.ink1, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' as const }}>
                         {b.revenue > 0 ? fmtKr(b.revenue) : '—'}
                       </div>
-                      {b.revenue_delta_pct != null && (
-                        <div style={{ fontSize: UX.fsMicro, fontWeight: UX.fwMedium, color: b.revenue_delta_pct >= 0 ? UX.greenInk : UX.redInk }}>
-                          {b.revenue_delta_pct >= 0 ? '↑' : '↓'} {Math.abs(b.revenue_delta_pct)}%
-                        </div>
-                      )}
+                      {deltaNode}
                     </div>
 
-                    {/* Sparkline — dashed placeholder (no per-biz time series fetched here) */}
+                    {/* Sparkline — real points when we have them, dashed flat
+                        grey line otherwise.  Tone: up → green, down → red. */}
                     <div style={{ margin: '6px 0 8px' }}>
-                      <Sparkline points={[]} tone={tone} dashed width={160} height={14} />
+                      <Sparkline
+                        points={hasSpark ? last7 : []}
+                        tone={hasSpark ? sparkTone : 'neutral'}
+                        dashed={!hasSpark}
+                        width={160}
+                        height={18}
+                      />
                     </div>
 
                     {/* 2×2 meta grid */}
@@ -245,15 +295,19 @@ export default function GroupPage() {
               })}
             </div>
 
-            {/* ─── AI Group Manager as AttentionPanel-style card ──────── */}
+            {/* ─── AI Group Manager as AttentionPanel-style card ────────
+                Prefer the server-side AI items when we have them (2–3
+                bullets covering different angles — GROUP-FIX § 4).  Fall
+                back to the deterministic builder if Claude returned nothing
+                parseable, so the panel is never empty. */}
             <AttentionPanel
               title="Needs your attention"
               rightSlot={
                 <span style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
-                  Synthesised from {businesses.length} locations · {period.label}
+                  {aiItems?.length ? 'AI Group Manager' : 'Synthesised'} · {period.label}
                 </span>
               }
-              items={buildGroupAttention(businesses, summary)}
+              items={(aiItems?.length ? aiItems : buildGroupAttention(businesses, summary))}
             />
           </>
         )}
@@ -334,28 +388,27 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
 
   const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
 
-  // 1. Draining locations — staff hours burning with zero revenue. Hard red.
+  // Ranked candidates by margin %  — used by all three angle bullets.
+  const ranked = withRev
+    .filter((b: any) => Number(b.revenue ?? 0) > 0 && b.margin_pct != null)
+    .sort((a: any, b: any) => a.margin_pct - b.margin_pct)
+
   const draining = withRev.filter((b: any) => Number(b.revenue ?? 0) === 0 && Number(b.staff_cost ?? 0) > 0)
-  for (const b of draining) {
-    if (items.length >= 3) break
+  const best     = ranked[ranked.length - 1] ?? null
+
+  // ─── Angle 1 — the biggest problem (red/amber) ────────────────────────────
+  if (draining.length) {
+    const b   = draining[0]
     const hrs = Math.round(Number(b.hours ?? 0))
     const kr  = fmtKr(Number(b.staff_cost ?? 0))
     items.push({
       tone:    'bad',
       entity:  b.name,
-      message: `burning ${hrs}h (${kr}) with no revenue — close, restructure, or pause scheduling.`,
+      message: `${hrs}h labour (${kr}) on zero revenue — close, restructure, or cut schedule to covers only.`,
     })
-  }
-
-  // 2. Outlier margin — single worst positive-revenue location if it's well
-  //    below the group average. Red if <30%, amber if <45%.
-  const ranked = withRev
-    .filter((b: any) => Number(b.revenue ?? 0) > 0 && b.margin_pct != null)
-    .sort((a: any, b: any) => a.margin_pct - b.margin_pct)
-
-  if (items.length < 3 && ranked.length) {
+  } else if (ranked.length) {
     const worst = ranked[0]
-    if (worst.margin_pct < 45 && !draining.find((d: any) => d.id === worst.id)) {
+    if (worst.margin_pct < 45) {
       items.push({
         tone:    worst.margin_pct < 30 ? 'bad' : 'warning',
         entity:  worst.name,
@@ -364,20 +417,46 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
     }
   }
 
-  // 3. Best location — green praise if clearly ahead of the group average.
-  if (items.length < 3 && ranked.length >= 2) {
-    const best = ranked[ranked.length - 1]
-    const groupAvg = summary?.group_margin_pct ?? null
-    if (best.margin_pct >= 45 && (groupAvg == null || best.margin_pct > groupAvg + 5)) {
+  // ─── Angle 2 — the opportunity / reallocation (amber) ─────────────────────
+  // Move hours from the weakest site to the strongest. Estimate SEK/week
+  // impact as ~25% of the weak site's weekly labour cost at the strong
+  // site's rev/hour, rounded to nearest thousand.
+  if (items.length < 3 && best && ranked.length >= 2) {
+    const worst = ranked[0]
+    const isDifferent = worst.id !== best.id
+    const weakLabW = Number(worst.staff_cost ?? 0) / 4           // month → week
+    const strongRh = Number(best.rev_per_hour ?? 0)
+    const approxKr = Math.max(0, Math.round((weakLabW * 0.25 * strongRh / 400) / 1000) * 1000)
+    if (isDifferent && weakLabW > 0 && strongRh > 0) {
       items.push({
-        tone:    'good',
+        tone:    'warning',
         entity:  best.name,
-        message: `leading at ${fmtPct(best.margin_pct)} margin — worth modelling the schedule onto other sites.`,
+        message: approxKr > 0
+          ? `could absorb hours from ${worst.name} at ${fmtKr(strongRh)}/h — ~${fmtKr(approxKr)}/wk recovered.`
+          : `could absorb hours from ${worst.name} at ${fmtKr(strongRh)}/h — worth reallocating.`,
+      })
+    } else if (draining.length && best) {
+      items.push({
+        tone:    'warning',
+        entity:  best.name,
+        message: `reallocate labour from ${draining[0].name} — ${best.rev_per_hour ? fmtKr(best.rev_per_hour) + '/h' : 'stronger output'} beats burning hours on zero revenue.`,
       })
     }
   }
 
-  // 4. Fallback — if nothing flagged, surface a single neutral status line.
+  // ─── Angle 3 — what's working (green) ─────────────────────────────────────
+  if (items.length < 3 && best) {
+    const groupAvg = summary?.group_margin_pct ?? null
+    if (best.margin_pct != null && best.margin_pct >= 30 && (groupAvg == null || best.margin_pct > groupAvg + 5)) {
+      items.push({
+        tone:    'good',
+        entity:  best.name,
+        message: `carrying the group — ${fmtPct(best.margin_pct)} margin${best.rev_per_hour ? `, ${fmtKr(best.rev_per_hour)}/h` : ''}. Preserve its schedule pattern.`,
+      })
+    }
+  }
+
+  // Fallback — stable single line if nothing else flagged.
   if (items.length === 0 && summary) {
     items.push({
       tone:    'good',
@@ -386,7 +465,7 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
     })
   }
 
-  return items
+  return items.slice(0, 3)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

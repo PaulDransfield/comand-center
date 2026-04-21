@@ -75,11 +75,12 @@ export async function GET(req: NextRequest) {
   const curRows  = (curRes.data  ?? []).filter(r => r.date <= to)
   const prevRows = (prevRes.data ?? []).filter(r => r.date <= prevToStr)
 
-  // Aggregate per business
+  // Aggregate per business + keep the raw daily sequence for per-card sparklines
   const emptyAgg = () => ({ revenue: 0, staff_cost: 0, hours: 0, covers: 0, days: 0 })
-  const cur: Record<string, any>  = {}
-  const prev: Record<string, any> = {}
-  for (const id of bizIds) { cur[id] = emptyAgg(); prev[id] = emptyAgg() }
+  const cur:  Record<string, any>  = {}
+  const prev: Record<string, any>  = {}
+  const daily: Record<string, Array<{ date: string; revenue: number }>> = {}
+  for (const id of bizIds) { cur[id] = emptyAgg(); prev[id] = emptyAgg(); daily[id] = [] }
 
   for (const r of curRows) {
     const b = cur[r.business_id]; if (!b) continue
@@ -88,6 +89,7 @@ export async function GET(req: NextRequest) {
     b.staff_cost += Number(r.staff_cost ?? 0)
     b.hours      += Number(r.hours_worked ?? 0)
     b.covers     += Number(r.covers     ?? 0)
+    daily[r.business_id].push({ date: r.date, revenue: Number(r.revenue ?? 0) })
   }
   for (const r of prevRows) {
     const b = prev[r.business_id]; if (!b) continue
@@ -95,6 +97,12 @@ export async function GET(req: NextRequest) {
     b.staff_cost += Number(r.staff_cost ?? 0)
     b.hours      += Number(r.hours_worked ?? 0)
     b.covers     += Number(r.covers     ?? 0)
+  }
+  // Sort each daily series by date and trim to last 30 days — the sparkline
+  // only needs a compact trend, not the full window.
+  for (const id of bizIds) {
+    daily[id].sort((a, b) => a.date.localeCompare(b.date))
+    if (daily[id].length > 30) daily[id] = daily[id].slice(-30)
   }
 
   // Shape per-business rows
@@ -124,6 +132,7 @@ export async function GET(req: NextRequest) {
       rev_per_cover: c.covers > 0 ? Math.round(c.revenue / c.covers) : null,
       prev_revenue:  Math.round(p.revenue),
       revenue_delta_pct: revenueDelta != null ? Math.round(revenueDelta * 10) / 10 : null,
+      daily_revenue: daily[biz.id],   // compact time series for the card sparkline
     }
   })
 
@@ -158,14 +167,18 @@ export async function GET(req: NextRequest) {
 
   // Generate AI narrative — only if we have 2+ businesses with data
   let narrative: string | null = null
+  let items: Array<{ tone: string; entity: string; message: string }> | null = null
   if (ranked.length >= 2 && process.env.ANTHROPIC_API_KEY) {
-    narrative = await generateNarrative(db, auth.orgId, rows, summary)
+    const aiOut = await generateNarrative(db, auth.orgId, rows, summary)
+    narrative = aiOut.narrative
+    items     = aiOut.items
   }
 
   return NextResponse.json({
     businesses: rows,
     summary,
     narrative,
+    items,
   }, {
     headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
   })
@@ -175,14 +188,28 @@ export async function GET(req: NextRequest) {
 // Narrative generator — single Haiku call that identifies the outlier + one
 // cross-business action. Deliberately short, opinionated, SEK-quantified.
 // ─────────────────────────────────────────────────────────────────────────────
-async function generateNarrative(db: any, orgId: string, rows: any[], summary: any): Promise<string | null> {
-  const prompt = `You are the group operations manager of a restaurant group with ${rows.length} locations. You have their trading data for ${summary.period_from} to ${summary.period_to}. Write ONE short paragraph (90-130 words) that:
+async function generateNarrative(
+  db: any, orgId: string, rows: any[], summary: any,
+): Promise<{ narrative: string | null; items: Array<{ tone: string; entity: string; message: string }> | null }> {
+  const prompt = `You are the group operations manager of a restaurant group with ${rows.length} locations. You have their trading data for ${summary.period_from} to ${summary.period_to}.
 
-1. Opens with a one-sentence verdict on the group's period (revenue vs last period, overall labour %).
-2. Identifies the biggest outlier — which business is pulling ahead or falling behind, WHY (compare their rev/hour, labour %, or margin % to the best performer).
-3. Ends with ONE concrete cross-business action ("copy X's staffing pattern from Y", "rebalance hours from A to B", etc.) with an estimated SEK/week impact.
+Return a JSON object with EXACTLY this shape and nothing else:
 
-Be direct, conversational, Swedish-owner-to-owner tone. No preamble. No "I recommend" / "consider" — just say it.
+{
+  "items": [
+    { "tone": "bad" | "warning" | "good", "entity": "<location name>", "message": "<short action, max 120 chars>" }
+  ]
+}
+
+Rules for items:
+- Produce 2 or 3 items, covering DIFFERENT angles:
+  (a) the biggest problem → tone "bad" or "warning", with a specific action (close / cut hours / restructure).
+  (b) an opportunity or reallocation → tone "warning", suggesting moving hours or capacity from the weak site to the strong one, with an estimated SEK/week impact.
+  (c) what's working → tone "good", praising the best performer and naming what to preserve (schedule pattern, rev/hour, etc.).
+- Each "message" must be ≤ 120 characters, plain English, no preamble.
+- Each "entity" must be the exact location name from the data below.
+- If a location has high labour % (over 80%) with low revenue, that's the problem bullet.
+- If only one location has meaningful revenue, item (b) may be omitted.
 
 TRADING DATA (all ex-VAT, SEK)
 
@@ -192,7 +219,7 @@ Period: ${summary.period_from} to ${summary.period_to}
 Per business:
 ${rows.map(r => `  ${r.name} — rev ${fmtKr(r.revenue)} (${r.revenue_delta_pct != null ? (r.revenue_delta_pct >= 0 ? '+' : '') + r.revenue_delta_pct + '%' : '—'} vs prev), labour ${fmtKr(r.staff_cost)} (${r.labour_pct ?? '—'}%), margin ${r.margin_pct ?? '—'}%, ${r.hours}h, ${r.rev_per_hour ? fmtKr(r.rev_per_hour) + '/hr' : '—/hr'}, ${r.covers} covers`).join('\n')}
 
-Write the paragraph only — no headers, no JSON, just prose.`
+Return ONLY the JSON object — no code fence, no preamble, no trailing prose.`
 
   const started = Date.now()
   try {
@@ -216,10 +243,31 @@ Write the paragraph only — no headers, no JSON, just prose.`
       })
     } catch { /* non-fatal */ }
 
-    return text || null
+    if (!text) return { narrative: null, items: null }
+
+    // Parse the JSON object the model was asked to produce. Strip any leading
+    // code fence defensively — some Haiku responses still wrap in ```json.
+    const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    try {
+      const parsed = JSON.parse(cleaned)
+      const out: Array<{ tone: string; entity: string; message: string }> = []
+      if (Array.isArray(parsed?.items)) {
+        for (const it of parsed.items) {
+          if (!it || typeof it.message !== 'string') continue
+          const tone   = ['good', 'warning', 'bad'].includes(it.tone) ? it.tone : 'warning'
+          const entity = typeof it.entity === 'string' ? it.entity.slice(0, 40) : 'Group'
+          const message = it.message.trim().slice(0, 160)
+          out.push({ tone, entity, message })
+        }
+      }
+      return { narrative: text, items: out.length ? out.slice(0, 3) : null }
+    } catch {
+      // Parse failed — return the raw text as fallback narrative.
+      return { narrative: text, items: null }
+    }
   } catch (e: any) {
     console.error('[group/overview] Claude call failed:', e.message)
-    return null
+    return { narrative: null, items: null }
   }
 }
 
