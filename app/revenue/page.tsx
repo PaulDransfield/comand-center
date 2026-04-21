@@ -11,6 +11,7 @@ import AskAI from '@/components/AskAI'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
@@ -128,6 +129,16 @@ export default function RevenuePage() {
   const bevRev      = sum.total_bev_revenue ?? 0
   const dineIn      = sum.total_dine_in ?? 0
   const takeaway    = sum.total_takeaway ?? 0
+  const daysWithData = sum.days_with_data ?? 0
+
+  // Surface the single day when that's all we've got — the hero, the chart
+  // state, and the "only day" copy all key off it.
+  const onlyDayRow = (() => {
+    const nonClosed = rows.filter((r: any) => !r.is_closed && Number(r.revenue ?? 0) > 0)
+    return nonClosed.length === 1 ? nonClosed[0] : null
+  })()
+  const foodOnly = foodRev > 0 && bevRev === 0 && totalRev > 0
+  const hasChannelData = dineIn > 0 || takeaway > 0
 
   // Chart
   const dayCount  = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
@@ -157,35 +168,45 @@ export default function RevenuePage() {
     <AppShell>
       <div className="page-wrap">
 
-        {/* Local period navigator + W/M toggle */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          {viewMode === 'week' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setWeekOffset(o => o - 1)} style={navBtn}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                Week {(curr as any).weekNum} · {curr.label}
-              </div>
-              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...navBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
-              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-            </div>
-          )}
-          <SegmentedToggle
-            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'week' | 'month')}
-          />
-        </div>
+        {/* TopBar — crumb + period navigator + W/M toggle in the right slot.
+            Replaces the free-floating navigator that was competing with the
+            hero's SupportingStats for visual weight. */}
+        <TopBar
+          crumbs={[
+            { label: 'Operations' },
+            { label: 'Revenue', active: true },
+          ]}
+          rightSlot={
+            <>
+              {viewMode === 'week' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => setWeekOffset(o => o - 1)} style={navBtn}>‹</button>
+                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+                    Week {(curr as any).weekNum} · {curr.label}
+                  </div>
+                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...navBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn}>‹</button>
+                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
+                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+                </div>
+              )}
+              <SegmentedToggle
+                options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+                value={viewMode}
+                onChange={(v) => setViewMode(v as 'week' | 'month')}
+              />
+            </>
+          }
+        />
 
         {/* PageHero */}
         <PageHero
-          eyebrow={`${curr.label.toUpperCase()} · ${sum.days_with_data ?? 0} DAYS OF DATA`}
-          headline={<RevenueHeadline totalRev={totalRev} prevRev={prevSum.total_revenue ?? 0} foodRev={foodRev} bevRev={bevRev} takeaway={takeaway} viewMode={viewMode} />}
-          context={buildRevenueContext(sum, totalCovers, takeaway, dineIn)}
+          eyebrow={`${curr.label.toUpperCase()} · ${daysWithData} DAY${daysWithData === 1 ? '' : 'S'} OF DATA`}
+          headline={<RevenueHeadline totalRev={totalRev} prevRev={prevSum.total_revenue ?? 0} foodRev={foodRev} bevRev={bevRev} foodOnly={foodOnly} takeaway={takeaway} dineIn={dineIn} viewMode={viewMode} onlyDayRow={onlyDayRow} />}
+          context={buildRevenueContext({ totalRev, totalCovers, takeaway, dineIn, foodRev, bevRev, hasChannelData, foodOnly })}
           right={
             <SupportingStats
               items={[
@@ -218,8 +239,15 @@ export default function RevenuePage() {
             {/* ── Daily revenue chart ────────────────────────────────── */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Revenue — {periodLabel}</div>
-                {(foodRev > 0 || bevRev > 0) && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Revenue — {periodLabel}</div>
+                  {daysWithData > 0 && daysWithData < Math.max(3, Math.floor(dayCount / 3)) && (
+                    <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>
+                      Only {daysWithData} day{daysWithData === 1 ? '' : 's'} of data in this {viewMode === 'week' ? 'week' : 'month'} — the rest will fill in as they sync.
+                    </div>
+                  )}
+                </div>
+                {(foodRev > 0 && bevRev > 0) && (
                   <div style={{ display: 'flex', gap: 16 }}>
                     {[{ color: '#1a1f2e', label: 'Food' }, { color: '#10b981', label: 'Beverage' }].map(l => (
                       <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -283,8 +311,14 @@ export default function RevenuePage() {
               )}
             </div>
 
-            {/* ── Revenue splits + table ──────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: (dineIn > 0 || takeaway > 0 || foodRev > 0 || bevRev > 0) ? '3fr 1fr' : '1fr', gap: 12, marginBottom: 16 }}>
+            {/* ── Revenue splits + table ────────────────────────────────
+                The sidebar column only opens when at least one card inside
+                it will actually render. Channel Split needs dine-in OR
+                takeaway; Food vs Bev needs BOTH food and beverage; Tips
+                needs totalTips > 0. Anything less → single-column layout.
+                Stops an empty sidebar appearing on food-only / single-day
+                states (FIX-PROMPT § Phase 6). */}
+            <div style={{ display: 'grid', gridTemplateColumns: (hasChannelData || (foodRev > 0 && bevRev > 0) || totalTips > 0) ? '3fr 1fr' : '1fr', gap: 12, marginBottom: 16 }}>
 
               {/* Revenue table */}
               <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
@@ -347,8 +381,8 @@ export default function RevenuePage() {
 
               </div>
 
-              {/* Breakdown sidebar */}
-              {(dineIn > 0 || takeaway > 0 || foodRev > 0 || bevRev > 0) && (
+              {/* Breakdown sidebar — same gate as the grid column above. */}
+              {(hasChannelData || (foodRev > 0 && bevRev > 0) || totalTips > 0) && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
                   {/* Dine-in vs takeaway — tax-treatment matters: Swedish
@@ -390,8 +424,11 @@ export default function RevenuePage() {
                     </div>
                   )}
 
-                  {/* Food vs beverage */}
-                  {(foodRev > 0 || bevRev > 0) && (
+                  {/* Food vs beverage — hide entirely when it'd just show
+                      "Food 100% · Beverage 0%". That's already called out
+                      in the hero (foodOnly flag), so the card adds noise
+                      rather than signal. FIX-PROMPT § Phase 6. */}
+                  {(foodRev > 0 && bevRev > 0) && (
                     <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
                       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>Food vs Beverage</div>
                       <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', marginBottom: 10, background: '#f3f4f6' }}>
@@ -442,23 +479,40 @@ export default function RevenuePage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Revenue hero headline — swaps based on delta direction and mix signal.
+// Revenue hero headline — prioritises single-day / food-only honesty over a
+// generic delta template. Per FIX-PROMPT § Phase 6 the hero must reflect
+// what's actually in the data, not inject a vague "mix steady" platitude.
 // ─────────────────────────────────────────────────────────────────────────────
-function RevenueHeadline({ totalRev, prevRev, foodRev, bevRev, takeaway, viewMode }: any) {
+function RevenueHeadline({ totalRev, prevRev, foodRev, bevRev, takeaway, dineIn, foodOnly, viewMode, onlyDayRow }: any) {
   if (totalRev <= 0) {
     return <>Waiting on the sync — no revenue data for this {viewMode === 'week' ? 'week' : 'month'} yet.</>
+  }
+  // Single day with data + food-only is the most specific state the page
+  // typically sees early in a month. Name it explicitly — Paul's exact
+  // copy from FIX-PROMPT.
+  if (onlyDayRow) {
+    const d = new Date(onlyDayRow.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    const kr = Math.round(Number(onlyDayRow.revenue ?? 0)).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
+    if (foodOnly) {
+      return <>Only <span style={{ fontWeight: UX.fwMedium }}>{d}</span> has data — <span style={{ fontWeight: UX.fwMedium }}>{kr}</span>, <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>food-only</span>.</>
+    }
+    return <>Only <span style={{ fontWeight: UX.fwMedium }}>{d}</span> has data — <span style={{ fontWeight: UX.fwMedium }}>{kr}</span>.</>
   }
   if (prevRev > 0) {
     const pct = ((totalRev - prevRev) / prevRev) * 100
     const delta = (pct >= 0 ? '+' : '−') + (Math.round(Math.abs(pct) * 10) / 10).toFixed(1) + '%'
     const tone = pct >= 0 ? UX.greenInk : UX.redInk
-    const mix = foodRev > bevRev * 2
-      ? 'food dominant'
-      : bevRev > foodRev * 2
-      ? 'beverage dominant'
-      : takeaway > 0
-      ? 'takeaway active'
-      : 'mix steady'
+    // Describe mix from the actual data, not a template.
+    let mix: string
+    if (foodOnly) mix = 'food-only'
+    else if (foodRev > bevRev * 2) mix = 'food-heavy'
+    else if (bevRev > foodRev * 2) mix = 'beverage-heavy'
+    else if (takeaway > 0 && dineIn > 0) {
+      const takePct = Math.round((takeaway / (takeaway + dineIn)) * 100)
+      mix = `dine-in ${100 - takePct}% / takeaway ${takePct}%`
+    }
+    else if (takeaway > 0) mix = 'takeaway-only'
+    else mix = 'dine-in'
     return (
       <>
         Revenue <span style={{ color: tone, fontWeight: UX.fwMedium }}>{delta}</span> vs last {viewMode === 'week' ? 'week' : 'month'} — {mix}.
@@ -472,11 +526,19 @@ function RevenueHeadline({ totalRev, prevRev, foodRev, bevRev, takeaway, viewMod
   )
 }
 
-function buildRevenueContext(sum: any, totalCovers: number, takeaway: number, dineIn: number): string | undefined {
+function buildRevenueContext({ totalRev, totalCovers, takeaway, dineIn, foodRev, bevRev, hasChannelData, foodOnly }: any): string | undefined {
   const parts: string[] = []
+  // Channel split — surface the same 63/37 that the Channel Split card
+  // shows, so the hero and the card don't contradict each other.
+  if (hasChannelData && totalRev > 0) {
+    const dinePct = Math.round((dineIn / totalRev) * 100)
+    const takePct = Math.round((takeaway / totalRev) * 100)
+    if (dineIn > 0 && takeaway > 0)      parts.push(`dine-in ${dinePct}% / takeaway ${takePct}%`)
+    else if (takeaway > 0)               parts.push(`takeaway only (6% VAT)`)
+    else if (dineIn > 0)                 parts.push(`dine-in only`)
+  }
   if (totalCovers > 0) parts.push(`${totalCovers} covers`)
-  if (takeaway > 0) parts.push(`takeaway ${Math.round(takeaway).toLocaleString('en-GB').replace(/,/g, ' ')} kr`)
-  else if (dineIn > 0) parts.push('no takeaway data yet')
+  if (foodOnly)        parts.push(`beverage shows 0 kr — check POS sync if this seems wrong`)
   if (!parts.length) return undefined
   return parts.join(' · ')
 }
