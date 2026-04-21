@@ -250,13 +250,7 @@ Return ONLY valid JSON with this exact shape and nothing else:
         "net_profit":   0
       },
       "lines": [
-        {
-          "label":           "Bankavgifter",
-          "category":        "revenue" | "food_cost" | "staff_cost" | "other_cost" | "depreciation" | "financial",
-          "amount":          340,                    // FULL SEK — positive for cost lines and revenue
-          "fortnox_account": 6570,
-          "note":            null
-        }
+        { "label": "Bankavgifter", "amount": 340, "account": 6570 }
       ]
     }
   ]
@@ -290,12 +284,16 @@ Return ONLY the JSON object.`
     // ── Single-shot Haiku extraction ───────────────────────────────────
     // Reverted the peek+parallel pipeline after real-world tests showed
     // Anthropic's concurrent-connection tier cap made parallel fills
-    // unreliable on multi-month PDFs. A single Haiku call with 24 000
-    // output tokens handles any Fortnox report within Vercel's 300 s
-    // function timeout. Slower on 12-month PDFs (~2 min) but reliably
-    // completes — "slow and done" beats "fast and stuck".
+    // unreliable on multi-month PDFs. A single Haiku call handles any
+    // Fortnox report within Vercel's 300 s function timeout.
+    //
+    // max_tokens 48 000 fits a 12-month × ~40-line Resultatrapport —
+    // prior 24 000 truncated mid-month on Rosali 2025. Well under
+    // Haiku 4.5's 64k output ceiling. The slim line schema below (no
+    // `category`/`subcategory`/`note` fields — server enriches from the
+    // Swedish label lookup) keeps the output tokens manageable.
     await writeProgress('Extracting with Haiku…')
-    const response = await runClaude({ prompt, maxTokens: 24000, cachePdf: false })
+    const response = await runClaude({ prompt, maxTokens: 48000, cachePdf: false })
     totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
     totalOutputTokens += (response as any).usage?.output_tokens ?? 0
 
@@ -329,7 +327,11 @@ Return ONLY the JSON object.`
           ? fromAI
           : looked.category
         const subcategory = looked.subcategory
-        const fortnoxAccount = Number.isFinite(Number(l?.fortnox_account)) ? Number(l.fortnox_account) : null
+        // Accept both the old "fortnox_account" field and the new slim
+        // "account" field — the prompt schema was shortened to save
+        // output tokens on multi-month PDFs.
+        const acctRaw = l?.fortnox_account ?? l?.account
+        const fortnoxAccount = Number.isFinite(Number(acctRaw)) ? Number(acctRaw) : null
         return { label_sv: label, category, subcategory, amount, fortnox_account: fortnoxAccount }
       }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))
     }
