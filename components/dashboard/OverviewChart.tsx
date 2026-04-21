@@ -286,15 +286,9 @@ export default function OverviewChart({
       padding: '18px 20px', marginBottom: 16,
     }}>
 
-      {/* Title row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 500, color: '#111', letterSpacing: '-.01em', lineHeight: 1.2 }}>
-            {periodLabel}
-          </div>
-          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{businessName}</div>
-        </div>
-      </div>
+      {/* Title row removed — period label already shown on the period dropdown
+          button below and business name is in the sidebar. Duplicate branding
+          per FIX-PROMPT § Phase 1. */}
 
       {/* Controls row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' as const, gap: 10, marginBottom: 14 }}>
@@ -426,46 +420,9 @@ export default function OverviewChart({
         </div>
       </div>
 
-      {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 14 }}>
-        <KpiBlock
-          label={hasFilter ? `Revenue (${visibleDays.length} days)` : 'Revenue'}
-          value={fmtKr(kpi.revenue)}
-          compareMode={compareMode}
-          compareLabel={compareLabelFor(compareMode, isWeek)}
-          fcast={kpi.revenueFcast}
-          fmtKr={fmtKr}
-          higherBetter
-        />
-        <KpiBlock
-          label="Labour cost"
-          value={fmtKr(kpi.labour)}
-          compareMode={compareMode}
-          compareLabel={compareLabelFor(compareMode, isWeek)}
-          fcast={kpi.labourFcast}
-          fmtKr={fmtKr}
-          higherBetter={false}
-        />
-        <KpiBlock
-          label="Labour %"
-          value={kpi.revenue > 0 ? fmtPct(kpi.labourPct) : '—'}
-          compareMode={compareMode}
-          compareLabel={compareLabelFor(compareMode, isWeek)}
-          fcast={kpi.labourPctFcast}
-          fmtKr={(v: number) => fmtPct(v)}
-          higherBetter={false}
-          isPct
-        />
-        <KpiBlock
-          label="Gross margin"
-          value={fmtKr(kpi.margin)}
-          compareMode={compareMode}
-          compareLabel={compareLabelFor(compareMode, isWeek)}
-          fcast={kpi.marginFcast}
-          fmtKr={fmtKr}
-          higherBetter
-        />
-      </div>
+      {/* KPI strip removed per FIX-PROMPT § Phase 1 — the same four numbers
+          (Revenue / Labour / Labour % / Gross margin) already live in the
+          page-hero SupportingStats. Keeping them here duplicated the hero. */}
 
       {/* Chart card */}
       <div style={{
@@ -491,6 +448,13 @@ export default function OverviewChart({
             <pattern id="pk-pred" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(-45)">
               <rect width="8" height="8" fill={C.predFill1} />
               <rect width="4" height="8" fill={C.predFill2} />
+            </pattern>
+            {/* Predicted-labour fill — same stripe style in burnt-orange
+                tones so predicted labour reads as "planned cost" rather than
+                a solid actual. */}
+            <pattern id="pk-pred-lab" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(-45)">
+              <rect width="8" height="8" fill="#fed7aa" />
+              <rect width="4" height="8" fill="#ffedd5" />
             </pattern>
           </defs>
 
@@ -524,7 +488,8 @@ export default function OverviewChart({
             const cx  = xAt(i)
             const rev = shownRev(d)
             const lab = shownLabour(d)
-            const hasPred = !d.revenue && d.pred && d.pred.est_revenue > 0
+            const hasPred    = !d.revenue    && d.pred && d.pred.est_revenue  > 0
+            const hasPredLab = !d.staff_cost && d.pred && (d.pred.planned_cost ?? 0) > 0
 
             const fcast = dayForecast(d, compareMode)
 
@@ -566,7 +531,10 @@ export default function OverviewChart({
                     width={barW}
                     height={Math.max(1, yAt(-lab) - zeroY)}
                     rx={barR} ry={barR}
-                    fill={C.lab}
+                    fill={hasPredLab ? 'url(#pk-pred-lab)' : C.lab}
+                    stroke={hasPredLab ? '#fdba74' : 'none'}
+                    strokeWidth={hasPredLab ? 0.6 : 0}
+                    opacity={hasPredLab ? 0.85 : 1}
                   />
                 )}
 
