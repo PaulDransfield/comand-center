@@ -45,6 +45,8 @@ export async function POST(req: NextRequest) {
   const guard = await requireAdmin(req, { orgId: effectiveOrgId!, businessId })
   if ('ok' in guard === false) return guard as NextResponse
 
+  const NO_CACHE = { 'Cache-Control': 'no-store, max-age=0, must-revalidate' }
+
   const started = Date.now()
   const { aggregateMetrics } = await import('@/lib/sync/aggregate')
   const results: any[] = []
@@ -71,5 +73,5 @@ export async function POST(req: NextRequest) {
     status:      errors === 0 ? 'success' : 'partial',
   })
 
-  return NextResponse.json({ ok: errors === 0, years: results })
+  return NextResponse.json({ ok: errors === 0, years: results }, { headers: NO_CACHE })
 }
