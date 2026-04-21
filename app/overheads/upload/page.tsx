@@ -340,7 +340,17 @@ function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
           }}>
             <span style={{ color: UX.ink1, fontWeight: UX.fwMedium, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
               {u.pdf_filename}
-              {u.error_message && <div style={{ fontSize: UX.fsMicro, color: UX.redInk, marginTop: 2 }}>{u.error_message}</div>}
+              {u.error_message && (
+                <div style={{
+                  fontSize:  UX.fsMicro,
+                  // While extracting, error_message is a live progress
+                  // indicator ("Extracting 4/12 months…") — render it
+                  // in indigo, not red. Red only when status='failed'.
+                  color:     (u.status === 'extracting' || u.status === 'pending') ? UX.indigo : UX.redInk,
+                  marginTop: 2,
+                  whiteSpace: 'normal' as const,
+                }}>{u.error_message}</div>
+              )}
             </span>
             <span style={{ color: UX.ink3, fontSize: UX.fsMicro }}>{periodLabel}</span>
             <span style={{ textAlign: 'right' as const, color: UX.ink4, fontSize: UX.fsMicro, fontVariantNumeric: 'tabular-nums' as const }}>

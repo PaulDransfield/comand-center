@@ -277,7 +277,17 @@ Return ONLY the JSON object.`
   let totalInputTokens  = 0
   let totalOutputTokens = 0
 
+  // Progress writer — updates error_message with a phase string so the
+  // UI can show "Peeking…" → "Extracting month 4/12…" → success. Using
+  // error_message because it's already a text column and not semantically
+  // load-bearing while status='extracting'.
+  const writeProgress = async (msg: string) => {
+    try { await db.from('fortnox_uploads').update({ error_message: msg }).eq('id', upload_id) }
+    catch { /* non-fatal */ }
+  }
+
   try {
+    await writeProgress('Peeking at PDF structure…')
     // ── Peek first ─────────────────────────────────────────────────────
     // Identify periods + scale + confidence in one small call. The PDF
     // is marked cache_control=ephemeral so the follow-up fill calls (if
@@ -339,12 +349,17 @@ Return ONLY JSON:
   ]
 }`
 
+      await writeProgress(`Peek detected ${peekPeriods.length} months — extracting 0/${peekPeriods.length}…`)
+      let completed = 0
       // Cap concurrency at 4 — Anthropic's concurrent-connection ceiling
       // trips at 5+ on lower tiers.  12 months / 4 concurrent × ~15 s
       // per call ≈ 45 s wall time, still a 3x win over the serial path.
-      const fillResps = await runPooled(peekPeriods, 4, (p) =>
-        runClaude({ prompt: monthPromptFor(p), maxTokens: 4000, cachePdf: true }),
-      )
+      const fillResps = await runPooled(peekPeriods, 4, async (p) => {
+        const r = await runClaude({ prompt: monthPromptFor(p), maxTokens: 4000, cachePdf: true })
+        completed++
+        writeProgress(`Extracting ${completed}/${peekPeriods.length} months…`).catch(() => {})
+        return r
+      })
       const filled: any[] = fillResps.map((resp: any, i: number) => {
         totalInputTokens  += resp.usage?.input_tokens  ?? 0
         totalOutputTokens += resp.usage?.output_tokens ?? 0
