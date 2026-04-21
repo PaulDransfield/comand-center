@@ -16,6 +16,16 @@ const MONTHS = ['January','February','March','April','May','June','July','August
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => n.toFixed(1) + '%'
 
+function QuickStat({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' }) {
+  const valueColour = tone === 'bad' ? '#fca5a5' : tone === 'ok' ? '#86efac' : 'white'
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.65)', letterSpacing: '.05em', textTransform: 'uppercase' as const, fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: valueColour, marginTop: 1 }}>{value}</div>
+    </div>
+  )
+}
+
 export default function BudgetPage() {
   const now = new Date()
   const [businesses, setBusinesses] = useState<Business[]>([])
@@ -36,6 +46,9 @@ export default function BudgetPage() {
   const [analysis, setAnalysis] = useState<any>(null)                       // { month, result }
   // Shared AI limit-reached flag (either Generate or Analyse triggered a 429 with upgrade:true)
   const [aiLimitHit, setAiLimitHit] = useState<{limit:number,used:number,plan:string}|null>(null)
+  // AI Budget Coach — current-month pacing + prescription
+  const [coach,        setCoach]        = useState<any>(null)
+  const [coachLoading, setCoachLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
@@ -63,6 +76,20 @@ export default function BudgetPage() {
   }, [selected, year])
 
   useEffect(() => { if (selected) load() }, [selected])
+
+  // Fetch the AI Budget Coach pacing narrative for the current month as soon
+  // as a business is picked. Cheap — one Haiku call, ~200 tokens.
+  useEffect(() => {
+    if (!selected) return
+    let cancelled = false
+    setCoachLoading(true); setCoach(null)
+    fetch(`/api/budgets/coach?business_id=${selected}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => { if (!cancelled && j && !j.error) setCoach(j) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setCoachLoading(false) })
+    return () => { cancelled = true }
+  }, [selected])
 
   async function save(month: number) {
     setSaving(true)
@@ -153,8 +180,10 @@ export default function BudgetPage() {
     <AppShell>
       <div className="page-wrap" style={{ maxWidth: 1000 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-          <div><h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Budget vs Actual</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Full year comparison · {year}</p></div>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Budget vs Actual</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Your plan for the year: expected revenue + cost % targets. Each month shows actual vs plan with AI pacing advice.</p>
+          </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
             <button
               onClick={generateWithAI}
@@ -180,6 +209,44 @@ export default function BudgetPage() {
             </select>
           </div>
         </div>
+
+        {/* ───────────────────────────────────────────────────────────
+            AI Budget Coach — current-month pacing + one prescription.
+            Answers "am I on track + what do I do next week?". Always at
+            the top so the page leads with action, not with a table.
+        ─────────────────────────────────────────────────────────── */}
+        {(coachLoading || coach?.narrative || coach?.has_budget === false) && (
+          <div style={{ background: 'linear-gradient(135deg, #1e1b4b, #312e81)', borderRadius: 14, padding: '22px 26px', marginBottom: 16, color: 'white' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ width: 26, height: 26, background: 'rgba(99,102,241,0.35)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>✦</div>
+              <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '2px 8px', borderRadius: 4, fontWeight: 700, letterSpacing: '.05em' }}>AI BUDGET COACH</span>
+            </div>
+            {coachLoading ? (
+              <div style={{ fontSize: 14, color: 'rgba(199,210,254,0.85)', fontStyle: 'italic' as const }}>Checking this month's pace…</div>
+            ) : coach?.has_budget === false ? (
+              <div style={{ fontSize: 14, color: 'rgba(199,210,254,0.9)', lineHeight: 1.6 }}>
+                {coach.hint || 'Set a budget for this month to see pacing and AI advice.'}
+              </div>
+            ) : coach?.narrative ? (
+              <>
+                <div style={{ fontSize: 15, fontWeight: 400, lineHeight: 1.65, fontFamily: 'Georgia, serif', whiteSpace: 'pre-wrap' as const }}>
+                  {coach.narrative}
+                </div>
+                {/* Quick-stat row + scheduling jump when labour is the lever */}
+                <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap' as const, gap: 16, alignItems: 'center' }}>
+                  <QuickStat label="Revenue MTD"    value={fmtKr(coach.mtd.revenue)} />
+                  <QuickStat label="Projected"      value={fmtKr(coach.projected.revenue)} />
+                  <QuickStat label="Labour %"       value={fmtPct(coach.projected.labour_pct)} tone={coach.labour_is_the_lever ? 'bad' : 'ok'} />
+                  {coach.labour_is_the_lever && (
+                    <a href="/scheduling" style={{ marginLeft: 'auto', padding: '8px 16px', background: '#6366f1', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' as const }}>
+                      Open scheduling → trim next week
+                    </a>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
 
         {/* AI daily limit hit — reuse the AskAI upsell card */}
         {aiLimitHit && (

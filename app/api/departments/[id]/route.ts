@@ -85,13 +85,23 @@ export async function GET(
     }
   }
 
-  // Revenue daily trend — fill every date in range
-  const trend: Array<{ date: string; revenue: number; covers: number }> = []
+  // Per-day staff cost — dept-scoped so the detail page can render a margin
+  // line and labour bar matching the dashboard's overview chart treatment.
+  const staffByDate: Record<string, number> = {}
+  for (const s of staffLogs ?? []) {
+    const cost = s.cost_actual > 0 ? s.cost_actual : (s.estimated_salary ?? 0)
+    if (!s.shift_date) continue
+    staffByDate[s.shift_date] = (staffByDate[s.shift_date] ?? 0) + cost
+  }
+
+  // Revenue + labour daily trend — fill every date in range
+  const trend: Array<{ date: string; revenue: number; covers: number; staff_cost: number }> = []
   const cur = new Date(from)
   const end = new Date(to)
   while (cur <= end) {
     const d = cur.toISOString().slice(0, 10)
-    trend.push({ date: d, ...(revByDate[d] ?? { revenue: 0, covers: 0 }) })
+    const rev = revByDate[d] ?? { revenue: 0, covers: 0 }
+    trend.push({ date: d, ...rev, staff_cost: Math.round(staffByDate[d] ?? 0) })
     cur.setUTCDate(cur.getUTCDate() + 1)
   }
 

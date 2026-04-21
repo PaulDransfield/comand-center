@@ -3,10 +3,11 @@
 // app/departments/[id]/page.tsx — Single department detail with W/M navigator
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { deptColor } from '@/lib/constants/colors'
+import OverviewChart from '@/components/dashboard/OverviewChart'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number | null) => n != null ? n.toFixed(1) + '%' : '—'
@@ -32,19 +33,43 @@ function getMonthBounds(offset = 0) {
   return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, firstDay: d, daysInMonth: last.getDate() }
 }
 
-export default function DepartmentDetailPage() {
+// Next 14 requires client components using useSearchParams to be inside a
+// <Suspense> boundary or the static prerender bails out (FIXES.md §0d).
+export default function DepartmentDetailPageWrapper() {
+  return (
+    <Suspense fallback={<AppShell><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div></AppShell>}>
+      <DepartmentDetailPage />
+    </Suspense>
+  )
+}
+
+function DepartmentDetailPage() {
   const params   = useParams()
   const router   = useRouter()
+  const search   = useSearchParams()
   const deptName = decodeURIComponent(params.id as string)
+
+  // Initial period — if `?year=YYYY&month=M` is passed (e.g. from the
+  // forecast page's dept drill-down), we compute the matching monthOffset
+  // so the user lands on the period they clicked from. Otherwise default to
+  // current month. Week param is accepted too for future deep-links.
+  const qYear  = Number(search?.get('year')  ?? 0)
+  const qMonth = Number(search?.get('month') ?? 0)
+  const qView  = search?.get('view') as 'week' | 'month' | null
+  const now0   = new Date()
+  const initialMonthOffset = (qYear && qMonth)
+    ? (qYear - now0.getFullYear()) * 12 + (qMonth - (now0.getMonth() + 1))
+    : 0
+  const initialView: 'week' | 'month' = qView === 'week' ? 'week' : 'month'
 
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
-  const [monthOffset, setMonthOffset] = useState(0)
+  const [monthOffset, setMonthOffset] = useState(initialMonthOffset)
   // Default to month — week view lands on the current week which, early in
   // the week, has no synced revenue/labour data yet and shows all dashes.
   // Month matches the dept list's default and gives the user useful numbers
   // on first load. They can flip to week once they're exploring.
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
+  const [viewMode,    setViewMode]    = useState<'week'|'month'>(initialView)
   const [data,        setData]        = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
   const [tooltip,     setTooltip]     = useState<any>(null)
@@ -72,7 +97,10 @@ export default function DepartmentDetailPage() {
   const staff   = data?.staff ?? []
   const color   = data?.color ?? deptColor(deptName)
 
-  // Chart data
+  // Chart data — shaped for the shared OverviewChart so /departments/[id]
+  // has the same visual treatment as /dashboard (bars + gross-margin line).
+  // Dept-level AI predictions don't exist yet (the scheduling AI is business-
+  // level), so `pred` is always null here — the chart handles that cleanly.
   const dayCount = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
   const chartDays = Array.from({ length: dayCount }, (_, i) => {
     const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
@@ -80,9 +108,22 @@ export default function DepartmentDetailPage() {
     const ds = localDate(d)
     const row = trend.find((t: any) => t.date === ds)
     const dayIdx = (d.getDay() + 6) % 7
-    return { dateStr: ds, revenue: row?.revenue ?? 0, covers: row?.covers ?? 0, dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1), isToday: ds === localDate(now), isFuture: d > now, dayIdx }
+    const labourPct = row?.revenue > 0 && row?.staff_cost > 0 ? (row.staff_cost / row.revenue) * 100 : null
+    return {
+      date:       ds,
+      dateStr:    ds,
+      revenue:    row?.revenue ?? 0,
+      staff_cost: row?.staff_cost ?? 0,
+      staff_pct:  labourPct,
+      covers:     row?.covers ?? 0,
+      dayName:    viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
+      isToday:    ds === localDate(now),
+      isFuture:   d > now,
+      dayIdx,
+      pred:       null,
+      prevDay:    null,
+    }
   })
-  const maxRev = Math.max(...chartDays.map(d => d.revenue), 1)
 
   return (
     <AppShell>
@@ -195,34 +236,17 @@ export default function DepartmentDetailPage() {
               </div>
             )}
 
-            {/* Revenue chart */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 16 }}>Daily revenue — {periodLabel}</div>
-              <div style={{ display: 'flex', gap: viewMode === 'week' ? 8 : 2, height: 160, alignItems: 'flex-end' }}>
-                {chartDays.map((day) => {
-                  const h = day.revenue > 0 ? Math.max((day.revenue / maxRev) * 140, 3) : 0
-                  const isHover = tooltip?.dateStr === day.dateStr
-                  return (
-                    <div key={day.dateStr} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: day.revenue > 0 ? 'pointer' : 'default' }}
-                      onMouseEnter={() => day.revenue > 0 && setTooltip(day)} onMouseLeave={() => setTooltip(null)}>
-                      <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        {day.revenue > 0 ? (
-                          <div style={{ height: h, borderRadius: '4px 4px 0 0', background: color, opacity: isHover ? 1 : day.isFuture ? 0.3 : 0.8, boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none' }} />
-                        ) : <div style={{ height: 2, background: '#e5e7eb', borderRadius: 2 }} />}
-                      </div>
-                      <div style={{ fontSize: viewMode === 'week' ? 11 : 8, color: day.isToday ? '#6366f1' : '#9ca3af', fontWeight: day.isToday ? 700 : 400 }}>{day.dayName}</div>
-                    </div>
-                  )
-                })}
-              </div>
-              {tooltip && (
-                <div style={{ marginTop: 12, padding: '10px 14px', background: '#1a1f2e', borderRadius: 10, display: 'flex', gap: 20 }}>
-                  <span style={{ fontSize: 11, color: '#9ca3af' }}>{new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{fmtKr(tooltip.revenue)}</span>
-                  {tooltip.covers > 0 && <span style={{ fontSize: 12, color: '#86efac' }}>{tooltip.covers} covers</span>}
-                </div>
-              )}
-            </div>
+            {/* Daily revenue + labour + gross-margin line — same treatment as
+                the dashboard overview chart, scoped to this department. */}
+            <OverviewChart
+              days={chartDays}
+              viewMode={viewMode}
+              periodLabel={`${deptName} — ${periodLabel}`}
+              businessName={deptName}
+              targetLabourPct={40}
+              fmtKr={fmtKr}
+              fmtPct={(n: any) => n == null ? '—' : (Math.round(n * 10) / 10).toFixed(1) + '%'}
+            />
 
             {/* Staff table */}
             {staff.length > 0 && (

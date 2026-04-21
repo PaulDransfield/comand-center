@@ -382,13 +382,25 @@ export default function ForecastPage() {
                                         const total = depts.reduce((s: number, dep: string) => s + (deptRow[dep]?.cost ?? 0), 0)
                                         const pct   = total > 0 ? (d.cost / total) * 100 : 0
                                         const staffCount = deptData?.totals?.[dept]?.staff ?? 0
+                                        const deptHref = `/departments/${encodeURIComponent(dept)}?year=${yr}&month=${m}`
                                         return (
-                                          <tr key={dept} style={{ borderBottom: '0.5px solid #f3f4f6' }}>
+                                          <tr
+                                            key={dept}
+                                            onClick={(e) => { e.stopPropagation(); window.location.href = deptHref }}
+                                            style={{
+                                              borderBottom: '0.5px solid #f3f4f6',
+                                              cursor: 'pointer',
+                                              transition: 'background .1s',
+                                            }}
+                                            onMouseEnter={e => (e.currentTarget.style.background = '#fafbff')}
+                                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                          >
                                             <td style={{ padding: '7px 10px' }}>
                                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: DEPT_COLORS[dept] ?? '#9ca3af', flexShrink: 0 }} />
                                                 <span style={{ fontWeight: 500, color: '#111' }}>{dept}</span>
                                                 <span style={{ fontSize: 10, color: '#9ca3af' }}>{pct.toFixed(0)}% of total</span>
+                                                <span style={{ marginLeft: 'auto', fontSize: 11, color: '#6366f1', fontWeight: 600 }}>open →</span>
                                               </div>
                                             </td>
                                             <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6b7280' }}>{staffCount}</td>

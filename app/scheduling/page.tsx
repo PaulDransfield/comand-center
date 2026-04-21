@@ -73,6 +73,11 @@ export default function SchedulingPage() {
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiError,      setAiError]      = useState('')
 
+  // Progressive disclosure — historical pattern + AI observations start
+  // collapsed so the page lead with the prescriptive AI schedule only.
+  const [showHistory,      setShowHistory]      = useState(false)
+  const [showObservations, setShowObservations] = useState(false)
+
   useEffect(() => {
     const sync = () => {
       const saved = localStorage.getItem('cc_selected_biz')
@@ -228,6 +233,43 @@ export default function SchedulingPage() {
           <>
 
             {/* ═══════════════════════════════════════════════════════
+                AI-SUGGESTED SCHEDULE (next week) — promoted to the top.
+                This is the most valuable, most decisive output of the
+                page. Owner reads: save X kr / trim Y hours, done.
+            ═══════════════════════════════════════════════════════ */}
+            <AiSuggestedSchedule
+              loading={aiLoading}
+              error={aiError}
+              data={aiSched}
+              fmt={fmtKr}
+              fmtHrs={fmtH}
+            />
+
+            {/* Progressive disclosure — historical pattern is supporting
+                context for the prescription above, not the lead. Click to
+                expand; keeps the page scannable. */}
+            <button
+              onClick={() => setShowHistory(s => !s)}
+              style={{
+                width: '100%', padding: '10px 16px', marginBottom: showHistory ? 12 : 16,
+                background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#111', textAlign: 'left' as const,
+              }}
+            >
+              <span>
+                How this period performed
+                <span style={{ fontWeight: 400, color: '#9ca3af', marginLeft: 8, fontSize: 12 }}>
+                  · labour {labourPct !== null ? fmtPct(labourPct) : '—'} · rev/hr {summary?.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : '—'}
+                  {leanCount > 0 && ` · ${leanCount} lean day${leanCount !== 1 ? 's' : ''}`}
+                  {overstaffedList.length > 0 && ` · ${overstaffedList.length} overstaffed`}
+                </span>
+              </span>
+              <span style={{ color: '#6b7280', fontSize: 14 }}>{showHistory ? '▾' : '▸'}</span>
+            </button>
+
+            {showHistory && (<>
+            {/* ═══════════════════════════════════════════════════════
                 HERO SCORECARD — labour % vs target is the one number
                 that tells the operator whether this period worked.
             ═══════════════════════════════════════════════════════ */}
@@ -382,12 +424,35 @@ export default function SchedulingPage() {
                 </span>
               </div>
             </div>
+            </>)}{/* end showHistory */}
 
             {/* ═══════════════════════════════════════════════════════
-                OBSERVATIONS — AI-generated specifics. Falls back to
-                the upgrade card when no recommendations exist yet.
+                OBSERVATIONS — AI-generated specifics. Collapsed by
+                default (secondary to the AI schedule above). Falls back
+                to the upgrade card when no recommendations exist yet.
             ═══════════════════════════════════════════════════════ */}
-            {recommendation ? (
+            <button
+              onClick={() => setShowObservations(s => !s)}
+              style={{
+                width: '100%', padding: '10px 16px', marginBottom: showObservations ? 12 : 16,
+                background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#111', textAlign: 'left' as const,
+              }}
+            >
+              <span>
+                {recommendation ? 'AI observations from the last 90 days' : 'Weekly AI observations'}
+                <span style={{ fontWeight: 400, color: '#9ca3af', marginLeft: 8, fontSize: 12 }}>
+                  {recommendation
+                    ? `· generated ${new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                    : '· available on Group plan'}
+                </span>
+              </span>
+              <span style={{ color: '#6b7280', fontSize: 14 }}>{showObservations ? '▾' : '▸'}</span>
+            </button>
+
+            {showObservations && (
+              recommendation ? (
               <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                   <div>
@@ -428,20 +493,7 @@ export default function SchedulingPage() {
                   </div>
                 </div>
               </div>
-            )}
-
-            {/* ═══════════════════════════════════════════════════════
-                AI-SUGGESTED SCHEDULE (next week) — forward-looking,
-                always shown regardless of the W/M period selector.
-                Cuts-only policy: never recommends adding hours.
-            ═══════════════════════════════════════════════════════ */}
-            <AiSuggestedSchedule
-              loading={aiLoading}
-              error={aiError}
-              data={aiSched}
-              fmt={fmtKr}
-              fmtHrs={fmtH}
-            />
+            ))}
           </>
         )}
       </div>
