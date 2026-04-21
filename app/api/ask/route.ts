@@ -18,6 +18,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE }                from '@/lib/ai/scope'
+import { log }                       from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -176,8 +177,6 @@ export async function POST(req: NextRequest) {
     await incrementAiUsage(supabase, auth.orgId)
 
     // ── 6. Write full audit row — tokens, cost, user, duration ─
-    // Non-fatal: the helper logs and swallows any error so a slow DB write
-    // doesn't break the user's response.
     const inputTokens  = (response as any).usage?.input_tokens  ?? 0
     const outputTokens = (response as any).usage?.output_tokens ?? 0
     await logAiRequest(supabase, {
@@ -193,8 +192,31 @@ export async function POST(req: NextRequest) {
       duration_ms:      Date.now() - startedAt,
     })
 
+    log.info('ask answered', {
+      route:         'api/ask',
+      duration_ms:   Date.now() - startedAt,
+      org_id:        auth.orgId,
+      user_id:       auth.userId,
+      page,
+      tier,
+      model,
+      input_tokens:  inputTokens,
+      output_tokens: outputTokens,
+      status:        'success',
+    })
+
   } catch (err: any) {
-    console.error('Claude API error:', err)
+    log.error('ask claude failed', {
+      route:       'api/ask',
+      duration_ms: Date.now() - startedAt,
+      org_id:      auth.orgId,
+      user_id:     auth.userId,
+      page,
+      tier,
+      model,
+      error:       err?.message ?? String(err),
+      status:      'error',
+    })
     return NextResponse.json({ error: 'AI service unavailable. Please try again.' }, { status: 503 })
   }
 

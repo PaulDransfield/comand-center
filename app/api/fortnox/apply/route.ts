@@ -13,8 +13,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { log } from '@/lib/log/structured'
 
-export const runtime = 'nodejs'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
@@ -24,6 +27,7 @@ export async function POST(req: NextRequest) {
   const { upload_id, overrides } = body as { upload_id?: string; overrides?: any }
   if (!upload_id) return NextResponse.json({ error: 'upload_id required' }, { status: 400 })
 
+  const started = Date.now()
   const db = createAdminClient()
 
   const { data: upload, error: getErr } = await db
@@ -107,6 +111,17 @@ export async function POST(req: NextRequest) {
       runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
         .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
     } catch { /* non-fatal */ }
+
+    log.info('fortnox-apply complete', {
+      route:       'fortnox/apply',
+      duration_ms: Date.now() - started,
+      kind:        'multi_month',
+      upload_id,
+      org_id:      auth.orgId,
+      business_id: upload.business_id,
+      periods:     periodsArr.length,
+      status:      'success',
+    })
 
     return NextResponse.json({
       ok: true,
@@ -197,6 +212,19 @@ export async function POST(req: NextRequest) {
     runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
       .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
   } catch { /* non-fatal */ }
+
+  log.info('fortnox-apply complete', {
+    route:       'fortnox/apply',
+    duration_ms: Date.now() - started,
+    kind:        'monthly',
+    upload_id,
+    org_id:      auth.orgId,
+    business_id: upload.business_id,
+    year,
+    month,
+    line_count:  singleResult.line_count,
+    status:      'success',
+  })
 
   return NextResponse.json({
     ok: true,

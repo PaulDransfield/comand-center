@@ -27,6 +27,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe                        from 'stripe'
 import { createAdminClient }         from '@/lib/supabase/server'
+import { log }                       from '@/lib/log/structured'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' })
 
@@ -67,26 +68,47 @@ export async function POST(req: NextRequest) {
     .insert({ event_id: event.id, event_type: event.type })
 
   if (dedupErr) {
-    // Unique constraint violation = replay = already done.
     if (dedupErr.code === '23505' || /duplicate key/i.test(dedupErr.message ?? '')) {
-      console.log(`[stripe-webhook] duplicate event ${event.id} — skipping`)
+      log.info('stripe-webhook duplicate event skipped', {
+        route:      'stripe/webhook',
+        event_id:   event.id,
+        event_type: event.type,
+        status:     'duplicate',
+      })
       return NextResponse.json({ received: true, duplicate: true, type: event.type })
     }
-    // Table missing (migration not run) or other DB error — let Stripe
-    // retry rather than silently losing the event.
-    console.error('[stripe-webhook] dedup insert failed:', dedupErr)
+    log.error('stripe-webhook dedup insert failed', {
+      route:      'stripe/webhook',
+      event_id:   event.id,
+      event_type: event.type,
+      error:      dedupErr.message,
+      status:     'error',
+    })
     return NextResponse.json({ error: `DB error: ${dedupErr.message}` }, { status: 500 })
   }
 
   // ── 4. Process ───────────────────────────────────────────────────
+  const started = Date.now()
   try {
     await handleEvent(event, supabase)
+    log.info('stripe-webhook processed', {
+      route:       'stripe/webhook',
+      duration_ms: Date.now() - started,
+      event_id:    event.id,
+      event_type:  event.type,
+      status:      'success',
+    })
     return NextResponse.json({ received: true, type: event.type })
   } catch (err: any) {
-    // Remove the dedup row so the Stripe retry actually re-runs the
-    // handler (otherwise the dedup check would no-op it).
     await supabase.from('stripe_processed_events').delete().eq('event_id', event.id)
-    console.error(`[stripe-webhook] handler failed for ${event.type}:`, err)
+    log.error('stripe-webhook handler failed', {
+      route:       'stripe/webhook',
+      duration_ms: Date.now() - started,
+      event_id:    event.id,
+      event_type:  event.type,
+      error:       err?.message ?? 'handler error',
+      status:      'error',
+    })
     return NextResponse.json({ error: err?.message ?? 'handler error' }, { status: 500 })
   }
 }

@@ -28,6 +28,7 @@ import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
+import { log }          from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 300      // Haiku on a 12-month PDF fits in 300 s with the compact schema
@@ -144,6 +145,7 @@ export async function POST(req: NextRequest) {
     }).catch(() => {})
   }
 
+  const jobStarted = Date.now()
   try {
     const result = await runExtraction(db, job, writeProgress)
 
@@ -155,11 +157,30 @@ export async function POST(req: NextRequest) {
       updated_at:   new Date().toISOString(),
     }).eq('id', job.id)
 
+    log.info('extract-worker job complete', {
+      route:       'fortnox/extract-worker',
+      duration_ms: Date.now() - jobStarted,
+      job_id:      job.id,
+      upload_id:   job.upload_id,
+      org_id:      job.org_id,
+      attempt:     job.attempts,
+      status:      'success',
+    })
+
     waitUntil(triggerNext())
     return NextResponse.json({ ok: true, job_id: job.id, ...result })
   } catch (e: any) {
     const msg = String(e?.message ?? e)
-    console.error('[extract-worker] job failed:', { job_id: job.id, upload_id: job.upload_id, msg })
+    log.error('extract-worker job failed', {
+      route:       'fortnox/extract-worker',
+      duration_ms: Date.now() - jobStarted,
+      job_id:      job.id,
+      upload_id:   job.upload_id,
+      org_id:      job.org_id,
+      attempt:     job.attempts,
+      error:       msg,
+      status:      'error',
+    })
 
     const attempt = Number(job.attempts ?? 0)      // already incremented by claim RPC
     const maxAttempts = Number(job.max_attempts ?? 3)
