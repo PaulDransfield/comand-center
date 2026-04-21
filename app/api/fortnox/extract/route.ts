@@ -301,6 +301,13 @@ Return ONLY the JSON object.`
           .map((p: any) => ({ year: Number(p?.year), month: Number(p?.month) }))
           .filter((p: { year: number; month: number }) => Number.isFinite(p.year))
       : []
+    console.log('[fortnox/extract] peek result:', {
+      periods:       peekPeriods.length,
+      scale:         peek?.scale_detected,
+      doc_type:      peek?.doc_type,
+      confidence:    peek?.confidence,
+      raw_length:    JSON.stringify(peek ?? {}).length,
+    })
     const detectedScale   = String(peek?.scale_detected ?? 'sek').toLowerCase()
     const peekDocType     = String(peek?.doc_type ?? 'pnl_monthly')
     const peekBizHint     = peek?.business_hint ?? null
@@ -378,7 +385,14 @@ Return ONLY JSON:
     } else {
       // Single-shot fallback path — the original prompt, for single-period
       // PDFs or when peek failed to enumerate periods.
-      const response = await runClaude({ prompt, maxTokens: 32000, cachePdf: false })
+      //
+      // Capped at 10 000 output tokens. The peek should catch multi-month
+      // PDFs and route them to the parallel path; if it didn't, Haiku
+      // trying to emit a full 12-month extraction here would grind for 3+
+      // minutes. 10 000 covers a single-month or annual-summary PDF
+      // comfortably and fails fast if we're in the wrong regime.
+      await writeProgress('Extracting single period (peek found no multi-month split)…')
+      const response = await runClaude({ prompt, maxTokens: 10000, cachePdf: false })
       totalInputTokens  += (response as any).usage?.input_tokens  ?? 0
       totalOutputTokens += (response as any).usage?.output_tokens ?? 0
 
