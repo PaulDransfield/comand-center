@@ -11,6 +11,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
+import { log }                       from '@/lib/log/structured'
+
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60
 
 // How many orgs need to share an error before we alert
 const ALERT_THRESHOLD = 2
@@ -101,13 +106,24 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 4. Return summary ──────────────────────────────────────────
+  const duration_ms = Date.now() - started
+  log.info('health-check complete', {
+    route:       'cron/health-check',
+    duration_ms,
+    checked,
+    errors:      errors.length,
+    warnings:    warnings.length,
+    alerts_sent: alertsSent.length,
+    status:      errors.length === 0 ? 'success' : 'degraded',
+  })
+
   return NextResponse.json({
     ok:          true,
     checked,
     errors:      errors.length,
     warnings:    warnings.length,
     alerts_sent: alertsSent,
-    duration_ms: Date.now() - started,
+    duration_ms,
     timestamp:   new Date().toISOString(),
   })
 }
