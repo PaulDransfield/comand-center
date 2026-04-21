@@ -37,7 +37,7 @@ export default function HealthDashboard() {
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data)   return null
 
-  const { crons, ai, sync_by_provider, error_feed } = data
+  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits } = data
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
@@ -93,6 +93,57 @@ export default function HealthDashboard() {
             "Last run" is inferred from the latest row in the cron's output table — not an exact execution log. For true execution status, check Vercel cron logs.
           </div>
         </div>
+
+        {/* Extraction queue + webhook health */}
+        {extraction_queue && (
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14, marginBottom: 14 }}>
+            <div style={S.card}>
+              <div style={S.head}>Extraction queue (Fortnox PDFs)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10 }}>
+                <QStat label="Pending"      value={extraction_queue.pending}      tone={extraction_queue.pending > 10 ? 'warn' : 'neutral'} />
+                <QStat label="Processing"   value={extraction_queue.processing}   tone="neutral" />
+                <QStat label="Completed 1d" value={extraction_queue.completed_1d} tone="good" />
+                <QStat label="Dead"         value={extraction_queue.dead}         tone={extraction_queue.dead > 0 ? 'bad' : 'neutral'} />
+                <QStat label="Stale (>10m)" value={extraction_queue.stale}        tone={extraction_queue.stale > 0 ? 'warn' : 'neutral'} />
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: '#9ca3af' }}>
+                Sweeper runs every 2 min and retries dead/stale jobs. "Dead" {'>'} 0 = investigate.
+              </div>
+            </div>
+
+            <div style={S.card}>
+              <div style={S.head}>Stripe webhooks (24h)</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: '#111', letterSpacing: '-0.03em' }}>
+                {stripe_dedup?.processed_1d ?? 0}
+              </div>
+              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                unique events processed (duplicates skipped via event-id dedup)
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Rate-limit hits — surfaces compromised sessions / abusive clients */}
+        {rate_limit_hits && rate_limit_hits.length > 0 && (
+          <div style={{ ...S.card, marginBottom: 14, borderLeft: '3px solid #d97706' }}>
+            <div style={S.head}>Rate-limit hits (last 24h)</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+              <thead>
+                <tr><th style={th('left')}>Org</th><th style={th('left')}>Bucket</th><th style={th('right')}>Count</th><th style={th('right')}>Window start</th></tr>
+              </thead>
+              <tbody>
+                {rate_limit_hits.map((h: any, i: number) => (
+                  <tr key={i} style={{ borderTop: '1px solid #f3f4f6' }}>
+                    <td style={{ ...S.td, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>{h.org_id.slice(0, 8)}…</td>
+                    <td style={S.td}>{h.bucket}</td>
+                    <td style={{ ...S.td, textAlign: 'right', fontWeight: 700 }}>{h.count}</td>
+                    <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{fmt(h.window_start)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* AI spend + sync rates side-by-side */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
@@ -331,6 +382,17 @@ export default function HealthDashboard() {
         </div>
 
       </div>
+    </div>
+  )
+}
+
+// Small-stat tile used in the extraction-queue strip.
+function QStat({ label, value, tone }: { label: string; value: number; tone: 'good' | 'warn' | 'bad' | 'neutral' }) {
+  const colour = tone === 'good' ? '#15803d' : tone === 'warn' ? '#d97706' : tone === 'bad' ? '#dc2626' : '#111'
+  return (
+    <div style={{ padding: '10px 12px', background: '#fafbff', borderRadius: 8 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: colour, letterSpacing: '-0.02em' }}>{value}</div>
     </div>
   )
 }

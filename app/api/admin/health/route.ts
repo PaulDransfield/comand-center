@@ -8,7 +8,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { checkAdminSecret } from '@/lib/admin/check-secret'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 30
 
 function checkAuth(req: NextRequest): boolean {
   return checkAdminSecret(req)
@@ -83,6 +85,54 @@ export async function GET(req: NextRequest) {
     last_sync_at:   i.last_sync_at,
   }))
 
+  // ── Extraction queue snapshot ───────────────────────────────────
+  // Counts by status so the operator can see at a glance whether jobs
+  // are stuck. 'dead' > 0 warrants investigation (3 failed attempts).
+  const extractionQueue = { pending: 0, processing: 0, completed_1d: 0, failed: 0, dead: 0, stale: 0 }
+  try {
+    const oneDayAgo = new Date(now - 24 * 60 * 60_000).toISOString()
+    const tenMinAgo = new Date(now - 10 * 60_000).toISOString()
+    const [pend, proc, comp, dead, stale] = await Promise.all([
+      db.from('extraction_jobs').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      db.from('extraction_jobs').select('id', { count: 'exact', head: true }).eq('status', 'processing'),
+      db.from('extraction_jobs').select('id', { count: 'exact', head: true }).eq('status', 'completed').gte('completed_at', oneDayAgo),
+      db.from('extraction_jobs').select('id', { count: 'exact', head: true }).eq('status', 'dead'),
+      db.from('extraction_jobs').select('id', { count: 'exact', head: true }).eq('status', 'processing').lt('started_at', tenMinAgo),
+    ])
+    extractionQueue.pending      = pend.count     ?? 0
+    extractionQueue.processing   = proc.count     ?? 0
+    extractionQueue.completed_1d = comp.count     ?? 0
+    extractionQueue.dead         = dead.count     ?? 0
+    extractionQueue.stale        = stale.count    ?? 0
+  } catch { /* table may not exist in envs without M017 */ }
+
+  // ── Stripe webhook dedup activity ──────────────────────────────
+  let stripeDedup = { processed_1d: 0 }
+  try {
+    const oneDayAgo = new Date(now - 24 * 60 * 60_000).toISOString()
+    const { count } = await db
+      .from('stripe_processed_events')
+      .select('event_id', { count: 'exact', head: true })
+      .gte('processed_at', oneDayAgo)
+    stripeDedup.processed_1d = count ?? 0
+  } catch { /* M018 may not be applied */ }
+
+  // ── Org rate-limit burn ────────────────────────────────────────
+  // Recent windows where an org has exceeded the limit — useful signal
+  // for a compromised session or abusive client.
+  let rateLimitHits: Array<{ org_id: string; bucket: string; count: number; window_start: string }> = []
+  try {
+    const oneDayAgo = new Date(now - 24 * 60 * 60_000).toISOString()
+    const { data } = await db
+      .from('org_rate_limits')
+      .select('org_id, bucket, count, window_start')
+      .gte('window_start', oneDayAgo)
+      .gte('count', 5)
+      .order('window_start', { ascending: false })
+      .limit(20)
+    rateLimitHits = data ?? []
+  } catch { /* M018 may not be applied */ }
+
   return NextResponse.json({
     crons:            cronRows,
     ai: {
@@ -95,6 +145,9 @@ export async function GET(req: NextRequest) {
       fail:     v.fail,
       rate:     v.success + v.fail > 0 ? Math.round((v.success / (v.success + v.fail)) * 100) : null,
     })),
-    error_feed: errorFeed,
+    error_feed:       errorFeed,
+    extraction_queue: extractionQueue,
+    stripe_dedup:     stripeDedup,
+    rate_limit_hits:  rateLimitHits,
   })
 }
