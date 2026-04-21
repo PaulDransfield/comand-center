@@ -21,11 +21,10 @@ import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import StatusPill from '@/components/ui/StatusPill'
 import Sparkline from '@/components/ui/Sparkline'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 import { deptColor } from '@/lib/constants/colors'
-
-const fmtKr   = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-const fmtPct  = (n: number | null) => n != null ? (Math.round(n * 10) / 10).toFixed(1) + '%' : '—'
+import { fmtKr, fmtPct } from '@/lib/format'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -75,16 +74,35 @@ export default function DepartmentsPage() {
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
   const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
 
+  // Filter out rows with no revenue AND no labour — those were rendering as
+  // all-em-dash rows with a green status dot, which read as "active but
+  // blank" (FIX-PROMPT § Phase 9 Q2). A department only shows up in the
+  // table when it has real activity.
+  const activeDepts = depts.filter(d => Number(d.revenue ?? 0) > 0 || Number(d.staff_cost ?? 0) > 0)
+  const hasAnyActivity = activeDepts.length > 0
+
   // Rank by margin %
-  const withGP = depts.filter(d => d.gp_pct != null && d.revenue > 0)
+  const withGP = activeDepts.filter(d => d.gp_pct != null && d.revenue > 0)
   const sortedByGP = [...withGP].sort((a, b) => Number(b.gp_pct) - Number(a.gp_pct))
   const best  = sortedByGP[0] ?? null
   const worst = sortedByGP[sortedByGP.length - 1] ?? null
 
-  // Hero headline
+  // Hero headline — resolves the contradiction where the old copy said
+  // "No department data" while the table still listed a dept row
+  // (FIX-PROMPT § Phase 9 Q1). Three states:
+  //   - truly empty         → explicit empty state, no table below
+  //   - activity w/o margin → name the active dept(s), explain data gap
+  //   - best/worst spread   → original contrast headline
   const headline = (() => {
     if (loading) return <>Loading departments…</>
-    if (withGP.length === 0) return <>No department data in this period yet.</>
+    if (!hasAnyActivity) {
+      return <>No department data for <span style={{ fontWeight: UX.fwMedium }}>{periodLabel}</span> — departments sync nightly.</>
+    }
+    if (withGP.length === 0) {
+      // Activity exists but we can't compute GP (probably no revenue split yet)
+      const names = activeDepts.slice(0, 3).map(d => d.name).filter(Boolean).join(', ')
+      return <>{names} active — <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>revenue split not yet allocated</span>, GP% unavailable.</>
+    }
     if (best && worst && best !== worst) {
       return (
         <>
@@ -101,6 +119,7 @@ export default function DepartmentsPage() {
   })()
 
   const heroContext = (() => {
+    if (!hasAnyActivity) return undefined
     const parts: string[] = []
     if (summary.total_revenue > 0) parts.push(`${fmtKr(summary.total_revenue)} total`)
     if (summary.labour_pct != null) parts.push(`avg labour ${fmtPct(summary.labour_pct)}`)
@@ -129,7 +148,7 @@ export default function DepartmentsPage() {
     }
   }
   // Anomaly: very-high-margin dept with no labour allocation (data gap)
-  for (const d of depts) {
+  for (const d of activeDepts) {
     if (d.gp_pct != null && d.gp_pct > 95 && Number(d.staff_cost ?? 0) === 0 && Number(d.revenue ?? 0) > 1000) {
       if (attention.length < 3) {
         attention.push({
@@ -145,42 +164,52 @@ export default function DepartmentsPage() {
     <AppShell>
       <div style={{ maxWidth: 1100 }}>
 
-        {/* Period nav + W/M */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          {viewMode === 'week' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setWeekOffset(o => o - 1)} style={deptNavBtn}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                Week {(curr as any).weekNum} · {curr.label}
-              </div>
-              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...deptNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={deptNavBtn}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
-              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...deptNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-            </div>
-          )}
-          <SegmentedToggle
-            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'week' | 'month')}
-          />
-        </div>
+        {/* TopBar — breadcrumb + period nav + W/M toggle in the right slot */}
+        <TopBar
+          crumbs={[
+            { label: 'Operations' },
+            { label: 'Departments', active: true },
+          ]}
+          rightSlot={
+            <>
+              {viewMode === 'week' ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => setWeekOffset(o => o - 1)} style={deptNavBtn}>‹</button>
+                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+                    Week {(curr as any).weekNum} · {curr.label}
+                  </div>
+                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...deptNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button onClick={() => setMonthOffset(o => o - 1)} style={deptNavBtn}>‹</button>
+                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
+                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...deptNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+                </div>
+              )}
+              <SegmentedToggle
+                options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+                value={viewMode}
+                onChange={(v) => setViewMode(v as 'week' | 'month')}
+              />
+            </>
+          }
+        />
 
-        {/* PageHero */}
+        {/* PageHero — SupportingStats only rendered when there's real
+            activity, so we don't prominently display "0 kr · 0 dept"
+            next to an empty-state headline. */}
         <PageHero
           eyebrow={`DEPARTMENTS — ${periodLabel.toUpperCase()}`}
           headline={headline}
           context={heroContext}
-          right={
+          right={hasAnyActivity ? (
             <SupportingStats
               items={[
                 {
                   label: 'Revenue',
                   value: fmtKr(summary.total_revenue ?? 0),
-                  sub:   `${depts.length} dept${depts.length === 1 ? '' : 's'}`,
+                  sub:   `${activeDepts.length} dept${activeDepts.length === 1 ? '' : 's'}`,
                 },
                 {
                   label: 'Profit',
@@ -195,15 +224,27 @@ export default function DepartmentsPage() {
                 },
               ]}
             />
-          }
+          ) : undefined}
         />
 
         {loading ? (
           <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
-        ) : depts.length === 0 ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4 }}>
-            <div style={{ fontSize: 15, fontWeight: UX.fwMedium, marginBottom: 8 }}>No department data</div>
-            <div style={{ fontSize: UX.fsBody }}>Try a different period or check that Personalkollen has synced.</div>
+        ) : !hasAnyActivity ? (
+          // Explicit empty state per FIX-PROMPT § Phase 9 Q1 — hide the
+          // table entirely rather than render a grid of em-dashes.
+          <div style={{
+            background:   UX.cardBg,
+            border:       `0.5px solid ${UX.border}`,
+            borderRadius: UX.r_lg,
+            padding:      48,
+            textAlign:    'center' as const,
+          }}>
+            <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>
+              No department data for {periodLabel}
+            </div>
+            <div style={{ fontSize: UX.fsBody, color: UX.ink3, maxWidth: 440, margin: '0 auto' }}>
+              Departments sync nightly from Personalkollen. Check back after the next sync, or open a different period.
+            </div>
           </div>
         ) : (
           <>
@@ -239,11 +280,11 @@ export default function DepartmentsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {[...depts].sort((a: any, b: any) => (Number(b?.revenue) || 0) - (Number(a?.revenue) || 0)).map((d: any) => {
+                    {[...activeDepts].sort((a: any, b: any) => (Number(b?.revenue) || 0) - (Number(a?.revenue) || 0)).map((d: any) => {
                       const rev    = Number(d?.revenue ?? 0)
                       const cost   = Number(d?.staff_cost ?? 0)
                       const profit = rev - cost
-                      const noData = rev === 0 && cost === 0
+                      const noData = rev === 0 && cost === 0  // kept for safety; activeDepts already excludes these
                       const marginTone: 'good' | 'bad' | 'warning' | 'neutral' =
                           d?.gp_pct == null ? 'neutral'
                         : d.gp_pct >= 55 ? 'good'
