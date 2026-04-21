@@ -17,7 +17,10 @@ import { logAiRequest } from '@/lib/ai/usage'
 import { rateLimit } from '@/lib/middleware/rate-limit'
 
 export const runtime     = 'nodejs'
-export const maxDuration = 90
+// Sonnet reading a dense multi-month Resultatrapport (12 columns × ~40
+// line items) with max_tokens=8000 can push past 90s. Vercel's 300s
+// default gives comfortable headroom without changing model behaviour.
+export const maxDuration = 300
 
 // Swedish label → internal subcategory lookup.  Bootstrap list covering
 // the common Fortnox BAS chart rows seen in restaurant P&Ls.  Anything

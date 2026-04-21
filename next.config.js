@@ -23,6 +23,10 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co",
       "font-src 'self'",
+      // object-src permits the <object> PDF preview on /overheads/upload
+      // to load signed Supabase storage URLs. Falls back to default-src
+      // otherwise, which blocks the preview.
+      "object-src 'self' https://*.supabase.co",
       // Added *.ingest.de.sentry.io for EU Sentry error reporting
       "connect-src 'self' https://*.supabase.co https://api.anthropic.com https://api.stripe.com https://eu.i.posthog.com wss://*.supabase.co https://*.ingest.de.sentry.io",
       "frame-ancestors 'none'",
