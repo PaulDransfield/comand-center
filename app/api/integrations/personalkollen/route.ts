@@ -9,6 +9,10 @@ import {
   getStaff, getWorkplaces, getWorkPeriods, getLoggedTimes, getStaffSummary
 } from '@/lib/pos/personalkollen'
 
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60     // Personalkollen fetch chain
+
 const getAuth = getRequestAuth
 
 export async function POST(req: NextRequest) {

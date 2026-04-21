@@ -9,7 +9,9 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { getForecast, coordsFor } from '@/lib/weather/forecast'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 30     // Open-Meteo fetch
 
 export async function GET(req: NextRequest) {
   noStore()

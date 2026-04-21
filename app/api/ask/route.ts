@@ -19,6 +19,13 @@ import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE }                from '@/lib/ai/scope'
 
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+// Claude Sonnet 4.6 assistant calls run 20–40 s on a large context.
+// Declare the ceiling explicitly so behaviour matches on Hobby (60 s
+// default) and Pro (300 s default) — no surprise 504s on plan changes.
+export const maxDuration = 60
+
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
 You help restaurant operators understand their data — staff costs, revenue, margins, department performance, and forecasts.
@@ -76,6 +83,26 @@ export async function POST(req: NextRequest) {
   if (context.length > originalBudget) {
     console.warn(`[ask] context truncated — was ${context.length} chars, capped at ${originalBudget}`)
     context = context.slice(0, originalBudget) + '\n\n[context truncated for cost]'
+  }
+
+  // Verify the supplied business_id actually belongs to the caller's
+  // org before we use it anywhere (context enrichment, tool lookups).
+  // Without this check, a user could pass another org's business_id
+  // and — via prompt injection in the returned label text — make the
+  // model treat it as their own. eq('org_id', auth.orgId) on the
+  // data queries below protects the rows themselves, but not the
+  // control-flow decisions that depend on `businessId`.
+  if (businessId) {
+    const supabase = createAdminClient()
+    const { data: biz } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('id', businessId)
+      .eq('org_id', auth.orgId)
+      .maybeSingle()
+    if (!biz) {
+      return NextResponse.json({ error: 'Business not found in your organisation' }, { status: 403 })
+    }
   }
 
   // Now append cost detail if the question asks for it.

@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { decrypt }                   from '@/lib/integrations/encryption'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 30
 
 const getAuth = getRequestAuth
 

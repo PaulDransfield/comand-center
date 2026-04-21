@@ -7,6 +7,12 @@ import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { getRequestAuth }        from '@/lib/supabase/server'
 import { rateLimit }             from '@/lib/middleware/rate-limit'
 
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+// Claude Vision on a large PDF/image can push past 60 s. Declare the
+// ceiling explicitly so the route behaves identically on Hobby and Pro.
+export const maxDuration = 300
+
 const CATEGORIES = [
   'food_beverage','alcohol','staff','rent','cleaning',
   'repairs','marketing','utilities','admin','other'

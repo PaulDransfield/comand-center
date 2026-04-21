@@ -22,7 +22,12 @@ import { decrypt }                    from '@/lib/integrations/encryption'
 import { getWorkPeriods }              from '@/lib/pos/personalkollen'
 import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+// Personalkollen fetch + 8 weeks of aggregation + (optional) AI — stays
+// comfortably under 60 s, but declare the ceiling so we fail loudly
+// instead of getting silently truncated on Hobby.
+export const maxDuration = 60
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 

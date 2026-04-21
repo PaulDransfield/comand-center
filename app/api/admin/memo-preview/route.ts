@@ -17,7 +17,9 @@ import { createAdminClient }         from '@/lib/supabase/server'
 import { checkAdminSecret }          from '@/lib/admin/check-secret'
 import { memoEmailHtml }             from '@/lib/ai/weekly-manager'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60     // renders an AI-generated weekly memo
 
 export async function GET(req: NextRequest) {
   if (!checkAdminSecret(req)) {
