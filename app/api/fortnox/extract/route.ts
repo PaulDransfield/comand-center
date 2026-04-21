@@ -159,14 +159,42 @@ Return ONLY JSON, nothing else:
     const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
     const doc: any  = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
     if (args.cachePdf) doc.cache_control = { type: 'ephemeral' }
-    return client.messages.create({
-      model:      AI_MODELS.AGENT,
-      max_tokens: args.maxTokens,
-      messages: [{
-        role: 'user',
-        content: [ doc, { type: 'text', text: args.prompt } ],
-      }],
+    // Retry once on 429 with a 3-second backoff — Anthropic's concurrent-
+    // connection ceiling trips the whole fan-out if we fire too many at
+    // once.  The concurrency limiter below caps this at 4, but a retry
+    // here protects against transient spikes.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await client.messages.create({
+          model:      AI_MODELS.AGENT,
+          max_tokens: args.maxTokens,
+          messages: [{ role: 'user', content: [ doc, { type: 'text', text: args.prompt } ] }],
+        })
+      } catch (e: any) {
+        const is429 = e?.status === 429 || /rate_limit|concurrent/i.test(e?.message ?? '')
+        if (is429 && attempt === 0) { await new Promise(r => setTimeout(r, 3000)); continue }
+        throw e
+      }
+    }
+    throw new Error('unreachable')
+  }
+
+  // Concurrency pool — caps the number of simultaneous Anthropic calls so
+  // we don't trip the concurrent-connection rate limit.  4 seems to be a
+  // safe number on lower Anthropic tiers; it can be tuned up later when
+  // we upgrade plans.
+  async function runPooled<T, R>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<R>): Promise<R[]> {
+    const out: R[] = new Array(items.length)
+    let cursor = 0
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (true) {
+        const i = cursor++
+        if (i >= items.length) return
+        out[i] = await fn(items[i], i)
+      }
     })
+    await Promise.all(workers)
+    return out
   }
 
   function parseJsonFromResponse(resp: any): any | null {
@@ -286,8 +314,8 @@ Return ONLY the JSON object.`
           ? 'PDF values are printed in MSEK (millions of kr) — multiply every number by 1000000 before returning.'
           : 'PDF values are in full SEK — return them as-is.'
 
-      const fillPromises = peekPeriods.map((p: { year: number; month: number }) => {
-        const monthPrompt = `You are extracting ONE month's column from a Swedish Fortnox Resultatrapport.
+      const monthPromptFor = (p: { year: number; month: number }) =>
+        `You are extracting ONE month's column from a Swedish Fortnox Resultatrapport.
 
 Extract ONLY the ${p.year}-${String(p.month).padStart(2, '0')} column (month = ${p.month}). Ignore every other month column, ignore the "Ack." and year-total columns, ignore prior-year comparison columns.
 
@@ -310,10 +338,13 @@ Return ONLY JSON:
     { "label": "Bankavgifter", "category": "other_cost", "amount": 340, "fortnox_account": 6570 }
   ]
 }`
-        return runClaude({ prompt: monthPrompt, maxTokens: 4000, cachePdf: true })
-      })
 
-      const fillResps = await Promise.all(fillPromises)
+      // Cap concurrency at 4 — Anthropic's concurrent-connection ceiling
+      // trips at 5+ on lower tiers.  12 months / 4 concurrent × ~15 s
+      // per call ≈ 45 s wall time, still a 3x win over the serial path.
+      const fillResps = await runPooled(peekPeriods, 4, (p) =>
+        runClaude({ prompt: monthPromptFor(p), maxTokens: 4000, cachePdf: true }),
+      )
       const filled: any[] = fillResps.map((resp: any, i: number) => {
         totalInputTokens  += resp.usage?.input_tokens  ?? 0
         totalOutputTokens += resp.usage?.output_tokens ?? 0
