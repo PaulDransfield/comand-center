@@ -22,6 +22,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UX } from '@/lib/constants/tokens'
+import SyncIndicator from './SyncIndicator'
 
 interface Business {
   id:   string
@@ -69,9 +70,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
   const [selected,    setSelected]    = useState<Business | null>(null)
   const [showBizMenu, setShowBizMenu] = useState(false)
   const [userName,    setUserName]    = useState('')
-  const [syncStatus,  setSyncStatus]  = useState<{ last_sync_at: string | null } | null>(null)
   const [alertCount,  setAlertCount]  = useState(0)
-  const [now,         setNow]         = useState(Date.now())  // so the "Xm ago" label ticks
   const bizMenuRef = useRef<HTMLDivElement | null>(null)
 
   // ── Hydrate collapse state from localStorage ───────────────────────────────
@@ -106,25 +105,11 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
     }).catch(() => {})
   }, [])
 
-  // ── Sync freshness + alerts count polling ─────────────────────────────────
+  // ── Alerts count polling ──────────────────────────────────────────────────
+  // Sync freshness lives in <SyncIndicator/> now, so this effect only
+  // refreshes the alerts badge.
   useEffect(() => {
     if (!selected) return
-    const bizId = selected.id
-
-    async function fetchSync() {
-      try {
-        const db = createClient()
-        const { data } = await (db as any)
-          .from('integrations')
-          .select('last_sync_at')
-          .eq('business_id', bizId)
-          .not('last_sync_at', 'is', null)
-          .order('last_sync_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        setSyncStatus(data ? { last_sync_at: data.last_sync_at } : null)
-      } catch { /* non-fatal */ }
-    }
     async function fetchAlertCount() {
       try {
         const r = await fetch('/api/alerts', { cache: 'no-store' })
@@ -135,12 +120,11 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
       } catch { /* non-fatal */ }
     }
 
-    fetchSync(); fetchAlertCount()
-    const tick    = setInterval(() => setNow(Date.now()), 60_000)
-    const refresh = setInterval(() => { fetchSync(); fetchAlertCount() }, 60_000)
-    const focus   = () => { fetchSync(); fetchAlertCount() }
+    fetchAlertCount()
+    const refresh = setInterval(fetchAlertCount, 60_000)
+    const focus   = () => fetchAlertCount()
     window.addEventListener('focus', focus)
-    return () => { clearInterval(tick); clearInterval(refresh); window.removeEventListener('focus', focus) }
+    return () => { clearInterval(refresh); window.removeEventListener('focus', focus) }
   }, [selected])
 
   // ── Business picker outside-click ─────────────────────────────────────────
@@ -177,22 +161,6 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
     if (!matches.length) return ''
     return matches.sort((a, b) => b.href.length - a.href.length)[0].key
   }, [pathname, activeKey])
-
-  // ── Sync freshness label ──────────────────────────────────────────────────
-  // The coloured dot beside the label carries the "is this live?" signal,
-  // so we don't need the "Live · " prefix that was forcing a truncation
-  // in ~148 px of horizontal room. Short + plain is enough.
-  const syncLabel = useMemo(() => {
-    if (!syncStatus?.last_sync_at) return null
-    const d = new Date(syncStatus.last_sync_at)
-    const diffMin = Math.floor((now - d.getTime()) / 60_000)
-    if (diffMin < 1)  return 'Synced just now'
-    if (diffMin < 60) return `Synced ${diffMin}m ago`
-    const diffH = Math.floor(diffMin / 60)
-    if (diffH < 24) return `Synced ${diffH}h ago`
-    return `Synced ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-  }, [syncStatus, now])
-  const syncFresh = !!syncStatus?.last_sync_at && (now - new Date(syncStatus.last_sync_at).getTime()) < 30 * 60_000
 
   // ── Render ────────────────────────────────────────────────────────────────
   const W = collapsed ? UX.sidebarWCol : UX.sidebarW
@@ -296,17 +264,14 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
         </div>
       )}
 
-      {/* Sync status — single clickable indicator. Click triggers a sync
-          (rate-limited 3 min/biz server-side). Collapsed sidebar shows
-          only the dot. No separate "Sync now" button — the combo of a
-          truncated "Live · 2m …" label with a button next to it read as
-          broken UI. FORECAST-FIX § 1 (global). */}
-      {(syncLabel || selected) && (
+      {/* Sync status — shared SyncIndicator. Sole source of truth for the
+          "Synced Nm ago" pill; REVENUE-FIX § 1 called out that inline
+          copies kept drifting and rendering broken text. */}
+      {selected && (
         <SyncIndicator
           collapsed={collapsed}
-          businessId={selected?.id ?? null}
-          label={syncLabel ?? 'Never synced'}
-          fresh={syncFresh}
+          businessId={selected.id}
+          surface="dark"
         />
       )}
 
@@ -427,104 +392,6 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
         </div>
       )}
     </aside>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SyncIndicator — single clickable element that both shows sync freshness
-// AND fires a re-sync when clicked. Replaces the old truncated label + button
-// combo (FORECAST-FIX § 1).
-//   - collapsed:  green / amber dot only (7 px), click to sync
-//   - expanded:   dot + "Synced Xm ago" / "Never synced", click to sync
-//   - syncing:    "Syncing…" with a subtle spinning glyph
-//   - cooldown:   briefly disabled after a trigger; server-side rate-limit
-//                 (3 min/biz) still applies if the user clicks fast
-// ─────────────────────────────────────────────────────────────────────────────
-function SyncIndicator({
-  collapsed, businessId, label, fresh,
-}: { collapsed: boolean; businessId: string | null; label: string; fresh: boolean }) {
-  const [busy,  setBusy]  = useState(false)
-  const [toast, setToast] = useState<string>('')
-
-  async function run() {
-    if (!businessId || busy) return
-    setBusy(true); setToast('')
-    try {
-      const r = await fetch('/api/resync', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ business_id: businessId }),
-      })
-      const j = await r.json()
-      if (!r.ok)              setToast(j.error ?? `Failed (${r.status})`)
-      else if (j.errors > 0)  setToast(`Synced with ${j.errors} error${j.errors === 1 ? '' : 's'}`)
-      else                    setToast(`Synced ${j.synced} integration${j.synced === 1 ? '' : 's'}`)
-    } catch (e: any) {
-      setToast('Sync failed — ' + (e?.message ?? 'network'))
-    }
-    setBusy(false)
-    setTimeout(() => setToast(''), 4000)
-  }
-
-  const dotColour = busy ? UX.indigoLight : fresh ? '#10b981' : UX.amberInk
-  const displayed = busy ? 'Syncing…' : label
-
-  return (
-    <>
-      <button
-        onClick={run}
-        disabled={busy || !businessId}
-        title={`${displayed}${busy ? '' : ' — click to refresh'}`}
-        style={{
-          width:        '100%',
-          display:      'flex',
-          alignItems:   'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          gap:          6,
-          padding:      collapsed ? '6px 0' : '6px 12px',
-          background:   'transparent',
-          border:       'none',
-          borderBottom: '0.5px solid rgba(255,255,255,0.06)',
-          cursor:       busy || !businessId ? 'default' : 'pointer',
-          color:        'rgba(255,255,255,0.5)',
-          fontSize:     UX.fsMicro,
-          textAlign:    'left' as const,
-        }}
-      >
-        <span
-          className={busy ? 'cc-sync-spin' : undefined}
-          style={{
-            width:        collapsed ? 7 : 6,
-            height:       collapsed ? 7 : 6,
-            borderRadius: '50%',
-            background:   dotColour,
-            boxShadow:    fresh && !busy ? '0 0 6px rgba(16,185,129,0.55)' : 'none',
-            flexShrink:   0,
-            display:      'inline-block',
-          }}
-        />
-        {!collapsed && (
-          <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-            {displayed}
-          </span>
-        )}
-      </button>
-      {!collapsed && (
-        <style>{`
-          @keyframes cc-sync-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
-          .cc-sync-spin { animation: cc-sync-spin 1.2s linear infinite; }
-        `}</style>
-      )}
-      {toast && (
-        <div role="status" style={{
-          position: 'fixed' as const, bottom: 24, left: 24, background: UX.navy, color: 'white',
-          padding: '10px 14px', borderRadius: UX.r_md, fontSize: UX.fsBody,
-          boxShadow: '0 6px 18px rgba(0,0,0,.3)', zIndex: 1000,
-        }}>
-          {toast}
-        </div>
-      )}
-    </>
   )
 }
 
