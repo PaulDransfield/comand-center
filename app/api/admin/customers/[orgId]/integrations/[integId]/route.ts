@@ -6,21 +6,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
-import { checkAdminSecret } from '@/lib/admin/check-secret'
+import { requireAdmin } from '@/lib/admin/require-admin'
+import { captureWarning } from '@/lib/monitoring/sentry'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 
-function checkAuth(req: NextRequest): boolean {
-  return checkAdminSecret(req)
-}
-
 export async function DELETE(req: NextRequest, { params }: { params: { orgId: string; integId: string } }) {
-  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Admin-secret + org-exists scope check in one call.
+  const guard = await requireAdmin(req, { orgId: params.orgId })
+  if ('ok' in guard === false) return guard as NextResponse
 
   const db = createAdminClient()
 
-  // Verify the integration belongs to this org (defense in depth)
+  // Verify the integration belongs to this org (defense in depth —
+  // admin guard confirmed the org, this confirms the integration
+  // pairing matches).
   const { data: integ } = await db.from('integrations')
     .select('id, provider, org_id')
     .eq('id', params.integId)
@@ -28,13 +30,28 @@ export async function DELETE(req: NextRequest, { params }: { params: { orgId: st
     .maybeSingle()
   if (!integ) return NextResponse.json({ error: 'Integration not found for this org' }, { status: 404 })
 
-  // Cascade-delete related rows first (api_discoveries, api_discoveries_enhanced, implementation_plans).
-  // Ignore errors — tables may not exist in all environments.
-  await Promise.all([
-    db.from('api_discoveries').delete().eq('integration_id', params.integId).catch(() => null),
-    db.from('api_discoveries_enhanced').delete().eq('integration_id', params.integId).catch(() => null),
-    db.from('implementation_plans').delete().eq('integration_id', params.integId).catch(() => null),
-  ])
+  // Cascade-delete related rows. Tables may not exist in all environments
+  // (api_discoveries et al. come from a separate migration sequence).
+  // Capture failures as warnings so we can tell "table-doesn't-exist"
+  // (expected) from "real problem" (unexpected) post-hoc via Sentry —
+  // rather than silent .catch(() => null) which hides both.
+  const cascades = [
+    { table: 'api_discoveries',          q: db.from('api_discoveries').delete().eq('integration_id', params.integId) },
+    { table: 'api_discoveries_enhanced', q: db.from('api_discoveries_enhanced').delete().eq('integration_id', params.integId) },
+    { table: 'implementation_plans',     q: db.from('implementation_plans').delete().eq('integration_id', params.integId) },
+  ]
+  for (const c of cascades) {
+    const { error } = await c.q
+    if (error) {
+      captureWarning(`integration cascade delete failed: ${c.table}`, {
+        route:          'admin/integrations/delete',
+        table:          c.table,
+        error:          error.message,
+        integration_id: params.integId,
+        org_id:         params.orgId,
+      })
+    }
+  }
 
   const { error } = await db.from('integrations').delete().eq('id', params.integId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -54,7 +71,8 @@ export async function DELETE(req: NextRequest, { params }: { params: { orgId: st
 
 // Trigger Enhanced Discovery for this one integration
 export async function POST(req: NextRequest, { params }: { params: { orgId: string; integId: string } }) {
-  if (!checkAuth(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const guard = await requireAdmin(req, { orgId: params.orgId })
+  if ('ok' in guard === false) return guard as NextResponse
 
   const body = await req.json().catch(() => ({}))
   if (body.action !== 'run_discovery') return NextResponse.json({ error: 'Unknown action' }, { status: 400 })

@@ -1,8 +1,11 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { captureError, captureWarning } from '@/lib/monitoring/sentry'
 
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 30
 
 const getAuth = getRequestAuth
 
@@ -28,8 +31,11 @@ export async function POST(req: NextRequest) {
     },
   }, { onConflict: 'org_id' })
 
-  // Log to admin for follow-up
-  await db.from('admin_log').insert({
+  // Log to admin for follow-up. If admin_log has schema drift we don't
+  // want to block the customer's request, but we MUST know about it —
+  // a setup request the admin team never sees is a lost lead. Capture
+  // to Sentry as a warning so the ops team investigates within hours.
+  const { error: adminLogErr } = await db.from('admin_log').insert({
     event_type:  'setup_request',
     description: `New setup request from ${auth.email} — ${restaurantName} (${city})`,
     metadata: {
@@ -43,7 +49,15 @@ export async function POST(req: NextRequest) {
       contact_time:  contactTime,
       phone,
     },
-  }).catch(() => {}) // don't fail if admin_log has different schema
+  })
+  if (adminLogErr) {
+    captureWarning('admin_log insert failed on setup-request', {
+      route:     'onboarding/setup-request',
+      error:     adminLogErr.message,
+      org_id:    auth.orgId,
+      user_email: auth.email,
+    })
+  }
 
   // Send notification email via Resend if configured
   if (process.env.RESEND_API_KEY) {
@@ -72,8 +86,14 @@ export async function POST(req: NextRequest) {
           `,
         }),
       })
-    } catch (e) {
-      console.error('Email notification failed:', e)
+    } catch (e: any) {
+      captureError(e, {
+        route:     'onboarding/setup-request',
+        op:        'resend_email',
+        org_id:    auth.orgId,
+        user_email: auth.email,
+        restaurant: restaurantName,
+      })
     }
   }
 
