@@ -95,6 +95,17 @@ export default function OverheadsPage() {
     return () => clearInterval(t)
   }, [uploads, load])
 
+  // Ticks every second while something is extracting so the status chip
+  // can render elapsed seconds ("EXTRACTING · 12s") and the user knows
+  // the UI is alive, not stuck.
+  const [nowMs, setNowMs] = useState(Date.now())
+  useEffect(() => {
+    const extracting = uploads.some(u => u.status === 'extracting' || u.status === 'pending')
+    if (!extracting) return
+    const t = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [uploads])
+
   async function extractOne(uploadId: string) {
     try {
       await fetch('/api/fortnox/extract', {
@@ -238,6 +249,7 @@ export default function OverheadsPage() {
         ) : (
           <UploadsTable
             uploads={uploads}
+            nowMs={nowMs}
             onReview={(id: string) => setReviewId(id)}
             onRetry={retryExtract}
             onDelete={deleteUpload}
@@ -261,7 +273,7 @@ export default function OverheadsPage() {
 }
 
 // ─── Uploads table ─────────────────────────────────────────────────────
-function UploadsTable({ uploads, onReview, onRetry, onDelete }: any) {
+function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
   return (
     <div style={{
       background:   UX.cardBg,
@@ -303,7 +315,14 @@ function UploadsTable({ uploads, onReview, onRetry, onDelete }: any) {
           : u.status === 'extracted'  ? 'info'
           : u.status === 'extracting' ? 'warning'
           :                             'neutral'
-        const statusLabel = lowConfidence ? 'LOW CONFIDENCE' : u.status.toUpperCase()
+        const elapsedSec  = (u.status === 'extracting' || u.status === 'pending') && u.created_at
+          ? Math.max(0, Math.floor(((nowMs ?? Date.now()) - new Date(u.created_at).getTime()) / 1000))
+          : null
+        const statusLabel = lowConfidence
+          ? 'LOW CONFIDENCE'
+          : elapsedSec !== null
+            ? `EXTRACTING · ${elapsedSec}s`
+            : u.status.toUpperCase()
         const periodLabel = u.period_year && u.period_month
           ? `${MONTHS[u.period_month - 1]} ${u.period_year}`
           : u.period_year
