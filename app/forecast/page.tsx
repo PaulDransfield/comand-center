@@ -23,6 +23,7 @@ import PageHero from '@/components/ui/PageHero'
 import StatusPill from '@/components/ui/StatusPill'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'
+import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 
 const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -119,11 +120,24 @@ export default function ForecastPage() {
     .filter((r: any) => r.period_year === currentYear)
     .reduce((s: number, r: any) => s + Number(r.net_profit ?? 0), 0)
 
-  // Projected full-year revenue = actual past + forecast future
-  const projectedFullYear = monthly.reduce((s, r) => {
-    if (r.isPast || r.isCurrent) return s + Math.max(r.actualRev, r.forecastRev)
-    return s + r.forecastRev
-  }, 0)
+  // Honesty guards — before we can claim a full-year projection we need
+  // (a) at least one non-zero actual and (b) forecasts covering the rest
+  // of the year. Without both, saying "Tracking to X kr" is a maths lie.
+  const forecastCount = (data?.forecasts ?? [])
+    .filter((r: any) => r.period_year === currentYear && r.period_month >= currentMonth)
+    .length
+  const actualMonths = monthly.filter(r => r.actualRev > 0).length
+  const hasProjection = forecastCount > 0 && actualMonths > 0
+
+  // Projected full-year revenue — only meaningful when we have forecasts
+  // for the remaining months. Otherwise return null so the hero never
+  // shows a "Tracking to {kr}" line that's really just one month's actual.
+  const projectedFullYear = hasProjection
+    ? monthly.reduce((s, r) => {
+        if (r.isPast || r.isCurrent) return s + Math.max(r.actualRev, r.forecastRev)
+        return s + r.forecastRev
+      }, 0)
+    : null
 
   // Weak spot = future month with lowest margin forecast (or biggest past miss if none).
   const weakFuture = monthly
@@ -137,10 +151,26 @@ export default function ForecastPage() {
   const headline = (() => {
     if (loading) return <>Loading forecast…</>
     if (!data) return <>Forecast not available yet.</>
+
+    // No forecast yet. Don't invent a projection — surface the real state.
+    if (!hasProjection) {
+      if (actualMonths === 0) {
+        return <>No actuals or forecast yet for <span style={{ fontWeight: UX.fwMedium }}>{currentYear}</span>.</>
+      }
+      const monthNames = monthly
+        .filter(r => r.actualRev > 0)
+        .map(r => MONTHS_SHORT[r.m - 1]).join(', ')
+      return (
+        <>
+          {monthNames} logged — <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>no forecast generated yet</span> for the rest of the year.
+        </>
+      )
+    }
+
     if (weakFuture && weakFuture.marginForecast != null && weakFuture.marginForecast < 12) {
       return (
         <>
-          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear)}</span> revenue
+          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear!)}</span> revenue
           {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[weakFuture.m - 1]} weak at {fmtPct(weakFuture.marginForecast)} margin</span>.
         </>
       )
@@ -149,16 +179,24 @@ export default function ForecastPage() {
       const pct = ((biggestMiss.actualRev - biggestMiss.forecastRev) / biggestMiss.forecastRev) * 100
       return (
         <>
-          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear)}</span>
+          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear!)}</span>
           {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[biggestMiss.m - 1]} missed by {fmtPct(Math.abs(pct))}</span>.
         </>
       )
     }
     return (
       <>
-        Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear)}</span> revenue this year.
+        Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear!)}</span> revenue this year.
       </>
     )
+  })()
+
+  const heroContextText = (() => {
+    if (!data) return undefined
+    if (!hasProjection) {
+      return `${actualMonths} month${actualMonths === 1 ? '' : 's'} of actuals · forecasts regenerate on the 1st of each month`
+    }
+    return `${currentMonth - 1} months actual · ${12 - currentMonth + 1} months forecast`
   })()
 
   // ── Flags list (supporting row) ───────────────────────────────────────────
@@ -185,32 +223,41 @@ export default function ForecastPage() {
     <AppShell>
       <div style={{ maxWidth: 1100 }}>
 
-        {/* Local selectors + sync */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 8, flexWrap: 'wrap' as const }}>
-          <button
-            onClick={triggerSync}
-            disabled={syncing || !selected}
-            style={{
-              padding: '6px 12px', background: 'transparent', color: UX.ink2,
-              border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md,
-              fontSize: UX.fsBody, fontWeight: UX.fwMedium,
-              cursor: syncing || !selected ? 'not-allowed' : 'pointer',
-              opacity: syncing || !selected ? 0.6 : 1,
-            }}
-          >
-            {syncing ? 'Syncing…' : 'Refresh forecast'}
-          </button>
-          <select value={selected} onChange={e => setSelected(e.target.value)}
-            style={{ padding: '6px 10px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-            {businesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </div>
+        {/* TopBar — crumb trail + refresh + biz picker. Replaces the
+            floating right-aligned selectors. */}
+        <TopBar
+          crumbs={[
+            { label: 'Financials' },
+            { label: 'Forecast', active: true },
+          ]}
+          rightSlot={
+            <>
+              <button
+                onClick={triggerSync}
+                disabled={syncing || !selected}
+                style={{
+                  padding: '5px 11px', background: 'transparent', color: UX.ink2,
+                  border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md,
+                  fontSize: UX.fsBody, fontWeight: UX.fwMedium,
+                  cursor: syncing || !selected ? 'not-allowed' : 'pointer',
+                  opacity: syncing || !selected ? 0.6 : 1,
+                }}
+              >
+                {syncing ? 'Syncing…' : 'Refresh forecast'}
+              </button>
+              <select value={selected} onChange={e => setSelected(e.target.value)}
+                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
+                {businesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </>
+          }
+        />
 
         {/* ─── PageHero ──────────────────────────────────────────────────── */}
         <PageHero
           eyebrow={`${currentYear} FORECAST`}
           headline={headline}
-          context={`${currentMonth - 1} months actual · ${12 - currentMonth + 1} months forecast`}
+          context={heroContextText}
           right={
             <div style={{ minWidth: 160, textAlign: 'right' as const }}>
               <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: '0.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>
@@ -232,7 +279,12 @@ export default function ForecastPage() {
           </div>
         )}
 
-        {/* ─── Primary: full-year line chart ──────────────────────────── */}
+        {/* ─── Primary: full-year line chart ────────────────────────────
+            When no forecast exists for the remaining months AND fewer than
+            2 past months have actuals, an empty chart is noise — render an
+            explainer card instead (FIX-PROMPT § Phase 5). Once we have
+            enough signal, show the chart with the actual line connecting
+            through zero months so Jan → current is always one stroke. */}
         <div style={{
           background:   UX.cardBg,
           border:       `0.5px solid ${UX.border}`,
@@ -251,12 +303,26 @@ export default function ForecastPage() {
               </span>
             </div>
           </div>
-          <ForecastChart
-            monthly={monthly}
-            currentMonth={currentMonth}
-            todayProgress={todayProgress}
-            loading={loading}
-          />
+          {!loading && !hasProjection && actualMonths < 2 ? (
+            <div style={{
+              padding:     '40px 20px',
+              textAlign:   'center' as const,
+              color:       UX.ink4,
+              fontSize:    UX.fsBody,
+              lineHeight:  1.55,
+            }}>
+              {actualMonths === 0
+                ? <>No forecast or actuals to plot yet.  The monthly calibration cron generates forecasts from last year's trading data — it runs on the 1st of each month, or click <b>Refresh forecast</b> above.</>
+                : <>Only 1 month of actuals and no forecast generated yet. Check back after the 1st of next month, or run the calibration manually.</>}
+            </div>
+          ) : (
+            <ForecastChart
+              monthly={monthly}
+              currentMonth={currentMonth}
+              todayProgress={todayProgress}
+              loading={loading}
+            />
+          )}
         </div>
 
         {/* ─── Supporting: forecast flags ─────────────────────────────── */}
@@ -271,7 +337,7 @@ export default function ForecastPage() {
 
       <AskAI
         page="forecast"
-        context={data ? `Year: ${currentYear}. YTD profit: ${fmtKr(ytdActualProfit)}. Projected full year: ${fmtKr(projectedFullYear)}. ${flags.length} flagged months.` : 'No forecast data yet'}
+        context={data ? `Year: ${currentYear}. YTD profit: ${fmtKr(ytdActualProfit)}. ${projectedFullYear != null ? `Projected full year: ${fmtKr(projectedFullYear)}. ` : 'No full-year forecast yet. '}${flags.length} flagged months.` : 'No forecast data yet'}
       />
     </AppShell>
   )
@@ -299,7 +365,22 @@ function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
   const xAt = (i: number) => PL + (plotW * (i + 0.5)) / 12
   const yAt = (v: number) => PT + plotH * (1 - v / yMax)
 
-  const actualPoints   = monthly.filter((m: any) => !m.isFuture && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: true }))
+  // Actual line — connects Jan → current through every past month.
+  // Earlier versions filtered on `m.value > 0` which meant a single
+  // data month drew a single floating dot with nothing to connect to.
+  // FIX-PROMPT § Phase 5 explicitly asks for the line to span all
+  // past months, even if some are zero. Only skip months in the
+  // future (not yet happened). Zero months sit on the baseline so the
+  // line is honest: zero literally means zero.
+  const firstActualIdx = monthly.findIndex((m: any) => !m.isFuture && m.actualRev > 0)
+  const lastActualIdx  = monthly.length - 1 - [...monthly].reverse().findIndex((m: any) => !m.isFuture && m.actualRev > 0)
+  const actualPoints = firstActualIdx < 0
+    ? []
+    : monthly
+        .slice(firstActualIdx, lastActualIdx + 1)
+        .filter((m: any) => !m.isFuture)
+        .map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.actualRev), tone: m.tone, m: m.m, value: m.actualRev, actual: true }))
+
   const forecastPoints = monthly.filter((m: any) => (m.isFuture || m.isCurrent) && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: false }))
 
   const actualPath = actualPoints.length >= 2
