@@ -195,10 +195,12 @@ Return ONLY the JSON object.`
 
     const response = await client.messages.create({
       model:      AI_MODELS.ANALYSIS,
-      // Annual reports have 50+ line items + the rollup — 4 000 tokens
-      // sometimes truncates mid-JSON.  8 000 is still well under Sonnet's
-      // 64k ceiling and costs ≈ $0.03 per call in the worst case.
-      max_tokens: 8000,
+      // Multi-month Resultatrapports (12 columns × ~40 line items) run to
+      // ~25k output tokens. 8 000 truncated mid-JSON on a Rosali 2025
+      // sample. 32 000 is still half of Sonnet's 64k ceiling and costs
+      // ≈ $0.12 per call in the worst case — acceptable for the handful
+      // of multi-month PDFs a customer uploads per year.
+      max_tokens: 32000,
       messages: [{
         role: 'user',
         content: [
