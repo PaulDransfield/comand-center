@@ -213,6 +213,14 @@ export default function TrackerPage() {
   return (
     <AppShell>
       <div style={{ maxWidth: 1000 }}>
+        {/* Row-hover reveal for the pencil action.  Keeps the row visually
+            clean by default — the ✎ only appears on hover, keyboard focus,
+            or when editing.  FIX-PROMPT § Phase 3 ("actions live on hover"). */}
+        <style>{`
+          .cc-pnl-action { opacity: 0; transition: opacity .12s ease; }
+          .cc-pnl-row:hover .cc-pnl-action,
+          .cc-pnl-row:focus-within .cc-pnl-action { opacity: 1; }
+        `}</style>
 
         {/* Minimal period selectors (business picker is in sidebar now but
             retained here as a quick local override; year picker stays). */}
@@ -307,15 +315,19 @@ export default function TrackerPage() {
             <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
           ) : (
             allMonths.map((row) => {
-              const hasData    = rows.some(r => r.period_month === row.period_month)
+              // "Has data" now means real revenue logged — a row with all
+              // zeros should render as a dashed placeholder, not a full row
+              // with a 0 kr bar (FIX-PROMPT § Phase 3).
+              const hasRev     = Number(row.revenue ?? 0) > 0
+              const hasData    = rows.some(r => r.period_month === row.period_month) && hasRev
               const isFuture   = year === currentYear && row.period_month > currentMonth
                                 || year > currentYear
               const isCurrent  = year === currentYear && row.period_month === currentMonth
               const isExpanded = expanded === row.period_month && hasData
               const isEdit     = editing === row.period_month
 
-              const foodPct  = Number(row.revenue) > 0 ? (Number(row.food_cost)  / Number(row.revenue)) * 100 : 0
-              const staffPct = Number(row.revenue) > 0 ? (Number(row.staff_cost) / Number(row.revenue)) * 100 : 0
+              const foodPct  = hasRev ? (Number(row.food_cost)  / Number(row.revenue)) * 100 : 0
+              const staffPct = hasRev ? (Number(row.staff_cost) / Number(row.revenue)) * 100 : 0
               const marginPct = Number(row.margin_pct ?? 0)
               const marginTone: 'good' | 'bad' | 'warning' | 'neutral' =
                 !hasData    ? 'neutral'
@@ -323,10 +335,15 @@ export default function TrackerPage() {
                 : marginPct >=  5 ? 'warning'
                 :                   'bad'
 
-              // Inline bar math — revenue fills the track; staff_cost is an
-              // overlay at the start of the bar (burnt). Both scale to year max.
-              const revPct   = Math.max(0, Math.min(100, (Number(row.revenue ?? 0) / maxRevenue) * 100))
-              const costPct  = Math.max(0, Math.min(revPct, (Number(row.staff_cost ?? 0) / maxRevenue) * 100))
+              // Inline bar math — revPct is the navy width (revenue as % of
+              // year max).  costPct is the burnt overlay, which sits AT THE
+              // LEFT of the navy bar and represents staff_cost / revenue as
+              // a fraction of the navy bar.  So: 70% margin → narrow burnt
+              // slice at the start and a long navy tail. Not two segments
+              // scaled independently to the track.
+              const revPct       = hasRev ? Math.max(0, Math.min(100, (Number(row.revenue ?? 0) / maxRevenue) * 100)) : 0
+              const costShareRev = hasRev ? Math.min(1, Number(row.staff_cost ?? 0) / Number(row.revenue)) : 0
+              const costPct      = revPct * costShareRev
 
               const rowBg =
                 isCurrent && hasData ? (marginTone === 'bad' ? UX.redSoft : marginTone === 'warning' ? UX.amberSoft : UX.greenSoft)
@@ -374,6 +391,7 @@ export default function TrackerPage() {
                     </div>
                   ) : (
                     <div
+                      className="cc-pnl-row"
                       onClick={() => hasData && toggleExpand(row.period_month)}
                       style={{
                         display:             'grid',
@@ -391,29 +409,41 @@ export default function TrackerPage() {
                         {hasData ? (isExpanded ? '▾' : '▸') : ''}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: UX.fwMedium, color: isFuture ? UX.ink4 : UX.ink1, fontSize: UX.fsBody }}>
+                        <span style={{ fontWeight: UX.fwMedium, color: (isFuture || !hasRev) ? UX.ink4 : UX.ink1, fontSize: UX.fsBody }}>
                           {MONTHS_SHORT[row.period_month - 1]}
                         </span>
                         {isCurrent && <StatusPill tone="info">NOW</StatusPill>}
                         {isFuture && <span style={{ fontSize: 9, color: UX.ink4 }}>forecast</span>}
                       </div>
-                      <div style={{ position: 'relative' as const, height: 8, background: UX.borderSoft, borderRadius: 2 }}>
-                        {hasData && (
-                          <>
+                      {/* Revenue vs cost bar.
+                          - hasData (real revenue): solid navy width=revPct with
+                            burnt-orange slice at the LEFT spanning costPct of
+                            the total track (= staff_cost/revenue × revPct).
+                          - no revenue: dashed grey placeholder so zero months
+                            don't render as empty grey tracks that look live. */}
+                      {hasData ? (
+                        <div style={{ position: 'relative' as const, height: 8, background: UX.borderSoft, borderRadius: 2 }}>
+                          <div style={{
+                            position: 'absolute' as const, left: 0, top: 0, bottom: 0,
+                            width: `${revPct}%`, background: UX.navy, borderRadius: 2,
+                          }} />
+                          {costPct > 0 && (
                             <div style={{
                               position: 'absolute' as const, left: 0, top: 0, bottom: 0,
-                              width: `${revPct}%`, background: UX.navy, borderRadius: 2,
+                              width: `${costPct}%`, background: UX.burnt, borderRadius: 2,
+                              opacity: 0.9,
                             }} />
-                            {costPct > 0 && (
-                              <div style={{
-                                position: 'absolute' as const, left: 0, top: 0, bottom: 0,
-                                width: `${costPct}%`, background: UX.burnt, borderRadius: 2,
-                                opacity: 0.9,
-                              }} />
-                            )}
-                          </>
-                        )}
-                      </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ height: 8, display: 'flex', alignItems: 'center' }}>
+                          <div style={{
+                            flex:    1,
+                            borderTop: `1px dashed ${UX.ink5}`,
+                            opacity: 0.6,
+                          }} />
+                        </div>
+                      )}
                       <span style={{ textAlign: 'right' as const, color: hasData ? UX.ink1 : UX.ink5, fontVariantNumeric: 'tabular-nums' as const, fontSize: UX.fsBody }}>
                         {hasData ? fmtKr(Number(row.revenue)) : '—'}
                       </span>
@@ -434,13 +464,34 @@ export default function TrackerPage() {
                       <span style={{ textAlign: 'right' as const, fontWeight: UX.fwMedium, color: hasData ? (Number(row.net_profit) >= 0 ? UX.ink1 : UX.redInk) : UX.ink5, fontVariantNumeric: 'tabular-nums' as const, fontSize: UX.fsBody }}>
                         {hasData ? fmtKr(Number(row.net_profit)) : '—'}
                       </span>
-                      <div style={{ textAlign: 'right' as const }} onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => { setEditing(row.period_month); setForm({ period_month: row.period_month, revenue: Number(row.revenue), food_cost: Number(row.food_cost), staff_cost: Number(row.staff_cost) }) }}
-                          style={{ padding: '3px 10px', background: 'transparent', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', color: UX.ink3 }}
-                        >
-                          {hasData ? 'Edit' : '+ Add'}
-                        </button>
+                      {/* Hover-only pencil — no persistent Edit/+Add buttons.
+                          Future months render nothing (just dimmed grey row).
+                          Past months with data show ✎ on row hover.
+                          The CSS for .cc-pnl-action is injected at the page
+                          root below. */}
+                      <div
+                        className="cc-pnl-action"
+                        style={{ textAlign: 'right' as const }}
+                        onClick={e => e.stopPropagation()}
+                      >
+                        {!isFuture && (
+                          <button
+                            aria-label={hasData ? `Edit ${MONTHS_SHORT[row.period_month - 1]}` : `Add ${MONTHS_SHORT[row.period_month - 1]}`}
+                            onClick={() => { setEditing(row.period_month); setForm({ period_month: row.period_month, revenue: Number(row.revenue), food_cost: Number(row.food_cost), staff_cost: Number(row.staff_cost) }) }}
+                            style={{
+                              padding:      '3px 8px',
+                              background:   'transparent',
+                              border:       'none',
+                              borderRadius: UX.r_sm,
+                              fontSize:     13,
+                              cursor:       'pointer',
+                              color:        UX.ink4,
+                              lineHeight:   1,
+                            }}
+                          >
+                            ✎
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
