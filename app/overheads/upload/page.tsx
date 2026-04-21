@@ -18,6 +18,7 @@ import TopBar from '@/components/ui/TopBar'
 import AttentionPanel from '@/components/ui/AttentionPanel'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
+import { createClient as createSupabaseBrowser } from '@/lib/supabase/client'
 
 interface Business { id: string; name: string; city: string | null }
 interface ExtractionJob {
@@ -99,11 +100,36 @@ export default function OverheadsPage() {
   // business's table.
   useEffect(() => { initialLoadDone.current = false; if (bizId) load() }, [bizId, load])
 
-  // Poll while anything is extracting so the status chip updates live.
+  // Supabase Realtime subscription — pushes row changes as they
+  // happen, eliminating the 3s-polling loop we had before. We still
+  // keep a safety-net slow poll (every 15s) while something is in
+  // flight in case Realtime drops the connection silently.
+  useEffect(() => {
+    if (!bizId) return
+    const sb = createSupabaseBrowser()
+    const channel = sb.channel(`fortnox-uploads:${bizId}`)
+      .on('postgres_changes', {
+        event:  '*',
+        schema: 'public',
+        table:  'fortnox_uploads',
+        filter: `business_id=eq.${bizId}`,
+      }, () => { load() })
+      .on('postgres_changes', {
+        event:  '*',
+        schema: 'public',
+        table:  'extraction_jobs',
+        filter: `business_id=eq.${bizId}`,
+      }, () => { load() })
+      .subscribe()
+    return () => { sb.removeChannel(channel) }
+  }, [bizId, load])
+
+  // Safety-net slow poll while extracting — kicks in if Realtime drops.
+  // 15s is cheap (1 req/15s/user) and only active while there's work.
   useEffect(() => {
     const extracting = uploads.some(u => u.status === 'extracting' || u.status === 'pending')
     if (!extracting) return
-    const t = setInterval(() => load(), 3000)
+    const t = setInterval(() => load(), 15000)
     return () => clearInterval(t)
   }, [uploads, load])
 

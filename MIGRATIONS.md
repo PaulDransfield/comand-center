@@ -16,6 +16,16 @@
 **Purpose:** stores thumbs up / thumbs down + optional comment on each Monday memo. Populated via the public `/api/memo-feedback` endpoint, secured by HMAC-signed tokens (key: `CRON_SECRET`) embedded in the email buttons.
 **To apply:** open Supabase SQL Editor, paste file contents, run. No backfill needed — new memos from the next cron tick onward will include the feedback block. Requires M003 `briefings` already applied (FK target).
 
+### M019 — Supabase Realtime publication
+**File:** `M019-REALTIME-PUBLICATION.sql` (repo root)
+**Purpose:** adds `fortnox_uploads` and `extraction_jobs` to the `supabase_realtime` publication so the `/overheads/upload` page receives push updates instead of polling every 3 seconds. RLS policies still apply to Realtime events.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Idempotent.
+
+### M018 — RLS gaps + Stripe dedup + org rate limits
+**File:** `M018-RLS-GAPS-MIGRATION.sql` (repo root)
+**Purpose:** enables RLS on 5 previously-exposed tables, replaces single-org `current_org_id()` with array-returning `current_user_org_ids()`, adds `stripe_processed_events` for webhook idempotency, adds `org_rate_limits` for persistent per-org rate limiting.
+**Applied:** 2026-04-21 ✅
+
 ### M017 — extraction_jobs queue
 **File:** `FORTNOX-JOBS-MIGRATION.sql` (repo root)
 **Purpose:** job queue for async Fortnox PDF extraction. Replaces the request-bound extraction path with dispatcher → worker → sweeper architecture: dispatcher upserts a row, worker atomically claims jobs via `FOR UPDATE SKIP LOCKED`, sweeper cron resets stale 'processing' rows and fires workers for ready 'pending' rows. Retries with exponential backoff (30s / 2m / 10m), dead-letter after 3 attempts.
