@@ -8,6 +8,7 @@ import { createAdminClient }         from '@/lib/supabase/server'
 import { runSync }                   from '@/lib/sync/engine'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
 import { log }                       from '@/lib/log/structured'
+import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
 
 export const runtime    = 'nodejs'
 export const dynamic    = 'force-dynamic'
@@ -57,17 +58,9 @@ export async function GET(req: NextRequest) {
   // concurrent-outbound-request limits.
   const CONCURRENCY = 10
 
-  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`timeout: ${label} exceeded ${ms}ms`)), ms)
-      p.then(v => { clearTimeout(t); resolve(v) },
-             e => { clearTimeout(t); reject(e) })
-    })
-  }
-
   async function syncOne(integ: any) {
     try {
-      const result = await withTimeout(
+      const result = await sharedWithTimeout(
         runSync(integ.org_id, integ.provider, from90, toDate, integ.id),
         PER_INTEGRATION_TIMEOUT_MS,
         `${integ.provider}/${integ.id}`,

@@ -24,7 +24,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
 import { runSync }                   from '@/lib/sync/engine'
+import { log }                       from '@/lib/log/structured'
+import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
 
+export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 
@@ -33,6 +36,7 @@ async function handle(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const runStarted = Date.now()
   const db = createAdminClient()
 
   const { data: integrations } = await db
@@ -41,6 +45,7 @@ async function handle(req: NextRequest) {
     .eq('status', 'connected')
 
   if (!integrations?.length) {
+    log.info('catchup-sync: no active integrations', { route: 'cron/catchup-sync' })
     return NextResponse.json({ ok: true, message: 'No active integrations' })
   }
 
@@ -53,17 +58,9 @@ async function handle(req: NextRequest) {
   const PER_INTEGRATION_TIMEOUT_MS = 60_000
   const CONCURRENCY = 10
 
-  function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error(`timeout: ${label} exceeded ${ms}ms`)), ms)
-      p.then(v => { clearTimeout(t); resolve(v) },
-             e => { clearTimeout(t); reject(e) })
-    })
-  }
-
   async function syncOne(integ: any) {
     try {
-      const result = await withTimeout(
+      const result = await sharedWithTimeout(
         runSync(integ.org_id, integ.provider, from7, toDate, integ.id),
         PER_INTEGRATION_TIMEOUT_MS,
         `${integ.provider}/${integ.id}`,
@@ -84,6 +81,16 @@ async function handle(req: NextRequest) {
   const errors    = results.filter(r => r.error)
   const timedOut  = errors.filter(r => /^timeout:/.test(r.error ?? ''))
   const skipped   = results.filter(r => r.skipped).length
+
+  log.info('catchup-sync complete', {
+    route:        'cron/catchup-sync',
+    duration_ms:  Date.now() - runStarted,
+    integrations: integrations.length,
+    errors:       errors.length,
+    timed_out:    timedOut.length,
+    skipped,
+    status:       errors.length === 0 ? 'success' : 'partial',
+  })
 
   return NextResponse.json({
     ok:         errors.length === 0,
