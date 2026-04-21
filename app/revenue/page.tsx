@@ -8,6 +8,10 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
+import PageHero from '@/components/ui/PageHero'
+import SupportingStats from '@/components/ui/SupportingStats'
+import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import { UX } from '@/lib/constants/tokens'
 
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
@@ -153,58 +157,63 @@ export default function RevenuePage() {
     <AppShell>
       <div className="page-wrap">
 
-        {/* ── Header ──────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#111' }}>Revenue</h1>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: '#9ca3af' }}>Daily revenue, covers & breakdown</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {viewMode === 'week' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {(curr as any).weekNum}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
-                </div>
-                <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
+        {/* Local period navigator + W/M toggle */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          {viewMode === 'week' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => setWeekOffset(o => o - 1)} style={navBtn}>‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+                Week {(curr as any).weekNum} · {curr.label}
               </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setMonthOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}><div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{curr.label}</div></div>
-                <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: monthOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-              </div>
-            )}
-            <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
-              {(['week', 'month'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)} style={{
-                  padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                  background: viewMode === m ? 'white' : 'transparent', color: viewMode === m ? '#111' : '#9ca3af',
-                  boxShadow: viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
-                }}>{m === 'week' ? 'W' : 'M'}</button>
-              ))}
+              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...navBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
             </div>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn}>‹</button>
+              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
+              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
+            </div>
+          )}
+          <SegmentedToggle
+            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'week' | 'month')}
+          />
         </div>
 
+        {/* PageHero */}
+        <PageHero
+          eyebrow={`${curr.label.toUpperCase()} · ${sum.days_with_data ?? 0} DAYS OF DATA`}
+          headline={<RevenueHeadline totalRev={totalRev} prevRev={prevSum.total_revenue ?? 0} foodRev={foodRev} bevRev={bevRev} takeaway={takeaway} viewMode={viewMode} />}
+          context={buildRevenueContext(sum, totalCovers, takeaway, dineIn)}
+          right={
+            <SupportingStats
+              items={[
+                {
+                  label: 'Revenue',
+                  value: totalRev > 0 ? fmtKr(totalRev) : '—',
+                  delta: deltaLabel(totalRev, prevSum.total_revenue ?? 0),
+                  deltaTone: (prevSum.total_revenue ?? 0) > 0 ? (totalRev >= (prevSum.total_revenue ?? 0) ? 'good' : 'bad') : 'neutral',
+                },
+                {
+                  label: 'Per cover',
+                  value: avgRpc > 0 ? fmtKr(avgRpc) : '—',
+                  sub:   totalCovers > 0 ? `${totalCovers} covers` : 'No cover data',
+                },
+                {
+                  label: 'Takeaway',
+                  value: takeaway > 0 ? fmtKr(takeaway) : '—',
+                  sub:   takeaway > 0 && totalRev > 0 ? `${fmtPct((takeaway / totalRev) * 100)} · 6% VAT` : 'No takeaway data',
+                },
+              ]}
+            />
+          }
+        />
+
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading...</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
         ) : (
           <>
-            {/* ── 4 KPI cards ────────────────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-              <KpiCard label="Revenue" value={totalRev > 0 ? fmtKr(totalRev) : '—'} deltaVal={delta(totalRev, prevSum.total_revenue ?? 0)} sub={`vs prev ${viewMode === 'week' ? 'week' : 'month'}`} />
-              <KpiCard
-                label="Takeaway"
-                value={takeaway > 0 ? fmtKr(takeaway) : '—'}
-                deltaVal={delta(takeaway, prevSum.total_takeaway ?? 0)}
-                sub={takeaway > 0 && totalRev > 0 ? `${fmtPct((takeaway / totalRev) * 100)} of revenue · 6% VAT` : 'No takeaway data'}
-              />
-              <KpiCard label="Covers" value={totalCovers > 0 ? totalCovers.toLocaleString('en-GB') : '—'} deltaVal={delta(totalCovers, prevSum.total_covers ?? 0)} sub={`${sum.days_with_data ?? 0} days with data`} />
-              <KpiCard label="Avg per Cover" value={avgRpc > 0 ? fmtKr(avgRpc) : '—'} sub={totalCovers > 0 ? `${totalCovers} covers` : 'No cover data'} />
-              <KpiCard label="Tips" value={totalTips > 0 ? fmtKr(totalTips) : '—'} deltaVal={delta(totalTips, prevSum.total_tips ?? 0)} sub={totalTips > 0 && totalRev > 0 ? `${fmtPct((totalTips / totalRev) * 100)} of revenue` : 'No tip data'} />
-            </div>
 
             {/* ── Daily revenue chart ────────────────────────────────── */}
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
@@ -431,3 +440,55 @@ export default function RevenuePage() {
     </AppShell>
   )
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Revenue hero headline — swaps based on delta direction and mix signal.
+// ─────────────────────────────────────────────────────────────────────────────
+function RevenueHeadline({ totalRev, prevRev, foodRev, bevRev, takeaway, viewMode }: any) {
+  if (totalRev <= 0) {
+    return <>Waiting on the sync — no revenue data for this {viewMode === 'week' ? 'week' : 'month'} yet.</>
+  }
+  if (prevRev > 0) {
+    const pct = ((totalRev - prevRev) / prevRev) * 100
+    const delta = (pct >= 0 ? '+' : '−') + (Math.round(Math.abs(pct) * 10) / 10).toFixed(1) + '%'
+    const tone = pct >= 0 ? UX.greenInk : UX.redInk
+    const mix = foodRev > bevRev * 2
+      ? 'food dominant'
+      : bevRev > foodRev * 2
+      ? 'beverage dominant'
+      : takeaway > 0
+      ? 'takeaway active'
+      : 'mix steady'
+    return (
+      <>
+        Revenue <span style={{ color: tone, fontWeight: UX.fwMedium }}>{delta}</span> vs last {viewMode === 'week' ? 'week' : 'month'} — {mix}.
+      </>
+    )
+  }
+  return (
+    <>
+      Revenue <span style={{ fontWeight: UX.fwMedium }}>{Math.round(totalRev).toLocaleString('en-GB').replace(/,/g, ' ')} kr</span> this {viewMode === 'week' ? 'week' : 'month'}.
+    </>
+  )
+}
+
+function buildRevenueContext(sum: any, totalCovers: number, takeaway: number, dineIn: number): string | undefined {
+  const parts: string[] = []
+  if (totalCovers > 0) parts.push(`${totalCovers} covers`)
+  if (takeaway > 0) parts.push(`takeaway ${Math.round(takeaway).toLocaleString('en-GB').replace(/,/g, ' ')} kr`)
+  else if (dineIn > 0) parts.push('no takeaway data yet')
+  if (!parts.length) return undefined
+  return parts.join(' · ')
+}
+
+function deltaLabel(cur: number, prev: number): string | undefined {
+  if (!prev) return undefined
+  const pct = ((cur - prev) / prev) * 100
+  return `${pct >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(pct * 10) / 10).toFixed(1)}%`
+}
+
+const navBtn = {
+  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
+  background: UX.cardBg, cursor: 'pointer', fontSize: 14,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', color: UX.ink2,
+} as const
