@@ -6,6 +6,23 @@
 
 const BASE = 'https://personalkollen.se/api'
 
+// Django parses a bare date ("2026-04-21") in a DateTime filter as 00:00:00.
+// That means `sale_time__lte=2026-04-21` matches sales up to midnight at the
+// START of that day — excluding all of 2026-04-21 AND the evening of the
+// previous day (since restaurants close after 22:00, those rows fail <=00:00).
+//
+// Bug confirmed 2026-04-21: Mon 20 Apr + Sun 19 Apr were silently dropped
+// from master-sync because each morning's cron passed `toDate` as a bare
+// date and cut off yesterday's dinner service.
+//
+// Fix: if the caller passes a date-only string, pad to end-of-day in local
+// time so the __lte window is inclusive of the full day.
+function endOfDay(d: string): string {
+  // Already a datetime? Leave alone.
+  if (d.includes('T') || d.includes(' ')) return d
+  return `${d}T23:59:59`
+}
+
 // Map Swedish OB verbose names from PK to English labels
 // PK returns ob.tag like "ob1","ob2","ob3" and ob.verbose_name in Swedish
 // We keep the tag as the key and provide English display names
@@ -69,7 +86,7 @@ export async function getLoggedTimes(token: string, fromDate?: string, toDate?: 
   let endpoint = '/logged-times/'
   const params: string[] = []
   if (fromDate) params.push(`start__gte=${fromDate}`)
-  if (toDate)   params.push(`start__lte=${toDate}`)
+  if (toDate)   params.push(`start__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
   const times = await fetchAll(endpoint, token)
@@ -109,7 +126,7 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
   let endpoint = '/work-periods/'
   const params: string[] = []
   if (fromDate) params.push(`start__gte=${fromDate}`)
-  if (toDate)   params.push(`start__lte=${toDate}`)
+  if (toDate)   params.push(`start__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
   const periods = await fetchAll(endpoint, token)
@@ -160,7 +177,7 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
   let endpoint = '/sales/'
   const params: string[] = []
   if (fromDate) params.push(`sale_time__gte=${fromDate}`)
-  if (toDate)   params.push(`sale_time__lte=${toDate}`)
+  if (toDate)   params.push(`sale_time__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
   const raw = await fetchAll(endpoint, token)
@@ -257,7 +274,7 @@ export async function getSaleForecast(token: string, fromDate?: string, toDate?:
   let endpoint = '/sale-forecast/'
   const params: string[] = []
   if (fromDate) params.push(`date__gte=${fromDate}`)
-  if (toDate)   params.push(`date__lte=${toDate}`)
+  if (toDate)   params.push(`date__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
   const forecasts = await fetchAll(endpoint, token)

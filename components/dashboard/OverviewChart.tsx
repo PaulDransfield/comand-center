@@ -84,6 +84,13 @@ const C = {
   ttMute:    'rgba(255,255,255,0.55)',
   goodGreen: '#86efac',
   badRed:    '#fca5a5',
+  // Predicted-revenue bar fill: distinctly lighter / cooler than the solid
+  // navy actuals so forecasts fade into the background visually. Sky-blue
+  // tones at low opacity — can't be mistaken for a dark actual bar at a
+  // glance.
+  predFill1: '#c7d2fe',   // light indigo
+  predFill2: '#e0e7ff',   // even lighter stripe
+  predBorder:'#a5b4fc',   // soft outline to separate from white bg
 }
 
 // Chart geometry — viewBox is fixed, width scales with container.
@@ -478,9 +485,12 @@ export default function OverviewChart({
         >
           {/* Pattern for predicted revenue bars */}
           <defs>
+            {/* Predicted-revenue fill — two light tones, no dark colour in
+                the pattern, so it reads as "soft / forecast" against the
+                solid-dark actuals. */}
             <pattern id="pk-pred" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(-45)">
-              <rect width="8" height="8" fill={C.rev} />
-              <rect width="4" height="8" fill={C.revAccent} />
+              <rect width="8" height="8" fill={C.predFill1} />
+              <rect width="4" height="8" fill={C.predFill2} />
             </pattern>
           </defs>
 
@@ -532,7 +542,9 @@ export default function OverviewChart({
                 }}
                 style={{ opacity: opH, transition: 'opacity .15s', cursor: onDayClick ? 'pointer' : 'default' }}
               >
-                {/* Revenue bar */}
+                {/* Revenue bar — predicted bars use the light stripe pattern
+                    + a thin border + reduced opacity so they read as "forecast
+                    / tentative" next to the solid navy actuals. */}
                 {rev > 0 && (
                   <rect
                     x={cx - barW / 2}
@@ -541,6 +553,9 @@ export default function OverviewChart({
                     height={Math.max(1, zeroY - yAt(rev))}
                     rx={barR} ry={barR}
                     fill={hasPred ? 'url(#pk-pred)' : C.rev}
+                    stroke={hasPred ? C.predBorder : 'none'}
+                    strokeWidth={hasPred ? 0.6 : 0}
+                    opacity={hasPred ? 0.85 : 1}
                   />
                 )}
                 {/* Labour bar (below zero line, extending down) */}
@@ -868,7 +883,7 @@ function KpiDelta({ value, fcast, compareMode, compareLabel, fmt, higherBetter }
 function LegendItem({ kind, color, label }: any) {
   let swatch: any = null
   if (kind === 'swatch')  swatch = <div style={{ width: 12, height: 10, borderRadius: 2, background: color }} />
-  if (kind === 'striped') swatch = <div style={{ width: 12, height: 10, borderRadius: 2, background: `repeating-linear-gradient(135deg, ${C.rev} 0 4px, ${C.revAccent} 4px 8px)` }} />
+  if (kind === 'striped') swatch = <div style={{ width: 12, height: 10, borderRadius: 2, background: `repeating-linear-gradient(135deg, ${C.predFill1} 0 4px, ${C.predFill2} 4px 8px)`, border: `0.5px solid ${C.predBorder}` }} />
   if (kind === 'line')    swatch = <div style={{ width: 14, height: 0, borderTop: `2px solid ${color}`, borderRadius: 2 }} />
   if (kind === 'dashed')  swatch = <svg width={14} height={4}><line x1="0" y1="2" x2="14" y2="2" stroke={color} strokeWidth={1.4} strokeDasharray="3 2" /></svg>
   return (

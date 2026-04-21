@@ -1,5 +1,23 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-20
+Last updated: 2026-04-21
+
+---
+
+## 0f. PK date-filter `__lte` with bare date silently drops yesterday's evening sales
+
+**Symptom:** Recurring "yesterday's data is missing" on the revenue/dashboard pages. Paul kept seeing Sun 19 Apr + Mon 20 Apr both missing from the revenue table on 2026-04-21, while Sat 18 Apr and earlier were fine. Same pattern repeated every few days.
+
+**Root cause:** `lib/pos/personalkollen.ts` passed `toDate` to PK as a bare date string (e.g. `sale_time__lte=2026-04-21`). Personalkollen's backend is Django; Django parses a bare date in a DateTimeField filter as `00:00:00` local time. So `sale_time__lte=2026-04-21` matched only sales with `sale_time <= 2026-04-21 00:00:00` — **excluding the entire previous day's dinner service** (restaurants close after 22:00, so no evening rows satisfy `<= 00:00:00`).
+
+Each daily cron silently lost yesterday. The master-sync reported "ok", raw data looked healthy on older days, and daily_metrics was missing the most-recent-day row.
+
+**Fix (2026-04-21):** `lib/pos/personalkollen.ts` now has an `endOfDay(d)` helper that appends `T23:59:59` to any bare date string before passing to PK. Applied to all four __lte filters: `start__lte` (logged times + work periods), `sale_time__lte` (sales), `date__lte` (workplaces/sales). The __gte side was fine — a bare date as the lower bound correctly means "from 00:00:00 that day", which includes the whole day.
+
+**Backfill:** to recover already-lost days, re-run PK sync for any integration. The sync will fetch the full window on its next master-sync run (05:00 UTC daily), or admin can kick it off via `/admin → customer → integration → Sync`.
+
+**Diagnostic:** `GET /api/admin/diagnose-day?business_id=UUID&date=YYYY-MM-DD` (header `x-admin-secret`) returns the raw rows at every pipeline stage for that biz × date + a plain-language verdict. Hit this whenever you suspect a data gap.
+
+---
 
 This file documents recurring problems and their confirmed fixes.
 Before trying anything new, check here first.

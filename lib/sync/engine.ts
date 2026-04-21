@@ -235,6 +235,12 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     }
 
     // ── Aggregate sales by (dept_slug, date) ─────────────────────────────────
+    // Captures every revenue split we have per-sale so revenue_logs ends up
+    // with food/bev, dine-in/takeaway and tips per department per day. Prior
+    // to 2026-04-21 only revenue + covers + food/drink were retained — the
+    // takeaway/dine-in split was thrown away before the upsert, which meant
+    // the /revenue Takeaway card stayed empty for every customer whose
+    // revenue flowed via pk_* per-department providers.
     const byDeptDay: Record<string, any> = {}
     for (const sale of sales) {
       if (!sale.sale_time || !sale.workplace_url) continue
@@ -242,12 +248,15 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
       if (!deptSlug) continue
       const date = sale.sale_time.slice(0, 10)
       const key  = `${deptSlug}|${date}`
-      if (!byDeptDay[key]) byDeptDay[key] = { deptSlug, date, revenue: 0, covers: 0, transactions: 0, food: 0, drink: 0 }
+      if (!byDeptDay[key]) byDeptDay[key] = { deptSlug, date, revenue: 0, covers: 0, transactions: 0, food: 0, drink: 0, takeaway: 0, dine_in: 0, tip: 0 }
       byDeptDay[key].revenue      += sale.amount
       byDeptDay[key].covers       += sale.covers ?? 0
       byDeptDay[key].transactions += 1
-      byDeptDay[key].food         += sale.food_revenue  ?? 0
-      byDeptDay[key].drink        += sale.drink_revenue ?? 0
+      byDeptDay[key].food         += sale.food_revenue     ?? 0
+      byDeptDay[key].drink        += sale.drink_revenue    ?? 0
+      byDeptDay[key].takeaway     += sale.takeaway_revenue ?? 0
+      byDeptDay[key].dine_in      += sale.dine_in_revenue  ?? 0
+      byDeptDay[key].tip          += sale.tip              ?? 0
     }
 
     const pkRows = Object.values(byDeptDay)
@@ -261,8 +270,11 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
         covers:            d.covers,
         revenue_per_cover: d.covers > 0 ? Math.round(d.revenue / d.covers) : 0,
         transactions:      d.transactions,
-        food_revenue:      Math.round(d.food  * 100) / 100,
-        bev_revenue:       Math.round(d.drink * 100) / 100,
+        food_revenue:      Math.round(d.food     * 100) / 100,
+        bev_revenue:       Math.round(d.drink    * 100) / 100,
+        takeaway_revenue:  Math.round(d.takeaway * 100) / 100,
+        dine_in_revenue:   Math.round(d.dine_in  * 100) / 100,
+        tip_revenue:       Math.round(d.tip      * 100) / 100,
         period_year:       parseInt(d.date.slice(0, 4)),
         period_month:      parseInt(d.date.slice(5, 7)),
       }))
@@ -300,10 +312,18 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     business_id:       integ.business_id ?? null,
     provider:          'personalkollen',
     revenue_date:      date,
-    revenue:           Math.round(data.revenue * 100) / 100,
+    revenue:           Math.round(data.revenue  * 100) / 100,
     covers:            data.covers,
     revenue_per_cover: data.covers > 0 ? Math.round(data.revenue / data.covers) : 0,
     transactions:      data.transactions,
+    // Previously these were accumulated into byDay then silently dropped — so
+    // food/bev/takeaway/dine-in/tip all stayed NULL in the aggregate pk row.
+    // Fixed 2026-04-21 together with the per-department fix above.
+    food_revenue:      Math.round(data.food     * 100) / 100,
+    bev_revenue:       Math.round(data.drink    * 100) / 100,
+    takeaway_revenue:  Math.round(data.takeaway * 100) / 100,
+    dine_in_revenue:   Math.round(data.dine_in  * 100) / 100,
+    tip_revenue:       Math.round(data.tip      * 100) / 100,
     period_year:       parseInt(date.slice(0,4)),
     period_month:      parseInt(date.slice(5,7)),
   }))
