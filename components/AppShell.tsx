@@ -4,7 +4,10 @@
 
 'use client'
 
-import Sidebar       from './Sidebar'
+// Phase 1 (ux/phase-1-overview): swapped to the redesigned SidebarV2. Old
+// `components/Sidebar.tsx` is retained in-tree so it can be reinstated by
+// reverting this one line if the redesign ever needs to roll back.
+import Sidebar from './ui/SidebarV2'
 import ConsentBanner from './ConsentBanner'
 import MobileNav from './MobileNav'
 

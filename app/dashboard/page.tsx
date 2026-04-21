@@ -7,8 +7,12 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
-import WeatherStrip from '@/components/WeatherStrip'
 import OverviewChart, { PeriodOption } from '@/components/dashboard/OverviewChart'
+import PageHero from '@/components/ui/PageHero'
+import SupportingStats from '@/components/ui/SupportingStats'
+import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
+import Sparkline from '@/components/ui/Sparkline'
+import { UX } from '@/lib/constants/tokens'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
@@ -403,50 +407,10 @@ function DashboardInner() {
           </div>
         )}
 
-        {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-
-          {/* Business selector */}
-          <select
-            value={bizId ?? ''}
-            onChange={e => { setBizId(e.target.value); localStorage.setItem('cc_selected_biz', e.target.value) }}
-            style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14, fontWeight: 600, background: 'white', color: '#111', cursor: 'pointer' }}
-          >
-            {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-
-          {/* Week / month navigator */}
-          {viewMode === 'week' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-              <div style={{ minWidth: 160, textAlign: 'center', padding: '0 8px' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {curr.weekNum}</div>
-                <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
-              </div>
-              <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-              <div style={{ minWidth: 160, textAlign: 'center', padding: '0 8px' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{currM.label}</div>
-              </div>
-              <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: monthOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-            </div>
-          )}
-
-          {/* W / M toggle */}
-          <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
-            {(['week', 'month'] as const).map(m => (
-              <button key={m} onClick={() => setViewMode(m)} style={{
-                padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-                background: viewMode === m ? 'white' : 'transparent',
-                color:      viewMode === m ? '#111'   : '#9ca3af',
-                boxShadow:  viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none',
-              }}>{m === 'week' ? 'W' : 'M'}</button>
-            ))}
-          </div>
-        </div>
+        {/* Outer header removed in Phase 1 — the business selector is now in
+            the sidebar (SidebarV2) and the period navigator + W/M toggle are
+            inside OverviewChart's own control row. Keeping both would be the
+            exact duplication the redesign is trying to eliminate. */}
 
         {/* ── Alerts strip ────────────────────────────────────────────────── */}
         {alerts.filter(a => a.severity === 'high' || a.severity === 'critical').slice(0, 1).map(a => (
@@ -459,247 +423,36 @@ function DashboardInner() {
           </a>
         ))}
 
+        {/* ─── PageHero + chart + supporting row ─────────────────────────────
+            One consolidated view for both week and month — the chart's own
+            W/M toggle drives viewMode state, so a single render path serves
+            both. Spec: DESIGN.md § 1. Overview. */}
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading…</div>
-        ) : viewMode === 'week' ? (
-
-          /* ══════════════════════════════════════════════════════════════════
-             WEEK VIEW
-          ══════════════════════════════════════════════════════════════════ */
-          <>
-            <WeatherStrip businessId={bizId ?? undefined} />
-            {/* ── 4 KPI cards ────────────────────────────────────────────── */}
-            <div className="kpi-row" style={{ marginBottom: 16 }}>
-              <KpiCard
-                label="Revenue"
-                value={fmtKr(totalRev)}
-                sub={`vs Week ${getWeekBounds(weekOffset - 1).weekNum}`}
-                deltaVal={delta(totalRev, prevRev)}
-                href="/revenue"
-              />
-              <KpiCard
-                label="Labour Cost"
-                value={fmtKr(totalLabour)}
-                sub={`vs Week ${getWeekBounds(weekOffset - 1).weekNum}`}
-                deltaVal={totalLabour > 0 && prevLabour > 0 ? { pct: Math.abs(delta(totalLabour, prevLabour)?.pct ?? 0), up: (delta(totalLabour, prevLabour)?.up ?? true) === false } : null}
-                href="/staff"
-              />
-              <KpiCard
-                label="Labour Cost %"
-                value={totalRev > 0 ? fmtPct(labourPct) : '—'}
-                sub={`Target ${targetPct}%${prevLabPct !== null ? ` · prev ${fmtPct(prevLabPct)}` : ''}`}
-                deltaVal={null}
-                ok={totalRev > 0 ? labourPct <= targetPct : null}
-                href="/staff"
-              />
-              <KpiCard
-                label={totalHours > 0 ? 'Hours / Rev per hr' : 'Hours'}
-                value={totalHours > 0 ? `${Math.round(totalHours)}h` : '—'}
-                sub={revPerHour > 0 ? `${Math.round(revPerHour).toLocaleString('en-GB')} kr/hr` : undefined}
-                deltaVal={null}
-                href="/staff"
-              />
-            </div>
-
-            {/* ── Interactive overview chart (week view) ───────────────── */}
-            <OverviewChart
-              days={weekDays}
-              viewMode="week"
-              onViewModeChange={handleViewModeChange}
-              periodLabel={`Week ${curr.weekNum} · ${curr.label}`}
-              businessName={selectedBiz?.name ?? ''}
-              targetLabourPct={targetPct}
-              availablePeriods={availablePeriods}
-              onPeriodChange={handlePeriodChange}
-              onDayClick={handleDayClick}
-              selectedDates={selectedDates}
-              onSelectedDatesChange={handleSelectedDatesChange}
-              compareMode={compareMode}
-              onCompareChange={handleCompareChange}
-              fmtKr={fmtKr}
-              fmtPct={fmtPct}
-            />
-
-            {/* ── Dept table + P&L ───────────────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, marginBottom: 16 }}>
-
-              {/* Department table */}
-              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — Week {curr.weekNum}</div>
-                  <a href="/departments" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>View all →</a>
-                </div>
-                {(depts?.departments ?? []).length === 0 ? (
-                  <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Run a sync to see department data</div>
-                ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#f9fafb' }}>
-                        {['Department', 'Revenue', 'Labour', 'Lab%', 'GP%'].map(h => (
-                          <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(depts.departments ?? []).map((d: any, i: number) => (
-                        <tr key={d.name} style={{ borderBottom: '1px solid #f9fafb' }}>
-                          <td style={{ padding: '10px 14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color ?? '#9ca3af', flexShrink: 0 }} />
-                              <a href={`/departments/${encodeURIComponent(d.name)}`} style={{ fontSize: 13, color: '#111', textDecoration: 'none', fontWeight: 500 }}>{d.name}</a>
-                            </div>
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#111', fontWeight: 600 }}>
-                            {d.revenue > 0 ? Math.round(d.revenue).toLocaleString('en-GB') : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>
-                            {d.staff_cost > 0 ? Math.round(d.staff_cost).toLocaleString('en-GB') : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            {d.labour_pct !== null ? (
-                              <span style={{
-                                fontSize: 12, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-                                background: d.labour_pct > targetPct ? '#fee2e2' : '#dcfce7',
-                                color:      d.labour_pct > targetPct ? '#dc2626' : '#16a34a',
-                              }}>{fmtPct(d.labour_pct)}</span>
-                            ) : <span style={{ color: '#d1d5db', fontSize: 13 }}>—</span>}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: d.gp_pct !== null ? (d.gp_pct >= 50 ? '#16a34a' : d.gp_pct >= 30 ? '#d97706' : '#dc2626') : '#d1d5db', fontWeight: d.gp_pct !== null ? 600 : 400 }}>
-                            {d.gp_pct !== null ? fmtPct(d.gp_pct) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    {depts?.summary && (
-                      <tfoot>
-                        <tr style={{ background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
-                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Total</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{Math.round(depts.summary.total_revenue).toLocaleString('en-GB')}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#374151' }}>{Math.round(depts.summary.total_staff_cost).toLocaleString('en-GB')}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            {depts.summary.labour_pct !== null && (
-                              <span style={{ fontSize: 12, fontWeight: 700, color: depts.summary.labour_pct > targetPct ? '#dc2626' : '#16a34a' }}>{fmtPct(depts.summary.labour_pct)}</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: depts.summary.gp_pct !== null ? (depts.summary.gp_pct >= 50 ? '#16a34a' : '#d97706') : '#d1d5db' }}>
-                            {depts.summary.gp_pct !== null ? fmtPct(depts.summary.gp_pct) : '—'}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                )}
-              </div>
-
-              {/* Right column: P&L + quick actions */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-                {/* Week P&L */}
-                <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 16 }}>P&L — Week {curr.weekNum}</div>
-                  {[
-                    { label: 'Revenue',     value: totalRev,    color: '#111',    prefix: '+' },
-                    { label: 'Labour Cost', value: -totalLabour, color: '#374151', prefix: '' },
-                  ].map(row => (
-                    <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
-                      <span style={{ fontSize: 13, color: '#6b7280' }}>{row.label}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: row.color }}>
-                        {row.value >= 0 ? (row.prefix + Math.round(row.value).toLocaleString('en-GB')) : '−' + Math.abs(Math.round(row.value)).toLocaleString('en-GB')} kr
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Gross margin line */}
-                  <div style={{ marginTop: 12, padding: '12px 14px', background: '#f9fafb', borderRadius: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Gross Margin</span>
-                      <span style={{ fontSize: 18, fontWeight: 700, color: (totalRev - totalLabour) >= 0 ? '#16a34a' : '#dc2626' }}>
-                        {totalRev > 0 ? fmtKr(totalRev - totalLabour) : '—'}
-                      </span>
-                    </div>
-                    {totalRev > 0 && totalLabour > 0 && (
-                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                        {fmtPct(((totalRev - totalLabour) / totalRev) * 100)} margin (after labour)
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Hours + rev/hour */}
-                  {totalHours > 0 && (
-                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
-                      <span>{Math.round(totalHours)}h worked</span>
-                      {revPerHour > 0 && <span>{Math.round(revPerHour).toLocaleString('en-GB')} kr/hr</span>}
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick links */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[
-                    { label: 'Staff',        href: '/staff',    icon: '👥' },
-                    { label: 'AI Assistant', href: '/notebook', icon: '✦'  },
-                    { label: 'Forecast',     href: '/forecast', icon: '📈' },
-                    { label: 'Tracker',      href: '/tracker',  icon: '📋' },
-                  ].map(a => (
-                    <a key={a.href} href={a.href} style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
-                      background: 'white', border: '1px solid #e5e7eb', borderRadius: 10,
-                      textDecoration: 'none', color: '#374151', fontSize: 12, fontWeight: 600,
-                    }}>
-                      <span style={{ fontSize: 16 }}>{a.icon}</span> {a.label}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
-
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
         ) : (
-
-          /* ══════════════════════════════════════════════════════════════════
-             MONTH VIEW — same data sources as week, wider date range
-          ══════════════════════════════════════════════════════════════════ */
           <>
-            <WeatherStrip businessId={bizId ?? undefined} />
-            {/* ── 4 KPI cards ────────────────────────────────────────────── */}
-            <div className="kpi-row" style={{ marginBottom: 16 }}>
-              <KpiCard
-                label="Revenue"
-                value={fmtKr(totalRev)}
-                sub={`vs ${getMonthBounds(monthOffset - 1).label}`}
-                deltaVal={delta(totalRev, prevRev)}
-                href="/revenue"
-              />
-              <KpiCard
-                label="Labour Cost"
-                value={fmtKr(totalLabour)}
-                sub={`vs ${getMonthBounds(monthOffset - 1).label}`}
-                deltaVal={totalLabour > 0 && prevLabour > 0 ? { pct: Math.abs(delta(totalLabour, prevLabour)?.pct ?? 0), up: (delta(totalLabour, prevLabour)?.up ?? true) === false } : null}
-                href="/staff"
-              />
-              <KpiCard
-                label="Labour Cost %"
-                value={totalRev > 0 ? fmtPct(labourPct) : '—'}
-                sub={`Target ${targetPct}%${prevLabPct !== null ? ` · prev ${fmtPct(prevLabPct)}` : ''}`}
-                deltaVal={null}
-                ok={totalRev > 0 ? labourPct <= targetPct : null}
-                href="/staff"
-              />
-              <KpiCard
-                label={totalHours > 0 ? 'Hours / Rev per hr' : 'Hours'}
-                value={totalHours > 0 ? `${Math.round(totalHours)}h` : '—'}
-                sub={revPerHour > 0 ? `${Math.round(revPerHour).toLocaleString('en-GB')} kr/hr` : undefined}
-                deltaVal={null}
-                href="/staff"
-              />
-            </div>
+            <OverviewHero
+              viewMode={viewMode}
+              curr={curr}
+              currM={currM}
+              totalRev={totalRev}
+              totalLabour={totalLabour}
+              prevRev={prevRev}
+              prevLabour={prevLabour}
+              totalHours={totalHours}
+              revPerHour={revPerHour}
+              labourPct={labourPct}
+              targetPct={targetPct}
+              aiSaving={aiSched?.summary?.saving_kr ?? 0}
+              fmtKr={fmtKr}
+              fmtPct={fmtPct}
+            />
 
-            {/* ── Interactive overview chart (month view) ──────────────── */}
             <OverviewChart
-              days={monthDays}
-              viewMode="month"
+              days={viewMode === 'week' ? weekDays : monthDays}
+              viewMode={viewMode}
               onViewModeChange={handleViewModeChange}
-              periodLabel={currM.label}
+              periodLabel={viewMode === 'week' ? `Week ${curr.weekNum} · ${curr.label}` : currM.label}
               businessName={selectedBiz?.name ?? ''}
               targetLabourPct={targetPct}
               availablePeriods={availablePeriods}
@@ -713,140 +466,36 @@ function DashboardInner() {
               fmtPct={fmtPct}
             />
 
-            {/* ── Dept table + P&L ───────────────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 12, marginBottom: 16 }}>
-
-              {/* Department table */}
-              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Departments — {currM.label}</div>
-                  <a href="/departments" style={{ fontSize: 12, color: '#6366f1', textDecoration: 'none', fontWeight: 600 }}>View all →</a>
-                </div>
-                {(depts?.departments ?? []).length === 0 ? (
-                  <div style={{ padding: 32, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>No department data available</div>
-                ) : (
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ background: '#f9fafb' }}>
-                        {['Department', 'Revenue', 'Labour', 'Lab%', 'GP%'].map(h => (
-                          <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(depts.departments ?? []).map((d: any) => (
-                        <tr key={d.name} style={{ borderBottom: '1px solid #f9fafb' }}>
-                          <td style={{ padding: '10px 14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color ?? '#9ca3af', flexShrink: 0 }} />
-                              <a href={`/departments/${encodeURIComponent(d.name)}`} style={{ fontSize: 13, color: '#111', textDecoration: 'none', fontWeight: 500 }}>{d.name}</a>
-                            </div>
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>
-                            {d.revenue > 0 ? Math.round(d.revenue).toLocaleString('en-GB') : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>
-                            {d.staff_cost > 0 ? Math.round(d.staff_cost).toLocaleString('en-GB') : '—'}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            {d.labour_pct !== null ? (
-                              <span style={{
-                                fontSize: 12, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-                                background: d.labour_pct > targetPct ? '#fee2e2' : '#dcfce7',
-                                color:      d.labour_pct > targetPct ? '#dc2626' : '#16a34a',
-                              }}>{fmtPct(d.labour_pct)}</span>
-                            ) : <span style={{ color: '#d1d5db', fontSize: 13 }}>—</span>}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: d.gp_pct !== null ? (d.gp_pct >= 50 ? '#16a34a' : d.gp_pct >= 30 ? '#d97706' : '#dc2626') : '#d1d5db', fontWeight: d.gp_pct !== null ? 600 : 400 }}>
-                            {d.gp_pct !== null ? fmtPct(d.gp_pct) : '—'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    {depts?.summary && (
-                      <tfoot>
-                        <tr style={{ background: '#f9fafb', borderTop: '2px solid #e5e7eb' }}>
-                          <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 700, color: '#374151' }}>Total</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#111' }}>{Math.round(depts.summary.total_revenue).toLocaleString('en-GB')}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#374151' }}>{Math.round(depts.summary.total_staff_cost).toLocaleString('en-GB')}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            {depts.summary.labour_pct !== null && (
-                              <span style={{ fontSize: 12, fontWeight: 700, color: depts.summary.labour_pct > targetPct ? '#dc2626' : '#16a34a' }}>{fmtPct(depts.summary.labour_pct)}</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 700, color: depts.summary.gp_pct !== null ? (depts.summary.gp_pct >= 50 ? '#16a34a' : '#d97706') : '#d1d5db' }}>
-                            {depts.summary.gp_pct !== null ? fmtPct(depts.summary.gp_pct) : '—'}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                )}
-              </div>
-
-              {/* Right column: P&L + quick actions */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-                {/* Month P&L */}
-                <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111', marginBottom: 16 }}>P&L — {currM.label}</div>
-                  {[
-                    { label: 'Revenue',     value: totalRev,    color: '#111',    prefix: '+' },
-                    { label: 'Labour Cost', value: -totalLabour, color: '#374151', prefix: '' },
-                  ].map(row => (
-                    <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f3f4f6' }}>
-                      <span style={{ fontSize: 13, color: '#6b7280' }}>{row.label}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: row.color }}>
-                        {row.value >= 0 ? (row.prefix + Math.round(row.value).toLocaleString('en-GB')) : '−' + Math.abs(Math.round(row.value)).toLocaleString('en-GB')} kr
-                      </span>
-                    </div>
-                  ))}
-
-                  {/* Gross margin line */}
-                  <div style={{ marginTop: 12, padding: '12px 14px', background: '#f9fafb', borderRadius: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#374151' }}>Gross Margin</span>
-                      <span style={{ fontSize: 18, fontWeight: 700, color: (totalRev - totalLabour) >= 0 ? '#16a34a' : '#dc2626' }}>
-                        {totalRev > 0 ? fmtKr(totalRev - totalLabour) : '—'}
-                      </span>
-                    </div>
-                    {totalRev > 0 && totalLabour > 0 && (
-                      <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                        {fmtPct(((totalRev - totalLabour) / totalRev) * 100)} margin (after labour)
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Hours + rev/hour */}
-                  {totalHours > 0 && (
-                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#9ca3af' }}>
-                      <span>{Math.round(totalHours)}h worked</span>
-                      {revPerHour > 0 && <span>{Math.round(revPerHour).toLocaleString('en-GB')} kr/hr</span>}
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick links */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[
-                    { label: 'Staff',        href: '/staff',    icon: '👥' },
-                    { label: 'AI Assistant', href: '/notebook', icon: '✦'  },
-                    { label: 'Forecast',     href: '/forecast', icon: '📈' },
-                    { label: 'Tracker',      href: '/tracker',  icon: '📋' },
-                  ].map(a => (
-                    <a key={a.href} href={a.href} style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
-                      background: 'white', border: '1px solid #e5e7eb', borderRadius: 10,
-                      textDecoration: 'none', color: '#374151', fontSize: 12, fontWeight: 600,
-                    }}>
-                      <span style={{ fontSize: 16 }}>{a.icon}</span> {a.label}
-                    </a>
-                  ))}
-                </div>
-              </div>
+            {/* Supporting row — Departments summary + AttentionPanel.
+                Spec § 1 Overview: grid 1fr 260px, max 5 dept rows + max 3
+                attention items. */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 260px',
+              gap: 12,
+              marginTop: 12,
+              marginBottom: 16,
+            }}>
+              <DepartmentsSummary
+                depts={(depts?.departments ?? [])}
+                targetPct={targetPct}
+                periodLabel={viewMode === 'week' ? `Week ${curr.weekNum}` : currM.label}
+                fmtKr={fmtKr}
+                fmtPct={fmtPct}
+              />
+              <AttentionPanel
+                items={buildAttentionItems({
+                  depts: depts?.departments ?? [],
+                  aiSaving: aiSched?.summary?.saving_kr ?? 0,
+                  targetPct,
+                  labourPct,
+                  totalRev,
+                })}
+              />
             </div>
           </>
         )}
+
       </div>
 
       <AskAI
@@ -861,4 +510,285 @@ function DashboardInner() {
       />
     </AppShell>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OverviewHero — PageHero wrapping the redesigned Overview-page introduction.
+// Single-sentence headline answering "am I trading ahead this week?", inline
+// coloured delta, SupportingStats in the right slot.
+// ─────────────────────────────────────────────────────────────────────────────
+function OverviewHero({
+  viewMode, curr, currM,
+  totalRev, totalLabour, prevRev, prevLabour,
+  totalHours, revPerHour,
+  labourPct, targetPct,
+  aiSaving,
+  fmtKr, fmtPct,
+}: any) {
+  const isWeek = viewMode === 'week'
+  const eyebrow = isWeek
+    ? `THIS WEEK · ${curr.label ?? ''}`
+    : `THIS MONTH · ${currM.label ?? ''}`
+
+  // Revenue delta vs previous period.
+  const revDelta = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
+  const revTone: 'good' | 'bad' | 'neutral' =
+    revDelta == null ? 'neutral' : revDelta >= 0 ? 'good' : 'bad'
+
+  // Labour shape — "lean" = at or under target, "tight" = ≤ 5pp over, "hot" = > 5pp over.
+  const labourState =
+    totalRev <= 0 || labourPct == null       ? 'unknown'
+    : labourPct <= targetPct                 ? 'lean'
+    : labourPct <= targetPct + 5             ? 'tight'
+    :                                          'hot'
+
+  // Headline construction — keep to a single sentence, ≤ 14 words target.
+  const headline = (() => {
+    if (totalRev <= 0) {
+      return (
+        <span>
+          Waiting on today's sync — revenue hasn't landed yet.
+        </span>
+      )
+    }
+    if (revDelta != null) {
+      const sign = revDelta >= 0 ? '+' : ''
+      const deltaText = `${sign}${Math.round(revDelta * 10) / 10}%`
+      const deltaSpan = (
+        <span style={{
+          color: revTone === 'good' ? UX.greenInk : revTone === 'bad' ? UX.redInk : UX.ink1,
+          fontWeight: UX.fwMedium,
+        }}>
+          {deltaText}
+        </span>
+      )
+      const direction = revDelta >= 0 ? 'ahead of' : 'behind'
+      const ref       = isWeek ? 'last week' : 'last month'
+      const labourTail =
+        labourState === 'lean'  ? <>, labour running <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>lean</span>.</> :
+        labourState === 'tight' ? <>, labour tight at <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{fmtPct(labourPct)}</span>.</> :
+        labourState === 'hot'   ? <>, labour <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{fmtPct(labourPct)}</span> vs {targetPct}% target.</> :
+                                  <>.</>
+      return <span>Trading {deltaSpan} {direction} {ref}{labourTail}</span>
+    }
+    // No prev-period baseline — state the absolute figures.
+    return (
+      <span>
+        Revenue <span style={{ fontWeight: UX.fwMedium }}>{fmtKr(totalRev)}</span>
+        , margin <span style={{ fontWeight: UX.fwMedium }}>{fmtKr(Math.max(0, totalRev - totalLabour))}</span> this {isWeek ? 'week' : 'month'}.
+      </span>
+    )
+  })()
+
+  // Context — one line: hours, rev/hour, and AI saving if any.
+  const contextParts: string[] = []
+  if (totalHours > 0)        contextParts.push(`${Math.round(totalHours)}h worked`)
+  if (revPerHour > 0)        contextParts.push(`${fmtKr(revPerHour)}/hr`)
+  if (aiSaving > 0)          contextParts.push(`AI sees ${fmtKr(aiSaving)} save next week`)
+  const context = contextParts.length ? contextParts.join(' · ') : undefined
+
+  // Right slot — 3 stats, per spec.
+  const margin = Math.max(0, totalRev - totalLabour)
+  const labourDelta = prevLabour > 0 ? ((totalLabour - prevLabour) / prevLabour) * 100 : null
+  const prevMargin  = prevRev - prevLabour
+  const marginDelta = prevMargin > 0 ? ((margin - prevMargin) / prevMargin) * 100 : null
+  const fmtDelta = (d: number | null): string | undefined =>
+    d == null ? undefined : `${d >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(d * 10) / 10)}%`
+
+  // Labour delta is inverted — lower is better for the business.
+  const labourTone: 'good' | 'bad' | 'neutral' =
+    labourDelta == null ? 'neutral' : labourDelta <= 0 ? 'good' : 'bad'
+  const marginTone: 'good' | 'bad' | 'neutral' =
+    marginDelta == null ? 'neutral' : marginDelta >= 0 ? 'good' : 'bad'
+
+  const stats = [
+    {
+      label: 'Revenue',
+      value: totalRev > 0 ? fmtKr(totalRev) : '—',
+      delta: fmtDelta(revDelta),
+      deltaTone: revTone as 'good' | 'bad' | 'neutral',
+      sub: prevRev > 0 ? `vs ${fmtKr(prevRev)}` : undefined,
+    },
+    {
+      label: 'Labour',
+      value: totalLabour > 0 ? fmtKr(totalLabour) : '—',
+      delta: fmtDelta(labourDelta),
+      deltaTone: labourTone,
+      sub: labourPct != null && totalRev > 0 ? fmtPct(labourPct) : undefined,
+    },
+    {
+      label: 'Margin',
+      value: totalRev > 0 ? fmtKr(margin) : '—',
+      delta: fmtDelta(marginDelta),
+      deltaTone: marginTone,
+      sub: totalRev > 0 ? fmtPct((margin / totalRev) * 100) : undefined,
+    },
+  ]
+
+  return (
+    <PageHero
+      eyebrow={eyebrow}
+      headline={headline}
+      context={context}
+      right={<SupportingStats items={stats} />}
+    />
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DepartmentsSummary — condensed list of departments for the current period.
+// Spec § 1 Overview: 5 rows max, each with status dot · name · revenue · margin
+// · sparkline. `View all →` routes to /departments.
+// ─────────────────────────────────────────────────────────────────────────────
+function DepartmentsSummary({ depts, targetPct, periodLabel, fmtKr, fmtPct }: any) {
+  const rows = (depts ?? [])
+    .filter((d: any) => Number(d.revenue ?? 0) > 0 || Number(d.staff_cost ?? 0) > 0)
+    .sort((a: any, b: any) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))
+    .slice(0, 5)
+
+  return (
+    <div style={{
+      background:   UX.cardBg,
+      border:       `0.5px solid ${UX.border}`,
+      borderRadius: UX.r_lg,
+      overflow:     'hidden' as const,
+    }}>
+      <div style={{
+        padding:        '12px 16px',
+        borderBottom:   `0.5px solid ${UX.borderSoft}`,
+        display:        'flex',
+        justifyContent: 'space-between',
+        alignItems:     'baseline',
+      }}>
+        <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+          Departments — {periodLabel}
+        </div>
+        <a href="/departments" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
+          View all →
+        </a>
+      </div>
+
+      {rows.length === 0 ? (
+        <div style={{ padding: 24, textAlign: 'center' as const, fontSize: UX.fsBody, color: UX.ink4 }}>
+          No department data for this period yet.
+        </div>
+      ) : (
+        <div>
+          {rows.map((d: any) => {
+            const margin = Number(d.revenue ?? 0) - Number(d.staff_cost ?? 0)
+            const marginPct = d.revenue > 0 ? (margin / d.revenue) * 100 : null
+            const marginTone: 'good' | 'bad' | 'warning' | 'neutral' =
+              marginPct == null ? 'neutral'
+              : marginPct >= 55 ? 'good'
+              : marginPct >= 30 ? 'warning'
+              :                   'bad'
+            const dotColour =
+              marginTone === 'good'    ? UX.greenInk :
+              marginTone === 'warning' ? UX.amberInk :
+              marginTone === 'bad'     ? UX.redInk   : UX.ink4
+            return (
+              <a
+                key={d.name}
+                href={`/departments/${encodeURIComponent(d.name)}`}
+                style={{
+                  display:        'grid',
+                  gridTemplateColumns: '10px 1fr auto auto auto',
+                  gap:            10,
+                  alignItems:     'center',
+                  padding:        '9px 16px',
+                  borderBottom:   `0.5px solid ${UX.borderSoft}`,
+                  textDecoration: 'none',
+                  color:          UX.ink1,
+                  fontSize:       UX.fsBody,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{ width: 6, height: 6, borderRadius: '50%', background: d.color ?? dotColour }}
+                />
+                <span style={{ fontWeight: UX.fwMedium, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                  {d.name}
+                </span>
+                <span style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const }}>
+                  {fmtKr(d.revenue)}
+                </span>
+                <span style={{
+                  fontVariantNumeric: 'tabular-nums' as const,
+                  fontWeight: UX.fwMedium,
+                  color:
+                    marginTone === 'good'    ? UX.greenInk :
+                    marginTone === 'warning' ? UX.amberInk :
+                    marginTone === 'bad'     ? UX.redInk   : UX.ink3,
+                  whiteSpace: 'nowrap' as const,
+                }}>
+                  {marginPct == null ? '—' : fmtPct(marginPct)}
+                </span>
+                <Sparkline points={[]} tone={marginTone} dashed />
+              </a>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildAttentionItems — synthesise up to 3 items for the AttentionPanel from
+// the data already loaded on this page. Spec § 1: worst dept + trending-down
+// dept + AI saving. We approximate "trending-down" with the 2nd-worst margin
+// when a clear worst exists, since per-dept deltas aren't fetched yet.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev }: any): AttentionItem[] {
+  const items: AttentionItem[] = []
+
+  // 1. AI saving (if any) — most actionable first.
+  if (aiSaving > 0) {
+    const kr = Math.round(aiSaving).toLocaleString('en-GB').replace(/,/g, ' ')
+    items.push({
+      tone:    'good',
+      entity:  'AI',
+      message: `sees ${kr} kr to trim from next week's hours.`,
+    })
+  }
+
+  // 2. Worst department by margin %.
+  const withRev = (depts ?? []).filter((d: any) => Number(d.revenue ?? 0) > 0)
+  if (withRev.length) {
+    const ranked = withRev.map((d: any) => {
+      const margin    = Number(d.revenue ?? 0) - Number(d.staff_cost ?? 0)
+      const marginPct = d.revenue > 0 ? (margin / d.revenue) * 100 : null
+      return { ...d, _marginPct: marginPct }
+    }).sort((a: any, b: any) => (a._marginPct ?? 1e9) - (b._marginPct ?? 1e9))
+
+    const worst = ranked[0]
+    if (worst && worst._marginPct != null && worst._marginPct < 55) {
+      items.push({
+        tone:    worst._marginPct < 30 ? 'bad' : 'warning',
+        entity:  worst.name,
+        message: `margin ${(Math.round(worst._marginPct * 10) / 10).toFixed(1)}% — labour is the swing factor.`,
+      })
+    }
+
+    // 3. Second worst if it's also in trouble.
+    const second = ranked[1]
+    if (items.length < 3 && second && second._marginPct != null && second._marginPct < 40) {
+      items.push({
+        tone:    'warning',
+        entity:  second.name,
+        message: `margin ${(Math.round(second._marginPct * 10) / 10).toFixed(1)}% — worth a look.`,
+      })
+    }
+  }
+
+  // 4. Group-level labour flag if nothing else.
+  if (items.length === 0 && labourPct != null && totalRev > 0 && labourPct > targetPct + 5) {
+    items.push({
+      tone:    'warning',
+      entity:  'Labour',
+      message: `running ${(Math.round(labourPct * 10) / 10).toFixed(1)}% of revenue, ${targetPct}% target.`,
+    })
+  }
+
+  return items
 }
