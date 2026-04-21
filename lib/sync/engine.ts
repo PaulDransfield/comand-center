@@ -382,9 +382,11 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
   return { shifts: shiftsUpserted, scheduled: scheduledUpserted, revenue_days: revenueUpserted, per_dept_days: perDeptRevUpserted, staff_count: staff.length, forecasts: forecastsUpserted }
 }
 
-// ── Fortnox sync ──────────────────────────────────────────────────────────────
-async function syncFortnox(db: any, integ: any, fromDate: string, toDate: string) {
-  // Get fresh access token
+// ── Fortnox OAuth token refresh (auto-called before every sync) ──────────────
+// Fortnox access tokens live for 1 hour. Long syncs or stale integrations
+// would previously 401 mid-sync; now we refresh proactively if the token
+// expires in <5 min.
+async function ensureFreshFortnoxToken(db: any, integ: any): Promise<any> {
   const { data: tokenData } = await db
     .from('integrations')
     .select('credentials_enc')
@@ -393,6 +395,51 @@ async function syncFortnox(db: any, integ: any, fromDate: string, toDate: string
 
   const creds = JSON.parse(decrypt(tokenData.credentials_enc) ?? '{}')
   if (!creds.access_token) throw new Error('No Fortnox access token')
+
+  const expiresAtMs = Number(creds.expires_at) || 0
+  const fiveMinMs   = 5 * 60 * 1000
+  if (expiresAtMs && expiresAtMs - Date.now() > fiveMinMs) return creds
+
+  // Token is expired or about to expire — refresh via Fortnox OAuth.
+  if (!creds.refresh_token) throw new Error('Fortnox token expired and no refresh_token on file — reconnect integration')
+
+  const clientId     = process.env.FORTNOX_CLIENT_ID
+  const clientSecret = process.env.FORTNOX_CLIENT_SECRET
+  if (!clientId || !clientSecret) throw new Error('FORTNOX_CLIENT_ID/SECRET not configured')
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const res = await fetch('https://apps.fortnox.se/oauth-v1/token', {
+    method:  'POST',
+    headers: { 'Authorization': `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body:    new URLSearchParams({ grant_type: 'refresh_token', refresh_token: creds.refresh_token }).toString(),
+  })
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`Fortnox token refresh failed (${res.status}): ${errText.slice(0, 200)}`)
+  }
+  const tok: any = await res.json()
+  const refreshed = {
+    ...creds,
+    access_token:  tok.access_token  ?? creds.access_token,
+    refresh_token: tok.refresh_token ?? creds.refresh_token,
+    expires_at:    Date.now() + (Number(tok.expires_in ?? 3600) * 1000),
+    token_type:    tok.token_type    ?? creds.token_type,
+    scope:         tok.scope         ?? creds.scope,
+  }
+
+  const { encrypt } = await import('@/lib/integrations/encryption')
+  await db.from('integrations')
+    .update({ credentials_enc: encrypt(JSON.stringify(refreshed)), status: 'connected', last_error: null })
+    .eq('id', integ.id)
+
+  return refreshed
+}
+
+// ── Fortnox sync ──────────────────────────────────────────────────────────────
+async function syncFortnox(db: any, integ: any, fromDate: string, toDate: string) {
+  // Always refresh if the token is close to expiry — blocks the old
+  // silent-401-midsync failure mode.
+  const creds = await ensureFreshFortnoxToken(db, integ)
 
   const baseUrl = 'https://api.fortnox.se/3'
   const headers = {

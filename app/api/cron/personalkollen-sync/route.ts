@@ -7,12 +7,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { decrypt }                   from '@/lib/integrations/encryption'
 import { getStaff, getLoggedTimes, getSales } from '@/lib/pos/personalkollen'
+import { withTimeout }               from '@/lib/sync/with-timeout'
+import { checkCronSecret }           from '@/lib/admin/check-secret'
 
-export const dynamic = 'force-dynamic'
+export const dynamic     = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const maxDuration = 300
+
+// Per-integration budget. If any one integration takes longer than this,
+// we abort that one and move on — previously a single slow Personalkollen
+// API could block every other tenant's sync for the rest of the run.
+const PER_INTEGRATION_TIMEOUT_MS = 60_000
 
 export async function GET(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret') ?? req.nextUrl.searchParams.get('secret')
-  if (secret !== process.env.CRON_SECRET) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -45,13 +53,18 @@ export async function GET(req: NextRequest) {
       const fromDate = fromParam ?? new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0,10)
       const toDate   = toParam   ?? now.toISOString().slice(0,10)
 
-      // Fetch staff list for name/group lookup
-      const staff = await getStaff(token)
+      // Fetch staff list for name/group lookup — bounded by the
+      // per-integration timeout so one slow tenant doesn't starve the rest.
+      const staff = await withTimeout(getStaff(token), PER_INTEGRATION_TIMEOUT_MS, `pk.getStaff(${integ.id})`)
       const staffMap: Record<string, any> = {}
       for (const s of staff) { staffMap[s.url] = s }
 
       // Fetch all logged times in range
-      const logged = await getLoggedTimes(token, fromDate, toDate)
+      const logged = await withTimeout(
+        getLoggedTimes(token, fromDate, toDate),
+        PER_INTEGRATION_TIMEOUT_MS,
+        `pk.getLoggedTimes(${integ.id})`,
+      )
 
       // Upsert each shift into staff_logs
       let upserted = 0
@@ -149,7 +162,11 @@ export async function GET(req: NextRequest) {
       }
 
       // Sync covers from sales
-      const sales        = await getSales(token, fromDate, toDate)
+      const sales = await withTimeout(
+        getSales(token, fromDate, toDate),
+        PER_INTEGRATION_TIMEOUT_MS,
+        `pk.getSales(${integ.id})`,
+      )
       const totalCovers  = sales.reduce((s: number, sale: any) => s + (sale.covers ?? 0), 0)
       const totalRevenue = sales.reduce((s: number, sale: any) => s + sale.amount, 0)
 
