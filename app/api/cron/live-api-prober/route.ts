@@ -5,20 +5,15 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { probeAPIs } from '@/lib/agents/live-api-prober'
+import { checkCronSecret } from '@/lib/admin/check-secret'
 
+export const runtime     = 'nodejs'
 export const maxDuration = 300 // 5 minutes for extensive probing
-export const dynamic = 'force-dynamic'
+export const dynamic     = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret
-  const authHeader = request.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json(
-      { error: 'Unauthorized' },
-      { status: 401 }
-    )
+  if (!checkCronSecret(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   
   try {

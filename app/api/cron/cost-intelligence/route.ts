@@ -12,13 +12,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { runCostIntel } from '@/lib/agents/cost-intelligence'
+import { checkCronSecret } from '@/lib/admin/check-secret'
 
+export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 

@@ -19,15 +19,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { checkCronSecret }   from '@/lib/admin/check-secret'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 30
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization') ?? ''
-  const isVercelCron = req.headers.get('x-vercel-cron') === '1'
-  const isSelfAuthed = process.env.CRON_SECRET && authHeader === `Bearer ${process.env.CRON_SECRET}`
-  if (!isVercelCron && !isSelfAuthed) {
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
