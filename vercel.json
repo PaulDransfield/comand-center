@@ -59,6 +59,10 @@
     {
       "path": "/api/cron/cost-intelligence",
       "schedule": "0 6 2 * *"
+    },
+    {
+      "path": "/api/cron/industry-benchmarks",
+      "schedule": "0 3 * * 0"
     }
   ]
 }
