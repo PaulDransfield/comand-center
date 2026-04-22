@@ -10,6 +10,7 @@
 import Sidebar from './ui/SidebarV2'
 import ConsentBanner from './ConsentBanner'
 import MobileNav from './MobileNav'
+import BackgroundSync from './BackgroundSync'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -39,6 +40,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Consent banner */}
       <ConsentBanner />
+
+      {/* Fires /api/sync/today on mount (throttled server-side to 10 min/integration) */}
+      <BackgroundSync />
 
       {/* Mobile bottom nav */}
       <div className="cc-mobile-nav">
