@@ -116,7 +116,7 @@ end $$;
 
 select cron.schedule(
   'cc-reset-stale-extraction-jobs',
-  '1 minute',
+  '* * * * *',
   $$ select reset_stale_extraction_jobs(); $$
 );
 
