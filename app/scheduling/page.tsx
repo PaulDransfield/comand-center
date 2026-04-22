@@ -591,8 +591,8 @@ function AiSuggestedSchedule({ loading, error, data, recommendation, fmt, fmtHrs
             {/* Why column removed — the rationale now surfaces as a hover
               tooltip on each row so long prose doesn't blow out the table
               (FIX-PROMPT § Phase 8 Q3). */}
-          {['Day','Weather','Your plan','AI suggestion','Predicted sales','Margin'].map((h, i) => (
-              <th key={h} style={{ padding: '6px 8px', textAlign: i >= 2 ? 'right' as const : 'left' as const, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>
+          {['Day','Action','Weather','Your plan','AI suggestion','Predicted sales','Margin'].map((h, i) => (
+              <th key={h} style={{ padding: '6px 8px', textAlign: i >= 3 ? 'right' as const : 'left' as const, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>
                 {h}
               </th>
             ))}
@@ -613,12 +613,71 @@ function AiSuggestedSchedule({ loading, error, data, recommendation, fmt, fmtHrs
                                  : margin >= 70 ? '#15803d'
                                  : margin >= 55 ? '#d97706'
                                                 : '#dc2626'
+            const hoursDelta   = (c.hours ?? 0) - (s.hours ?? 0)
+            const isCut        = !isNote && hoursDelta > 0.05
+            const noChange     = !isNote && Math.abs(hoursDelta) < 0.05
+            // Rows where there's nothing for the owner to do are visually
+            // de-emphasised so the action rows stand out. Notes keep full
+            // brightness because they still carry useful context.
+            const rowOpacity   = noChange ? 0.55 : 1
             return (
-              <tr key={c.date} title={s.reasoning || undefined} style={{ borderBottom: '1px solid #f3f4f6', background: isNote ? '#f8fafc' : undefined, cursor: s.reasoning ? 'help' : undefined }}>
+              <tr
+                key={c.date}
+                title={s.reasoning || undefined}
+                style={{
+                  borderBottom: '1px solid #f3f4f6',
+                  background:   isNote ? '#f8fafc' : undefined,
+                  cursor:       s.reasoning ? 'help' : undefined,
+                  opacity:      rowOpacity,
+                }}
+              >
                 {/* Day */}
                 <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500, whiteSpace: 'nowrap' as const }}>
                   <strong>{c.weekday}</strong> · {c.date.slice(5)}
                   {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>note</span>}
+                </td>
+                {/* Action — plain-English recommendation pill. This is the
+                    hero column: the owner should see what to do at a glance
+                    without scanning the hours/cost columns. */}
+                <td style={{ padding: '8px 8px', whiteSpace: 'nowrap' as const }}>
+                  {isNote ? (
+                    <span style={{
+                      display:      'inline-block',
+                      fontSize:     11,
+                      fontWeight:   600,
+                      padding:      '3px 9px',
+                      borderRadius: 20,
+                      background:   '#eff6ff',
+                      color:        '#1e3a5f',
+                      border:       '1px solid #bfdbfe',
+                    }}>
+                      Review bookings
+                    </span>
+                  ) : isCut ? (
+                    <span style={{
+                      display:      'inline-block',
+                      fontSize:     11,
+                      fontWeight:   700,
+                      padding:      '3px 10px',
+                      borderRadius: 20,
+                      background:   '#dcfce7',
+                      color:        '#15803d',
+                    }}>
+                      Cut {fmtHrs(hoursDelta)} · save {fmt(Math.abs(s.delta_cost ?? 0))}
+                    </span>
+                  ) : (
+                    <span style={{
+                      display:      'inline-block',
+                      fontSize:     11,
+                      fontWeight:   500,
+                      padding:      '3px 10px',
+                      borderRadius: 20,
+                      background:   '#f3f4f6',
+                      color:        '#6b7280',
+                    }}>
+                      Keep as-is
+                    </span>
+                  )}
                 </td>
                 {/* Weather — temp always "{min}–{max}°C" with en-dash;
                     precip only shown above 0.3 mm, formatted "{n} mm" with
@@ -642,26 +701,19 @@ function AiSuggestedSchedule({ loading, error, data, recommendation, fmt, fmtHrs
                   <div style={{ fontWeight: 600, color: '#111' }}>{fmtHrs(c.hours)}</div>
                   <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? fmt(c.est_cost) : '—'}</div>
                 </td>
-                {/* AI suggestion — hours + cost + saving.  When the AI's
-                    hours match the plan we render italic "no change" with
-                    no numbers (SCHEDULING-FIX § 8); when they differ we
-                    show the new hours/cost/delta. */}
+                {/* AI suggestion — target hours + cost. The savings line has
+                    moved to the Action pill, so this column now just shows
+                    what the AI wants the plan to look like. "—" on no-change
+                    rows since the Plan column already has the number. */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
-                  {(() => {
-                    const noChange = isNote || Math.abs((c.hours ?? 0) - (s.hours ?? 0)) < 0.05
-                    if (noChange) {
-                      return <span style={{ color: '#6b7280', fontStyle: 'italic' as const }}>no change</span>
-                    }
-                    return (
-                      <>
-                        <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
-                        <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? fmt(s.est_cost) : '—'}</div>
-                        {s.delta_cost < 0 && (
-                          <div style={{ fontSize: 10, color: '#15803d', fontWeight: 600, marginTop: 1 }}>save {fmt(Math.abs(s.delta_cost))}</div>
-                        )}
-                      </>
-                    )
-                  })()}
+                  {isNote || noChange ? (
+                    <span style={{ color: '#d1d5db' }}>—</span>
+                  ) : (
+                    <>
+                      <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? fmt(s.est_cost) : '—'}</div>
+                    </>
+                  )}
                 </td>
                 {/* Predicted sales — est_revenue from the historical pattern */}
                 <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', whiteSpace: 'nowrap' as const }}>
