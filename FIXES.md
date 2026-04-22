@@ -1,5 +1,41 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-21
+Last updated: 2026-04-22
+
+---
+
+## 0g. Admin-route auth gap — 4 routes exposed tenant data (SEC-2026-04-22)
+
+**Severity:** Critical. Resolved in commit 946a7d1 on 2026-04-22.
+
+**Finding:** Audit of `/app/api/admin/*` on 2026-04-22 found four routes that either had no auth check at all or used a hardcoded fallback secret (`commandcenter123`) still sitting in source:
+
+| Route | Problem | What it exposed |
+|---|---|---|
+| `/api/admin/orgs` (GET) | No auth | Every org's name, owner email, business list, integration status, last_error strings |
+| `/api/admin/sync` (POST) | No auth | Ability to trigger a sync on any (org_id, integration_id) pair |
+| `/api/admin/diagnose-pk` (GET) | Hardcoded `commandcenter123` | Decrypted Personalkollen API tokens + sample responses |
+| `/api/admin/test-swess` (GET) | Hardcoded `commandcenter123` | Arbitrary API key probing via query string |
+
+**Exposure window:** approximately 2-3 weeks (since the routes first landed in early April 2026).
+
+**Mitigation applied (commit 946a7d1):**
+- `/orgs` → added `checkAdminSecret()`
+- `/sync` → added `requireAdmin()` with org-existence verification
+- `/diagnose-pk` → replaced hardcoded secret with `checkAdminSecret()`
+- `/test-swess` → same; flagged the query-string `key` param as a follow-up if the route is ever used again
+
+**Secondary actions taken:**
+- Both Personalkollen API tokens (Vero + Rosali) rotated as a precaution — the `diagnose-pk` route could have leaked them during the exposure window.
+- Vercel function logs reviewed for hits on the four routes during the exposure window — only owner IPs observed.
+
+**Git-history note:** the hardcoded string `commandcenter123` remains in the commits where the four routes were introduced. Deliberately **not** rewriting history because:
+1. The secret no longer grants any access (the checks were removed in source).
+2. Rewriting a live `main` branch force-invalidates Vercel's build cache, every clone, and the auto-push hook's linear history.
+3. The string has already been scraped into archival systems (GitHub snapshots, any mirrors, clones), so rewriting upstream wouldn't un-expose it.
+
+The documented neutralisation in this entry is the audit trail.
+
+**Prevention:** `/admin` prefix gives no protection on its own. Every new admin route must call `requireAdmin()` or `checkAdminSecret()` at the top of its handler. Any route that catches a secret should never do so with a hardcoded fallback — use `process.env` and fail closed.
 
 ---
 
