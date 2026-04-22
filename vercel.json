@@ -70,7 +70,7 @@
     },
     {
       "path": "/api/cron/extraction-sweeper",
-      "schedule": "0 6 * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/cron/ai-accuracy-reconciler",
