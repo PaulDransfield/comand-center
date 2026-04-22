@@ -155,6 +155,19 @@ Every long-running path uses the queue. The HTTP request from the browser is alw
 17. ☑ **`/admin/health` live dashboard** — extraction queue counters, Stripe webhook dedup activity, org rate-limit hits surfaced alongside existing cron/sync/AI-cost panels.
 18. ☑ **Validation runbook** — `VALIDATION-RUNBOOK.sql` with nine read-only checks for RLS, dedup, queue health, AI burn, sync freshness, token expiry, rate-limit counters, and stuck-work detection. Run periodically; replaces the heavier integration-test-framework approach for current scale.
 
+### Session 2026-04-22 evening — ops debugging + open issues
+
+**Resolved:**
+- ☑ **GitHub→Vercel auto-deploy stuck** — root cause was a sub-daily cron schedule (`*/2 * * * *` on extraction-sweeper) violating Vercel Hobby tier rules. Every push since `3a8607d` had been silently failing to deploy for hours. Fixed by changing schedule to daily (`0 6 * * *`) + documenting Hobby constraint. Production caught up via `vercel deploy --prod` once the build validated.
+- ☑ **/api/health was cached** — returning 2h-stale JSON because of Vercel PRERENDER. Fixed with `runtime: 'nodejs'` + `dynamic: 'force-dynamic'` + explicit `Cache-Control: no-store` headers on both success and error responses.
+- ☑ **Historical Fortnox data backfill** — Vero's Apr–Aug 2025 monthly_metrics now carry revenue + `rev_source='fortnox'`. Confirmed via SQL: Apr 625k, May 533k, Jun 406k, Jul 440k, Aug 687k. Rosali also aggregated cleanly.
+
+**Still open — business questions for next session:**
+
+1. **Vero 2025 data completeness.** Database total 2.69M (Apr–Aug) + 2.48M (Nov–Dec POS) = ~5.2M visible. Jan–Mar and Sep–Oct show zero revenue despite staff_cost from PK being populated (business was operating). Need to verify against accountant's actual 2025 figure — if >5.2M, upload the missing Fortnox PDFs for Jan–Mar + Sep–Oct 2025 and re-run `/api/admin/reaggregate`.
+2. **Budget AI recency bias.** Paul flagged that 2026 Apr–Aug targets came out 2.3–3.3× the 2025 Fortnox figures. AI is anchoring on Q1 2026 YTD (1.4–1.6M/month) as "new normal"; user wants more weight on historical. Open question: is Q1 2026 a structural step-change (new location/menu/marketing) or a transient strength? If transient, tighten the generator's prompt to anchor mid-year on last-year + 10–15% when YTD deviates >50% from prior-year comparable months. One-commit fix, ~5 prompt lines — wait on business clarity first.
+3. **Prior-year anchor in the budget UI.** Worth adding a sanity-check panel next to each month showing "last-year actual" and "implied % change" so the user catches runaway projections before accepting the AI's suggestions. UX work, ~1 hour.
+
 ### Post-session follow-ups (2026-04-22)
 
 Surfaced during live use of the queue + Realtime architecture:
