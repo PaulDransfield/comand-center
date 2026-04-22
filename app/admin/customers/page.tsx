@@ -35,7 +35,7 @@ export default function CustomersPipeline() {
       router.push('/admin/login?next=/admin/customers')
       return
     }
-    fetch('/api/admin/customers', { headers: { 'x-admin-secret': secret } })
+    fetch('/api/admin/customers', { headers: { 'x-admin-secret': secret }, cache: 'no-store' })
       .then(async r => {
         if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized — log in via /admin' : `HTTP ${r.status}`)
         return r.json()

@@ -116,5 +116,7 @@ export async function GET(req: NextRequest) {
     churned:  enriched.filter((o: any) => o.stage === 'churned').length,
   }
 
-  return NextResponse.json({ customers: enriched, counts })
+  return NextResponse.json({ customers: enriched, counts }, {
+    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+  })
 }
