@@ -100,6 +100,32 @@ export default function OverheadsPage() {
   // business's table.
   useEffect(() => { initialLoadDone.current = false; if (bizId) load() }, [bizId, load])
 
+  // Auto-kick the queue whenever the page becomes visible and there
+  // are jobs still in flight. On Hobby plan the sweeper cron only
+  // runs daily, so if a dispatcher's worker fetch failed silently
+  // we'd otherwise be stuck until tomorrow. This gives a near-
+  // real-time retry as long as the user is actively watching.
+  useEffect(() => {
+    const hasStuck = uploads.some(u => u.status === 'extracting' || u.status === 'pending')
+    if (!hasStuck) return
+    fetch('/api/fortnox/sweep', { method: 'POST' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.kicked > 0) setTimeout(() => load(), 2000) })
+      .catch(() => {})
+  }, [uploads, load])
+
+  // Also kick on tab-focus — classic "I came back to the tab to
+  // check" case. Same safety net as above.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetch('/api/fortnox/sweep', { method: 'POST' }).catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   // Supabase Realtime subscription — pushes row changes as they
   // happen, eliminating the 3s-polling loop we had before. We still
   // keep a safety-net slow poll (every 15s) while something is in
