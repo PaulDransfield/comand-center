@@ -23,6 +23,7 @@ import { checkCronSecret }   from '@/lib/admin/check-secret'
 import { log }               from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
+export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
 export const maxDuration = 30
 
 export async function GET(req: NextRequest) {

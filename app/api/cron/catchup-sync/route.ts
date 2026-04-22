@@ -28,6 +28,7 @@ import { log }                       from '@/lib/log/structured'
 import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
 
 export const runtime     = 'nodejs'
+export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 

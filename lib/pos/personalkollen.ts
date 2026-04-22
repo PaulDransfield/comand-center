@@ -38,6 +38,21 @@ function obLabel(ob: any): string {
   return ob.tag ?? 'OB'
 }
 
+// Thrown when PK returns 401/403 — signals the customer's API token was
+// revoked or rotated and the integration needs reconnection. Typed so
+// sync/engine can distinguish auth failures from transient network errors
+// and flip `integrations.status` + send a re-auth email (rather than silent
+// retry-until-you-email-support).
+export class PersonalkollenAuthError extends Error {
+  readonly code = 'PK_AUTH_EXPIRED'
+  readonly httpStatus: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'PersonalkollenAuthError'
+    this.httpStatus = status
+  }
+}
+
 async function fetchAll(endpoint: string, token: string): Promise<any[]> {
   const results: any[] = []
   let url: string | null = `${BASE}${endpoint}`
@@ -45,7 +60,12 @@ async function fetchAll(endpoint: string, token: string): Promise<any[]> {
     const res = await fetch(url, {
       headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
     })
-    if (!res.ok) throw new Error(`Personalkollen error ${res.status}: ${res.statusText}`)
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        throw new PersonalkollenAuthError(res.status, `Personalkollen ${res.status}: token revoked or rotated`)
+      }
+      throw new Error(`Personalkollen error ${res.status}: ${res.statusText}`)
+    }
     const data = await res.json()
     results.push(...(data.results ?? []))
     url = data.next ?? null

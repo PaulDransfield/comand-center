@@ -14,6 +14,7 @@ import { buildWeeklyContext, generateWeeklyMemo, memoEmailHtml } from '@/lib/ai/
 import { log }                       from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
+export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 120
 

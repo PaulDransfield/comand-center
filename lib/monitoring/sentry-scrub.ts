@@ -31,12 +31,23 @@ const SECRET_PATTERNS: RegExp[] = [
   /sk-ant-api[0-9]+-[\w-]+/g,                             // Anthropic API key
 ]
 
+// PII patterns — GDPR Art. 5(1)(c) data minimisation. Sentry is a US
+// processor so we should never forward personal data we don't need.
+// Emails and Swedish phone numbers can show up in error strings when a
+// query or template interpolates a user field into a thrown message.
+const PII_PATTERNS: RegExp[] = [
+  /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/g,   // email addresses
+  /\+46[\s\-]?\d{2,3}[\s\-]?\d{3}[\s\-]?\d{2,4}/g,       // Swedish E.164 phone
+  /\b0\d{2,3}[\s\-]?\d{3}[\s\-]?\d{2,4}\b/g,             // Swedish domestic phone
+]
+
 const MAX_STRING = 2000  // truncate any single string field above this length
 
 function redact(s: string): string {
   if (typeof s !== 'string') return s as any
   let out = s
   for (const p of SECRET_PATTERNS) out = out.replace(p, '[REDACTED]')
+  for (const p of PII_PATTERNS)    out = out.replace(p, '[PII]')
   if (out.length > MAX_STRING) out = out.slice(0, MAX_STRING) + '…[truncated]'
   return out
 }

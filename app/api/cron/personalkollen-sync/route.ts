@@ -13,6 +13,7 @@ import { log }                       from '@/lib/log/structured'
 
 export const dynamic     = 'force-dynamic'
 export const runtime     = 'nodejs'
+export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
 export const maxDuration = 300
 
 // Per-integration budget. If any one integration takes longer than this,

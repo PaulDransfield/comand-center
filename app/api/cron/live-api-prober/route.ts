@@ -9,6 +9,7 @@ import { checkCronSecret } from '@/lib/admin/check-secret'
 import { log }             from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
+export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
 export const maxDuration = 300 // 5 minutes for extensive probing
 export const dynamic     = 'force-dynamic'
 

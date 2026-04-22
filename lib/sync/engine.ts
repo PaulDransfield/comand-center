@@ -1166,7 +1166,81 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   } catch (e: any) {
     status = 'error'
     result = { error: e.message }
-    await db.from('integrations').update({ last_error: e.message }).eq('id', integ.id)
+
+    // Auth-expired sits in a different bucket from generic sync errors: no
+    // amount of retrying will fix a revoked token. Flip the integration's
+    // status so the UI can show a "Reconnect" CTA, and email the owner
+    // once per expiration (dedup via reauth_notified_at) — otherwise we'd
+    // spam them daily from master-sync.
+    const isAuthError = e?.code === 'PK_AUTH_EXPIRED' || e?.name === 'PersonalkollenAuthError'
+    if (isAuthError) {
+      try {
+        const { data: current } = await db
+          .from('integrations')
+          .select('status, reauth_notified_at')
+          .eq('id', integ.id)
+          .maybeSingle()
+
+        await db.from('integrations').update({
+          status:     'needs_reauth',
+          last_error: e.message,
+        }).eq('id', integ.id)
+
+        // One email per reauth event. We only (re)send if the integration
+        // wasn't already in needs_reauth state on the previous run.
+        if (current?.status !== 'needs_reauth') {
+          try {
+            const { data: member } = await db
+              .from('organisation_members')
+              .select('user_id')
+              .eq('org_id', orgId)
+              .eq('role', 'owner')
+              .maybeSingle()
+            const { data: authUser } = member?.user_id
+              ? await db.auth.admin.getUserById(member.user_id)
+              : { data: null }
+            const ownerEmail = authUser?.user?.email
+
+            if (ownerEmail) {
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://comandcenter.se'
+              const { sendEmail } = await import('@/lib/email/send')
+              await sendEmail({
+                from:    'CommandCenter <alerts@comandcenter.se>',
+                to:      ownerEmail,
+                subject: `Action needed: reconnect ${provider}`,
+                html: `
+                  <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#1a1f2e">
+                    <h1 style="font-size:20px;margin:0 0 12px">Your ${provider} connection needs reauthorising</h1>
+                    <p style="font-size:14px;color:#374151;line-height:1.6">
+                      We got a <strong>${e.httpStatus ?? 'auth'}</strong> response trying to sync ${business?.name ?? 'your business'}.
+                      This usually means the API token was rotated or revoked on the ${provider} side.
+                      Until you reconnect, your dashboard data will stop updating.
+                    </p>
+                    <p style="font-size:14px;color:#374151;line-height:1.6;margin-top:16px">
+                      It takes about a minute to fix:
+                    </p>
+                    <a href="${appUrl}/settings/integrations" style="display:inline-block;padding:10px 18px;background:#1a1f2e;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;margin-top:8px">Reconnect ${provider}</a>
+                    <p style="margin-top:28px;font-size:12px;color:#9ca3af">We only send this email once per reconnection — not daily.</p>
+                  </div>
+                `,
+                context: { kind: 'integration_reauth', org_id: orgId, integration_id: integ.id, provider },
+              })
+            }
+
+            await db.from('integrations').update({
+              reauth_notified_at: new Date().toISOString(),
+            }).eq('id', integ.id)
+          } catch (notifyErr: any) {
+            console.warn('reauth notify failed:', notifyErr?.message)
+          }
+        }
+      } catch (markErr: any) {
+        console.error('Could not mark integration needs_reauth:', markErr?.message)
+        await db.from('integrations').update({ last_error: e.message }).eq('id', integ.id)
+      }
+    } else {
+      await db.from('integrations').update({ last_error: e.message }).eq('id', integ.id)
+    }
   }
 
   // Log the sync run
