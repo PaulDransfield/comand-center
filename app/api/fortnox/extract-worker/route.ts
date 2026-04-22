@@ -2,10 +2,19 @@
 //
 // Background worker for Fortnox extraction jobs.
 //
-// Invoked by either the dispatcher (/api/fortnox/extract) for fast-path
-// processing, or the sweeper cron (/api/cron/extraction-sweeper) for
-// retry/resilience. Authed via CRON_SECRET bearer token — not exposed
-// to the browser.
+// Primary invoker: Supabase pg_cron fires fire_extraction_worker()
+// every 20 seconds (M021). The worker claims one job per call via the
+// atomic claim_next_extraction_job() RPC. pg_cron's 20s cadence means
+// up to 3 jobs per minute are drained even without chain-triggers;
+// crashed workers auto-release locks after 5 min via the paired
+// cc-reset-stale-extraction-jobs cron.
+//
+// Secondary invokers: the dispatcher /api/fortnox/extract (fast-path
+// when a user just uploaded) and /api/fortnox/sweep (user-scoped UI
+// trigger). Both exist as belt-and-braces; pg_cron is the load-bearing
+// path and keeps the queue draining even if every HTTP invoker fails.
+//
+// Authed via CRON_SECRET bearer token — not exposed to the browser.
 //
 // Lifecycle:
 //   1. claim_next_extraction_job() — atomic FOR UPDATE SKIP LOCKED,

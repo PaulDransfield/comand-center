@@ -16,6 +16,16 @@
 **Purpose:** stores thumbs up / thumbs down + optional comment on each Monday memo. Populated via the public `/api/memo-feedback` endpoint, secured by HMAC-signed tokens (key: `CRON_SECRET`) embedded in the email buttons.
 **To apply:** open Supabase SQL Editor, paste file contents, run. No backfill needed — new memos from the next cron tick onward will include the feedback block. Requires M003 `briefings` already applied (FK target).
 
+### M021 — pg_cron replaces fire-and-forget dispatcher
+**File:** `M021-PG-CRON-EXTRACTION-SWEEPER.sql` (repo root)
+**Purpose:** Claude.ai architecture review item 4 — replace `waitUntil(fetch())` dispatcher + Vercel cron with Supabase pg_cron firing the worker every 20 seconds. Kills the stuck-in-extracting class of failure at the DB layer (no HTTP hop between scheduler and DB). Paired `cc-reset-stale-extraction-jobs` cron runs the M017 reset RPC every minute so crashed workers release their claim automatically.
+**Creates:** enables `pg_cron` + `pg_net` extensions; `fire_extraction_worker()` function that reads `cc_worker_url` + `cc_cron_secret` from Supabase Vault and POSTs to the worker endpoint; two scheduled jobs.
+**Post-migration manual step:** after running the SQL, go to **Supabase Dashboard → Project Settings → Vault** and add two secrets:
+  - `cc_worker_url` = `https://www.comandcenter.se/api/fortnox/extract-worker`
+  - `cc_cron_secret` = `<your CRON_SECRET>` (from Vercel env vars)
+The `fire_extraction_worker()` function reads these by name.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Then add the two Vault secrets. Verification query at bottom of the SQL file confirms both crons are scheduled.
+
 ### M020 — ai_forecast_outcomes (AI accuracy feedback loop)
 **File:** `M020-AI-FORECAST-OUTCOMES.sql` (repo root)
 **Purpose:** captures every AI-suggested budget/forecast prediction + the actual outcome once the period closes, so future AI prompts can include a "PRIOR ACCURACY" block and correct systematic bias. Not ML training — pure in-context feedback via future prompts.
