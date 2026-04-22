@@ -21,7 +21,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </div>
       <style>{`
         @media (min-width: 768px) {
-          .cc-sidebar-wrapper { display: block !important; }
+          /* Sticky sidebar — pins to the top of the viewport while the
+             page scrolls. align-self:flex-start stops flex from
+             stretching it to the full page height; max-height + overflow
+             give it its own internal scroll if its own content (long
+             nav list on a short viewport) exceeds the viewport. */
+          .cc-sidebar-wrapper {
+            display: block !important;
+            position: sticky;
+            top: 0;
+            align-self: flex-start;
+            max-height: 100vh;
+            overflow-y: auto;
+          }
           .cc-mobile-nav { display: none !important; }
         }
         @media (max-width: 767px) {
