@@ -24,7 +24,9 @@ interface Business { id: string; name: string }
 export default function CashflowPage() {
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
-  const [startBal,   setStartBal]   = useState<string>('0')
+  // Empty string = "auto-derive from prior-year P&L on the server". We only
+  // flip this into an explicit number once the owner actually types one.
+  const [startBal,   setStartBal]   = useState<string>('')
   const [data,       setData]       = useState<any>(null)
   const [loading,    setLoading]    = useState(true)
 
@@ -44,11 +46,15 @@ export default function CashflowPage() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  // Persist starting-balance per biz so the owner doesn't re-enter every visit
+  // Persist starting-balance per biz so the owner doesn't re-enter every visit.
+  // A saved "0" is ambiguous (explicit 0 vs. stale default from before auto-
+  // derive shipped) so we ignore it — leave the field blank and let the server
+  // propose the prior-year P&L value as a placeholder.
   useEffect(() => {
     if (!bizId) return
     const saved = localStorage.getItem(`cc_cash_start_${bizId}`)
-    if (saved) setStartBal(saved)
+    if (saved && saved !== '0') setStartBal(saved)
+    else setStartBal('')
   }, [bizId])
 
   const load = useCallback(async () => {
@@ -70,7 +76,11 @@ export default function CashflowPage() {
 
   function saveStart(v: string) {
     setStartBal(v)
-    if (bizId) localStorage.setItem(`cc_cash_start_${bizId}`, v)
+    if (!bizId) return
+    // Clearing the field wipes the saved override so the page falls back to
+    // the server's auto-derived suggestion. Typing anything (even "0") saves.
+    if (v.trim() === '') localStorage.removeItem(`cc_cash_start_${bizId}`)
+    else                 localStorage.setItem(`cc_cash_start_${bizId}`, v)
   }
 
   const selectedBiz = businesses.find(b => b.id === bizId) ?? null

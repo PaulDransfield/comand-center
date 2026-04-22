@@ -111,9 +111,12 @@ export async function GET(req: NextRequest) {
   const suggestedStartingBalance = Math.round(
     Math.abs(priorYearNetProfit) > 1 ? priorYearNetProfit : derivedFromParts,
   )
-  const suggestionReason = priorYear_rows.length === 0
-    ? `No ${priorYear} P&L data on file`
-    : `Sum of ${priorYear} P&L result across ${priorYear_rows.length} months`
+  const suggestionReason =
+    priorYear_rows.length === 0
+      ? `No ${priorYear} P&L data on file — enter your real bank balance above`
+      : priorYear_rows.length < 9
+      ? `Only ${priorYear_rows.length}/12 months of ${priorYear} on file — figure is partial`
+      : `Sum of ${priorYear} P&L result across ${priorYear_rows.length} months`
 
   const startBal = explicitStartBal ?? suggestedStartingBalance
 
