@@ -170,9 +170,15 @@ export async function POST(req: NextRequest) {
 
   const lyAnnual = annualSummary(year - 1)
   const lyTable = lastYear.length
-    ? lastYear.map(r =>
-        `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}% (src: ${r.source})`
-      ).join('\n')
+    ? lastYear.map(r => {
+        // Flag data gaps explicitly so the AI doesn't confuse them
+        // with genuine zero-revenue months (closed business etc).
+        // Gap = revenue=0 but staff_cost>0 (payroll proves the business
+        // was operating, we just lack revenue data for that period).
+        const isGap = Number(r.revenue ?? 0) === 0 && Number(r.staff_cost ?? 0) > 0
+        const gapFlag = isGap ? ' ⚠ DATA GAP — use YTD / nearest-month anchor' : ''
+        return `  ${MONTHS[r.month - 1]}: rev=${fmt(r.revenue)} staff=${fmt(r.staff_cost)} food=${fmt(r.food_cost)} net=${fmt(r.net_profit)} margin=${r.margin_pct ?? '?'}% (src: ${r.source})${gapFlag}`
+      }).join('\n')
     : lyAnnual
       ? `  (no monthly breakdown — using annual Fortnox report instead, see block below)`
       : '  (no prior-year data)'
@@ -252,23 +258,38 @@ SECONDARY RULE — RESPECT LAST YEAR'S SEASONALITY:
   business may be a winter restaurant, a lunch spot, a takeaway, seasonal,
   etc. You do not know; the last-year numbers do.
 
-HANDLING DATA GAPS — STRICT:
-  A last-year month may show revenue=0 with staff_cost>0. That is a DATA GAP,
-  NOT a zero-revenue month. Do NOT paper over it with forecasts or industry
-  averages. Instead:
-    - Anchor the target on the NEAREST month (before or after) that DOES have
-      revenue data, adjusted for the typical direction of seasonal change.
-    - In the reasoning, flag the gap explicitly: e.g. "Sep 2025 data missing;
-      anchored on Aug 2025 (687k) minus 10% back-to-work adjustment = 620k".
-    - Never use the industry-default or the forecast engine to fill the gap.
+HANDLING DATA GAPS — READ CAREFULLY:
+  A last-year month showing revenue=0 with staff_cost > 0 means the business
+  WAS OPERATING (payroll proves it) but we simply don't have the revenue
+  number for that period. This is a DATA GAP. It does NOT mean "hibernation"
+  or "closed". Never budget 0 revenue against staff cost > 0 — that would
+  guarantee a loss the owner cannot staff around.
+
+  Use this priority order to anchor a data-gap month:
+    (a) SAME-MONTH THIS YEAR'S YTD actual — if the calendar month is in the
+        past and YTD data exists, THIS is the highest-authority signal for
+        that specific month. Use it as the anchor: target = YTD × (1.03 to
+        1.08). This overrides the "prior-year is the anchor" rule for gap
+        months only, because we have no better prior-year number to use.
+    (b) NEAREST POPULATED LAST-YEAR MONTH adjusted for seasonal direction.
+        E.g. "Sep 2025 gap; anchored on Aug 2025 (687k) minus 10% back-to-
+        work adjustment = 620k." Document the adjustment in the reasoning.
+    (c) STAFF COST SANITY CHECK — whichever anchor you use, the implied
+        staff-cost ratio should be within 10pp of the staff_cost / revenue
+        ratio from populated months. If your revenue target paired with
+        that month's staff_cost would give a ratio outside the industry
+        ceiling (42%), flag it in the reasoning.
+
+  Never use industry averages or calibrated-forecast output to fill a gap.
 
 TREATING YTD (this year so far):
-  This year's YTD actuals are evidence the business is trading. They ARE NOT
-  evidence of a structural growth inflection unless there's a known reason
-  (new location, menu change, expansion). If YTD is running significantly
-  above last-year comparable months, flag it in the overall_strategy but DO
-  NOT project that uplift across the whole year. Continue to anchor on last
-  year for months without YTD data. Over-projecting causes overstaffing.
+  This year's YTD actuals are evidence the business is trading.
+  For months WITH prior-year revenue data: YTD is a signal, not the anchor.
+  Stay within +15% of last-year's actual for that month.
+  For months with a data gap last year: YTD for that same month IS the
+  anchor (per "HANDLING DATA GAPS" rule (a)).
+  Never project YTD run-rates forward into future months that already have
+  prior-year data — that causes overstaffing.
 
 STAFF COST — CAP TO HISTORICAL:
   staff_cost_pct_target = last year's actual staff cost ratio for that month,
