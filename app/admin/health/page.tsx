@@ -18,26 +18,33 @@ export default function HealthDashboard() {
   const [aiGlobal, setAiGlobal] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+  // Scope for the AI learning panel — null = all orgs, otherwise a
+  // specific business_id. Toggled from the selector; re-fetches the
+  // /api/admin/health endpoint with ?business_id= query param.
+  const [scopeBusinessId, setScopeBusinessId] = useState<string | null>(null)
 
   useEffect(() => {
     const secret = sessionStorage.getItem('admin_auth') ?? ''
     if (!secret) { router.push('/admin/login?next=/admin/health'); return }
     const h = { 'x-admin-secret': secret }
+    const url = scopeBusinessId
+      ? `/api/admin/health?business_id=${encodeURIComponent(scopeBusinessId)}`
+      : '/api/admin/health'
     Promise.all([
-      fetch('/api/admin/health',    { headers: h }).then(r => r.ok ? r.json() : Promise.reject(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)),
+      fetch(url,                    { headers: h }).then(r => r.ok ? r.json() : Promise.reject(r.status === 401 ? 'Unauthorized' : `HTTP ${r.status}`)),
       fetch('/api/admin/sync-log',  { headers: h }).then(r => r.ok ? r.json() : { logs: [] }),
       fetch('/api/admin/ai-usage',  { headers: h }).then(r => r.ok ? r.json() : null),
     ])
       .then(([h, s, ai]) => { setData(h); setSyncLogs(s.logs ?? []); setAiGlobal(ai) })
       .catch(e => setError(typeof e === 'string' ? e : e.message))
       .finally(() => setLoading(false))
-  }, [router])
+  }, [router, scopeBusinessId])
 
   if (loading) return <div><AdminNav /><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div></div>
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data)   return null
 
-  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning } = data
+  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning, businesses } = data
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
@@ -129,7 +136,36 @@ export default function HealthDashboard() {
             ~15 rows, the next AI generation starts seeing real bias. */}
         {ai_learning && (
           <div style={{ ...S.card, marginBottom: 14 }}>
-            <div style={S.head}>AI feedback loop</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={S.head}>
+                AI feedback loop
+                {scopeBusinessId && businesses && (
+                  <span style={{ fontSize: 11, fontWeight: 500, color: '#6366f1', marginLeft: 10, textTransform: 'none' as const, letterSpacing: 'normal' as const }}>
+                    — scope: {businesses.find((b: any) => b.id === scopeBusinessId)?.name ?? 'unknown'}
+                  </span>
+                )}
+              </div>
+              <select
+                value={scopeBusinessId ?? ''}
+                onChange={e => setScopeBusinessId(e.target.value || null)}
+                style={{
+                  padding: '4px 8px',
+                  fontSize: 12,
+                  border: '1px solid #e5e7eb',
+                  borderRadius: 6,
+                  background: 'white',
+                  color: '#111',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">All orgs · aggregate</option>
+                {(businesses ?? []).map((b: any) => (
+                  <option key={b.id} value={b.id}>
+                    {b.org_name ? `${b.org_name} · ${b.name}` : b.name}{b.is_active ? '' : ' (inactive)'}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 14 }}>
               <QStat label="Suggestions"  value={ai_learning.total_suggestions}    tone="neutral" />
               <QStat label="Resolved"     value={ai_learning.resolved_suggestions} tone={ai_learning.resolved_suggestions > 0 ? 'good' : 'neutral'} />
@@ -148,6 +184,7 @@ export default function HealthDashboard() {
               <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
                 <thead>
                   <tr>
+                    <th style={th('left')}>Business</th>
                     <th style={th('left')}>Surface</th>
                     <th style={th('left')}>Period</th>
                     <th style={th('right')}>Suggested</th>
@@ -159,6 +196,7 @@ export default function HealthDashboard() {
                 <tbody>
                   {ai_learning.recent_rows.slice(0, 12).map((r: any, i: number) => (
                     <tr key={i} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ ...S.td, fontSize: 11, color: '#111', fontWeight: 500 }}>{r.business_name ?? r.business_id?.slice(0, 8)}</td>
                       <td style={{ ...S.td, fontSize: 11, color: '#6b7280' }}>{r.surface}</td>
                       <td style={{ ...S.td, fontSize: 11 }}>{r.period_year}{r.period_month ? `-${String(r.period_month).padStart(2,'0')}` : ''}</td>
                       <td style={{ ...S.td, textAlign: 'right', fontFamily: 'ui-monospace, monospace' }}>{r.suggested_revenue ? Math.round(r.suggested_revenue).toLocaleString('en-GB') : '—'}</td>

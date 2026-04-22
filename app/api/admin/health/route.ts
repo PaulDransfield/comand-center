@@ -35,6 +35,17 @@ export async function GET(req: NextRequest) {
   const now = Date.now()
   const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10)
 
+  // Optional business filter for the AI learning panel (+ anything else
+  // that benefits from per-business drill-down). Absent = aggregate.
+  const businessFilter = req.nextUrl.searchParams.get('business_id') || null
+
+  // List of all businesses so the UI can render a selector. Joined with
+  // org name for display. Sorted by org then business for a stable list.
+  const { data: businessesList } = await db
+    .from('businesses')
+    .select('id, name, org_id, is_active, organisations(name)')
+    .order('name', { ascending: true })
+
   // Cron probe — look up last row per probe.table
   const cronRows = await Promise.all(CRON_DEFS.map(async (c) => {
     if (!c.probe) return { ...c, last_run: null, total_7d: 0 }
@@ -147,15 +158,20 @@ export async function GET(req: NextRequest) {
     recent_rows: [] as Array<{ surface: string; org_id: string; business_id: string; period_year: number; period_month: number | null; suggested_revenue: number | null; actual_revenue: number | null; revenue_error_pct: number | null; revenue_direction: string | null; owner_reaction: string | null; created_at: string }>,
   }
   try {
-    const [totalRes, resolvedRes, reactionRes, recentRes] = await Promise.all([
-      db.from('ai_forecast_outcomes').select('id', { count: 'exact', head: true }),
-      db.from('ai_forecast_outcomes').select('id', { count: 'exact', head: true }).not('actuals_resolved_at', 'is', null),
-      db.from('ai_forecast_outcomes').select('owner_reaction').not('owner_reaction', 'is', null),
-      db.from('ai_forecast_outcomes')
-        .select('surface, org_id, business_id, period_year, period_month, suggested_revenue, actual_revenue, revenue_error_pct, revenue_direction, owner_reaction, created_at')
-        .order('created_at', { ascending: false })
-        .limit(25),
-    ])
+    const totalQ    = db.from('ai_forecast_outcomes').select('id', { count: 'exact', head: true })
+    const resolvedQ = db.from('ai_forecast_outcomes').select('id', { count: 'exact', head: true }).not('actuals_resolved_at', 'is', null)
+    const reactionQ = db.from('ai_forecast_outcomes').select('owner_reaction').not('owner_reaction', 'is', null)
+    const recentQ   = db.from('ai_forecast_outcomes')
+      .select('surface, org_id, business_id, period_year, period_month, suggested_revenue, actual_revenue, revenue_error_pct, revenue_direction, owner_reaction, created_at')
+      .order('created_at', { ascending: false })
+      .limit(25)
+    if (businessFilter) {
+      totalQ.eq('business_id', businessFilter)
+      resolvedQ.eq('business_id', businessFilter)
+      reactionQ.eq('business_id', businessFilter)
+      recentQ.eq('business_id', businessFilter)
+    }
+    const [totalRes, resolvedRes, reactionRes, recentRes] = await Promise.all([totalQ, resolvedQ, reactionQ, recentQ])
     aiLearning.total_suggestions   = totalRes.count    ?? 0
     aiLearning.resolved_suggestions = resolvedRes.count ?? 0
     aiLearning.pending_resolution   = aiLearning.total_suggestions - aiLearning.resolved_suggestions
@@ -168,17 +184,26 @@ export async function GET(req: NextRequest) {
     // Directional bias — mean signed error % across all resolved rows.
     // Positive = AI tends to under-predict (actuals come in higher).
     // Negative = AI tends to over-predict.
-    const { data: biasRows } = await db
+    const biasQ = db
       .from('ai_forecast_outcomes')
       .select('revenue_error_pct')
       .not('revenue_error_pct', 'is', null)
+    if (businessFilter) biasQ.eq('business_id', businessFilter)
+    const { data: biasRows } = await biasQ
     const errs = (biasRows ?? []).map(r => Number(r.revenue_error_pct)).filter(n => Number.isFinite(n))
     if (errs.length) {
       const mean = errs.reduce((s, n) => s + n, 0) / errs.length
       aiLearning.directional_bias = { mean_error_pct: Math.round(mean * 10) / 10, sample_size: errs.length }
     }
 
-    aiLearning.recent_rows = recentRes.data ?? []
+    // Enrich each recent row with business_name for UI readability.
+    const bizNameMap = new Map<string, string>()
+    for (const b of businessesList ?? []) bizNameMap.set(b.id, b.name ?? b.id.slice(0, 8))
+    aiLearning.recent_rows = (recentRes.data ?? []).map((r: any) => ({
+      ...r,
+      business_name: bizNameMap.get(r.business_id) ?? r.business_id.slice(0, 8),
+    }))
+    aiLearning.filtered_by_business_id = businessFilter
   } catch { /* M020 may not be applied */ }
 
   return NextResponse.json({
@@ -198,5 +223,12 @@ export async function GET(req: NextRequest) {
     stripe_dedup:     stripeDedup,
     rate_limit_hits:  rateLimitHits,
     ai_learning:      aiLearning,
+    businesses:       (businessesList ?? []).map((b: any) => ({
+      id:        b.id,
+      name:      b.name,
+      org_id:    b.org_id,
+      org_name:  b.organisations?.name ?? null,
+      is_active: b.is_active,
+    })),
   })
 }
