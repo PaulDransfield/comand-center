@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { decrypt }                   from '@/lib/integrations/encryption'
+import { checkAdminSecret }          from '@/lib/admin/check-secret'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 30
@@ -22,8 +23,9 @@ async function pkFetch(endpoint: string, token: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
-  if (secret !== process.env.CRON_SECRET && secret !== 'commandcenter123') {
+  // Hardcoded 'commandcenter123' check removed 2026-04-22 — anyone with the
+  // URL could dump decrypted PK tokens. Real admin auth now required.
+  if (!checkAdminSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

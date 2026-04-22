@@ -5,6 +5,7 @@
 // Call: GET /api/admin/test-swess?secret=commandcenter123&key=YOUR_KEY
 
 import { NextRequest, NextResponse } from 'next/server'
+import { checkAdminSecret }          from '@/lib/admin/check-secret'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 30
@@ -22,8 +23,11 @@ async function probe(label: string, url: string, headers: Record<string, string>
 }
 
 export async function GET(req: NextRequest) {
-  const secret = req.nextUrl.searchParams.get('secret')
-  if (secret !== process.env.CRON_SECRET && secret !== 'commandcenter123') {
+  // Hardcoded 'commandcenter123' check removed 2026-04-22 — leaked in source.
+  // Real admin auth now required. Note: `key` still comes via query string,
+  // which lands in CDN logs — switch to header or body if this route gets
+  // used in anger again.
+  if (!checkAdminSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

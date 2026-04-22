@@ -1,9 +1,16 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
+import { checkAdminSecret }  from '@/lib/admin/check-secret'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
+  // Route returns every org's owner email + integration status. Without
+  // this check it was a cross-tenant info leak — fixed 2026-04-22.
+  if (!checkAdminSecret(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const db = createAdminClient()
 
   // Get all orgs with member emails
