@@ -45,6 +45,10 @@ export default function BudgetPage() {
   const [generating, setGenerating] = useState(false)
   const [genError,   setGenError]   = useState('')
   const [suggestions, setSuggestions] = useState<any>(null)  // { overall_strategy, monthly }
+  // Owner feedback per month (too_high / too_low / just_right / wrong_shape).
+  // Captured immediately on click; flows into ai_forecast_outcomes and feeds
+  // the next AI generation's "PRIOR ACCURACY" block.
+  const [feedbackByMonth, setFeedbackByMonth] = useState<Record<number, string>>({})
   const [applying,   setApplying]   = useState(false)
   // Per-month analyse state
   const [analysingMonth, setAnalysingMonth] = useState<number|null>(null)  // month being analysed (loading spinner)
@@ -408,7 +412,16 @@ export default function BudgetPage() {
                   <div key={s.month} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                       <span style={{ fontWeight: 700, color: '#111', fontSize: 14 }}>{MONTHS[s.month - 1]}</span>
-                      <span style={{ fontSize: 13, color: '#6366f1', fontWeight: 600 }}>{fmtKr(s.revenue_target)}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <FeedbackButtons
+                          businessId={selected}
+                          year={year}
+                          month={s.month}
+                          currentReaction={feedbackByMonth[s.month]}
+                          onRecord={(reaction) => setFeedbackByMonth(prev => ({ ...prev, [s.month]: reaction }))}
+                        />
+                        <span style={{ fontSize: 13, color: '#6366f1', fontWeight: 600 }}>{fmtKr(s.revenue_target)}</span>
+                      </div>
                     </div>
                     <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
                       Food {s.food_cost_pct_target}% · Staff {s.staff_cost_pct_target}% · Profit target {fmtKr(s.net_profit_target)}
@@ -816,6 +829,68 @@ function TallyDot({ tone, count, label }: { tone: 'good' | 'bad' | 'neutral' | '
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, display: 'inline-block' }} />
       <span style={{ fontSize: 17, fontWeight: UX.fwMedium, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>{count}</span>
       <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>{label}</span>
+    </div>
+  )
+}
+
+// ─── FeedbackButtons — per-month owner reaction on an AI suggestion ──
+// Writes to ai_forecast_outcomes via /api/budgets/feedback. The next
+// AI generation includes these reactions in its "PRIOR ACCURACY"
+// block, so the AI self-corrects toward what the owner actually wants.
+function FeedbackButtons({
+  businessId, year, month, currentReaction, onRecord,
+}: {
+  businessId: string | null
+  year: number
+  month: number
+  currentReaction: string | undefined
+  onRecord: (reaction: string) => void
+}) {
+  const [saving, setSaving] = useState<string | null>(null)
+
+  const record = async (reaction: 'too_high' | 'too_low' | 'just_right' | 'wrong_shape') => {
+    if (!businessId || saving) return
+    setSaving(reaction)
+    try {
+      const r = await fetch('/api/budgets/feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, year, month, reaction }),
+      })
+      if (r.ok) onRecord(reaction)
+    } catch { /* silent — UI doesn't block on this */ }
+    setSaving(null)
+  }
+
+  const btn = (reaction: 'too_high' | 'too_low' | 'just_right', glyph: string, title: string) => {
+    const active = currentReaction === reaction
+    return (
+      <button
+        onClick={() => record(reaction)}
+        disabled={saving !== null}
+        title={title}
+        style={{
+          padding:     '2px 6px',
+          background:  active ? '#6366f1' : 'transparent',
+          color:       active ? 'white'   : '#9ca3af',
+          border:      `1px solid ${active ? '#6366f1' : '#e5e7eb'}`,
+          borderRadius: 4,
+          fontSize:    10,
+          fontWeight:  600,
+          cursor:      saving === null ? 'pointer' : 'wait',
+          opacity:     saving === reaction ? 0.6 : 1,
+          transition:  'all 120ms',
+        }}
+      >
+        {glyph}
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {btn('too_low',    '↑', 'Target too low')}
+      {btn('just_right', '✓', 'Just right')}
+      {btn('too_high',   '↓', 'Target too high')}
     </div>
   )
 }
