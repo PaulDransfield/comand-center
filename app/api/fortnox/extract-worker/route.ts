@@ -242,85 +242,194 @@ async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promi
   const arrayBuffer = await blob.arrayBuffer()
   const base64      = Buffer.from(arrayBuffer).toString('base64')
 
-  await writeProgress({ phase: 'extracting', message: 'Extracting with Haiku…', percent: 20 })
+  await writeProgress({ phase: 'extracting', message: 'Extracting with Sonnet 4.6 + extended thinking…', percent: 20 })
 
-  const prompt = `You are extracting a Swedish Fortnox accounting report into structured JSON.
+  // System prompt — split so we can cache this portion on the Anthropic
+  // side. The per-PDF document block is the only non-cacheable part.
+  // Cache saves ~90% on input tokens for the repeated instructions across
+  // every extraction.
+  const systemPrompt = `You are extracting a Swedish Fortnox accounting report into structured JSON via the submit_extraction tool.
 
-SCALE / UNIT.  Swedish reports are printed in SEK, KSEK (tkr / thousands) or MSEK (mkr / millions). Detect it from the header. Then convert EVERYTHING to full SEK:
+SCALE / UNIT.  Swedish reports are printed in SEK, KSEK (tkr / thousands) or MSEK (mkr / millions). Detect it from the header (look for "(kr)", "(tkr)", "Belopp i kkr", "Alla belopp i tusentals kronor", "MSEK", "mkr" etc). Then convert EVERYTHING to full SEK before returning:
   • SEK: as-is
   • KSEK / tkr: × 1 000
   • MSEK / mkr: × 1 000 000
 
-A restaurant's monthly revenue is typically 200 000 – 3 000 000 SEK. If the numbers would be absurd in SEK (e.g. revenue 1 023 for a restaurant), the scale is NOT SEK — reconvert.
+A restaurant's monthly revenue is typically 200 000 – 3 000 000 SEK. If a number would be absurd in SEK (e.g. revenue 1 023 for a month), the scale is NOT SEK — reconvert.
 
-MULTI-PERIOD.  If the PDF has one row per BAS account with multiple monthly columns (Jan–Dec), emit ONE "periods" entry per month with JUST a rollup (no lines per month — line-item detail goes into the single "annual_lines" array at the top level from the year-total / "Ack." column). This keeps the output compact.
+MULTI-PERIOD.  If the PDF has one row per BAS account with multiple monthly columns (Jan–Dec), emit ONE "periods" entry per month with ONLY a rollup (no per-month lines — put line-item detail in "annual_lines" drawn from the year-total / "Ack." column). Ignore "Ack."/"Totalt"/"Året"/"Föregående" comparison columns when emitting per-month rows.
 
-If the PDF is a single-month or single-year report, emit ONE period with the rollup AND put all its line items into "annual_lines".
+SINGLE-PERIOD.  If the PDF is a single-month or single-year report, emit ONE period with a rollup AND put all its line items into annual_lines.
 
-Return ONLY valid JSON with this shape, nothing else:
+BAS CATEGORIES.  Sum accounts into rollup categories:
+  revenue       = 3xxx (all operating revenue)
+  food_cost     = 4xxx (cost of goods)
+  staff_cost    = 7xxx (salaries + payroll tax + pension — 7000-7699 all go here)
+  other_cost    = 5xxx + 6xxx (rent, utilities, admin, bank fees, insurance, consulting, marketing, software)
+  depreciation  = 78xx (avskrivningar)
+  financial     = 8xxx (interest + financial items — signed; interest expense negative)
+  net_profit    = revenue − food_cost − staff_cost − other_cost − depreciation + financial
 
-{
-  "doc_type":       "pnl_monthly" | "pnl_annual" | "pnl_multi_month" | "invoice" | "sales" | "vat",
-  "business_hint":  "Company name" | null,
-  "scale_detected": "sek" | "ksek" | "msek",
-  "confidence":     "high" | "medium" | "low",
-  "warnings":       [],
+SIGN CONVENTION.  Costs positive, revenue positive, financial items signed (negative for interest expense, positive for interest income). Swedish decimal marker is comma: "1,5" in an MSEK report = 1 500 000 SEK.
 
-  "periods": [
-    {
-      "year":  2025,
-      "month": 1,
-      "rollup": { "revenue": 0, "food_cost": 0, "staff_cost": 0, "other_cost": 0, "depreciation": 0, "financial": 0, "net_profit": 0 }
-    }
-  ],
+VALIDATION.  Before submitting:
+  1. SUM(all line items whose BAS account ∈ revenue range) must equal rollup.revenue within 2% — otherwise raise confidence='medium' and add warning
+  2. For each monthly rollup, net_profit = revenue − food − staff − other − depreciation + financial. Compute yourself and compare; fix sign errors before submitting.
+  3. Skip "Summa…" / "Total…" / "S:a" subtotal rows when listing line items (they'd double-count).
+  4. Monthly revenue under 10 000 SEK or over 100 000 000 SEK almost always means scale misread — re-check the header before submitting.`
 
-  "annual_lines": [
-    { "label": "Bankavgifter", "amount": 4080, "account": 6570 }
-  ]
-}
-
-Rules:
-- Monthly revenue ranges per-business 200 000 – 3 000 000 SEK — sanity-check before returning.
-- All costs positive; revenue positive; financial items signed.
-- Swedish decimal marker is comma. "1,5" in an MSEK report = 1 500 000 SEK.
-- Skip "Summa…" / "Total…" subtotal rows.
-- annual_lines contains the year-total amounts for every line account (not per-month lines).
-
-Return ONLY the JSON object.`
+  // Tool definition — enforces the JSON shape at the protocol level.
+  // tool_choice forces Claude to respond with a structured tool call
+  // (not free-form text), eliminating JSON parse failures entirely.
+  const submitExtractionTool = {
+    name: 'submit_extraction',
+    description: 'Submit the structured extraction of the Fortnox accounting PDF. Must be called exactly once with the full extraction.',
+    input_schema: {
+      type: 'object',
+      required: ['doc_type', 'scale_detected', 'confidence', 'periods', 'annual_lines'],
+      properties: {
+        doc_type:       { type: 'string', enum: ['pnl_monthly', 'pnl_annual', 'pnl_multi_month', 'invoice', 'sales', 'vat'] },
+        business_hint:  { type: ['string', 'null'] },
+        scale_detected: { type: 'string', enum: ['sek', 'ksek', 'msek'] },
+        confidence:     { type: 'string', enum: ['high', 'medium', 'low'] },
+        warnings:       { type: 'array', items: { type: 'string' } },
+        periods: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['year', 'month', 'rollup'],
+            properties: {
+              year:   { type: 'integer' },
+              month:  { type: 'integer', minimum: 0, maximum: 12 },
+              rollup: {
+                type: 'object',
+                required: ['revenue', 'food_cost', 'staff_cost', 'other_cost', 'depreciation', 'financial', 'net_profit'],
+                properties: {
+                  revenue:      { type: 'number' },
+                  food_cost:    { type: 'number' },
+                  staff_cost:   { type: 'number' },
+                  other_cost:   { type: 'number' },
+                  depreciation: { type: 'number' },
+                  financial:    { type: 'number' },
+                  net_profit:   { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+        annual_lines: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['label', 'amount', 'account'],
+            properties: {
+              label:   { type: 'string' },
+              amount:  { type: 'number' },
+              account: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+  }
 
   const started = Date.now()
   const Anthropic = (await import('@anthropic-ai/sdk')).default
   const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+  // Sonnet 4.6 with extended thinking — based on Claude.ai's own
+  // reasoning on this exact problem. The thinking budget gives Sonnet
+  // room to do BAS-category aggregation + scale validation + sum-to-
+  // rollup reconciliation mentally before emitting the tool call,
+  // which is what the web version of Claude was doing implicitly.
+  //
+  // Prompt caching on the system prompt cuts 90% off the repeated
+  // input cost across every subsequent extraction.
   const response = await client.messages.create({
-    model:      AI_MODELS.AGENT,
-    max_tokens: 8000,
+    model:      AI_MODELS.ANALYSIS,   // claude-sonnet-4-6
+    max_tokens: 16000,
+    thinking:   { type: 'enabled', budget_tokens: 5000 },
+    system:     [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+    tools:      [submitExtractionTool],
+    tool_choice:{ type: 'tool', name: 'submit_extraction' },
     messages: [{
       role: 'user',
       content: [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } } as any,
-        { type: 'text', text: prompt },
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+        { type: 'text', text: 'Extract this Fortnox PDF via the submit_extraction tool.' },
       ],
     }],
-  })
+  } as any)
 
-  await writeProgress({ phase: 'parsing', message: 'Parsing Haiku output…', percent: 70 })
+  await writeProgress({ phase: 'parsing', message: 'Validating extraction…', percent: 70 })
 
-  const raw = (response.content ?? []).map((b: any) => b?.type === 'text' ? b.text : '').join('').trim()
-  let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-  const firstBrace = cleaned.indexOf('{')
-  const lastBrace  = cleaned.lastIndexOf('}')
-  if (firstBrace >= 0 && lastBrace > firstBrace) cleaned = cleaned.slice(firstBrace, lastBrace + 1)
-
-  let parsed: any
-  try { parsed = JSON.parse(cleaned) }
-  catch (e: any) {
-    const snippet = raw.slice(0, 400).replace(/\s+/g, ' ')
-    const truncated = (response as any).stop_reason === 'max_tokens'
-    throw new Error(truncated
-      ? `Haiku ran out of tokens before finishing JSON. Sample: ${snippet}`
-      : `Haiku returned non-JSON output (${e.message}). Sample: ${snippet}`)
+  // With tool_choice forced, Claude's response contains exactly one
+  // tool_use block with the structured input. No JSON parsing required.
+  const toolBlock = (response.content ?? []).find((b: any) => b?.type === 'tool_use')
+  if (!toolBlock) {
+    const stopReason = (response as any).stop_reason ?? 'unknown'
+    const preview = (response.content ?? []).map((b: any) => b?.type === 'text' ? b.text : `[${b?.type}]`).join(' ').slice(0, 400)
+    throw new Error(`No tool_use block in Sonnet response (stop_reason: ${stopReason}). Preview: ${preview}`)
   }
+  let parsed: any = (toolBlock as any).input
+
+  // Server-side validation — rollup reconciliation + sanity checks.
+  // This is the "the model said something, but is it mathematically
+  // consistent?" layer. Raises confidence floor or appends warnings
+  // so the review UI surfaces low-confidence rows for human check.
+  const validationWarnings: string[] = []
+  try {
+    for (const p of parsed?.periods ?? []) {
+      const r = p.rollup ?? {}
+      const computedNet = (Number(r.revenue) || 0) - (Number(r.food_cost) || 0) - (Number(r.staff_cost) || 0) - (Number(r.other_cost) || 0) - (Number(r.depreciation) || 0) + (Number(r.financial) || 0)
+      const declaredNet = Number(r.net_profit) || 0
+      // 2% tolerance OR 1000 SEK absolute (whichever wider) — catches
+      // real arithmetic errors without tripping on rounding jitter.
+      const tolerance = Math.max(Math.abs(computedNet) * 0.02, 1000)
+      if (Math.abs(computedNet - declaredNet) > tolerance) {
+        validationWarnings.push(`${p.year}-${String(p.month).padStart(2,'0')} net_profit math: declared ${declaredNet} vs computed ${Math.round(computedNet)} (diff ${Math.round(computedNet - declaredNet)})`)
+      }
+
+      // Restaurant revenue sanity band — flag outside 10k–100M SEK/month
+      const rev = Number(r.revenue) || 0
+      if (p.month && p.month >= 1 && p.month <= 12) {
+        if (rev > 0 && rev < 10_000) {
+          validationWarnings.push(`${p.year}-${String(p.month).padStart(2,'0')} revenue ${Math.round(rev)} SEK is suspiciously low — possible scale misdetection`)
+        }
+        if (rev > 100_000_000) {
+          validationWarnings.push(`${p.year}-${String(p.month).padStart(2,'0')} revenue ${Math.round(rev)} SEK is suspiciously high — possible scale misdetection (MSEK not applied?)`)
+        }
+      }
+    }
+
+    // Annual_lines reconcile against summed rollup revenue if we have both.
+    const periodsSum = (parsed?.periods ?? []).reduce((s: number, p: any) => s + (Number(p?.rollup?.revenue) || 0), 0)
+    const revLineSum = (parsed?.annual_lines ?? [])
+      .filter((l: any) => {
+        const acct = Number(l?.account) || 0
+        return acct >= 3000 && acct < 4000
+      })
+      .reduce((s: number, l: any) => s + (Number(l?.amount) || 0), 0)
+
+    if (periodsSum > 0 && revLineSum > 0) {
+      const relDiff = Math.abs(periodsSum - revLineSum) / periodsSum
+      if (relDiff > 0.05) {
+        validationWarnings.push(`Revenue cross-check: periods sum ${Math.round(periodsSum)} vs 3xxx line-items ${Math.round(revLineSum)} (diff ${(relDiff * 100).toFixed(1)}%) — one side may be under-extracted`)
+      }
+    }
+
+    if (validationWarnings.length) {
+      parsed.warnings = [...(parsed.warnings ?? []), ...validationWarnings]
+      // Drop confidence one notch if the model said 'high' but math didn't reconcile.
+      if (parsed.confidence === 'high') parsed.confidence = 'medium'
+    }
+  } catch (e: any) {
+    console.warn('[extract-worker] validation threw:', e?.message)
+    // Validation failures shouldn't block extraction — just no extra warnings.
+  }
+
+  // tool_use forces a structured response so parsed is always non-null
+  // unless the API itself failed (caught above). No fallback path needed.
 
   // Attach annual_lines to the latest period so the apply route can
   // write them into tracker_line_items via the existing annual path.
