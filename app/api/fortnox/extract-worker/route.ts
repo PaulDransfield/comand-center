@@ -567,17 +567,35 @@ VALIDATION.  Before submitting:
 
   await writeProgress({ phase: 'finalising', message: 'Writing to database…', percent: 95 })
 
-  await db.from('fortnox_uploads').update({
+  // CRITICAL: surface .error explicitly. Previously we awaited this
+  // without checking the return value, so if Postgres rejected the
+  // update (e.g. doc_type enum violation, JSONB size, RLS unexpectedly
+  // applying), the call silently no-op'd and the outer POST handler
+  // then marked the job 'completed' against an un-extracted upload row.
+  // The extraction job says it finished; the upload row says
+  // "extracting" forever. We lose the extraction entirely.
+  //
+  // Now: capture .error, log with full context, throw so the outer
+  // handler routes through the retry-with-backoff path instead of
+  // marking the job completed.
+  const { error: finalUpdateErr } = await db.from('fortnox_uploads').update({
     doc_type:           docType,
     period_year:        pYear,
     period_month:       pMonth,
     extracted_json:     extraction,
-    extraction_model:   AI_MODELS.AGENT,
+    extraction_model:   AI_MODELS.ANALYSIS,  // Sonnet 4.6 since 588c4bb
     extraction_cost_kr: Math.round(costKr * 100) / 100,
     status:             'extracted',
     extracted_at:       new Date().toISOString(),
     error_message:      extraction.confidence === 'low' ? 'Low confidence — review carefully' : null,
   }).eq('id', job.upload_id)
+
+  if (finalUpdateErr) {
+    // Include the exact error message + any row-size hints so next
+    // time we know what's failing. Throwing triggers the retry path.
+    const extractionSize = JSON.stringify(extraction).length
+    throw new Error(`fortnox_uploads final update failed: ${finalUpdateErr.message} (code: ${finalUpdateErr.code ?? 'n/a'}, extracted_json size: ${extractionSize} chars, periods: ${periods.length}, lines: ${mainLines.length})`)
+  }
 
   return {
     upload_id:      job.upload_id,
