@@ -2,16 +2,22 @@
 > Last updated: 2026-04-22 | Session 11 architecture pass + 2026-04-22 data-flow + Hobby-cron fixes
 > See ARCHITECTURE-PLAN.md for the full audit + phased roadmap.
 >
+> Infra plans (as of 2026-04-22 evening):
+>   • Supabase: **Pro** — daily backups, PITR, 8GB DB, no-pause
+>   • Vercel: **Pro** — sub-daily crons, Rolling Releases, preview password protection
+>   • GitHub: Free (fine at current scale)
+>
 > Key architecture additions (2026-04-21 → 22):
 >   • Job queue: extraction_jobs + dispatcher/worker/sweeper pattern (M017)
 >   • Tenant isolation: RLS on 5 previously-exposed tables + current_user_org_ids() (M018)
 >   • Realtime: fortnox_uploads + extraction_jobs pushed via supabase_realtime (M019)
+>   • AI learning: ai_forecast_outcomes + capture hook + accuracy reconciler + owner feedback UI (M020)
 >   • Billing correctness: stripe_processed_events dedup + org_rate_limits persistence
 >   • Reusable helpers: requireAdmin(), orgRateLimit(), withTimeout(), log (structured)
 >   • Observability: structured JSON logs across every scheduled cron + hot API route
 >   • Data-flow fix: aggregator now merges Fortnox revenue + costs into monthly_metrics;
 >     /api/fortnox/apply triggers re-aggregation; /api/admin/reaggregate backfills history
->   • Hobby cron constraint documented: all vercel.json crons must be daily
+>   • User-scoped queue sweep (/api/fortnox/sweep) — auto-kick stuck jobs from UI
 
 ---
 
