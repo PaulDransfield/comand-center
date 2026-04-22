@@ -29,19 +29,23 @@ export default function DiagnosePkPage() {
     setSecret(s)
   }, [router])
 
-  // Load all businesses that have a connected PK integration. We hit the
-  // existing /api/admin/customers list endpoint and flatten down to the
-  // (biz_id, biz_name, org_name) rows that have `personalkollen` integrations.
+  // Load all businesses that have a PK integration. /api/admin/orgs returns
+  // the nested shape (org → businesses → integrations); /api/admin/customers
+  // would only give us flat org rows, which wouldn't let us pick a specific
+  // business within an org that has multiple locations.
   useEffect(() => {
     if (!secret) return
-    fetch('/api/admin/customers', { headers: { 'x-admin-secret': secret }, cache: 'no-store' })
-      .then(r => r.json())
+    fetch('/api/admin/orgs', { headers: { 'x-admin-secret': secret }, cache: 'no-store' })
+      .then(r => {
+        if (!r.ok) throw new Error(r.status === 401 ? 'Unauthorized — log in via /admin' : `HTTP ${r.status}`)
+        return r.json()
+      })
       .then(j => {
         const out: Biz[] = []
-        for (const c of (j?.customers ?? [])) {
-          for (const b of (c.businesses ?? [])) {
+        for (const o of (j?.orgs ?? [])) {
+          for (const b of (o.businesses ?? [])) {
             if ((b.integrations ?? []).some((i: any) => i.provider === 'personalkollen')) {
-              out.push({ id: b.id, name: b.name, org_name: c.name })
+              out.push({ id: b.id, name: b.name, org_name: o.name })
             }
           }
         }
