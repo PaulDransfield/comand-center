@@ -357,30 +357,45 @@ VALIDATION.  Before submitting:
   const response = await client.messages.create({
     model:      AI_MODELS.ANALYSIS,   // claude-sonnet-4-6
     max_tokens: 16000,
+    // Anthropic's API forbids thinking + forced tool_choice together
+    // ("Thinking may not be enabled when tool_choice forces tool use").
+    // Solution: tool_choice='auto' lets the model decide; with a single
+    // relevant tool + a clear prompt, Sonnet picks it ~100% of the time.
+    // Text-JSON fallback below catches the rare text-response case.
     thinking:   { type: 'enabled', budget_tokens: 5000 },
     system:     [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
     tools:      [submitExtractionTool],
-    tool_choice:{ type: 'tool', name: 'submit_extraction' },
+    tool_choice:{ type: 'auto' },
     messages: [{
       role: 'user',
       content: [
         { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-        { type: 'text', text: 'Extract this Fortnox PDF via the submit_extraction tool.' },
+        { type: 'text', text: 'Extract this Fortnox PDF. Call the submit_extraction tool with the full structured extraction — do not reply in free text.' },
       ],
     }],
   } as any)
 
   await writeProgress({ phase: 'parsing', message: 'Validating extraction…', percent: 70 })
 
-  // With tool_choice forced, Claude's response contains exactly one
-  // tool_use block with the structured input. No JSON parsing required.
+  // Prefer the tool_use block (Claude's normal response mode with
+  // tool_choice='auto'); fall back to parsing a text response as JSON
+  // if for any reason the model chose to reply in text.
+  let parsed: any = null
   const toolBlock = (response.content ?? []).find((b: any) => b?.type === 'tool_use')
-  if (!toolBlock) {
-    const stopReason = (response as any).stop_reason ?? 'unknown'
-    const preview = (response.content ?? []).map((b: any) => b?.type === 'text' ? b.text : `[${b?.type}]`).join(' ').slice(0, 400)
-    throw new Error(`No tool_use block in Sonnet response (stop_reason: ${stopReason}). Preview: ${preview}`)
+  if (toolBlock) {
+    parsed = (toolBlock as any).input
+  } else {
+    const raw = (response.content ?? []).map((b: any) => b?.type === 'text' ? b.text : '').join('').trim()
+    let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    const firstBrace = cleaned.indexOf('{')
+    const lastBrace  = cleaned.lastIndexOf('}')
+    if (firstBrace >= 0 && lastBrace > firstBrace) cleaned = cleaned.slice(firstBrace, lastBrace + 1)
+    try { parsed = JSON.parse(cleaned) }
+    catch (e: any) {
+      const stopReason = (response as any).stop_reason ?? 'unknown'
+      throw new Error(`Sonnet returned neither tool_use nor parseable JSON (stop_reason: ${stopReason}). Preview: ${raw.slice(0, 400)}`)
+    }
   }
-  let parsed: any = (toolBlock as any).input
 
   // Server-side validation — rollup reconciliation + sanity checks.
   // This is the "the model said something, but is it mathematically
