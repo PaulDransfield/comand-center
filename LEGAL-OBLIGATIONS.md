@@ -220,6 +220,7 @@ A personal data breach triggers:
 | AI query logs (with PII redacted) | 90 days | Debugging — must be PII-free |
 | Email marketing list | Until unsubscribe | Consent |
 | Anomaly / alert records | While org active | Feature data |
+| AI forecast outcomes (budget accuracy feedback) | 3 years | Derivative audit data — shorter than the 7-year bokföring requirement applying to source tracker_data. Enforced by `prune_ai_forecast_outcomes()` RPC + daily cron |
 
 ---
 

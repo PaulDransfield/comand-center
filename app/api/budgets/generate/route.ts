@@ -126,6 +126,22 @@ export async function POST(req: NextRequest) {
   const biz        = bizRes.data
   const annualRows = annualRes.data ?? []
 
+  // ── Prior AI accuracy — the feedback loop ─────────────────────────
+  // Pull the last 12 months of ai_forecast_outcomes for this business
+  // where an actual has been resolved. Feed as a "track record" block
+  // so the AI can see its own systematic bias and correct for it.
+  // Org-scoped query; no cross-tenant data leakage.
+  const { data: priorOutcomes } = await db
+    .from('ai_forecast_outcomes')
+    .select('period_year, period_month, suggested_revenue, actual_revenue, revenue_error_pct, revenue_direction, owner_reaction')
+    .eq('org_id', auth.orgId)
+    .eq('business_id', businessId)
+    .eq('surface', 'budget_generate')
+    .not('actual_revenue', 'is', null)
+    .order('period_year', { ascending: false })
+    .order('period_month', { ascending: false })
+    .limit(12)
+
   // ── 2. Format the data into a compact context for Claude ─────────────────────
   const fmt = (n: any) => (n === null || n === undefined) ? '?' : Math.round(Number(n)).toLocaleString('en-GB')
 
@@ -172,6 +188,46 @@ export async function POST(req: NextRequest) {
         `  ${MONTHS[r.period_month - 1]}: rev_forecast=${fmt(r.revenue_forecast)} staff_forecast=${fmt(r.staff_cost_forecast)} food_forecast=${fmt(r.food_cost_forecast)} net_forecast=${fmt(r.net_profit_forecast)}`
       ).join('\n')
     : '  (no forecasts yet)'
+
+  // Prior AI accuracy block — shows the AI its own track record for
+  // this business. Only populated after at least one resolved outcome.
+  // Directional bias is aggregated so the AI sees "you tend to
+  // under-predict by N%" and can correct.
+  const outcomeRows = priorOutcomes ?? []
+  let priorAccuracyBlock = ''
+  if (outcomeRows.length) {
+    const lines = outcomeRows.map(o => {
+      const period = o.period_month
+        ? `${MONTHS[o.period_month - 1]} ${o.period_year}`
+        : `${o.period_year}`
+      const arrow = o.revenue_direction === 'over'     ? '↓ over-predicted'
+                  : o.revenue_direction === 'under'    ? '↑ under-predicted'
+                  : o.revenue_direction === 'accurate' ? '≈ accurate'
+                  : '— no actual'
+      const errPct = o.revenue_error_pct == null ? '' : ` (${Math.round(Number(o.revenue_error_pct))}%)`
+      const fb = o.owner_reaction ? ` [owner: ${o.owner_reaction}]` : ''
+      return `  ${period}: suggested ${fmt(o.suggested_revenue)} → actual ${fmt(o.actual_revenue)} ${arrow}${errPct}${fb}`
+    }).join('\n')
+
+    // Compute directional bias — mean signed error % across rows with actuals
+    const withErr = outcomeRows.filter(o => Number.isFinite(Number(o.revenue_error_pct)))
+    const meanErr = withErr.length
+      ? withErr.reduce((s, o) => s + Number(o.revenue_error_pct), 0) / withErr.length
+      : 0
+    const biasText = Math.abs(meanErr) < 5 ? 'broadly accurate (within ±5%)'
+                   : meanErr > 0 ? `tending to UNDER-predict this business by ~${Math.round(meanErr)}%`
+                   : `tending to OVER-predict this business by ~${Math.abs(Math.round(meanErr))}%`
+
+    priorAccuracyBlock = `
+PRIOR AI BUDGET ACCURACY FOR THIS BUSINESS (your own track record):
+${lines}
+
+Directional bias: your past suggestions for this business are ${biasText}.
+Factor that into today's targets — but stay within the ±15% ceiling
+against last year's actual for each month. Owner reactions (if shown)
+are direct feedback; weight them heavily.
+`
+  }
 
   const prompt = `You are helping set monthly budget targets for a Swedish restaurant: "${biz?.name ?? 'Unknown'}"${biz?.city ? ` in ${biz.city}` : ''}.
 
@@ -239,6 +295,7 @@ ${ytdTable}
 
 CALIBRATED FORECASTS FOR ${year} (input only, NOT the anchor — informs confidence band but never the target):
 ${fcTable}
+${priorAccuracyBlock}
 
 RULES:
 - revenue_target = last year's same-month actual × (1.03 to 1.08). Hard max: last year × 1.15.
@@ -315,6 +372,64 @@ Return JSON only, no prose outside JSON, no markdown code fence:
       duration_ms:   Date.now() - startedAt,
     })
 
+    // Capture one outcome row per suggested month. The accuracy-
+    // reconciler cron fills in actuals when the month closes, then
+    // priorAccuracyBlock picks them up on the next budget generation.
+    // Legal: numeric values only, no PII. Org-scoped via RLS.
+    try {
+      const lastYearByMonth = new Map<number, any>()
+      for (const r of lastYear) lastYearByMonth.set(Number(r.month), r)
+
+      const outcomeRowsToInsert = monthly.map(m => {
+        const revenue = m.revenue_target
+        const staff   = Math.round(revenue * (m.staff_cost_pct_target / 100))
+        const food    = Math.round(revenue * (m.food_cost_pct_target / 100))
+        const other   = Math.round(revenue * 0.10)   // matches AI's 10% other-cost assumption
+        const net     = m.net_profit_target
+        const marginPct = revenue > 0 ? Math.round((net / revenue) * 1000) / 10 : 0
+
+        return {
+          org_id:               auth.orgId,
+          business_id:          businessId,
+          surface:              'budget_generate',
+          model:                AI_MODELS.AGENT,
+          period_year:          year,
+          period_month:         m.month,
+          suggested_revenue:    revenue,
+          suggested_staff_cost: staff,
+          suggested_food_cost:  food,
+          suggested_other_cost: other,
+          suggested_net_profit: net,
+          suggested_margin_pct: marginPct,
+          // Tight context snapshot — no PII, just what the AI was
+          // anchoring on for this month's prediction.
+          suggested_context: {
+            last_year_revenue:   lastYearByMonth.get(m.month)?.revenue ?? null,
+            last_year_staff_pct: lastYearByMonth.get(m.month)?.margin_pct ?? null,
+            ytd_avg_revenue:     ytd.length ? Math.round(ytd.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0) / ytd.length) : null,
+            reasoning:           m.reasoning,
+          },
+        }
+      })
+
+      // Upsert on (business_id, period_year, period_month, surface) via
+      // delete-then-insert so re-generating replaces prior suggestions
+      // cleanly. The 'surface' dimension keeps budget vs coach vs memo
+      // suggestions separate even for the same month.
+      await db.from('ai_forecast_outcomes')
+        .delete()
+        .eq('business_id', businessId)
+        .eq('period_year', year)
+        .eq('surface', 'budget_generate')
+        .is('actuals_resolved_at', null)   // never delete resolved history
+      const { error: insErr } = await db.from('ai_forecast_outcomes').insert(outcomeRowsToInsert)
+      if (insErr) console.warn('[budgets/generate] outcomes capture failed:', insErr.message)
+    } catch (e: any) {
+      // Non-fatal: the user still gets their suggestions; the feedback
+      // loop just misses this generation.
+      console.warn('[budgets/generate] outcomes capture threw:', e?.message)
+    }
+
     return NextResponse.json({
       overall_strategy: String(parsed.overall_strategy ?? ''),
       monthly,
@@ -322,6 +437,7 @@ Return JSON only, no prose outside JSON, no markdown code fence:
         last_year_months:  lastYear.length,
         ytd_months:        ytd.length,
         forecast_months:   forecasts.length,
+        prior_outcomes:    outcomeRows.length,
       },
     })
 

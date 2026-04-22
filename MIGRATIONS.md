@@ -16,6 +16,14 @@
 **Purpose:** stores thumbs up / thumbs down + optional comment on each Monday memo. Populated via the public `/api/memo-feedback` endpoint, secured by HMAC-signed tokens (key: `CRON_SECRET`) embedded in the email buttons.
 **To apply:** open Supabase SQL Editor, paste file contents, run. No backfill needed — new memos from the next cron tick onward will include the feedback block. Requires M003 `briefings` already applied (FK target).
 
+### M020 — ai_forecast_outcomes (AI accuracy feedback loop)
+**File:** `M020-AI-FORECAST-OUTCOMES.sql` (repo root)
+**Purpose:** captures every AI-suggested budget/forecast prediction + the actual outcome once the period closes, so future AI prompts can include a "PRIOR ACCURACY" block and correct systematic bias. Not ML training — pure in-context feedback via future prompts.
+**Creates:** `ai_forecast_outcomes` table (one row per business × period × surface), indexes for dispatch + unresolved lookup, RLS (org read + feedback-only UPDATE), `prune_ai_forecast_outcomes()` RPC for 3-year retention.
+**Downstream:** `/api/budgets/generate` writes rows on each AI call; `/api/cron/ai-accuracy-reconciler` (daily 07:00 UTC) fills in actuals from monthly_metrics; budget generator reads last 12 months on next call.
+**GDPR:** numeric values only, no PII. Tenant-isolated via RLS. Cascade deletes on org/business removal. 3-year retention enforced.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Idempotent.
+
 ### M019 — Supabase Realtime publication
 **File:** `M019-REALTIME-PUBLICATION.sql` (repo root)
 **Purpose:** adds `fortnox_uploads` and `extraction_jobs` to the `supabase_realtime` publication so the `/overheads/upload` page receives push updates instead of polling every 3 seconds. RLS policies still apply to Realtime events.
