@@ -64,11 +64,20 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!integ) return NextResponse.json({ error: 'no PK integration on this business' }, { status: 404 })
 
+  // PK stores the API token as a raw decrypted string, not a JSON blob
+  // (see lib/sync/engine.ts syncPersonalkollen). Handle both shapes so
+  // this diagnostic also works if PK ever moves to { api_key: '...' }.
   let token: string
   try {
-    const creds = JSON.parse(decrypt(integ.credentials_enc))
-    token = creds.api_key ?? creds.token
-    if (!token) throw new Error('no api_key/token in credentials')
+    const raw = decrypt(integ.credentials_enc) ?? ''
+    const trimmed = raw.trim()
+    if (trimmed.startsWith('{')) {
+      const parsed = JSON.parse(trimmed)
+      token = parsed.api_key ?? parsed.token ?? ''
+    } else {
+      token = trimmed
+    }
+    if (!token) throw new Error('empty token after decrypt')
   } catch (e: any) {
     return NextResponse.json({ error: `credential decrypt failed: ${e.message}` }, { status: 500 })
   }
