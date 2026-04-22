@@ -269,12 +269,19 @@ HANDLING DATA GAPS — READ CAREFULLY:
   payroll and 0 revenue is impossible. If you produce revenue_target=0 for
   a month with payroll, you have failed at this task.
 
-  Use this priority order to anchor a data-gap month:
-    (a) SAME-MONTH THIS YEAR'S YTD actual — if the calendar month is in the
-        past and YTD data exists, THIS is the highest-authority signal for
-        that specific month. Use it as the anchor: target = YTD × (1.03 to
-        1.08). This overrides the "prior-year is the anchor" rule for gap
-        months only, because we have no better prior-year number to use.
+  CURRENT-MONTH RULE (CRITICAL): The current calendar month is NEVER a
+  valid YTD anchor, even if "YTD" data exists for it. Today is part-way
+  through the month, so "YTD April 2026" might show 52 000 kr when the
+  full month will end at 850 000 kr. Using partial-month data as an
+  anchor produces absurd targets. For the current month, ALWAYS anchor
+  on last year's same month — or on the nearest FULLY-CLOSED neighbour
+  if last year's same month is a data gap.
+
+  Use this priority order for any month WITHOUT a populated prior-year row:
+    (a) SAME-MONTH THIS YEAR'S YTD actual — ONLY if the calendar month has
+        fully closed (last day of the month is in the past). Target =
+        YTD × (1.03 to 1.08). Do NOT use partial data from the current
+        month — it's under-reported by definition.
     (b) NEAREST POPULATED LAST-YEAR MONTH — check BOTH DIRECTIONS (before
         AND after). October 2025 gap? Closest populated months are August
         2025 (revenue 687k, 2 months earlier) and November 2025 (revenue
@@ -290,6 +297,7 @@ HANDLING DATA GAPS — READ CAREFULLY:
 
   Never use industry averages or calibrated-forecast output to fill a gap.
   Never leave revenue_target at 0 when staff_cost for that month is > 0.
+  Never use partial-month YTD as an anchor for the current month.
 
 FOOD COST — ALWAYS APPLY A FLOOR:
   food_cost_pct_target MUST be between 28 and 32 for every month, ALWAYS.
