@@ -262,8 +262,12 @@ HANDLING DATA GAPS — READ CAREFULLY:
   A last-year month showing revenue=0 with staff_cost > 0 means the business
   WAS OPERATING (payroll proves it) but we simply don't have the revenue
   number for that period. This is a DATA GAP. It does NOT mean "hibernation"
-  or "closed". Never budget 0 revenue against staff cost > 0 — that would
-  guarantee a loss the owner cannot staff around.
+  or "closed".
+
+  ABSOLUTE HARD RULE: If staff_cost > 0 for a month (in last year or this
+  year), then revenue_target for that month MUST BE > 0. A month with
+  payroll and 0 revenue is impossible. If you produce revenue_target=0 for
+  a month with payroll, you have failed at this task.
 
   Use this priority order to anchor a data-gap month:
     (a) SAME-MONTH THIS YEAR'S YTD actual — if the calendar month is in the
@@ -271,16 +275,29 @@ HANDLING DATA GAPS — READ CAREFULLY:
         that specific month. Use it as the anchor: target = YTD × (1.03 to
         1.08). This overrides the "prior-year is the anchor" rule for gap
         months only, because we have no better prior-year number to use.
-    (b) NEAREST POPULATED LAST-YEAR MONTH adjusted for seasonal direction.
-        E.g. "Sep 2025 gap; anchored on Aug 2025 (687k) minus 10% back-to-
-        work adjustment = 620k." Document the adjustment in the reasoning.
-    (c) STAFF COST SANITY CHECK — whichever anchor you use, the implied
+    (b) NEAREST POPULATED LAST-YEAR MONTH — check BOTH DIRECTIONS (before
+        AND after). October 2025 gap? Closest populated months are August
+        2025 (revenue 687k, 2 months earlier) and November 2025 (revenue
+        476k, 1 month later). Use the closer one — November — and document
+        the adjustment. Do NOT only look backward.
+    (c) If both a-before and b-after gap-month neighbours exist with real
+        data, INTERPOLATE or pick the closer in calendar distance.
+    (d) STAFF COST SANITY CHECK — whichever anchor you use, the implied
         staff-cost ratio should be within 10pp of the staff_cost / revenue
         ratio from populated months. If your revenue target paired with
         that month's staff_cost would give a ratio outside the industry
         ceiling (42%), flag it in the reasoning.
 
   Never use industry averages or calibrated-forecast output to fill a gap.
+  Never leave revenue_target at 0 when staff_cost for that month is > 0.
+
+FOOD COST — ALWAYS APPLY A FLOOR:
+  food_cost_pct_target MUST be between 28 and 32 for every month, ALWAYS.
+  A running restaurant cannot have 0% food cost; even if last year's
+  recorded food_cost was 0 (data gap — Fortnox PDF not uploaded for that
+  month), the ACTUAL food cost of a trading restaurant is 28–32% of revenue.
+  Never output food_cost_pct_target=0. If last year showed 0% food cost, it
+  is a DATA GAP; target 30% as the prudent default for that month.
 
 TREATING YTD (this year so far):
   This year's YTD actuals are evidence the business is trading.
@@ -364,6 +381,15 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     }
 
     // Normalise: ensure we have 12 months. Fill gaps with zeros.
+    // Also enforce the server-side backstops that protect against Haiku
+    // ignoring prompt rules — food cost floor, anti-zero-revenue-with-
+    // payroll guard. Any suggestion that slips through gets repaired
+    // here before it reaches the UI.
+    const lastYearByMonth = new Map<number, any>()
+    for (const r of lastYear) lastYearByMonth.set(Number(r.month), r)
+    const ytdByMonth = new Map<number, any>()
+    for (const r of ytd) ytdByMonth.set(Number(r.month), r)
+
     const byMonth = new Map<number, any>()
     for (const s of parsed.monthly ?? []) {
       if (s.month >= 1 && s.month <= 12) byMonth.set(s.month, s)
@@ -371,12 +397,60 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     const monthly = Array.from({ length: 12 }, (_, i) => {
       const m = i + 1
       const s = byMonth.get(m)
+
+      let revenueTarget = Math.round(Number(s?.revenue_target ?? 0))
+      const foodPctRaw  = Math.round(Number(s?.food_cost_pct_target ?? 30))
+      const staffPctRaw = Math.round(Number(s?.staff_cost_pct_target ?? 40))
+
+      // Food cost floor — 28-32% range, clamp to 30% when missing/zero.
+      // No running restaurant has 0% food cost, regardless of data gaps.
+      const foodCostPctTarget = foodPctRaw < 28 ? 30 : Math.min(foodPctRaw, 32)
+
+      // Anti-zero-revenue backstop. If the AI budgeted 0 revenue for a
+      // month that had any payroll (last year OR this year), pick the
+      // best available anchor from our data and apply a 5% stretch.
+      if (revenueTarget <= 0) {
+        const ly = lastYearByMonth.get(m)
+        const yt = ytdByMonth.get(m)
+        const lyStaff = Number(ly?.staff_cost ?? 0)
+        const ytStaff = Number(yt?.staff_cost ?? 0)
+
+        if (lyStaff > 0 || ytStaff > 0) {
+          // Must budget something. Priority: YTD actual > LY revenue >
+          // nearest-populated-month revenue.
+          const ytRev = Number(yt?.revenue ?? 0)
+          const lyRev = Number(ly?.revenue ?? 0)
+
+          if (ytRev > 0) {
+            revenueTarget = Math.round(ytRev * 1.05)
+          } else if (lyRev > 0) {
+            revenueTarget = Math.round(lyRev * 1.05)
+          } else {
+            // Find nearest populated month in last year, in either direction.
+            let nearest = 0
+            let nearestDist = Infinity
+            for (const [otherM, row] of lastYearByMonth) {
+              const rev = Number(row?.revenue ?? 0)
+              if (rev > 0) {
+                const dist = Math.abs(otherM - m)
+                if (dist < nearestDist) { nearestDist = dist; nearest = rev }
+              }
+            }
+            if (nearest > 0) revenueTarget = Math.round(nearest * 0.95)  // conservative adjustment for gap month
+          }
+        }
+      }
+
+      // Recompute net profit using the (potentially repaired) numbers
+      // so the UI can't show -435k loss against a 0 revenue row.
+      const netProfitTarget = Math.round(revenueTarget * (1 - foodCostPctTarget / 100 - staffPctRaw / 100 - 0.10))
+
       return {
         month:                  m,
-        revenue_target:         Math.round(Number(s?.revenue_target         ?? 0)),
-        food_cost_pct_target:   Math.round(Number(s?.food_cost_pct_target   ?? 31)),
-        staff_cost_pct_target:  Math.round(Number(s?.staff_cost_pct_target  ?? 40)),
-        net_profit_target:      Math.round(Number(s?.net_profit_target      ?? 0)),
+        revenue_target:         revenueTarget,
+        food_cost_pct_target:   foodCostPctTarget,
+        staff_cost_pct_target:  staffPctRaw,
+        net_profit_target:      netProfitTarget,
         reasoning:              String(s?.reasoning ?? ''),
       }
     })
