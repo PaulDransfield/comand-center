@@ -55,7 +55,11 @@ export default function CashflowPage() {
     if (!bizId) return
     setLoading(true)
     try {
-      const r = await fetch(`/api/cashflow/projection?business_id=${bizId}&starting_balance=${Number(startBal) || 0}`, { cache: 'no-store' })
+      // Empty startBal means "auto-derive from prior-year P&L". Only append
+      // starting_balance if the owner has typed something, so the server
+      // can fall back to the Resultatrapport-derived value.
+      const balQs = startBal.trim() === '' ? '' : `&starting_balance=${Number(startBal) || 0}`
+      const r = await fetch(`/api/cashflow/projection?business_id=${bizId}${balQs}`, { cache: 'no-store' })
       const j = await r.json()
       setData(j)
     } catch {}
@@ -82,17 +86,31 @@ export default function CashflowPage() {
           crumbs={[{ label: 'Financials' }, { label: 'Cashflow', active: true }]}
           rightSlot={
             <>
-              <label style={{ fontSize: UX.fsMicro, color: UX.ink3, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <label
+                title={data?.suggestion_reason}
+                style={{ fontSize: UX.fsMicro, color: UX.ink3, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
                 Starting balance
                 <input
                   type="number"
                   value={startBal}
                   onChange={e => saveStart(e.target.value)}
-                  placeholder="0"
+                  placeholder={
+                    // Show the server-derived value so the owner sees what we'd
+                    // use if they leave this blank. "0" is the pre-load default.
+                    typeof data?.suggested_starting_balance === 'number'
+                      ? String(data.suggested_starting_balance)
+                      : '0'
+                  }
                   style={{ width: 110, padding: '5px 8px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}
                 />
                 kr
               </label>
+              {data?.starting_balance_source === 'derived_prior_year_pnl' && (
+                <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>
+                  auto-filled from {data.suggestion_reason?.toLowerCase?.() ?? 'prior-year P&L'}
+                </span>
+              )}
               {selectedBiz && (
                 <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>
                   for <span style={{ color: UX.ink1, fontWeight: UX.fwMedium }}>{selectedBiz.name}</span>

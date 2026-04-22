@@ -31,14 +31,19 @@ export async function GET(req: NextRequest) {
 
   const u          = new URL(req.url)
   const businessId = u.searchParams.get('business_id')
-  const startBal   = Number(u.searchParams.get('starting_balance') ?? '0')
+  // Explicit user-provided balance wins. Otherwise we auto-derive below
+  // from prior-year cumulative net_profit (Resultatrapport "Årets resultat").
+  // Null here means "auto-derive"; 0 still means "explicit 0, don't derive".
+  const rawStartBal     = u.searchParams.get('starting_balance')
+  const explicitStartBal = rawStartBal !== null && rawStartBal !== '' ? Number(rawStartBal) : null
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
   const db = createAdminClient()
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
   // ── Data pulls in parallel ────────────────────────────────────────────
-  const [dailyRes, mmRes, liRes, forecastRes, invRes] = await Promise.all([
+  const priorYear = today.getFullYear() - 1
+  const [dailyRes, mmRes, liRes, forecastRes, invRes, priorYearRes] = await Promise.all([
     // Last 60 days of revenue for seasonality pattern
     db.from('daily_metrics')
       .select('date, revenue, dow')
@@ -74,6 +79,13 @@ export async function GET(req: NextRequest) {
       .eq('business_id', businessId)
       .in('status', ['unpaid', 'overdue', 'pending'])
       .not('due_date', 'is', null),
+    // Prior-year tracker totals — used to derive a suggested starting balance
+    // from the Resultatrapport "Årets resultat" (sum of net_profit Jan–Dec).
+    db.from('tracker_data')
+      .select('period_month, revenue, food_cost, staff_cost, other_cost, depreciation, financial, net_profit')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .eq('period_year', priorYear),
   ])
 
   const daily    = dailyRes.data    ?? []
@@ -81,6 +93,29 @@ export async function GET(req: NextRequest) {
   const lines    = liRes.data       ?? []
   const forecasts = forecastRes.data ?? []
   const invoices = invRes.data      ?? []
+  const priorYear_rows = priorYearRes.data ?? []
+
+  // ── Derive suggested starting balance from prior-year P&L ──────────────
+  // Prefer the explicit net_profit column when present. Fall back to
+  // revenue - (food+staff+other+depreciation+financial) if net_profit is
+  // null/zero, which happens when the Fortnox extractor filled in top-line
+  // rows but not the bottom line.
+  const sumColumn = (k: string) => priorYear_rows.reduce((s: number, r: any) => s + Number(r?.[k] ?? 0), 0)
+  const priorYearNetProfit = sumColumn('net_profit')
+  const derivedFromParts = sumColumn('revenue')
+    - sumColumn('food_cost')
+    - sumColumn('staff_cost')
+    - sumColumn('other_cost')
+    - sumColumn('depreciation')
+    - sumColumn('financial')
+  const suggestedStartingBalance = Math.round(
+    Math.abs(priorYearNetProfit) > 1 ? priorYearNetProfit : derivedFromParts,
+  )
+  const suggestionReason = priorYear_rows.length === 0
+    ? `No ${priorYear} P&L data on file`
+    : `Sum of ${priorYear} P&L result across ${priorYear_rows.length} months`
+
+  const startBal = explicitStartBal ?? suggestedStartingBalance
 
   // ── Revenue projection: daily pattern with weekly seasonality ──────────
   // avg revenue by day-of-week from the last 60 days
@@ -184,17 +219,21 @@ export async function GET(req: NextRequest) {
   const firstLow = days.find(d => d.balance < threshold)
 
   return NextResponse.json({
-    starting_balance: startBal,
-    horizon_days:     HORIZON_DAYS,
+    starting_balance:             startBal,
+    starting_balance_source:      explicitStartBal !== null ? 'user' : 'derived_prior_year_pnl',
+    suggested_starting_balance:   suggestedStartingBalance,
+    suggestion_reason:            suggestionReason,
+    horizon_days:                 HORIZON_DAYS,
     days,
-    threshold_kr:     threshold,
-    first_low_day:    firstLow ? { date: firstLow.date, balance: firstLow.balance } : null,
+    threshold_kr:                 threshold,
+    first_low_day:                firstLow ? { date: firstLow.date, balance: firstLow.balance } : null,
     assumptions: {
-      avg_by_dow:       avgByDow.map(v => Math.round(v)),
-      recurring_labels: recurring.length,
-      recent_staff_cost: Math.round(recentStaff),
-      invoices_loaded:   invoices.length,
-      forecasts_loaded:  forecasts.length,
+      avg_by_dow:               avgByDow.map(v => Math.round(v)),
+      recurring_labels:         recurring.length,
+      recent_staff_cost:        Math.round(recentStaff),
+      invoices_loaded:          invoices.length,
+      forecasts_loaded:         forecasts.length,
+      prior_year_rows_loaded:   priorYear_rows.length,
     },
   })
 }
