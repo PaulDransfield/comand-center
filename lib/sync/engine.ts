@@ -1133,10 +1133,16 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
       } catch { /* best-effort */ }
     }
 
-    // Update integration last_sync
+    // Update integration last_sync. Also reset status to 'connected' so a
+    // previous flip to 'error' or 'needs_reauth' doesn't permanently exclude
+    // the integration from resync/BackgroundSync/catchup — all three filter
+    // on status='connected'. Before this fix, a one-off failure would stick
+    // the integration in error state even after subsequent syncs succeeded.
     await db.from('integrations').update({
-      last_sync_at: now.toISOString(),
-      last_error:   null,
+      last_sync_at:       now.toISOString(),
+      last_error:         null,
+      status:             'connected',
+      reauth_notified_at: null,
     }).eq('id', integ.id)
 
     if (provider === 'personalkollen' && result.shifts > 0 && !integ.last_sync_at) {
