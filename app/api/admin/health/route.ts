@@ -133,6 +133,54 @@ export async function GET(req: NextRequest) {
     rateLimitHits = data ?? []
   } catch { /* M018 may not be applied */ }
 
+  // ── AI feedback loop — suggestions captured, actuals resolved,
+  //    owner reactions, directional bias by surface ───────────────
+  // Surfaces the state of the AI self-learning loop wired in M020.
+  // Lets you watch the loop actually filling up with real data as
+  // months close out.
+  const aiLearning: any = {
+    total_suggestions:  0,
+    resolved_suggestions: 0,
+    pending_resolution:   0,
+    reactions: { too_high: 0, too_low: 0, just_right: 0, wrong_shape: 0 },
+    directional_bias: null as null | { mean_error_pct: number; sample_size: number },
+    recent_rows: [] as Array<{ surface: string; org_id: string; business_id: string; period_year: number; period_month: number | null; suggested_revenue: number | null; actual_revenue: number | null; revenue_error_pct: number | null; revenue_direction: string | null; owner_reaction: string | null; created_at: string }>,
+  }
+  try {
+    const [totalRes, resolvedRes, reactionRes, recentRes] = await Promise.all([
+      db.from('ai_forecast_outcomes').select('id', { count: 'exact', head: true }),
+      db.from('ai_forecast_outcomes').select('id', { count: 'exact', head: true }).not('actuals_resolved_at', 'is', null),
+      db.from('ai_forecast_outcomes').select('owner_reaction').not('owner_reaction', 'is', null),
+      db.from('ai_forecast_outcomes')
+        .select('surface, org_id, business_id, period_year, period_month, suggested_revenue, actual_revenue, revenue_error_pct, revenue_direction, owner_reaction, created_at')
+        .order('created_at', { ascending: false })
+        .limit(25),
+    ])
+    aiLearning.total_suggestions   = totalRes.count    ?? 0
+    aiLearning.resolved_suggestions = resolvedRes.count ?? 0
+    aiLearning.pending_resolution   = aiLearning.total_suggestions - aiLearning.resolved_suggestions
+    for (const r of reactionRes.data ?? []) {
+      if (r.owner_reaction && r.owner_reaction in aiLearning.reactions) {
+        aiLearning.reactions[r.owner_reaction]++
+      }
+    }
+
+    // Directional bias — mean signed error % across all resolved rows.
+    // Positive = AI tends to under-predict (actuals come in higher).
+    // Negative = AI tends to over-predict.
+    const { data: biasRows } = await db
+      .from('ai_forecast_outcomes')
+      .select('revenue_error_pct')
+      .not('revenue_error_pct', 'is', null)
+    const errs = (biasRows ?? []).map(r => Number(r.revenue_error_pct)).filter(n => Number.isFinite(n))
+    if (errs.length) {
+      const mean = errs.reduce((s, n) => s + n, 0) / errs.length
+      aiLearning.directional_bias = { mean_error_pct: Math.round(mean * 10) / 10, sample_size: errs.length }
+    }
+
+    aiLearning.recent_rows = recentRes.data ?? []
+  } catch { /* M020 may not be applied */ }
+
   return NextResponse.json({
     crons:            cronRows,
     ai: {
@@ -149,5 +197,6 @@ export async function GET(req: NextRequest) {
     extraction_queue: extractionQueue,
     stripe_dedup:     stripeDedup,
     rate_limit_hits:  rateLimitHits,
+    ai_learning:      aiLearning,
   })
 }

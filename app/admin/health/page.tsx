@@ -37,7 +37,7 @@ export default function HealthDashboard() {
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data)   return null
 
-  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits } = data
+  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning } = data
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
@@ -120,6 +120,61 @@ export default function HealthDashboard() {
                 unique events processed (duplicates skipped via event-id dedup)
               </div>
             </div>
+          </div>
+        )}
+
+        {/* AI feedback loop — suggestions captured + owner reactions +
+            directional bias. Watching this fill up shows whether the
+            feedback loop is actually moving. Once 'resolved' grows past
+            ~15 rows, the next AI generation starts seeing real bias. */}
+        {ai_learning && (
+          <div style={{ ...S.card, marginBottom: 14 }}>
+            <div style={S.head}>AI feedback loop</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 14 }}>
+              <QStat label="Suggestions"  value={ai_learning.total_suggestions}    tone="neutral" />
+              <QStat label="Resolved"     value={ai_learning.resolved_suggestions} tone={ai_learning.resolved_suggestions > 0 ? 'good' : 'neutral'} />
+              <QStat label="Pending"      value={ai_learning.pending_resolution}   tone="neutral" />
+              <QStat label="👍 just_right" value={ai_learning.reactions.just_right} tone="good" />
+              <QStat label="↕ too-off"     value={ai_learning.reactions.too_high + ai_learning.reactions.too_low + ai_learning.reactions.wrong_shape} tone={(ai_learning.reactions.too_high + ai_learning.reactions.too_low + ai_learning.reactions.wrong_shape) > 0 ? 'warn' : 'neutral'} />
+            </div>
+            {ai_learning.directional_bias && (
+              <div style={{ padding: '10px 12px', background: '#fafbff', borderRadius: 8, marginBottom: 10, fontSize: 12, color: '#374151' }}>
+                <strong style={{ color: '#111' }}>Directional bias:</strong> {ai_learning.directional_bias.mean_error_pct > 0
+                  ? `AI tends to UNDER-predict by ~${ai_learning.directional_bias.mean_error_pct}% on average`
+                  : `AI tends to OVER-predict by ~${Math.abs(ai_learning.directional_bias.mean_error_pct)}% on average`} (across {ai_learning.directional_bias.sample_size} resolved rows)
+              </div>
+            )}
+            {ai_learning.recent_rows?.length > 0 && (
+              <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={th('left')}>Surface</th>
+                    <th style={th('left')}>Period</th>
+                    <th style={th('right')}>Suggested</th>
+                    <th style={th('right')}>Actual</th>
+                    <th style={th('right')}>Err %</th>
+                    <th style={th('left')}>Owner</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ai_learning.recent_rows.slice(0, 12).map((r: any, i: number) => (
+                    <tr key={i} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ ...S.td, fontSize: 11, color: '#6b7280' }}>{r.surface}</td>
+                      <td style={{ ...S.td, fontSize: 11 }}>{r.period_year}{r.period_month ? `-${String(r.period_month).padStart(2,'0')}` : ''}</td>
+                      <td style={{ ...S.td, textAlign: 'right', fontFamily: 'ui-monospace, monospace' }}>{r.suggested_revenue ? Math.round(r.suggested_revenue).toLocaleString('en-GB') : '—'}</td>
+                      <td style={{ ...S.td, textAlign: 'right', fontFamily: 'ui-monospace, monospace', color: r.actual_revenue ? '#111' : '#9ca3af' }}>{r.actual_revenue ? Math.round(r.actual_revenue).toLocaleString('en-GB') : 'pending'}</td>
+                      <td style={{ ...S.td, textAlign: 'right', fontFamily: 'ui-monospace, monospace', color: r.revenue_direction === 'accurate' ? '#15803d' : r.revenue_direction === 'over' ? '#dc2626' : r.revenue_direction === 'under' ? '#d97706' : '#9ca3af' }}>{r.revenue_error_pct != null ? `${r.revenue_error_pct > 0 ? '+' : ''}${r.revenue_error_pct}%` : '—'}</td>
+                      <td style={{ ...S.td, fontSize: 11 }}>{r.owner_reaction ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {ai_learning.total_suggestions === 0 && (
+              <div style={{ padding: 16, textAlign: 'center' as const, fontSize: 12, color: '#9ca3af' }}>
+                No AI suggestions captured yet. Click "✦ Generate with AI" on /budget to start the loop.
+              </div>
+            )}
           </div>
         )}
 
