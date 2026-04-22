@@ -168,6 +168,30 @@ Every long-running path uses the queue. The HTTP request from the browser is alw
 2. **Budget AI recency bias.** Paul flagged that 2026 Apr–Aug targets came out 2.3–3.3× the 2025 Fortnox figures. AI is anchoring on Q1 2026 YTD (1.4–1.6M/month) as "new normal"; user wants more weight on historical. Open question: is Q1 2026 a structural step-change (new location/menu/marketing) or a transient strength? If transient, tighten the generator's prompt to anchor mid-year on last-year + 10–15% when YTD deviates >50% from prior-year comparable months. One-commit fix, ~5 prompt lines — wait on business clarity first.
 3. **Prior-year anchor in the budget UI.** Worth adding a sanity-check panel next to each month showing "last-year actual" and "implied % change" so the user catches runaway projections before accepting the AI's suggestions. UX work, ~1 hour.
 
+### 2026-04-22 late evening — Fortnox extraction rebuilt on Claude.ai's review
+
+Paul asked Claude.ai to design a reliable extraction pipeline given our pain points. Ten-item ranked roadmap came back. Items 1–4 + 6 shipped same night:
+
+- ☑ **#1 Sonnet 4.6 + extended thinking (5k budget).** Replaces Haiku 4.5 as default. Handles multi-axis reasoning (scale detection + BAS taxonomy + sign convention + rollup validation) that Haiku couldn't. `588c4bb`.
+- ☑ **#2 Tool use with strict JSON schema + forced tool_choice='auto'.** Eliminates JSON-parse failures + truncation + schema drift. Anthropic forbids `thinking + tool_choice=forced`, so we use `auto` + explicit instruction and it works ~100% in testing. Text-JSON fallback for the edge. `588c4bb` + `d5ea98a`.
+- ☑ **#3 Rollup reconciliation + scale sanity + cross-check** server-side after every extraction. Warnings flow into `extraction.warnings`; confidence drops from 'high' to 'medium' when math doesn't reconcile. `588c4bb`.
+- ☑ **#4 pg_cron replaces fire-and-forget dispatcher.** Every 20s via Supabase pg_cron + pg_net; no HTTP hop between scheduler and DB. Paired stale-release cron every minute. `b5d88d2` + M021.
+- ☑ **#6 Prompt caching on system prompt.** `cache_control: { type: 'ephemeral' }`. 90% off repeated input tokens.
+
+Also critical fixes surfaced during live testing:
+- ☑ **`fortnox_uploads_doc_type_check` missing `pnl_multi_month`** — `FORTNOX-FOLLOWUP-MIGRATION.sql` had shipped but never been run on production. One-line SQL ALTER fixed it after the error-surfacing commit made it visible.
+- ☑ **Silent update failure in worker** — `fortnox_uploads` final update was throwing via `.error` but we never destructured it. Jobs flipped to 'completed' against half-written upload rows. Fix: always destructure `.error` from Supabase updates and throw on failure. `0968093`.
+- ☑ **Current-month YTD anchor bug in budget AI** — April 2026 target came out 54k because today is April 22 (partial month). New rule: current-month YTD is never a valid anchor. `b202766`.
+
+Remaining from Claude's checklist (follow-ups, not blocking):
+- ☐ **#5 Peek + extract split** — with current Sonnet+thinking reliability, deferred unless extraction surfaces a scale-detection regression
+- ☐ **#7 PDF text-layer cross-reference** — catches hallucinated numbers that validation math can't; `pdf-parse` already in deps
+- ☐ **#8 extraction_events log + per-check failure metric** — enables prompt-regression detection when prompt version changes
+- ☐ **#9 Opus 4.7 retry rung** — only fires on validation-fail; ~1 hour
+- ☐ **#10 Per-cell red/yellow/green review UX with side-by-side PDF** — the last mile for customer-facing reliability
+
+**First-attempt success rate observed on Rosali + Vero 2025 multi-month PDFs after shipping 1-4 + 6: both succeeded cleanly.** Per Claude's estimate: 1-4 moves from ~80% to ~97%. 5-8 to 99%. 9-10 is the productization layer.
+
 ### Post-session follow-ups (2026-04-22)
 
 Surfaced during live use of the queue + Realtime architecture:

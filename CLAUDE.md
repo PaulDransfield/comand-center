@@ -12,6 +12,9 @@
 >   • Tenant isolation: RLS on 5 previously-exposed tables + current_user_org_ids() (M018)
 >   • Realtime: fortnox_uploads + extraction_jobs pushed via supabase_realtime (M019)
 >   • AI learning: ai_forecast_outcomes + capture hook + accuracy reconciler + owner feedback UI (M020)
+>   • pg_cron firing extraction worker every 20s + 1-min stale-release (M021)
+>   • Extraction rebuilt: Sonnet 4.6 + extended thinking + tool use + prompt caching + validation
+>   • Budget AI hardened: historical anchor, current-month rule, data-gap handling, code-level clamps
 >   • Billing correctness: stripe_processed_events dedup + org_rate_limits persistence
 >   • Reusable helpers: requireAdmin(), orgRateLimit(), withTimeout(), log (structured)
 >   • Observability: structured JSON logs across every scheduled cron + hot API route
