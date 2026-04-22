@@ -177,41 +177,76 @@ export async function POST(req: NextRequest) {
 
 ${SCOPE_NOTE}
 
-Your job: return 12 monthly budgets for ${year} that are realistic, slightly ambitious, and usable as stretch targets. These become operational goals the team will be measured against.
+Your job: return 12 monthly budgets for ${year} that are GROUNDED IN LAST YEAR'S ACTUAL MONTHLY REVENUE. These become operational goals — an over-ambitious target will cause the owner to over-staff and burn real cash.
 
-All figures in Swedish kronor (kr). All percentages in 0-100 (e.g. 31 for 31%).
+PRIMARY RULE — HISTORICAL ANCHOR:
+  Each month's target MUST be anchored to the same month from last year.
+  Maximum stretch: +3% to +8% above last year's ACTUAL revenue for that month.
+  You are FORBIDDEN to project a target more than 15% above last year's actual
+  for the same month, no matter how strong this year's YTD looks.
 
-${lyAnnual ? `LAST YEAR (${year - 1}) FORTNOX ANNUAL REPORT — whole-year totals, no monthly split available:
+  If last year's actual for a given month is 440 000 kr, this year's target
+  belongs in the 453 000 – 475 000 kr range. NOT 1 200 000 kr. NOT "calibrated
+  forecast". The forecast engine is an input; it is NOT the anchor.
+
+SECONDARY RULE — RESPECT LAST YEAR'S SEASONALITY:
+  Do NOT assume generic "summer peak" or "holiday peak" patterns. Use the
+  SHAPE of last year's actual monthly revenue as ground truth. If last year
+  June was lower than May, this year June should also be lower than May — the
+  business may be a winter restaurant, a lunch spot, a takeaway, seasonal,
+  etc. You do not know; the last-year numbers do.
+
+HANDLING DATA GAPS — STRICT:
+  A last-year month may show revenue=0 with staff_cost>0. That is a DATA GAP,
+  NOT a zero-revenue month. Do NOT paper over it with forecasts or industry
+  averages. Instead:
+    - Anchor the target on the NEAREST month (before or after) that DOES have
+      revenue data, adjusted for the typical direction of seasonal change.
+    - In the reasoning, flag the gap explicitly: e.g. "Sep 2025 data missing;
+      anchored on Aug 2025 (687k) minus 10% back-to-work adjustment = 620k".
+    - Never use the industry-default or the forecast engine to fill the gap.
+
+TREATING YTD (this year so far):
+  This year's YTD actuals are evidence the business is trading. They ARE NOT
+  evidence of a structural growth inflection unless there's a known reason
+  (new location, menu change, expansion). If YTD is running significantly
+  above last-year comparable months, flag it in the overall_strategy but DO
+  NOT project that uplift across the whole year. Continue to anchor on last
+  year for months without YTD data. Over-projecting causes overstaffing.
+
+STAFF COST — CAP TO HISTORICAL:
+  staff_cost_pct_target = last year's actual staff cost ratio for that month,
+  capped at the industry maximum (42%). Do NOT target below last year's ratio
+  unless there's a concrete operational reason — the owner would read it as a
+  staffing cut mandate.
+
+INDUSTRY GUARDRAILS (ceilings, not anchors):
+  Food cost: 28-32% of revenue
+  Staff cost: 35-42% of revenue
+  Net profit margin: 10-15%
+
+${lyAnnual ? `LAST YEAR (${year - 1}) FORTNOX ANNUAL REPORT — whole-year totals:
   revenue=${fmt(lyAnnual.revenue)}  food_cost=${fmt(lyAnnual.food)}  staff_cost=${fmt(lyAnnual.staff)}  other_cost=${fmt(lyAnnual.other)}  net_profit=${fmt(lyAnnual.netProfit)}  margin=${lyAnnual.marginPct.toFixed(1)}%
-  This is the authoritative year total. Do NOT say the business had "zero revenue" — the annual report has the full-year figure above. Use it as the year anchor and distribute across months using seasonality norms for a Swedish mid-market restaurant (summer peak Jun–Aug, holiday peak Nov–Dec, trough Jan–Feb).
+  Use this to cross-check: the SUM of your 12 monthly revenue_targets should
+  be within 15% of this figure × 1.05. If you'd exceed that sum, you're
+  overshooting — pull back.
 
-` : ''}LAST YEAR (${year - 1}) ACTUALS:
+` : ''}LAST YEAR (${year - 1}) ACTUAL MONTHLY — THE AUTHORITATIVE ANCHOR:
 ${lyTable}
 
-${year} CURRENT-YEAR ACTUALS SO FAR:
+${year} CURRENT-YEAR ACTUALS SO FAR (YTD — input only, not the anchor):
 ${ytdTable}
 
-CALIBRATED FORECASTS FOR ${year} (per-business calibrated, trust these as the baseline):
+CALIBRATED FORECASTS FOR ${year} (input only, NOT the anchor — informs confidence band but never the target):
 ${fcTable}
 
-INDUSTRY GUARDRAILS (Swedish casual/mid-market restaurants):
-- Food cost: ~28-32% of revenue
-- Staff cost: ~35-42% of revenue
-- Net profit margin: ~10-15%
-
-SEASONALITY TO CONSIDER (Sweden):
-- Jan: post-holiday slow
-- Feb-Apr: steady
-- May-Aug: outdoor-dining peak, summer tourists
-- Sep-Oct: return to workplace routines
-- Nov-Dec: holiday peak
-
 RULES:
-- revenue_target should be slightly above forecast (5-10% stretch) unless YTD data clearly suggests otherwise
-- food_cost_pct_target should target lower end of industry range when margin is healthy
-- staff_cost_pct_target should be realistic — use last year's actual staff cost ratio as starting point
+- revenue_target = last year's same-month actual × (1.03 to 1.08). Hard max: last year × 1.15.
+- If last year data is a gap (zero revenue with staff cost), anchor on nearest populated month.
+- food_cost_pct_target: lower end of industry range when margin is healthy.
+- staff_cost_pct_target: anchored on last year's same-month ratio, never below it.
 - net_profit_target = revenue_target × (1 - food_pct/100 - staff_pct/100 - 10% other-cost assumption)
-- reasoning: one short sentence, mention ONE concrete datapoint from above (e.g. "last April hit 420k so stretch to 460k")
+- reasoning: one short sentence with BOTH last year's actual AND your target, so the owner can see the anchor. e.g. "Jul 2025 actual 440k → target 470k (+7%)" — NOT "calibrated forecast 1.36M so stretch to 1.46M".
 
 Return JSON only, no prose outside JSON, no markdown code fence:
 
