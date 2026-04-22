@@ -40,18 +40,14 @@ export async function POST(req: NextRequest) {
       .map(([k, v]) => `${k}: ${v}`)
       .join(', ') || 'Not specified'
 
-    // Send confirmation email to customer via Resend
-    const emailRes = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: 'CommandCenter <hello@comandcenter.se>',
-        to: user.email,
-        subject: 'Your CommandCenter account is being set up',
-        html: `
+    // Send confirmation email via shared helper — 10s timeout + Sentry capture.
+    const { sendEmail } = await import('@/lib/email/send')
+    const emailResult = await sendEmail({
+      from:    'CommandCenter <hello@comandcenter.se>',
+      to:      user.email,
+      subject: 'Your CommandCenter account is being set up',
+      context: { kind: 'onboarding_confirmation', user_id: user.id, business_name },
+      html: `
           <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:40px 24px;color:#1a1f2e">
             <div style="font-size:20px;font-weight:700;margin-bottom:24px">CommandCenter</div>
             <h1 style="font-size:24px;font-weight:700;margin-bottom:12px">We've received your setup request</h1>
@@ -79,14 +75,11 @@ export async function POST(req: NextRequest) {
             </div>
           </div>
         `,
-      }),
     })
 
-    if (!emailRes.ok) {
-      const err = await emailRes.text()
-      console.error('Resend error:', err)
-      // Don't fail the request if email fails — log it and continue
-    }
+    // sendEmail already captured any failure to Sentry with context.
+    // Success path needs nothing more; non-fatal for the caller.
+    void emailResult
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {

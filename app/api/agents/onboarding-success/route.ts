@@ -117,23 +117,14 @@ Tone: warm, brief, tell them what they can now explore. End with one suggested f
     </div>
   `
 
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: 'CommandCenter <hello@comandcenter.se>',
-        to: user.email,
-        subject: 'Your CommandCenter data is live',
-        html: emailHtml,
-      }),
-    })
-  } catch (err: any) {
-    console.error('Onboarding success email failed:', err)
-  }
+  const { sendEmail } = await import('@/lib/email/send')
+  await sendEmail({
+    from:    'CommandCenter <hello@comandcenter.se>',
+    to:      user.email,
+    subject: 'Your CommandCenter data is live',
+    html:    emailHtml,
+    context: { kind: 'onboarding_data_live', user_id: user.id, integration_id },
+  })
 
   if (integration_id) {
     try {

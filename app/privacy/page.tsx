@@ -99,6 +99,12 @@ Data: Stack traces, URL of the failing page, user id and organisation id (used f
 Location: EU region (ingest.de.sentry.io). Standard Contractual Clauses are in place for any incidental US transfer.
 Privacy: sentry.io/privacy
 
+TRANSACTIONAL EMAIL — Resend (Resend, Inc.)
+Role: Delivery of transactional emails — account verification, password reset, weekly business digest, alert notifications, onboarding welcome.
+Data: Recipient email address, subject line, HTML body (may include business name, revenue figures, staff-cost metrics, alert text). No raw staff personal data is transmitted in email bodies.
+Location: USA. Standard Contractual Clauses are in place as the Chapter V transfer mechanism.
+Privacy: resend.com/legal/privacy-policy
+
 INTEGRATION PARTNERS — data synced on your explicit instruction only
 Personalkollen (Sweden): Staff scheduling and hours data
 Fortnox (Sweden): Accounting and invoice data

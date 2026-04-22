@@ -160,23 +160,18 @@ export async function POST(req: NextRequest) {
         console.log(`[digest] dry-run (no RESEND_API_KEY) would send ${bizMemos.length} memo(s) to ${ownerEmail}`)
         sent++
       } else {
-        const emailRes = await fetch('https://api.resend.com/emails', {
-          method:  'POST',
-          headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-          body:    JSON.stringify({
-            from:    'CommandCenter <digest@comandcenter.se>',
-            to:      ownerEmail,
-            subject: `Monday memo — ${weekLabel}`,
-            html:    combinedHtml,
-          }),
+        const { sendEmail } = await import('@/lib/email/send')
+        const emailRes = await sendEmail({
+          from:    'CommandCenter <digest@comandcenter.se>',
+          to:      ownerEmail,
+          subject: `Monday memo — ${weekLabel}`,
+          html:    combinedHtml,
+          context: { kind: 'weekly_digest', org_id: org.id, org_name: org.name, week_label: weekLabel },
         })
         if (emailRes.ok) {
           sent++
-          console.log(`[digest] sent to ${ownerEmail} for ${org.name}`)
         } else {
-          const err = await emailRes.text()
-          errors.push(`${org.name}: ${err}`)
-          console.error(`[digest] email failed for ${org.name}:`, err)
+          errors.push(`${org.name}: ${emailRes.error ?? 'unknown'}`)
           continue
         }
       }

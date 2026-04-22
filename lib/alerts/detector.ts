@@ -120,23 +120,29 @@ async function sendCriticalAlertEmail(alert: Alert, businessName: string, ownerE
       </body>
       </html>`
 
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
+    const { sendEmail } = await import('@/lib/email/send')
+    const r = await sendEmail({
+      from:    'CommandCenter <alerts@comandcenter.se>',
+      to:      ownerEmail,
+      subject,
+      html,
+      context: {
+        kind:          'critical_alert',
+        business_name: businessName,
+        alert_title:   alert.title,
+        severity:      alert.severity,
+        metric_value:  alert.metric_value,
       },
-      body: JSON.stringify({
-        from: 'CommandCenter <alerts@comandcenter.se>',
-        to: [ownerEmail],
-        subject,
-        html,
-      }),
     })
-
-    console.log(`Critical alert email sent to ${ownerEmail} for ${businessName}`)
+    if (!r.ok) {
+      // sendEmail already captured to Sentry with full context. Bubble
+      // up for the caller to decide (retry, admin dashboard etc).
+      throw new Error(`critical alert email not delivered: ${r.error}`)
+    }
   } catch (err: any) {
-    console.error('Failed to send critical alert email:', err)
+    // One last catch here — we do NOT want a failed critical-alert
+    // email to crash the anomaly detection run for every business.
+    // sendEmail already logged; we just swallow the bubble above.
   }
 }
 

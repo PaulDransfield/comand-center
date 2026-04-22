@@ -201,41 +201,20 @@ Format as plain text email body (no HTML).`
             if (!process.env.RESEND_API_KEY) {
               console.log(`[onboarding-success] RESEND_API_KEY not set — would send email to ${userEmail}`)
             } else {
-              try {
-                // Use fetch instead of Resend SDK to avoid import issues
-                const emailResponse = await fetch('https://api.resend.com/emails', {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    from: 'CommandCenter <welcome@comandcenter.se>',
-                    to: userEmail,
-                    subject: `Welcome to CommandCenter, ${businessData.name}!`,
-                    text: emailBody,
-                  }),
-                })
-
-                if (!emailResponse.ok) {
-                  const errorText = await emailResponse.text()
-                  throw new Error(`Resend API error: ${emailResponse.status} ${errorText}`)
-                }
-
-                const emailResult = await emailResponse.json()
-                
-                emailsSent.push({
-                  business: businessData.name,
-                  email: userEmail,
-                  message_id: emailResult.id,
-                })
-
-                console.log(`[onboarding-success] Welcome email sent to ${userEmail} for ${businessData.name}`)
-
-              } catch (emailError: any) {
-                console.error(`[onboarding-success] Email error for ${businessData.name}:`, emailError)
-                // Continue anyway - we'll mark as sent to prevent retries
+              const { sendEmail } = await import('@/lib/email/send')
+              const emailResult = await sendEmail({
+                from:    'CommandCenter <welcome@comandcenter.se>',
+                to:      userEmail,
+                subject: `Welcome to CommandCenter, ${businessData.name}!`,
+                html:    emailBody.replace(/\n/g, '<br/>'),
+                text:    emailBody,
+                context: { kind: 'onboarding_welcome', business_id: businessData.id, business: businessData.name },
+              })
+              if (emailResult.ok) {
+                emailsSent.push({ business: businessData.name, email: userEmail, message_id: emailResult.messageId })
               }
+              // Failure path already captured by sendEmail + kept the
+              // 'continue anyway' semantics (no retry); explicit handling not needed.
             }
 
             // Mark integration as welcome email sent

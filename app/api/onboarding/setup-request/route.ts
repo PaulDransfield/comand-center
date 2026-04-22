@@ -59,43 +59,31 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Send notification email via Resend if configured
-  if (process.env.RESEND_API_KEY) {
-    try {
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type':  'application/json',
-        },
-        body: JSON.stringify({
-          from:    'CommandCenter <noreply@comandcenter.se>',
-          to:      ['paul@laweka.com'],
-          subject: `New setup request: ${restaurantName}`,
-          html: `
-            <h2>New setup request</h2>
-            <p><strong>Restaurant:</strong> ${restaurantName} (${city})</p>
-            <p><strong>Customer email:</strong> ${auth.email}</p>
-            <p><strong>Staff system:</strong> ${staffSystem || 'Not specified'}</p>
-            <p><strong>Accounting:</strong> ${accounting || 'Not specified'}</p>
-            <p><strong>POS:</strong> ${pos || 'Not specified'}</p>
-            <p><strong>Best time to contact:</strong> ${contactTime || 'Anytime'}</p>
-            <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
-            <hr/>
-            <p><a href="https://app.supabase.com/project/llzmixkrysduztsvmfzi">View in Supabase</a></p>
-          `,
-        }),
-      })
-    } catch (e: any) {
-      captureError(e, {
-        route:     'onboarding/setup-request',
-        op:        'resend_email',
-        org_id:    auth.orgId,
-        user_email: auth.email,
-        restaurant: restaurantName,
-      })
-    }
-  }
+  // Send notification email via shared sendEmail helper (timeout + Sentry capture).
+  const { sendEmail } = await import('@/lib/email/send')
+  await sendEmail({
+    from:    'CommandCenter <noreply@comandcenter.se>',
+    to:      'paul@laweka.com',
+    subject: `New setup request: ${restaurantName}`,
+    html: `
+      <h2>New setup request</h2>
+      <p><strong>Restaurant:</strong> ${restaurantName} (${city})</p>
+      <p><strong>Customer email:</strong> ${auth.email}</p>
+      <p><strong>Staff system:</strong> ${staffSystem || 'Not specified'}</p>
+      <p><strong>Accounting:</strong> ${accounting || 'Not specified'}</p>
+      <p><strong>POS:</strong> ${pos || 'Not specified'}</p>
+      <p><strong>Best time to contact:</strong> ${contactTime || 'Anytime'}</p>
+      <p><strong>Phone:</strong> ${phone || 'Not provided'}</p>
+      <hr/>
+      <p><a href="https://app.supabase.com/project/llzmixkrysduztsvmfzi">View in Supabase</a></p>
+    `,
+    context: {
+      kind:        'setup_request',
+      org_id:      auth.orgId,
+      user_email:  auth.email,
+      restaurant:  restaurantName,
+    },
+  })
 
   return NextResponse.json({ ok: true })
 }

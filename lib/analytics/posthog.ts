@@ -63,9 +63,34 @@ interface EventProperties {
 
 let _posthog: any = null
 
+// ── ePrivacy / cookie consent gate ─────────────────────────────────
+// Analytics cookies are not "strictly necessary" so the ePrivacy
+// Directive + IMY guidance require explicit prior consent. We read
+// consent from localStorage (set by the CookieConsent banner). No
+// banner clicked → no analytics init.
+const CONSENT_KEY = 'cc_analytics_consent'
+export function hasAnalyticsConsent(): boolean {
+  if (typeof window === 'undefined') return false
+  try { return localStorage.getItem(CONSENT_KEY) === 'granted' } catch { return false }
+}
+export function setAnalyticsConsent(granted: boolean) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(CONSENT_KEY, granted ? 'granted' : 'denied')
+    // If the user revokes consent mid-session, reset + unload PostHog
+    // so no further events fire.
+    if (!granted && _posthog) {
+      try { _posthog.opt_out_capturing() } catch {}
+    }
+  } catch {}
+}
+
 function getPostHog() {
   if (typeof window === 'undefined') return null  // server-side — skip
   if (_posthog) return _posthog
+
+  // Do not initialise PostHog without explicit consent.
+  if (!hasAnalyticsConsent()) return null
 
   const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
   if (!key) return null  // not configured — skip silently

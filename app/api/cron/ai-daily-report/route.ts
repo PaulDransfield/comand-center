@@ -130,26 +130,16 @@ async function run() {
     return NextResponse.json({ ok: false, sent: false, reason: 'resend_key_missing', summary: { sumDay, globalPct, anomalies: anomalies.length } })
   }
 
-  const sendRes = await fetch('https://api.resend.com/emails', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.RESEND_API_KEY}` },
-    body:    JSON.stringify({
-      from:    'CommandCenter Ops <ops@comandcenter.se>',
-      to:      OPS_EMAIL,
-      subject: `[CC Ops] AI daily — ${reportDate} · ${sumDay.queries} queries · ${sumDay.cost_sek.toFixed(2)} kr · global ${globalPct}%`,
-      html,
-    }),
+  const { sendEmail } = await import('@/lib/email/send')
+  const sendRes = await sendEmail({
+    from:    'CommandCenter Ops <ops@comandcenter.se>',
+    to:      OPS_EMAIL,
+    subject: `[CC Ops] AI daily — ${reportDate} · ${sumDay.queries} queries · ${sumDay.cost_sek.toFixed(2)} kr · global ${globalPct}%`,
+    html,
+    context: { kind: 'ai_daily_report', report_date: reportDate, queries: sumDay.queries },
   })
 
   if (!sendRes.ok) {
-    const err = await sendRes.text()
-    log.error('ai-daily-report resend failed', {
-      route:        'cron/ai-daily-report',
-      duration_ms:  Date.now() - started,
-      resend_status: sendRes.status,
-      error:        err,
-      status:       'error',
-    })
     return NextResponse.json({ ok: false, sent: false, reason: 'resend_failed', status: sendRes.status }, { status: 502 })
   }
 
