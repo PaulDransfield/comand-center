@@ -43,18 +43,22 @@ interface PeriodKey {
 
 interface PeriodData {
   revenue:      number
-  food_cost:    number
+  food_cost:    number      // total cost of goods (food + alcohol combined)
+  alcohol_cost: number      // subset of food_cost tagged as beverages/alcohol
+  food_only_cost: number    // food_cost minus alcohol_cost
   staff_cost:   number
   overheads:    number
   net_margin:   number
   margin_pct:   number | null
   food_pct:     number | null
+  alcohol_pct:  number | null
   staff_pct:    number | null
   overheads_pct: number | null
   // Breakdown of overheads by subcategory for the donut + table
   overhead_split: { rent: number; utilities: number; other: number }
   // Data completeness flags — used to show `—` and explain honestly.
   has_food:      boolean
+  has_alcohol:   boolean
   has_overheads: boolean
 }
 
@@ -202,6 +206,11 @@ function samePeriodLastYear(k: PeriodKey): PeriodKey {
 // don't sum `tracker_line_items.other_cost` as the overhead total: food
 // lines that the AI mis-classified as other_cost would double-count
 // against tracker_data.food_cost (see FIXES.md §0k).
+// Regex for label-based alcohol detection — PDF labels that mention wine,
+// beer, spirits, or generic "dryck/alkohol" get split out of food_cost. Used
+// as a fallback when the AI set the subcategory to null.
+const ALCOHOL_LABEL_RE = /(alkohol|öl|vin|sprit|whisky|cider|dryckesinköp)/i
+
 function aggregateMonths(
   trackerRows: any[],
   lineItems:   any[],
@@ -220,6 +229,25 @@ function aggregateMonths(
     if (Number(r.food_cost  ?? 0) > 0) anyFood      = true
     if (Number(r.other_cost ?? 0) > 0) anyOverheads = true
   }
+  // Alcohol split — tracker_data.food_cost is a single total for cost of
+  // goods, but tracker_line_items carries subcategory info (beverages /
+  // alcohol) from the extractor's SV_SUB map. Sum those and subtract from
+  // food_cost to isolate the food-only figure.
+  let alcoholCost = 0
+  for (const li of lineItems) {
+    if (!includeMonths(li.period_year, li.period_month)) continue
+    if (li.category !== 'food_cost') continue
+    const sub = (li.subcategory ?? '').toLowerCase()
+    const label = (li.label_sv ?? '').toLowerCase()
+    if (sub === 'beverages' || sub === 'alcohol' || ALCOHOL_LABEL_RE.test(label)) {
+      alcoholCost += Number(li.amount ?? 0)
+    }
+  }
+  // Clamp — if line-item alcohol somehow exceeds the rollup food_cost
+  // (rounding or extractor inconsistency), cap at food_cost so food_only
+  // can't go negative.
+  alcoholCost = Math.min(alcoholCost, food)
+  const foodOnly = food - alcoholCost
   // Subcategory split for the donut + breakdown table — only use line items
   // whose Fortnox account is in the 5000-6999 "Övriga externa kostnader"
   // range. Account 4000-4999 is cost-of-goods (food), which we intentionally
@@ -255,15 +283,25 @@ function aggregateMonths(
   const netMargin = revenue - food - staff - overheads - depreciation - financial
   const marginPct = revenue > 0 ? (netMargin / revenue) * 100 : null
   return {
-    revenue, food_cost: food, staff_cost: staff, overheads,
-    net_margin: netMargin,
-    margin_pct:   marginPct,
-    food_pct:     revenue > 0 ? (food / revenue) * 100      : null,
-    staff_pct:    revenue > 0 ? (staff / revenue) * 100     : null,
-    overheads_pct: revenue > 0 ? (overheads / revenue) * 100 : null,
+    revenue,
+    food_cost:      food,
+    alcohol_cost:   alcoholCost,
+    food_only_cost: foodOnly,
+    staff_cost:     staff,
+    overheads,
+    net_margin:     netMargin,
+    margin_pct:     marginPct,
+    // food_pct is the COMBINED COGS ratio (food + alcohol) — industry
+    // benchmarks (28-32%) apply to total cost-of-goods, not just food.
+    // alcohol_pct breaks out the beverage portion for display.
+    food_pct:       revenue > 0 ? (food / revenue)        * 100 : null,
+    alcohol_pct:    revenue > 0 ? (alcoholCost / revenue) * 100 : null,
+    staff_pct:      revenue > 0 ? (staff / revenue)       * 100 : null,
+    overheads_pct:  revenue > 0 ? (overheads / revenue)   * 100 : null,
     overhead_split: split,
-    has_food:      anyFood,
-    has_overheads: anyOverheads,
+    has_food:       anyFood,
+    has_alcohol:    alcoholCost > 0,
+    has_overheads:  anyOverheads,
   }
 }
 
@@ -277,13 +315,22 @@ function aggregateDaily(dailyRows: any[]): PeriodData {
   }
   const net = revenue - staff
   return {
-    revenue, food_cost: 0, staff_cost: staff, overheads: 0,
-    net_margin: net,
-    margin_pct: revenue > 0 ? (net / revenue) * 100 : null,
-    food_pct: null, staff_pct: revenue > 0 ? (staff / revenue) * 100 : null,
-    overheads_pct: null,
+    revenue,
+    food_cost:      0,
+    alcohol_cost:   0,
+    food_only_cost: 0,
+    staff_cost:     staff,
+    overheads:      0,
+    net_margin:     net,
+    margin_pct:     revenue > 0 ? (net / revenue) * 100 : null,
+    food_pct:       null,
+    alcohol_pct:    null,
+    staff_pct:      revenue > 0 ? (staff / revenue) * 100 : null,
+    overheads_pct:  null,
     overhead_split: { rent: 0, utilities: 0, other: 0 },
-    has_food: false, has_overheads: false,
+    has_food:       false,
+    has_alcohol:    false,
+    has_overheads:  false,
   }
 }
 
@@ -650,8 +697,11 @@ function buildAskContext(
   if (!data) return `Performance page for ${bizName ?? '—'}. No data for ${periodLabel(period)} yet.`
   const lines: string[] = []
   lines.push(`Performance page · ${bizName ?? 'business'} · ${periodLabel(period)}`)
-  lines.push(`Revenue ${fmtKr(data.revenue)}, food cost ${data.has_food ? fmtKr(data.food_cost) : '—'}, labour ${fmtKr(data.staff_cost)}, overheads ${data.has_overheads ? fmtKr(data.overheads) : '—'}, net margin ${fmtKr(data.net_margin)}.`)
-  lines.push(`Ratios: margin ${fmtPct(data.margin_pct)}, labour ${fmtPct(data.staff_pct)}${data.has_food ? `, food ${fmtPct(data.food_pct)}` : ''}${data.has_overheads ? `, overheads ${fmtPct(data.overheads_pct)}` : ''}.`)
+  const foodPart = data.has_alcohol
+    ? `food ${fmtKr(data.food_only_cost)} + alcohol ${fmtKr(data.alcohol_cost)}`
+    : (data.has_food ? `food cost ${fmtKr(data.food_cost)}` : 'food cost —')
+  lines.push(`Revenue ${fmtKr(data.revenue)}, ${foodPart}, labour ${fmtKr(data.staff_cost)}, overheads ${data.has_overheads ? fmtKr(data.overheads) : '—'}, net margin ${fmtKr(data.net_margin)}.`)
+  lines.push(`Ratios: margin ${fmtPct(data.margin_pct)}, labour ${fmtPct(data.staff_pct)}${data.has_food ? `, food-total ${fmtPct(data.food_pct)}` : ''}${data.has_alcohol ? ` (alcohol ${fmtPct(data.alcohol_pct)})` : ''}${data.has_overheads ? `, overheads ${fmtPct(data.overheads_pct)}` : ''}.`)
   if (data.has_overheads) {
     const os = data.overhead_split
     lines.push(`Overhead split: rent ${fmtKr(os.rent)}, utilities ${fmtKr(os.utilities)}, other ${fmtKr(os.other)}.`)
@@ -961,35 +1011,46 @@ function MenuRow({ onClick, children }: any) {
 function WaterfallCard({ period, data, compare, compareLabel }: {
   period: PeriodKey; data: PeriodData; compare: PeriodData | null; compareLabel: string | null
 }) {
-  const { revenue, food_cost, staff_cost, overheads, net_margin } = data
+  const { revenue, food_only_cost, alcohol_cost, staff_cost, overheads, net_margin } = data
   const maxVal = Math.max(revenue, 1)
   const W = 700, H = 240
   const padX = 40, padY = 30
+  // Alcohol gets its own bar only when the business actually tracks it —
+  // most food-only restaurants stay on the 5-bar layout.
+  const showAlcohol = data.has_alcohol && alcohol_cost > 0
+  const BAR_COUNT   = showAlcohol ? 6 : 5
   const innerW = W - padX - 20, innerH = H - padY - 30
   const yBase  = padY + innerH            // baseline (value = 0)
-  const xFor  = (i: number) => padX + (innerW / 5) * (i + 0.5)
+  const xFor  = (i: number) => padX + (innerW / BAR_COUNT) * (i + 0.5)
   // Clamp y into the chart area so bars can't overflow the x-axis when a
   // cumulative value goes negative (e.g. overheads push afterOh < 0).
   const yFor  = (v: number) => Math.max(padY, Math.min(yBase, padY + innerH - (v / maxVal) * innerH))
-  const barW  = (innerW / 5) * 0.6
+  const barW  = (innerW / BAR_COUNT) * 0.6
 
   // Stepping heights.
-  const afterRev   = revenue
-  const afterFood  = afterRev - food_cost
-  const afterStaff = afterFood - staff_cost
-  const afterOh    = afterStaff - overheads
+  const afterRev     = revenue
+  const afterFood    = afterRev - food_only_cost
+  const afterAlcohol = afterFood - (showAlcohol ? alcohol_cost : 0)
+  const afterStaff   = afterAlcohol - staff_cost
+  const afterOh      = afterStaff - overheads
 
   const grid = [0, maxVal * 0.33, maxVal * 0.66, maxVal]
-  const bars = [
-    { label: 'Revenue',   value: revenue,      top: yFor(revenue),       bot: yFor(0),            fill: UX.navy,                           x: xFor(0) },
-    { label: 'Food cost', value: food_cost,    top: yFor(afterRev),      bot: yFor(afterFood),    fill: UX.burnt,                          x: xFor(1),  show: data.has_food      },
-    { label: 'Labour',    value: staff_cost,   top: yFor(afterFood),     bot: yFor(afterStaff),   fill: UX.burnt, opacity: 0.75,           x: xFor(2) },
-    { label: 'Overheads', value: overheads,    top: yFor(afterStaff),    bot: yFor(afterOh),      fill: UX.burnt, opacity: 0.45,           x: xFor(3),  show: data.has_overheads },
+  const bars: any[] = [
+    { label: 'Revenue',   value: revenue,         top: yFor(revenue),        bot: yFor(0),             fill: UX.navy,                            x: xFor(0) },
+    { label: 'Food cost', value: food_only_cost,  top: yFor(afterRev),       bot: yFor(afterFood),     fill: UX.burnt,                           x: xFor(1), show: data.has_food },
+  ]
+  let idx = 2
+  if (showAlcohol) {
+    bars.push({ label: 'Alcohol', value: alcohol_cost, top: yFor(afterFood), bot: yFor(afterAlcohol), fill: UX.burnt, opacity: 0.9, x: xFor(idx++), show: true })
+  }
+  bars.push(
+    { label: 'Labour',    value: staff_cost, top: yFor(afterAlcohol), bot: yFor(afterStaff), fill: UX.burnt, opacity: 0.75, x: xFor(idx++) },
+    { label: 'Overheads', value: overheads,  top: yFor(afterStaff),   bot: yFor(afterOh),    fill: UX.burnt, opacity: 0.45, x: xFor(idx++), show: data.has_overheads },
     // Height mirrors the displayed value, not the running total after
     // overheads — otherwise a business with depreciation/financial costs
     // would see a Net bar taller than the net_margin text on it.
-    { label: 'Net',       value: net_margin,   top: yFor(Math.max(net_margin, 0)), bot: yFor(0), fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(4) },
-  ]
+    { label: 'Net',       value: net_margin, top: yFor(Math.max(net_margin, 0)), bot: yFor(0), fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(idx++) },
+  )
 
   return (
     <div style={cardStyle()}>
@@ -1010,8 +1071,9 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
         {bars.slice(0, -1).map((b, i) => (
           <line key={`c${i}`} x1={b.x + barW / 2} x2={bars[i + 1].x - barW / 2} y1={b.top} y2={b.top} stroke={UX.ink5} strokeDasharray="3 2" strokeWidth="0.5" />
         ))}
-        {bars.map((b, i) => {
-          const show = (b.show ?? true) && (b.value !== 0 || i === 0 || i === 4)
+        {bars.map((b) => {
+          const isTerminal = b.label === 'Revenue' || b.label === 'Net'
+          const show = (b.show ?? true) && (b.value !== 0 || isTerminal)
           return (
             <g key={b.label}>
               {show ? (
@@ -1020,7 +1082,7 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
                 <rect x={b.x - barW / 2} y={yFor(maxVal * 0.05)} width={barW} height={2} fill={UX.ink5} />
               )}
               <text x={b.x} y={(show ? Math.min(b.top, b.bot) : yFor(maxVal * 0.05)) - 5} textAnchor="middle" fontSize="10" fontWeight="500" fill={UX.ink1}>
-                {show ? (i === 0 || i === 4 ? fmtShortKr(b.value) + ' kr' : '−' + fmtShortKr(b.value)) : '—'}
+                {show ? (isTerminal ? fmtShortKr(b.value) + ' kr' : '−' + fmtShortKr(b.value)) : '—'}
               </text>
               <text x={b.x} y={H - 12} textAnchor="middle" fontSize="11" fill={UX.ink2}>{b.label}</text>
               <text x={b.x} y={H - 1}  textAnchor="middle" fontSize="9"  fill={UX.ink4}>
@@ -1028,16 +1090,23 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
                   b.label === 'Net'    ? fmtPct(data.margin_pct) :
                   show && revenue > 0  ? fmtPct((b.value / revenue) * 100) : '—'}
               </text>
-              {/* Compare overlay: dashed indigo line at compare-value's height */}
+              {/* Compare overlay — compute running total at this bar's
+                  position on the compare series, mirroring the deduction
+                  order of the current bars so the dashed line sits at the
+                  comparable step height. */}
               {compare && show && (() => {
-                const compareBar = i === 0 ? compare.revenue : i === 1 ? compare.food_cost : i === 2 ? compare.staff_cost : i === 3 ? compare.overheads : compare.net_margin
-                // Compute the y of the compare value at this bar position using the same step logic, applied to compare.
-                const cRev = compare.revenue, cFood = compare.food_cost, cStaff = compare.staff_cost, cOh = compare.overheads, cNet = compare.net_margin
-                const yTopCompare = i === 0 ? yFor(cRev)
-                                  : i === 1 ? yFor(cRev - cFood)
-                                  : i === 2 ? yFor(cRev - cFood - cStaff)
-                                  : i === 3 ? yFor(cRev - cFood - cStaff - cOh)
-                                  : yFor(cNet >= 0 ? cNet : 0)
+                const cRev = compare.revenue, cFoodOnly = compare.food_only_cost, cAlc = compare.alcohol_cost,
+                      cStaff = compare.staff_cost, cOh = compare.overheads, cNet = compare.net_margin
+                let yTopCompare: number
+                switch (b.label) {
+                  case 'Revenue':   yTopCompare = yFor(cRev); break
+                  case 'Food cost': yTopCompare = yFor(cRev); break
+                  case 'Alcohol':   yTopCompare = yFor(cRev - cFoodOnly); break
+                  case 'Labour':    yTopCompare = yFor(cRev - cFoodOnly - (showAlcohol ? cAlc : 0)); break
+                  case 'Overheads': yTopCompare = yFor(cRev - cFoodOnly - (showAlcohol ? cAlc : 0) - cStaff); break
+                  case 'Net':       yTopCompare = yFor(Math.max(cNet, 0)); break
+                  default:          yTopCompare = b.top
+                }
                 return <line x1={b.x - barW / 2 - 3} x2={b.x + barW / 2 + 3} y1={yTopCompare} y2={yTopCompare} stroke={UX.indigo} strokeDasharray="3 2" strokeWidth="1.2" />
               })()}
             </g>
@@ -1070,10 +1139,15 @@ function LegendSwatch({ colour, label, dashed }: { colour: string; label: string
 // ─── Donut ─────────────────────────────────────────────────────────────────
 function DonutCard({ data }: { data: PeriodData }) {
   const total = data.food_cost + data.staff_cost + data.overheads
+  // Split food into food-only + alcohol when the business tracks alcohol
+  // separately. All costs use the same hue (burnt) at different opacities
+  // so it reads as "varieties of cost" not rainbow categories — matches
+  // the DESIGN.md colour-restraint rule.
   const slices = [
-    { label: 'Labour',    value: data.staff_cost, opacity: 0.75 },
-    { label: 'Food cost', value: data.food_cost,  opacity: 1    },
-    { label: 'Overheads', value: data.overheads,  opacity: 0.45 },
+    { label: 'Labour',    value: data.staff_cost,     opacity: 0.75 },
+    { label: 'Food cost', value: data.food_only_cost, opacity: 1    },
+    ...(data.has_alcohol ? [{ label: 'Alcohol', value: data.alcohol_cost, opacity: 0.9 }] : []),
+    { label: 'Overheads', value: data.overheads,      opacity: 0.45 },
   ].filter(s => s.value > 0)
   // SVG stroke straddles the path radius, so the donut actually extends
   // from (R - strokeWidth/2) to (R + strokeWidth/2). With R=55 and
@@ -1136,13 +1210,24 @@ function DonutCard({ data }: { data: PeriodData }) {
 function BreakdownTable({ data, compare, compareLabel }: {
   data: PeriodData; compare: PeriodData | null; compareLabel: string | null
 }) {
-  const rows = [
-    { label: 'Revenue',         kr: data.revenue,                 swatch: UX.navy,                  ccKr: compare?.revenue,          compareable: true },
-    { label: 'Food cost',       kr: data.food_cost,               swatch: UX.burnt,                 ccKr: compare?.food_cost,        compareable: data.has_food },
-    { label: 'Labour',          kr: data.staff_cost,              swatch: UX.burnt,  opacity: 0.75, ccKr: compare?.staff_cost,       compareable: true },
-    { label: 'Rent & utilities',kr: data.overhead_split.rent + data.overhead_split.utilities, swatch: UX.burnt, opacity: 0.45, ccKr: (compare?.overhead_split.rent ?? 0) + (compare?.overhead_split.utilities ?? 0), compareable: data.has_overheads },
-    { label: 'Other overheads', kr: data.overhead_split.other,    swatch: UX.burnt,  opacity: 0.45, ccKr: compare?.overhead_split.other, compareable: data.has_overheads },
+  // Breakdown rows. Alcohol shows only when the current period has it —
+  // so food-only restaurants keep the simpler 5-row layout. Food row uses
+  // food_only_cost (minus alcohol) when alcohol is broken out, otherwise
+  // food_cost (the whole COGS total from Fortnox).
+  const foodKr   = data.has_alcohol ? data.food_only_cost : data.food_cost
+  const cFoodKr  = data.has_alcohol ? compare?.food_only_cost : compare?.food_cost
+  const rows: any[] = [
+    { label: 'Revenue',    kr: data.revenue,    swatch: UX.navy, ccKr: compare?.revenue, compareable: true },
+    { label: 'Food cost',  kr: foodKr,          swatch: UX.burnt, ccKr: cFoodKr, compareable: data.has_food },
   ]
+  if (data.has_alcohol) {
+    rows.push({ label: 'Alcohol', kr: data.alcohol_cost, swatch: UX.burnt, opacity: 0.9, ccKr: compare?.alcohol_cost, compareable: true })
+  }
+  rows.push(
+    { label: 'Labour',           kr: data.staff_cost, swatch: UX.burnt, opacity: 0.75, ccKr: compare?.staff_cost, compareable: true },
+    { label: 'Rent & utilities', kr: data.overhead_split.rent + data.overhead_split.utilities, swatch: UX.burnt, opacity: 0.45, ccKr: (compare?.overhead_split.rent ?? 0) + (compare?.overhead_split.utilities ?? 0), compareable: data.has_overheads },
+    { label: 'Other overheads',  kr: data.overhead_split.other, swatch: UX.burnt, opacity: 0.45, ccKr: compare?.overhead_split.other, compareable: data.has_overheads },
+  )
   return (
     <div style={cardStyle()}>
       <div style={titleRowStyle()}>
