@@ -370,22 +370,50 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+    // Tool use — forces Haiku to respond via submit_budget with a strict
+    // schema. Replaces regex-parse which silently 502'd when Claude added
+    // commentary around the JSON.
+    const submitBudgetTool = {
+      name: 'submit_budget',
+      description: 'Submit the 12-month budget proposal.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          strategy: { type: 'string', description: 'One paragraph overall strategy (80-150 words).' },
+          months: {
+            type: 'array',
+            minItems: 12,
+            maxItems: 12,
+            items: {
+              type: 'object',
+              properties: {
+                month:            { type: 'number' },
+                revenue_target:   { type: 'number' },
+                food_pct_target:  { type: 'number' },
+                staff_pct_target: { type: 'number' },
+                notes:            { type: 'string' },
+              },
+              required: ['month', 'revenue_target', 'food_pct_target', 'staff_pct_target'],
+            },
+          },
+        },
+        required: ['strategy', 'months'],
+      },
+    }
+
     const startedAt = Date.now()
-    const response = await claude.messages.create({
+    const response = await (claude as any).messages.create({
       model:      AI_MODELS.AGENT,
-      max_tokens: 2500, // 12 months × ~150 tokens each + overall strategy + JSON overhead
+      max_tokens: 2500,
+      tools:      [submitBudgetTool],
+      tool_choice: { type: 'tool', name: 'submit_budget' },
       messages:   [{ role: 'user', content: prompt }],
     })
 
-    const text = (response.content?.[0] as any)?.text ?? ''
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json({ error: 'AI response not valid JSON', raw: text }, { status: 502 })
-    }
-
-    let parsed: any
-    try { parsed = JSON.parse(jsonMatch[0]) } catch (e: any) {
-      return NextResponse.json({ error: 'AI response parse failed: ' + e.message, raw: text }, { status: 502 })
+    const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
+    const parsed = toolUse?.input
+    if (!parsed?.months) {
+      return NextResponse.json({ error: 'AI response missing months', raw: response }, { status: 502 })
     }
 
     // Normalise: ensure we have 12 months. Fill gaps with zeros.

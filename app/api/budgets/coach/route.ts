@@ -19,6 +19,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
+import { VOICE, INDUSTRY_BENCHMARKS } from '@/lib/ai/rules'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -114,6 +115,32 @@ export async function GET(req: NextRequest) {
         labour_pp: labourPctGap,
       },
     })
+
+    // Capture this MTD-pace projection as an outcome so the accuracy
+    // reconciler can compare it to month-end reality when it lands.
+    // Only worth capturing once narrative generation succeeded — otherwise
+    // we'd be tracking the straight-line projection without the AI in the
+    // loop, which is just arithmetic.
+    if (narrative) {
+      const { captureOutcome } = await import('@/lib/ai/outcomes')
+      await captureOutcome(db, {
+        surface:              'budget_coach',
+        org_id:               auth.orgId,
+        business_id:          bizId,
+        period_year:          year,
+        period_month:         month,
+        model:                'claude-haiku-4-5-20251001',
+        suggested_revenue:    Math.round(projectedRev),
+        suggested_staff_cost: Math.round(projectedLabour),
+        suggested_margin_pct: projectedRev > 0 ? Math.round(((projectedRev - projectedLabour - mtdFoodCost) / projectedRev) * 1000) / 10 : null,
+        context: {
+          day_of_month: dayOfMonth,
+          pct_elapsed:  Math.round(pctElapsed * 1000) / 1000,
+          mtd_revenue:  Math.round(mtdRevenue),
+          budget_target: Number(budget.revenue_target),
+        },
+      })
+    }
   }
 
   return NextResponse.json({
@@ -152,13 +179,15 @@ async function generateNarrative(db: any, orgId: string, ctx: any): Promise<stri
 
 ${SCOPE_NOTE}
 
+${INDUSTRY_BENCHMARKS}
+
+${VOICE}
+
 Write ONE short paragraph (70-110 words) that:
 
 1. Open with a one-sentence verdict — on pace, ahead, or behind revenue target.
 2. Call out the biggest lever for the rest of the month with a specific action. If labour % is running over target, the action should reference the /scheduling page ("trim next week's hours — the scheduling page shows the specific cuts").
 3. End with a projected month-end number and whether the target will be hit.
-
-Direct, Swedish-owner-to-owner tone. Use exact SEK numbers. No preamble, no "I recommend" — say it.
 
 MONTH-TO-DATE
 Revenue: ${fmtKr(ctx.mtd.revenue)} · target ${fmtKr(ctx.budget.revenue_target)} for the full month

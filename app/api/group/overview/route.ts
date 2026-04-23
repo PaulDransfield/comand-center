@@ -18,6 +18,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { SCOPE_NOTE }            from '@/lib/ai/scope'
+import { INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY } from '@/lib/ai/rules'
 import { logAiRequest } from '@/lib/ai/usage'
 
 export const dynamic    = 'force-dynamic'
@@ -192,6 +194,14 @@ async function generateNarrative(
   db: any, orgId: string, rows: any[], summary: any,
 ): Promise<{ narrative: string | null; items: Array<{ tone: string; entity: string; message: string }> | null }> {
   const prompt = `You are the group operations manager of a restaurant group with ${rows.length} locations. You have their trading data for ${summary.period_from} to ${summary.period_to}.
+
+${SCOPE_NOTE}
+
+${INDUSTRY_BENCHMARKS}
+
+${VOICE}
+
+${SCHEDULING_ASYMMETRY}
 
 Return a JSON object with EXACTLY this shape and nothing else:
 

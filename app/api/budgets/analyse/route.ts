@@ -187,22 +187,46 @@ Return JSON only, no markdown fence, no prose outside JSON:
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+    // Tool use: strict schema for single-month budget-vs-actual analysis.
+    const submitAnalysisTool = {
+      name: 'submit_analysis',
+      description: 'Submit the single-month variance analysis.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          verdict:  { type: 'string', description: 'One-sentence verdict on the month.' },
+          drivers:  {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                metric:      { type: 'string' },
+                direction:   { enum: ['above', 'below', 'on'] },
+                magnitude:   { type: 'string' },
+                explanation: { type: 'string' },
+              },
+              required: ['metric', 'direction', 'magnitude'],
+            },
+          },
+          next_step: { type: 'string', description: 'One concrete action for the coming month.' },
+        },
+        required: ['verdict', 'drivers', 'next_step'],
+      },
+    }
+
     const startedAt = Date.now()
-    const response = await claude.messages.create({
+    const response = await (claude as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: 800,
+      tools:      [submitAnalysisTool],
+      tool_choice: { type: 'tool', name: 'submit_analysis' },
       messages:   [{ role: 'user', content: prompt }],
     })
 
-    const text = (response.content?.[0] as any)?.text ?? ''
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      return NextResponse.json({ error: 'AI response not valid JSON', raw: text }, { status: 502 })
-    }
-
-    let parsed: any
-    try { parsed = JSON.parse(jsonMatch[0]) } catch (e: any) {
-      return NextResponse.json({ error: 'AI response parse failed: ' + e.message, raw: text }, { status: 502 })
+    const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
+    const parsed = toolUse?.input
+    if (!parsed?.verdict) {
+      return NextResponse.json({ error: 'AI response missing verdict', raw: response }, { status: 502 })
     }
 
     // Filter out any analysis rows referencing metrics that weren't available

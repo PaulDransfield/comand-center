@@ -18,6 +18,8 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE }                from '@/lib/ai/scope'
+import { INDUSTRY_BENCHMARKS, VOICE, DATA_GAPS } from '@/lib/ai/rules'
+import { buildAskContext }           from '@/lib/ai/contextBuilder'
 import { log }                       from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
@@ -27,18 +29,21 @@ export const dynamic     = 'force-dynamic'
 // default) and Pro (300 s default) — no surprise 504s on plan changes.
 export const maxDuration = 60
 
+// Built once from the shared rule modules. Identical across every /api/ask
+// call, so we send it as a cache_control ephemeral system block — cuts input
+// token cost by ~80% on this endpoint, which is the hottest Claude surface
+// in the app.
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
 You help restaurant operators understand their data — staff costs, revenue, margins, department performance, and forecasts.
 
-Guidelines:
-- Answer in the same language as the question (Swedish or English)
-- Be concise and direct — operators are busy
-- When you see numbers, interpret them in restaurant industry context
-- Typical healthy targets: food cost 28-35%, staff cost 30-40%, net margin 10-20%
-- Flag anything that looks like a problem
-- Never make up numbers not in the context provided
-- If you cannot answer from the context, say so clearly
+Answer in the same language as the question (Swedish or English). Never invent numbers that aren't in the context provided. If you cannot answer from the context, say so clearly and explain what data would be needed.
+
+${INDUSTRY_BENCHMARKS}
+
+${VOICE}
+
+${DATA_GAPS}
 
 ${SCOPE_NOTE}`
 
@@ -70,29 +75,12 @@ export async function POST(req: NextRequest) {
   if (!question) return NextResponse.json({ error: 'No question provided' }, { status: 400 })
   if (question.length > 1000) return NextResponse.json({ error: 'Question too long' }, { status: 400 })
 
-  // Cost-aware enrichment runs AFTER the truncation step below so the
-  // line items fit inside their own reserved budget.
-  const COST_KEYWORDS = /\b(cost|overhead|overheads|subscription|subscribe|bank|fees|fee|rent|software|saas|bokio|fortnox|insurance|utilit|electric|marketing|accounting|audit|margin|other[_\s]cost|line[_\s]item)s?\b/i
-
-  // Hard cap on context size. Caps input tokens roughly at ~2 500 tokens (4 chars ≈ 1 token),
-  // keeping a single call below ~$0.04 on Sonnet and ~$0.007 on Haiku.
-  // Reserve the last 1500 chars for the cost enrichment (when relevant)
-  // so Fortnox line items don't get cropped when the base context is big.
-  const MAX_CONTEXT_CHARS = 6000
-  const COST_BUDGET       = 1500
-  const originalBudget    = MAX_CONTEXT_CHARS - COST_BUDGET
-  if (context.length > originalBudget) {
-    console.warn(`[ask] context truncated — was ${context.length} chars, capped at ${originalBudget}`)
-    context = context.slice(0, originalBudget) + '\n\n[context truncated for cost]'
-  }
-
-  // Verify the supplied business_id actually belongs to the caller's
-  // org before we use it anywhere (context enrichment, tool lookups).
-  // Without this check, a user could pass another org's business_id
-  // and — via prompt injection in the returned label text — make the
-  // model treat it as their own. eq('org_id', auth.orgId) on the
-  // data queries below protects the rows themselves, but not the
-  // control-flow decisions that depend on `businessId`.
+  // Verify the supplied business_id belongs to the caller's org before we
+  // use it for anything (context enrichment, tool lookups). Without this
+  // check a user could pass another org's business_id and — via prompt
+  // injection in the returned label text — make the model treat it as
+  // their own. eq('org_id', auth.orgId) on data queries protects rows but
+  // not control-flow decisions that depend on `businessId`.
   if (businessId) {
     const supabase = createAdminClient()
     const { data: biz } = await supabase
@@ -106,45 +94,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Now append cost detail if the question asks for it.
-  if (businessId && COST_KEYWORDS.test(question)) {
-    try {
-      const supabase = createAdminClient()
-      const yearFrom = new Date().getFullYear() - 1
-      const { data: lines } = await supabase
-        .from('tracker_line_items')
-        .select('period_year, period_month, category, subcategory, label_sv, amount')
-        .eq('org_id', auth.orgId)
-        .eq('business_id', businessId)
-        .eq('category', 'other_cost')
-        .gte('period_year', yearFrom)
-        .order('period_year', { ascending: false })
-        .order('period_month', { ascending: false })
-        .order('amount', { ascending: false })
-        .limit(60)
-
-      if (lines && lines.length) {
-        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-        const formatted = lines
-          .map((l: any) => {
-            const period = l.period_month && l.period_month > 0
-              ? `${MONTHS[l.period_month - 1]} ${l.period_year}`
-              : `${l.period_year} (annual)`
-            const sub = l.subcategory ? ` [${l.subcategory}]` : ''
-            return `  - ${period}: ${l.label_sv}${sub} — ${Math.round(l.amount).toLocaleString('en-GB').replace(/,/g, ' ')} kr`
-          })
-          .join('\n')
-        // Flag the scope explicitly so Claude doesn't attribute these to a
-        // single department when the user asks a dept-scoped question.
-        // Fortnox P&L is always whole-business; any per-dept attribution
-        // would be invented.
-        const block = `\n\nOverhead line items (other_cost, from Fortnox PDFs — BUSINESS-WIDE, not split by department):\n${formatted}`
-        context += block.length > COST_BUDGET ? block.slice(0, COST_BUDGET) + '\n[line items truncated]' : block
-      }
-    } catch (e: any) {
-      console.warn('[ask] overhead enrichment failed:', e?.message)
-    }
-  }
+  // Centralised context assembly — truncation + optional cost enrichment.
+  // Replaces the inline logic that used to live here; see lib/ai/contextBuilder.ts.
+  const supabaseForCtx = createAdminClient()
+  const built = await buildAskContext(supabaseForCtx, context, question, {
+    orgId:       auth.orgId,
+    businessId:  businessId,
+  })
+  context = built.context
+  for (const w of built.warnings) console.warn('[ask]', w)
 
   // ── 3. Check daily query limit (shared helper in lib/ai/usage.ts) ────────
   const supabase = createAdminClient()
@@ -165,10 +123,14 @@ export async function POST(req: NextRequest) {
   let answer: string
   const startedAt = Date.now()
   try {
-    const response = await claude.messages.create({
+    // Prompt caching: SYSTEM_PROMPT is identical across every call, so
+    // marking it as cache_control ephemeral lets Anthropic reuse the KV
+    // cache for 5 minutes and bill the cached tokens at ~10% of normal.
+    // Typical hot-path saving: ~80% of input token cost.
+    const response = await (claude as any).messages.create({
       model,
       max_tokens: maxTokens,
-      system:     SYSTEM_PROMPT,
+      system:     [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages:   [{ role: 'user', content: userMessage }],
     })
     answer = (response.content[0] as any).text ?? 'No response'

@@ -150,7 +150,18 @@ export async function POST(req: NextRequest) {
               const Anthropic = (await import('@anthropic-ai/sdk')).default
               const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+              const { SCOPE_NOTE } = await import('@/lib/ai/scope')
+              const { INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY } = await import('@/lib/ai/rules')
+
               const prompt = `You are a restaurant scheduling optimization expert. Analyze this data and provide specific, actionable scheduling recommendations.
+
+${SCOPE_NOTE}
+
+${INDUSTRY_BENCHMARKS}
+
+${VOICE}
+
+${SCHEDULING_ASYMMETRY}
 
 BUSINESS: ${biz.name}
 ANALYSIS PERIOD: ${analysisData.analysis_period}

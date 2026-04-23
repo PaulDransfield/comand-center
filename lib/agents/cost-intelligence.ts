@@ -139,18 +139,42 @@ Output ONLY the JSON object.`
   try {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-    const response  = await client.messages.create({
+    const submitInsightsTool = {
+      name: 'submit_cost_insights',
+      description: 'Submit cost-intelligence findings.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          insights: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                kind:        { type: 'string', description: 'e.g. "subscription_creep", "duplicate", "outlier"' },
+                title:       { type: 'string' },
+                description: { type: 'string' },
+                impact_kr:   { type: 'number' },
+                confidence:  { enum: ['low', 'medium', 'high'] },
+              },
+              required: ['kind', 'title', 'description'],
+            },
+          },
+        },
+        required: ['insights'],
+      },
+    }
+    const response  = await (client as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
+      tools:      [submitInsightsTool],
+      tool_choice: { type: 'tool', name: 'submit_cost_insights' },
       messages:   [{ role: 'user', content: prompt }],
     }, { signal: abort.signal as any })
-    const raw   = (response.content?.[0] as any)?.text?.trim() ?? ''
-    const clean = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+    const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
+    const parsed  = toolUse?.input
 
-    let parsed: any
-    try { parsed = JSON.parse(clean) }
-    catch {
-      console.warn('[cost-intel] non-JSON output from Haiku:', clean.slice(0, 200))
+    if (!parsed) {
+      console.warn('[cost-intel] tool_use missing from Haiku response')
       return { insights: [], reason: 'parse_error' }
     }
 

@@ -11,6 +11,8 @@
 
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest }          from '@/lib/ai/usage'
+import { SCOPE_NOTE }            from '@/lib/ai/scope'
+import { SCHEDULING_ASYMMETRY, VOICE, INDUSTRY_BENCHMARKS } from '@/lib/ai/rules'
 import { getForecast, coordsFor, DailyWeather, weatherBucket } from '@/lib/weather/forecast'
 import { signFeedback }          from '@/lib/email/feedback-token'
 
@@ -359,6 +361,14 @@ ${ctx.weatherPattern.map(p => `  ${p.bucket.padEnd(10)}  ${p.days} days  avg ${f
 ${ctx.nextWeekAnalogues.length ? `NEXT WEEK ANALOGUES (forecast matched to your own history)
 ${ctx.nextWeekAnalogues.map(a => `  ${a.date} ${a.weekday}: forecast ${a.forecast_summary} → bucket=${a.bucket}. ${a.analogue_days >= 2 ? `Matching historicals: ${a.analogue_days} days, avg rev ${fmt(a.analogue_avg_rev ?? 0)} (vs all-${a.weekday} avg ${fmt(a.all_weather_avg_rev)})` : `Only ${a.analogue_days} matching historicals — not enough to be confident.`}`).join('\n')}` : ''}
 
+${SCOPE_NOTE}
+
+${INDUSTRY_BENCHMARKS}
+
+${VOICE}
+
+${SCHEDULING_ASYMMETRY}
+
 WRITE YOUR MEMO
 Constraints — NON-NEGOTIABLE:
 - 150–200 words total
@@ -368,30 +378,14 @@ Constraints — NON-NEGOTIABLE:
   (b) The action in imperative form
   (c) Expected SEK impact ("saves 4 200 kr/wk", "recovers 1.2 pts labour %", etc.)
 - No generic advice. Every action must reference numbers from the data above.
-- Tone: direct, conversational, Swedish owner-to-owner. Assume technical literacy.
-- No "I recommend", no "You should consider" — just say it. "Drop X. Saves Y."
-- NEVER recommend adding staff hours or extra shifts. Cuts only. Our scheduling guidance is intentionally asymmetric: a cut that's slightly too aggressive just saves less than hoped (still a win), but an "add hours" recommendation that doesn't pay off costs the owner real money for no reason. If the schedule looks light vs the pattern, note it as an observation — never as an action. All 3 numbered actions must be cost-saves, revenue-mix shifts, pricing moves, or supplier asks — not "staff up".
+- All 3 numbered actions must be cost-saves, revenue-mix shifts, pricing moves, or supplier asks — not "staff up" (see SCHEDULING RULE above).
 - Weather matters for footfall. Two layers of weather data are provided:
   1. UPCOMING WEATHER — raw forecast for next 7 days
   2. HISTORICAL WEATHER EFFECT + NEXT WEEK ANALOGUES — what YOUR OWN trading days show at each weather pattern (when a backfill has run; may be empty on first weeks)
 - When the analogues show a concrete delta ("matching historicals avg 142k vs all-Friday avg 168k"), USE THAT SPECIFIC NUMBER in one of your actions rather than a generic "rain might reduce footfall" statement. That specificity is what makes this feel like a real manager's advice.
 - Only mention weather if it's actually notable for that week's forecast — don't force it when the week looks neutral.
 - End with ONE sentence flagging the biggest risk for next week if it exists.
-- Output JSON ONLY in this exact shape:
-
-{
-  "narrative": "The full memo as one block of prose, 150-200 words. Include the numbered actions inline within the prose.",
-  "actions": [
-    { "title": "Short 3-6 word title", "impact": "+X kr/wk or -Y% labour etc", "reasoning": "one-sentence why" },
-    { "title": "...", "impact": "...", "reasoning": "..." },
-    { "title": "...", "impact": "...", "reasoning": "..." }
-  ],
-  "facts_cited": [
-    "Tuesday avg hours 42 — labour 63% last 4 weeks",
-    "Saturday Bella 486k rev vs Friday 116k",
-    "..."
-  ]
-}`
+- Call the submit_memo tool with the finished memo. narrative is the full 150–200 word prose with the 3 numbered actions inline; actions is the structured breakdown (title ≤ 6 words, impact as "+X kr/wk" or similar, one-sentence reasoning); facts_cited is an array of specific numeric facts from the data above that you referenced.`
 }
 
 function fmt(n: number): string {
@@ -422,13 +416,43 @@ export async function generateWeeklyMemo(
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-    const response = await claude.messages.create({
+    // Tool use — forces Claude to respond via the submit_memo tool with a
+    // strict JSON schema. Replaces regex-extract-JSON which silently dropped
+    // responses when Claude added surrounding commentary.
+    const submitMemoTool = {
+      name: 'submit_memo',
+      description: 'Submit the finished weekly manager memo.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          narrative:   { type: 'string', description: '150–200 words of prose with 3 numbered actions inline.' },
+          actions:     {
+            type: 'array',
+            minItems: 3,
+            maxItems: 3,
+            items: {
+              type: 'object',
+              properties: {
+                title:     { type: 'string' },
+                impact:    { type: 'string' },
+                reasoning: { type: 'string' },
+              },
+              required: ['title', 'impact', 'reasoning'],
+            },
+          },
+          facts_cited: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['narrative', 'actions', 'facts_cited'],
+      },
+    }
+
+    const response = await (claude as any).messages.create({
       model:       AI_MODELS.AGENT,
       max_tokens:  MAX_TOKENS.AGENT_SUMMARY,
+      tools:       [submitMemoTool],
+      tool_choice: { type: 'tool', name: 'submit_memo' },
       messages:    [{ role: 'user', content: prompt }],
     })
-
-    const text = (response.content?.[0] as any)?.text?.trim() ?? ''
 
     // Log cost regardless of parse success.
     try {
@@ -442,15 +466,11 @@ export async function generateWeeklyMemo(
       })
     } catch { /* non-fatal */ }
 
-    // Extract JSON from response. Claude occasionally wraps in ```json …```.
-    const match = text.match(/\{[\s\S]*\}/)
-    if (!match) {
-      console.warn('[weekly-manager] Claude returned no JSON. raw:', text.slice(0, 400))
-      return null
-    }
-    const parsed = JSON.parse(match[0])
+    // Tool use: the validated input lives on the tool_use block.
+    const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
+    const parsed = toolUse?.input
     if (!parsed?.narrative) {
-      console.warn('[weekly-manager] parsed but missing narrative', parsed)
+      console.warn('[weekly-manager] tool_use returned no narrative', parsed)
       return null
     }
     return {
