@@ -318,6 +318,10 @@ MULTI-PERIOD.  If the PDF has one row per BAS account with multiple monthly colu
 
 SINGLE-PERIOD.  If the PDF is a single-month or single-year report, emit ONE period with a rollup AND put all its line items into annual_lines.
 
+LINE ITEMS ARE MANDATORY.  "annual_lines" MUST contain ONE entry per BAS account leaf row visible in the PDF — a Swedish restaurant Resultatrapport typically has 15–40 rows (revenue splits by VAT, food/drink accounts, salary + tax rows, rent, utilities, insurance, bank fees, etc). Do NOT submit an empty "annual_lines": the downstream pipeline depends on them for category/VAT-rate/subcategory classification and for the Performance page's food-vs-alcohol split. If you're unsure whether a row is a subtotal, err on the side of including it — the server de-dupes. Subtotal rows that clearly say "Summa", "S:a", "Totalt", "Bruttovinst", "Rörelseresultat" or "Resultat före/efter…" must NOT be emitted (they would double-count).
+
+For each line, "label" = the row text exactly as printed (Swedish), "amount" = the Ack./year-total (always positive for costs, signed for financial items), "account" = the BAS account number (integer). If a row has no visible account number but a clear label, still emit it with account=0 and rely on label classification downstream.
+
 BAS CATEGORIES.  Sum accounts into rollup categories:
   revenue       = 3xxx (all operating revenue)
   food_cost     = 4xxx (cost of goods)
@@ -503,12 +507,53 @@ VALIDATION.  Before submitting:
   // tool_use forces a structured response so parsed is always non-null
   // unless the API itself failed (caught above). No fallback path needed.
 
-  // Attach annual_lines to the latest period so the apply route can
-  // write them into tracker_line_items via the existing annual path.
+  // annual_lines handling. PK Resultatrapport: one list of account rows
+  // for the whole year. We need per-month line items so the Performance
+  // page can show alcohol/food split on any single-month view.
+  //
+  // Strategy:
+  //   - Single-period upload: attach all annual_lines to that period.
+  //   - Multi-period (12-month) upload: distribute each line proportionally
+  //     across the 12 periods based on each period's rollup share for
+  //     that line's classified category. Imperfect (a line posted entirely
+  //     in Dec would still show distributed) but honest given the source
+  //     data shape, and lets every monthly view show the subcategory mix.
   const annualLines = Array.isArray(parsed?.annual_lines) ? parsed.annual_lines : []
   if (annualLines.length && Array.isArray(parsed?.periods) && parsed.periods.length) {
-    const target = parsed.periods[parsed.periods.length - 1]
-    target.lines = Array.isArray(target.lines) && target.lines.length ? target.lines : annualLines
+    if (parsed.periods.length === 1) {
+      const target = parsed.periods[0]
+      target.lines = Array.isArray(target.lines) && target.lines.length ? target.lines : annualLines
+    } else {
+      // Compute per-category category totals across all months.
+      const catTotals: Record<string, number> = {
+        revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0,
+      }
+      for (const p of parsed.periods) {
+        for (const cat of Object.keys(catTotals)) {
+          catTotals[cat] += Math.abs(Number(p?.rollup?.[cat] ?? 0))
+        }
+      }
+      // Classify each annual line once, then distribute proportionally.
+      const classifiedLines = annualLines.map((l: any) => {
+        const acct = Number.isFinite(Number(l?.account)) ? Number(l.account) : null
+        const classification = classifyByAccount(acct) ?? classifyLabel(String(l?.label ?? ''))
+        return { line: l, category: classification.category }
+      })
+      for (const p of parsed.periods) {
+        p.lines = []
+        for (const { line, category } of classifiedLines) {
+          const catTotal   = catTotals[category] || 0
+          const monthValue = Math.abs(Number(p?.rollup?.[category] ?? 0))
+          if (catTotal <= 0) continue
+          const share = monthValue / catTotal
+          if (share === 0) continue
+          p.lines.push({
+            ...line,
+            amount: Number(line.amount ?? 0) * share,
+          })
+        }
+      }
+    }
   }
 
   await writeProgress({ phase: 'normalising', message: 'Normalising line items…', percent: 85 })
