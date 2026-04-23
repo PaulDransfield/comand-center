@@ -498,8 +498,41 @@ function AiSuggestedSchedule({ loading, error, data, recommendation, fmt, fmtHrs
   }
   if (!data) return null
 
-  const { summary, suggested, current, week_from, week_to, pk_shifts_found } = data
+  const { summary, suggested, current, week_from, week_to, pk_shifts_found, pk_fetch_error, diag } = data
   const shortRange = `${week_from.slice(8)}–${week_to.slice(8)} ${new Date(week_from).toLocaleDateString('en-GB', { month: 'short' })}`
+
+  // If PK returned zero shifts for the target week, show the owner a clear
+  // message instead of an empty table. Three distinct reasons:
+  //   - pk_fetch_error: token or endpoint broke → actionable (reconnect)
+  //   - integration_status != 'connected': stuck flag → actionable (fix in admin)
+  //   - neither of the above: PK is fine, schedule just hasn't been
+  //     published for next week yet → not actionable, wait/publish in PK
+  if (pk_shifts_found === 0) {
+    let reason: string
+    let fix: string | null = null
+    if (pk_fetch_error) {
+      reason = `Couldn't reach Personalkollen (${pk_fetch_error})`
+      fix    = 'Check the integration — the API token may have been revoked or rotated.'
+    } else if (diag?.integration_status && diag.integration_status !== 'connected') {
+      reason = `PK integration status: ${diag.integration_status}`
+      fix    = 'Open Admin → Customers → your business and check the integration row.'
+    } else {
+      reason = 'Personalkollen has no published schedule for this week yet.'
+      fix    = 'Publish next week\'s schedule in PK and reload this page — AI advice will appear automatically.'
+    }
+    return (
+      <div id="ai-schedule" style={cardStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>AI-suggested schedule</span>
+          <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>AI</span>
+        </div>
+        <div style={{ fontSize: 13, color: '#374151', background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 14px' }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>No AI advice available — {reason}</div>
+          {fix && <div style={{ fontSize: 12, color: '#6b7280' }}>{fix}</div>}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div id="ai-schedule" style={cardStyle}>

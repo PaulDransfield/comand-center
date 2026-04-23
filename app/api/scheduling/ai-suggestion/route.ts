@@ -74,17 +74,25 @@ export async function GET(req: NextRequest) {
   // Shift mapping: each WorkPeriod has start + end timestamps. hours = (end-start)/3600.
   let scheduledRows: any[] = []
   let liveFetchError: string | null = null
+  let integrationStatus: string | null = null
+  let periodsReturned = 0
   try {
+    // Removed the .eq('status','connected') filter — if a sync briefly
+    // flipped the status to 'error' while PK itself is actually fine, we'd
+    // skip the live fetch and the AI table would silently render empty.
+    // Try the fetch regardless and let the PK call itself be the oracle on
+    // whether the token still works.
     const { data: integ } = await db.from('integrations')
-      .select('credentials_enc')
+      .select('credentials_enc, status')
       .eq('business_id', bizId)
       .eq('provider', 'personalkollen')
-      .eq('status', 'connected')
       .maybeSingle()
+    integrationStatus = integ?.status ?? 'missing'
     if (integ?.credentials_enc) {
       const token = decrypt(integ.credentials_enc)
       if (token) {
         const periods = await getWorkPeriods(token, weekFrom, weekTo)
+        periodsReturned = periods.length
         scheduledRows = periods.map((p: any) => {
           const startMs = p.start ? new Date(p.start).getTime() : 0
           const endMs   = p.end   ? new Date(p.end).getTime()   : 0
@@ -335,6 +343,14 @@ export async function GET(req: NextRequest) {
     business_name:   biz.name,
     pk_shifts_found: scheduledRows.length,
     pk_fetch_error:  liveFetchError,
+    // Diagnostics for the UI: if pk_shifts_found is 0, this tells us why.
+    // 'periods_returned=0' means PK responded OK but has no shifts published
+    // for this week yet. 'pk_fetch_error' means the token or endpoint broke.
+    // 'integration_status' shows whether the row is still marked connected.
+    diag: {
+      integration_status: integrationStatus,
+      periods_returned:   periodsReturned,
+    },
     current:         Object.values(currentByDate),
     suggested,
     summary: {
