@@ -12,6 +12,7 @@ import ConsentBanner from './ConsentBanner'
 import MobileNav from './MobileNav'
 import BackgroundSync from './BackgroundSync'
 import PlanGate from './PlanGate'
+import AiUsageBanner from './AiUsageBanner'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -48,6 +49,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           old 220px margin was leftover from the 220px Sidebar and
           was doubling the spacing with the 148px SidebarV2. */}
       <div className="cc-main-content" style={{ flex: 1, minWidth: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <AiUsageBanner />
         {children}
       </div>
 

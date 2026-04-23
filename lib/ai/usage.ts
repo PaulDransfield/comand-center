@@ -28,10 +28,27 @@ export interface LimitGateOk {
   booster:      number
   monthly_used_sek?: number
   monthly_ceiling_sek?: number
-  warning?: {         // present when used is ≥ 80 % of daily limit
-    used:    number
-    limit:   number
-    percent: number
+  /**
+   * Daily-cap warning ladder:
+   *   severity='info' — used ≥ 50% (soft nudge)
+   *   severity='warn' — used ≥ 80% (near cap + email on first crossing)
+   */
+  warning?: {
+    used:     number
+    limit:    number
+    percent:  number
+    severity: 'info' | 'warn'
+  }
+  /**
+   * Monthly cost-ceiling warning ladder:
+   *   severity='info' — used ≥ 70% of monthly SEK ceiling
+   *   severity='warn' — used ≥ 90% (email on first crossing)
+   */
+  monthly_warning?: {
+    used_sek:    number
+    ceiling_sek: number
+    percent:     number
+    severity:    'info' | 'warn'
   }
 }
 // Three distinct block reasons so the UI can give the right call-to-action.
@@ -68,6 +85,11 @@ const MONTHLY_COST_CEILING_SEK: Record<string, number> = {
 function monthlyCeilingFor(planKey: string): number {
   return MONTHLY_COST_CEILING_SEK[planKey] ?? MONTHLY_COST_CEILING_SEK.trial
 }
+// Exported so /admin/overview and other cross-org surfaces can apply the
+// same ceiling logic without re-defining the map.
+export function getMonthlyCeilingSek(planKey: string): number {
+  return monthlyCeilingFor(planKey)
+}
 
 // ── Global daily kill-switch ─────────────────────────────────────────────────
 // If total Claude spend across ALL orgs in the last 24 h exceeds this cap,
@@ -85,9 +107,14 @@ function globalDailyCapUsd(): number {
 // org at Sonnet, ~$1 at Haiku).
 const UNLIMITED_SAFETY_CAP_PER_DAY = 500
 
-// Approaching-limit warning threshold — we return a warning (not a block) when
-// used/limit reaches this fraction. UI can show a banner.
-const WARNING_THRESHOLD = 0.80
+// Approaching-limit warning ladders. Daily: 50% info → 80% warn → block at
+// 100%. Monthly (cost ceiling): 70% info → 90% warn → block at 100%.
+// Email dedup via ai_usage_notifications (M025) — exactly one email per
+// (org, period, level).
+const DAILY_INFO_THRESHOLD = 0.50
+const DAILY_WARN_THRESHOLD = 0.80
+const MONTHLY_INFO_THRESHOLD = 0.70
+const MONTHLY_WARN_THRESHOLD = 0.90
 
 // Compute the org's effective daily limit including any active AI Boosters.
 // Returns { base, booster, total } so the response can attribute the extra
@@ -203,9 +230,44 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
     }
   }
 
-  const warning = (used / limit) >= WARNING_THRESHOLD
-    ? { used, limit, percent: Math.round((used / limit) * 100) }
-    : undefined
+  // Daily ladder
+  const dailyPct = limit > 0 ? used / limit : 0
+  let warning: LimitGateOk['warning']
+  if (dailyPct >= DAILY_WARN_THRESHOLD) {
+    warning = { used, limit, percent: Math.round(dailyPct * 100), severity: 'warn' }
+  } else if (dailyPct >= DAILY_INFO_THRESHOLD) {
+    warning = { used, limit, percent: Math.round(dailyPct * 100), severity: 'info' }
+  }
+
+  // Monthly ladder
+  const monthlyPct = monthCeiling > 0 ? monthSpendSek / monthCeiling : 0
+  let monthly_warning: LimitGateOk['monthly_warning']
+  if (monthlyPct >= MONTHLY_WARN_THRESHOLD) {
+    monthly_warning = {
+      used_sek:    Math.round(monthSpendSek * 100) / 100,
+      ceiling_sek: monthCeiling,
+      percent:     Math.round(monthlyPct * 100),
+      severity:    'warn',
+    }
+  } else if (monthlyPct >= MONTHLY_INFO_THRESHOLD) {
+    monthly_warning = {
+      used_sek:    Math.round(monthSpendSek * 100) / 100,
+      ceiling_sek: monthCeiling,
+      percent:     Math.round(monthlyPct * 100),
+      severity:    'info',
+    }
+  }
+
+  // Fire email notifications on FIRST crossing of 'warn' severity.
+  // Dedup via ai_usage_notifications (unique on org_id, level, period_key).
+  // Non-fatal — an insert conflict or missing table never blocks the gate.
+  if (warning?.severity === 'warn') {
+    notifyThreshold(db, orgId, 'daily_80', today()).catch(() => {})
+  }
+  if (monthly_warning?.severity === 'warn') {
+    const monthKey = today().slice(0, 7)   // 'YYYY-MM'
+    notifyThreshold(db, orgId, 'monthly_90', monthKey).catch(() => {})
+  }
 
   return {
     ok: true,
@@ -215,7 +277,86 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
     monthly_used_sek:    Math.round(monthSpendSek * 100) / 100,
     monthly_ceiling_sek: monthCeiling,
     warning,
+    monthly_warning,
   }
+}
+
+// One email per (org, level, period). Second call for the same period
+// hits the unique constraint and silently skips — by design.
+async function notifyThreshold(
+  db: Db,
+  orgId: string,
+  level: 'daily_80' | 'monthly_90',
+  periodKey: string,
+) {
+  // Pre-check — avoid doing the owner-lookup + email work if we already
+  // sent this notification. The unique constraint is the source of truth,
+  // this is just a fast-path.
+  try {
+    const { data: existing } = await db.from('ai_usage_notifications')
+      .select('id').eq('org_id', orgId).eq('level', level).eq('period_key', periodKey)
+      .maybeSingle()
+    if (existing) return
+  } catch { /* table may not exist yet — keep going, insert will fail silently */ }
+
+  // Resolve owner email.
+  let ownerEmail: string | null = null
+  try {
+    const { data: member } = await db.from('organisation_members')
+      .select('user_id').eq('org_id', orgId).eq('role', 'owner').maybeSingle()
+    if (member?.user_id) {
+      const { data: userRow } = await db.auth.admin.getUserById(member.user_id)
+      ownerEmail = userRow?.user?.email ?? null
+    }
+  } catch { /* no-op */ }
+
+  // Insert the dedup row FIRST. If it conflicts, another request already
+  // sent this notification — bail so we don't double-send.
+  try {
+    const { error } = await db.from('ai_usage_notifications').insert({
+      org_id:     orgId,
+      level,
+      period_key: periodKey,
+      email_to:   ownerEmail,
+    })
+    if (error) return   // unique violation or table missing — either way, skip
+  } catch { return }
+
+  if (!ownerEmail) return
+
+  try {
+    const { sendEmail } = await import('@/lib/email/send')
+    const isMonthly = level === 'monthly_90'
+    await sendEmail({
+      from:    'CommandCenter <alerts@comandcenter.se>',
+      to:      ownerEmail,
+      subject: isMonthly
+        ? `Heads up — you're at 90% of this month's AI budget`
+        : `Heads up — you're at 80% of today's AI queries`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:28px 24px;color:#1a1f2e">
+          <h1 style="font-size:18px;margin:0 0 10px;font-weight:600">
+            ${isMonthly
+              ? 'Your AI spend this month is at 90% of the ceiling.'
+              : "You've used 80% of today's AI queries."}
+          </h1>
+          <p style="font-size:14px;color:#374151;line-height:1.6">
+            ${isMonthly
+              ? 'Once you hit 100%, CommandCenter pauses AI calls on your account until next month to prevent surprise costs. Upgrade your plan or contact us if this should keep going.'
+              : "You have a little headroom left today. The quota resets tomorrow at midnight Stockholm time — or you can upgrade / buy a Booster to extend today's limit."}
+          </p>
+          <a href="https://comandcenter.se/upgrade?focus=ai"
+             style="display:inline-block;padding:10px 18px;background:#1a1f2e;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;margin-top:14px">
+            Review usage
+          </a>
+          <p style="margin-top:24px;font-size:12px;color:#9ca3af">
+            We only send this email once per ${isMonthly ? 'month' : 'day'} — not every query.
+          </p>
+        </div>
+      `,
+      context: { kind: 'ai_usage_threshold', org_id: orgId, level, period_key: periodKey },
+    })
+  } catch { /* email is best-effort */ }
 }
 
 /**

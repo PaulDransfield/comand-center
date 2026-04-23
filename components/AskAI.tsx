@@ -71,7 +71,7 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
   const [error,    setError]    = useState('')
   const [upgrade,  setUpgrade]  = useState(false)
   const [limitInfo, setLimitInfo] = useState<{ used: number; limit: number; plan: string; reason?: string } | null>(null)
-  const [warning,  setWarning]  = useState<{ percent: number; used: number; limit: number } | null>(null)
+  const [warning,  setWarning]  = useState<{ percent: number; used: number; limit: number; severity?: 'info' | 'warn' } | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
 
@@ -318,9 +318,20 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
           {/* Soft warning — 80 % of daily quota used. Shown once then persists
               for the session until the next question confirms it's gone. */}
           {warning && !upgrade && (
-            <div style={{ padding: '10px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#78350f', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              padding: '10px 12px',
+              background: warning.severity === 'info' ? '#eef2ff' : '#fffbeb',
+              border:     warning.severity === 'info' ? '1px solid #c7d2fe' : '1px solid #fde68a',
+              borderRadius: 8, fontSize: 12,
+              color:      warning.severity === 'info' ? '#3730a3' : '#78350f',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+            }}>
               <span>You've used {warning.percent}% of today's AI quota ({warning.used} of {warning.limit}).</span>
-              <a href="/upgrade?focus=ai" style={{ fontSize: 11, color: '#b45309', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap' }}>
+              <a href="/upgrade?focus=ai" style={{
+                fontSize: 11,
+                color: warning.severity === 'info' ? '#4338ca' : '#b45309',
+                fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap',
+              }}>
                 Upgrade →
               </a>
             </div>

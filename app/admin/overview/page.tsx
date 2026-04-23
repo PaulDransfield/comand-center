@@ -55,7 +55,7 @@ export default function AdminOverview() {
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data)   return null
 
-  const { kpis, recent_signups, recent_setup_requests, critical_alerts, cron_status } = data
+  const { kpis, recent_signups, recent_setup_requests, critical_alerts, cron_status, ai_at_risk = [] } = data
 
   const signupDelta = kpis.signups_last_week > 0
     ? Math.round(((kpis.signups_this_week - kpis.signups_last_week) / kpis.signups_last_week) * 100)
@@ -160,6 +160,27 @@ export default function AdminOverview() {
             )}
           </div>
         </div>
+
+        {/* AI at-risk — orgs ≥70% of monthly cost ceiling */}
+        {ai_at_risk.length > 0 && (
+          <div style={{ ...S.card, background: '#fffbeb', border: '1px solid #fde68a', marginBottom: 20 }}>
+            <div style={{ ...S.cardHead, color: '#b45309' }}>
+              <div>AI spend at risk ({ai_at_risk.length})</div>
+              <span style={{ fontSize: 11, color: '#92400e' }}>≥70% of monthly ceiling — reach out before they hit the block</span>
+            </div>
+            {ai_at_risk.map((o: any) => (
+              <div key={o.id} style={{ padding: '8px 4px', borderTop: '1px solid #fde68a', fontSize: 12, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ color: '#111', fontWeight: 500 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3, background: 'white', color: o.percent >= 90 ? '#dc2626' : '#b45309', marginRight: 6 }}>{o.percent}%</span>
+                  {o.name} — <span style={{ color: '#6b7280' }}>{o.plan}</span>
+                </div>
+                <div style={{ color: '#9ca3af', fontSize: 11, whiteSpace: 'nowrap' as const }}>
+                  {Math.round(o.used_sek)} / {Math.round(o.ceiling_sek)} SEK
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Critical alerts */}
         {critical_alerts.length > 0 && (

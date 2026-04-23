@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { PLANS }                     from '@/lib/stripe/config'
+import { getMonthlyCeilingSek }      from '@/lib/ai/usage'
 import { checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
@@ -112,6 +113,29 @@ export async function GET(req: NextRequest) {
   const aiQueriesThisMonth = (aiMonthRes.data ?? []).reduce((s: number, r: any) => s + Number(r.query_count ?? 0), 0)
   const aiCostEstimateUsd = aiQueriesThisMonth * 0.00125
 
+  // Per-org AI cost this month, in SEK, against each org's monthly ceiling.
+  // Flag any org ≥70% of its ceiling as "AI at risk" so we can reach out
+  // before they hit the hard block (100%).
+  const { data: costRows } = await db
+    .from('ai_request_log')
+    .select('org_id, cost_sek')
+    .gte('created_at', `${firstOfMonth}T00:00:00`)
+  const sekByOrg: Record<string, number> = {}
+  for (const r of costRows ?? []) {
+    sekByOrg[r.org_id] = (sekByOrg[r.org_id] ?? 0) + Number(r.cost_sek ?? 0)
+  }
+  const aiAtRisk = orgs
+    .filter((o: any) => o.is_active)
+    .map((o: any) => {
+      const usedSek    = Math.round((sekByOrg[o.id] ?? 0) * 100) / 100
+      const ceilingSek = getMonthlyCeilingSek(String(o.plan ?? 'trial'))
+      const pct        = ceilingSek > 0 ? usedSek / ceilingSek : 0
+      return { id: o.id, name: o.name, plan: o.plan, used_sek: usedSek, ceiling_sek: ceilingSek, percent: Math.round(pct * 100) }
+    })
+    .filter(o => o.percent >= 70)
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, 20)
+
   // Cron status — look up sync_log for most recent by provider, plus check for
   // health-check / other cron-specific tables. For MVP just show expected schedules
   // + a "last run from sync_log" where applicable.
@@ -159,5 +183,6 @@ export async function GET(req: NextRequest) {
     recent_setup_requests: recentSetupRequests,
     critical_alerts:      criticalAlerts,
     cron_status:          cronStatus,
+    ai_at_risk:           aiAtRisk,
   })
 }
