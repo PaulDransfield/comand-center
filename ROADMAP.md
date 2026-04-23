@@ -1,8 +1,21 @@
 # ROADMAP.md — CommandCenter
-> Version 8.2 | Updated: 2026-04-20 | Session 7 ✅ · Session 8 ✅ · Session 9 ✅ · Session 10 🔄 (AI differentiation)
-> Active focus: **docs/AI-ROADMAP.md** (Feature 1 + 4 shipped; Feature 2/3 next)
-> UX redesign queued: docs/ux-redesign-spec.md
+> Version 8.3 | Updated: 2026-04-23 | Session 12 ✅ (PK hardening + AI layer upgrade + Performance page)
+> Active focus: mobile deployment (Capacitor + Apple/Google enrolment — see session 12 notes)
+> UX redesign: phase 10 shipped (Performance page replaces Cashflow)
 > Read alongside CLAUDE.md and FIXES.md
+
+---
+
+## Session 12 — 2026-04-23 shipped
+
+- **New `/financials/performance` page** replacing the dead `/cashflow` page. Unified Revenue / Food / Labour / Overheads / Net-margin view with Week/Month/Quarter/YTD granularity, period picker, compare dropdown, waterfall + donut + trend sparklines + template-driven "What's tunable" attention panel. No new endpoints — reads existing `/api/tracker` + `/api/overheads/line-items` + `/api/metrics/daily`.
+- **AI layer upgrade** — `lib/ai/rules.ts` centralises domain rules across 9 surfaces; tool-use replaces regex-JSON on weekly-manager, budgets/generate, budgets/analyse, cost-intelligence; prompt caching on /api/ask (~80% input-token saving); `ai_forecast_outcomes` writes added to budget_coach; new `lib/ai/contextBuilder.ts`.
+- **PK hardening** — `include_drafts=1`, timezone-tagged timestamps, sync-cursor plumbing (M024 pending), scheduled-break correctness, COGS + staff_uid + sale_center + staff employments captured.
+- **Sync engine status reset** — every successful sync now resets `status='connected'` (fixes the stuck-in-error footgun, M023 applied).
+- **Email infra** — comandcenter.se Gmail Workspace fully live, 11 aliases, SPF/DKIM/DMARC all PASS.
+- **Admin hardening** — 4 routes locked down (SEC-2026-04-22), customer-list cache-bust, new /admin/diagnose-pk UI.
+
+See CLAUDE.md header + FIXES.md §0g/0h/0i/0j for detail.
 
 ---
 

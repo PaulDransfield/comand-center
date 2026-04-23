@@ -9,10 +9,11 @@
 >   • Email: Gmail Workspace on `comandcenter.se` — paul@ mailbox + 11 aliases, SPF/DKIM/DMARC all PASS
 >
 > Key additions (2026-04-23, session 12):
+>   • New page: `/financials/performance` — unified Revenue / Food / Labour / Overheads / Net-margin view with Week/Month/Quarter/YTD granularity, period picker, compare dropdown, waterfall + donut + trend sparklines + "What's tunable" attention panel. Replaced the dead `/cashflow` route entirely.
 >   • AI layer upgrade: `lib/ai/rules.ts` (shared benchmarks / scheduling-asymmetry / voice / forecast-anchor), tool-use replaces regex-JSON on 4 agents, prompt caching on /api/ask, `lib/ai/outcomes.ts` + budget_coach feeds the accuracy loop, `lib/ai/contextBuilder.ts` consolidates /api/ask enrichment
 >   • PK hardening: `include_drafts=1` (scheduling AI no longer silently empty), timezone-tagged timestamps (endOfDay always emits `Z`), sync cursors (M024 pending), `work_time` net-of-breaks, COGS + staff_uid + sale_center + staff employments captured
 >   • Sync engine: resets `status='connected'` on every successful sync (fixes FIXES §0i), typed `PersonalkollenAuthError` → `needs_reauth` + dedup-email (M022)
->   • UX: sticky sidebar, action-pill on scheduling AI, cashflow auto-derives starting balance from prior-year P&L, "why is AI advice missing" explanations
+>   • UX: sticky sidebar, action-pill on scheduling AI, "why is AI advice missing" explanations
 >   • Admin: 4 routes locked down (SEC-2026-04-22, FIXES §0g), customer-list cache-bust (§0h), new /admin/diagnose-pk UI
 >
 > Key architecture additions (2026-04-21 → 22):
