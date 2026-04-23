@@ -885,8 +885,11 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
   const W = 700, H = 240
   const padX = 40, padY = 30
   const innerW = W - padX - 20, innerH = H - padY - 30
+  const yBase  = padY + innerH            // baseline (value = 0)
   const xFor  = (i: number) => padX + (innerW / 5) * (i + 0.5)
-  const yFor  = (v: number) => padY + innerH - (v / maxVal) * innerH
+  // Clamp y into the chart area so bars can't overflow the x-axis when a
+  // cumulative value goes negative (e.g. overheads push afterOh < 0).
+  const yFor  = (v: number) => Math.max(padY, Math.min(yBase, padY + innerH - (v / maxVal) * innerH))
   const barW  = (innerW / 5) * 0.6
 
   // Stepping heights.
@@ -988,7 +991,13 @@ function DonutCard({ data }: { data: PeriodData }) {
     { label: 'Food cost', value: data.food_cost,  opacity: 1    },
     { label: 'Overheads', value: data.overheads,  opacity: 0.45 },
   ].filter(s => s.value > 0)
-  const R = 62, r = 38
+  // SVG stroke straddles the path radius, so the donut actually extends
+  // from (R - strokeWidth/2) to (R + strokeWidth/2). With R=55 and
+  // strokeWidth=20, outer edge is at radius 65 from centre. Centring at
+  // (75,75) inside a 150×150 viewBox gives 10 px of safe padding on all
+  // sides — no clipping, regardless of renderer anti-aliasing.
+  const R = 55, r = 35
+  const strokeW = R - r
   const circumference = 2 * Math.PI * R
   let offset = 0
   const arcs = slices.map(s => {
@@ -1008,18 +1017,18 @@ function DonutCard({ data }: { data: PeriodData }) {
         </span>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '6px 0' }}>
-        <svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Cost breakdown donut">
-          <circle cx="70" cy="70" r={R} fill="none" stroke={UX.borderSoft} strokeWidth={R - r} />
+        <svg viewBox="0 0 150 150" width="150" height="150" role="img" aria-label="Cost breakdown donut" style={{ flexShrink: 0 }}>
+          <circle cx="75" cy="75" r={R} fill="none" stroke={UX.borderSoft} strokeWidth={strokeW} />
           {arcs.map((a, i) => (
-            <circle key={i} cx="70" cy="70" r={R} fill="none"
+            <circle key={i} cx="75" cy="75" r={R} fill="none"
               stroke={UX.burnt} strokeOpacity={a.opacity}
-              strokeWidth={R - r}
+              strokeWidth={strokeW}
               strokeDasharray={a.dashArray}
               strokeDashoffset={a.dashOffset}
-              transform="rotate(-90 70 70)" />
+              transform="rotate(-90 75 75)" />
           ))}
-          <text x="70" y="66" textAnchor="middle" fontSize="16" fontWeight="500" fill={UX.ink1}>{fmtShortKr(total)}</text>
-          <text x="70" y="80" textAnchor="middle" fontSize="10" fill={UX.ink4}>total cost</text>
+          <text x="75" y="71" textAnchor="middle" fontSize="16" fontWeight="500" fill={UX.ink1}>{fmtShortKr(total)}</text>
+          <text x="75" y="86" textAnchor="middle" fontSize="10" fill={UX.ink4}>total cost</text>
         </svg>
         <div style={{ flex: 1, minWidth: 0 }}>
           {slices.map(s => (
