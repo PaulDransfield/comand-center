@@ -116,16 +116,37 @@ export async function getWorkplaces(token: string) {
 // ── Staff ─────────────────────────────────────────────────────────────────────
 // Response: { id, url, first_name, last_name, email, group_name, workplace, confirmed }
 export async function getStaff(token: string) {
-  const staff = await fetchAll('/staffs/', token)
-  return staff.map((s: any) => ({
-    id:            s.id,
-    url:           s.url,
-    name:          `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
-    email:         s.email ?? null,
-    group:         s.group_name ?? null,
-    workplace_url: s.workplace ?? null,
-    confirmed:     s.confirmed ?? false,
-  }))
+  // with_employments=true surfaces salary_type, hourly_salary, monthly_salary,
+  // service_grade and fixed_cost_per_day. We need these to predict staff cost
+  // for shifts where PK hasn't computed one yet, and to let the budget AI
+  // separate fixed-salary employees from hourly staff (very different cost
+  // behaviour when forecasting).
+  const staff = await fetchAll('/staffs/?with_employments=true', token)
+  return staff.map((s: any) => {
+    // Pick the employment currently in effect (end is null or in the future).
+    const today = new Date().toISOString().slice(0, 10)
+    const activeEmp = (s.employments ?? []).find((e: any) =>
+      (!e.end || e.end >= today) && (!e.start || e.start <= today),
+    ) ?? null
+    return {
+      id:            s.id,
+      url:           s.url,
+      name:          `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim(),
+      email:         s.email ?? null,
+      group:         s.group_name ?? null,
+      workplace_url: s.workplace ?? null,
+      confirmed:     s.confirmed ?? false,
+      // Employment surface for cost prediction. Null on guest/unconfirmed
+      // staff or those with no current employment on file. employments
+      // (the full history) kept so callers can reason about date ranges.
+      salary_type:        activeEmp?.salary_type ?? null,
+      hourly_salary:      activeEmp?.hourly_salary ? parseFloat(activeEmp.hourly_salary) : null,
+      monthly_salary:     activeEmp?.monthly_salary ? parseFloat(activeEmp.monthly_salary) : null,
+      fixed_cost_per_day: activeEmp?.fixed_cost_per_day ? parseFloat(activeEmp.fixed_cost_per_day) : null,
+      service_grade:      activeEmp?.service_grade ? parseFloat(activeEmp.service_grade) : null,
+      employments:        s.employments ?? [],
+    }
+  })
 }
 
 // ── Logged times (actual worked hours) ───────────────────────────────────────
@@ -331,6 +352,11 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
       // without needing a re-sync. PK returns { uid, name } or null.
       staff_uid:        s.staff?.uid ?? null,
       staff_name_on_sale: s.staff?.name ?? null,
+      // Sale center = PK's "Kategorier" grouping (e.g. Bar, Kitchen,
+      // Lunch). Enables revenue splits by area beyond the VAT-based
+      // food/drink split.
+      sale_center_uid:   s.sale_center?.uid ?? null,
+      sale_center_name:  s.sale_center?.name ?? null,
     }
   })
 }
