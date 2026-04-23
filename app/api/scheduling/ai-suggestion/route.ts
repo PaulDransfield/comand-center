@@ -96,7 +96,9 @@ export async function GET(req: NextRequest) {
         scheduledRows = periods.map((p: any) => {
           const startMs = p.start ? new Date(p.start).getTime() : 0
           const endMs   = p.end   ? new Date(p.end).getTime()   : 0
-          const hours   = startMs && endMs ? Math.max(0, (endMs - startMs) / 3_600_000) : 0
+          const grossHrs = startMs && endMs ? Math.max(0, (endMs - startMs) / 3_600_000) : 0
+          const breakHrs = (p.breaks_duration ?? 0) / 3600
+          const hours    = Math.max(0, grossHrs - breakHrs)
           return {
             shift_date:        p.date ?? (p.start ? p.start.slice(0, 10) : null),
             staff_name:        p.staff_name,

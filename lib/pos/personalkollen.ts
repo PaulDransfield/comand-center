@@ -194,6 +194,17 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
         // duration in seconds × estimated rate — we store just the flag for now
         return s + (ob.duration ? ob.duration / 3600 : 0)
       }, 0)
+      // Sum scheduled break time (seconds) so callers can compute net
+      // working hours. PK's start/end spans the full shift including
+      // breaks — without subtracting breaks the "scheduled hours" figure
+      // is inflated by typically 15–30 min per shift, which drifts the
+      // scheduling AI's "cut X hours" recommendation.
+      const breakSeconds = (p.breaks ?? []).reduce((sum: number, br: any) => {
+        if (!br.start || !br.stop) return sum
+        const s = new Date(br.start).getTime()
+        const e = new Date(br.stop).getTime()
+        return sum + Math.max(0, (e - s) / 1000)
+      }, 0)
       return {
         url:                p.url,
         staff_url:          p.staff,
@@ -211,6 +222,9 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
         // differently from published shifts if needed (e.g. badge them,
         // or exclude from "actual hours planned" totals).
         is_published:       p.is_published ?? true,
+        // Break seconds — subtract from (end-start) to get net working
+        // hours that match PK's logged-time `work_time` semantics.
+        breaks_duration:    Math.round(breakSeconds),
       }
     })
 }
@@ -257,6 +271,12 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
     let drinkNet     = 0
     let takeawayNet  = 0
     let dineInNet    = 0
+    // COGS: sum of (qty × product.purchase_price) across line items that
+    // have a purchase_price set. Rows without a cost stay out of both
+    // numerator and denominator, so the resulting food-cost % is honest
+    // about data coverage (surface it alongside the gross).
+    let cogsNet      = 0
+    let cogsCoverage = 0   // sum of line gross where purchase_price is known
     for (const i of (s.items ?? [])) {
       const qty    = parseFloat(i.amount          ?? 0)
       const price  = parseFloat(i.price_per_unit  ?? 0)
@@ -267,6 +287,11 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
       else if (Math.abs(vat - 0.06) < 0.001) { foodNet  += line; takeawayNet += line }
       else if (Math.abs(vat - 0.25) < 0.001) { drinkNet += line; dineInNet   += line }
       else                                   { drinkNet += line; dineInNet   += line }  // unknowns default to drink / dine-in
+      const purchasePrice = parseFloat(i.product?.purchase_price ?? NaN)
+      if (Number.isFinite(purchasePrice) && purchasePrice > 0) {
+        cogsNet      += qty * purchasePrice
+        cogsCoverage += line
+      }
     }
 
     const gross = (s.payments ?? []).reduce((sum: number, p: any) => sum + parseFloat(p.amount ?? 0), 0)
@@ -296,6 +321,16 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
       drink_revenue:    Math.round(drinkNet * 100) / 100,
       takeaway_revenue: Math.round(takeawayNet * 100) / 100,
       dine_in_revenue:  Math.round(dineInNet * 100) / 100,
+      // COGS captured now so future per-product margin / food-cost-%
+      // features have the historical data. cogs_coverage is the portion
+      // of this sale's net revenue where we actually have a purchase
+      // price — if it's 0 the product master is missing costs entirely.
+      cogs_amount:      Math.round(cogsNet * 100) / 100,
+      cogs_coverage:    Math.round(cogsCoverage * 100) / 100,
+      // Server / sale operator — enables per-staff revenue tracking later
+      // without needing a re-sync. PK returns { uid, name } or null.
+      staff_uid:        s.staff?.uid ?? null,
+      staff_name_on_sale: s.staff?.name ?? null,
     }
   })
 }
@@ -311,8 +346,11 @@ export async function getStaffSummary(token: string, fromDate: string, toDate: s
   const totalLoggedHours    = logged.reduce((s, t) => s + (t.hours ?? 0), 0)
   const totalScheduledHours = scheduled.reduce((s, p) => {
     if (!p.start || !p.end) return s
-    const hrs = (new Date(p.end).getTime() - new Date(p.start).getTime()) / 3600000
-    return s + Math.max(0, hrs)
+    // Gross shift duration minus scheduled breaks. Matches logged-times'
+    // work_time semantics so planned-vs-actual comparisons are honest.
+    const grossHrs = (new Date(p.end).getTime() - new Date(p.start).getTime()) / 3600000
+    const breakHrs = (p.breaks_duration ?? 0) / 3600
+    return s + Math.max(0, grossHrs - breakHrs)
   }, 0)
   const totalStaffCost      = logged.reduce((s, t) => s + (t.cost ?? 0), 0)
   const scheduledCost       = scheduled.reduce((s, p) => s + (p.estimated_cost ?? 0), 0)
