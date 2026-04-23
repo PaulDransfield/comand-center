@@ -52,6 +52,8 @@ export default function UpgradePage() {
   const upgradeSuccess = searchParams.get('upgrade') === 'success'
   const cancelled      = searchParams.get('cancelled') === '1'
   const focusAi        = searchParams.get('focus') === 'ai'
+  const required       = searchParams.get('required') === '1'
+  const pastDue        = searchParams.get('past_due') === '1'
 
   const boosterRef = useRef<HTMLDivElement>(null)
   const [flashBooster, setFlashBooster] = useState(false)
@@ -85,7 +87,7 @@ export default function UpgradePage() {
 
   async function handleUpgrade(plan: string) {
     if (plan === 'enterprise') {
-      window.location.href = 'mailto:sales@commandcenter.se?subject=Enterprise+Enquiry'
+      window.location.href = 'mailto:hello@comandcenter.se?subject=Enterprise+Enquiry'
       return
     }
 
@@ -153,6 +155,16 @@ export default function UpgradePage() {
       )}
       {cancelled && (
         <div style={S.bannerInfo}>No changes were made. You can upgrade any time.</div>
+      )}
+      {required && !upgradeSuccess && (
+        <div style={{ ...S.bannerInfo, background: '#eef2ff', borderColor: '#c7d2fe', color: '#3730a3' }}>
+          Welcome to CommandCenter — choose a plan below to unlock the dashboard, integrations and AI. We recommend the founding tier (10 spots · 995 kr/mo locked for 24 months).
+        </div>
+      )}
+      {pastDue && (
+        <div style={{ ...S.bannerInfo, background: '#fef2f2', borderColor: '#fecaca', color: '#991b1b' }}>
+          Your last payment didn't go through. Update billing below to restore access.
+        </div>
       )}
 
       {/* Trial expiry banner */}

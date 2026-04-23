@@ -11,6 +11,7 @@ import Sidebar from './ui/SidebarV2'
 import ConsentBanner from './ConsentBanner'
 import MobileNav from './MobileNav'
 import BackgroundSync from './BackgroundSync'
+import PlanGate from './PlanGate'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -55,6 +56,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Fires /api/sync/today on mount (throttled server-side to 10 min/integration) */}
       <BackgroundSync />
+
+      {/* Subscription gate — redirects trial/past_due orgs to /upgrade */}
+      <PlanGate />
 
       {/* Mobile bottom nav */}
       <div className="cc-mobile-nav">
