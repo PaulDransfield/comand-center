@@ -20,6 +20,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
+import AskAI from '@/components/AskAI'
 import TopBar from '@/components/ui/TopBar'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
@@ -580,8 +581,45 @@ export default function PerformancePage() {
           </div>
         )}
       </div>
+
+      {/* Floating Ask AI — plain-text summary of the current view so Claude
+          can answer questions like "why is margin lower than last month?"
+          without needing to re-query the DB. Mirrors the pattern on every
+          other AppShell page (dashboard, revenue, overheads, etc). */}
+      <AskAI
+        page="performance"
+        context={buildAskContext(period, currentData, comparePeriod, compareData, selectedBiz?.name)}
+      />
     </AppShell>
   )
+}
+
+// Plain-text context passed to /api/ask. Keep under a few hundred chars —
+// the AI already has system-prompt rules + benchmarks baked in; this only
+// needs to carry what's on screen RIGHT NOW.
+function buildAskContext(
+  period:       PeriodKey,
+  data:         PeriodData | null,
+  comparePeriod: PeriodKey | null,
+  compare:      PeriodData | null,
+  bizName?:     string | null,
+): string {
+  if (!data) return `Performance page for ${bizName ?? '—'}. No data for ${periodLabel(period)} yet.`
+  const lines: string[] = []
+  lines.push(`Performance page · ${bizName ?? 'business'} · ${periodLabel(period)}`)
+  lines.push(`Revenue ${fmtKr(data.revenue)}, food cost ${data.has_food ? fmtKr(data.food_cost) : '—'}, labour ${fmtKr(data.staff_cost)}, overheads ${data.has_overheads ? fmtKr(data.overheads) : '—'}, net margin ${fmtKr(data.net_margin)}.`)
+  lines.push(`Ratios: margin ${fmtPct(data.margin_pct)}, labour ${fmtPct(data.staff_pct)}${data.has_food ? `, food ${fmtPct(data.food_pct)}` : ''}${data.has_overheads ? `, overheads ${fmtPct(data.overheads_pct)}` : ''}.`)
+  if (data.has_overheads) {
+    const os = data.overhead_split
+    lines.push(`Overhead split: rent ${fmtKr(os.rent)}, utilities ${fmtKr(os.utilities)}, other ${fmtKr(os.other)}.`)
+  }
+  if (comparePeriod && compare) {
+    lines.push(`Compare vs ${periodLabel(comparePeriod)}: revenue ${fmtKr(compare.revenue)} (Δ ${fmtKr(data.revenue - compare.revenue)}), margin ${fmtPct(compare.margin_pct)} (Δ ${((data.margin_pct ?? 0) - (compare.margin_pct ?? 0)).toFixed(1)}pp).`)
+  }
+  if (period.granularity === 'week' && !data.has_food) {
+    lines.push('Note: food cost and overheads are tracked monthly in Fortnox, so they show as — at Week granularity.')
+  }
+  return lines.join('\n')
 }
 
 // ─── Hero headline + context (template-driven) ────────────────────────────
