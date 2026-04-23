@@ -113,6 +113,21 @@ function classifyLabel(label: string): { category: string; subcategory: string |
   return { category: 'other_cost', subcategory: null }
 }
 
+// Swedish VAT rates are a reliable signal when a Fortnox label says e.g.
+// "Försäljning varor 25% moms" / "Försäljning varor 12% moms":
+//   25%  — alcohol, non-food drinks (standard rate)
+//   12%  — food served dine-in or takeaway (restaurant-reduced rate)
+//    6%  — reduced rate (books, transport — not restaurant)
+// Applied AFTER classifyByAccount / classifyLabel so it can refine a
+// generic revenue label into the specific food vs alcohol subcategory.
+function classifyByVat(label: string): { subcategory: string | null } | null {
+  const key = label.trim().toLowerCase()
+  if (/\b25\s*%?\s*moms\b/.test(key))  return { subcategory: 'alcohol' }
+  if (/\b12\s*%?\s*moms\b/.test(key))  return { subcategory: 'food' }
+  if (/\b6\s*%?\s*moms\b/.test(key))   return { subcategory: 'food' }
+  return null
+}
+
 // Swedish BAS chart-of-accounts ranges. The account number is the ONLY
 // authoritative signal for category on a Fortnox P&L — label alone is
 // ambiguous (e.g. "Inköp livsmedel" and "Varuinköp" both mean food cost
@@ -516,9 +531,19 @@ VALIDATION.  Before submitting:
       const validAI      = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
       const category     = accountBased?.category ?? (validAI ? fromAI : labelBased.category)
 
-      // Subcategory: prefer the label lookup (more granular — e.g. 'rent',
-      // 'software') over the broad account-based subcategory.
-      const subcategory  = labelBased.subcategory ?? accountBased?.subcategory ?? null
+      // Subcategory priority for revenue + food_cost:
+      //   VAT rate in label (e.g. "25% moms" = alcohol, "12% moms" = food)
+      //   → specific label match (försäljning alkohol, dryckesinköp)
+      //   → account-based generic (null for revenue, 'goods' for food_cost).
+      // Only overrides when the VAT match actually discriminates — 25% on
+      // a cost line isn't meaningful, so we restrict VAT-based override to
+      // revenue + food_cost categories.
+      const vatBased = (category === 'revenue' || category === 'food_cost')
+        ? classifyByVat(label) : null
+      const subcategory = vatBased?.subcategory
+        ?? labelBased.subcategory
+        ?? accountBased?.subcategory
+        ?? null
 
       return { label_sv: label, category, subcategory, amount, fortnox_account: fortnoxAccount }
     }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))

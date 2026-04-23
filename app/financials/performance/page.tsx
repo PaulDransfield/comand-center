@@ -43,6 +43,13 @@ interface PeriodKey {
 
 interface PeriodData {
   revenue:      number
+  // Revenue split derived from tracker_line_items subcategory tags — only
+  // present when the Fortnox labels differentiate by VAT rate (25% =
+  // alcohol, 12% = food). Totals may not sum exactly to `revenue` because
+  // line items can miss rows; treat as "of the portion we could split".
+  revenue_food:    number
+  revenue_alcohol: number
+  has_revenue_split: boolean
   food_cost:    number      // total cost of goods (food + alcohol combined)
   alcohol_cost: number      // subset of food_cost tagged as beverages/alcohol
   food_only_cost: number    // food_cost minus alcohol_cost
@@ -229,18 +236,28 @@ function aggregateMonths(
     if (Number(r.food_cost  ?? 0) > 0) anyFood      = true
     if (Number(r.other_cost ?? 0) > 0) anyOverheads = true
   }
-  // Alcohol split — tracker_data.food_cost is a single total for cost of
-  // goods, but tracker_line_items carries subcategory info (beverages /
-  // alcohol) from the extractor's SV_SUB map. Sum those and subtract from
-  // food_cost to isolate the food-only figure.
+  // Alcohol split (COST side) — tracker_data.food_cost is a single total
+  // for cost of goods, but tracker_line_items carries subcategory info
+  // (beverages / alcohol) from the extractor's SV_SUB map. Sum those and
+  // subtract from food_cost to isolate the food-only figure.
   let alcoholCost = 0
+  // Revenue split — lines like "Försäljning varor 25% moms" (account
+  // 3051) carry subcategory='alcohol' via the VAT classifier; 12%-moms
+  // lines carry subcategory='food'. Authoritative revenue still comes
+  // from tracker_data (rollup); the split is derived here for display.
+  let revenueFood = 0, revenueAlcohol = 0
   for (const li of lineItems) {
     if (!includeMonths(li.period_year, li.period_month)) continue
-    if (li.category !== 'food_cost') continue
     const sub = (li.subcategory ?? '').toLowerCase()
     const label = (li.label_sv ?? '').toLowerCase()
-    if (sub === 'beverages' || sub === 'alcohol' || ALCOHOL_LABEL_RE.test(label)) {
-      alcoholCost += Number(li.amount ?? 0)
+    if (li.category === 'food_cost') {
+      if (sub === 'beverages' || sub === 'alcohol' || ALCOHOL_LABEL_RE.test(label)) {
+        alcoholCost += Number(li.amount ?? 0)
+      }
+    } else if (li.category === 'revenue') {
+      const amt = Number(li.amount ?? 0)
+      if (sub === 'alcohol' || sub === 'beverage' || sub === 'drinks') revenueAlcohol += amt
+      else if (sub === 'food' || sub === 'takeaway')                    revenueFood    += amt
     }
   }
   // Clamp — if line-item alcohol somehow exceeds the rollup food_cost
@@ -248,6 +265,11 @@ function aggregateMonths(
   // can't go negative.
   alcoholCost = Math.min(alcoholCost, food)
   const foodOnly = food - alcoholCost
+  // Revenue split is only meaningful if at least one side has data AND
+  // the sum is within a sensible band of the authoritative revenue
+  // (±15% — anything beyond that suggests incomplete line items).
+  const splitSum = revenueFood + revenueAlcohol
+  const hasRevenueSplit = splitSum > 0 && revenue > 0 && Math.abs(splitSum - revenue) / revenue < 0.15
   // Subcategory split for the donut + breakdown table — only use line items
   // whose Fortnox account is in the 5000-6999 "Övriga externa kostnader"
   // range. Account 4000-4999 is cost-of-goods (food), which we intentionally
@@ -284,6 +306,9 @@ function aggregateMonths(
   const marginPct = revenue > 0 ? (netMargin / revenue) * 100 : null
   return {
     revenue,
+    revenue_food:      revenueFood,
+    revenue_alcohol:   revenueAlcohol,
+    has_revenue_split: hasRevenueSplit,
     food_cost:      food,
     alcohol_cost:   alcoholCost,
     food_only_cost: foodOnly,
@@ -308,14 +333,23 @@ function aggregateMonths(
 // Aggregation for week granularity using daily rows (revenue + staff_cost
 // only — food/overheads are N/A weekly).
 function aggregateDaily(dailyRows: any[]): PeriodData {
-  let revenue = 0, staff = 0
+  let revenue = 0, staff = 0, revFood = 0, revBev = 0
   for (const r of dailyRows) {
     revenue += Number(r.revenue ?? 0)
     staff   += Number(r.staff_cost ?? 0)
+    // daily_metrics writes food_revenue / bev_revenue via the aggregator —
+    // VAT-based PK split (12% = food, 25% = drink). Surface when non-zero.
+    revFood += Number(r.food_revenue ?? 0)
+    revBev  += Number(r.bev_revenue  ?? 0)
   }
+  const splitSum = revFood + revBev
+  const hasSplit = splitSum > 0 && revenue > 0 && Math.abs(splitSum - revenue) / revenue < 0.15
   const net = revenue - staff
   return {
     revenue,
+    revenue_food:      revFood,
+    revenue_alcohol:   revBev,
+    has_revenue_split: hasSplit,
     food_cost:      0,
     alcohol_cost:   0,
     food_only_cost: 0,
@@ -1218,8 +1252,21 @@ function BreakdownTable({ data, compare, compareLabel }: {
   const cFoodKr  = data.has_alcohol ? compare?.food_only_cost : compare?.food_cost
   const rows: any[] = [
     { label: 'Revenue',    kr: data.revenue,    swatch: UX.navy, ccKr: compare?.revenue, compareable: true },
-    { label: 'Food cost',  kr: foodKr,          swatch: UX.burnt, ccKr: cFoodKr, compareable: data.has_food },
   ]
+  // Revenue split (food vs alcohol) — only shown when the data source
+  // actually differentiates, which happens when Fortnox labels carry the
+  // VAT rate (25% = alcohol, 12% = food) or when PK sale data has the
+  // food_revenue/bev_revenue split. Indented under the Revenue row so
+  // it's clearly a sub-breakdown, not a double-counted total.
+  if (data.has_revenue_split) {
+    rows.push(
+      { label: '  · Food revenue',    kr: data.revenue_food,    swatch: 'transparent', ccKr: compare?.revenue_food,    compareable: true, indented: true },
+      { label: '  · Alcohol revenue', kr: data.revenue_alcohol, swatch: 'transparent', ccKr: compare?.revenue_alcohol, compareable: true, indented: true },
+    )
+  }
+  rows.push(
+    { label: 'Food cost',  kr: foodKr, swatch: UX.burnt, ccKr: cFoodKr, compareable: data.has_food },
+  )
   if (data.has_alcohol) {
     rows.push({ label: 'Alcohol', kr: data.alcohol_cost, swatch: UX.burnt, opacity: 0.9, ccKr: compare?.alcohol_cost, compareable: true })
   }
