@@ -14,6 +14,7 @@ import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+import { labourTier, labourTierStyle, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
@@ -143,7 +144,13 @@ export default function StaffPage() {
   const curRev        = srSum?.total_revenue ?? 0
   const labourPct     = curRev > 0 ? (totalCost / curRev) * 100 : 0
   const prevLabPct    = prevTotalRev > 0 && prevTotalCost > 0 ? (prevTotalCost / prevTotalRev) * 100 : null
-  const targetPct     = srSum?.target_pct ?? 40
+  // Shared four-tier labour target with /scheduling. Default 30–35 (target)
+  // / 35–50 (watch) / >50 (over). Uses labourTier() helper.
+  //
+  // TODO: surface in Settings → Business → Labour target range (min/max/watch ceiling)
+  const tierCfg     = DEFAULT_TIER_CONFIG
+  const targetPct   = tierCfg.targetMax   // used for the dashed chart line
+  const targetMinPct = tierCfg.targetMin
 
   // ── Build day grid for chart ────────────────────────────────────────────────
   const maxDayPct = Math.max(...srRows.map((r: any) => r.staff_pct ?? 0), targetPct + 5, 1)
@@ -184,7 +191,15 @@ export default function StaffPage() {
   }
   if (srSum?.worst_day) insights.push({ text: `Highest cost day: ${new Date(srSum.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${fmtPct(srSum.worst_day.pct)}`, type: 'warn' })
   if (srSum?.best_day) insights.push({ text: `Best day: ${new Date(srSum.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${fmtPct(srSum.best_day.pct)}`, type: 'good' })
-  if (labourPct > 0 && labourPct <= targetPct) insights.push({ text: `Labour at ${fmtPct(labourPct)} — under ${targetPct}% target`, type: 'good' })
+  // Labour-tier insights: green "on-target", amber "watch", red "over",
+  // indigo "low" (below target — verify staffing rather than celebrate).
+  if (labourPct > 0) {
+    const t = labourTier(labourPct, tierCfg)
+    if (t === 'on-target') insights.push({ text: `Labour at ${fmtPct(labourPct)} — on target (${tierCfg.targetMin}–${tierCfg.targetMax}%)`, type: 'good' })
+    else if (t === 'low')  insights.push({ text: `Labour at ${fmtPct(labourPct)} — below target. Verify service quality isn't suffering.`, type: 'info' })
+    else if (t === 'watch') insights.push({ text: `Labour at ${fmtPct(labourPct)} — watch (target ${tierCfg.targetMin}–${tierCfg.targetMax}%)`, type: 'warn' })
+    else if (t === 'over')  insights.push({ text: `Labour at ${fmtPct(labourPct)} — significantly over target`, type: 'warn' })
+  }
   const topLate = sorted.filter((s: any) => (s.late_shifts ?? 0) > 0).slice(0, 2)
   topLate.forEach((s: any) => insights.push({ text: `${s.name}: ${s.late_shifts} late shift${s.late_shifts > 1 ? 's' : ''} (avg ${s.avg_late_minutes}min)`, type: 'warn' }))
 
@@ -284,25 +299,29 @@ export default function StaffPage() {
                     {srSum?.days_over_target > 0 && (
                       <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>{srSum.days_over_target} days over target</span>
                     )}
-                    <span style={{ fontSize: 11, color: '#9ca3af' }}>Target: {targetPct}%</span>
+                    <span style={{ fontSize: 11, color: '#9ca3af' }}>Target: {targetMinPct}–{targetPct}%</span>
                   </div>
                 </div>
 
-                {/* Vertical bars — one per day.  Colour tiers (STAFF-FIX § 2):
-                    green (≤ target), amber (target < pct ≤ 70), red (> 70).
-                    Bars > 100 % render the value above the bar so offenders
-                    are self-explanatory without hovering (STAFF-FIX § 3). */}
+                {/* Vertical bars — one per day. Colour uses the shared
+                    four-tier labour helper (labourTier/labourTierStyle) so
+                    Staff and Scheduling stay perfectly aligned. */}
                 <div style={{ display: 'flex', gap: viewMode === 'week' ? 8 : 2, height: 200, alignItems: 'flex-end', position: 'relative', paddingTop: 16 }}>
-                  {/* Target line */}
-                  <div style={{ position: 'absolute', left: 0, right: 0, bottom: `${(targetPct / maxDayPct) * 170}px`, height: 1, borderTop: '2px dashed #fcd34d', zIndex: 1 }} />
+                  {/* Target range band (30–35% by default) */}
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0,
+                    bottom: `${(targetMinPct / maxDayPct) * 170}px`,
+                    height: `${((targetPct - targetMinPct) / maxDayPct) * 170}px`,
+                    background: 'rgba(21,128,61,0.06)',
+                    borderTop: '1px dashed rgba(21,128,61,0.45)',
+                    borderBottom: '1px dashed rgba(21,128,61,0.45)',
+                    zIndex: 0,
+                  }} />
 
                   {chartDays.map((day, i) => {
                     const barH   = day.pct !== null ? Math.max((day.pct / maxDayPct) * 170, 3) : 0
-                    const color  =
-                      day.pct === null       ? '#e5e7eb'
-                      : day.pct <= targetPct ? '#16a34a'     // green
-                      : day.pct <= 70        ? UX.amberInk   // amber
-                      :                        '#dc2626'     // red
+                    const tier   = day.pct === null ? 'no-data' : labourTier(day.pct, tierCfg)
+                    const color  = tier === 'no-data' ? '#e5e7eb' : labourTierStyle(tier).ink
                     const isHover = tooltip?.dateStr === day.dateStr
 
                     // X-axis label visibility — week view labels every day;
@@ -412,30 +431,35 @@ export default function StaffPage() {
                         <div style={{ fontSize: 10, color: UX.ink4, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Only day with data</div>
                         <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
                           {new Date(only.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                          <span style={{ marginLeft: 8, color: only.staff_pct > targetPct ? UX.redInk : UX.greenInk }}>
+                          <span style={{ marginLeft: 8, color: labourTierStyle(labourTier(only.staff_pct, tierCfg)).ink }}>
                             {fmtPct(only.staff_pct)}
                           </span>
                         </div>
                       </div>
                     )
                   }
+                  // Callouts use the tier colour of each day's %, not a hardcoded
+                  // green/red. A 'best day' at 28% still renders indigo (below
+                  // target) to flag that low % deserves a service-quality check.
+                  const bestStyle  = srSum?.best_day  ? labourTierStyle(labourTier(srSum.best_day.pct,  tierCfg)) : null
+                  const worstStyle = srSum?.worst_day ? labourTierStyle(labourTier(srSum.worst_day.pct, tierCfg)) : null
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-                      {srSum?.best_day && (
-                        <div style={{ padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                          <div style={{ fontSize: 10, color: '#15803d', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Best day</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                      {srSum?.best_day && bestStyle && (
+                        <div style={{ padding: '8px 12px', background: bestStyle.bg, borderRadius: 8, border: `1px solid ${bestStyle.ink}20` }}>
+                          <div style={{ fontSize: 10, color: bestStyle.ink, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Lowest labour %</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
                             {new Date(srSum.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                            <span style={{ marginLeft: 8, color: '#15803d' }}>{fmtPct(srSum.best_day.pct)}</span>
+                            <span style={{ marginLeft: 8, color: bestStyle.ink }}>{fmtPct(srSum.best_day.pct)}</span>
                           </div>
                         </div>
                       )}
-                      {srSum?.worst_day && (
-                        <div style={{ padding: '8px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
-                          <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Highest cost day</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
+                      {srSum?.worst_day && worstStyle && (
+                        <div style={{ padding: '8px 12px', background: worstStyle.bg, borderRadius: 8, border: `1px solid ${worstStyle.ink}20` }}>
+                          <div style={{ fontSize: 10, color: worstStyle.ink, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Highest labour %</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
                             {new Date(srSum.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                            <span style={{ marginLeft: 8, color: '#dc2626' }}>{fmtPct(srSum.worst_day.pct)}</span>
+                            <span style={{ marginLeft: 8, color: worstStyle.ink }}>{fmtPct(srSum.worst_day.pct)}</span>
                           </div>
                         </div>
                       )}

@@ -10,6 +10,7 @@ import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct, fmtHrs as fmtH } from '@/lib/format'
+import AiSchedulePanel from '@/components/scheduling/AiSchedulePanel'
 
 // Local-date helpers matching departments/dashboard pages
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -165,6 +166,95 @@ export default function SchedulingPage() {
       .finally(() => { if (!cancelled) setAiLoading(false) })
     return () => { cancelled = true }
   }, [selectedBiz, aiRange])
+
+  // ─── Accepted rows (persisted) ─────────────────────────────────────────
+  // Map of 'YYYY-MM-DD' → { batch_id, ai_hours, ... }. Empty when nothing
+  // has been accepted. Drives "Accepted ✓" state, hero recomputation, and
+  // the "Undo all" window.
+  const [acceptances, setAcceptances] = useState<Record<string, any>>({})
+  const [lastBatch,   setLastBatch]   = useState<{ batch_id: string; at: number } | null>(null)
+
+  async function loadAcceptances() {
+    if (!selectedBiz) return
+    try {
+      const r = await fetch(`/api/scheduling/acceptances?business_id=${selectedBiz}&from=${aiBounds.from}&to=${aiBounds.to}`, { cache: 'no-store' })
+      const j = await r.json()
+      if (r.ok) {
+        const map: Record<string, any> = {}
+        for (const row of (j.rows ?? [])) map[row.date] = row
+        setAcceptances(map)
+      }
+    } catch { /* non-fatal */ }
+  }
+  useEffect(() => { loadAcceptances() }, [selectedBiz, aiRange, aiBounds.from, aiBounds.to])
+
+  async function acceptDay(row: { date: string; ai_hours: number; ai_cost_kr: number; current_hours: number; current_cost_kr: number; est_revenue_kr: number | null }) {
+    // Optimistic local update so the UI feels instant.
+    setAcceptances(prev => ({ ...prev, [row.date]: { ...row, decided_at: new Date().toISOString() } }))
+    try {
+      const r = await fetch('/api/scheduling/accept-day', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: selectedBiz, ...row }),
+      })
+      if (!r.ok) throw new Error((await r.json()).error ?? 'accept failed')
+    } catch (e: any) {
+      // Revert on error.
+      setAcceptances(prev => { const next = { ...prev }; delete next[row.date]; return next })
+      alert(`Couldn't save: ${e.message}`)
+    }
+  }
+
+  async function undoDay(date: string) {
+    setAcceptances(prev => { const next = { ...prev }; delete next[date]; return next })
+    try {
+      await fetch(`/api/scheduling/accept-day?business_id=${selectedBiz}&date=${date}`, { method: 'DELETE' })
+    } catch { /* UI already reverted */ }
+  }
+
+  async function acceptAll(rows: Array<any>) {
+    const payload = rows.map(r => ({
+      date:            r.date,
+      ai_hours:        r.ai_hours,
+      ai_cost_kr:      r.ai_cost_kr,
+      current_hours:   r.current_hours,
+      current_cost_kr: r.current_cost_kr,
+      est_revenue_kr:  r.est_revenue_kr,
+    }))
+    // Optimistic: flip them all locally.
+    const optimistic: Record<string, any> = { ...acceptances }
+    for (const r of rows) optimistic[r.date] = { ...r, decided_at: new Date().toISOString() }
+    setAcceptances(optimistic)
+
+    try {
+      const r = await fetch('/api/scheduling/accept-all', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: selectedBiz, rows: payload }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error ?? 'accept-all failed')
+      setLastBatch({ batch_id: j.batch_id, at: Date.now() })
+      // Clear the undo window after 10 s.
+      setTimeout(() => setLastBatch(curr => (curr && Date.now() - curr.at >= 10_000) ? null : curr), 10_500)
+    } catch (e: any) {
+      // Revert everything from this batch locally.
+      setAcceptances(acceptances)
+      alert(`Couldn't apply all: ${e.message}`)
+    }
+  }
+
+  async function undoBatch() {
+    if (!lastBatch) return
+    const batchId = lastBatch.batch_id
+    setLastBatch(null)
+    // Reload from server after undo; cheaper than replaying local diffs.
+    try {
+      await fetch(`/api/scheduling/accept-all?business_id=${selectedBiz}&batch_id=${batchId}`, { method: 'DELETE' })
+    } finally {
+      loadAcceptances()
+    }
+  }
 
   async function openDayDrill(weekday: number) {
     setDrillDay(weekday)
@@ -380,12 +470,18 @@ export default function SchedulingPage() {
                 SCHEDULING-FIX § 3.
             ═══════════════════════════════════════════════════════ */}
             <AiRangePicker value={aiRange} onChange={setAiRange} label={aiBounds.label} />
-            <AiSuggestedSchedule
+            <AiSchedulePanel
               loading={aiLoading}
               error={aiError}
               data={aiSched}
               recommendation={recommendation}
               rangeLabel={aiBounds.label}
+              acceptances={acceptances}
+              lastBatch={lastBatch}
+              onAcceptDay={acceptDay}
+              onUndoDay={undoDay}
+              onAcceptAll={acceptAll}
+              onUndoBatch={undoBatch}
               fmt={fmtKr}
               fmtHrs={fmtH}
             />
@@ -574,354 +670,6 @@ function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v
   )
 }
 
-function AiSuggestedSchedule({ loading, error, data, recommendation, rangeLabel, fmt, fmtHrs }: any) {
-  const deltaColor = (d: number) => d < -0.5 ? '#15803d' : '#6b7280'
-  const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16, scrollMarginTop: 16 }
-  const [obsOpen, setObsOpen] = useState(false)
-
-  if (loading) {
-    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading AI suggestion for {rangeLabel ? rangeLabel.toLowerCase() : 'next week'}…</div></div>
-  }
-  if (error) {
-    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#dc2626', fontSize: 13 }}>AI suggestion: {error}</div></div>
-  }
-  if (!data) return null
-
-  const { summary, suggested, current, week_from, week_to, pk_shifts_found, pk_fetch_error, diag } = data
-  const shortRange = `${week_from.slice(8)}–${week_to.slice(8)} ${new Date(week_from).toLocaleDateString('en-GB', { month: 'short' })}`
-
-  // If PK returned zero shifts for the target week, show the owner a clear
-  // message instead of an empty table. Three distinct reasons:
-  //   - pk_fetch_error: token or endpoint broke → actionable (reconnect)
-  //   - integration_status != 'connected': stuck flag → actionable (fix in admin)
-  //   - neither of the above: PK is fine, schedule just hasn't been
-  //     published for next week yet → not actionable, wait/publish in PK
-  if (pk_shifts_found === 0) {
-    let reason: string
-    let fix: string | null = null
-    if (pk_fetch_error) {
-      reason = `Couldn't reach Personalkollen (${pk_fetch_error})`
-      fix    = 'Check the integration — the API token may have been revoked or rotated.'
-    } else if (diag?.integration_status && diag.integration_status !== 'connected') {
-      reason = `PK integration status: ${diag.integration_status}`
-      fix    = 'Open Admin → Customers → your business and check the integration row.'
-    } else {
-      reason = 'Personalkollen has no published schedule for this week yet.'
-      fix    = 'Publish next week\'s schedule in PK and reload this page — AI advice will appear automatically.'
-    }
-    return (
-      <div id="ai-schedule" style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>AI-suggested schedule</span>
-          <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600 }}>AI</span>
-        </div>
-        <div style={{ fontSize: 13, color: '#374151', background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 14px' }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>No AI advice available — {reason}</div>
-          {fix && <div style={{ fontSize: 12, color: '#6b7280' }}>{fix}</div>}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div id="ai-schedule" style={cardStyle}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12, flexWrap: 'wrap' as const }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>AI-suggested schedule</span>
-            <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600, letterSpacing: '.03em' }}>AI</span>
-            {/* Method help (FIX-PROMPT § Phase 8 Q4) — moves the
-                "Method." paragraph out of the footer and into a hover
-                popover attached to a ? icon next to the title. */}
-            {summary.rationale && (
-              <span
-                title={summary.rationale}
-                aria-label="How the suggestion is built"
-                style={{
-                  display:      'inline-flex',
-                  alignItems:   'center',
-                  justifyContent: 'center',
-                  width:        16,
-                  height:       16,
-                  borderRadius: '50%',
-                  background:   '#f3f4f6',
-                  color:        '#6b7280',
-                  fontSize:     10,
-                  fontWeight:   700,
-                  cursor:       'help',
-                }}
-              >?</span>
-            )}
-            {/* Weekly AI observations — surfaces latest_recommendation
-                (Group-plan Monday 07:00 run) in a click-to-open popover
-                next to the title. Supersedes the old collapsed footer
-                row that got stripped in the redesign. */}
-            {recommendation && (
-              <button
-                onClick={() => setObsOpen(true)}
-                title="Weekly AI observations from the last 90 days"
-                aria-label="Open weekly AI observations"
-                style={{
-                  display:      'inline-flex',
-                  alignItems:   'center',
-                  gap:          4,
-                  padding:      '2px 8px',
-                  marginLeft:   2,
-                  borderRadius: 999,
-                  background:   '#ede9fe',
-                  color:        '#6d28d9',
-                  border:       'none',
-                  fontSize:     10,
-                  fontWeight:   600,
-                  letterSpacing: '.03em',
-                  cursor:       'pointer',
-                }}
-              >
-                <span style={{ fontSize: 11, lineHeight: 1 }}>ⓘ</span> Observations
-              </button>
-            )}
-          </div>
-          <div style={{ fontSize: 11, color: '#9ca3af' }}>
-            Next week · {shortRange} · {pk_shifts_found > 0 ? `${pk_shifts_found} shifts in PK` : 'no PK schedule yet'}
-          </div>
-        </div>
-        {/* Inline summary */}
-        <div style={{ display: 'flex', gap: 18, alignItems: 'flex-end' }}>
-          <Stat label="Scheduled"  value={`${summary.current_hours}h`} />
-          <Stat label="Suggested"  value={`${summary.suggested_hours}h`} tone={summary.suggested_hours < summary.current_hours ? 'good' : 'neutral'} />
-          <Stat
-            label="Saving"
-            value={summary.saving_kr > 0 ? `−${fmt(summary.saving_kr)}` : '—'}
-            tone={summary.saving_kr > 0 ? 'good' : 'neutral'}
-          />
-        </div>
-      </div>
-
-      {/* Under-staffed notice */}
-      {summary.under_staffed_days > 0 && (
-        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#1e3a5f' }}>
-          <strong>{summary.under_staffed_days}</strong> day{summary.under_staffed_days > 1 ? 's' : ''} look lighter than your 12-week pattern. We don't recommend adding hours — it's a judgment call based on booking outlook only you can see.
-        </div>
-      )}
-
-      {/* Diff table — planned (PK) vs AI + predicted sales + margin indicator */}
-      <div style={{ overflowX: 'auto' as const }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-            {/* Why column removed — the rationale now surfaces as a hover
-              tooltip on each row so long prose doesn't blow out the table
-              (FIX-PROMPT § Phase 8 Q3). */}
-          {['Day','Action','Weather','Your plan','AI suggestion','Predicted sales','Margin'].map((h, i) => (
-              <th key={h} style={{ padding: '6px 8px', textAlign: i >= 3 ? 'right' as const : 'left' as const, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {current.map((c: any, i: number) => {
-            const s = suggested[i]
-            const isNote = s.under_staffed_note
-            const w = s.weather
-            // Margin uses the AI-suggested cost (closer to what we'd advise)
-            // when a cut is available, else the current planned cost. If the
-            // day's predicted revenue is zero we can't compute a margin.
-            const predictedRev   = s.est_revenue ?? 0
-            const effectiveCost  = isNote ? c.est_cost : s.est_cost
-            const margin         = predictedRev > 0 ? ((predictedRev - effectiveCost) / predictedRev) * 100 : null
-            const marginColour   = margin === null ? '#9ca3af'
-                                 : margin >= 70 ? '#15803d'
-                                 : margin >= 55 ? '#d97706'
-                                                : '#dc2626'
-            const hoursDelta   = (c.hours ?? 0) - (s.hours ?? 0)
-            const isCut        = !isNote && hoursDelta > 0.05
-            const noChange     = !isNote && Math.abs(hoursDelta) < 0.05
-            // Rows where there's nothing for the owner to do are visually
-            // de-emphasised so the action rows stand out. Notes keep full
-            // brightness because they still carry useful context.
-            const rowOpacity   = noChange ? 0.55 : 1
-            return (
-              <tr
-                key={c.date}
-                title={s.reasoning || undefined}
-                style={{
-                  borderBottom: '1px solid #f3f4f6',
-                  background:   isNote ? '#f8fafc' : undefined,
-                  cursor:       s.reasoning ? 'help' : undefined,
-                  opacity:      rowOpacity,
-                }}
-              >
-                {/* Day */}
-                <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500, whiteSpace: 'nowrap' as const }}>
-                  <strong>{c.weekday}</strong> · {c.date.slice(5)}
-                  {isNote && <span style={{ display: 'inline-block', marginLeft: 6, fontSize: 9, color: '#1e3a5f', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>note</span>}
-                </td>
-                {/* Action — plain-English recommendation pill. This is the
-                    hero column: the owner should see what to do at a glance
-                    without scanning the hours/cost columns. */}
-                <td style={{ padding: '8px 8px', whiteSpace: 'nowrap' as const }}>
-                  {isNote ? (
-                    <span style={{
-                      display:      'inline-block',
-                      fontSize:     11,
-                      fontWeight:   600,
-                      padding:      '3px 9px',
-                      borderRadius: 20,
-                      background:   '#eff6ff',
-                      color:        '#1e3a5f',
-                      border:       '1px solid #bfdbfe',
-                    }}>
-                      Review bookings
-                    </span>
-                  ) : isCut ? (
-                    <span style={{
-                      display:      'inline-block',
-                      fontSize:     11,
-                      fontWeight:   700,
-                      padding:      '3px 10px',
-                      borderRadius: 20,
-                      background:   '#dcfce7',
-                      color:        '#15803d',
-                    }}>
-                      Cut {fmtHrs(hoursDelta)} · save {fmt(Math.abs(s.delta_cost ?? 0))}
-                    </span>
-                  ) : (
-                    <span style={{
-                      display:      'inline-block',
-                      fontSize:     11,
-                      fontWeight:   500,
-                      padding:      '3px 10px',
-                      borderRadius: 20,
-                      background:   '#f3f4f6',
-                      color:        '#6b7280',
-                    }}>
-                      Keep as-is
-                    </span>
-                  )}
-                </td>
-                {/* Weather — temp always "{min}–{max}°C" with en-dash;
-                    precip only shown above 0.3 mm, formatted "{n} mm" with
-                    a space and " · " separator (SCHEDULING-FIX § 6). */}
-                <td style={{ padding: '8px 8px', color: '#4b5563', minWidth: 130 }}>
-                  {w ? (
-                    <>
-                      <div style={{ fontWeight: 600, color: '#1a1f2e' }}>{w.summary}</div>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>
-                        {w.temp_min != null ? `${Math.round(w.temp_min)}\u2013${Math.round(w.temp_max)}°C` : ''}
-                        {Number(w.precip_mm) > 0.3 ? ` · ${Number(w.precip_mm).toFixed(1)} mm` : ''}
-                      </div>
-                      {s.bucket_days_seen >= 3 && (
-                        <div style={{ fontSize: 10, color: '#15803d', marginTop: 1 }}>✓ {s.bucket_days_seen} matching days</div>
-                      )}
-                    </>
-                  ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                </td>
-                {/* Your plan — hours + planned cost */}
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#374151', whiteSpace: 'nowrap' as const }}>
-                  <div style={{ fontWeight: 600, color: '#111' }}>{fmtHrs(c.hours)}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280' }}>{c.est_cost > 0 ? fmt(c.est_cost) : '—'}</div>
-                </td>
-                {/* AI suggestion — target hours + cost. The savings line has
-                    moved to the Action pill, so this column now just shows
-                    what the AI wants the plan to look like. "—" on no-change
-                    rows since the Plan column already has the number. */}
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
-                  {isNote || noChange ? (
-                    <span style={{ color: '#d1d5db' }}>—</span>
-                  ) : (
-                    <>
-                      <div style={{ fontWeight: 700, color: '#111' }}>{fmtHrs(s.hours)}</div>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>{s.est_cost > 0 ? fmt(s.est_cost) : '—'}</div>
-                    </>
-                  )}
-                </td>
-                {/* Predicted sales — est_revenue from the historical pattern */}
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, color: '#111', whiteSpace: 'nowrap' as const }}>
-                  {predictedRev > 0 ? (
-                    <>
-                      <div style={{ fontWeight: 600 }}>{fmt(predictedRev)}</div>
-                      <div style={{ fontSize: 10, color: '#9ca3af' }}>pattern avg</div>
-                    </>
-                  ) : <span style={{ color: '#d1d5db' }}>—</span>}
-                </td>
-                {/* Margin % indicator */}
-                <td style={{ padding: '8px 8px', textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
-                  {margin === null ? <span style={{ color: '#d1d5db' }}>—</span> : (
-                    <span style={{
-                      display: 'inline-block',
-                      fontSize: 12, fontWeight: 700,
-                      padding: '2px 8px', borderRadius: 20,
-                      background: margin >= 70 ? '#dcfce7' : margin >= 55 ? '#fef3c7' : '#fee2e2',
-                      color: marginColour,
-                    }}>{margin.toFixed(0)}%</span>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      </div>
-
-      {/* Method footer removed — now behind the ? help icon next to the
-          card title (FIX-PROMPT § Phase 8 Q4). */}
-
-      {/* Weekly AI observations modal — opens from the ⓘ Observations
-          button next to the card title. Reuses the same content that
-          used to live in the deleted collapsed row. */}
-      {obsOpen && recommendation && (
-        <div
-          onClick={() => setObsOpen(false)}
-          style={{ position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' as const }}
-          >
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: '#111' }}>Weekly AI observations</span>
-                  <span style={{ fontSize: 10, background: '#ede9fe', color: '#6d28d9', padding: '2px 7px', borderRadius: 4, fontWeight: 600, letterSpacing: '.03em' }}>AI</span>
-                </div>
-                <div style={{ fontSize: 11, color: '#9ca3af' }}>
-                  Generated {new Date(recommendation.generated_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  {recommendation.analysis_period && ` · based on ${recommendation.analysis_period}`}
-                </div>
-              </div>
-              <button onClick={() => setObsOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
-            </div>
-            <div style={{ overflowY: 'auto' as const, flex: 1, padding: '16px 24px' }}>
-              <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap' as const, background: '#fafbff', borderRadius: 10, padding: '14px 16px', borderLeft: '3px solid #6366f1' }}>
-                {recommendation.recommendations}
-              </div>
-              {recommendation.metadata && (
-                <div style={{ marginTop: 12, display: 'flex', gap: 20, fontSize: 11, color: '#9ca3af', flexWrap: 'wrap' as const }}>
-                  {recommendation.metadata.staff_shifts && <span>Shifts analysed: <strong style={{ color: '#374151' }}>{recommendation.metadata.staff_shifts}</strong></span>}
-                  {recommendation.metadata.total_hours && <span>Hours: <strong style={{ color: '#374151' }}>{Math.round(recommendation.metadata.total_hours)}h</strong></span>}
-                  {recommendation.metadata.labor_cost && <span>Labour cost: <strong style={{ color: '#374151' }}>{fmt(recommendation.metadata.labor_cost)}</strong></span>}
-                  {recommendation.metadata.late_shifts && <span>Late shifts: <strong style={{ color: '#374151' }}>{recommendation.metadata.late_shifts}</strong></span>}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function Stat({ label, value, tone = 'neutral' }: any) {
-  const colour = tone === 'good' ? '#15803d' : '#111'
-  return (
-    <div style={{ textAlign: 'right' as const }}>
-      <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: '#9ca3af' }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: colour, marginTop: 1 }}>{value}</div>
-    </div>
-  )
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Top-of-page CTA that teases the AI schedule's value and scrolls to the card.
