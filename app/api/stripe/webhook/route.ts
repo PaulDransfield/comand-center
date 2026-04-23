@@ -123,7 +123,7 @@ async function handleEvent(event: Stripe.Event, supabase: any) {
     case 'customer.subscription.updated': {
       const sub   = event.data.object as Stripe.Subscription
       const orgId = sub.metadata?.org_id
-      const plan  = sub.metadata?.plan || 'starter'
+      const plan  = sub.metadata?.plan || 'solo'
 
       if (!orgId) {
         console.warn(`Subscription ${sub.id} has no org_id metadata — skipping`)

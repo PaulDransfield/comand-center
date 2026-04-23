@@ -174,8 +174,8 @@ export default function LandingPage() {
             <Link href="/login" className="btn-outline-white nav-cta-login" style={{ padding: '8px 18px', fontSize: 13 }}>
               Log in
             </Link>
-            <Link href="/login?mode=signup" className="btn-white nav-cta-trial" style={{ padding: '8px 18px', fontSize: 13 }}>
-              Start free trial
+            <Link href="/login?mode=signup&plan=founding" className="btn-white nav-cta-trial" style={{ padding: '8px 18px', fontSize: 13 }}>
+              Get started
             </Link>
           </div>
         </div>
@@ -230,12 +230,12 @@ export default function LandingPage() {
 
           {/* CTAs */}
           <div className="hero-btns" style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 48 }}>
-            <Link href="/login?mode=signup" className="btn-white">
-              Start 30-day free trial
+            <Link href="/login?mode=signup&plan=founding" className="btn-white">
+              Claim founding spot
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </Link>
-            <a href="#features" className="btn-outline-white">
-              See how it works
+            <a href="#pricing" className="btn-outline-white">
+              See pricing
             </a>
           </div>
 
@@ -245,7 +245,7 @@ export default function LandingPage() {
             borderTop: '1px solid rgba(255,255,255,.12)', paddingTop: 36,
           }}>
             {[
-              { value: '30 days', label: 'Free trial, no card needed' },
+              { value: '10 spots', label: 'Founding customers · 995 kr/mo' },
               { value: '< 5 min', label: 'To connect Personalkollen' },
               { value: '06:00', label: 'Daily auto-sync, every morning' },
             ].map(s => (
@@ -398,39 +398,83 @@ export default function LandingPage() {
           PRICING
       ════════════════════════════════════════════════════════ */}
       <section id="pricing" style={{ background: C.parchment, padding: '80px 24px' }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1080, margin: '0 auto' }}>
 
-          <div style={{ textAlign: 'center', marginBottom: 56 }}>
+          <div style={{ textAlign: 'center', marginBottom: 40 }}>
             <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: C.blue, marginBottom: 10, fontFamily: F.body }}>
               Pricing
             </p>
             <h2 style={{ fontFamily: F.display, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 300, fontStyle: 'italic', color: C.navy, marginBottom: 12, lineHeight: 1.25 }}>
-              Simple pricing, per restaurant
+              Pay from day one. Priced per restaurant.
             </h2>
-            <p style={{ fontSize: 15, color: C.ink3 }}>
-              Start with a 30-day free trial. No credit card required.
+            <p style={{ fontSize: 15, color: C.ink3, maxWidth: 620, margin: '0 auto' }}>
+              Swedish operators don&rsquo;t buy toys. CommandCenter replaces a
+              chunk of what a fractional CFO would charge you for — and it works
+              while you sleep.
             </p>
+          </div>
+
+          {/* Founding-customer banner */}
+          <div style={{
+            background: C.navy,
+            color: 'white',
+            borderRadius: 16,
+            padding: '28px 32px',
+            marginBottom: 40,
+            display: 'grid',
+            gridTemplateColumns: '1fr auto',
+            gap: 24,
+            alignItems: 'center',
+            boxShadow: '0 18px 48px -20px rgba(10,18,47,.35)',
+          }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <span style={{
+                  background: 'rgba(255,255,255,.12)', color: 'white',
+                  fontSize: 11, fontWeight: 700, letterSpacing: '.08em',
+                  textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20,
+                }}>Founding customer · 10 spots</span>
+              </div>
+              <h3 style={{ fontFamily: F.display, fontSize: 28, fontWeight: 400, fontStyle: 'italic', color: 'white', marginBottom: 6 }}>
+                995 kr / month — locked for 24 months
+              </h3>
+              <p style={{ fontSize: 14, color: 'rgba(255,255,255,.72)', lineHeight: 1.5, maxWidth: 620 }}>
+                Full Solo tier + most of Group for the first 10 restaurants to
+                sign on. In exchange: monthly feedback, case-study partnership,
+                and a direct line to the team. Converts to 1,495 kr/mo permanent
+                discount after 24 months.
+              </p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 180 }}>
+              <Link href="/login?mode=signup&plan=founding" className="btn-white" style={{ justifyContent: 'center' }}>
+                Claim founding spot
+              </Link>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', textAlign: 'center' }}>
+                No free trial. Paid from day one.
+              </p>
+            </div>
           </div>
 
           <div className="pricing-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20, alignItems: 'start' }}>
 
-            {/* Starter */}
+            {/* Solo */}
             <div className="pricing-card">
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>Starter</p>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>Solo</p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>499</span>
+                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>1 995</span>
                 <span style={{ fontSize: 14, color: C.ink3 }}>kr / mo</span>
               </div>
-              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>per restaurant</p>
+              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>Single restaurant</p>
               <div style={{ height: 1, background: C.border, marginBottom: 20 }} />
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {[
-                  '1 restaurant',
-                  'All analytics pages',
-                  'Personalkollen integration',
-                  '20 AI queries / day',
-                  'Nightly anomaly alerts',
-                  'Email support',
+                  '1 restaurant location',
+                  'Fortnox PDF + Personalkollen',
+                  'All core AI agents',
+                  'Anomaly alerts + Monday Memo',
+                  'P&L, budget, forecast, overheads',
+                  '30 AI queries / day',
+                  'Email support · 5 team seats',
                 ].map(item => (
                   <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: C.ink2 }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -438,12 +482,12 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login?mode=signup" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
-                Start free trial
+              <Link href="/login?mode=signup&plan=solo" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
+                Get started
               </Link>
             </div>
 
-            {/* Pro — featured */}
+            {/* Group — featured */}
             <div className="pricing-card featured" style={{ position: 'relative' }}>
               <div style={{
                 position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
@@ -451,22 +495,23 @@ export default function LandingPage() {
                 letterSpacing: '.08em', textTransform: 'uppercase', padding: '4px 14px',
                 borderRadius: 20, whiteSpace: 'nowrap',
               }}>Most popular</div>
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.55)', marginBottom: 8 }}>Pro</p>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.55)', marginBottom: 8 }}>Group</p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: 'white' }}>799</span>
+                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: 'white' }}>4 995</span>
                 <span style={{ fontSize: 14, color: 'rgba(255,255,255,.55)' }}>kr / mo</span>
               </div>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,.45)', marginBottom: 24 }}>per restaurant</p>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,.45)', marginBottom: 24 }}>2–5 restaurants</p>
               <div style={{ height: 1, background: 'rgba(255,255,255,.15)', marginBottom: 20 }} />
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {[
-                  'Up to 5 restaurants',
-                  'Everything in Starter',
-                  'Fortnox integration',
-                  '50 AI queries / day',
-                  'Monday briefing report',
-                  'Forecast calibration',
-                  'Priority support',
+                  'Up to 5 locations',
+                  'Everything in Solo',
+                  'Multi-location rollup + Departments',
+                  'Weekly scheduling optimisation',
+                  'Supplier price-creep alerts',
+                  'Priority support · 24h SLA',
+                  'Quarterly review call',
+                  '100 AI queries / day · 25 seats',
                 ].map(item => (
                   <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: 'rgba(255,255,255,.85)' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -474,29 +519,29 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login?mode=signup" className="btn-white" style={{ justifyContent: 'center' }}>
-                Start free trial
+              <Link href="/login?mode=signup&plan=group" className="btn-white" style={{ justifyContent: 'center' }}>
+                Get started
               </Link>
             </div>
 
-            {/* Group */}
+            {/* Chain */}
             <div className="pricing-card">
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>Group</p>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>Chain</p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>1 499</span>
-                <span style={{ fontSize: 14, color: C.ink3 }}>kr / mo</span>
+                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>9 995</span>
+                <span style={{ fontSize: 14, color: C.ink3 }}>kr / mo+</span>
               </div>
-              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>per restaurant</p>
+              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>6+ restaurants</p>
               <div style={{ height: 1, background: C.border, marginBottom: 20 }} />
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {[
                   'Unlimited restaurants',
-                  'Everything in Pro',
-                  'Unlimited AI queries',
-                  'Weekly scheduling optimisation',
-                  'Supplier price creep alerts',
+                  'Everything in Group',
                   'Dedicated onboarding',
-                  'SLA support',
+                  'Custom Fortnox OAuth setup',
+                  'API access (when available)',
+                  'Unlimited AI usage',
+                  'Unlimited team seats',
                 ].map(item => (
                   <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: C.ink2 }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -504,8 +549,8 @@ export default function LandingPage() {
                   </li>
                 ))}
               </ul>
-              <Link href="/login?mode=signup" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
-                Start free trial
+              <Link href="/login?mode=signup&plan=chain" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
+                Contact us
               </Link>
             </div>
 
@@ -513,7 +558,7 @@ export default function LandingPage() {
 
           {/* Annual note */}
           <p style={{ textAlign: 'center', fontSize: 13, color: C.ink4, marginTop: 24 }}>
-            Save 2 months with annual billing — ask us about annual invoicing (common for Swedish B2B).
+            Annual billing saves ~17% (2 months free). Invoicing available — standard for Swedish B2B.
           </p>
 
         </div>
@@ -536,11 +581,11 @@ export default function LandingPage() {
             Ready to see what&apos;s really going on in your restaurants?
           </h2>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,.6)', marginBottom: 36, lineHeight: 1.7 }}>
-            30-day free trial. No credit card. Cancel any time. Setup takes under 5 minutes.
+            10 founding spots at 995 kr/mo, locked for 24 months. Setup takes under 5 minutes. Cancel any time.
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <Link href="/login?mode=signup" className="btn-white">
-              Start your free trial
+            <Link href="/login?mode=signup&plan=founding" className="btn-white">
+              Claim founding spot
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </Link>
           </div>

@@ -59,8 +59,9 @@ export async function POST(req: NextRequest) {
   // ── 3. Parse + validate plan ───────────────────────────────────
   const { plan, annual = false } = await req.json()
 
-  if (!['starter', 'pro', 'group', 'ai_addon'].includes(plan)) {
-    return NextResponse.json({ error: 'Invalid plan. Choose starter, pro, group, or ai_addon.' }, { status: 400 })
+  const validPlans = ['founding', 'solo', 'group', 'chain', 'ai_addon', 'starter', 'pro']
+  if (!validPlans.includes(plan)) {
+    return NextResponse.json({ error: 'Invalid plan. Choose founding, solo, group, chain, or ai_addon.' }, { status: 400 })
   }
 
   // AI add-on is a separate product, not a plan in PLANS config

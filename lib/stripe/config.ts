@@ -1,8 +1,15 @@
 // lib/stripe/config.ts
 //
 // PLAN DEFINITIONS — single source of truth for what each plan includes.
-// Prices match SAAS_MANIFEST.md exactly.
-// To change a plan limit, change it once here and it propagates everywhere.
+//
+// 2026-04-23 repricing: list tiers renamed/repriced from starter/pro/group
+// (499/799/1499) to solo/group/chain (1,995/4,995/9,995) + a time-limited
+// founding tier (995 kr locked for 24 months for the first 10 customers).
+// Free trial retired; new signups go straight to founding.
+//
+// Backwards-compat: `starter` and `pro` remain in PLANS as aliases to
+// `solo` and `group` respectively so existing DB rows (plan='starter')
+// still resolve to sane limits. New signups only use the new keys.
 
 import { AI_MODELS } from '@/lib/ai/models'
 
@@ -29,10 +36,13 @@ export interface Plan {
   features:                string[]
   model:                   string
   badge:                   string | null
+  legacy?:                 boolean         // backwards-compat alias, hide from UI
 }
 
 export const PLANS: Record<string, Plan> = {
 
+  // Deprecated: retained so org_members with plan='trial' don't break, but
+  // new signups flow straight to founding (no free trial anymore).
   trial: {
     name:                    'Free Trial',
     price_sek:               0,
@@ -44,7 +54,7 @@ export const PLANS: Record<string, Plan> = {
       businesses:       1,
       documents:        50,
       monthly_tokens:   500_000,
-      monthly_requests: 600,       // 20/day * 30
+      monthly_requests: 600,
       team_members:     1,
       notebooks:        3,
       audio_overviews:  3,
@@ -57,52 +67,23 @@ export const PLANS: Record<string, Plan> = {
       'Dashboard & staff analytics',
       'PDF exports',
     ],
-    model: 'claude-haiku-4-5-20251001',
-    badge: null,
+    model:  AI_MODELS.AGENT,
+    badge:  null,
+    legacy: true,
   },
 
-  starter: {
-    name:                    'Starter',
-    price_sek:               499,
-    price_usd:               49,
-    stripe_price_env:        'STRIPE_PRICE_STARTER',
-    stripe_price_annual_env: 'STRIPE_PRICE_STARTER_ANNUAL',
-    ai_queries_per_day:      20,
-    limits: {
-      businesses:       1,
-      documents:        500,
-      monthly_tokens:   2_000_000,
-      monthly_requests: 600,       // 20/day * 30
-      team_members:     3,
-      notebooks:        20,
-      audio_overviews:  20,
-      export_schedules: 5,
-      storage_mb:       2_000,
-    },
-    features: [
-      '1 restaurant location',
-      '20 AI queries per day',
-      'Personalkollen integration',
-      'Staff, revenue & department analytics',
-      'Scheduled reports',
-      'Team access (3 users)',
-    ],
-    model: AI_MODELS.ASSISTANT,
-    badge: null,
-  },
-
-  pro: {
-    name:                    'Pro',
-    price_sek:               799,
-    price_usd:               79,
-    stripe_price_env:        'STRIPE_PRICE_PRO',
-    stripe_price_annual_env: 'STRIPE_PRICE_PRO_ANNUAL',
+  founding: {
+    name:                    'Founding Customer',
+    price_sek:               995,
+    price_usd:               99,
+    stripe_price_env:        'STRIPE_PRICE_FOUNDING',
+    stripe_price_annual_env: 'STRIPE_PRICE_FOUNDING_ANNUAL',
     ai_queries_per_day:      50,
     limits: {
-      businesses:       5,
+      businesses:       3,           // enough for a small group
       documents:        5_000,
       monthly_tokens:   10_000_000,
-      monthly_requests: 1_500,     // 50/day * 30
+      monthly_requests: 1_500,
       team_members:     10,
       notebooks:        100,
       audio_overviews:  100,
@@ -110,23 +91,88 @@ export const PLANS: Record<string, Plan> = {
       storage_mb:       20_000,
     },
     features: [
-      'Up to 5 restaurant locations',
+      'Locked for 24 months',
+      'Up to 3 restaurants',
+      'Full Solo + partial Group features',
+      'Fortnox PDF extraction',
+      'Nightly anomaly alerts + Monday Memo',
       '50 AI queries per day',
-      'All integrations (Personalkollen, Fortnox)',
-      'Forecasting & budget tracking',
-      'Priority support',
-      'Team access (10 users)',
+      'Case-study partnership with founder',
+      'Direct line to the team',
+    ],
+    model:  AI_MODELS.ASSISTANT,
+    badge:  '10 spots only',
+  },
+
+  solo: {
+    name:                    'Solo',
+    price_sek:               1_995,
+    price_usd:               199,
+    stripe_price_env:        'STRIPE_PRICE_SOLO',
+    stripe_price_annual_env: 'STRIPE_PRICE_SOLO_ANNUAL',
+    ai_queries_per_day:      30,
+    limits: {
+      businesses:       1,
+      documents:        1_500,
+      monthly_tokens:   5_000_000,
+      monthly_requests: 900,
+      team_members:     5,
+      notebooks:        50,
+      audio_overviews:  50,
+      export_schedules: 10,
+      storage_mb:       5_000,
+    },
+    features: [
+      '1 restaurant location',
+      'Fortnox PDF + Personalkollen integration',
+      'All core AI agents (anomaly, cost, onboarding, Monday Memo)',
+      'P&L tracker, budget, forecast, overheads, revenue, staff',
+      '30 AI queries per day',
+      'Email support',
+      'Team access (5 users)',
+    ],
+    model: AI_MODELS.ASSISTANT,
+    badge: null,
+  },
+
+  group: {
+    name:                    'Group',
+    price_sek:               4_995,
+    price_usd:               499,
+    stripe_price_env:        'STRIPE_PRICE_GROUP',
+    stripe_price_annual_env: 'STRIPE_PRICE_GROUP_ANNUAL',
+    ai_queries_per_day:      100,
+    limits: {
+      businesses:       5,
+      documents:        10_000,
+      monthly_tokens:   25_000_000,
+      monthly_requests: 3_000,
+      team_members:     25,
+      notebooks:        500,
+      audio_overviews:  500,
+      export_schedules: 50,
+      storage_mb:       50_000,
+    },
+    features: [
+      '2–5 restaurants',
+      'Everything in Solo',
+      'Multi-location rollup + Departments view',
+      'Weekly scheduling optimisation agent',
+      'Supplier price-creep agent',
+      'Priority support (24h SLA)',
+      'Quarterly review call',
+      'Team access (25 users)',
     ],
     model: AI_MODELS.ASSISTANT,
     badge: 'Most Popular',
   },
 
-  group: {
-    name:                    'Group',
-    price_sek:               1_499,
-    price_usd:               149,
-    stripe_price_env:        'STRIPE_PRICE_GROUP',
-    stripe_price_annual_env: 'STRIPE_PRICE_GROUP_ANNUAL',
+  chain: {
+    name:                    'Chain',
+    price_sek:               9_995,
+    price_usd:               999,
+    stripe_price_env:        'STRIPE_PRICE_CHAIN',
+    stripe_price_annual_env: 'STRIPE_PRICE_CHAIN_ANNUAL',
     ai_queries_per_day:      Infinity,
     limits: {
       businesses:       Infinity,
@@ -140,19 +186,19 @@ export const PLANS: Record<string, Plan> = {
       storage_mb:       Infinity,
     },
     features: [
-      'Unlimited restaurant locations',
-      'Unlimited AI queries',
-      'All integrations',
-      'Custom reporting',
-      'Dedicated support',
+      '6+ restaurants',
+      'Everything in Group',
+      'Dedicated onboarding',
+      'Custom Fortnox OAuth setup',
+      'API access (when available)',
+      'Unlimited AI usage',
       'Unlimited team members',
     ],
     model: AI_MODELS.ASSISTANT,
-    badge: 'Best Value',
+    badge: null,
   },
 
   // past_due is a temporary state after payment failure.
-  // Access is restricted by the UI. Limits match starter so data stays intact.
   past_due: {
     name:                    'Payment failed',
     price_sek:               null,
@@ -204,23 +250,67 @@ export const PLANS: Record<string, Plan> = {
     model: AI_MODELS.ASSISTANT,
     badge: 'Custom',
   },
+
+  // ────────────────────────────────────────────────────────────────
+  // Legacy aliases — retained so existing DB rows with plan='starter'
+  // or plan='pro' still resolve. Hidden from pricing/upgrade UIs.
+  // ────────────────────────────────────────────────────────────────
+  starter: {
+    name:                    'Starter (legacy)',
+    price_sek:               1_995,
+    price_usd:               199,
+    stripe_price_env:        'STRIPE_PRICE_SOLO',
+    stripe_price_annual_env: 'STRIPE_PRICE_SOLO_ANNUAL',
+    ai_queries_per_day:      30,
+    limits: {
+      businesses:       1, documents: 1_500, monthly_tokens: 5_000_000,
+      monthly_requests: 900, team_members: 5, notebooks: 50, audio_overviews: 50,
+      export_schedules: 10, storage_mb: 5_000,
+    },
+    features: [],
+    model:  AI_MODELS.ASSISTANT,
+    badge:  null,
+    legacy: true,
+  },
+
+  pro: {
+    name:                    'Pro (legacy)',
+    price_sek:               4_995,
+    price_usd:               499,
+    stripe_price_env:        'STRIPE_PRICE_GROUP',
+    stripe_price_annual_env: 'STRIPE_PRICE_GROUP_ANNUAL',
+    ai_queries_per_day:      100,
+    limits: {
+      businesses:       5, documents: 10_000, monthly_tokens: 25_000_000,
+      monthly_requests: 3_000, team_members: 25, notebooks: 500, audio_overviews: 500,
+      export_schedules: 50, storage_mb: 50_000,
+    },
+    features: [],
+    model:  AI_MODELS.ASSISTANT,
+    badge:  null,
+    legacy: true,
+  },
 }
 
+// Ordered list of plans that render in pricing/upgrade UIs (legacy hidden).
+export const VISIBLE_PLAN_ORDER = ['founding', 'solo', 'group', 'chain'] as const
+export type VisiblePlanKey = typeof VISIBLE_PLAN_ORDER[number]
+
 export function getPlan(planName: string): Plan {
-  return PLANS[planName] ?? PLANS.trial
+  return PLANS[planName] ?? PLANS.solo
 }
 
 export function getLimits(planName: string): PlanLimits {
   return getPlan(planName).limits
 }
 
-// Annual pricing: 10 months price for 12 months (2 months free)
+// Annual pricing: 10 months price for 12 months (2 months free = ~17% off)
 export function annualPrice(plan: Plan): number | null {
   if (!plan.price_sek) return null
-  return plan.price_sek * 10   // total annual amount in SEK
+  return plan.price_sek * 10
 }
 
 export function annualMonthlyEquivalent(plan: Plan): number | null {
   if (!plan.price_sek) return null
-  return Math.round(plan.price_sek * 10 / 12)  // per-month equivalent when paying annually
+  return Math.round(plan.price_sek * 10 / 12)
 }

@@ -24,12 +24,12 @@ interface UsageData {
   }>
 }
 
-const PLAN_ORDER = ['trial', 'starter', 'pro', 'group', 'enterprise'] as const
+const PLAN_ORDER = ['founding', 'solo', 'group', 'chain', 'enterprise'] as const
 const PLAN_DESCS: Record<string, string> = {
-  trial:      '30 days to explore the full platform',
-  starter:    'For single-location restaurants',
-  pro:        'For groups with up to 5 locations',
-  group:      'For unlimited locations — best value',
+  founding:   '10 spots — 995 kr/mo locked for 24 months',
+  solo:       'Single restaurant',
+  group:      '2–5 restaurants — best value',
+  chain:      '6+ restaurants',
   enterprise: 'Custom pricing for large chains',
 }
 
@@ -204,8 +204,8 @@ export default function UpgradePage() {
         {PLAN_ORDER.map(planKey => {
           const plan      = PLANS[planKey]
           const isCurrent = currentPlan === planKey
-          const isPopular = planKey === 'pro'
-          const isBestVal = planKey === 'group'
+          const isPopular = planKey === 'group'
+          const isBestVal = planKey === 'founding'
 
           const monthlyPrice = plan.price_usd
           // Annual = 10 months price for 12 months (2 months free)
@@ -220,7 +220,7 @@ export default function UpgradePage() {
               ...(isBestVal  && !isCurrent ? S.planCardBestVal  : {}),
             }}>
               {isPopular && !isCurrent && <div style={S.popularBadge}>Most Popular</div>}
-              {isBestVal && !isCurrent && <div style={{ ...S.popularBadge, background: '#15803d' }}>Best Value</div>}
+              {isBestVal && !isCurrent && <div style={{ ...S.popularBadge, background: '#15803d' }}>Founding · 10 spots</div>}
               {isCurrent && <div style={S.currentBadge}>Current Plan</div>}
 
               <div style={S.planName}>{plan.name}</div>
