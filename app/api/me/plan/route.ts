@@ -14,7 +14,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient }              from '@/lib/supabase/server'
 import { unstable_noStore }          from 'next/cache'
 
-const PAID_PLANS = new Set(['founding', 'solo', 'group', 'chain', 'enterprise'])
+// Paid plans + legacy aliases (`starter`, `pro`) so existing DB rows from
+// before the 2026-04-23 rename still count as paid. Only `trial` and
+// `past_due` (and anything unrecognised) trigger the upgrade redirect.
+const PAID_PLANS = new Set(['founding', 'solo', 'group', 'chain', 'enterprise', 'starter', 'pro'])
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
