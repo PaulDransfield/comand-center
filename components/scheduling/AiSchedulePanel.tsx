@@ -463,12 +463,24 @@ export default function AiSchedulePanel(props: Props) {
         flexWrap:   'wrap' as const,
       }}>
         <div style={{ color: UX.ink3 }}>
-          {pctCurrentWeek != null && pctAiWeek != null
-            ? <>period labour {pctCurrentWeek.toFixed(1)}% → {pctAiWeek.toFixed(1)}% · {cuttableRows.length} days with cuts · {keepDays} days unchanged</>
-            : <>{cuttableRows.length} days with cuts · {keepDays} days unchanged</>}
+          {cuttableRows.length} days with cuts · {keepDays} days unchanged
         </div>
-        <div style={{ color: savingKr > 0 ? UX.greenInk : UX.ink3, fontWeight: 500 }}>
-          {savingKr > 0 ? `total saving −${props.fmt(savingKr)}` : 'no savings available'}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' as const, justifyContent: 'flex-end' }}>
+          {pctCurrentWeek != null && pctAiWeek != null && (
+            <span style={{ color: UX.ink3 }}>
+              labour{' '}
+              <span style={{ fontWeight: 500, color: labourTierStyle(labourTier(pctCurrentWeek, cfg)).ink }}>
+                {pctCurrentWeek.toFixed(1)}%
+              </span>
+              {' → '}
+              <span style={{ fontWeight: 500, color: labourTierStyle(labourTier(pctAiWeek, cfg)).ink }}>
+                {pctAiWeek.toFixed(1)}%
+              </span>
+            </span>
+          )}
+          <span style={{ color: savingKr > 0 ? UX.greenInk : UX.ink3, fontWeight: 500 }}>
+            {savingKr > 0 ? `total saving −${props.fmt(savingKr)}` : 'no savings available'}
+          </span>
         </div>
       </div>
 
