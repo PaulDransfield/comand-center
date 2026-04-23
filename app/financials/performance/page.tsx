@@ -311,10 +311,23 @@ export default function PerformancePage() {
   const [compare,     setCompare]     = useState<CompareMode>('none')
 
   // Data cache keyed by year so year-changes don't refetch everything.
+  // The caches are wiped whenever bizId changes (see effect below) — they're
+  // scoped to a single business, so stale year-keys from a previous
+  // selection would otherwise be reused when switching to a new business.
   const [trackerByYear, setTrackerByYear]     = useState<Record<number, any[]>>({})
   const [lineItemsByYear, setLineItemsByYear] = useState<Record<number, any[]>>({})
   const [dailyByRange,  setDailyByRange]      = useState<Record<string, any[]>>({})
   const [loading, setLoading] = useState(false)
+
+  // Wipe caches on business change so the next fetch effect re-pulls for
+  // the newly-selected business. Without this, switching from Vero →
+  // Rosali would see "2025 already cached" and silently show Vero's
+  // numbers under Rosali's name.
+  useEffect(() => {
+    setTrackerByYear({})
+    setLineItemsByYear({})
+    setDailyByRange({})
+  }, [bizId])
 
   // Load businesses + restore selection.
   useEffect(() => {
