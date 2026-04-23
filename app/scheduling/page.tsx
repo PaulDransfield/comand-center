@@ -67,12 +67,18 @@ export default function SchedulingPage() {
   const [drillData,   setDrillData]   = useState<any>(null)
   const [drillLoading,setDrillLoading] = useState(false)
 
-  // AI-suggested schedule (next week) — independent of the view selector
-  // because the suggestion always targets the next Mon-Sun regardless of
+  // AI-suggested schedule — independent of the view selector because the
+  // suggestion always targets a forward-looking window regardless of
   // whether the user is looking at this month or last week.
+  //
+  // aiRange lets the owner pick how far ahead to look. Default is next
+  // week (the common case); 2 / 4 weeks and next month support the
+  // "nobody changes a schedule mid-week — I want to see what's ahead"
+  // workflow Paul flagged 2026-04-23.
   const [aiSched,      setAiSched]      = useState<any>(null)
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiError,      setAiError]      = useState('')
+  const [aiRange,      setAiRange]      = useState<'next_week'|'2w'|'4w'|'next_month'>('next_week')
 
   // (Observations + historical scorecard expanders were removed per
   // SCHEDULING-FIX §§ 3, 5 — hero + always-visible by-day grid cover
@@ -108,17 +114,57 @@ export default function SchedulingPage() {
 
   useEffect(() => { if (selectedBiz) load() }, [selectedBiz, viewMode, weekOffset, monthOffset])
 
+  // Compute from/to for the AI range picker. All ranges start from the
+  // COMING Monday (never mid-week) because scheduling is normally locked
+  // in by Monday morning and the AI advice is only actionable for the
+  // coming published schedule.
+  const aiBounds = (() => {
+    const now = new Date()
+    const daysUntilMon = ((1 - now.getDay() + 7) % 7) || 7
+    const nextMon = new Date(now); nextMon.setDate(now.getDate() + daysUntilMon); nextMon.setHours(0,0,0,0)
+    let end: Date
+    let label: string
+    switch (aiRange) {
+      case '2w': {
+        end = new Date(nextMon); end.setDate(nextMon.getDate() + 13)
+        label = 'Next 2 weeks'
+        break
+      }
+      case '4w': {
+        end = new Date(nextMon); end.setDate(nextMon.getDate() + 27)
+        label = 'Next 4 weeks'
+        break
+      }
+      case 'next_month': {
+        // First day of the month AFTER nextMon's month → last day of that month
+        const y = nextMon.getFullYear(), m = nextMon.getMonth() + 1
+        const start = new Date(y, m, 1)
+        end = new Date(y, m + 1, 0)
+        label = 'Next calendar month'
+        return { from: localDate(start), to: localDate(end), label }
+      }
+      case 'next_week':
+      default: {
+        end = new Date(nextMon); end.setDate(nextMon.getDate() + 6)
+        label = 'Next week'
+        break
+      }
+    }
+    return { from: localDate(nextMon), to: localDate(end), label }
+  })()
+
   useEffect(() => {
     if (!selectedBiz) return
     let cancelled = false
     setAiLoading(true); setAiError('')
-    fetch(`/api/scheduling/ai-suggestion?business_id=${selectedBiz}`, { cache: 'no-store' })
+    const qs = `business_id=${selectedBiz}&from=${aiBounds.from}&to=${aiBounds.to}`
+    fetch(`/api/scheduling/ai-suggestion?${qs}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(j => { if (!cancelled) { if (j.error) setAiError(j.error); else setAiSched(j) } })
       .catch(e => { if (!cancelled) setAiError(e.message) })
       .finally(() => { if (!cancelled) setAiLoading(false) })
     return () => { cancelled = true }
-  }, [selectedBiz])
+  }, [selectedBiz, aiRange])
 
   async function openDayDrill(weekday: number) {
     setDrillDay(weekday)
@@ -204,7 +250,7 @@ export default function SchedulingPage() {
         />
 
         {/* ─── PageHero (replaces big header + old AI CTA banner) ─────── */}
-        <SchPageHero aiSched={aiSched} aiLoading={aiLoading} fmtKr={fmtKr} />
+        <SchPageHero aiSched={aiSched} aiLoading={aiLoading} rangeLabel={aiBounds.label} fmtKr={fmtKr} />
 
         {error && (
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#dc2626' }}>
@@ -333,11 +379,13 @@ export default function SchedulingPage() {
                 AFTER the by-day overview per DESIGN.md § 8 /
                 SCHEDULING-FIX § 3.
             ═══════════════════════════════════════════════════════ */}
+            <AiRangePicker value={aiRange} onChange={setAiRange} label={aiBounds.label} />
             <AiSuggestedSchedule
               loading={aiLoading}
               error={aiError}
               data={aiSched}
               recommendation={recommendation}
+              rangeLabel={aiBounds.label}
               fmt={fmtKr}
               fmtHrs={fmtH}
             />
@@ -485,13 +533,54 @@ export default function SchedulingPage() {
 // Cuts-only: delta is always ≤0, days the model would have added show as a
 // soft "note" row with no numeric recommendation.
 // ─────────────────────────────────────────────────────────────────────────────
-function AiSuggestedSchedule({ loading, error, data, recommendation, fmt, fmtHrs }: any) {
+function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v: any) => void; label: string }) {
+  const opts: Array<{ value: 'next_week'|'2w'|'4w'|'next_month'; label: string }> = [
+    { value: 'next_week',  label: 'Next week' },
+    { value: '2w',         label: '2 weeks' },
+    { value: '4w',         label: '4 weeks' },
+    { value: 'next_month', label: 'Next month' },
+  ]
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' as const, gap: 8 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#9ca3af' }}>
+        AI outlook · {label}
+      </div>
+      <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: '#f3f4f6', borderRadius: 8 }}>
+        {opts.map(o => {
+          const active = value === o.value
+          return (
+            <button
+              key={o.value}
+              onClick={() => onChange(o.value)}
+              style={{
+                padding:    '5px 10px',
+                fontSize:   11,
+                fontWeight: active ? 700 : 500,
+                color:      active ? '#111'    : '#6b7280',
+                background: active ? 'white'   : 'transparent',
+                border:     active ? '0.5px solid #e5e7eb' : '0.5px solid transparent',
+                borderRadius: 6,
+                cursor:     'pointer',
+                boxShadow:  active ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
+                whiteSpace: 'nowrap' as const,
+              }}
+            >
+              {o.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function AiSuggestedSchedule({ loading, error, data, recommendation, rangeLabel, fmt, fmtHrs }: any) {
   const deltaColor = (d: number) => d < -0.5 ? '#15803d' : '#6b7280'
   const cardStyle  = { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '20px 24px', marginBottom: 16, scrollMarginTop: 16 }
   const [obsOpen, setObsOpen] = useState(false)
 
   if (loading) {
-    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading next week's AI suggestion…</div></div>
+    return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#9ca3af', fontSize: 13 }}>Loading AI suggestion for {rangeLabel ? rangeLabel.toLowerCase() : 'next week'}…</div></div>
   }
   if (error) {
     return <div id="ai-schedule" style={cardStyle}><div style={{ color: '#dc2626', fontSize: 13 }}>AI suggestion: {error}</div></div>
@@ -901,7 +990,7 @@ function AiScheduleCTA({ data, loading, fmt }: any) {
 }
 
 // ─── Phase 8 UX helpers — PageHero, compact toggle, navBtn ───────────────
-function SchPageHero({ aiSched, aiLoading, fmtKr }: any) {
+function SchPageHero({ aiSched, aiLoading, rangeLabel, fmtKr }: any) {
   const saving    = aiSched?.summary?.saving_kr ?? 0
   const totalDays = aiSched?.suggested?.length ?? 0
   const trimDays  = (aiSched?.suggested ?? []).filter((s: any) => (s.delta_hours ?? 0) < 0).length
@@ -909,6 +998,9 @@ function SchPageHero({ aiSched, aiLoading, fmtKr }: any) {
   const weekRange = aiSched
     ? `${aiSched.week_from?.slice(8)}\u2013${aiSched.week_to?.slice(8)} ${new Date(aiSched.week_from + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' })}`
     : ''
+  const eyebrow = rangeLabel
+    ? `${rangeLabel.toUpperCase()}${weekRange ? ` · ${weekRange}` : ''}`
+    : `NEXT WEEK${weekRange ? ` · ${weekRange}` : ''}`
 
   // Dynamic headline by state (FIX-PROMPT § Phase 8 Q2):
   //   trim-all: "zero scheduled hours all week" reads as a cancellation
@@ -938,7 +1030,7 @@ function SchPageHero({ aiSched, aiLoading, fmtKr }: any) {
 
   return (
     <PageHero
-      eyebrow={`NEXT WEEK${weekRange ? ` · ${weekRange}` : ''}`}
+      eyebrow={eyebrow}
       headline={headline}
       context={aiSched ? `${totalDays} days analysed · cuts only, never adds` : undefined}
       right={saving > 0 ? (
