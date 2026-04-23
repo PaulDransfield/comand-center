@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
-import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct, fmtHrs as fmtH } from '@/lib/format'
@@ -309,33 +308,17 @@ export default function SchedulingPage() {
     <AppShell>
       <div className="page-wrap" style={{ maxWidth: 1100 }}>
 
-        {/* TopBar — crumb + period nav + W/M toggle. Same shell pattern as
-            the other pages. */}
+        {/* Period nav + W/M toggle removed 2026-04-23. The scheduling
+            page is now forward-looking only — the AI panel's own range
+            picker (Next week / 2 weeks / 4 weeks / Next month) is the
+            sole period control. The historical /api/scheduling fetch
+            still runs with the default current-month window for the
+            AskAI context + "no joined data yet" guard. */}
         <TopBar
           crumbs={[
             { label: 'Operations' },
             { label: 'Scheduling', active: true },
           ]}
-          rightSlot={
-            <>
-              {viewMode === 'week' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setWeekOffset(o => o - 1)} style={schNavBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: 12, fontWeight: 500, color: '#111' }}>
-                    Week {(curr as any).weekNum} · {curr.label}
-                  </div>
-                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...schNavBtn, color: weekOffset === 0 ? '#d1d5db' : '#374151', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setMonthOffset(o => o - 1)} style={schNavBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: 12, fontWeight: 500, color: '#111' }}>{curr.label}</div>
-                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...schNavBtn, color: monthOffset === 0 ? '#d1d5db' : '#374151', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              )}
-              <SchSegmentedToggle value={viewMode} onChange={setViewMode} />
-            </>
-          }
         />
 
         {/* SchPageHero removed 2026-04-23 — the new AI schedule panel's
@@ -571,20 +554,5 @@ function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v
 }
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SchSegmentedToggle({ value, onChange }: any) {
-  return (
-    <SegmentedToggle
-      options={[{ value: "week", label: "W" }, { value: "month", label: "M" }]}
-      value={value}
-      onChange={(v: any) => onChange(v)}
-    />
-  )
-}
-
-const schNavBtn = {
-  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
-  background: UX.cardBg, cursor: "pointer", fontSize: 14,
-  display: "flex", alignItems: "center", justifyContent: "center", color: UX.ink2,
-} as const
+// SchSegmentedToggle + schNavBtn removed along with the historical
+// period nav on 2026-04-23.
