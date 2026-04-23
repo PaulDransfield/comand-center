@@ -167,8 +167,11 @@ export default function UpgradePage() {
         </div>
       )}
 
-      {/* Trial expiry banner */}
-      {currentPlan === 'trial' && usage?.trialDaysLeft !== null && (
+      {/* Trial expiry banner — shown only for legacy grandfathered trials
+          when not already carrying the `required=1` welcome banner.
+          New signups never see a trial countdown (free trial was retired
+          2026-04-23 in favour of the founding tier). */}
+      {!required && currentPlan === 'trial' && usage?.trialDaysLeft !== null && (
         <div style={{
           ...S.bannerTrial,
           ...(usage.trialDaysLeft! <= 3 ? S.bannerTrialUrgent : {}),
@@ -178,8 +181,8 @@ export default function UpgradePage() {
           </span>
           <span>
             {usage.trialDaysLeft! <= 0
-              ? 'Your free trial has ended. Choose a plan to restore access.'
-              : `${usage.trialDaysLeft} days left on your free trial. Upgrade to keep all your data and integrations.`}
+              ? 'Your legacy trial has ended. Choose a plan to restore access.'
+              : `${usage.trialDaysLeft} days left on your legacy trial. Pick a plan to keep your data and integrations.`}
           </span>
         </div>
       )}
@@ -195,7 +198,7 @@ export default function UpgradePage() {
       {/* Page header */}
       <div style={S.header}>
         <h1 style={S.title}>Choose your plan</h1>
-        <p style={S.subtitle}>All plans include a 30-day free trial. No card required to start.</p>
+        <p style={S.subtitle}>Paid from day one — no free trial. Founding tier locks 995 kr/mo for 24 months (10 spots only).</p>
       </div>
 
       {/* Billing toggle */}
@@ -219,10 +222,14 @@ export default function UpgradePage() {
           const isPopular = planKey === 'group'
           const isBestVal = planKey === 'founding'
 
-          const monthlyPrice = plan.price_usd
+          // Swedish-krona pricing is the source of truth — USD is a
+          // fallback for customers abroad but the product is sold in SEK.
+          const monthlyPrice  = plan.price_sek
           // Annual = 10 months price for 12 months (2 months free)
           const annualMonthly = monthlyPrice ? Math.round(monthlyPrice * 10 / 12) : null
           const displayPrice  = billing === 'annual' && annualMonthly ? annualMonthly : monthlyPrice
+          // Swedish spacing: "1 995 kr" not "1,995" or "1995".
+          const fmtSek = (n: number) => n.toLocaleString('sv-SE').replace(/,/g, ' ')
 
           return (
             <div key={planKey} style={{
@@ -244,12 +251,11 @@ export default function UpgradePage() {
                   <span style={S.planAmount}>Free</span>
                 ) : (
                   <>
-                    <span style={{ fontSize: 18, color: '#6b7280', marginBottom: 4 }}>$</span>
-                    <span style={S.planAmount}>{displayPrice}</span>
-                    <span style={{ fontSize: 12, color: '#9ca3af', alignSelf: 'flex-end', marginBottom: 4 }}>/mo</span>
+                    <span style={S.planAmount}>{fmtSek(displayPrice)}</span>
+                    <span style={{ fontSize: 13, color: '#6b7280', alignSelf: 'flex-end', marginBottom: 6, marginLeft: 4 }}>kr / mo</span>
                     {billing === 'annual' && annualMonthly && monthlyPrice && (
-                      <span style={{ fontSize: 11, color: '#9ca3af', textDecoration: 'line-through', alignSelf: 'flex-end', marginBottom: 4, marginLeft: 4 }}>
-                        ${monthlyPrice}
+                      <span style={{ fontSize: 11, color: '#9ca3af', textDecoration: 'line-through', alignSelf: 'flex-end', marginBottom: 6, marginLeft: 6 }}>
+                        {fmtSek(monthlyPrice)}
                       </span>
                     )}
                   </>
