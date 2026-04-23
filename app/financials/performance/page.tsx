@@ -196,33 +196,63 @@ function samePeriodLastYear(k: PeriodKey): PeriodKey {
 }
 
 // Aggregation: reduce a set of month-rows into a PeriodData.
+//
+// Totals come from `tracker_data` (Fortnox rollup — authoritative). Line
+// items are used ONLY for the overhead subcategory split. We deliberately
+// don't sum `tracker_line_items.other_cost` as the overhead total: food
+// lines that the AI mis-classified as other_cost would double-count
+// against tracker_data.food_cost (see FIXES.md §0k).
 function aggregateMonths(
   trackerRows: any[],
   lineItems:   any[],
   includeMonths: (yr: number, mo: number) => boolean,
 ): PeriodData {
-  let revenue = 0, food = 0, staff = 0, overheads = 0
-  const split = { rent: 0, utilities: 0, other: 0 }
+  let revenue = 0, food = 0, staff = 0, overheads = 0, depreciation = 0, financial = 0
   let anyFood = false, anyOverheads = false
   for (const r of trackerRows) {
     if (!includeMonths(r.period_year, r.period_month)) continue
-    revenue += Number(r.revenue ?? 0)
-    food    += Number(r.food_cost ?? 0)
-    staff   += Number(r.staff_cost ?? 0)
-    if (Number(r.food_cost ?? 0) > 0) anyFood = true
+    revenue      += Number(r.revenue      ?? 0)
+    food         += Number(r.food_cost    ?? 0)
+    staff        += Number(r.staff_cost   ?? 0)
+    overheads    += Number(r.other_cost   ?? 0)
+    depreciation += Number(r.depreciation ?? 0)
+    financial    += Number(r.financial    ?? 0)
+    if (Number(r.food_cost  ?? 0) > 0) anyFood      = true
+    if (Number(r.other_cost ?? 0) > 0) anyOverheads = true
   }
+  // Subcategory split for the donut + breakdown table — only use line items
+  // whose Fortnox account is in the 5000-6999 "Övriga externa kostnader"
+  // range. Account 4000-4999 is cost-of-goods (food), which we intentionally
+  // exclude even if it's been mis-classified as category='other_cost'.
+  // Falls back to category+subcategory label matching when the account is
+  // missing (older extractions pre-account-capture).
+  const split = { rent: 0, utilities: 0, other: 0 }
   for (const li of lineItems) {
     if (!includeMonths(li.period_year, li.period_month)) continue
-    if (li.category !== 'other_cost') continue
+    const acct = Number(li.fortnox_account ?? 0)
+    const isOverheadByAccount = acct >= 5000 && acct <= 6999
+    const isOverheadByCategory = li.category === 'other_cost' && (!acct || acct === 0)
+    // Exclude food lines that may have been mis-classified as other_cost
+    // in older extractions — if the account sits in the 4000-series, it's
+    // cost-of-goods, not overheads.
+    if (acct >= 4000 && acct <= 4999) continue
+    if (!isOverheadByAccount && !isOverheadByCategory) continue
     const amt = Number(li.amount ?? 0)
-    overheads += amt
-    anyOverheads = true
     const sub = (li.subcategory ?? '').toLowerCase()
-    if (sub === 'rent')               split.rent      += amt
-    else if (sub === 'utilities' || sub === 'electricity' || sub === 'telecom') split.utilities += amt
-    else                              split.other     += amt
+    if (sub === 'rent')                                                           split.rent      += amt
+    else if (sub === 'utilities' || sub === 'electricity' || sub === 'telecom')   split.utilities += amt
+    else                                                                          split.other     += amt
   }
-  const netMargin = revenue - food - staff - overheads
+  // If the subcategory split is much smaller than the authoritative total,
+  // the line items are incomplete — fall back to showing everything under
+  // "other" so the donut matches the waterfall.
+  const splitTotal = split.rent + split.utilities + split.other
+  if (splitTotal > 0 && splitTotal < overheads * 0.6) {
+    split.other += overheads - splitTotal
+  } else if (splitTotal === 0 && overheads > 0) {
+    split.other = overheads
+  }
+  const netMargin = revenue - food - staff - overheads - depreciation - financial
   const marginPct = revenue > 0 ? (netMargin / revenue) * 100 : null
   return {
     revenue, food_cost: food, staff_cost: staff, overheads,

@@ -97,6 +97,23 @@ function classifyLabel(label: string): { category: string; subcategory: string |
   return { category: 'other_cost', subcategory: null }
 }
 
+// Swedish BAS chart-of-accounts ranges. The account number is the ONLY
+// authoritative signal for category on a Fortnox P&L — label alone is
+// ambiguous (e.g. "Inköp livsmedel" and "Varuinköp" both mean food cost
+// but neither matches the 3 food-cost keys in SV_SUB, so they'd fall
+// back to other_cost and double-count against tracker_data.food_cost).
+// See FIXES.md §0k for the incident this prevents going forward.
+function classifyByAccount(acct: number | null): { category: string; subcategory: string | null } | null {
+  if (acct == null || !Number.isFinite(acct)) return null
+  if (acct >= 3000 && acct <= 3999) return { category: 'revenue',      subcategory: null }
+  if (acct >= 4000 && acct <= 4999) return { category: 'food_cost',    subcategory: 'goods' }
+  if (acct >= 5000 && acct <= 6999) return { category: 'other_cost',   subcategory: null }
+  if (acct >= 7000 && acct <= 7999) return { category: 'staff_cost',   subcategory: null }
+  if (acct >= 8900 && acct <= 8999) return { category: 'depreciation', subcategory: 'depreciation' }
+  if (acct >= 8000 && acct <= 8899) return { category: 'financial',    subcategory: 'other' }
+  return null
+}
+
 // Backoff schedule — 30 s, 2 min, 10 min. Keeps failing-fast behaviour
 // visible (user sees 'failed' quickly for bad input) without burning
 // through retries when Anthropic is having a moment.
@@ -470,12 +487,24 @@ VALIDATION.  Before submitting:
       const label   = String(l?.label ?? '').trim()
       const fromAI  = String(l?.category ?? '').trim()
       const amount  = Number(l?.amount ?? 0)
-      const looked  = classifyLabel(label)
-      const category = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
-        ? fromAI : looked.category
       const acctRaw = l?.fortnox_account ?? l?.account
       const fortnoxAccount = Number.isFinite(Number(acctRaw)) ? Number(acctRaw) : null
-      return { label_sv: label, category, subcategory: looked.subcategory, amount, fortnox_account: fortnoxAccount }
+
+      // Category priority: account number (authoritative) → AI hint (if
+      // valid) → label lookup → other_cost fallback. Account number is the
+      // ONLY source that can't be wrong — a Fortnox 4010 is food cost no
+      // matter what the AI called it. Prevents the double-counting bug
+      // captured in FIXES.md §0k.
+      const accountBased = classifyByAccount(fortnoxAccount)
+      const labelBased   = classifyLabel(label)
+      const validAI      = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
+      const category     = accountBased?.category ?? (validAI ? fromAI : labelBased.category)
+
+      // Subcategory: prefer the label lookup (more granular — e.g. 'rent',
+      // 'software') over the broad account-based subcategory.
+      const subcategory  = labelBased.subcategory ?? accountBased?.subcategory ?? null
+
+      return { label_sv: label, category, subcategory, amount, fortnox_account: fortnoxAccount }
     }).filter((l: any) => l.label_sv && Number.isFinite(l.amount))
   }
 

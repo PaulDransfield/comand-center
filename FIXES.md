@@ -3,6 +3,27 @@ Last updated: 2026-04-23
 
 ---
 
+## 0k. Overheads double-counted food cost — 140% total of revenue
+
+**Symptom:** Performance page YTD 2025 for Vero showed Revenue 10.2M but costs totalled 14.3M (140.2%). Breakdown said food 34.9%, labour 39.6%, overheads **65.8%**. Industry benchmarks top out at ~25% overheads — the total was physically impossible without double-counting.
+
+**Root cause:** two independent data sources for the same information disagreed.
+
+- `tracker_data.food_cost` / `other_cost` — populated from the AI's **rollup totals** when extracting a Fortnox P&L (authoritative, reads the Resultatrapport summary line).
+- `tracker_line_items.category` — populated per-line from a fallback `classifyLabel()` function. It only knew three Swedish keys for food cost (`råvaror`, `handelsvaror`, `råvaror och förnödenheter`) and defaulted everything else to `other_cost`. Real Fortnox labels like "Varuinköp" or "Inköp livsmedel" on account 4010 fell through the cracks and ended up tagged `other_cost`.
+
+The Performance page was summing the authoritative food total from `tracker_data` AND summing `tracker_line_items` where `category='other_cost'` — so any food-line that slipped into `other_cost` got counted twice.
+
+**Fix (2026-04-23):**
+
+1. **Performance page** — totals (revenue, food, labour, overheads, depreciation, financial) now come exclusively from `tracker_data` via `/api/tracker`. Line items are used only for the overhead subcategory split (rent vs utilities vs other), and that split filters out any line whose `fortnox_account` is in the 4000-series range even if it was classified as `other_cost`.
+2. **`/api/tracker`** response extended with `other_cost`, `depreciation`, `financial` fields (additive — existing callers unaffected).
+3. **Fortnox extract-worker** — new `classifyByAccount()` function uses the Swedish BAS chart-of-accounts ranges (3000s = revenue, 4000s = food, 5000-6999 = other, 7000s = staff, 8900s = depreciation). Account number is the ONLY authoritative signal; AI category and label lookup are fallbacks. Prevents the same bug on future extractions.
+
+**Rule for future AI surfaces:** when both a rollup total and a line-item stream exist for the same concept, the rollup is authoritative. Line items are for drill-down detail, never for re-computing the total.
+
+---
+
 ## 0j. PK `/work-periods/` silently returns empty without `include_drafts=1`
 
 **Symptom:** Scheduling AI page showed a blank table with no obvious error. Owner had built next week's schedule in PK but the AI table was empty.
