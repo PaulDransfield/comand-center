@@ -1,5 +1,37 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-22
+Last updated: 2026-04-23
+
+---
+
+## 0j. PK `/work-periods/` silently returns empty without `include_drafts=1`
+
+**Symptom:** Scheduling AI page showed a blank table with no obvious error. Owner had built next week's schedule in PK but the AI table was empty.
+
+**Root cause:** per PK API docs, "work periods that have never been published (including work periods without assigned staff) are not included in the response" by default. `lib/pos/personalkollen.ts::getWorkPeriods` never passed `include_drafts=1`, so draft / unassigned shifts were invisible to us — PK API returned 200 with an empty `results` array. No error to surface.
+
+**Fix (2026-04-23, commit `dd2979e`):** `getWorkPeriods` always passes `include_drafts=1` now. `is_deleted` is still filtered locally. `is_published` is surfaced on the returned shape so callers can distinguish published-for-real from draft-in-progress.
+
+**Paired UI fix (commit `347e4b1`):** `/api/scheduling/ai-suggestion` now returns `diag.integration_status` + `diag.periods_returned`, and the UI branches on `pk_shifts_found === 0` to explain which of three causes triggered it (fetch error / stuck integration status / no published schedule yet) instead of just rendering blank.
+
+---
+
+## 0i. Integration stuck in `status='error'` after a single bad sync, forever
+
+**Symptom:** admin UI showed 8 integrations in status='error' with empty `last_error` and "Synced today". Timeline confirmed 1311 records at 07:44 — syncs ARE working. But `/api/resync`, BackgroundSync, and catchup-sync all filter on `status='connected'`, so they skipped. Only the nightly master-sync cron (no status filter) was getting through, which explained the 12h staleness.
+
+**Root cause:** `lib/sync/engine.ts` on success updated `last_sync_at` and `last_error` but never reset `status`. Once anything flipped it to 'error' or 'needs_reauth', it stayed there permanently.
+
+**Fix (2026-04-23, commit `d60d193`):** engine now sets `status='connected'` + `reauth_notified_at=null` on every successful sync. Migration `M023-RESET-STUCK-ERROR-STATUS.sql` flipped the existing 8 stuck rows in one pass. Verified 8 connected.
+
+---
+
+## 0h. Admin customer list cached stale data after successful deletion
+
+**Symptom:** deleted a test org, it stayed in the admin list. Clicking delete on the ghost row returned 404 "Organisation not found" — the org really was gone from Postgres. Hard refresh didn't clear it.
+
+**Root cause:** browser `fetch()` cache. `/api/admin/customers` didn't set `Cache-Control: no-store` AND the client-side fetch in `app/admin/customers/page.tsx` didn't pass `cache: 'no-store'`. Same CLAUDE.md §10b footgun we keep hitting.
+
+**Fix (2026-04-23, commit `0be3eef`):** belt-and-braces — both layers now set `no-store`. Also patched `/api/admin/orgs` which had the same pattern.
 
 ---
 

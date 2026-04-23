@@ -1,10 +1,24 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-20 | M015 (weather_daily) + M016 (memo_feedback) pending
+> Last updated: 2026-04-23 | M022 applied · M023 applied · M024 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M024 — PK sync cursors (incremental fetch optimisation)
+**File:** `M024-PK-SYNC-CURSORS.sql` (repo root)
+**Purpose:** add `integrations.pk_sync_cursors jsonb default '{}'::jsonb` column so master-sync can pass PK's `?sync_cursor=<last>` parameter and only fetch rows that changed/appeared since the last run, instead of refetching the full window. Roughly halves both PK API calls and Vercel function time on repeat syncs.
+**Safety:** non-destructive single ALTER TABLE ADD COLUMN. Sync engine falls back to range mode if the column is missing, so applying this is an optimisation not a requirement — but recommended.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
+
+### M023 — reset stuck `status = 'error'` integrations (one-off backfill) ✅ applied 2026-04-23
+**File:** `M023-RESET-STUCK-ERROR-STATUS.sql` (repo root)
+**Purpose:** companion to code fix `d60d193`. Engine was only updating `last_sync_at` + `last_error` on success, never resetting `status` itself — so one-off failures stuck integrations in 'error' forever, excluding them from `/api/resync`, BackgroundSync, and catchup-sync (all filter on status='connected'). The backfill flipped rows where `last_sync_at` was within 48h AND `last_error` was empty back to 'connected'. Code fix prevents recurrence. Verified: 8 connected after run.
+
+### M022 — integration reauth tracking ✅ applied 2026-04-22
+**File:** `M022-INTEGRATION-REAUTH.sql` (repo root)
+**Purpose:** support for the typed `PersonalkollenAuthError` path added in commit `ada0e7d`. When PK returns 401/403, sync engine flips `integrations.status` to `needs_reauth` and emails the org owner once per event — deduped via `reauth_notified_at` so a daily failed master-sync doesn't spam the inbox. Verified: `reauth_notified_at timestamptz` present, status CHECK widened to include `needs_reauth`.
 
 ### M015 — weather_daily
 **File:** `sql/M015-weather-daily.sql`
