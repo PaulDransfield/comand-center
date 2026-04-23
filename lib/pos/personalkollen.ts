@@ -142,12 +142,20 @@ export async function getLoggedTimes(token: string, fromDate?: string, toDate?: 
 
 // ── Work periods (scheduled shifts) ──────────────────────────────────────────
 // Response: { url, staff, staff_name, date, start, end, estimated_cost, workplace, is_deleted }
+//
+// include_drafts=1 is essential: per PK docs, work periods that have never
+// been published (or have no assigned staff) are excluded by default. Owners
+// often build next week's schedule without explicitly "publishing" — or
+// leave some slots unassigned — and without this flag the /work-periods/
+// endpoint silently returns empty, breaking the scheduling AI page.
+// The extractor still filters out is_deleted below, and we also drop
+// is_published=false at the call-site if we want a "published-only" view.
 export async function getWorkPeriods(token: string, fromDate?: string, toDate?: string) {
   let endpoint = '/work-periods/'
-  const params: string[] = []
+  const params: string[] = ['include_drafts=1']
   if (fromDate) params.push(`start__gte=${fromDate}`)
   if (toDate)   params.push(`start__lte=${endOfDay(toDate)}`)
-  if (params.length) endpoint += '?' + params.join('&')
+  endpoint += '?' + params.join('&')
 
   const periods = await fetchAll(endpoint, token)
   return periods
@@ -171,6 +179,10 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
         costgroup:          p.costgroup ?? null,
         ob_hours:           Math.round(obTotal * 10) / 10,
         has_ob:             (p.additional_salaries ?? []).length > 0,
+        // Surface publish state so the scheduling AI can treat drafts
+        // differently from published shifts if needed (e.g. badge them,
+        // or exclude from "actual hours planned" totals).
+        is_published:       p.is_published ?? true,
       }
     })
 }
