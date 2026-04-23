@@ -83,12 +83,41 @@ export async function GET(req: NextRequest) {
   const errors    = results.filter(r => r.error)
   const timedOut  = errors.filter(r => /^timeout:/.test(r.error ?? ''))
 
+  // Post-aggregate safety net — run aggregateMetrics ONCE per unique business
+  // after every integration has finished. Catches the race where Inzii (or
+  // any short-circuited sync) wrote stale daily_metrics rows while PK was
+  // still fetching, leaving the most recent day with revenue=0 even after
+  // PK's revenue_logs landed. See FIXES.md §0l.
+  const uniqueBiz = new Map<string, { orgId: string; businessId: string }>()
+  for (const r of results) {
+    if (!r.business_id) continue
+    uniqueBiz.set(`${r.org_id}|${r.business_id}`, { orgId: r.org_id, businessId: r.business_id })
+  }
+  let postAggregated = 0
+  let postAggErrors  = 0
+  if (uniqueBiz.size) {
+    const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+    for (const { orgId, businessId } of uniqueBiz.values()) {
+      try {
+        await aggregateMetrics(orgId, businessId, from90, toDate)
+        postAggregated++
+      } catch (e: any) {
+        postAggErrors++
+        log.warn('master-sync post-aggregate failed', {
+          route: 'cron/master-sync', org_id: orgId, business_id: businessId, error: e?.message,
+        })
+      }
+    }
+  }
+
   log.info('master-sync complete', {
     route:        'cron/master-sync',
     duration_ms:  Date.now() - runStarted,
     integrations: integrations.length,
     errors:       errors.length,
     timed_out:    timedOut.length,
+    post_aggregated: postAggregated,
+    post_agg_errors: postAggErrors,
     status:       errors.length === 0 ? 'success' : 'partial',
   })
 

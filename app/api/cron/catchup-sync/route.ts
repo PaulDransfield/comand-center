@@ -83,6 +83,30 @@ async function handle(req: NextRequest) {
   const timedOut  = errors.filter(r => /^timeout:/.test(r.error ?? ''))
   const skipped   = results.filter(r => r.skipped).length
 
+  // Post-aggregate safety net — see master-sync for rationale. Catches
+  // late-arriving POS data that landed after a no-op sync skipped aggregate.
+  const uniqueBiz = new Map<string, { orgId: string; businessId: string }>()
+  for (const r of results) {
+    if (!r.business_id) continue
+    uniqueBiz.set(`${r.org_id}|${r.business_id}`, { orgId: r.org_id, businessId: r.business_id })
+  }
+  let postAggregated = 0
+  let postAggErrors  = 0
+  if (uniqueBiz.size) {
+    const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+    for (const { orgId, businessId } of uniqueBiz.values()) {
+      try {
+        await aggregateMetrics(orgId, businessId, from7, toDate)
+        postAggregated++
+      } catch (e: any) {
+        postAggErrors++
+        log.warn('catchup-sync post-aggregate failed', {
+          route: 'cron/catchup-sync', org_id: orgId, business_id: businessId, error: e?.message,
+        })
+      }
+    }
+  }
+
   log.info('catchup-sync complete', {
     route:        'cron/catchup-sync',
     duration_ms:  Date.now() - runStarted,
@@ -90,6 +114,8 @@ async function handle(req: NextRequest) {
     errors:       errors.length,
     timed_out:    timedOut.length,
     skipped,
+    post_aggregated: postAggregated,
+    post_agg_errors: postAggErrors,
     status:       errors.length === 0 ? 'success' : 'partial',
   })
 

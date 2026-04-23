@@ -1128,49 +1128,67 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
     // Aggregation errors used to be swallowed with a warning — syncs reported
     // "success" with stale summary data and the dashboard went days behind.
     // Surface the error on sync_log and fail the integration's sync cleanly.
-    try {
-      const { aggregateMetrics } = await import('@/lib/sync/aggregate')
-      const aggResult = await aggregateMetrics(orgId, integ.business_id, from, to)
-      console.log('[sync] aggregate OK', { orgId, business_id: integ.business_id, ...aggResult })
-    } catch (aggErr: any) {
-      console.error('[sync] aggregation FAILED', {
-        org_id:        orgId,
-        business_id:   integ.business_id,
-        provider,
-        integration_id: integ.id,
-        message:       aggErr.message,
-        stack:         aggErr.stack,
-      })
-      // Surface to Sentry so we see aggregation failures in the issues stream.
-      // Dashboard goes stale when this fires — high priority to investigate.
-      try {
-        const { captureError } = await import('@/lib/monitoring/sentry')
-        captureError(aggErr, {
-          route:          'lib/sync/engine',
-          phase:          'aggregateMetrics',
-          org_id:         orgId,
-          business_id:    integ.business_id,
-          provider,
-          integration_id: integ.id,
-          from, to,
-        })
-      } catch { /* monitoring must never break sync */ }
+    //
+    // 2026-04-23: skip aggregate when this integration wrote nothing. Inzii's
+    // short-circuited sync (records_synced=0) was running 8× in parallel with
+    // PK at master-sync, and each Inzii's aggregate was reading revenue_logs
+    // BEFORE PK's late-arriving writes committed, then overwriting daily_metrics
+    // with stale zero-revenue for the latest day. Result: "Wed 22 Apr — | 9,910 kr"
+    // with PK revenue already sitting in revenue_logs. No-op syncs don't need
+    // to aggregate; the caller (master-sync / catchup-sync) runs a single
+    // per-business aggregate sweep at the end of its run as a safety net.
+    const syncedSomething = Object.values(result ?? {})
+      .some((v: any) => typeof v === 'number' && v > 0)
 
-      // Mark the sync as partially successful — raw data landed but summaries didn't.
-      // The dashboard will show whatever daily_metrics currently has; we'll retry
-      // aggregation on the next master-sync.
+    if (!syncedSomething) {
+      console.log('[sync] skipping aggregate — no new rows', {
+        orgId, business_id: integ.business_id, provider,
+      })
+    } else {
       try {
-        await db.from('sync_log').insert({
-          org_id:       orgId,
-          business_id:  integ.business_id ?? null,
-          integration_id: integ.id,
+        const { aggregateMetrics } = await import('@/lib/sync/aggregate')
+        const aggResult = await aggregateMetrics(orgId, integ.business_id, from, to)
+        console.log('[sync] aggregate OK', { orgId, business_id: integ.business_id, ...aggResult })
+      } catch (aggErr: any) {
+        console.error('[sync] aggregation FAILED', {
+          org_id:        orgId,
+          business_id:   integ.business_id,
           provider,
-          status:       'partial',
-          error_msg:    `Aggregation failed: ${aggErr.message}`,
-          date_from:    from,
-          date_to:      to,
+          integration_id: integ.id,
+          message:       aggErr.message,
+          stack:         aggErr.stack,
         })
-      } catch { /* best-effort */ }
+        // Surface to Sentry so we see aggregation failures in the issues stream.
+        // Dashboard goes stale when this fires — high priority to investigate.
+        try {
+          const { captureError } = await import('@/lib/monitoring/sentry')
+          captureError(aggErr, {
+            route:          'lib/sync/engine',
+            phase:          'aggregateMetrics',
+            org_id:         orgId,
+            business_id:    integ.business_id,
+            provider,
+            integration_id: integ.id,
+            from, to,
+          })
+        } catch { /* monitoring must never break sync */ }
+
+        // Mark the sync as partially successful — raw data landed but summaries didn't.
+        // The dashboard will show whatever daily_metrics currently has; we'll retry
+        // aggregation on the next master-sync.
+        try {
+          await db.from('sync_log').insert({
+            org_id:       orgId,
+            business_id:  integ.business_id ?? null,
+            integration_id: integ.id,
+            provider,
+            status:       'partial',
+            error_msg:    `Aggregation failed: ${aggErr.message}`,
+            date_from:    from,
+            date_to:      to,
+          })
+        } catch { /* best-effort */ }
+      }
     }
 
     // Update integration last_sync. Also reset status to 'connected' so a
