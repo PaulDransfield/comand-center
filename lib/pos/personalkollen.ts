@@ -15,12 +15,27 @@ const BASE = 'https://personalkollen.se/api'
 // from master-sync because each morning's cron passed `toDate` as a bare
 // date and cut off yesterday's dinner service.
 //
-// Fix: if the caller passes a date-only string, pad to end-of-day in local
-// time so the __lte window is inclusive of the full day.
+// Fix: if the caller passes a date-only string, pad to end-of-day in UTC
+// so the __lte window is inclusive of the full day. PK docs are explicit:
+// timestamps MUST include a timezone designator. Without one ('Z' or
+// '+00:00') the server's interpretation is undefined — which is how we
+// lost yesterday's evening sales for months (FIXES.md §0f).
 function endOfDay(d: string): string {
-  // Already a datetime? Leave alone.
-  if (d.includes('T') || d.includes(' ')) return d
-  return `${d}T23:59:59`
+  if (d.includes('T') || d.includes(' ')) {
+    // Already a datetime — ensure it has a timezone. If none, treat as UTC.
+    return /[Zz]|[+-]\d{2}:?\d{2}$/.test(d) ? d : `${d}Z`
+  }
+  return `${d}T23:59:59Z`
+}
+
+// Mirror for lower-bound dates — PK is less strict on the gte side
+// ('2026-04-23' as gte includes the whole day) but we still want a
+// timezone-tagged string going over the wire to match the docs.
+function startOfDay(d: string): string {
+  if (d.includes('T') || d.includes(' ')) {
+    return /[Zz]|[+-]\d{2}:?\d{2}$/.test(d) ? d : `${d}Z`
+  }
+  return `${d}T00:00:00Z`
 }
 
 // Map Swedish OB verbose names from PK to English labels
@@ -54,8 +69,18 @@ export class PersonalkollenAuthError extends Error {
 }
 
 async function fetchAll(endpoint: string, token: string): Promise<any[]> {
+  const { results } = await fetchAllWithCursor(endpoint, token)
+  return results
+}
+
+// Like fetchAll, but also surfaces the Sync-Cursor header value from the
+// first response so callers can do incremental fetches. PK recommends this
+// for high-volume syncs — pass ?sync_cursor=<previous cursor> and only
+// changed/new rows come back, instead of refetching the whole window.
+export async function fetchAllWithCursor(endpoint: string, token: string): Promise<{ results: any[]; syncCursor: string | null }> {
   const results: any[] = []
   let url: string | null = `${BASE}${endpoint}`
+  let syncCursor: string | null = null
   while (url) {
     const res = await fetch(url, {
       headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
@@ -66,11 +91,14 @@ async function fetchAll(endpoint: string, token: string): Promise<any[]> {
       }
       throw new Error(`Personalkollen error ${res.status}: ${res.statusText}`)
     }
+    // Cursor comes from the first page only — PK returns the "as of" time
+    // of the initial response, valid for fetching changes since then.
+    if (syncCursor === null) syncCursor = res.headers.get('sync-cursor') ?? res.headers.get('Sync-Cursor')
     const data = await res.json()
     results.push(...(data.results ?? []))
     url = data.next ?? null
   }
-  return results
+  return { results, syncCursor }
 }
 
 // ── Workplaces ────────────────────────────────────────────────────────────────
@@ -105,7 +133,7 @@ export async function getStaff(token: string) {
 export async function getLoggedTimes(token: string, fromDate?: string, toDate?: string) {
   let endpoint = '/logged-times/'
   const params: string[] = []
-  if (fromDate) params.push(`start__gte=${fromDate}`)
+  if (fromDate) params.push(`start__gte=${startOfDay(fromDate)}`)
   if (toDate)   params.push(`start__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
@@ -153,7 +181,7 @@ export async function getLoggedTimes(token: string, fromDate?: string, toDate?: 
 export async function getWorkPeriods(token: string, fromDate?: string, toDate?: string) {
   let endpoint = '/work-periods/'
   const params: string[] = ['include_drafts=1']
-  if (fromDate) params.push(`start__gte=${fromDate}`)
+  if (fromDate) params.push(`start__gte=${startOfDay(fromDate)}`)
   if (toDate)   params.push(`start__lte=${endOfDay(toDate)}`)
   endpoint += '?' + params.join('&')
 
@@ -208,7 +236,7 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
 export async function getSales(token: string, fromDate?: string, toDate?: string) {
   let endpoint = '/sales/'
   const params: string[] = []
-  if (fromDate) params.push(`sale_time__gte=${fromDate}`)
+  if (fromDate) params.push(`sale_time__gte=${startOfDay(fromDate)}`)
   if (toDate)   params.push(`sale_time__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
@@ -305,7 +333,7 @@ export async function getStaffSummary(token: string, fromDate: string, toDate: s
 export async function getSaleForecast(token: string, fromDate?: string, toDate?: string) {
   let endpoint = '/sale-forecast/'
   const params: string[] = []
-  if (fromDate) params.push(`date__gte=${fromDate}`)
+  if (fromDate) params.push(`date__gte=${startOfDay(fromDate)}`)
   if (toDate)   params.push(`date__lte=${endOfDay(toDate)}`)
   if (params.length) endpoint += '?' + params.join('&')
 
@@ -316,4 +344,47 @@ export async function getSaleForecast(token: string, fromDate?: string, toDate?:
     date:         f.date,
     amount:       parseFloat(f.amount ?? 0),
   }))
+}
+
+// ── Incremental sync helpers (Sync-Cursor driven) ──────────────────────────
+// These wrappers are the cursor-aware siblings of getLoggedTimes / getSales.
+// Pass the previous response's syncCursor to pull ONLY the rows PK changed
+// or added since then. On first sync pass null/undefined and PK returns
+// everything (behaves like the range query). Always persist the returned
+// `syncCursor` so the next call can resume.
+//
+// Not wrapped for getWorkPeriods because the scheduling AI page wants a
+// full next-week snapshot each call, not "changes since last run".
+
+export async function getLoggedTimesIncremental(
+  token: string,
+  opts: { syncCursor?: string | null; fromDate?: string; toDate?: string } = {},
+) {
+  const params: string[] = []
+  if (opts.syncCursor)     params.push(`sync_cursor=${encodeURIComponent(opts.syncCursor)}`)
+  else {
+    if (opts.fromDate) params.push(`start__gte=${startOfDay(opts.fromDate)}`)
+    if (opts.toDate)   params.push(`start__lte=${endOfDay(opts.toDate)}`)
+  }
+  const endpoint = `/logged-times/${params.length ? '?' + params.join('&') : ''}`
+  const { results, syncCursor } = await fetchAllWithCursor(endpoint, token)
+  const mapped = results
+    .filter((t: any) => !t.is_canceled && !t.is_guest && t.stop)
+    .map((t: any) => t)   // caller re-maps — raw stays raw for now
+  return { data: mapped, syncCursor }
+}
+
+export async function getSalesIncremental(
+  token: string,
+  opts: { syncCursor?: string | null; fromDate?: string; toDate?: string } = {},
+) {
+  const params: string[] = []
+  if (opts.syncCursor)     params.push(`sync_cursor=${encodeURIComponent(opts.syncCursor)}`)
+  else {
+    if (opts.fromDate) params.push(`sale_time__gte=${startOfDay(opts.fromDate)}`)
+    if (opts.toDate)   params.push(`sale_time__lte=${endOfDay(opts.toDate)}`)
+  }
+  const endpoint = `/sales/${params.length ? '?' + params.join('&') : ''}`
+  const { results, syncCursor } = await fetchAllWithCursor(endpoint, token)
+  return { data: results, syncCursor }
 }

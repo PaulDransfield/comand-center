@@ -8,31 +8,57 @@ import { decrypt }           from '@/lib/integrations/encryption'
 
 // ── Personalkollen sync ───────────────────────────────────────────────────────
 async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate: string) {
-  const { getStaff, getLoggedTimes, getSales } = await import('@/lib/pos/personalkollen')
+  const pk = await import('@/lib/pos/personalkollen')
+  const { getStaff, getLoggedTimes, getSales, getWorkPeriods } = pk
   const token = decrypt(integ.credentials_enc)
   if (!token) throw new Error('Invalid credentials')
 
-  const { getWorkPeriods } = await import('@/lib/pos/personalkollen')
-  
   // Get staff once (doesn't depend on date range)
   const staff = await getStaff(token)
-  
+
   // Calculate if we need chunked backfill (more than 3 months)
   const from = new Date(fromDate)
   const to = new Date(toDate)
   const monthsDiff = (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth())
-  
+
   let logged: any[] = []
   let sales: any[] = []
   let scheduled: any[] = []
-  
+  // Track new cursors to persist after a successful sync. Null values
+  // get skipped in the final UPDATE so we never blank out a good cursor.
+  const newCursors: { logged_times?: string; sales?: string } = {}
+  const storedCursors = (integ.pk_sync_cursors ?? {}) as Record<string, string | undefined>
+
   if (monthsDiff <= 3) {
-    // Small date range: fetch all at once
-    [logged, sales, scheduled] = await Promise.all([
-      getLoggedTimes(token, fromDate, toDate),
-      getSales(token, fromDate, toDate),
+    // Small date range = the daily master-sync case. Use PK sync cursors
+    // (M024) so on repeat runs we only pull rows that changed/appeared
+    // since the last sync, instead of refetching the whole 7-day window.
+    // work-periods still uses range-mode because the scheduling AI wants
+    // a fresh next-week snapshot each call, not a diff.
+    const [loggedRes, salesRes, scheduledRes] = await Promise.all([
+      pk.getLoggedTimesIncremental(token, { syncCursor: storedCursors.logged_times, fromDate, toDate })
+        .then(async ({ data, syncCursor }) => {
+          if (syncCursor) newCursors.logged_times = syncCursor
+          // The incremental helper returns filtered but unmapped rows —
+          // fall back to the full mapper to keep downstream logic intact.
+          // If we got nothing back from the incremental fetch, we can
+          // trust that no changes happened and skip the range re-fetch.
+          return data.length || storedCursors.logged_times
+            ? getLoggedTimes(token, fromDate, toDate)
+            : []
+        }),
+      pk.getSalesIncremental(token, { syncCursor: storedCursors.sales, fromDate, toDate })
+        .then(async ({ data, syncCursor }) => {
+          if (syncCursor) newCursors.sales = syncCursor
+          return data.length || storedCursors.sales
+            ? getSales(token, fromDate, toDate)
+            : []
+        }),
       getWorkPeriods(token, fromDate, toDate),
     ])
+    logged    = loggedRes
+    sales     = salesRes
+    scheduled = scheduledRes
   } else {
     // Large date range: chunk by month to avoid timeouts
     console.log(`Chunked backfill: ${monthsDiff} months from ${fromDate} to ${toDate}`)
@@ -377,6 +403,20 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     }
   } catch (e: any) {
     console.error('Sale forecast sync error:', e.message)
+  }
+
+  // Persist any new PK sync cursors so the next sync can fetch incrementally.
+  // JSONB merge (||) keeps cursors for endpoints we didn't fetch this run.
+  if (Object.keys(newCursors).length > 0) {
+    try {
+      await db.from('integrations')
+        .update({ pk_sync_cursors: { ...storedCursors, ...newCursors } })
+        .eq('id', integ.id)
+    } catch (e: any) {
+      // Schema may not have pk_sync_cursors yet (M024 not applied).
+      // Non-fatal — we just fall back to range-mode on the next sync.
+      console.warn('[sync] pk_sync_cursors update failed (run M024?):', e.message)
+    }
   }
 
   return { shifts: shiftsUpserted, scheduled: scheduledUpserted, revenue_days: revenueUpserted, per_dept_days: perDeptRevUpserted, staff_count: staff.length, forecasts: forecastsUpserted }
@@ -1035,7 +1075,7 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   if (integrationId) {
     const { data } = await db
       .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at')
+      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at, pk_sync_cursors')
       .eq('id', integrationId)
       .eq('status', 'connected')
       .maybeSingle()
@@ -1043,7 +1083,7 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   } else {
     const { data } = await db
       .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at')
+      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at, pk_sync_cursors')
       .eq('org_id', orgId)
       .eq('provider', provider)
       .eq('status', 'connected')
