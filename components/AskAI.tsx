@@ -125,7 +125,7 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
         if (data.reason === 'global_kill_switch') {
           setError(data.error || 'AI is temporarily paused. Please try again shortly.')
         } else if (data.reason === 'monthly_ceiling') {
-          setError(data.error || 'Monthly AI cost ceiling reached. Please contact paul@laweka.com to review.')
+          setError(data.error || 'Monthly AI cost ceiling reached. Please contact support@comandcenter.se to review.')
         } else if (data.upgrade || data.reason === 'daily_cap') {
           setUpgrade(true)
           setLimitInfo({

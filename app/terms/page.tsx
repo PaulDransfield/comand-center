@@ -11,13 +11,13 @@ export default function TermsPage() {
 
       <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Terms of Service</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40 }}>
-        Version 1.1 · Effective 17 April 2026 · Dransfield Invest AB
+        Version 1.1 · Effective 17 April 2026 · ComandCenter AB
       </p>
 
       {[
         {
           title: '1. Agreement',
-          body: `By signing up for and using CommandCenter ("the Service"), you agree to these Terms of Service. If you do not agree, do not use the Service.\n\nThe Service is provided by Dransfield Invest AB, a Swedish company. These terms form a binding agreement between you (or the company you represent) and Dransfield Invest AB.`
+          body: `By signing up for and using CommandCenter ("the Service"), you agree to these Terms of Service. If you do not agree, do not use the Service.\n\nThe Service is provided by ComandCenter AB, a Swedish company. These terms form a binding agreement between you (or the company you represent) and ComandCenter AB.`
         },
         {
           title: '2. The Service',
@@ -25,7 +25,7 @@ export default function TermsPage() {
         },
         {
           title: '3. Account registration',
-          body: `You must provide accurate, complete information when registering. You are responsible for maintaining the security of your account credentials. You must notify us immediately at paul@laweka.com if you suspect unauthorised access to your account.\n\nOne account may represent one organisation. You may add multiple restaurant locations (businesses) within one account.`
+          body: `You must provide accurate, complete information when registering. You are responsible for maintaining the security of your account credentials. You must notify us immediately at security@comandcenter.se if you suspect unauthorised access to your account.\n\nOne account may represent one organisation. You may add multiple restaurant locations (businesses) within one account.`
         },
         {
           title: '4. Acceptable use',
@@ -45,11 +45,11 @@ export default function TermsPage() {
         },
         {
           title: '7. Subscription and payment',
-          body: `The Service is offered on a subscription basis. Current pricing is available at comandcenter.se/upgrade.\n\nMonthly subscriptions are billed on the same date each month. Annual subscriptions are billed once per year upfront.\n\nAll prices are in Swedish kronor (SEK) and include Swedish VAT (25%) where applicable.\n\nPayments are processed by Stripe. We do not store payment card details.\n\nSubscriptions auto-renew unless cancelled before the renewal date. You can cancel at any time from your account settings or by contacting paul@laweka.com.`
+          body: `The Service is offered on a subscription basis. Current pricing is available at comandcenter.se/upgrade.\n\nMonthly subscriptions are billed on the same date each month. Annual subscriptions are billed once per year upfront.\n\nAll prices are in Swedish kronor (SEK) and include Swedish VAT (25%) where applicable.\n\nPayments are processed by Stripe. We do not store payment card details.\n\nSubscriptions auto-renew unless cancelled before the renewal date. You can cancel at any time from your account settings or by contacting billing@comandcenter.se.`
         },
         {
           title: '8. Refunds',
-          body: `Monthly subscriptions: we do not offer refunds for partial months. If you cancel, your access continues until the end of the current billing period.\n\nAnnual subscriptions: if you cancel within 14 days of your annual payment and have not actively used the Service during that period, you may request a full refund by contacting paul@laweka.com.\n\nWe reserve the right to issue refunds at our discretion in exceptional circumstances.`
+          body: `Monthly subscriptions: we do not offer refunds for partial months. If you cancel, your access continues until the end of the current billing period.\n\nAnnual subscriptions: if you cancel within 14 days of your annual payment and have not actively used the Service during that period, you may request a full refund by contacting billing@comandcenter.se.\n\nWe reserve the right to issue refunds at our discretion in exceptional circumstances.`
         },
         {
           title: '9. Service availability',
@@ -57,11 +57,11 @@ export default function TermsPage() {
         },
         {
           title: '10. Limitation of liability',
-          body: `To the fullest extent permitted by Swedish law, Dransfield Invest AB is not liable for:\n\n— Indirect, incidental, or consequential losses\n— Loss of profit, revenue, or data\n— Business interruption\n— Decisions made based on data or insights from the Service\n\nOur total liability to you for any claim arising from use of the Service is limited to the amount you paid us in the three months prior to the claim.`
+          body: `To the fullest extent permitted by Swedish law, ComandCenter AB is not liable for:\n\n— Indirect, incidental, or consequential losses\n— Loss of profit, revenue, or data\n— Business interruption\n— Decisions made based on data or insights from the Service\n\nOur total liability to you for any claim arising from use of the Service is limited to the amount you paid us in the three months prior to the claim.`
         },
         {
           title: '11. Indemnification',
-          body: `You agree to indemnify and hold harmless Dransfield Invest AB from any claims, losses, or damages arising from your use of the Service, your violation of these terms, or your violation of any third party's rights.`
+          body: `You agree to indemnify and hold harmless ComandCenter AB from any claims, losses, or damages arising from your use of the Service, your violation of these terms, or your violation of any third party's rights.`
         },
         {
           title: '12. Termination',
@@ -77,7 +77,7 @@ export default function TermsPage() {
         },
         {
           title: '15. Contact',
-          body: `Questions about these terms:\n\nDransfield Invest AB\npaul@laweka.com\ncomandcenter.se`
+          body: `Questions about these terms:\n\nComandCenter AB\nlegal@comandcenter.se\ncomandcenter.se`
         },
       ].map(s => (
         <div key={s.title} style={{ marginBottom: 36 }}>
@@ -89,7 +89,7 @@ export default function TermsPage() {
       ))}
 
       <div style={{ marginTop: 48, paddingTop: 24, borderTop: '1px solid #e5e7eb', fontSize: 13, color: '#9ca3af' }}>
-        Dransfield Invest AB · CommandCenter · paul@laweka.com · comandcenter.se
+        ComandCenter AB · CommandCenter · hello@comandcenter.se · comandcenter.se
       </div>
     </div>
   )

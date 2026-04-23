@@ -6,7 +6,7 @@
 ## 1. Business Summary
 
 **Product**: CommandCenter — restaurant group business intelligence SaaS
-**Owner**: Paul Dransfield (paul@laweka.com) — Dransfield Invest AB
+**Owner**: Paul Dransfield (paul@comandcenter.se) — ComandCenter AB
 **Live**: https://comandcenter.se
 **Stage**: Platform live, 0 paying customers, ready for first sale
 **Target**: 50 paying customers within 12 months
@@ -82,7 +82,7 @@ Unlimited AI (Group plan) still delivers 93% margin even at maximum realistic us
 ```
 Customer signs up at comandcenter.se
   → Completes 4-step onboarding (name, city, systems they use)
-  → Email sent to paul@laweka.com with their system choices
+  → Email sent to paul@comandcenter.se with their system choices
   → Customer sees "setting up..." state on dashboard
 
 Support goes to /admin
@@ -105,7 +105,7 @@ Daily cron takes over
 ## 5. Customer Support Model
 
 **Phase 1 (0–20 customers)**: Paul handles all support directly
-- Email: paul@laweka.com
+- Email: paul@comandcenter.se
 - Response target: same business day
 - Onboarding: Paul connects all new customers via /admin panel
 
@@ -120,14 +120,14 @@ Daily cron takes over
 
 | Requirement | Status |
 |------------|--------|
-| Privacy policy | ✅ Live at /privacy — Dransfield Invest AB, full GDPR |
+| Privacy policy | ✅ Live at /privacy — ComandCenter AB, full GDPR |
 | Terms of service | ❌ Not built — MUST BUILD before charging customers |
 | GDPR data export | ✅ Built — /api/gdpr GET |
 | GDPR deletion | ✅ Built — deletion_requests table, 30-day process |
 | Consent logging | ✅ Built — ConsentBanner component, stored in DB |
 | Data location | ✅ Supabase Frankfurt (EU), Vercel EU |
 | Sub-processors disclosed | ✅ In privacy policy: Supabase, Vercel, Anthropic, Stripe |
-| Swedish company registration | ✅ Dransfield Invest AB |
+| Swedish company registration | ✅ ComandCenter AB |
 
 **Blocking issue**: Cannot legally charge customers without terms of service. Build in Session 6.
 

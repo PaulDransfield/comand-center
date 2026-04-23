@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   const { sendEmail } = await import('@/lib/email/send')
   await sendEmail({
     from:    'CommandCenter <noreply@comandcenter.se>',
-    to:      'paul@laweka.com',
+    to:      process.env.OPS_EMAIL ?? 'paul@comandcenter.se',
     subject: `New setup request: ${restaurantName}`,
     html: `
       <h2>New setup request</h2>

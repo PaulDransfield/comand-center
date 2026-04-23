@@ -94,7 +94,7 @@ Ranked by risk to the business.
 - **Opt-out toggle** per org: `organisations.log_ai_questions boolean default true`. When false, `logAiRequest` passes `question_preview = null`.
 - **Default for new orgs**: `true` (we want the data to help debug / improve), but clearly mentioned in privacy policy + a checkbox in onboarding to toggle off.
 - **Retention**: add a nightly cron that deletes `ai_request_log` rows older than 365 days. Kept inside EU (Supabase Frankfurt) — no change.
-- **Sub-processor disclosure**: already in privacy policy. Confirm Anthropic ZDR is turned on once Dransfield Invest AB is registered and under DPA.
+- **Sub-processor disclosure**: already in privacy policy. Confirm Anthropic ZDR is turned on once ComandCenter AB is registered and under DPA.
 - **Context sent to Claude**: today we pass aggregate business metrics. We do NOT pass individual staff names or PII to Claude. Verify this at the context-building layer: `lib/ai/buildContext.ts` and `app/notebook/page.tsx` `buildContext()` both must only include aggregated monthly totals, never individual staff rows.
 
 ### P1 — Anomaly detection + ops alerting
@@ -102,7 +102,7 @@ Ranked by risk to the business.
 **Gap:** A customer hitting 10× normal usage, a new exploit, a compromised API key — none of this surfaces until the monthly bill arrives.
 
 **What we need:**
-- **Daily ops email** to paul@laweka.com summarising: total queries, total SEK spent, any orgs over 2× their moving average, any orgs with 0 queries in the last 7 days (health signal).
+- **Daily ops email** to paul@comandcenter.se summarising: total queries, total SEK spent, any orgs over 2× their moving average, any orgs with 0 queries in the last 7 days (health signal).
 - **Realtime alert** when any single org exceeds $10 in a 24 h window, regardless of plan. Runbook: check audit log, contact customer if the pattern looks unusual, throttle if needed.
 - **Pattern detection for the future**: pre-compute moving average per org, flag sudden shifts. Not P0.
 
@@ -340,7 +340,7 @@ Before declaring done:
 1. **Monthly cost ceilings per plan** — propose Starter 60 kr, Pro 150 kr, Group 500 kr. Confirm.
 2. **Global daily kill-switch** — propose $50/day start. Confirm.
 3. **`log_ai_questions` default** — propose `true` (with privacy-policy note). Alternative: `false` by default, opt-in. Your call.
-4. **Ops email address** — `paul@laweka.com` today. Future `ops@comandcenter.se` once AB registered — OK?
+4. **Ops email address** — `paul@comandcenter.se` today. Future `ops@comandcenter.se` once AB registered — OK?
 5. **Booster price** — confirmed 299 kr/mo for +100/day?
 6. **Retention for `ai_request_log`** — propose 365 days. Legal review might prefer 180 days for PII minimisation. Confirm.
 7. **UI warning tone** — 80 % banner: soft yellow or urgent orange? I'll build soft yellow unless you say otherwise.

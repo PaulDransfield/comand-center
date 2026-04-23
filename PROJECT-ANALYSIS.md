@@ -99,7 +99,7 @@ This is a warts-and-all audit. The product is further along than most founders' 
 
 ### 3.10 `ADMIN_TOTP_SECRET` is optional in production
 - **Where:** `app/api/admin/auth/route.ts:33–40` — 2FA only required if env var is set. If unset, falls back to password.
-- **Why critical:** single-factor admin access is the single largest lateral-movement risk in the app. Once `Dransfield Invest AB` is registered and TOTP is enrolled (per my earlier step-1 plan), this becomes moot — until then it's a latent risk.
+- **Why critical:** single-factor admin access is the single largest lateral-movement risk in the app. Once `ComandCenter AB` is registered and TOTP is enrolled (per my earlier step-1 plan), this becomes moot — until then it's a latent risk.
 - **Fix:** refuse to start the server in production if `ADMIN_TOTP_SECRET` is unset. The 15 seconds of inconvenience is the whole point.
 
 ---
@@ -208,7 +208,7 @@ Ranked by when they'll bite, not how hard to fix.
 - **AI Act classification must be documented.** We're "limited risk" (transparency only). Writing the 2-page assessment takes an afternoon; not writing it costs much more if regulators ask.
 
 ### When we exit trial-only and take paying customers
-- **Everything in `LEGAL-OBLIGATIONS.md §10` "Before first paying customer"** is a hard gate. DPAs signed, Fortnox dev program approved, ZDR verified on Anthropic, hard-delete tested end-to-end, privacy policy accurate. Most of this is blocked on `Dransfield Invest AB` registration, which the user has explicitly flagged as pending.
+- **Everything in `LEGAL-OBLIGATIONS.md §10` "Before first paying customer"** is a hard gate. DPAs signed, Fortnox dev program approved, ZDR verified on Anthropic, hard-delete tested end-to-end, privacy policy accurate. Most of this is blocked on `ComandCenter AB` registration, which the user has explicitly flagged as pending.
 - **Stripe webhook reliability.** `app/api/stripe/webhook/route.ts` writes to unmigrated `billing_events`. If the webhook is down or the table shape drifts, subscriptions can fall out of sync with auth state (paid customer locked out, or cancelled customer still active).
 - **Resend deliverability.** Monday briefings and onboarding emails will go to customer decision-makers. Missing emails look worse than obvious missing features. No current bounce tracking.
 

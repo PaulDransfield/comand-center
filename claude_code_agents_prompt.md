@@ -259,7 +259,7 @@ if (result.shifts > 0) {
    - `shifts > 0` ✓
    - `staff_count > 0` ✓
    - Date range looks reasonable (not just 1 day)
-   - If anything looks wrong: email paul@laweka.com with details, do NOT email customer
+   - If anything looks wrong: email paul@comandcenter.se with details, do NOT email customer
 
 2. Gather a summary:
 ```typescript

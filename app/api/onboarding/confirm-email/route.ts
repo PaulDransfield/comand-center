@@ -68,10 +68,10 @@ export async function POST(req: NextRequest) {
               <li>You'll get another email when your dashboard is live</li>
             </ul>
             <p style="font-size:13px;color:#6b7280">
-              Questions? Reply to this email or contact paul@laweka.com
+              Questions? Reply to this email or contact support@comandcenter.se
             </p>
             <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af">
-              CommandCenter · Dransfield Invest AB · comandcenter.se
+              CommandCenter · ComandCenter AB · comandcenter.se
             </div>
           </div>
         `,

@@ -27,7 +27,7 @@ export default function SecurityPage() {
       ))}
 
       <div style={{ marginTop: 48, paddingTop: 24, borderTop: '1px solid #e5e7eb', fontSize: 13, color: '#9ca3af' }}>
-        Dransfield Invest AB · CommandCenter · paul@laweka.com · comandcenter.se
+        ComandCenter AB · CommandCenter · security@comandcenter.se · comandcenter.se
       </div>
     </div>
   )
@@ -36,7 +36,7 @@ export default function SecurityPage() {
 const SECTIONS = [
   {
     title: 'Reporting a vulnerability',
-    body: `If you discover a security issue in CommandCenter, please email paul@laweka.com with as much detail as you can share. PGP is not currently available — for highly sensitive findings, email us first and we will arrange a secure channel.
+    body: `If you discover a security issue in CommandCenter, please email security@comandcenter.se with as much detail as you can share. PGP is not currently available — for highly sensitive findings, email us first and we will arrange a secure channel.
 
 We ask that you:
 
@@ -81,7 +81,7 @@ Dependency hygiene: we ship only actively-maintained libraries and apply patches
     title: 'Data subject rights',
     body: `For access, rectification, erasure or portability requests under GDPR Article 15–22, log into CommandCenter and use the Data & Privacy section of your account settings. This is self-service — you can export all your data as JSON and trigger a deletion request from there.
 
-For questions that cannot be handled through the app, email paul@laweka.com. We respond within 30 days.`
+For questions that cannot be handled through the app, email security@comandcenter.se. We respond within 30 days.`
   },
   {
     title: 'Breach notification',

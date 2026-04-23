@@ -11,7 +11,7 @@
 
 **CommandCenter** is a Swedish-market business-intelligence SaaS for restaurant groups. It pulls data from the operator's existing tools (Personalkollen for staff + POS, Fortnox for accounting, Stripe for payments, POS integrations like Onslip), aggregates it into a unified view, and layers AI agents that generate actionable weekly/monthly insights — labour-cost cuts, food-cost anomalies, cash-flow projections, budget variance, scheduling optimisation.
 
-**Current state:** technically mature MVP+ in production with one live customer (the founder's own restaurant group — Vero Italiano + Rosali Deli). ~12 months of continuous shipping. Zero external paying customers yet. Legal entity (Dransfield Invest AB) not yet registered — blocks sub-processor DPAs and Fortnox developer-program access.
+**Current state:** technically mature MVP+ in production with one live customer (the founder's own restaurant group — Vero Italiano + Rosali Deli). ~12 months of continuous shipping. Zero external paying customers yet. Legal entity (ComandCenter AB) not yet registered — blocks sub-processor DPAs and Fortnox developer-program access.
 
 **Core question this doc addresses:** does this need VC funding, or is it a bootstrap?
 
@@ -111,7 +111,7 @@ Job queue built on Postgres (`extraction_jobs` table) with `FOR UPDATE SKIP LOCK
 
 - **Single-developer codebase.** ~100k+ LOC, no other human has touched it. Bus factor = 1.
 - **No automated tests.** Rely on TypeScript strict mode + manual verification per shipped feature + comprehensive error reporting to Sentry. Works at this scale; won't at 50+ customers.
-- **Fortnox supplier invoice sync blocked** pending Fortnox developer-program approval (requires legal entity = Dransfield Invest AB registration).
+- **Fortnox supplier invoice sync blocked** pending Fortnox developer-program approval (requires legal entity = ComandCenter AB registration).
 - **No cohort analytics yet** — industry-benchmark percentiles get computed but aren't a differentiated feature customers see.
 - **Mobile:** responsive web only. Native mobile (Capacitor) scoped and planned, not started.
 
@@ -184,7 +184,7 @@ At **SEK 1,500/month ARPU** and **$1.25/customer cost**, gross margin is ~99%. C
 
 ### Pre-launch gating (next 4–8 weeks)
 
-1. **Register Dransfield Invest AB.** Unblocks everything downstream. 2–4 week Bolagsverket turnaround.
+1. **Register ComandCenter AB.** Unblocks everything downstream. 2–4 week Bolagsverket turnaround.
 2. **Lawyer review of LEGAL-OBLIGATIONS.md + DPAs** with Supabase / Vercel / Stripe / Resend / Anthropic. Swedish GDPR compliance spot-check.
 3. **Landing page** at comandcenter.se — value prop, screenshots, pricing, self-service signup. Currently a login page.
 4. **3 pilot customers** outside the founder's own group. Free for 6 months in exchange for weekly feedback + testimonial.

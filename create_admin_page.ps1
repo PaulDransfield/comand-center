@@ -69,7 +69,7 @@ export default function AdminPage() {
     const res = await fetch('/api/admin', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-      body: JSON.stringify({ action, org_id: selectedOrg, admin_email: 'paul@laweka.com', ...extra }),
+      body: JSON.stringify({ action, org_id: selectedOrg, admin_email: 'paul@comandcenter.se', ...extra }),
     })
     const data = await res.json()
     setActionMsg(data.ok ? 'Done!' : (data.error ?? 'Failed'))
@@ -114,7 +114,7 @@ export default function AdminPage() {
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 12, color: '#64748b' }}>paul@laweka.com</div>
+        <div style={{ fontSize: 12, color: '#64748b' }}>paul@comandcenter.se</div>
       </div>
 
       <div style={{ display: 'flex', height: 'calc(100vh - 52px)' }}>

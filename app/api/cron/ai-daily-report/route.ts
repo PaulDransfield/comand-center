@@ -5,7 +5,7 @@
 // flags any org with anomalous spending (≥ 2× its 7-day moving average),
 // reports % of global kill-switch cap consumed.
 //
-// Recipient: OPS_EMAIL env var (fallback paul@laweka.com).
+// Recipient: OPS_EMAIL env var (fallback paul@comandcenter.se).
 // Schedule in vercel.json: '0 8 * * *'.
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -18,7 +18,7 @@ export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
 
-const OPS_EMAIL          = process.env.OPS_EMAIL ?? 'paul@laweka.com'
+const OPS_EMAIL          = process.env.OPS_EMAIL ?? 'paul@comandcenter.se'
 const GLOBAL_CAP_USD     = parseFloat(process.env.MAX_DAILY_GLOBAL_USD ?? '50') || 50
 const ANOMALY_MULTIPLIER = 2
 

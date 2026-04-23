@@ -2,7 +2,7 @@
 // app/api/admin/ai-booster/route.ts
 //
 // Admin-triggered AI Booster activation. Manual path until Stripe self-serve
-// Checkout + webhook goes live (blocked on Dransfield Invest AB registration).
+// Checkout + webhook goes live (blocked on ComandCenter AB registration).
 //
 // POST /api/admin/ai-booster       { org_id, extra, amount, days }
 // DELETE /api/admin/ai-booster     { booster_id }   → marks cancelled

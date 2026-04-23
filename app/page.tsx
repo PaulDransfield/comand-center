@@ -659,13 +659,13 @@ export default function LandingPage() {
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 20, paddingBottom: 16, fontSize: 12, color: 'rgba(255,255,255,.35)', lineHeight: 1.7 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>Provider</p>
             <p style={{ margin: 0 }}>
-              CommandCenter is operated by <strong style={{ color: 'rgba(255,255,255,.55)' }}>Dransfield Invest AB</strong>.
+              CommandCenter is operated by <strong style={{ color: 'rgba(255,255,255,.55)' }}>ComandCenter AB</strong>.
               {' '}Registered in Sweden.
               {' '}Org. nr: <span style={{ fontFamily: 'ui-monospace, monospace' }}>pending registration</span>.
               {' '}Momsnr (VAT): <span style={{ fontFamily: 'ui-monospace, monospace' }}>pending registration</span>.
               {' '}Registered address: <span style={{ fontStyle: 'italic' as const }}>pending</span>.
-              {' '}Contact: <a href="mailto:paul@laweka.com" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>paul@laweka.com</a>
-              {' '}· Security / vulnerability reports: <a href="mailto:paul@laweka.com" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>paul@laweka.com</a>.
+              {' '}Contact: <a href="mailto:hello@comandcenter.se" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>hello@comandcenter.se</a>
+              {' '}· Security / vulnerability reports: <a href="mailto:security@comandcenter.se" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>security@comandcenter.se</a>.
               {' '}For data-subject requests (GDPR Art. 15–22) use the Data &amp; Privacy section inside your account.
               {' '}Supervisory authority: <a href="https://www.imy.se" target="_blank" rel="noreferrer" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>Integritetsskyddsmyndigheten (IMY)</a>.
               {' '}CommandCenter is a B2B service — not intended for consumers.
@@ -675,7 +675,7 @@ export default function LandingPage() {
           {/* Bottom bar */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>
-              © {new Date().getFullYear()} Dransfield Invest AB. CommandCenter™ is a product of Dransfield Invest AB.
+              © {new Date().getFullYear()} ComandCenter AB. CommandCenter™ is a product of ComandCenter AB.
             </p>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>
               GDPR compliant · Data stored in EU (Frankfurt) · Swedish law

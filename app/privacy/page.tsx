@@ -11,15 +11,15 @@ export default function PrivacyPage() {
 
       <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Privacy Policy</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40, fontFamily: 'system-ui' }}>
-        Version 1.2 · Last updated 19 April 2026 · CommandCenter (Dransfield Invest AB)
+        Version 1.2 · Last updated 19 April 2026 · CommandCenter (ComandCenter AB)
       </p>
 
       {[
         {
           title: '1. Who we are',
-          body: `CommandCenter is operated by Dransfield Invest AB, a Swedish company. We provide restaurant management software that helps restaurant groups track financial performance, staff costs and revenue. Our registered address and contact details are available at comandcenter.se.
+          body: `CommandCenter is operated by ComandCenter AB, a Swedish company. We provide restaurant management software that helps restaurant groups track financial performance, staff costs and revenue. Our registered address and contact details are available at comandcenter.se.
 
-If you have any questions about this policy or your data, contact us at paul@laweka.com.`
+If you have any questions about this policy or your data, contact us at privacy@comandcenter.se.`
         },
         {
           title: '2. What data we collect',
@@ -112,7 +112,7 @@ Ancon / Swess / Caspeco: POS and revenue data
 
 LEGAL DISCLOSURE — We may disclose data if required by Swedish law, court order or regulatory authority. We will notify you unless legally prohibited from doing so.
 
-A full and current list of sub-processors is available on request at paul@laweka.com.`
+A full and current list of sub-processors is available on request at privacy@comandcenter.se.`
         },
         {
           title: '6. Data retention',
@@ -146,7 +146,7 @@ Right to object: Object to processing based on legitimate interests.
 
 Right to withdraw consent: Where processing is based on consent, withdraw it at any time.
 
-To exercise any of these rights, use the Data & Privacy section in your account settings, or contact paul@laweka.com. We will respond within 30 days.`
+To exercise any of these rights, use the Data & Privacy section in your account settings, or contact privacy@comandcenter.se. We will respond within 30 days.`
         },
         {
           title: '8. Security',
@@ -157,7 +157,7 @@ To exercise any of these rights, use the Data & Privacy section in your account 
 — Access controls limiting staff access to production data
 — Regular security reviews
 
-Despite these measures, no system is completely secure. If you discover a security issue, please report it to paul@laweka.com.`
+Despite these measures, no system is completely secure. If you discover a security issue, please report it to security@comandcenter.se.`
         },
         {
           title: '9. Cookies',
@@ -185,7 +185,7 @@ We do not use Google Analytics, Facebook Pixel or any third-party tracking cooki
           title: '13. Complaints',
           body: `If you are unhappy with how we handle your data, you have the right to lodge a complaint with the Swedish Authority for Privacy Protection (Integritetsskyddsmyndigheten, IMY) at imy.se.
 
-We would always prefer to resolve concerns directly — please contact paul@laweka.com first.`
+We would always prefer to resolve concerns directly — please contact privacy@comandcenter.se first.`
         },
       ].map(section => (
         <div key={section.title} style={{ marginBottom: 36 }}>
@@ -197,7 +197,7 @@ We would always prefer to resolve concerns directly — please contact paul@lawe
       ))}
 
       <div style={{ marginTop: 48, paddingTop: 24, borderTop: '1px solid #e5e7eb', fontSize: 13, color: '#9ca3af', fontFamily: 'system-ui' }}>
-        Dransfield Invest AB · CommandCenter · paul@laweka.com · comandcenter.se
+        ComandCenter AB · CommandCenter · privacy@comandcenter.se · comandcenter.se
       </div>
     </div>
   )

@@ -97,7 +97,7 @@ These get built opportunistically as each feature needs them.
 
 | Blocker | What it unblocks | Status |
 |---------|-----------------|--------|
-| Dransfield Invest AB registration | Anthropic ZDR+DPA, Stripe, Fortnox dev approval | ⏳ Not yet filed |
+| ComandCenter AB registration | Anthropic ZDR+DPA, Stripe, Fortnox dev approval | ⏳ Not yet filed |
 | Fortnox developer program | Food cost analysis, A/P timing, supplier insights | ⏳ Awaiting approval |
 | PK API write scope | One-click "Accept" for AI schedule (dropped in favour of side-by-side page) | ❌ Dropped; not pursuing |
 | Tink contract | Auto bank-balance for cash runway | 💡 Evaluate after MVP proves out |

@@ -1237,7 +1237,7 @@ function AddIntegrationModal({ secret, orgId, businessId, businessName, onClose,
             )}
             {selected && !selected.supported && (
               <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-                Adapter not built yet. Pick a different provider or <a href="mailto:paul@laweka.com?subject=Integration request" style={{ color: '#6366f1' }}>request this one</a>.
+                Adapter not built yet. Pick a different provider or <a href="mailto:support@comandcenter.se?subject=Integration request" style={{ color: '#6366f1' }}>request this one</a>.
               </div>
             )}
           </div>

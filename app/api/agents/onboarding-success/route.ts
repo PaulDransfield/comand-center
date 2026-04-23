@@ -112,7 +112,7 @@ Tone: warm, brief, tell them what they can now explore. End with one suggested f
       </p>
       <a href="https://comandcenter.se/dashboard" style="display:inline-block;padding:10px 18px;background:#1a1f2e;color:#fff;border-radius:8px;text-decoration:none;font-size:14px">Go to Dashboard</a>
       <div style="margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af">
-        CommandCenter · Dransfield Invest AB · comandcenter.se
+        CommandCenter · ComandCenter AB · comandcenter.se
       </div>
     </div>
   `

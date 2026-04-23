@@ -294,7 +294,7 @@ export default function OnboardingPage() {
 
         {/* Footer */}
         <div style={{ marginTop: 24, fontSize: 12, color: '#d1d5db', textAlign: 'center' as const }}>
-          Need help? <a href="mailto:paul@laweka.com" style={{ color: '#6366f1', textDecoration: 'none' }}>Contact support</a>
+          Need help? <a href="mailto:support@comandcenter.se" style={{ color: '#6366f1', textDecoration: 'none' }}>Contact support</a>
           {' · '}
           <a href="/privacy" style={{ color: '#6366f1', textDecoration: 'none' }}>Privacy Policy</a>
         </div>
