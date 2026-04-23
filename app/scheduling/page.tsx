@@ -77,7 +77,7 @@ export default function SchedulingPage() {
   const [aiSched,      setAiSched]      = useState<any>(null)
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiError,      setAiError]      = useState('')
-  const [aiRange,      setAiRange]      = useState<'next_week'|'2w'|'4w'|'next_month'>('next_week')
+  const [aiRange,      setAiRange]      = useState<'this_week'|'next_week'|'2w'|'4w'|'next_month'>('next_week')
 
   // (Observations + historical scorecard expanders were removed per
   // SCHEDULING-FIX §§ 3, 5 — hero + always-visible by-day grid cover
@@ -113,17 +113,25 @@ export default function SchedulingPage() {
 
   useEffect(() => { if (selectedBiz) load() }, [selectedBiz, viewMode, weekOffset, monthOffset])
 
-  // Compute from/to for the AI range picker. All ranges start from the
-  // COMING Monday (never mid-week) because scheduling is normally locked
-  // in by Monday morning and the AI advice is only actionable for the
-  // coming published schedule.
+  // Compute from/to for the AI range picker. Forward ranges anchor on the
+  // COMING Monday; 'This week' anchors on the CURRENT ISO week's Monday so
+  // the operator can see how today + the rest of this week compare against
+  // the 12-week pattern (useful mid-week for last-minute trim decisions).
   const aiBounds = (() => {
     const now = new Date()
-    const daysUntilMon = ((1 - now.getDay() + 7) % 7) || 7
-    const nextMon = new Date(now); nextMon.setDate(now.getDate() + daysUntilMon); nextMon.setHours(0,0,0,0)
+    // Current ISO week's Monday (Mon = 1..Sun = 0 → treat Sun as 7).
+    const dow = now.getDay() === 0 ? 7 : now.getDay()
+    const thisMon = new Date(now); thisMon.setDate(now.getDate() - (dow - 1)); thisMon.setHours(0,0,0,0)
+    const thisSun = new Date(thisMon); thisSun.setDate(thisMon.getDate() + 6)
+    // Next Monday = thisMon + 7 days.
+    const nextMon = new Date(thisMon); nextMon.setDate(thisMon.getDate() + 7)
+
     let end: Date
     let label: string
     switch (aiRange) {
+      case 'this_week': {
+        return { from: localDate(thisMon), to: localDate(thisSun), label: 'This week' }
+      }
       case '2w': {
         end = new Date(nextMon); end.setDate(nextMon.getDate() + 13)
         label = 'Next 2 weeks'
@@ -513,7 +521,8 @@ export default function SchedulingPage() {
 // soft "note" row with no numeric recommendation.
 // ─────────────────────────────────────────────────────────────────────────────
 function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v: any) => void; label: string }) {
-  const opts: Array<{ value: 'next_week'|'2w'|'4w'|'next_month'; label: string }> = [
+  const opts: Array<{ value: 'this_week'|'next_week'|'2w'|'4w'|'next_month'; label: string }> = [
+    { value: 'this_week',  label: 'This week' },
     { value: 'next_week',  label: 'Next week' },
     { value: '2w',         label: '2 weeks' },
     { value: '4w',         label: '4 weeks' },
