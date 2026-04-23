@@ -57,19 +57,43 @@ interface Props {
 }
 
 export default function AiSchedulePanel(props: Props) {
+  // ── Hooks FIRST, before any early return, to satisfy Rule of Hooks. ───
+  // Previous bug: useRef + the keyboard-shortcut useEffect were declared
+  // AFTER the loading/error/!data early-return branches, so the first
+  // render (loading=true) called fewer hooks than subsequent renders
+  // (data loaded). React crash #310. Everything stays inside this single
+  // component — just must be ordered above the first `return`.
   const cfg = props.tierConfig ?? DEFAULT_TIER_CONFIG
-  const cardStyle = {
-    background:    'white',
-    border:        `0.5px solid ${UX.border}`,
-    borderRadius:  14,
-    padding:       '20px 24px',
-    marginBottom:  16,
-    scrollMarginTop: 16,
-  }
 
   const [obsOpen, setObsOpen] = useState(false)
   const [bookingsFor, setBookingsFor] = useState<any | null>(null)
   const [undoCountdown, setUndoCountdown] = useState<number>(0)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  // Compute rowsAnnotated at the top so the keyboard-shortcut useEffect
+  // (which closes over it) has a value regardless of which return we hit.
+  const pkShiftsFound = Number(props?.data?.pk_shifts_found ?? 0)
+  const current       = (props?.data?.current as any[] | undefined) ?? []
+  const suggested     = (props?.data?.suggested as any[] | undefined) ?? []
+  const hasUsableData = !!props.data && pkShiftsFound > 0
+
+  const rowsAnnotated = hasUsableData ? current.map((c: any, i: number) => {
+    const s          = suggested[i] ?? {}
+    const predRev    = Number(s.est_revenue ?? 0)
+    const pctCurrent = predRev > 0 ? (Number(c.est_cost) / predRev) * 100 : null
+    const pctAi      = predRev > 0 ? (Number(s.est_cost) / predRev) * 100 : null
+    const hoursDelta = Number(c.hours ?? 0) - Number(s.hours ?? 0)
+    const isJudgment = !!s.under_staffed_note
+    const isCut      = !isJudgment && hoursDelta > 0.05
+    const noChange   = !isJudgment && Math.abs(hoursDelta) < 0.05
+    const accepted   = !!props.acceptances?.[c.date]
+    const actionType: 'cut'|'no_change'|'judgment_call'|'accepted' =
+      accepted     ? 'accepted'
+      : isJudgment ? 'judgment_call'
+      : isCut      ? 'cut'
+      :              'no_change'
+    return { ...c, s, predRev, pctCurrent, pctAi, hoursDelta, isJudgment, isCut, noChange, accepted, actionType }
+  }) : []
 
   // Tick the Undo all countdown so the button reads "Undo (Ns)".
   useEffect(() => {
@@ -83,6 +107,37 @@ export default function AiSchedulePanel(props: Props) {
     const id = setInterval(tick, 500)
     return () => clearInterval(id)
   }, [props.lastBatch])
+
+  // Keyboard shortcuts — A accepts focused row, B opens bookings, Shift+A applies all.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!containerRef.current?.contains(document.activeElement)) return
+      if (e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault(); handleApplyAll(); return
+      }
+      const rowDate = (document.activeElement as HTMLElement)?.dataset?.rowDate
+      if (!e.shiftKey && (e.key === 'a' || e.key === 'A') && rowDate) {
+        e.preventDefault()
+        const row = rowsAnnotated.find((r: any) => r.date === rowDate)
+        if (row && row.isCut && !row.accepted) acceptRow(row)
+      }
+      if ((e.key === 'b' || e.key === 'B') && rowDate) {
+        const row = rowsAnnotated.find((r: any) => r.date === rowDate)
+        if (row?.isJudgment) { e.preventDefault(); setBookingsFor(row) }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [rowsAnnotated])
+
+  const cardStyle = {
+    background:    'white',
+    border:        `0.5px solid ${UX.border}`,
+    borderRadius:  14,
+    padding:       '20px 24px',
+    marginBottom:  16,
+    scrollMarginTop: 16,
+  }
 
   if (props.loading) {
     return <div id="ai-schedule" style={cardStyle}>
@@ -98,7 +153,9 @@ export default function AiSchedulePanel(props: Props) {
   }
   if (!props.data) return null
 
-  const { summary, suggested, current, week_from, week_to, pk_shifts_found, pk_fetch_error, diag, business_name } = props.data
+  // `current` and `suggested` are already extracted at the top for the
+  // keyboard-shortcut closure; re-extract the rest.
+  const { summary, week_from, week_to, pk_shifts_found, pk_fetch_error, diag, business_name } = props.data
 
   // ── PK empty fallback (preserved from previous design) ────────────────
   if (pk_shifts_found === 0) {
@@ -125,36 +182,7 @@ export default function AiSchedulePanel(props: Props) {
     )
   }
 
-  // ── Per-row annotation: compute labour %, tier, action type, accepted state ──
-  const rowsAnnotated = (current ?? []).map((c: any, i: number) => {
-    const s          = suggested[i] ?? {}
-    const predRev    = Number(s.est_revenue ?? 0)
-    const pctCurrent = predRev > 0 ? (Number(c.est_cost) / predRev) * 100 : null
-    const pctAi      = predRev > 0 ? (Number(s.est_cost) / predRev) * 100 : null
-    const hoursDelta = Number(c.hours ?? 0) - Number(s.hours ?? 0)
-    const isJudgment = !!s.under_staffed_note          // "judgment call" variant
-    const isCut      = !isJudgment && hoursDelta > 0.05
-    const noChange   = !isJudgment && Math.abs(hoursDelta) < 0.05
-    const accepted   = !!props.acceptances?.[c.date]
-    const actionType: 'cut'|'no_change'|'judgment_call'|'accepted' =
-      accepted     ? 'accepted'
-      : isJudgment ? 'judgment_call'
-      : isCut      ? 'cut'
-      :              'no_change'
-    return {
-      ...c,
-      s,
-      predRev,
-      pctCurrent,
-      pctAi,
-      hoursDelta,
-      isJudgment,
-      isCut,
-      noChange,
-      accepted,
-      actionType,
-    }
-  })
+  // rowsAnnotated is computed at the top of the component (above hooks).
 
   // ── Hero totals — show what's been applied so far. Zero accepted ──────
   // means "full potential"; accepting individual rows narrows it. See §4.5.
@@ -191,33 +219,7 @@ export default function AiSchedulePanel(props: Props) {
     : N >= M && M > 0     ? `ALL ${M} APPLIED`
     :                       `WITH ${N} OF ${M} APPLIED`
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!containerRef.current?.contains(document.activeElement)) return
-      // Shift+A — Apply all
-      if (e.shiftKey && (e.key === 'A' || e.key === 'a')) {
-        e.preventDefault()
-        handleApplyAll()
-        return
-      }
-      // A on focused row — Accept that row
-      const rowDate = (document.activeElement as HTMLElement)?.dataset?.rowDate
-      if (!e.shiftKey && (e.key === 'a' || e.key === 'A') && rowDate) {
-        e.preventDefault()
-        const row = rowsAnnotated.find((r: any) => r.date === rowDate)
-        if (row && row.isCut && !row.accepted) acceptRow(row)
-      }
-      // B on focused judgment row — open bookings
-      if ((e.key === 'b' || e.key === 'B') && rowDate) {
-        const row = rowsAnnotated.find((r: any) => r.date === rowDate)
-        if (row?.isJudgment) { e.preventDefault(); setBookingsFor(row) }
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [rowsAnnotated])
+  // Keyboard effect lives at the top of the component (above early returns).
 
   function acceptRow(r: any) {
     props.onAcceptDay({
