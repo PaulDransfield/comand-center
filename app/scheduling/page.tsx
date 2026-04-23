@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import AskAI from '@/components/AskAI'
-import PageHero from '@/components/ui/PageHero'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
@@ -339,8 +338,9 @@ export default function SchedulingPage() {
           }
         />
 
-        {/* ─── PageHero (replaces big header + old AI CTA banner) ─────── */}
-        <SchPageHero aiSched={aiSched} aiLoading={aiLoading} rangeLabel={aiBounds.label} fmtKr={fmtKr} />
+        {/* SchPageHero removed 2026-04-23 — the new AI schedule panel's
+            hero + saving strip cover the same information, so leaving
+            both created a duplicate "saving N kr" headline. */}
 
         {error && (
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '14px 18px', marginBottom: 20, fontSize: 13, color: '#dc2626' }}>
@@ -360,114 +360,14 @@ export default function SchedulingPage() {
         ) : (
           <>
 
-            {/* ═══════════════════════════════════════════════════════
-                BY DAY OF WEEK — 2-second overview (primary visual).
-                Answers "what's the overall pattern this week?".
-                Rendered ABOVE the detailed AI schedule per DESIGN.md § 8
-                and SCHEDULING-FIX § 3.
-            ═══════════════════════════════════════════════════════ */}
-            <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 14, padding: '18px 22px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, flexWrap: 'wrap' as const, gap: 10 }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>By day of week</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                    Compared against {summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : '—'}/hr weekly average · ±20% band = on target
-                  </div>
-                </div>
-                {/* Summary tags */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
-                  {leanCount > 0 && (
-                    <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#f0fdf4', color: '#15803d', fontWeight: 600, border: '1px solid #bbf7d0' }}>
-                      {leanCount} lean day{leanCount !== 1 ? 's' : ''}
-                    </span>
-                  )}
-                  {overstaffedList.length > 0 && (
-                    <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, background: '#fffbeb', color: '#d97706', fontWeight: 600, border: '1px solid #fde68a' }}>
-                      Overstaffed: {overstaffedList.join(', ')}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* 7 cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 10 }}>
-                {weekdays.map((w: any) => {
-                  const meta = STATUS_META[w.uiStatus] ?? STATUS_META.no_data
-                  const has  = w.uiStatus !== 'no_data'
-                  return (
-                    <div
-                      key={w.weekday}
-                      onClick={() => has && openDayDrill(w.weekday)}
-                      title={has ? `${meta.hint} · click for staff details` : meta.hint}
-                      style={{
-                        background: has ? meta.bg : '#fafafa',
-                        border: `1px solid ${has ? meta.border : '#f3f4f6'}`,
-                        borderRadius: 10,
-                        padding: '12px 12px 10px',
-                        display: 'flex', flexDirection: 'column' as const, gap: 4,
-                        opacity: has ? 1 : 0.6,
-                        cursor: has ? 'pointer' : 'default',
-                        transition: 'transform .12s, box-shadow .12s',
-                      }}
-                      onMouseEnter={e => { if (has) { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 12px rgba(16,24,40,.08)' } }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}
-                    >
-                      {/* Day name + status dot */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: has ? meta.text : '#9ca3af' }}>
-                          {w.label}
-                        </span>
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: meta.dot }} />
-                      </div>
-
-                      {/* Rev/hr — the headline metric for this day */}
-                      <div style={{ fontSize: 18, fontWeight: 700, color: has ? '#111' : '#d1d5db', letterSpacing: '-.02em', lineHeight: 1.1 }}>
-                        {has && w.avg_rev_per_hour ? fmtKr(w.avg_rev_per_hour) : '—'}
-                      </div>
-
-                      {/* Supporting figures */}
-                      <div style={{ fontSize: 10, color: '#6b7280', lineHeight: 1.4 }}>
-                        {has ? (
-                          <>
-                            {fmtKr(w.avg_revenue ?? 0)} rev<br />
-                            {fmtH(w.avg_hours ?? 0)} · {w.days_with_data} days
-                          </>
-                        ) : (
-                          <>
-                            {w.days_with_data} day{w.days_with_data !== 1 ? 's' : ''} of data
-                          </>
-                        )}
-                      </div>
-
-                      {/* Status label at bottom */}
-                      {has && (
-                        <div style={{ marginTop: 2, fontSize: 10, fontWeight: 600, color: meta.text }}>
-                          {meta.label}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Legend */}
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '0.5px solid #f3f4f6', display: 'flex', gap: 18, flexWrap: 'wrap' as const, fontSize: 11, color: '#6b7280' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.lean.dot }} /> Lean — high output per hour (good)
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.on_target.dot }} /> On target — within ±20% of average
-                </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_META.overstaffed.dot }} /> Overstaffed — more hours than demand
-                </span>
-              </div>
-            </div>
+            {/* By-day-of-week overview card removed 2026-04-23 — the new
+                AI schedule panel below carries the same per-day info with
+                tier pills + accept controls. The drill-down modal still
+                works (triggered from inside the AI panel's day rows). */}
 
             {/* ═══════════════════════════════════════════════════════
-                AI-SUGGESTED SCHEDULE — detailed drill-in, rendered
-                AFTER the by-day overview per DESIGN.md § 8 /
-                SCHEDULING-FIX § 3.
+                AI-SUGGESTED SCHEDULE — now the first visual on the
+                page under TopBar + range picker.
             ═══════════════════════════════════════════════════════ */}
             <AiRangePicker value={aiRange} onChange={setAiRange} label={aiBounds.label} />
             <AiSchedulePanel
@@ -672,125 +572,6 @@ function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Top-of-page CTA that teases the AI schedule's value and scrolls to the card.
-// Dynamic labelling: once the suggestion loads, if there's a saving we say so
-// in SEK — nothing converts like a concrete number. Otherwise we still show a
-// clear button so customers don't miss that the tool exists.
-// ─────────────────────────────────────────────────────────────────────────────
-function AiScheduleCTA({ data, loading, fmt }: any) {
-  function scrollToAi() {
-    const el = document.getElementById('ai-schedule')
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  const saving   = data?.summary?.saving_kr ?? 0
-  const hoursCut = data?.summary ? Math.max(0, (data.summary.current_hours ?? 0) - (data.summary.suggested_hours ?? 0)) : 0
-  const weekFrom = data?.week_from
-  const weekTo   = data?.week_to
-  const rangeLabel = weekFrom && weekTo
-    ? `${weekFrom.slice(8)}–${weekTo.slice(8)} ${new Date(weekFrom).toLocaleDateString('en-GB', { month: 'short' })}`
-    : 'next week'
-
-  const primary =
-    loading       ? 'Loading…' :
-    saving > 0    ? `Save ~${fmt(saving)} next week` :
-    hoursCut > 0  ? `Trim ${hoursCut.toFixed(1)}h next week` :
-                    'View next week\'s AI schedule'
-
-  const secondary =
-    loading      ? 'Reviewing 12 weeks of data, weather, and your shift patterns.' :
-    saving > 0   ? `Based on your ${rangeLabel} forecast — ${data.suggested.length} days analysed against your 12-week pattern.` :
-    hoursCut > 0 ? `Lean cuts suggested for ${rangeLabel}. Weather-aware.` :
-                   `Your schedule matches the 12-week pattern — nothing to trim for ${rangeLabel}.`
-
-  return (
-    <button
-      onClick={scrollToAi}
-      style={{
-        display: 'flex', alignItems: 'center', gap: 14, width: '100%',
-        background: 'linear-gradient(135deg, #312e81, #1e1b4b)',
-        border: '0.5px solid rgba(99,102,241,0.35)', borderRadius: 14,
-        padding: '14px 18px', marginBottom: 16, cursor: 'pointer',
-        textAlign: 'left' as const, color: 'white',
-        boxShadow: '0 2px 10px rgba(49,46,129,0.15)',
-        transition: 'transform .15s, box-shadow .15s',
-      }}
-      onMouseEnter={e => {
-        (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
-        ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 18px rgba(49,46,129,0.25)'
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLButtonElement).style.transform = 'none'
-        ;(e.currentTarget as HTMLButtonElement).style.boxShadow = '0 2px 10px rgba(49,46,129,0.15)'
-      }}
-    >
-      <div style={{ flexShrink: 0, width: 40, height: 40, background: 'rgba(99,102,241,0.3)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✦</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' as const }}>
-          <span style={{ fontSize: 10, background: 'rgba(99,102,241,0.35)', color: 'white', padding: '1px 7px', borderRadius: 4, fontWeight: 700, letterSpacing: '.04em' }}>AI</span>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>{primary}</span>
-        </div>
-        <div style={{ fontSize: 12, color: 'rgba(199,210,254,0.8)', lineHeight: 1.4 }}>{secondary}</div>
-      </div>
-      <div style={{ flexShrink: 0, fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap' as const }}>View →</div>
-    </button>
-  )
-}
-
-// ─── Phase 8 UX helpers — PageHero, compact toggle, navBtn ───────────────
-function SchPageHero({ aiSched, aiLoading, rangeLabel, fmtKr }: any) {
-  const saving    = aiSched?.summary?.saving_kr ?? 0
-  const totalDays = aiSched?.suggested?.length ?? 0
-  const trimDays  = (aiSched?.suggested ?? []).filter((s: any) => (s.delta_hours ?? 0) < 0).length
-  const keepDays  = (aiSched?.suggested ?? []).filter((s: any) => !s.under_staffed_note && (s.delta_hours ?? 0) === 0).length
-  const weekRange = aiSched
-    ? `${aiSched.week_from?.slice(8)}\u2013${aiSched.week_to?.slice(8)} ${new Date(aiSched.week_from + 'T00:00:00').toLocaleDateString('en-GB', { month: 'short' })}`
-    : ''
-  const eyebrow = rangeLabel
-    ? `${rangeLabel.toUpperCase()}${weekRange ? ` · ${weekRange}` : ''}`
-    : `NEXT WEEK${weekRange ? ` · ${weekRange}` : ''}`
-
-  // Dynamic headline by state (FIX-PROMPT § Phase 8 Q2):
-  //   trim-all: "zero scheduled hours all week" reads as a cancellation
-  //             alarm, which it should — flag it in red.
-  //   partial: the classic trim-N-keep-M summary.
-  //   no-change: schedule already matches AI.
-  const headline = (() => {
-    if (aiLoading) return <>Crunching next week…</>
-    if (totalDays > 0 && trimDays === totalDays && keepDays === 0 && saving > 0) {
-      return (
-        <>
-          <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>AI suggests zero scheduled hours all week</span>
-          {' '}— <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(saving)} save</span> available.
-        </>
-      )
-    }
-    if (saving > 0) {
-      return (
-        <>
-          AI can save <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(saving)}</span>
-          {' '}— trim {trimDays} day{trimDays === 1 ? '' : 's'}, keep {keepDays}.
-        </>
-      )
-    }
-    return <>Schedule matches AI suggestion — no changes needed.</>
-  })()
-
-  return (
-    <PageHero
-      eyebrow={eyebrow}
-      headline={headline}
-      context={aiSched ? `${totalDays} days analysed · cuts only, never adds` : undefined}
-      right={saving > 0 ? (
-        <div style={{ minWidth: 180, textAlign: 'right' as const }}>
-          <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: '0.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>Potential save</div>
-          <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: UX.greenInk, fontVariantNumeric: 'tabular-nums' as const, letterSpacing: '-0.02em' }}>{fmtKr(saving)}</div>
-          <a href="#ai-schedule" style={{ display: 'inline-block', marginTop: 6, padding: '6px 12px', background: UX.navy, color: 'white', textDecoration: 'none', borderRadius: UX.r_md, fontSize: UX.fsMicro, fontWeight: UX.fwMedium }}>Apply to schedule →</a>
-        </div>
-      ) : undefined}
-    />
-  )
-}
 
 function SchSegmentedToggle({ value, onChange }: any) {
   return (
