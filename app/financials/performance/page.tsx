@@ -972,7 +972,10 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
     { label: 'Food cost', value: food_cost,    top: yFor(afterRev),      bot: yFor(afterFood),    fill: UX.burnt,                          x: xFor(1),  show: data.has_food      },
     { label: 'Labour',    value: staff_cost,   top: yFor(afterFood),     bot: yFor(afterStaff),   fill: UX.burnt, opacity: 0.75,           x: xFor(2) },
     { label: 'Overheads', value: overheads,    top: yFor(afterStaff),    bot: yFor(afterOh),      fill: UX.burnt, opacity: 0.45,           x: xFor(3),  show: data.has_overheads },
-    { label: 'Net',       value: net_margin,   top: yFor(Math.max(afterOh, 0)), bot: yFor(0),     fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(4) },
+    // Height mirrors the displayed value, not the running total after
+    // overheads — otherwise a business with depreciation/financial costs
+    // would see a Net bar taller than the net_margin text on it.
+    { label: 'Net',       value: net_margin,   top: yFor(Math.max(net_margin, 0)), bot: yFor(0), fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(4) },
   ]
 
   return (

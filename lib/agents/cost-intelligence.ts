@@ -56,8 +56,15 @@ export async function runCostIntel({ orgId, businessId, db }: CostIntelInput) {
 
   if (!lines?.length) return { insights: [], reason: 'no_data' }
 
-  // Filter to the last-6-months window in memory
+  // Filter to the last-6-months window, AND exclude any line whose BAS
+  // account sits in the 4000-series (cost of goods / food) or 7000-series
+  // (staff) — older extractions could classify those as 'other_cost' by
+  // mistake, which would make the cost-intel agent shout "subscription
+  // creep!" about actual food purchases. See FIXES.md §0k.
   const recent = lines.filter((l: any) => {
+    const acct = Number(l.fortnox_account ?? 0)
+    if (acct >= 3000 && acct <= 4999) return false
+    if (acct >= 7000 && acct <= 7999) return false
     if (l.period_year > yearFrom) return true
     if (l.period_year < yearFrom) return false
     return l.period_month >= monthFrom

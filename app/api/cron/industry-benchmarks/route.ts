@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   const yearNow  = new Date().getFullYear()
   const { data: lines } = await db
     .from('tracker_line_items')
-    .select('business_id, period_year, period_month, subcategory, amount')
+    .select('business_id, period_year, period_month, subcategory, amount, fortnox_account')
     .eq('category', 'other_cost')
     .gte('period_year', yearNow - 1)
     .limit(50_000)
@@ -52,6 +52,12 @@ export async function POST(req: NextRequest) {
   // Key: business|subcategory|year|month -> kr
   const bucketed: Record<string, number> = {}
   for (const l of lines) {
+    // Exclude cost-of-goods / staff lines that may have been tagged
+    // category='other_cost' by older extractions. Benchmarks built from
+    // those would poison the peer cohort's medians. See FIXES.md §0k.
+    const acct = Number((l as any).fortnox_account ?? 0)
+    if (acct >= 3000 && acct <= 4999) continue
+    if (acct >= 7000 && acct <= 7999) continue
     const sub = l.subcategory ?? null
     if (!sub) continue
     const k = `${l.business_id}|${sub}|${l.period_year}|${l.period_month}`

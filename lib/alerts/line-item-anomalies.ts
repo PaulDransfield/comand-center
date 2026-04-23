@@ -38,15 +38,26 @@ export async function runLineItemAnomalies({ orgId, businessId, db }: LineItemAn
   const cutoff = new Date(now.getFullYear(), now.getMonth() - windowMonths + 1, 1)
 
   // Pull the window
-  const { data: rows } = await db
+  const { data: rawRows } = await db
     .from('tracker_line_items')
-    .select('period_year, period_month, label_sv, subcategory, amount')
+    .select('period_year, period_month, label_sv, subcategory, amount, fortnox_account')
     .eq('org_id', orgId)
     .eq('business_id', businessId)
     .eq('category', 'other_cost')
     .or(`period_year.gt.${cutoff.getFullYear()},and(period_year.eq.${cutoff.getFullYear()},period_month.gte.${cutoff.getMonth() + 1})`)
     .order('period_year', { ascending: true })
     .order('period_month', { ascending: true })
+
+  // Exclude any line whose Fortnox account sits in 4000-series (food) or
+  // 7000-series (staff) — those may have been misclassified as other_cost
+  // by older extractions and would trigger false "cost creep" anomalies
+  // on legitimate food purchases or payroll. See FIXES.md §0k.
+  const rows = (rawRows ?? []).filter((r: any) => {
+    const acct = Number(r.fortnox_account ?? 0)
+    if (acct >= 3000 && acct <= 4999) return false
+    if (acct >= 7000 && acct <= 7999) return false
+    return true
+  })
 
   if (!rows?.length) return { findings: [], reason: 'no_data' }
 

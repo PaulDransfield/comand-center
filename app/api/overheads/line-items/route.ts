@@ -47,7 +47,20 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  const rows = data ?? []
+  const rawRows = data ?? []
+
+  // Defensive filter: when the caller asked for 'other_cost' line items,
+  // exclude anything on a Swedish BAS 4000-series account (food cost),
+  // even if the `category` column was populated as 'other_cost' by an
+  // older mis-classification. Also exclude 3000-series (revenue) and
+  // 7000-series (staff cost) for the same reason. See FIXES.md §0k.
+  const rows = category === 'other_cost'
+    ? rawRows.filter((r: any) => {
+        const acct = Number(r.fortnox_account ?? 0)
+        if (!acct) return true                       // no account info — trust category column
+        return !(acct >= 3000 && acct <= 4999) && !(acct >= 7000 && acct <= 7999)
+      })
+    : rawRows
 
   // ── Subcategory rollup for bar charts ────────────────────────────────
   const bySub: Record<string, { label: string; subcategory: string | null; total: number; months: Set<number> }> = {}
