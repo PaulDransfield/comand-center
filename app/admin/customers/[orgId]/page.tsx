@@ -175,11 +175,15 @@ export default function CustomerDetail() {
   async function triggerSync(integId: string) {
     setActionLoading('sync_' + integId)
     try {
-      await fetch(`/api/admin/sync`, {
+      const res = await fetch(`/api/admin/sync`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
-        body: JSON.stringify({ integration_id: integId }),
+        body: JSON.stringify({ integration_id: integId, org_id: orgId }),
       })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        setError(j.error ?? `Sync failed (${res.status})`)
+      }
       await load()
     } catch (e: any) { setError(e.message) }
     setActionLoading(null)
