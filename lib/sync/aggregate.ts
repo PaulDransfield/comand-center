@@ -98,15 +98,29 @@ export async function aggregateMetrics(
   // The sync engine writes BOTH an aggregate 'personalkollen' row AND per-dept
   // 'pk_*' rows for the same sales data. If we sum all providers, we double-count.
   // Priority: prefer per-dept rows (pk_*, inzii_*) over aggregate (personalkollen).
-  const hasDeptRows = rawRevLogs.some((r: any) => (r.provider ?? '').startsWith('pk_') || (r.provider ?? '').startsWith('inzii_'))
-  const revLogs = hasDeptRows
-    ? rawRevLogs.filter((r: any) => {
+  //
+  // IMPORTANT: filter per-date, not globally. A global hasDeptRows check caused
+  // yesterday's data to vanish whenever per-dept matching failed for that day
+  // (new workplace, timeout on getWorkplaces, sale without workplace_url).
+  // Old dates would have pk_* rows → hasDeptRows=true → ALL 'personalkollen'
+  // rows dropped, including yesterday's where only the aggregate row existed.
+  const datesWithDeptRows = new Set(
+    rawRevLogs
+      .filter((r: any) => {
         const p = r.provider ?? ''
-        // Keep per-dept rows (pk_*, inzii_*) and any non-PK aggregate (e.g. fortnox, manual)
-        // Skip the aggregate 'personalkollen' row since pk_* rows contain the same data
-        return p !== 'personalkollen'
+        return p.startsWith('pk_') || p.startsWith('inzii_')
       })
-    : rawRevLogs
+      .map((r: any) => r.revenue_date),
+  )
+  const revLogs = rawRevLogs.filter((r: any) => {
+    const p = r.provider ?? ''
+    // For the aggregate 'personalkollen' row: only drop it on dates where
+    // per-dept rows exist (to avoid double-counting). If a date has NO pk_*
+    // rows (e.g. per-dept matching failed that day), keep the aggregate so
+    // the day is not silently zeroed.
+    if (p === 'personalkollen') return !datesWithDeptRows.has(r.revenue_date)
+    return true
+  })
 
   // ── 2. Build daily_metrics ────────────────────────────────────────────────
   // Aggregate revenue by date.

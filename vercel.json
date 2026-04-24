@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/catchup-sync",
-      "schedule": "0 10,14,18 * * *"
+      "schedule": "0 7,10,14,18 * * *"
     },
     {
       "path": "/api/cron/anomaly-check",

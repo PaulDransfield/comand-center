@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   // Get all connected integrations across all orgs
   const { data: integrations } = await db
     .from('integrations')
-    .select('org_id, provider, id')
+    .select('org_id, provider, id, business_id')
     .eq('status', 'connected')
     .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco', 'inzii'])
 
