@@ -17,8 +17,9 @@ function checkAuth(req: NextRequest): boolean {
 }
 
 const CRON_DEFS = [
-  { path: '/api/cron/master-sync',             schedule: '0 5 * * *',  name: 'Master sync',          probe: { table: 'sync_log',                 time: 'created_at', status: 'success' } },
-  { path: '/api/cron/anomaly-check',           schedule: '30 5 * * *', name: 'Anomaly check',        probe: { table: 'anomaly_alerts',           time: 'created_at' } },
+  { path: '/api/cron/master-sync',             schedule: '0 5 * * *',      name: 'Master sync',          probe: { table: 'sync_log',                 time: 'created_at', status: 'success' } },
+  { path: '/api/cron/catchup-sync',            schedule: '0 7,10,14,18 *', name: 'Catchup sync',         probe: { table: 'sync_log',                 time: 'created_at', status: 'success' } },
+  { path: '/api/cron/anomaly-check',           schedule: '30 5 * * *',     name: 'Anomaly check',        probe: { table: 'anomaly_alerts',           time: 'created_at' } },
   { path: '/api/cron/health-check',            schedule: '0 6 * * *',  name: 'Health check',         probe: null },
   { path: '/api/cron/weekly-digest',           schedule: '0 6 * * 1',  name: 'Weekly digest',        probe: { table: 'briefings',                time: 'created_at' } },
   { path: '/api/cron/forecast-calibration',    schedule: '0 4 1 * *',  name: 'Forecast calibration', probe: { table: 'forecast_calibration',     time: 'calibrated_at' } },
