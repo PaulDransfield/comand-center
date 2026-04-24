@@ -64,7 +64,7 @@ export default function HealthDashboard() {
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data)   return null
 
-  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning, businesses } = data
+  const { crons, ai, sync_by_provider, error_feed, data_freshness, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning, businesses } = data
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
@@ -479,6 +479,43 @@ export default function HealthDashboard() {
             </div>
           )}
         </div>
+
+        {/* Data freshness */}
+        {data_freshness?.length > 0 && (
+          <div style={{ ...S.card, marginBottom: 14 }}>
+            <div style={S.head}>Data freshness — daily_metrics latest date per business</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f9fafb' }}>
+                  <th style={th('left')}>Business</th>
+                  <th style={th('right')}>Latest data</th>
+                  <th style={th('right')}>Hours stale</th>
+                  <th style={th('right')}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data_freshness.map((f: any) => {
+                  const colour = f.status === 'ok' ? '#15803d' : f.status === 'warn' ? '#d97706' : '#dc2626'
+                  return (
+                    <tr key={f.business_id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={S.td}><strong style={{ color: '#111' }}>{f.business_name}</strong></td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{f.latest_date ?? '—'}</td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{f.hours_stale != null ? f.hours_stale + 'h' : '—'}</td>
+                      <td style={{ ...S.td, textAlign: 'right' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'white', color: colour, border: `1px solid ${colour}` }}>
+                          {f.status?.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
+              OK = yesterday or today · WARN = 1–2 days behind · STALE = missing &gt;2 days
+            </div>
+          </div>
+        )}
 
         {/* Error feed */}
         <div style={S.card}>
