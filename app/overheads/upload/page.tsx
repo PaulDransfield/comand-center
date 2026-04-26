@@ -239,6 +239,27 @@ export default function OverheadsPage() {
   const pendingCount  = uploads.filter(u => u.status === 'pending' || u.status === 'extracting').length
   const reviewCount   = uploads.filter(u => u.status === 'extracted').length
   const appliedCount  = uploads.filter(u => u.status === 'applied').length
+  const reextractableCount = uploads.filter(u => ['extracted','applied','failed'].includes(u.status)).length
+
+  // Bulk re-extract handler — one click to re-run AI extraction on every
+  // eligible upload for the current business. The PDFs stay in storage; we
+  // just queue fresh jobs. Useful after a schema/prompt upgrade lands and
+  // you want history reprocessed without 30 individual clicks.
+  async function reextractAll() {
+    if (!bizId) return
+    if (!confirm(`Re-run AI extraction on all ${reextractableCount} PDF(s) for ${selectedBiz?.name ?? 'this business'}? Each will need to be re-Applied individually after extraction completes (~20-60s per PDF).`)) return
+    try {
+      const r = await fetch('/api/fortnox/reextract-all', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId }),
+      })
+      const j = await r.json()
+      if (!r.ok) { setToast(`Re-extract failed: ${j.error ?? r.status}`); return }
+      setToast(j.message ?? `Queued ${j.queued} PDF(s)`)
+      load()
+    } catch (e: any) { setToast(`Re-extract failed: ${e.message}`) }
+  }
 
   return (
     <AppShell>
@@ -302,6 +323,21 @@ export default function OverheadsPage() {
           </div>
           <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>PDF only · up to 10 MB each · up to 20 at a time</div>
         </div>
+
+        {/* Bulk re-extract — useful after AI prompt or schema upgrades.
+            Hidden when there's nothing eligible (no successful extractions
+            yet for this business). */}
+        {reextractableCount > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); reextractAll() }}
+              style={{ background: 'none', border: 'none', color: UX.ink3, fontSize: UX.fsMicro, cursor: 'pointer', textDecoration: 'underline', padding: '4px 6px' }}
+              title={`Re-run the current AI extractor on all ${reextractableCount} PDF(s). PDFs stay in storage — no re-upload needed.`}
+            >
+              Re-extract all {reextractableCount} PDFs with current AI
+            </button>
+          </div>
+        )}
 
         {toast && (
           <div style={{
@@ -501,6 +537,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [applying, setApplying] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [reextracting, setReextracting] = useState(false)
   const [err, setErr] = useState('')
   // Conflict state — if an existing tracker_data row would be replaced.
   const [conflict, setConflict] = useState<any>(null)
@@ -560,6 +597,27 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
       onDone()
     } catch (e: any) { setErr(e.message) }
     setRejecting(false)
+  }
+
+  // Re-runs the AI extraction on the SAME stored PDF using the current
+  // extract-worker code. No re-upload needed. Useful when the schema gained
+  // new fields (M028 depreciation/financial, M029 revenue VAT split) that
+  // the prior extraction didn't capture, or when the prompts have improved.
+  // After it lands, user reviews the new extracted_json and clicks Apply.
+  async function reextract() {
+    if (!confirm('Re-run AI extraction on this PDF? The stored data stays until you click Apply on the new extraction.')) return
+    setReextracting(true); setErr('')
+    try {
+      const r = await fetch('/api/fortnox/reextract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ upload_id: uploadId }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error ?? `Re-extract failed (${r.status})`)
+      onDone()
+    } catch (e: any) { setErr(e.message) }
+    setReextracting(false)
   }
 
   return (
@@ -660,16 +718,25 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         )}
 
         <div style={{ padding: '12px 20px', borderTop: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          {/* Re-extract — runs the current AI on the stored PDF. Available
+              for any non-pending/non-extracting state since the PDF is
+              already in storage. Cheap way to pick up new fields after
+              schema or prompt upgrades. */}
+          {upload && upload.status !== 'extracting' && upload.status !== 'pending' && (
+            <button onClick={reextract} disabled={reextracting || applying || rejecting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
+              {reextracting ? 'Re-extracting…' : 'Re-extract'}
+            </button>
+          )}
           {upload?.status === 'applied' ? (
-            <button onClick={reject} disabled={rejecting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody, color: UX.redInk }}>
+            <button onClick={reject} disabled={rejecting || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody, color: UX.redInk }}>
               {rejecting ? 'Rejecting…' : 'Unapply + reject'}
             </button>
           ) : (
             <>
-              <button onClick={reject} disabled={rejecting || applying} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
+              <button onClick={reject} disabled={rejecting || applying || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
                 {rejecting ? 'Rejecting…' : 'Reject'}
               </button>
-              <button onClick={apply} disabled={applying || !extraction} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: UX.fsBody }}>
+              <button onClick={apply} disabled={applying || reextracting || !extraction} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: UX.fsBody }}>
                 {applying ? 'Applying…' : 'Apply to P&L'}
               </button>
             </>
