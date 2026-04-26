@@ -82,7 +82,69 @@ interface TextItem {
   page: number
 }
 
+// pdfjs-dist uses browser DOM APIs (DOMMatrix, DOMRect, Path2D) for
+// transformation matrices and shape operations. None of them exist in
+// Node.js. We do TEXT extraction only (no rendering) so a minimal stub
+// of DOMMatrix is enough — the methods are called but their results
+// don't drive any output we care about. Without this stub pdfjs throws
+// "DOMMatrix is not defined" on getTextContent and the parser fails
+// silently in production. Diagnosed via the [parser-debug] markers we
+// wrote into extraction_jobs.error_message after Vercel logs proved
+// uninformative. See FIXES.md §0q.
+function ensureDomMatrixPolyfill() {
+  const g = globalThis as any
+  if (typeof g.DOMMatrix !== 'undefined') return
+  class DOMMatrixPolyfill {
+    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0
+    constructor(init?: any) {
+      if (Array.isArray(init) && init.length === 6) {
+        [this.a, this.b, this.c, this.d, this.e, this.f] = init as any
+      } else if (init && typeof init === 'object') {
+        Object.assign(this, init)
+      }
+    }
+    multiply(o: any) {
+      const r = new DOMMatrixPolyfill()
+      r.a = this.a * o.a + this.c * o.b
+      r.b = this.b * o.a + this.d * o.b
+      r.c = this.a * o.c + this.c * o.d
+      r.d = this.b * o.c + this.d * o.d
+      r.e = this.a * o.e + this.c * o.f + this.e
+      r.f = this.b * o.e + this.d * o.f + this.f
+      return r
+    }
+    translate(tx: number, ty: number) { return this.multiply({ a: 1, b: 0, c: 0, d: 1, e: tx, f: ty }) }
+    scale(sx: number, sy = sx)        { return this.multiply({ a: sx, b: 0, c: 0, d: sy, e: 0, f: 0 }) }
+    inverse() {
+      const det = this.a * this.d - this.b * this.c
+      if (det === 0) throw new Error('non-invertible matrix')
+      const r = new DOMMatrixPolyfill()
+      r.a =  this.d / det
+      r.b = -this.b / det
+      r.c = -this.c / det
+      r.d =  this.a / det
+      r.e = (this.c * this.f - this.d * this.e) / det
+      r.f = (this.b * this.e - this.a * this.f) / det
+      return r
+    }
+  }
+  g.DOMMatrix = DOMMatrixPolyfill
+  // Some pdfjs internals also poke at these; minimal stubs prevent throws.
+  if (typeof g.DOMRect === 'undefined') {
+    g.DOMRect = class DOMRect {
+      x = 0; y = 0; width = 0; height = 0
+      constructor(x = 0, y = 0, width = 0, height = 0) {
+        this.x = x; this.y = y; this.width = width; this.height = height
+      }
+    }
+  }
+  if (typeof g.Path2D === 'undefined') {
+    g.Path2D = class Path2D { addPath() {} closePath() {} moveTo() {} lineTo() {} bezierCurveTo() {} quadraticCurveTo() {} arc() {} arcTo() {} ellipse() {} rect() {} }
+  }
+}
+
 async function extractTextItems(pdfBuffer: Uint8Array): Promise<TextItem[]> {
+  ensureDomMatrixPolyfill()
   // Dynamic import — pdfjs-dist's legacy build is the Node-compatible one.
   const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
 
