@@ -9,18 +9,21 @@ const nextConfig = {
   // use the installed package directly at runtime. pdfjs-dist has a worker
   // file (pdf.worker.mjs) that webpack tends to drop during bundling, which
   // makes the deterministic Resultatrapport parser silently fall back to
-  // Claude in production. Listing it here keeps the package whole.
+  // Claude in production. Listing here keeps the package whole.
   //
-  // @napi-rs/canvas is pdfjs's optional native dependency for image
-  // rendering. Our parser only does TEXT extraction (getTextContent), so
-  // canvas isn't needed — but pdfjs's startup probes for it and emits a
-  // "Cannot load @napi-rs/canvas" warning to Vercel logs that we'd rather
-  // not see. Externalising it lets pdfjs treat it as unavailable cleanly.
-  serverExternalPackages: ['pdfjs-dist', '@napi-rs/canvas'],
+  // NOTE: this config key is `experimental.serverComponentsExternalPackages`
+  // on Next.js 14 (we're on 14.2.0). Next 15 renamed it to top-level
+  // `serverExternalPackages` — using the wrong name silently no-ops and
+  // pdfjs ends up half-bundled with the @napi-rs/canvas warning we saw
+  // in production logs (Vercel build emits "Invalid next.config.js options
+  // detected" but the function still runs without externalisation).
+  experimental: {
+    serverComponentsExternalPackages: ['pdfjs-dist', '@napi-rs/canvas'],
+  },
 
   // Webpack: ignore the optional canvas import so pdfjs's bundler probes
-  // don't try to resolve a binary we don't have. Belt-and-braces with
-  // serverExternalPackages above.
+  // don't try to resolve a binary we don't have. Belt-and-braces with the
+  // external-packages list above.
   webpack(config) {
     config.resolve = config.resolve ?? {}
     config.resolve.alias = { ...(config.resolve.alias ?? {}), canvas: false, '@napi-rs/canvas': false }
