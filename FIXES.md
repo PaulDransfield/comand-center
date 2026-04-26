@@ -3,6 +3,18 @@ Last updated: 2026-04-26
 
 ---
 
+## 0p. "Food cost" label showed food-only number on Performance page (2026-04-26)
+
+**Symptom:** Performance page Cost breakdown / Waterfall / Full breakdown all showed a "Food cost" row with an unreasonably small percentage (e.g. 4.7 % for an alcohol-heavy restaurant), then a separate "Alcohol" row at the same level. The label "Food cost" was carrying `food_only_cost` (food − alcohol) but every owner reads "Food cost" as total cost-of-goods. Paul flagged: "when showing the food cost it should include all food".
+
+**Root cause:** three render sites in `app/financials/performance/page.tsx` (`WaterfallCard`, `DonutCard`, `BreakdownTable`) all derived "Food cost" from `food_only_cost` and treated alcohol as a separate top-level slice/bar/row. Visually clean but the labels misled — total COGS sat in `food_cost` but never got displayed under that name.
+
+**Fix:** all three sites now show `food_cost` (total) under the "Food cost" label, and the food/alcohol split moves to indented sub-rows inside the Breakdown table — same idiom used for the Revenue VAT split. Waterfall drops back to 5 bars (Revenue → Food cost → Labour → Overheads → Net). Donut shows three slices (Labour / Food cost / Overheads).
+
+**Why this should hold:** the rule is now "rollup totals are the headline, subsets are indented detail". Same pattern across Revenue (dine-in / takeaway / alcohol) and Food cost (food / alcohol). No render site reads `food_only_cost` for a top-level row.
+
+---
+
 ## 0o. Takeaway revenue invisible — three-VAT-rate revenue split (2026-04-26)
 
 **Symptom:** Performance page revenue donut showed two buckets (food, alcohol). Takeaway revenue from Wolt/Foodora was lumped into food, hiding the platform-delivery share entirely. Owners couldn't see what % of revenue carried the ~30% Wolt/Foodora commission.
