@@ -85,19 +85,25 @@ interface TextItem {
 async function extractTextItems(pdfBuffer: Uint8Array): Promise<TextItem[]> {
   // Dynamic import — pdfjs-dist's legacy build is the Node-compatible one.
   const pdfjs: any = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  // In Node we point GlobalWorkerOptions.workerSrc at the bundled worker
-  // .mjs file. pdfjs requires this even when running entirely in-process.
+
+  // Two ways pdfjs can run in Node:
+  // 1. Spawn a worker process from pdf.worker.mjs — fast for big PDFs but
+  //    requires the worker file to be discoverable on disk. On Vercel /
+  //    Next.js this is unreliable: webpack bundles the function code but
+  //    often not the sibling worker file, so require.resolve('.../pdf.worker.mjs')
+  //    throws and the entire parser falls through to the Claude path
+  //    silently. That's what was happening in production.
+  // 2. Run inline (no worker process). Slower for huge PDFs but bulletproof
+  //    in serverless environments. Our Resultatrapports are small (~100 KB)
+  //    so inline is plenty fast — ~1 s end-to-end.
+  //
+  // We unconditionally disable the worker to take path #2. Reliability beats
+  // theoretical speedup for our payload sizes.
+  // pdfjs validates workerSrc as a string, so we set it to an empty string
+  // when running inline. Combined with disableWorker:true below, pdfjs
+  // skips the worker setup entirely and runs in-process.
   if (pdfjs.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
-    try {
-      const { pathToFileURL } = await import('node:url')
-      // require.resolve returns an absolute filesystem path; pdfjs needs a
-      // file:// URL on Windows or it errors out with "Only URLs with a
-      // scheme in: file, data, and node are supported".
-      const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
-      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href
-    } catch {
-      pdfjs.GlobalWorkerOptions.workerSrc = ''
-    }
+    pdfjs.GlobalWorkerOptions.workerSrc = ''
   }
 
   const loadingTask = pdfjs.getDocument({
@@ -105,6 +111,10 @@ async function extractTextItems(pdfBuffer: Uint8Array): Promise<TextItem[]> {
     useSystemFonts: true,
     disableFontFace: true,
     isEvalSupported: false,
+    // disableWorker: true is the canonical way to force inline parsing.
+    // Combined with workerSrc=false above, pdfjs uses its built-in fake
+    // worker that runs everything in the same thread.
+    disableWorker: true,
   })
   const doc = await loadingTask.promise
 

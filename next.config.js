@@ -5,6 +5,13 @@ const { withSentryConfig } = require('@sentry/nextjs')
 const nextConfig = {
   reactStrictMode: true,
 
+  // Tell Next.js NOT to bundle pdfjs-dist into our serverless functions —
+  // use the installed package directly at runtime. pdfjs-dist has a worker
+  // file (pdf.worker.mjs) that webpack tends to drop during bundling, which
+  // makes the deterministic Resultatrapport parser silently fall back to
+  // Claude in production. Listing it here keeps the package whole.
+  serverExternalPackages: ['pdfjs-dist'],
+
   images: {
     remotePatterns: [
       {
