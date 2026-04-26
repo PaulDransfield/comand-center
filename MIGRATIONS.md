@@ -1,22 +1,20 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 pending · M027 pending
+> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
 
-### M027 — aggregation_lock (per-business serialisation for aggregateMetrics)
+### M027 — aggregation_lock (per-business serialisation for aggregateMetrics) ✅ applied 2026-04-26
 **File:** `M027-AGGREGATION-LOCK.sql` (repo root)
 **Purpose:** part of FIXES.md §0m (PK sync recurring failures, four-phase fix). Adds a tiny `aggregation_lock` table so `aggregateMetrics` can take a per-business advisory lock and prevent two concurrent sync paths (per-sync aggregate + post-cron aggregate sweep + on-demand /api/sync/today) from race-overwriting `daily_metrics` rows. Stale rows >60s are stolen. The §0l workaround mitigates the race; this lock cures it.
-**Safety:** non-destructive CREATE TABLE IF NOT EXISTS + a single index. Engine falls back to no-lock behaviour with a structured `log.error()` if the table is missing — applying this lifts the warning and closes the race window.
-**To apply:** open Supabase SQL Editor, paste file contents, run. Idempotent.
+**Verified:** `aggregation_lock` table present with `business_id uuid PRIMARY KEY`, `locked_at timestamptz`, `locked_by text`.
 
-### M024 — PK sync cursors (incremental fetch optimisation)
+### M024 — PK sync cursors (incremental fetch optimisation) ✅ applied 2026-04-26
 **File:** `M024-PK-SYNC-CURSORS.sql` (repo root)
-**Purpose:** add `integrations.pk_sync_cursors jsonb default '{}'::jsonb` column so master-sync can pass PK's `?sync_cursor=<last>` parameter and only fetch rows that changed/appeared since the last run, instead of refetching the full window. Roughly halves both PK API calls and Vercel function time on repeat syncs.
-**Safety:** non-destructive single ALTER TABLE ADD COLUMN. Sync engine falls back to range mode if the column is missing, so applying this is an optimisation not a requirement — but recommended.
-**To apply:** open Supabase SQL Editor, paste file contents, run.
+**Purpose:** add `integrations.pk_sync_cursors jsonb default '{}'::jsonb` column so master-sync can pass PK's `?sync_cursor=<last>` parameter and only fetch rows that changed/appeared since the last run, instead of refetching the full window. Roughly halves both PK API calls and Vercel function time on repeat syncs. Engine has structured-error fallback if the column is missing — now lifted.
+**Verified:** `pk_sync_cursors jsonb DEFAULT '{}'::jsonb` present on `integrations`.
 
 ### M023 — reset stuck `status = 'error'` integrations (one-off backfill) ✅ applied 2026-04-23
 **File:** `M023-RESET-STUCK-ERROR-STATUS.sql` (repo root)
