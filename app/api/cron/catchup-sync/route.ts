@@ -45,7 +45,7 @@ async function handle(req: NextRequest) {
   const { data: rawIntegrations } = await db
     .from('integrations')
     .select('id, org_id, business_id, provider, status, reauth_notified_at')
-    .in('status', ['connected', 'needs_reauth'])
+    .in('status', ['connected', 'needs_reauth', 'error'])
 
   const integrations = filterEligible(rawIntegrations ?? [])
 

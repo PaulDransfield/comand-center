@@ -5,7 +5,7 @@
 // agree on the same rule — drift between them was how integrations got
 // silently wedged for ~24 h after a single transient PK auth blip.
 //
-// Two kinds of integration are eligible:
+// THREE kinds of integration are eligible:
 //
 //   1. status = 'connected'                      — happy path, always sync
 //   2. status = 'needs_reauth' AND last probe    — defensive probe so a
@@ -20,6 +20,24 @@
 //                                                  reauth_notified_at, so we
 //                                                  back off for another 6 h
 //                                                  before trying again.
+//   3. status = 'error'                          — added 2026-04-26 after
+//                                                  Vero/Rosali integrations
+//                                                  got wedged in 'error' from
+//                                                  pre-d60d193 code paths
+//                                                  with no recovery path. The
+//                                                  current engine doesn't
+//                                                  WRITE 'error' anymore (only
+//                                                  'connected' or 'needs_reauth')
+//                                                  but legacy rows + manual SQL
+//                                                  + future regressions can still
+//                                                  produce it. Always probe; the
+//                                                  engine's per-endpoint timeout
+//                                                  (12 s × max retries) bounds
+//                                                  cost if upstream is genuinely
+//                                                  down. Success → status flips
+//                                                  to 'connected'. Failure → no
+//                                                  status change, retry next tick.
+//                                                  See FIXES.md §0s.
 //
 // reauth_notified_at doubles as both the "last email sent" timestamp (set
 // on transition into needs_reauth, so we don't email more than once per
@@ -40,6 +58,10 @@ export function isEligibleForSync(integ: IntegrationLite, now: number = Date.now
     const lastProbe = integ.reauth_notified_at ? new Date(integ.reauth_notified_at).getTime() : 0
     return now - lastProbe > REAUTH_PROBE_BACKOFF_MS
   }
+  // 'error' is always probe-eligible. The engine bounds cost via per-endpoint
+  // timeout + 1 retry. Cron tick (hourly catchup) caps re-probe rate at 24/day.
+  // Success path resets status='connected' so probe self-heals on first success.
+  if (integ.status === 'error') return true
   return false
 }
 

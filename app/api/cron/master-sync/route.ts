@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const { data: rawIntegrations } = await db
     .from('integrations')
     .select('org_id, provider, id, business_id, status, reauth_notified_at')
-    .in('status', ['connected', 'needs_reauth'])
+    .in('status', ['connected', 'needs_reauth', 'error'])
     .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco', 'inzii'])
 
   const integrations = filterEligible(rawIntegrations ?? [])

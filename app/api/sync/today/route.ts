@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   const { data: rawIntegrations } = await db
     .from('integrations')
     .select('id, provider, last_sync_at, status, reauth_notified_at')
-    .in('status', ['connected', 'needs_reauth'])
+    .in('status', ['connected', 'needs_reauth', 'error'])
     .eq('business_id', bizId)
     .in('provider', ['personalkollen', 'inzii', 'ancon', 'swess', 'onslip'])
 

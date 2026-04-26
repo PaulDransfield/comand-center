@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     .from('integrations')
     .select('id, org_id, business_id, provider, status, reauth_notified_at')
     .eq('business_id', bizId)
-    .in('status', ['connected', 'needs_reauth'])
+    .in('status', ['connected', 'needs_reauth', 'error'])
 
   const integrations = filterEligible(rawIntegrations ?? [])
 
