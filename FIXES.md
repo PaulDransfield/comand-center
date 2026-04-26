@@ -1,5 +1,41 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-23
+Last updated: 2026-04-26
+
+---
+
+## 0m. PK sync recurring failures — four-phase root-cause fix (2026-04-26)
+
+**Symptom:** Paul reported repeated PK sync issues — data going stale, the "Sync now" button appearing to do nothing. Each prior fix (FIXES §0f, §0i, §0j, §0l) addressed a real but specific bug; the underlying class of failures kept resurfacing.
+
+**Root causes identified (deep dive 2026-04-26):**
+
+1. **M024 cursor optimization was silently dead.** Code at `lib/sync/engine.ts:410` tried to update `pk_sync_cursors` JSONB but the column was never added to Supabase (M024 marked pending in MIGRATIONS.md). Engine caught the error with `console.warn` (which Vercel doesn't surface), so the incremental fetch optimisation never actually ran in production — every sync refetched the full 90-day window.
+
+2. **`status='needs_reauth'` was a one-way trap.** Every sync entry point (master-sync, catchup-sync, /api/resync, /api/sync/today) filtered on `.eq('status', 'connected')`. A single transient PK 401/403 (token-rotation hiccup, brief upstream outage, network blip) flipped the integration to `needs_reauth` permanently — only manual reconnect via /settings/integrations could rescue it. This is the "Sync button doesn't work" symptom: button calls `/api/resync`, which sees zero connected integrations and returns `synced: 0`.
+
+3. **One slow PK endpoint ate the entire integration's 60s budget.** `syncPersonalkollen` made parallel calls to staff/logged-times/sales/work-periods/sale-forecast with no per-endpoint timeout. One sluggish endpoint timed out the whole integration even though four others were fine.
+
+4. **Aggregator race only mitigated, not cured.** The §0l fix (skip per-sync aggregate when 0 rows) reduced the race window but didn't close it — concurrent runSync + cron post-aggregate could still race-overwrite daily_metrics.
+
+**Fixes applied:**
+
+1. **Hardened M024 fallback** (`lib/sync/engine.ts:410`) — silent `console.warn` replaced with structured `log.error()` carrying the M024 hint. Drift between code and schema is now visible. Also added `scripts/verify-m024.mjs` for one-shot post-apply verification.
+
+2. **Auto-recovery probe for `needs_reauth`** (`lib/sync/eligibility.ts` + all 4 entry points) — integrations in `needs_reauth` are now retried by every sync path if their `reauth_notified_at` is older than 6 hours (the "probe backoff"). Engine error path updated to refresh `reauth_notified_at` on every auth failure (not just transitions) so the backoff timer ticks correctly. Email dedup unchanged — owners still get one email per failure event, not per probe. `/api/resync` also tells the UI when integrations are wedged so the button gives a useful message instead of silent zero.
+
+3. **Per-endpoint timeouts in `syncPersonalkollen`** (`lib/sync/engine.ts`) — every individual PK fetch (`getStaff`, `getLoggedTimes`, `getSales`, `getWorkPeriods`, `getSaleForecast`, `getWorkplaces`, plus the chunked-backfill variants) is now wrapped in a `pkFetch()` helper that imposes a 12s per-call timeout with one retry on transient errors. Auth errors bypass retry (deterministic, won't recover) and bubble straight to the engine's needs_reauth path.
+
+4. **Per-business advisory lock around `aggregateMetrics`** (`lib/sync/aggregate.ts` + `M027-AGGREGATION-LOCK.sql`) — concurrent aggregate runs for the same business are now serialised via a row in `aggregation_lock`. Stale rows >60s old are stolen (handles crashed workers). Falls back to no-lock behaviour if the table is missing, with a structured-log error so the drift is visible.
+
+**Manual steps required (Paul):**
+
+1. Open Supabase SQL Editor → paste `M024-PK-SYNC-CURSORS.sql` → Run.
+2. Same editor → paste `M027-AGGREGATION-LOCK.sql` → Run.
+3. From terminal: `node scripts/verify-m024.mjs` → confirm "OK — pk_sync_cursors column exists."
+4. Hit `/admin/diagnose-pk` to confirm both Vero and Rosali integrations show as healthy.
+5. If any are stuck `needs_reauth`, the next master-sync (06:00 UTC) or catchup-sync (10/14/18 UTC) will probe them automatically — no manual reconnect needed unless the token really is dead.
+
+**Why this should hold:** Each of the four fixes addresses a root cause (not a symptom). Phase 1 unblocks the optimisation that's been silently dead for weeks. Phase 2 turns transient failures from terminal to recoverable. Phase 3 turns one-bad-endpoint failures from total-loss to partial-success. Phase 4 makes aggregator-race impossible at the data layer.
 
 ---
 

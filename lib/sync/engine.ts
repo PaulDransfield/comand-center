@@ -5,6 +5,32 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { decrypt }           from '@/lib/integrations/encryption'
+import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
+
+// Per-endpoint timeout for individual PK API calls. Smaller than the
+// integration-level cap (60 s in master-sync) so one slow endpoint can't
+// eat the whole budget — gives us 5 sequential timeouts before the wrapper
+// trips. Auth errors (PersonalkollenAuthError) bypass retry — they will
+// not get better with another attempt.
+const PK_ENDPOINT_TIMEOUT_MS = 12_000
+const PK_RETRY_DELAY_MS      = 1_500
+
+async function pkFetch<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  let lastErr: any
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      return await sharedWithTimeout(fn(), PK_ENDPOINT_TIMEOUT_MS, label)
+    } catch (e: any) {
+      // Auth failures are deterministic — retrying just delays the inevitable
+      // and burns the integration's time budget. Bubble straight up so the
+      // engine's needs_reauth path runs.
+      if (e?.code === 'PK_AUTH_EXPIRED' || e?.name === 'PersonalkollenAuthError') throw e
+      lastErr = e
+      if (attempt < 2) await new Promise(r => setTimeout(r, PK_RETRY_DELAY_MS))
+    }
+  }
+  throw lastErr
+}
 
 // ── Personalkollen sync ───────────────────────────────────────────────────────
 async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate: string) {
@@ -14,7 +40,7 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
   if (!token) throw new Error('Invalid credentials')
 
   // Get staff once (doesn't depend on date range)
-  const staff = await getStaff(token)
+  const staff = await pkFetch('pk:getStaff', () => getStaff(token))
 
   // Calculate if we need chunked backfill (more than 3 months)
   const from = new Date(fromDate)
@@ -36,25 +62,27 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     // work-periods still uses range-mode because the scheduling AI wants
     // a fresh next-week snapshot each call, not a diff.
     const [loggedRes, salesRes, scheduledRes] = await Promise.all([
-      pk.getLoggedTimesIncremental(token, { syncCursor: storedCursors.logged_times, fromDate, toDate })
-        .then(async ({ data, syncCursor }) => {
-          if (syncCursor) newCursors.logged_times = syncCursor
-          // The incremental helper returns filtered but unmapped rows —
-          // fall back to the full mapper to keep downstream logic intact.
-          // If we got nothing back from the incremental fetch, we can
-          // trust that no changes happened and skip the range re-fetch.
-          return data.length || storedCursors.logged_times
-            ? getLoggedTimes(token, fromDate, toDate)
-            : []
-        }),
-      pk.getSalesIncremental(token, { syncCursor: storedCursors.sales, fromDate, toDate })
-        .then(async ({ data, syncCursor }) => {
-          if (syncCursor) newCursors.sales = syncCursor
-          return data.length || storedCursors.sales
-            ? getSales(token, fromDate, toDate)
-            : []
-        }),
-      getWorkPeriods(token, fromDate, toDate),
+      pkFetch('pk:loggedTimesIncremental', () =>
+        pk.getLoggedTimesIncremental(token, { syncCursor: storedCursors.logged_times, fromDate, toDate })
+      ).then(async ({ data, syncCursor }) => {
+        if (syncCursor) newCursors.logged_times = syncCursor
+        // The incremental helper returns filtered but unmapped rows —
+        // fall back to the full mapper to keep downstream logic intact.
+        // If we got nothing back from the incremental fetch, we can
+        // trust that no changes happened and skip the range re-fetch.
+        return data.length || storedCursors.logged_times
+          ? pkFetch('pk:getLoggedTimes', () => getLoggedTimes(token, fromDate, toDate))
+          : []
+      }),
+      pkFetch('pk:salesIncremental', () =>
+        pk.getSalesIncremental(token, { syncCursor: storedCursors.sales, fromDate, toDate })
+      ).then(async ({ data, syncCursor }) => {
+        if (syncCursor) newCursors.sales = syncCursor
+        return data.length || storedCursors.sales
+          ? pkFetch('pk:getSales', () => getSales(token, fromDate, toDate))
+          : []
+      }),
+      pkFetch('pk:getWorkPeriods', () => getWorkPeriods(token, fromDate, toDate)),
     ])
     logged    = loggedRes
     sales     = salesRes
@@ -75,9 +103,9 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
       
       try {
         const [monthLogged, monthSales, monthScheduled] = await Promise.all([
-          getLoggedTimes(token, monthFrom, monthTo),
-          getSales(token, monthFrom, monthTo),
-          getWorkPeriods(token, monthFrom, monthTo),
+          pkFetch(`pk:getLoggedTimes:${monthFrom}`, () => getLoggedTimes(token, monthFrom, monthTo)),
+          pkFetch(`pk:getSales:${monthFrom}`,       () => getSales(token, monthFrom, monthTo)),
+          pkFetch(`pk:getWorkPeriods:${monthFrom}`, () => getWorkPeriods(token, monthFrom, monthTo)),
         ])
         
         logged.push(...monthLogged)
@@ -210,7 +238,7 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
 
     // ── Strategy 1: workplace API names → dept name fuzzy match ─────────────
     const { getWorkplaces } = await import('@/lib/pos/personalkollen')
-    const workplaces = await getWorkplaces(token)
+    const workplaces = await pkFetch('pk:getWorkplaces', () => getWorkplaces(token))
 
     // Collect all dept names from departments table + staff_group fallback
     const { data: deptRows } = await db.from('departments').select('name').eq('org_id', integ.org_id)
@@ -383,7 +411,7 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     const now       = new Date()
     const forecastFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`
     const forecastTo   = `${now.getFullYear()}-12-31`
-    const pkForecasts  = await getSaleForecast(token, forecastFrom, forecastTo)
+    const pkForecasts  = await pkFetch('pk:getSaleForecast', () => getSaleForecast(token, forecastFrom, forecastTo))
 
     if (pkForecasts.length && integ.business_id) {
       const fRows = pkForecasts.map((f: any) => ({
@@ -408,14 +436,22 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
   // Persist any new PK sync cursors so the next sync can fetch incrementally.
   // JSONB merge (||) keeps cursors for endpoints we didn't fetch this run.
   if (Object.keys(newCursors).length > 0) {
-    try {
-      await db.from('integrations')
-        .update({ pk_sync_cursors: { ...storedCursors, ...newCursors } })
-        .eq('id', integ.id)
-    } catch (e: any) {
-      // Schema may not have pk_sync_cursors yet (M024 not applied).
-      // Non-fatal — we just fall back to range-mode on the next sync.
-      console.warn('[sync] pk_sync_cursors update failed (run M024?):', e.message)
+    const { error: cursorErr } = await db.from('integrations')
+      .update({ pk_sync_cursors: { ...storedCursors, ...newCursors } })
+      .eq('id', integ.id)
+    if (cursorErr) {
+      // M024 schema drift — column missing means the incremental optimization
+      // has been silently dead since aeec1f2. Surface as structured error so
+      // it shows up in Vercel/Sentry instead of console.warn that nobody reads.
+      const { log } = await import('@/lib/log/structured')
+      log.error('pk_sync_cursors update failed', {
+        route:          'sync/engine',
+        op:             'persist_cursors',
+        org_id:         integ.org_id,
+        integration_id: integ.id,
+        error:          cursorErr.message,
+        hint:           'M024-PK-SYNC-CURSORS.sql may not be applied — run it in Supabase SQL Editor',
+      })
     }
   }
 
@@ -1245,9 +1281,14 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
           .eq('id', integ.id)
           .maybeSingle()
 
+        // reauth_notified_at refreshed on EVERY auth failure (not just on
+        // transition) so the auto-recovery probe in lib/sync/eligibility.ts
+        // can use it as a backoff timer — otherwise master-sync would retry
+        // a permanently-broken integration every 5 minutes.
         await db.from('integrations').update({
-          status:     'needs_reauth',
-          last_error: e.message,
+          status:             'needs_reauth',
+          last_error:         e.message,
+          reauth_notified_at: new Date().toISOString(),
         }).eq('id', integ.id)
 
         // One email per reauth event. We only (re)send if the integration
@@ -1290,10 +1331,8 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
                 context: { kind: 'integration_reauth', org_id: orgId, integration_id: integ.id, provider },
               })
             }
-
-            await db.from('integrations').update({
-              reauth_notified_at: new Date().toISOString(),
-            }).eq('id', integ.id)
+            // reauth_notified_at was already refreshed in the parent UPDATE
+            // above — no need to touch it again here.
           } catch (notifyErr: any) {
             console.warn('reauth notify failed:', notifyErr?.message)
           }

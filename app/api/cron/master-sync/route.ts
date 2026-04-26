@@ -9,6 +9,7 @@ import { runSync }                   from '@/lib/sync/engine'
 import { checkCronSecret }           from '@/lib/admin/check-secret'
 import { log }                       from '@/lib/log/structured'
 import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
+import { filterEligible }            from '@/lib/sync/eligibility'
 
 export const runtime    = 'nodejs'
 export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
@@ -26,16 +27,28 @@ export async function GET(req: NextRequest) {
   const runStarted = Date.now()
   const db = createAdminClient()
 
-  // Get all connected integrations across all orgs
-  const { data: integrations } = await db
+  // Pull connected + needs_reauth (the latter only when the auto-recovery
+  // probe is due — see lib/sync/eligibility.ts). Without this, a single
+  // transient PK 401 used to wedge an integration for ~24 h until manual
+  // reconnect, because every sync entry point filtered status='connected'.
+  const { data: rawIntegrations } = await db
     .from('integrations')
-    .select('org_id, provider, id')
-    .eq('status', 'connected')
+    .select('org_id, provider, id, status, reauth_notified_at')
+    .in('status', ['connected', 'needs_reauth'])
     .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco', 'inzii'])
+
+  const integrations = filterEligible(rawIntegrations ?? [])
 
   if (!integrations?.length) {
     log.info('master-sync: no active integrations', { route: 'cron/master-sync' })
     return NextResponse.json({ ok: true, message: 'No active integrations' })
+  }
+
+  const probes = integrations.filter(i => i.status === 'needs_reauth').length
+  if (probes > 0) {
+    log.info('master-sync probing needs_reauth integrations', {
+      route: 'cron/master-sync', probes,
+    })
   }
 
   log.info('master-sync start', {

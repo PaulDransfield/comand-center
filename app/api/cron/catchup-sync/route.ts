@@ -26,6 +26,7 @@ import { checkCronSecret }           from '@/lib/admin/check-secret'
 import { runSync }                   from '@/lib/sync/engine'
 import { log }                       from '@/lib/log/structured'
 import { withTimeout as sharedWithTimeout } from '@/lib/sync/with-timeout'
+import { filterEligible }            from '@/lib/sync/eligibility'
 
 export const runtime     = 'nodejs'
 export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
@@ -40,14 +41,24 @@ async function handle(req: NextRequest) {
   const runStarted = Date.now()
   const db = createAdminClient()
 
-  const { data: integrations } = await db
+  // Includes connected + due-for-probe needs_reauth (lib/sync/eligibility.ts).
+  const { data: rawIntegrations } = await db
     .from('integrations')
-    .select('id, org_id, business_id, provider, status')
-    .eq('status', 'connected')
+    .select('id, org_id, business_id, provider, status, reauth_notified_at')
+    .in('status', ['connected', 'needs_reauth'])
+
+  const integrations = filterEligible(rawIntegrations ?? [])
 
   if (!integrations?.length) {
     log.info('catchup-sync: no active integrations', { route: 'cron/catchup-sync' })
     return NextResponse.json({ ok: true, message: 'No active integrations' })
+  }
+
+  const probes = integrations.filter(i => i.status === 'needs_reauth').length
+  if (probes > 0) {
+    log.info('catchup-sync probing needs_reauth integrations', {
+      route: 'cron/catchup-sync', probes,
+    })
   }
 
   // Last 7 days keeps the payload small + the PK API happy. The master-sync

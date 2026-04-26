@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { runSync } from '@/lib/sync/engine'
+import { filterEligible } from '@/lib/sync/eligibility'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 120
@@ -50,14 +51,32 @@ export async function POST(req: NextRequest) {
   }
   LAST_SYNC[bizId] = Date.now()
 
-  const { data: integrations } = await db
+  // User-clicked "Sync now" deserves a stronger probe than cron: if the
+  // integration is in needs_reauth we still try (subject to the 6 h backoff
+  // in eligibility.ts) so a transient earlier failure doesn't make the
+  // button look broken. If the probe still fails, the integration stays
+  // needs_reauth and the UI prompts reconnect; if it succeeds, runSync
+  // resets status='connected' and the button effectively self-heals.
+  const { data: rawIntegrations } = await db
     .from('integrations')
-    .select('id, org_id, business_id, provider, status')
+    .select('id, org_id, business_id, provider, status, reauth_notified_at')
     .eq('business_id', bizId)
-    .eq('status', 'connected')
+    .in('status', ['connected', 'needs_reauth'])
+
+  const integrations = filterEligible(rawIntegrations ?? [])
 
   if (!integrations?.length) {
-    return NextResponse.json({ ok: true, message: 'No connected integrations', synced: 0 })
+    // Distinguish "nothing connected" from "all wedged in needs_reauth and
+    // backoff hasn't elapsed" so the UI can tell the user what to do.
+    const wedged = (rawIntegrations ?? []).filter(i => i.status === 'needs_reauth').length
+    return NextResponse.json({
+      ok:      true,
+      synced:  0,
+      message: wedged > 0
+        ? `${wedged} integration(s) need reconnecting. Open Settings → Integrations.`
+        : 'No connected integrations',
+      needs_reauth: wedged,
+    })
   }
 
   const now   = new Date()

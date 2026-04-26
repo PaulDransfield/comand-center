@@ -11,6 +11,72 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 
+// ── Per-business advisory lock around aggregateMetrics ───────────────────────
+//
+// FIXES.md §0l surfaced a race where two concurrent paths (per-sync aggregate
+// inside runSync + post-cron aggregate sweep) both rebuild daily_metrics for
+// the same business at the same time, and the loser overwrites with stale data.
+// The §0l fix mitigates by skipping per-sync aggregate when 0 rows synced;
+// this lock is the structural cure — only one aggregateMetrics call per
+// business runs at a time, others skip.
+//
+// Lock is held in the `aggregation_lock` table (M027). Stale rows >60 s old
+// are stolen on the assumption the previous worker crashed. If the lock
+// table doesn't exist (M027 not applied), we fall back to no-lock behaviour
+// and log a structured error so Vercel surfaces the drift.
+
+const LOCK_STALE_MS = 60_000
+
+async function acquireAggregationLock(db: any, businessId: string, lockId: string): Promise<boolean | 'no_table'> {
+  // Attempt insert. PK violation means another worker holds the lock.
+  const { error: insErr } = await db.from('aggregation_lock').insert({
+    business_id: businessId,
+    locked_at:   new Date().toISOString(),
+    locked_by:   lockId,
+  })
+  if (!insErr) return true
+
+  // Distinguish "table missing" (M027 not applied) from "lock held".
+  const code = insErr.code ?? ''
+  const msg  = (insErr.message ?? '').toLowerCase()
+  if (msg.includes('aggregation_lock') && msg.includes('does not exist')) return 'no_table'
+
+  // 23505 = unique_violation on the PK → lock held. Check staleness.
+  if (code !== '23505' && !msg.includes('duplicate key')) {
+    // Some other error — surface it but don't block the aggregate.
+    console.error('[aggregate] unexpected lock error', insErr)
+    return false
+  }
+
+  const { data: existing } = await db
+    .from('aggregation_lock')
+    .select('locked_at, locked_by')
+    .eq('business_id', businessId)
+    .maybeSingle()
+
+  if (!existing) return false  // race — someone deleted between insert + select; bail this round
+  const ageMs = Date.now() - new Date(existing.locked_at).getTime()
+  if (ageMs < LOCK_STALE_MS) return false  // fresh — another worker owns it
+
+  // Stale — steal the lock by overwriting locked_by + timestamp.
+  const { error: stealErr } = await db
+    .from('aggregation_lock')
+    .update({ locked_by: lockId, locked_at: new Date().toISOString() })
+    .eq('business_id', businessId)
+    .eq('locked_by', existing.locked_by)  // optimistic: only steal if previous owner unchanged
+  if (stealErr) return false
+  return true
+}
+
+async function releaseAggregationLock(db: any, businessId: string, lockId: string) {
+  // Only delete if WE still own it — protects against the case where a
+  // long-running aggregate got its lock stolen by a stale-lock sweep.
+  await db.from('aggregation_lock')
+    .delete()
+    .eq('business_id', businessId)
+    .eq('locked_by', lockId)
+}
+
 // ── Aggregate for a specific business + date range ────────────────────────────
 // This is the main function called after sync. It re-computes summaries for the
 // date range that was just synced, not the entire history.
@@ -21,6 +87,25 @@ export async function aggregateMetrics(
   toDate: string,    // YYYY-MM-DD
 ) {
   const db = createAdminClient()
+
+  // Acquire per-business lock. If held by another worker, skip — they'll do
+  // the same work in a moment. If the lock table is missing (M027 pending)
+  // we proceed without locking and log it loudly.
+  const lockId = `${process.env.VERCEL_DEPLOYMENT_ID ?? 'local'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const acquired = await acquireAggregationLock(db, businessId, lockId)
+  if (acquired === 'no_table') {
+    const { log } = await import('@/lib/log/structured')
+    log.error('aggregation_lock table missing', {
+      route: 'sync/aggregate',
+      hint:  'M027-AGGREGATION-LOCK.sql may not be applied — run it in Supabase SQL Editor',
+    })
+    // Continue without lock — preserves prior behaviour rather than blocking.
+  } else if (!acquired) {
+    console.log('[aggregate] skipped — lock held', { business_id: businessId })
+    return { skipped: true, daily_rows: 0, monthly_rows: 0, dept_rows: 0 }
+  }
+
+  try {
 
   // ── 1. Fetch raw data for the date range ──────────────────────────────────
   // .lte(toDate) was dropped. With the upper-bound chained, Supabase was returning
@@ -440,12 +525,17 @@ export async function aggregateMetrics(
     }
   }
 
-  // Return actual WRITTEN counts, not just the compute-intent counts.
-  // Previously this returned `dailyRows.length` etc. even when upserts failed silently.
-  return {
-    daily_rows:   daily_written,
-    monthly_rows: monthly_written,
-    dept_rows:    dept_written,
+    // Return actual WRITTEN counts, not just the compute-intent counts.
+    // Previously this returned `dailyRows.length` etc. even when upserts failed silently.
+    return {
+      daily_rows:   daily_written,
+      monthly_rows: monthly_written,
+      dept_rows:    dept_written,
+    }
+  } finally {
+    if (acquired === true) {
+      await releaseAggregationLock(db, businessId, lockId)
+    }
   }
 }
 

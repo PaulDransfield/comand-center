@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { runSync }                           from '@/lib/sync/engine'
+import { filterEligible }                    from '@/lib/sync/eligibility'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
@@ -58,13 +59,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'not your business' }, { status: 403 })
   }
 
-  // Fetch all live integrations for this business that benefit from intraday sync.
-  const { data: integrations } = await db
+  // Fetch all live integrations for this business that benefit from intraday
+  // sync. Includes needs_reauth ones whose probe backoff has elapsed (see
+  // lib/sync/eligibility.ts) so a transient PK 401 can self-heal on next
+  // page load rather than waiting for manual reconnect.
+  const { data: rawIntegrations } = await db
     .from('integrations')
-    .select('id, provider, last_sync_at')
-    .eq('status', 'connected')
+    .select('id, provider, last_sync_at, status, reauth_notified_at')
+    .in('status', ['connected', 'needs_reauth'])
     .eq('business_id', bizId)
     .in('provider', ['personalkollen', 'inzii', 'ancon', 'swess', 'onslip'])
+
+  const integrations = filterEligible(rawIntegrations ?? [])
 
   if (!integrations?.length) {
     return NextResponse.json({ ok: true, synced: 0, skipped: 0, reason: 'no connected integrations' }, {
