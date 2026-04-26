@@ -110,6 +110,7 @@ export default function DashboardPage() {
 function DashboardInner() {
   const [businesses,  setBusinesses]  = useState<any[]>([])
   const [bizId,       setBizId]       = useState<string | null>(null)
+  const [dataAsOf,    setDataAsOf]    = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
   const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
@@ -244,6 +245,9 @@ function DashboardInner() {
       setDepts(deptRes ?? null)
       setAlerts(Array.isArray(alertRes) ? alertRes : [])
       setLoading(false)
+      // Track the freshest date in loaded rows for the stale-data banner
+      const latest = rows.reduce((m: string, r: any) => r.date > m ? r.date : m, '')
+      setDataAsOf(latest || null)
     })
   }, [bizId, weekOffset, monthOffset, viewMode])
 
@@ -405,6 +409,22 @@ function DashboardInner() {
             <button onClick={() => setShowUpgrade(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#15803d', fontSize: 20 }}>×</button>
           </div>
         )}
+
+        {/* Stale data warning — shown when the freshest loaded row is before
+            yesterday, meaning the hourly catchup hasn't synced recent sales. */}
+        {(() => {
+          if (!dataAsOf || loading) return null
+          const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+          if (dataAsOf >= yesterday) return null
+          const daysOld = Math.floor((Date.now() - new Date(dataAsOf + 'T23:59:59Z').getTime()) / 86_400_000)
+          return (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ fontSize: 13, color: '#92400e' }}>
+                <strong>Data last updated {daysOld === 1 ? 'yesterday' : `${daysOld} days ago`}</strong> — syncing is in progress. Click the sync dot in the sidebar to refresh now.
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Outer header removed in Phase 1 — the business selector is now in
             the sidebar (SidebarV2) and the period navigator + W/M toggle are

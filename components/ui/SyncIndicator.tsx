@@ -98,15 +98,27 @@ export default function SyncIndicator({
         body:    JSON.stringify({ business_id: businessId }),
       })
       const j = await r.json()
-      if (!r.ok)              setToast(j.error ?? `Failed (${r.status})`)
-      else if (j.errors > 0)  setToast(`Synced with ${j.errors} error${j.errors === 1 ? '' : 's'}`)
-      else                    setToast(`Synced ${j.synced} integration${j.synced === 1 ? '' : 's'}`)
-      setNow(Date.now()) // force the label to re-evaluate with the new timestamp once the effect refetches
+      if (!r.ok) {
+        setToast(j.error ?? `Sync failed (${r.status})`)
+      } else if (j.synced === 0 && j.errors === 0) {
+        setToast(j.message ?? 'No integrations connected — check Settings')
+      } else if (j.errors > 0) {
+        setToast(`Synced with ${j.errors} error${j.errors === 1 ? '' : 's'} — check admin health`)
+      } else {
+        setToast('Synced — reloading…')
+      }
+      setNow(Date.now())
+      // Reload the page after a successful sync so dashboard/staff/revenue
+      // pages pick up the freshly-written daily_metrics rows without the
+      // user having to manually refresh.
+      if (r.ok && j.synced > 0 && j.errors === 0) {
+        setTimeout(() => window.location.reload(), 1200)
+      }
     } catch (e: any) {
       setToast('Sync failed — ' + (e?.message ?? 'network'))
     }
     setBusy(false)
-    setTimeout(() => setToast(''), 4000)
+    setTimeout(() => setToast(''), 6000)
   }
 
   const dotColour = busy ? UX.indigoLight : fresh ? '#10b981' : UX.amberInk

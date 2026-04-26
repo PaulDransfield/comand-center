@@ -260,6 +260,14 @@ function aggregateMonths(
   // Defensive clamp — projectRollup also clamps on write, but doubling up
   // here costs nothing and protects against legacy rows that might violate.
   alcoholCost = Math.min(alcoholCost, food)
+  // Only show the food/alcohol COST split when both sides are meaningful.
+  // If 95%+ of COGS is tagged as alcohol (happens when the Fortnox PDF
+  // lumps all purchases under drink accounts, or the AI mislabels them),
+  // collapse back into a single "Food cost" line rather than showing
+  // "Food cost: 0, Alcohol: 594k" which looks like COGS is missing.
+  if (food > 0 && alcoholCost >= food * 0.95) {
+    alcoholCost = 0
+  }
   const foodOnly = food - alcoholCost
   // Revenue split is only meaningful if at least one bucket has data AND
   // the sum is within a sensible band of the authoritative revenue (±15% —

@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   // reconnect, because every sync entry point filtered status='connected'.
   const { data: rawIntegrations } = await db
     .from('integrations')
-    .select('org_id, provider, id, status, reauth_notified_at')
+    .select('org_id, provider, id, business_id, status, reauth_notified_at')
     .in('status', ['connected', 'needs_reauth'])
     .in('provider', ['personalkollen', 'fortnox', 'ancon', 'swess', 'caspeco', 'inzii'])
 

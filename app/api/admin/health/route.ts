@@ -17,8 +17,9 @@ function checkAuth(req: NextRequest): boolean {
 }
 
 const CRON_DEFS = [
-  { path: '/api/cron/master-sync',             schedule: '0 5 * * *',  name: 'Master sync',          probe: { table: 'sync_log',                 time: 'created_at', status: 'success' } },
-  { path: '/api/cron/anomaly-check',           schedule: '30 5 * * *', name: 'Anomaly check',        probe: { table: 'anomaly_alerts',           time: 'created_at' } },
+  { path: '/api/cron/master-sync',             schedule: '0 5 * * *',      name: 'Master sync',          probe: { table: 'sync_log',                 time: 'created_at', status: 'success' } },
+  { path: '/api/cron/catchup-sync',            schedule: '0 7,10,14,18 *', name: 'Catchup sync',         probe: { table: 'sync_log',                 time: 'created_at', status: 'success' } },
+  { path: '/api/cron/anomaly-check',           schedule: '30 5 * * *',     name: 'Anomaly check',        probe: { table: 'anomaly_alerts',           time: 'created_at' } },
   { path: '/api/cron/health-check',            schedule: '0 6 * * *',  name: 'Health check',         probe: null },
   { path: '/api/cron/weekly-digest',           schedule: '0 6 * * 1',  name: 'Weekly digest',        probe: { table: 'briefings',                time: 'created_at' } },
   { path: '/api/cron/forecast-calibration',    schedule: '0 4 1 * *',  name: 'Forecast calibration', probe: { table: 'forecast_calibration',     time: 'calibrated_at' } },
@@ -206,6 +207,52 @@ export async function GET(req: NextRequest) {
     aiLearning.filtered_by_business_id = businessFilter
   } catch { /* M020 may not be applied */ }
 
+  // ── Data freshness — per-business latest daily_metrics date ──────────────
+  // Shows how stale each business's dashboard data is. "stale" = latest
+  // daily_metrics row is before yesterday, meaning users are seeing old data.
+  const dataFreshness: any[] = []
+  try {
+    const yesterday = new Date(now - 24 * 60 * 60_000).toISOString().slice(0, 10)
+    const today     = new Date(now).toISOString().slice(0, 10)
+    const { data: latestRows } = await db
+      .from('daily_metrics')
+      .select('business_id, date')
+      .gte('date', new Date(now - 30 * 24 * 60 * 60_000).toISOString().slice(0, 10))
+      .order('date', { ascending: false })
+
+    const latestByBiz: Record<string, string> = {}
+    for (const r of latestRows ?? []) {
+      if (!latestByBiz[r.business_id]) latestByBiz[r.business_id] = r.date
+    }
+
+    const bizNameMap2 = new Map<string, string>()
+    for (const b of businessesList ?? []) bizNameMap2.set(b.id, b.name ?? b.id.slice(0, 8))
+
+    for (const [bizId, latestDate] of Object.entries(latestByBiz)) {
+      const hoursStale = Math.round((now - new Date(latestDate + 'T23:59:59Z').getTime()) / 3_600_000)
+      dataFreshness.push({
+        business_id:   bizId,
+        business_name: bizNameMap2.get(bizId) ?? bizId.slice(0, 8),
+        latest_date:   latestDate,
+        hours_stale:   hoursStale,
+        status:        latestDate >= yesterday ? 'ok' : latestDate >= new Date(now - 48 * 60 * 60_000).toISOString().slice(0, 10) ? 'warn' : 'stale',
+      })
+    }
+    // Businesses with no daily_metrics at all
+    for (const b of businessesList ?? []) {
+      if (!latestByBiz[b.id]) {
+        dataFreshness.push({
+          business_id:   b.id,
+          business_name: b.name ?? b.id.slice(0, 8),
+          latest_date:   null,
+          hours_stale:   null,
+          status:        'stale',
+        })
+      }
+    }
+    dataFreshness.sort((a, b) => (a.latest_date ?? '') < (b.latest_date ?? '') ? -1 : 1)
+  } catch { /* non-fatal */ }
+
   return NextResponse.json({
     crons:            cronRows,
     ai: {
@@ -219,6 +266,7 @@ export async function GET(req: NextRequest) {
       rate:     v.success + v.fail > 0 ? Math.round((v.success / (v.success + v.fail)) * 100) : null,
     })),
     error_feed:       errorFeed,
+    data_freshness:   dataFreshness,
     extraction_queue: extractionQueue,
     stripe_dedup:     stripeDedup,
     rate_limit_hits:  rateLimitHits,

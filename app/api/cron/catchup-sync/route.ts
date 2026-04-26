@@ -62,18 +62,59 @@ async function handle(req: NextRequest) {
   }
 
   // Last 7 days keeps the payload small + the PK API happy. The master-sync
-  // handles deeper backfills at 05:00 UTC.
+  // handles deeper backfills at 05:00 UTC. Stale-biz detection below extends
+  // the window to 30 days for any business that's missing yesterday's row.
   const now    = new Date()
-  const from7  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const toDate = now.toISOString().slice(0, 10)
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const from7  = new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const from30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+  // Gap detection: find businesses whose daily_metrics is missing yesterday's data.
+  // If a business hasn't been aggregated for >1 day, extend the sync window to 30
+  // days so the catch-up pull covers whatever the master-sync missed.
+  const { data: freshnesRows } = await db
+    .from('daily_metrics')
+    .select('business_id, date')
+    .gte('date', from7)
+    .order('date', { ascending: false })
+
+  const latestByBiz: Record<string, string> = {}
+  for (const r of freshnesRows ?? []) {
+    if (!latestByBiz[r.business_id]) latestByBiz[r.business_id] = r.date
+  }
+
+  // A business is "stale" if its newest daily_metrics row is before yesterday.
+  const staleBizIds = new Set(
+    Object.entries(latestByBiz)
+      .filter(([, latest]) => latest < yesterday)
+      .map(([bizId]) => bizId),
+  )
+  // Also flag businesses with no daily_metrics at all in last 7 days.
+  for (const integ of integrations) {
+    if (integ.business_id && !(integ.business_id in latestByBiz)) {
+      staleBizIds.add(integ.business_id)
+    }
+  }
+
+  const staleCount = staleBizIds.size
+  if (staleCount > 0) {
+    log.warn('catchup-sync: stale businesses detected — extending to 30-day window', {
+      route: 'cron/catchup-sync',
+      stale_count: staleCount,
+      stale_biz_ids: [...staleBizIds],
+    })
+  }
 
   const PER_INTEGRATION_TIMEOUT_MS = 60_000
   const CONCURRENCY = 10
 
   async function syncOne(integ: any) {
+    // Use 30-day window for stale businesses so we recover any gap.
+    const fromDate = (integ.business_id && staleBizIds.has(integ.business_id)) ? from30 : from7
     try {
       const result = await sharedWithTimeout(
-        runSync(integ.org_id, integ.provider, from7, toDate, integ.id),
+        runSync(integ.org_id, integ.provider, fromDate, toDate, integ.id),
         PER_INTEGRATION_TIMEOUT_MS,
         `${integ.provider}/${integ.id}`,
       )

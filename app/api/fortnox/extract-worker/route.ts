@@ -325,6 +325,8 @@ MULTI-PERIOD.  If the PDF has one row per BAS account with multiple monthly colu
 
 SINGLE-PERIOD.  If the PDF is a single-month or single-year report, emit ONE period with a rollup AND put all its line items into annual_lines.
 
+TWO-COLUMN PERIOD+ACKUMULERAT.  Swedish Fortnox monthly P&Ls typically have two data columns: "Period" (current month only) and "Ackumulerat" (year-to-date). For the rollup use the PERIOD column for ALL categories (revenue, food_cost, staff_cost, other_cost, depreciation, financial, net_profit). For annual_lines use the ACKUMULERAT column amounts. Do NOT use 0 for food_cost or staff_cost just because you are unsure — sum ALL 4xxx accounts from the Period column into food_cost, and ALL 7xxx accounts from the Period column into staff_cost. If a category genuinely has no rows, emit 0; but if there are 4xxx rows visible, their Period amounts must appear in food_cost.
+
 LINE ITEMS ARE MANDATORY.  "annual_lines" MUST contain ONE entry per BAS account leaf row visible in the PDF — a Swedish restaurant Resultatrapport typically has 15–40 rows (revenue splits by VAT, food/drink accounts, salary + tax rows, rent, utilities, insurance, bank fees, etc). Do NOT submit an empty "annual_lines": the downstream pipeline depends on them for category/VAT-rate/subcategory classification and for the Performance page's food-vs-alcohol split. If you're unsure whether a row is a subtotal, err on the side of including it — the server de-dupes. Subtotal rows that clearly say "Summa", "S:a", "Totalt", "Bruttovinst", "Rörelseresultat" or "Resultat före/efter…" must NOT be emitted (they would double-count).
 
 For each line, "label" = the row text exactly as printed (Swedish), "amount" = the Ack./year-total (always positive for costs, signed for financial items), "account" = the BAS account number (integer). If a row has no visible account number but a clear label, still emit it with account=0 and rely on label classification downstream.
@@ -798,22 +800,78 @@ Notes on the example:
       const month = p?.month == null ? null : (Number.isFinite(Number(p.month)) ? Number(p.month) : null)
       const lines = enrichLines(p?.lines)
       const rollupRaw = p?.rollup ?? {}
-      return {
-        year, month, lines,
-        rollup: {
-          revenue:          Number(rollupRaw.revenue          ?? 0) || 0,
-          dine_in_revenue:  Number(rollupRaw.dine_in_revenue  ?? 0) || 0,
-          takeaway_revenue: Number(rollupRaw.takeaway_revenue ?? 0) || 0,
-          alcohol_revenue:  Number(rollupRaw.alcohol_revenue  ?? 0) || 0,
-          food_cost:        Number(rollupRaw.food_cost        ?? 0) || 0,
-          alcohol_cost:     Number(rollupRaw.alcohol_cost     ?? 0) || 0,
-          staff_cost:       Number(rollupRaw.staff_cost       ?? 0) || 0,
-          other_cost:       Number(rollupRaw.other_cost       ?? 0) || 0,
-          depreciation:     Number(rollupRaw.depreciation     ?? 0) || 0,
-          financial:        Number(rollupRaw.financial        ?? 0) || 0,
-          net_profit:       Number(rollupRaw.net_profit       ?? 0) || 0,
-        },
+      // Server-side rollup repair: if the AI returned 0 for a category but
+      // the enriched line items contain accounts in that category's range,
+      // recompute from the lines. This catches the common failure mode on
+      // multi-column PDFs (Period + Ackumulerat) where the AI correctly reads
+      // revenue from the Period column but returns 0 for food_cost/staff_cost
+      // while silently absorbing those costs into other_cost or net_profit.
+      // Account classification here is authoritative (4xxx = food_cost, etc.)
+      // so the repair can't introduce double-counting.
+      function sumLinesForCategory(enriched: any[], cat: string): number {
+        return enriched.filter((l: any) => l.category === cat).reduce((s: number, l: any) => s + Math.abs(Number(l.amount) || 0), 0)
       }
+      // Sum a SUBSET of revenue lines by VAT-derived subcategory. Used to
+      // back-fill dine_in/takeaway/alcohol revenue when the AI didn't
+      // populate those rollup fields (older extractions, or it just missed).
+      function sumRevenueSubset(enriched: any[], subMatch: (sub: string) => boolean): number {
+        return enriched
+          .filter((l: any) => l.category === 'revenue' && subMatch(String(l.subcategory ?? '').toLowerCase()))
+          .reduce((s: number, l: any) => s + Math.abs(Number(l.amount) || 0), 0)
+      }
+      const aiRollup = {
+        revenue:          Number(rollupRaw.revenue          ?? 0) || 0,
+        // Revenue subsets (M029) — pass-through; back-filled below if AI
+        // returned 0 but line items have the VAT-tagged subcategory.
+        dine_in_revenue:  Number(rollupRaw.dine_in_revenue  ?? 0) || 0,
+        takeaway_revenue: Number(rollupRaw.takeaway_revenue ?? 0) || 0,
+        alcohol_revenue:  Number(rollupRaw.alcohol_revenue  ?? 0) || 0,
+        food_cost:        Number(rollupRaw.food_cost        ?? 0) || 0,
+        // alcohol_cost (M028) — subset of food_cost. Pass-through; the
+        // M028 backfill + line-item fallback in projectRollup catches gaps.
+        alcohol_cost:     Number(rollupRaw.alcohol_cost     ?? 0) || 0,
+        staff_cost:       Number(rollupRaw.staff_cost       ?? 0) || 0,
+        other_cost:       Number(rollupRaw.other_cost       ?? 0) || 0,
+        depreciation:     Number(rollupRaw.depreciation     ?? 0) || 0,
+        financial:        Number(rollupRaw.financial        ?? 0) || 0,
+        net_profit:       Number(rollupRaw.net_profit       ?? 0) || 0,
+      }
+      // Only repair categories the AI left at 0 when line items disagree.
+      // Revenue is intentionally excluded — the AI Period column read is
+      // more accurate than summing Ackumulerat-column line items.
+      const repaired = { ...aiRollup }
+      for (const cat of ['food_cost', 'staff_cost', 'other_cost', 'depreciation'] as const) {
+        if (aiRollup[cat] === 0 && lines.length > 0) {
+          const lineSum = sumLinesForCategory(lines, cat)
+          if (lineSum > 0) {
+            repaired[cat] = lineSum
+          }
+        }
+      }
+      // Revenue-subset back-fill: only when the AI returned 0 for a subset
+      // AND the line items have at least one row tagged for it. Each subset
+      // clamped to total revenue so we never report subset > total.
+      if (aiRollup.dine_in_revenue === 0) {
+        const v = sumRevenueSubset(lines, sub => sub === 'food' || sub === 'dine_in')
+        if (v > 0) repaired.dine_in_revenue = Math.min(v, repaired.revenue)
+      }
+      if (aiRollup.takeaway_revenue === 0) {
+        const v = sumRevenueSubset(lines, sub => sub === 'takeaway')
+        if (v > 0) repaired.takeaway_revenue = Math.min(v, repaired.revenue)
+      }
+      if (aiRollup.alcohol_revenue === 0) {
+        const v = sumRevenueSubset(lines, sub => sub === 'alcohol' || sub === 'beverage' || sub === 'drinks')
+        if (v > 0) repaired.alcohol_revenue = Math.min(v, repaired.revenue)
+      }
+      // Recompute net_profit if any cost category was repaired. Revenue
+      // subset back-fills don't change net_profit (they're subsets of
+      // revenue, not separate components).
+      const anyRepaired = (['food_cost','staff_cost','other_cost','depreciation'] as const).some(c => repaired[c] !== aiRollup[c])
+      if (anyRepaired) {
+        repaired.net_profit = repaired.revenue - repaired.food_cost - repaired.staff_cost - repaired.other_cost - repaired.depreciation + repaired.financial
+      }
+
+      return { year, month, lines, rollup: repaired }
     })
     .filter((p: any) => p.year != null)
     .sort((a: any, b: any) => (a.year - b.year) || ((a.month ?? 0) - (b.month ?? 0)))

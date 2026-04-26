@@ -18,6 +18,26 @@ export default function HealthDashboard() {
   const [aiGlobal, setAiGlobal] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncMsg,  setSyncMsg]  = useState('')
+
+  async function runSyncAll() {
+    setSyncBusy(true); setSyncMsg('')
+    try {
+      const secret = sessionStorage.getItem('admin_auth') ?? ''
+      const res = await fetch('/api/admin/sync-all', {
+        method: 'POST',
+        headers: { 'x-admin-secret': secret },
+      })
+      const j = await res.json()
+      if (!res.ok) { setSyncMsg('Error: ' + (j.error ?? res.status)); return }
+      setSyncMsg(`Done — ${j.synced} integration${j.synced === 1 ? '' : 's'} synced, ${j.errors} error${j.errors === 1 ? '' : 's'}`)
+    } catch (e: any) {
+      setSyncMsg('Error: ' + e.message)
+    } finally {
+      setSyncBusy(false)
+    }
+  }
   // Scope for the AI learning panel — null = all orgs, otherwise a
   // specific business_id. Toggled from the selector; re-fetches the
   // /api/admin/health endpoint with ?business_id= query param.
@@ -44,7 +64,7 @@ export default function HealthDashboard() {
   if (error)   return <div><AdminNav /><div style={{ padding: 24 }}><div style={S.bannerErr}>{error}</div></div></div>
   if (!data)   return null
 
-  const { crons, ai, sync_by_provider, error_feed, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning, businesses } = data
+  const { crons, ai, sync_by_provider, error_feed, data_freshness, extraction_queue, stripe_dedup, rate_limit_hits, ai_learning, businesses } = data
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
@@ -52,9 +72,21 @@ export default function HealthDashboard() {
 
       <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px' }}>
 
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>System health</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Cron status · AI spend · error feed · last 7 days of sync data</p>
+        <div style={{ marginBottom: 20, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' as const }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>System health</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Cron status · AI spend · error feed · last 7 days of sync data</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {syncMsg && <span style={{ fontSize: 12, color: syncMsg.startsWith('Error') ? '#dc2626' : '#15803d' }}>{syncMsg}</span>}
+            <button
+              onClick={runSyncAll}
+              disabled={syncBusy}
+              style={{ padding: '8px 16px', background: syncBusy ? '#e5e7eb' : '#1a1f2e', color: syncBusy ? '#9ca3af' : 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: syncBusy ? 'not-allowed' : 'pointer' }}
+            >
+              {syncBusy ? 'Syncing…' : 'Sync all now'}
+            </button>
+          </div>
         </div>
 
         {/* Cron status */}
@@ -447,6 +479,43 @@ export default function HealthDashboard() {
             </div>
           )}
         </div>
+
+        {/* Data freshness */}
+        {data_freshness?.length > 0 && (
+          <div style={{ ...S.card, marginBottom: 14 }}>
+            <div style={S.head}>Data freshness — daily_metrics latest date per business</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: '#f9fafb' }}>
+                  <th style={th('left')}>Business</th>
+                  <th style={th('right')}>Latest data</th>
+                  <th style={th('right')}>Hours stale</th>
+                  <th style={th('right')}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data_freshness.map((f: any) => {
+                  const colour = f.status === 'ok' ? '#15803d' : f.status === 'warn' ? '#d97706' : '#dc2626'
+                  return (
+                    <tr key={f.business_id} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={S.td}><strong style={{ color: '#111' }}>{f.business_name}</strong></td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{f.latest_date ?? '—'}</td>
+                      <td style={{ ...S.td, textAlign: 'right', color: '#6b7280' }}>{f.hours_stale != null ? f.hours_stale + 'h' : '—'}</td>
+                      <td style={{ ...S.td, textAlign: 'right' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 4, background: 'white', color: colour, border: `1px solid ${colour}` }}>
+                          {f.status?.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
+              OK = yesterday or today · WARN = 1–2 days behind · STALE = missing &gt;2 days
+            </div>
+          </div>
+        )}
 
         {/* Error feed */}
         <div style={S.card}>
