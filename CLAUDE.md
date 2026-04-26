@@ -1,6 +1,12 @@
 # CLAUDE.md — Working Guidelines
-> Last updated: 2026-04-23 | Session 12 — PK hardening + AI layer upgrade
+> Last updated: 2026-04-26 | Session 13 — PK auto-recovery + Fortnox Tier 2 rebuild
 > See ARCHITECTURE-PLAN.md for the full audit + phased roadmap.
+
+> **Session 13 invariants (2026-04-26):**
+>   • **Single writer, trusted reads.** `lib/finance/projectRollup.ts` is the only function that turns extracted Fortnox data into a `tracker_data` row. /api/tracker, the Performance page, and the aggregator all read the persisted values verbatim — no recompute. If the formula changes, change `projectRollup` + re-apply existing extractions (their `extracted_json` is immutable, projection is idempotent).
+>   • **Sign convention lives in `lib/finance/conventions.ts` and nowhere else.** Storage uses: revenue positive, costs positive, financial signed (negative = interest expense). `net_profit = revenue − food − staff − other − depreciation + financial`. Display layer translates if it needs different signs.
+>   • **fortnox_uploads supersede chain.** Re-uploading a corrected PDF for the same period marks the old upload `status='superseded'` and links via `supersedes_id` / `superseded_by_id`. Line items cleared by `source_upload_id` (NOT period_month — that filter was the multi-month reject bug). Reject walks the chain backwards: predecessor restored to 'applied'.
+>   • **PK sync `needs_reauth` auto-probe.** Every sync entry point uses `lib/sync/eligibility.ts::filterEligible()`. Includes connected + due-for-probe needs_reauth (last attempt > 6 h). Don't filter `.eq('status','connected')` directly anywhere new.
 >
 > Infra plans (as of 2026-04-23):
 >   • Supabase: **Pro** — daily backups, PITR, 8GB DB, no-pause

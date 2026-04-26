@@ -1,10 +1,19 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied
+> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M028 — Fortnox proper fix (depreciation/financial/alcohol_cost + supersede)
+**File:** `M028-FORTNOX-PROPER-FIX.sql` (repo root)
+**Purpose:** part of FIXES.md §0n (Tier 2 architectural rebuild of the Fortnox extraction pipeline). Three concerns in one migration:
+  1. Adds `depreciation`, `financial`, `alcohol_cost` columns to `tracker_data`. The first two were referenced everywhere but never existed in the schema; the apply route silently dropped them, /api/tracker silently overstated profit by the depreciation amount on every Fortnox month. `alcohol_cost` is promoted to a first-class rollup column so the Performance page reads the food/alcohol split from the rollup instead of summing line items.
+  2. Adds `supersedes_id` + `superseded_by_id` columns to `fortnox_uploads` and expands the status check to include `'superseded'`. apply() now detects a prior applied upload for the same (business, year, month) and links them so re-uploads have a traceable chain instead of orphan rows. Also fixes the multi-month reject bug (line items deleted by source_upload_id, no period_month filter).
+  3. Backfills (1) for already-applied uploads from `fortnox_uploads.extracted_json` so historical Performance page numbers become correct without forcing re-uploads. Recomputes `tracker_data.net_profit` + `margin_pct` for backfilled rows under the canonical formula (revenue − food − staff − other − depreciation + financial). Manual entries are not touched.
+**Safety:** all `ADD COLUMN` operations use `IF NOT EXISTS`. Status check is dropped + recreated by name lookup so the migration is environment-portable. Backfill only writes when current value is 0 (never overwrites manual entries). Wrapped in `BEGIN; … COMMIT;` so a partial failure rolls back cleanly.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Verification queries at the bottom show the new columns + a count of backfilled rows.
 
 ### M027 — aggregation_lock (per-business serialisation for aggregateMetrics) ✅ applied 2026-04-26
 **File:** `M027-AGGREGATION-LOCK.sql` (repo root)

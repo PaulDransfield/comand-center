@@ -324,20 +324,82 @@ For each line, "label" = the row text exactly as printed (Swedish), "amount" = t
 
 BAS CATEGORIES.  Sum accounts into rollup categories:
   revenue       = 3xxx (all operating revenue)
-  food_cost     = 4xxx (cost of goods)
+  food_cost     = 4xxx (cost of goods — total, includes alcohol)
+  alcohol_cost  = subset of food_cost: 4xxx lines whose label contains "25% moms" / "alkohol" / "vin" / "öl" / "sprit" / "drycker"
+                  (Swedish 25% VAT rate flags drinks/alcohol; 12% flags food)
   staff_cost    = 7xxx (salaries + payroll tax + pension — 7000-7699 all go here)
   other_cost    = 5xxx + 6xxx (rent, utilities, admin, bank fees, insurance, consulting, marketing, software)
   depreciation  = 78xx (avskrivningar)
   financial     = 8xxx (interest + financial items — signed; interest expense negative)
   net_profit    = revenue − food_cost − staff_cost − other_cost − depreciation + financial
 
+ALCOHOL/FOOD SPLIT.  alcohol_cost is a SUBSET of food_cost, never additive.
+The Performance page displays "food only = food_cost − alcohol_cost" alongside
+alcohol_cost so the owner sees their margin split. If you can't tell from labels
+whether a 4xxx line is alcohol vs food, default the line to food and leave
+alcohol_cost at 0 — never guess high. Rule: alcohol_cost ≤ food_cost ALWAYS.
+
 SIGN CONVENTION.  Costs positive, revenue positive, financial items signed (negative for interest expense, positive for interest income). Swedish decimal marker is comma: "1,5" in an MSEK report = 1 500 000 SEK.
 
 VALIDATION.  Before submitting:
   1. SUM(all line items whose BAS account ∈ revenue range) must equal rollup.revenue within 2% — otherwise raise confidence='medium' and add warning
   2. For each monthly rollup, net_profit = revenue − food − staff − other − depreciation + financial. Compute yourself and compare; fix sign errors before submitting.
-  3. Skip "Summa…" / "Total…" / "S:a" subtotal rows when listing line items (they'd double-count).
-  4. Monthly revenue under 10 000 SEK or over 100 000 000 SEK almost always means scale misread — re-check the header before submitting.`
+  3. alcohol_cost ≤ food_cost. If your computed alcohol exceeds food, you've double-counted — re-check.
+  4. Skip "Summa…" / "Total…" / "S:a" subtotal rows when listing line items (they'd double-count).
+  5. Monthly revenue under 10 000 SEK or over 100 000 000 SEK almost always means scale misread — re-check the header before submitting.
+
+EXAMPLE (single-month Resultatrapport, Vero restaurant, mars 2026, scale: SEK).
+
+Visible PDF rows:
+  3010 Försäljning mat 12% moms      485 200
+  3015 Försäljning alkohol 25% moms  178 400
+  Summa intäkter                     663 600
+  4015 Inköp livsmedel              -156 300
+  4020 Inköp dryck/alkohol           -84 100
+  Summa varuinköp                   -240 400
+  7010 Löner                        -198 500
+  7510 Sociala avgifter              -62 400
+  Summa personalkostnader           -260 900
+  5010 Lokalhyra                     -45 000
+  5040 El                            -12 800
+  6310 Försäkringar                   -3 200
+  6530 Redovisningstjänster           -8 500
+  Summa övriga externa kostnader     -69 500
+  7820 Avskrivningar inventarier     -15 000
+  8410 Räntekostnader                 -2 800
+  Resultat före skatt                 74 000
+
+Correct submit_extraction call:
+  doc_type: "pnl_monthly"
+  scale_detected: "sek"
+  confidence: "high"
+  periods: [{
+    year: 2026, month: 3,
+    rollup: {
+      revenue: 663600, food_cost: 240400, alcohol_cost: 84100,
+      staff_cost: 260900, other_cost: 69500, depreciation: 15000,
+      financial: -2800, net_profit: 74800
+    }
+  }]
+  annual_lines: [
+    { label: "Försäljning mat 12% moms",     amount: 485200, account: 3010 },
+    { label: "Försäljning alkohol 25% moms", amount: 178400, account: 3015 },
+    { label: "Inköp livsmedel",              amount: 156300, account: 4015 },
+    { label: "Inköp dryck/alkohol",          amount:  84100, account: 4020 },
+    { label: "Löner",                        amount: 198500, account: 7010 },
+    { label: "Sociala avgifter",             amount:  62400, account: 7510 },
+    { label: "Lokalhyra",                    amount:  45000, account: 5010 },
+    { label: "El",                           amount:  12800, account: 5040 },
+    { label: "Försäkringar",                 amount:   3200, account: 6310 },
+    { label: "Redovisningstjänster",         amount:   8500, account: 6530 },
+    { label: "Avskrivningar inventarier",    amount:  15000, account: 7820 },
+    { label: "Räntekostnader",               amount:  -2800, account: 8410 }
+  ]
+
+Note: net_profit declared 74000 vs computed 74800 — the 800 discrepancy is OK
+within tolerance (declared rounded). Subtotal rows ("Summa…") were dropped.
+Räntekostnader carries a negative amount because financial items are signed.
+alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020). Correct.`
 
   // Tool definition — enforces the JSON shape at the protocol level.
   // tool_choice forces Claude to respond with a structured tool call
@@ -368,6 +430,10 @@ VALIDATION.  Before submitting:
                 properties: {
                   revenue:      { type: 'number' },
                   food_cost:    { type: 'number' },
+                  // alcohol_cost is a SUBSET of food_cost (the 25%-VAT drinks
+                  // portion). Optional for backwards-compat with old extractions
+                  // — backfilled from line items if absent.
+                  alcohol_cost: { type: 'number' },
                   staff_cost:   { type: 'number' },
                   other_cost:   { type: 'number' },
                   depreciation: { type: 'number' },
@@ -398,110 +464,165 @@ VALIDATION.  Before submitting:
   const Anthropic = (await import('@anthropic-ai/sdk')).default
   const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-  // Sonnet 4.6 with extended thinking — based on Claude.ai's own
-  // reasoning on this exact problem. The thinking budget gives Sonnet
-  // room to do BAS-category aggregation + scale validation + sum-to-
-  // rollup reconciliation mentally before emitting the tool call,
-  // which is what the web version of Claude was doing implicitly.
-  //
-  // Prompt caching on the system prompt cuts 90% off the repeated
-  // input cost across every subsequent extraction.
-  const response = await client.messages.create({
-    model:      AI_MODELS.ANALYSIS,   // claude-sonnet-4-6
-    max_tokens: 16000,
-    // Anthropic's API forbids thinking + forced tool_choice together
-    // ("Thinking may not be enabled when tool_choice forces tool use").
-    // Solution: tool_choice='auto' lets the model decide; with a single
-    // relevant tool + a clear prompt, Sonnet picks it ~100% of the time.
-    // Text-JSON fallback below catches the rare text-response case.
-    thinking:   { type: 'enabled', budget_tokens: 5000 },
-    system:     [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-    tools:      [submitExtractionTool],
-    tool_choice:{ type: 'auto' },
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-        { type: 'text', text: 'Extract this Fortnox PDF. Call the submit_extraction tool with the full structured extraction — do not reply in free text.' },
-      ],
-    }],
-  } as any)
+  // ── Validation helpers (used for first pass + retry feedback) ─────────────
+  // Returns the list of algebraic / sanity issues with the current parsed
+  // output. Each issue is a short Swedish-style explanation safe to send
+  // back to Claude as retry context. Empty list = passed.
+  function runValidation(p: any): string[] {
+    const issues: string[] = []
+    if (!p || !Array.isArray(p.periods)) return issues
+    for (const period of p.periods) {
+      const r = period?.rollup ?? {}
+      const rev   = Number(r.revenue)      || 0
+      const food  = Number(r.food_cost)    || 0
+      const alc   = Number(r.alcohol_cost) || 0
+      const staff = Number(r.staff_cost)   || 0
+      const other = Number(r.other_cost)   || 0
+      const dep   = Number(r.depreciation) || 0
+      const fin   = Number(r.financial)    || 0
+      const declaredNet = Number(r.net_profit) || 0
+      const computedNet = rev - food - staff - other - dep + fin
+      const tolerance   = Math.max(Math.abs(computedNet) * 0.02, 1000)
+      const tag = `${period.year}-${String(period.month ?? 0).padStart(2, '0')}`
 
-  await writeProgress({ phase: 'parsing', message: 'Validating extraction…', percent: 70 })
+      if (Math.abs(computedNet - declaredNet) > tolerance) {
+        issues.push(`${tag} net_profit math: declared ${declaredNet} vs computed ${Math.round(computedNet)} (diff ${Math.round(computedNet - declaredNet)})`)
+      }
+      if (alc > food + 1) {
+        issues.push(`${tag} alcohol_cost ${Math.round(alc)} exceeds food_cost ${Math.round(food)} — alcohol must be a subset of food, not additive`)
+      }
+      if (period.month && period.month >= 1 && period.month <= 12) {
+        if (rev > 0 && rev < 10_000) {
+          issues.push(`${tag} revenue ${Math.round(rev)} SEK is suspiciously low — possible scale misdetection`)
+        }
+        if (rev > 100_000_000) {
+          issues.push(`${tag} revenue ${Math.round(rev)} SEK is suspiciously high — possible scale misdetection (MSEK not applied?)`)
+        }
+      }
+    }
+    // Annual_lines vs periods cross-check
+    const periodsSum = (p.periods ?? []).reduce((s: number, pp: any) => s + (Number(pp?.rollup?.revenue) || 0), 0)
+    const revLineSum = (p.annual_lines ?? [])
+      .filter((l: any) => { const a = Number(l?.account) || 0; return a >= 3000 && a < 4000 })
+      .reduce((s: number, l: any) => s + (Number(l?.amount) || 0), 0)
+    if (periodsSum > 0 && revLineSum > 0) {
+      const relDiff = Math.abs(periodsSum - revLineSum) / periodsSum
+      if (relDiff > 0.05) {
+        issues.push(`Revenue cross-check: periods sum ${Math.round(periodsSum)} vs 3xxx line-items ${Math.round(revLineSum)} (diff ${(relDiff * 100).toFixed(1)}%) — one side may be under-extracted`)
+      }
+    }
+    return issues
+  }
 
-  // Prefer the tool_use block (Claude's normal response mode with
-  // tool_choice='auto'); fall back to parsing a text response as JSON
-  // if for any reason the model chose to reply in text.
-  let parsed: any = null
-  const toolBlock = (response.content ?? []).find((b: any) => b?.type === 'tool_use')
-  if (toolBlock) {
-    parsed = (toolBlock as any).input
-  } else {
+  function parseToolResponse(response: any): any {
+    const toolBlock = (response.content ?? []).find((b: any) => b?.type === 'tool_use')
+    if (toolBlock) return (toolBlock as any).input
     const raw = (response.content ?? []).map((b: any) => b?.type === 'text' ? b.text : '').join('').trim()
     let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
     const firstBrace = cleaned.indexOf('{')
     const lastBrace  = cleaned.lastIndexOf('}')
     if (firstBrace >= 0 && lastBrace > firstBrace) cleaned = cleaned.slice(firstBrace, lastBrace + 1)
-    try { parsed = JSON.parse(cleaned) }
-    catch (e: any) {
+    try { return JSON.parse(cleaned) }
+    catch {
       const stopReason = (response as any).stop_reason ?? 'unknown'
       throw new Error(`Sonnet returned neither tool_use nor parseable JSON (stop_reason: ${stopReason}). Preview: ${raw.slice(0, 400)}`)
     }
   }
 
-  // Server-side validation — rollup reconciliation + sanity checks.
-  // This is the "the model said something, but is it mathematically
-  // consistent?" layer. Raises confidence floor or appends warnings
-  // so the review UI surfaces low-confidence rows for human check.
-  const validationWarnings: string[] = []
-  try {
-    for (const p of parsed?.periods ?? []) {
-      const r = p.rollup ?? {}
-      const computedNet = (Number(r.revenue) || 0) - (Number(r.food_cost) || 0) - (Number(r.staff_cost) || 0) - (Number(r.other_cost) || 0) - (Number(r.depreciation) || 0) + (Number(r.financial) || 0)
-      const declaredNet = Number(r.net_profit) || 0
-      // 2% tolerance OR 1000 SEK absolute (whichever wider) — catches
-      // real arithmetic errors without tripping on rounding jitter.
-      const tolerance = Math.max(Math.abs(computedNet) * 0.02, 1000)
-      if (Math.abs(computedNet - declaredNet) > tolerance) {
-        validationWarnings.push(`${p.year}-${String(p.month).padStart(2,'0')} net_profit math: declared ${declaredNet} vs computed ${Math.round(computedNet)} (diff ${Math.round(computedNet - declaredNet)})`)
+  const baseMessages: any[] = [{
+    role: 'user',
+    content: [
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+      { type: 'text', text: 'Extract this Fortnox PDF. Call the submit_extraction tool with the full structured extraction — do not reply in free text.' },
+    ],
+  }]
+
+  // Sonnet 4.6 with extended thinking — based on Claude.ai's own reasoning on
+  // this exact problem. tool_choice='auto' (Anthropic forbids thinking +
+  // forced tool_choice); with a single relevant tool Sonnet picks it ~100%
+  // of the time. Prompt caching on the system prompt cuts 90% off repeated
+  // input cost.
+  const response = await client.messages.create({
+    model:      AI_MODELS.ANALYSIS,
+    max_tokens: 16000,
+    thinking:   { type: 'enabled', budget_tokens: 5000 },
+    system:     [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+    tools:      [submitExtractionTool],
+    tool_choice:{ type: 'auto' },
+    messages:   baseMessages,
+  } as any)
+
+  await writeProgress({ phase: 'parsing', message: 'Validating extraction…', percent: 70 })
+
+  let parsed: any = parseToolResponse(response)
+  let totalInputTokens  = (response as any).usage?.input_tokens  ?? 0
+  let totalOutputTokens = (response as any).usage?.output_tokens ?? 0
+  let retried = false
+
+  // ── Validation-failure retry loop ─────────────────────────────────────────
+  // First pass found algebraic problems? Send them back to Claude with the
+  // prior submission as context. ONE retry max — beyond that the issues are
+  // probably structural (PDF layout we can't parse) and humans should review.
+  // Pattern reference: arxiv 2511.10659 (LLM fiscal extraction with
+  // hierarchical-sum validation) + Cognica's hierarchical recalculation
+  // approach. See FIXES.md §0n.
+  let validationWarnings = runValidation(parsed)
+  if (validationWarnings.length) {
+    await writeProgress({ phase: 'retrying', message: 'Validation failed — asking Claude to retry…', percent: 75 })
+    const toolUseBlock = (response.content ?? []).find((b: any) => b?.type === 'tool_use')
+    const retryMessages: any[] = [
+      ...baseMessages,
+      { role: 'assistant', content: response.content ?? [] },
+      {
+        role: 'user',
+        content: [
+          ...(toolUseBlock ? [{
+            type: 'tool_result',
+            tool_use_id: (toolUseBlock as any).id,
+            content: 'Server-side validation flagged the following issues. Re-extract with these specific corrections in mind, then call submit_extraction again with the corrected values. Do not reply in free text.\n\n' + validationWarnings.map(w => `• ${w}`).join('\n'),
+          }] : [{
+            type: 'text',
+            text: 'Server-side validation flagged the following issues. Re-extract with these specific corrections in mind, then call submit_extraction again with the corrected values. Do not reply in free text.\n\n' + validationWarnings.map(w => `• ${w}`).join('\n'),
+          }]),
+        ],
+      },
+    ]
+    try {
+      const retryResp = await client.messages.create({
+        model:      AI_MODELS.ANALYSIS,
+        max_tokens: 16000,
+        thinking:   { type: 'enabled', budget_tokens: 5000 },
+        system:     [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+        tools:      [submitExtractionTool],
+        tool_choice:{ type: 'auto' },
+        messages:   retryMessages,
+      } as any)
+      const retryParsed = parseToolResponse(retryResp)
+      const retryIssues = runValidation(retryParsed)
+      // Take the retry result if it improved things (fewer issues), otherwise
+      // keep the first pass and surface the warnings.
+      if (retryIssues.length < validationWarnings.length) {
+        parsed = retryParsed
+        validationWarnings = retryIssues
+        retried = true
+        totalInputTokens  += (retryResp as any).usage?.input_tokens  ?? 0
+        totalOutputTokens += (retryResp as any).usage?.output_tokens ?? 0
+        log.info('extract-worker validation retry improved result', {
+          route: 'fortnox/extract-worker', upload_id: job.upload_id,
+          before_issues: runValidation(parseToolResponse(response)).length,
+          after_issues:  retryIssues.length,
+        })
       }
-
-      // Restaurant revenue sanity band — flag outside 10k–100M SEK/month
-      const rev = Number(r.revenue) || 0
-      if (p.month && p.month >= 1 && p.month <= 12) {
-        if (rev > 0 && rev < 10_000) {
-          validationWarnings.push(`${p.year}-${String(p.month).padStart(2,'0')} revenue ${Math.round(rev)} SEK is suspiciously low — possible scale misdetection`)
-        }
-        if (rev > 100_000_000) {
-          validationWarnings.push(`${p.year}-${String(p.month).padStart(2,'0')} revenue ${Math.round(rev)} SEK is suspiciously high — possible scale misdetection (MSEK not applied?)`)
-        }
-      }
+    } catch (e: any) {
+      // Retry itself failed — keep the first-pass result with warnings.
+      console.warn('[extract-worker] validation retry failed:', e?.message)
     }
+  }
 
-    // Annual_lines reconcile against summed rollup revenue if we have both.
-    const periodsSum = (parsed?.periods ?? []).reduce((s: number, p: any) => s + (Number(p?.rollup?.revenue) || 0), 0)
-    const revLineSum = (parsed?.annual_lines ?? [])
-      .filter((l: any) => {
-        const acct = Number(l?.account) || 0
-        return acct >= 3000 && acct < 4000
-      })
-      .reduce((s: number, l: any) => s + (Number(l?.amount) || 0), 0)
-
-    if (periodsSum > 0 && revLineSum > 0) {
-      const relDiff = Math.abs(periodsSum - revLineSum) / periodsSum
-      if (relDiff > 0.05) {
-        validationWarnings.push(`Revenue cross-check: periods sum ${Math.round(periodsSum)} vs 3xxx line-items ${Math.round(revLineSum)} (diff ${(relDiff * 100).toFixed(1)}%) — one side may be under-extracted`)
-      }
-    }
-
-    if (validationWarnings.length) {
-      parsed.warnings = [...(parsed.warnings ?? []), ...validationWarnings]
-      // Drop confidence one notch if the model said 'high' but math didn't reconcile.
-      if (parsed.confidence === 'high') parsed.confidence = 'medium'
-    }
-  } catch (e: any) {
-    console.warn('[extract-worker] validation threw:', e?.message)
-    // Validation failures shouldn't block extraction — just no extra warnings.
+  if (validationWarnings.length) {
+    parsed.warnings = [...(parsed.warnings ?? []), ...validationWarnings]
+    // Drop confidence one notch if math still didn't reconcile after retry.
+    if (parsed.confidence === 'high') parsed.confidence = 'medium'
   }
 
   // tool_use forces a structured response so parsed is always non-null
@@ -526,7 +647,7 @@ VALIDATION.  Before submitting:
     } else {
       // Compute per-category category totals across all months.
       const catTotals: Record<string, number> = {
-        revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0,
+        revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, alcohol_cost: 0,
       }
       for (const p of parsed.periods) {
         for (const cat of Object.keys(catTotals)) {
@@ -595,7 +716,7 @@ VALIDATION.  Before submitting:
   }
 
   function emptyRollup() {
-    return { revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, net_profit: 0 }
+    return { revenue: 0, food_cost: 0, alcohol_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, net_profit: 0 }
   }
 
   let periodsRaw: any[] = []
@@ -616,6 +737,7 @@ VALIDATION.  Before submitting:
         rollup: {
           revenue:      Number(rollupRaw.revenue     ?? 0) || 0,
           food_cost:    Number(rollupRaw.food_cost   ?? 0) || 0,
+          alcohol_cost: Number(rollupRaw.alcohol_cost?? 0) || 0,
           staff_cost:   Number(rollupRaw.staff_cost  ?? 0) || 0,
           other_cost:   Number(rollupRaw.other_cost  ?? 0) || 0,
           depreciation: Number(rollupRaw.depreciation?? 0) || 0,
@@ -639,6 +761,7 @@ VALIDATION.  Before submitting:
     : periods.reduce((acc: any, p: any) => ({
         revenue:      acc.revenue      + p.rollup.revenue,
         food_cost:    acc.food_cost    + p.rollup.food_cost,
+        alcohol_cost: acc.alcohol_cost + p.rollup.alcohol_cost,
         staff_cost:   acc.staff_cost   + p.rollup.staff_cost,
         other_cost:   acc.other_cost   + p.rollup.other_cost,
         depreciation: acc.depreciation + p.rollup.depreciation,
@@ -665,14 +788,14 @@ VALIDATION.  Before submitting:
     scale_detected: parsed?.scale_detected ?? 'sek',
   }
 
-  const inputTokens  = (response as any).usage?.input_tokens  ?? 0
-  const outputTokens = (response as any).usage?.output_tokens ?? 0
+  const inputTokens  = totalInputTokens
+  const outputTokens = totalOutputTokens
   const costKr = (inputTokens * 1e-6 + outputTokens * 5e-6) * 11
 
   try {
     await logAiRequest(db, {
       org_id:        job.org_id,
-      request_type:  'fortnox_extract',
+      request_type:  retried ? 'fortnox_extract_retried' : 'fortnox_extract',
       model:         AI_MODELS.AGENT,
       input_tokens:  inputTokens,
       output_tokens: outputTokens,

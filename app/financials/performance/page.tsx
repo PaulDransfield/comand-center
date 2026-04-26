@@ -213,56 +213,54 @@ function samePeriodLastYear(k: PeriodKey): PeriodKey {
 // don't sum `tracker_line_items.other_cost` as the overhead total: food
 // lines that the AI mis-classified as other_cost would double-count
 // against tracker_data.food_cost (see FIXES.md §0k).
-// Regex for label-based alcohol detection — PDF labels that mention wine,
-// beer, spirits, or generic "dryck/alkohol" get split out of food_cost. Used
-// as a fallback when the AI set the subcategory to null.
-const ALCOHOL_LABEL_RE = /(alkohol|öl|vin|sprit|whisky|cider|dryckesinköp)/i
+// alcohol_cost now lives on tracker_data (M028) — the regex/label-based
+// fallback that used to live here was removed when the rollup column was
+// promoted. Cost-side alcohol comes from the rollup; revenue-side split
+// still derives from line-item subcategory (no rollup column for that).
 
 function aggregateMonths(
   trackerRows: any[],
   lineItems:   any[],
   includeMonths: (yr: number, mo: number) => boolean,
 ): PeriodData {
-  let revenue = 0, food = 0, staff = 0, overheads = 0, depreciation = 0, financial = 0
+  let revenue = 0, food = 0, alcoholCost = 0, staff = 0, overheads = 0, depreciation = 0, financial = 0
+  let netSum = 0
   let anyFood = false, anyOverheads = false
   for (const r of trackerRows) {
     if (!includeMonths(r.period_year, r.period_month)) continue
     revenue      += Number(r.revenue      ?? 0)
     food         += Number(r.food_cost    ?? 0)
+    // alcohol_cost reads STRAIGHT FROM tracker_data (M028 column). Pre-M028
+    // rows are backfilled from line items by the migration. Used to be
+    // recomputed here from line items every render — fragile when items were
+    // missing or misclassified. See FIXES.md §0n.
+    alcoholCost  += Number(r.alcohol_cost ?? 0)
     staff        += Number(r.staff_cost   ?? 0)
     overheads    += Number(r.other_cost   ?? 0)
     depreciation += Number(r.depreciation ?? 0)
     financial    += Number(r.financial    ?? 0)
+    // Trust the persisted net_profit too — projectRollup applied the
+    // canonical formula at write time. Summing them here gives the
+    // multi-month period total directly.
+    netSum       += Number(r.net_profit   ?? 0)
     if (Number(r.food_cost  ?? 0) > 0) anyFood      = true
     if (Number(r.other_cost ?? 0) > 0) anyOverheads = true
   }
-  // Alcohol split (COST side) — tracker_data.food_cost is a single total
-  // for cost of goods, but tracker_line_items carries subcategory info
-  // (beverages / alcohol) from the extractor's SV_SUB map. Sum those and
-  // subtract from food_cost to isolate the food-only figure.
-  let alcoholCost = 0
-  // Revenue split — lines like "Försäljning varor 25% moms" (account
-  // 3051) carry subcategory='alcohol' via the VAT classifier; 12%-moms
-  // lines carry subcategory='food'. Authoritative revenue still comes
-  // from tracker_data (rollup); the split is derived here for display.
+  // Revenue split — Performance page still derives food vs alcohol revenue
+  // from line items (tracker_data has no separate column for it). 25%-VAT
+  // lines = alcohol revenue, 12%-VAT lines = food revenue. The cost-side
+  // alcohol split now comes from the rollup column.
   let revenueFood = 0, revenueAlcohol = 0
   for (const li of lineItems) {
     if (!includeMonths(li.period_year, li.period_month)) continue
+    if (li.category !== 'revenue') continue
     const sub = (li.subcategory ?? '').toLowerCase()
-    const label = (li.label_sv ?? '').toLowerCase()
-    if (li.category === 'food_cost') {
-      if (sub === 'beverages' || sub === 'alcohol' || ALCOHOL_LABEL_RE.test(label)) {
-        alcoholCost += Number(li.amount ?? 0)
-      }
-    } else if (li.category === 'revenue') {
-      const amt = Number(li.amount ?? 0)
-      if (sub === 'alcohol' || sub === 'beverage' || sub === 'drinks') revenueAlcohol += amt
-      else if (sub === 'food' || sub === 'takeaway')                    revenueFood    += amt
-    }
+    const amt = Number(li.amount ?? 0)
+    if (sub === 'alcohol' || sub === 'beverage' || sub === 'drinks') revenueAlcohol += amt
+    else if (sub === 'food' || sub === 'takeaway')                    revenueFood    += amt
   }
-  // Clamp — if line-item alcohol somehow exceeds the rollup food_cost
-  // (rounding or extractor inconsistency), cap at food_cost so food_only
-  // can't go negative.
+  // Defensive clamp — projectRollup also clamps on write, but doubling up
+  // here costs nothing and protects against legacy rows that might violate.
   alcoholCost = Math.min(alcoholCost, food)
   const foodOnly = food - alcoholCost
   // Revenue split is only meaningful if at least one side has data AND
@@ -302,7 +300,15 @@ function aggregateMonths(
   } else if (splitTotal === 0 && overheads > 0) {
     split.other = overheads
   }
-  const netMargin = revenue - food - staff - overheads - depreciation - financial
+  // Use the summed persisted net_profit values from /api/tracker (which
+  // already applied the canonical formula via projectRollup). Falls back to
+  // the components-formula only if no rows had a persisted net_profit
+  // (e.g. a pure manual-entry month from before tracker_data.net_profit
+  // was reliable). Sign convention matches lib/finance/conventions.ts:
+  // financial is signed, ADDED (not subtracted).
+  const netMargin = netSum !== 0
+    ? netSum
+    : (revenue - food - staff - overheads - depreciation + financial)
   const marginPct = revenue > 0 ? (netMargin / revenue) * 100 : null
   return {
     revenue,

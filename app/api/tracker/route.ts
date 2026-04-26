@@ -63,25 +63,38 @@ export async function GET(req: NextRequest) {
 
     if (revenue === 0 && staff_cost === 0 && food_cost === 0) continue // skip empty months
 
-    const net_profit = revenue - food_cost - staff_cost
-    const margin_pct = revenue > 0 ? Math.round((net_profit / revenue) * 1000) / 10 : 0
+    // Trust the persisted rollup. apply() (via lib/finance/projectRollup.ts)
+    // already computed net_profit + margin_pct under the canonical sign
+    // convention. Recomputing here historically dropped depreciation and
+    // flipped the financial sign — see FIXES.md §0n.
+    //
+    // We only OVERRIDE revenue and staff_cost when POS / PK reports a
+    // non-zero value, since those are real-time data sources that
+    // supersede the accountant's PDF for the current month. Everything
+    // else (food, alcohol, other, depreciation, financial, net_profit,
+    // margin_pct) reads straight from tracker_data.
+    const other_cost   = Number(manual?.other_cost   ?? 0)
+    const alcohol_cost = Number(manual?.alcohol_cost ?? 0)
+    const depreciation = Number(manual?.depreciation ?? 0)
+    const financial    = Number(manual?.financial    ?? 0)
+
+    // If revenue or staff was overridden by synced data, the persisted
+    // net_profit no longer reflects current truth. Recompute using the
+    // canonical formula in that single case. Otherwise return the
+    // persisted value verbatim.
+    const overrideHappened = (realRev > 0 && realRev !== Number(manual?.revenue ?? 0))
+                          || (realCost > 0 && realCost !== Number(manual?.staff_cost ?? 0))
+    const persistedNet = Number(manual?.net_profit ?? 0)
+    const persistedPct = Number(manual?.margin_pct ?? 0)
+    const net_profit = overrideHappened
+      ? Math.round(revenue - food_cost - staff_cost - other_cost - depreciation + financial)
+      : Math.round(persistedNet)
+    const margin_pct = overrideHappened
+      ? (revenue > 0 ? Math.round((net_profit / revenue) * 1000) / 10 : 0)
+      : persistedPct
+
     const food_pct   = revenue > 0 ? Math.round((food_cost / revenue) * 1000) / 10 : 0
     const staff_pct  = revenue > 0 ? Math.round((staff_cost / revenue) * 1000) / 10 : 0
-
-    // Pull the Fortnox-rollup overhead/depreciation/financial totals straight
-    // from tracker_data — these are the authoritative figures the AI read
-    // off the Resultatrapport. Without them, consumers have to sum
-    // tracker_line_items, which double-counts when food lines get
-    // misclassified as other_cost (see FIXES.md §0k).
-    const other_cost   = Number(manual?.other_cost ?? 0)
-    const depreciation = Number(manual?.depreciation ?? 0)
-    const financial    = Number(manual?.financial ?? 0)
-    // Recompute net_profit including overheads when we have them. Falls
-    // back to the simpler revenue − food − staff when other_cost is zero.
-    const full_net_profit = other_cost > 0
-      ? revenue - food_cost - staff_cost - other_cost - depreciation - financial
-      : net_profit
-    const full_margin_pct = revenue > 0 ? Math.round((full_net_profit / revenue) * 1000) / 10 : 0
 
     merged.push({
       id:           manual?.id ?? null,
@@ -91,12 +104,13 @@ export async function GET(req: NextRequest) {
       period_month: m,
       revenue,
       food_cost,
+      alcohol_cost,
       staff_cost,
       other_cost,
       depreciation,
       financial,
-      net_profit:   Math.round(full_net_profit),
-      margin_pct:   full_margin_pct,
+      net_profit,
+      margin_pct,
       food_pct,
       staff_pct,
       source:       realRev > 0 || realCost > 0 ? 'synced' : 'manual',

@@ -160,7 +160,10 @@ export async function aggregateMetrics(
         .range(lo, hi)
     ),
     db.from('tracker_data')
-      .select('period_year, period_month, revenue, food_cost, staff_cost, rent_cost, other_cost, net_profit, source')
+      // depreciation/financial/alcohol_cost added in M028 (FIXES.md §0n).
+      // The aggregator must read them so monthly_metrics.net_profit accounts
+      // for full P&L (was silently dropping depreciation pre-M028).
+      .select('period_year, period_month, revenue, food_cost, alcohol_cost, staff_cost, rent_cost, other_cost, depreciation, financial, net_profit, source')
       .eq('business_id', businessId)
       .gte('period_year', parseInt(fromDate.slice(0, 4)))
       .lte('period_year', parseInt(toDate.slice(0, 4))),
@@ -368,11 +371,22 @@ export async function aggregateMetrics(
     const staff_cost   = a.hasStaff ? a.staff_cost : trackerStaff
     const cost_source  = a.hasStaff ? 'pk' : (trackerStaff > 0 ? 'fortnox' : 'none')
 
-    const food_cost  = Number(tracker?.food_cost  ?? 0)
-    const rent_cost  = Number(tracker?.rent_cost  ?? 0)
-    const other_cost = Number(tracker?.other_cost ?? 0)
-    const total_cost = staff_cost + food_cost + rent_cost + other_cost
-    const net_profit = revenue - total_cost
+    const food_cost    = Number(tracker?.food_cost    ?? 0)
+    const rent_cost    = Number(tracker?.rent_cost    ?? 0)
+    const other_cost   = Number(tracker?.other_cost   ?? 0)
+    const depreciation = Number(tracker?.depreciation ?? 0)
+    // financial is signed: negative = net interest expense, positive = net
+    // interest income. See lib/finance/conventions.ts.
+    const financial    = Number(tracker?.financial    ?? 0)
+    // total_cost = positive cost components only (excludes signed financial).
+    // Used for cost/revenue ratios where mixing in net interest income
+    // would be misleading.
+    const total_cost = staff_cost + food_cost + rent_cost + other_cost + depreciation
+    // net_profit applies the canonical formula from lib/finance/conventions.ts.
+    // PRIOR BUG (FIXES.md §0n): aggregator omitted depreciation entirely and
+    // monthly_metrics.net_profit was overstated by exactly the depreciation
+    // amount on every Fortnox-sourced month.
+    const net_profit = revenue - total_cost + financial
     const margin_pct = revenue > 0 ? Math.round((net_profit / revenue) * 1000) / 10 : 0
     const labour_pct = revenue > 0 && staff_cost > 0 ? Math.round((staff_cost / revenue) * 1000) / 10 : null
     const food_pct   = revenue > 0 && food_cost  > 0 ? Math.round((food_cost  / revenue) * 1000) / 10 : null

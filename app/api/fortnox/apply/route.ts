@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { log } from '@/lib/log/structured'
+import { projectRollup } from '@/lib/finance/projectRollup'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -271,19 +272,49 @@ async function applyMonthly(db: any, args: {
   orgId: string; businessId: string; uploadId: string;
   year: number; month: number;
   rollup: any; lines: any;
-}): Promise<{ error?: string; tracker_data_id?: string; line_count?: number; rollup?: any }> {
+}): Promise<{ error?: string; tracker_data_id?: string; line_count?: number; rollup?: any; superseded_id?: string }> {
   const { orgId, businessId, uploadId, year, month } = args
-  const rollup = args.rollup ?? {}
-  const revenue      = Number(rollup.revenue      ?? 0) || 0
-  const food_cost    = Number(rollup.food_cost    ?? 0) || 0
-  const staff_cost   = Number(rollup.staff_cost   ?? 0) || 0
-  const other_cost   = Number(rollup.other_cost   ?? 0) || 0
-  const depreciation = Number(rollup.depreciation ?? 0) || 0
-  const financial    = Number(rollup.financial    ?? 0) || 0
-  const net_profit   = Number.isFinite(Number(rollup.net_profit))
-    ? Number(rollup.net_profit)
-    : (revenue - food_cost - staff_cost - other_cost - depreciation + financial)
-  const margin_pct   = revenue > 0 ? Math.round(((net_profit / revenue) * 100) * 10) / 10 : 0
+
+  // Single source of truth for the rollup math. projectRollup applies the
+  // canonical sign convention (revenue positive, costs positive, financial
+  // signed) and computes net_profit + margin_pct from components — see
+  // lib/finance/conventions.ts. Anything that needs these values reads them
+  // from tracker_data; nothing recomputes from raw fields.
+  const projected = projectRollup(args.rollup, args.lines)
+
+  // ── Supersede prior applied upload for the same period ──────────────────
+  // If a previous applied upload covered this (business, year, month), mark
+  // it as superseded by THIS upload. Old line items get cleared by
+  // source_upload_id below — no period_month filter (fixes the multi-month
+  // bug from FIXES.md §0n where rejecting an annual report didn't clean up).
+  const { data: priorApplied } = await db
+    .from('fortnox_uploads')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('period_year', year)
+    .eq('period_month', month)
+    .eq('status', 'applied')
+    .neq('id', uploadId)
+    .maybeSingle()
+
+  let supersededId: string | undefined
+  if (priorApplied?.id) {
+    supersededId = priorApplied.id
+    await db.from('fortnox_uploads')
+      .update({
+        status:           'superseded',
+        superseded_by_id: uploadId,
+      })
+      .eq('id', priorApplied.id)
+    await db.from('fortnox_uploads')
+      .update({ supersedes_id: priorApplied.id })
+      .eq('id', uploadId)
+    // Clear superseded upload's line items by source_upload_id only — no
+    // period_month filter so multi-month uploads get fully cleaned up.
+    await db.from('tracker_line_items')
+      .delete()
+      .eq('source_upload_id', priorApplied.id)
+  }
 
   const { data: upserted, error: upErr } = await db
     .from('tracker_data')
@@ -292,8 +323,15 @@ async function applyMonthly(db: any, args: {
       business_id:       businessId,
       period_year:       year,
       period_month:      month,
-      revenue, food_cost, staff_cost, net_profit, margin_pct,
-      other_cost,
+      revenue:           projected.revenue,
+      food_cost:         projected.food_cost,
+      alcohol_cost:      projected.alcohol_cost,
+      staff_cost:        projected.staff_cost,
+      other_cost:        projected.other_cost,
+      depreciation:      projected.depreciation,
+      financial:         projected.financial,
+      net_profit:        projected.net_profit,
+      margin_pct:        projected.margin_pct,
       source:            'fortnox_pdf',
       fortnox_upload_id: uploadId,
     }, { onConflict: 'org_id,business_id,period_year,period_month' })
@@ -303,13 +341,17 @@ async function applyMonthly(db: any, args: {
     return { error: `tracker_data upsert failed (${year}-${month}): ${upErr?.message}` }
   }
 
-  // Replace line items for this specific period
+  // Replace line items for this specific period FROM THIS UPLOAD. Filter
+  // by source_upload_id (NOT just period) so we don't trample line items
+  // that another upload may have written for the same period — historically
+  // that was the multi-month delete bug.
   await db.from('tracker_line_items')
     .delete()
     .eq('org_id', orgId)
     .eq('business_id', businessId)
     .eq('period_year', year)
     .eq('period_month', month)
+    .eq('source_upload_id', uploadId)
 
   const lines = Array.isArray(args.lines) ? args.lines : []
   if (lines.length) {
@@ -334,6 +376,7 @@ async function applyMonthly(db: any, args: {
   return {
     tracker_data_id: upserted.id,
     line_count:      lines.length,
-    rollup:          { revenue, food_cost, staff_cost, other_cost, net_profit, margin_pct },
+    rollup:          projected,
+    superseded_id:   supersededId,
   }
 }

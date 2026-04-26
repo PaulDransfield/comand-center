@@ -3,6 +3,48 @@ Last updated: 2026-04-26
 
 ---
 
+## 0n. Fortnox extraction pipeline — Tier 2 rebuild (2026-04-26)
+
+**Symptom:** Performance page numbers didn't reconcile with the source PDFs. Net profit looked too high on every Fortnox month. After re-upload of a corrected PDF, the original data sometimes lingered. Multi-month annual reports rejected via the UI weren't actually unwound.
+
+**Root causes (verified, three layers):**
+
+1. **`depreciation` and `financial` columns didn't exist in `tracker_data`.** The schema (supabase_schema.sql:113) only had revenue/staff/food/rent/other. But the extract worker correctly produced both fields and apply() correctly used them to compute net_profit, then upserted JUST net_profit. /api/tracker (line 71-83 pre-fix) tried to read `manual?.depreciation` and `manual?.financial` from the DB row, got `undefined → 0`, and **recomputed net_profit using its own formula that omitted depreciation entirely**. For a Vero P&L with 150k/month depreciation, the page showed ~150k more profit than the PDF stated, every month.
+
+2. **Sign-convention drift on `financial`.** extract-worker + apply.ts used `+ financial`; /api/tracker + Performance page used `- financial`. No observable impact while the columns were absent (always 0), but a foot-gun the moment any code path actually populated them.
+
+3. **Reject was a no-op for multi-month uploads.** `reject/route.ts` (pre-fix line 31-45) used `monthKey = doc_type === 'pnl_annual' ? 0 : period_month`, then deleted line items WHERE period_month = monthKey. Multi-month line items have actual period_months 1-12, so **nothing got deleted**. The tracker_data clear was guarded by `if doc_type !== 'pnl_annual'`, so for pnl_annual / pnl_multi_month, **tracker_data was never cleared**. Status flipped to 'rejected' but all the data lived on indefinitely.
+
+**Fixes (M028 + code, four pieces):**
+
+1. **M028 migration** adds `depreciation`, `financial`, `alcohol_cost` to `tracker_data`; adds `supersedes_id`, `superseded_by_id` to `fortnox_uploads`; expands status check for 'superseded'; backfills already-applied uploads from `extracted_json`; recomputes net_profit on backfilled rows under the canonical formula.
+
+2. **`lib/finance/conventions.ts`** — single source-of-truth for the sign convention (revenue positive, costs positive, financial signed, ADDED in net_profit), with typed coercers and the canonical `computeNetProfit()` formula. Pattern adopted from Square Books / pgledger / Modern Treasury — see file header for sources.
+
+3. **`lib/finance/projectRollup.ts`** — single deterministic function that turns an extracted AI rollup into the canonical `tracker_data` shape. Used by apply() and **only** by apply(). Promotes `alcohol_cost` to a first-class rollup field, with line-item fallback for backwards-compat. Clamps `alcohol_cost ≤ food_cost` defensively.
+
+4. **Read sites refactored to trust persisted values.** /api/tracker no longer recomputes net_profit when the rollup is intact; it returns the value `apply()` wrote. The Performance page sums persisted net_profit values across selected months instead of re-deriving from components. Aggregator (lib/sync/aggregate.ts) now reads `depreciation` + `financial` + `alcohol_cost` and applies the canonical formula to monthly_metrics. **Anywhere that needs net_profit reads the stored value; nothing recomputes from raw fields.** Pattern: single writer, trusted reads.
+
+5. **Apply gained supersede semantics.** When apply() finds a prior applied upload for the same (business, year, month), it marks the old one `status='superseded'`, links both directions via `supersedes_id`/`superseded_by_id`, and clears the old upload's line items by `source_upload_id` (no period_month filter — fixes the multi-month delete bug). Re-uploading a corrected PDF now leaves a traceable chain instead of orphan rows.
+
+6. **Reject rewritten to be symmetric.** Line items deleted by `source_upload_id` only (no period_month filter). `tracker_data` cleared for any row pointing at the rejected upload regardless of doc_type. Walks the supersede chain backwards — if the rejected upload was itself a replacement, the predecessor is restored to 'applied' so the previous correct data takes over instead of leaving a hole. Re-aggregates affected years immediately.
+
+**AI-side improvements bundled in:**
+
+- Few-shot example added to the extraction system prompt (one cleaned Vero Resultatrapport with the correct submit_extraction call). Cuts hallucination on edge-case account numbers and mixed-language labels.
+- Validation-failure retry loop: if first-pass extraction fails any algebraic check (net_profit math, alcohol > food, revenue sanity band), the validation issues are sent back to Claude as a 2nd turn with the original tool_use as context. One retry max — beyond that issues are probably structural and humans should review. Pattern reference: arxiv 2511.10659 (LLM fiscal-document extraction with hierarchical validation).
+- Tool schema now has `alcohol_cost` as an optional rollup field (extractor populates from VAT classifier).
+
+**Manual steps required (Paul):**
+
+1. Open Supabase SQL Editor → paste `M028-FORTNOX-PROPER-FIX.sql` → Run. Verify the 3 SELECT statements at the end show the new columns + a backfilled-row count.
+2. Old multi-month PDFs uploaded before commit `7f601bc` (2026-04-23) had all line items attached to December — re-upload those Resultatrapporte to get the per-month subcategory split. The new supersede flow makes this safe (old upload becomes a traceable predecessor, not an orphan).
+3. After re-upload + apply, the Performance page should now match the source PDF exactly for every Fortnox month. If it doesn't, hit `/admin/diagnose-pk` (or future `/admin/diagnose-fortnox`) for the per-step trace.
+
+**Why this should hold:** every fix targets a root cause at the architectural layer (single writer, single computation, immutable extractions with supersede chain) rather than patching symptoms. The conventions file makes sign drift impossible to introduce without seeing the source comment. The validation retry loop catches extraction errors before they ever land in the DB. The supersede chain makes corrections traceable instead of destructive.
+
+---
+
 ## 0m. PK sync recurring failures — four-phase root-cause fix (2026-04-26)
 
 **Symptom:** Paul reported repeated PK sync issues — data going stale, the "Sync now" button appearing to do nothing. Each prior fix (FIXES §0f, §0i, §0j, §0l) addressed a real but specific bug; the underlying class of failures kept resurfacing.
