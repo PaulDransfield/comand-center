@@ -336,7 +336,18 @@ export async function aggregateMetrics(
     const y = parseInt(row.date.slice(0, 4))
     const m = parseInt(row.date.slice(5, 7))
     const key = `${y}-${m}`
-    if (!monthlyAcc[key]) monthlyAcc[key] = { year: y, month: m, revenue: 0, covers: 0, tips: 0, food_revenue: 0, bev_revenue: 0, staff_cost: 0, hours: 0, shifts: 0, late: 0, ob: 0, hasRev: false, hasStaff: false }
+    if (!monthlyAcc[key]) monthlyAcc[key] = {
+      year: y, month: m,
+      revenue: 0, covers: 0, tips: 0, food_revenue: 0, bev_revenue: 0,
+      staff_cost: 0, hours: 0, shifts: 0, late: 0, ob: 0,
+      hasRev: false, hasStaff: false,
+      // Track distinct calendar dates with non-zero revenue. Used to
+      // detect partial-month POS coverage (e.g. PK integration added
+      // mid-month). See FIXES.md §0r — without this signal, partial POS
+      // revenue would override full Fortnox revenue and produce the
+      // "Vero Nov 2025 = -137 % margin" symptom.
+      daysWithRevenue: new Set<string>(),
+    }
     const a = monthlyAcc[key]
     a.revenue      += row.revenue
     a.covers       += row.covers
@@ -348,7 +359,10 @@ export async function aggregateMetrics(
     a.shifts       += row.shifts
     a.late         += row.late_shifts
     a.ob           += row.ob_supplement
-    if (row.revenue > 0) a.hasRev = true
+    if (row.revenue > 0) {
+      a.hasRev = true
+      a.daysWithRevenue.add(row.date)
+    }
     if (row.staff_cost > 0) a.hasStaff = true
   }
 
@@ -364,25 +378,60 @@ export async function aggregateMetrics(
   for (const [key, t] of Object.entries(trackerByMonth)) {
     if (monthlyAcc[key]) continue
     monthlyAcc[key] = {
-      year:         t.period_year,
-      month:        t.period_month,
-      revenue:      0, covers: 0, tips: 0, food_revenue: 0, bev_revenue: 0,
-      staff_cost:   0, hours: 0, shifts: 0, late: 0, ob: 0,
-      hasRev:       false,
-      hasStaff:     false,
+      year:           t.period_year,
+      month:          t.period_month,
+      revenue:        0, covers: 0, tips: 0, food_revenue: 0, bev_revenue: 0,
+      staff_cost:     0, hours: 0, shifts: 0, late: 0, ob: 0,
+      hasRev:         false,
+      hasStaff:       false,
+      daysWithRevenue: new Set<string>(),
     }
   }
+
+  // POS-revenue completeness threshold: at least 90 % of calendar days
+  // must have non-zero revenue for POS to be considered the authoritative
+  // source over Fortnox. Below 90 %, POS is treated as PARTIAL and we
+  // prefer Fortnox's full-month rollup (avoids the Vero Nov 2025 bug
+  // where 9 days of POS data overrode the full-month Fortnox figure).
+  const POS_COMPLETE_THRESHOLD = 0.90
 
   const monthlyRows = Object.values(monthlyAcc).map((a: any) => {
     const tracker = trackerByMonth[`${a.year}-${a.month}`]
 
-    // Revenue: POS wins if it saw anything (daily granularity > monthly rollup);
-    //          otherwise fall back to Fortnox rollup.
-    const trackerRev = Number(tracker?.revenue ?? 0)
-    const revenue    = a.hasRev ? a.revenue : trackerRev
-    const rev_source = a.hasRev ? 'pos' : (trackerRev > 0 ? 'fortnox' : 'none')
+    // Calendar days in this (year, month). new Date(y, m, 0) returns the
+    // last day of the previous month — passing m gives us the last day of
+    // the m-th month (1-indexed), which is the day count.
+    const calendarDays = new Date(a.year, a.month, 0).getDate()
+    const pos_days_with_revenue = a.daysWithRevenue.size
+    const posCompletenessPct = calendarDays > 0 ? pos_days_with_revenue / calendarDays : 0
+    const posIsComplete = posCompletenessPct >= POS_COMPLETE_THRESHOLD
 
-    // Staff cost: PK wins if present; otherwise Fortnox rollup.
+    // Revenue source priority:
+    //   1. POS if it covered ≥90 % of the month (complete)
+    //   2. Fortnox if POS is partial AND Fortnox has data
+    //   3. POS partial if no Fortnox data
+    //   4. None
+    const trackerRev = Number(tracker?.revenue ?? 0)
+    let revenue: number
+    let rev_source: string
+    if (a.hasRev && (posIsComplete || trackerRev === 0)) {
+      revenue = a.revenue
+      rev_source = posIsComplete ? 'pos' : 'pos_partial'
+    } else if (trackerRev > 0) {
+      revenue = trackerRev
+      rev_source = 'fortnox'
+    } else if (a.hasRev) {
+      revenue = a.revenue
+      rev_source = 'pos_partial'
+    } else {
+      revenue = 0
+      rev_source = 'none'
+    }
+
+    // Staff cost: PK is always reliable per-shift, even in partial-month
+    // scenarios — it captures shifts as they happen at daily granularity
+    // and isn't subject to the partial-month-revenue distortion. So PK
+    // wins when present, regardless of revenue completeness.
     const trackerStaff = Number(tracker?.staff_cost ?? 0)
     const staff_cost   = a.hasStaff ? a.staff_cost : trackerStaff
     const cost_source  = a.hasStaff ? 'pk' : (trackerStaff > 0 ? 'fortnox' : 'none')
@@ -432,6 +481,10 @@ export async function aggregateMetrics(
       food_pct,
       rev_source,
       cost_source,
+      // M031: distinct calendar days where POS had non-zero revenue.
+      // Used by /api/tracker to detect partial-month POS coverage and
+      // surface the gap to operators if needed.
+      pos_days_with_revenue,
       updated_at:   new Date().toISOString(),
     }
   })

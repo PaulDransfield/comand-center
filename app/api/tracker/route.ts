@@ -55,8 +55,20 @@ export async function GET(req: NextRequest) {
     const realRev  = Math.round(syncedRev[m] ?? 0)
     const realCost = Math.round(syncedStaff[m] ?? 0)
 
-    // Use synced data if it exists, otherwise use manual
-    const revenue    = realRev > 0 ? realRev : Number(manual?.revenue ?? 0)
+    // monthly_metrics is now the SINGLE source of truth for revenue +
+    // staff_cost. The aggregator (lib/sync/aggregate.ts) applies the
+    // canonical priority rule (POS if ≥90 % calendar coverage, else
+    // Fortnox) and writes the chosen value. /api/tracker simply trusts
+    // it. Fall back to tracker_data only when monthly_metrics has no row
+    // for this month (e.g. brand-new business with no aggregator run yet).
+    //
+    // Pre-M031 fix: this used `realRev > 0 ? realRev : manual?.revenue`,
+    // which let PARTIAL-month POS data override full-month Fortnox values.
+    // Vero Nov 2025 showed POS=476k overriding Fortnox=1 624k → −137%
+    // margin on the Performance page. The new aggregator decision +
+    // pos_days_with_revenue signal makes that scenario impossible to
+    // reproduce. See FIXES.md §0r.
+    const revenue    = realRev  > 0 ? realRev  : Number(manual?.revenue    ?? 0)
     const staff_cost = realCost > 0 ? realCost : Number(manual?.staff_cost ?? 0)
     const syncedFc   = Math.round(syncedFood[m] ?? 0)
     const food_cost  = syncedFc > 0 ? syncedFc : Number(manual?.food_cost ?? 0)

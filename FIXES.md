@@ -3,6 +3,31 @@ Last updated: 2026-04-26
 
 ---
 
+## 0r. Partial POS revenue overrode full Fortnox revenue (2026-04-26)
+
+**Symptom:** After the deterministic Resultatrapport parser landed and Vero's 2025 annual was re-extracted, Performance page Nov 2025 still showed wrong numbers — revenue 476 638 kr against 1 126 523 kr of costs, producing an absurd −137 % margin. Fortnox tracker_data had revenue 1 623 900 kr (correct, matching the source PDF). Yet `/api/tracker` was returning 476 638.
+
+**Root cause:** Personalkollen integration was added mid-November 2025, so it only synced ~9 days of revenue (476k of the full month's 1.6M). The `/api/tracker` merge logic was `realRev > 0 ? realRev : manual?.revenue` — POS wins if it has ANY data. Partial POS revenue (29 % of the month) overrode complete Fortnox revenue while Fortnox costs (full month) were kept. The two halves of the P&L came from different time windows, producing nonsense.
+
+**Architectural fix — completeness signal:**
+
+1. **M031 migration** adds `monthly_metrics.pos_days_with_revenue` (INT). Counts distinct calendar days where `daily_metrics.revenue > 0` for that (business, year, month). Backfilled from existing daily_metrics rows.
+
+2. **Aggregator** (`lib/sync/aggregate.ts`) tracks distinct dates with non-zero revenue per month via a Set, computes coverage = `pos_days_with_revenue / calendar_days`, and applies a tiered source priority when picking each month's revenue:
+   - POS if ≥ 90 % of calendar days had revenue (`'pos'` source)
+   - Fortnox if POS is partial AND Fortnox tracker_data exists (`'fortnox'` source)
+   - POS partial if no Fortnox available (`'pos_partial'` source — better than nothing)
+   - Zero if neither (`'none'`)
+   The chosen value is written to `monthly_metrics.revenue`. Staff cost decision unchanged (PK is reliable per-shift even partial-month).
+
+3. **`/api/tracker` simplified** — reads `monthly_metrics.revenue` verbatim. The aggregator already made the right choice; the API doesn't second-guess. Pre-fix the API had its own priority rule that disagreed with the aggregator's; the new design has ONE decision point.
+
+**Why this should hold:** the threshold check is data-driven (actual day count vs calendar days), not a magic percentage on revenue values. A business that genuinely has low revenue won't trigger the Fortnox fallback unless its daily_metrics is also sparse. New businesses still onboarding without Fortnox data fall to `'pos_partial'` mode and show whatever they have.
+
+**Manual step required (Paul):** apply `M031-POS-COMPLETENESS.sql` in Supabase SQL Editor. The verification query at the bottom shows any month where POS coverage is below 90 % — those are the rows where the new logic will switch to Fortnox.
+
+---
+
 ## 0q. Deterministic Resultatrapport parser replaces LLM for known format (2026-04-26)
 
 **Symptom:** annual 2025 Resultatrapport extracted via Sonnet showed several months with missing data (e.g. November had no alcohol_revenue / alcohol_cost) even after the M029 / M030 prompt + retry improvements. Re-extraction didn't help. Owner verified the source PDF clearly labels the months and account codes.

@@ -1,10 +1,16 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending · M029 pending · M030 pending
+> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending · M029 pending · M030 pending · M031 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M031 — POS completeness signal (`pos_days_with_revenue`)
+**File:** `M031-POS-COMPLETENESS.sql` (repo root)
+**Purpose:** part of FIXES.md §0r. Adds `monthly_metrics.pos_days_with_revenue INT` so the aggregator can detect partial-month POS coverage and prefer Fortnox tracker_data when POS only synced a fraction of the month. Without this, partial POS revenue (e.g. PK integration added mid-month) would override full Fortnox revenue in `monthly_metrics`, producing absurd margins on the Performance page (Vero Nov 2025 showed −137 % margin from POS-revenue-vs-Fortnox-costs mismatch).
+**Backfill:** counts distinct dates with non-zero revenue per (business, year, month) from `daily_metrics` and writes to the new column. Idempotent.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Verification query at the end lists 2025 months by coverage % so you can spot the partial-month rows that the aggregator will now route to Fortnox.
 
 ### M030 — Re-categorise misclassified line items (one-off cleanup)
 **File:** `M030-RECATEGORIZE-LINE-ITEMS.sql` (repo root)
