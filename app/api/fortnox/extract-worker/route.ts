@@ -741,15 +741,21 @@ Notes on the example:
       const acctRaw = l?.fortnox_account ?? l?.account
       const fortnoxAccount = Number.isFinite(Number(acctRaw)) ? Number(acctRaw) : null
 
-      // Category priority: account number (authoritative) → AI hint (if
-      // valid) → label lookup → other_cost fallback. Account number is the
-      // ONLY source that can't be wrong — a Fortnox 4010 is food cost no
-      // matter what the AI called it. Prevents the double-counting bug
-      // captured in FIXES.md §0k.
-      const accountBased = classifyByAccount(fortnoxAccount)
-      const labelBased   = classifyLabel(label)
-      const validAI      = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
-      const category     = accountBased?.category ?? (validAI ? fromAI : labelBased.category)
+      // Category priority: account number (authoritative) → label-based
+      // SPECIFIC match → AI hint → label-based fallback. Account number is
+      // the only source that can't be wrong — a Fortnox 4010 is food cost
+      // no matter what the AI called it (FIXES §0k). Label-based with a
+      // specific match (subcategory set OR category != 'other_cost') beats
+      // the AI hint because classifyLabel only returns specific matches
+      // for known Swedish keywords like 'reklam' → marketing/other_cost.
+      // Pre-2026-04-26 the AI override let "Reklam" land as
+      // category='revenue' subcategory='marketing' (FIXES §0o postscript).
+      const accountBased   = classifyByAccount(fortnoxAccount)
+      const labelBased     = classifyLabel(label)
+      const labelIsSpecific = labelBased.subcategory !== null || labelBased.category !== 'other_cost'
+      const validAI         = ['revenue','food_cost','staff_cost','other_cost','depreciation','financial'].includes(fromAI)
+      const category = accountBased?.category
+        ?? (labelIsSpecific ? labelBased.category : (validAI ? fromAI : labelBased.category))
 
       // Subcategory priority for revenue + food_cost:
       //   VAT rate in label (e.g. "25% moms" = alcohol, "12% moms" = food)

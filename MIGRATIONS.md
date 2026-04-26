@@ -1,10 +1,21 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending · M029 pending
+> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending · M029 pending · M030 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M030 — Re-categorise misclassified line items (one-off cleanup)
+**File:** `M030-RECATEGORIZE-LINE-ITEMS.sql` (repo root)
+**Purpose:** companion to the FIXES.md §0o postscript fix in `extract-worker/route.ts::enrichLines`. Pre-fix, when the AI tagged a line as one category (e.g. 'revenue') but the Swedish label clearly meant another (e.g. 'reklam' = marketing → other_cost), the AI category was kept. Surfaced by the M029 verify query as 13 rows of `category='revenue' subcategory='marketing'` (50k kr).
+**Mappings (all idempotent):**
+  - subcategory ∈ {marketing, rent, utilities, accounting, audit, consulting, insurance, bank_fees, telecom, software, postage, shipping, office_supplies, cleaning, repairs, consumables, entertainment, vehicles, electricity} → category='other_cost'
+  - subcategory ∈ {salaries, payroll_tax, pension} → category='staff_cost'
+  - subcategory='depreciation' → category='depreciation'
+  - subcategory ∈ {interest, interest_income} → category='financial'
+**Safety:** UPDATE only flips `category`; subcategory + amount + label stay untouched. Wrapped in `BEGIN; … COMMIT;`. Verify queries at the end show the post-fix distribution and confirm `revenue` bucket is now clean (food/takeaway/alcohol/null only).
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M029 — Revenue VAT-rate split (dine_in / takeaway / alcohol)
 **File:** `M029-REVENUE-VAT-SPLIT.sql` (repo root)
