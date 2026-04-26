@@ -603,11 +603,24 @@ export async function parseResultatrapport(pdfBuffer: Uint8Array | Buffer): Prom
     const vatHint      = (category === 'revenue' || category === 'food_cost') ? classifyByVat(label) : null
     const subcategory  = vatHint?.subcategory ?? labelClass.subcategory ?? accountClass?.subcategory ?? null
 
-    // Sign convention: Resultatrapport prints costs as positive numbers in
-    // the cost section. We store costs as positive too. Financial items can
-    // be signed (interest expense negative, income positive) — preserve sign.
-    // Some PDFs print costs with leading minus; abs them for non-financial.
-    const normaliseSign = (n: number) => category === 'financial' ? n : Math.abs(n)
+    // Sign convention. Resultatrapport prints expenses as NEGATIVE numbers
+    // in cost sections (-307,4 for a salary). Credits / reversals (e.g.
+    // "Förändring av semesterlöneskuld" when vacation liability decreases)
+    // print as POSITIVE on the same cost line. Storage convention: costs
+    // are positive, credits to a cost line subtract from the rollup.
+    //
+    // Therefore: NEGATE all cost values (-X → +X expense, +X → -X credit).
+    // Pre-fix used Math.abs which turned credits into additional expenses
+    // and inflated staff_cost by ~8% on annual reports with vacation
+    // liability adjustments.
+    //
+    // Revenue stays as-is (PDF positive = sale, negative = credit memo).
+    // Financial stays signed (interest expense negative, income positive).
+    const normaliseSign = (n: number) => {
+      if (category === 'financial') return n
+      if (category === 'revenue')   return n
+      return -n  // negate cost lines so credits subtract correctly
+    }
 
     // Add to per-month aggregates and per-month line items
     for (const { month, amount } of monthAmounts) {

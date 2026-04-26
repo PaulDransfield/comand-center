@@ -84,14 +84,29 @@ export function classifyLabel(label: string): { category: string; subcategory: s
 // ── Swedish BAS chart-of-accounts → category ────────────────────────────────
 // Account number is the ONLY authoritative classifier on a Fortnox P&L.
 // Label-based lookup is fallback.
+//
+// BAS subranges that matter for restaurant P&L:
+//   3000-3999  Revenue
+//   4000-4999  Food cost (cost-of-goods, including alcohol purchases)
+//   5000-6999  Other operating costs (rent, utilities, admin, marketing, …)
+//   7000-7699  Staff cost (salaries, payroll tax, pension)
+//   7700-7799  Reserved / rarely used — treated as staff for safety
+//   7800-7899  AVSKRIVNINGAR (depreciation) — NOT staff cost. Pre-fix
+//              everything in 7xxx was lumped as staff, inflating staff_cost
+//              for any business with depreciation accounts in this range.
+//   8000-8899  Financial items (interest income / expense — signed)
+//   8900-8999  Tax — out of scope for the operating-margin view, treated
+//              as financial here so it doesn't fall through to other_cost.
 export function classifyByAccount(acct: number | null): { category: string; subcategory: string | null } | null {
   if (acct == null || !Number.isFinite(acct)) return null
   if (acct >= 3000 && acct <= 3999) return { category: 'revenue',      subcategory: null }
   if (acct >= 4000 && acct <= 4999) return { category: 'food_cost',    subcategory: 'goods' }
   if (acct >= 5000 && acct <= 6999) return { category: 'other_cost',   subcategory: null }
-  if (acct >= 7000 && acct <= 7999) return { category: 'staff_cost',   subcategory: null }
-  if (acct >= 8900 && acct <= 8999) return { category: 'depreciation', subcategory: 'depreciation' }
+  if (acct >= 7000 && acct <= 7799) return { category: 'staff_cost',   subcategory: null }
+  if (acct >= 7800 && acct <= 7899) return { category: 'depreciation', subcategory: 'depreciation' }
+  if (acct >= 7900 && acct <= 7999) return { category: 'staff_cost',   subcategory: null }
   if (acct >= 8000 && acct <= 8899) return { category: 'financial',    subcategory: 'other' }
+  if (acct >= 8900 && acct <= 8999) return { category: 'financial',    subcategory: 'tax' }
   return null
 }
 
