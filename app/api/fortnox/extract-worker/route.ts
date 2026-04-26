@@ -113,18 +113,25 @@ function classifyLabel(label: string): { category: string; subcategory: string |
   return { category: 'other_cost', subcategory: null }
 }
 
-// Swedish VAT rates are a reliable signal when a Fortnox label says e.g.
-// "Försäljning varor 25% moms" / "Försäljning varor 12% moms":
-//   25%  — alcohol, non-food drinks (standard rate)
-//   12%  — food served dine-in or takeaway (restaurant-reduced rate)
-//    6%  — reduced rate (books, transport — not restaurant)
-// Applied AFTER classifyByAccount / classifyLabel so it can refine a
-// generic revenue label into the specific food vs alcohol subcategory.
+// Swedish VAT rates encode product/service classification on a restaurant
+// Fortnox P&L. The three rates the owner cares about:
+//   25 %  — alcohol, non-food drinks (standard rate)
+//   12 %  — dine-in food (restaurant-reduced rate)
+//    6 %  — takeaway food incl. platform delivery (Wolt, Foodora, Uber Eats)
+//
+// Pre-M029 (FIXES.md §0o) we lumped 12 % and 6 % together under 'food',
+// silently hiding takeaway revenue inside dine-in. Now they're distinct
+// so the Performance page revenue donut can show three buckets.
+//
+// Also matches platform-name labels directly because some bookkeepers tag
+// the line "Försäljning Wolt" without the moms suffix.
 function classifyByVat(label: string): { subcategory: string | null } | null {
   const key = label.trim().toLowerCase()
   if (/\b25\s*%?\s*moms\b/.test(key))  return { subcategory: 'alcohol' }
   if (/\b12\s*%?\s*moms\b/.test(key))  return { subcategory: 'food' }
-  if (/\b6\s*%?\s*moms\b/.test(key))   return { subcategory: 'food' }
+  if (/\b6\s*%?\s*moms\b/.test(key))   return { subcategory: 'takeaway' }
+  // Platform-delivery labels: bookkeepers sometimes drop the VAT suffix.
+  if (/\b(wolt|foodora|uber\s*eats)\b/.test(key)) return { subcategory: 'takeaway' }
   return null
 }
 
@@ -323,17 +330,34 @@ LINE ITEMS ARE MANDATORY.  "annual_lines" MUST contain ONE entry per BAS account
 For each line, "label" = the row text exactly as printed (Swedish), "amount" = the Ack./year-total (always positive for costs, signed for financial items), "account" = the BAS account number (integer). If a row has no visible account number but a clear label, still emit it with account=0 and rely on label classification downstream.
 
 BAS CATEGORIES.  Sum accounts into rollup categories:
-  revenue       = 3xxx (all operating revenue)
-  food_cost     = 4xxx (cost of goods — total, includes alcohol)
-  alcohol_cost  = subset of food_cost: 4xxx lines whose label contains "25% moms" / "alkohol" / "vin" / "öl" / "sprit" / "drycker"
-                  (Swedish 25% VAT rate flags drinks/alcohol; 12% flags food)
-  staff_cost    = 7xxx (salaries + payroll tax + pension — 7000-7699 all go here)
-  other_cost    = 5xxx + 6xxx (rent, utilities, admin, bank fees, insurance, consulting, marketing, software)
-  depreciation  = 78xx (avskrivningar)
-  financial     = 8xxx (interest + financial items — signed; interest expense negative)
-  net_profit    = revenue − food_cost − staff_cost − other_cost − depreciation + financial
+  revenue          = 3xxx (all operating revenue — total)
+  dine_in_revenue  = subset of revenue: 3xxx lines flagged "12% moms" (in-restaurant food)
+  takeaway_revenue = subset of revenue: 3xxx lines flagged "6% moms" or labelled "Wolt"/"Foodora"/"Uber Eats" (platform delivery)
+  alcohol_revenue  = subset of revenue: 3xxx lines flagged "25% moms" (alcohol, non-food drinks)
+  food_cost        = 4xxx (cost of goods — total, includes alcohol-cost)
+  alcohol_cost     = subset of food_cost: 4xxx lines whose label or account indicates drinks/alcohol
+                     (account 4020-4029 typically; or label contains "alkohol"/"vin"/"öl"/"sprit"/"drycker")
+  staff_cost       = 7xxx (salaries + payroll tax + pension — 7000-7699 all go here)
+  other_cost       = 5xxx + 6xxx (rent, utilities, admin, bank fees, insurance, consulting, marketing, software)
+  depreciation     = 78xx (avskrivningar)
+  financial        = 8xxx (interest + financial items — signed; interest expense negative)
+  net_profit       = revenue − food_cost − staff_cost − other_cost − depreciation + financial
 
-ALCOHOL/FOOD SPLIT.  alcohol_cost is a SUBSET of food_cost, never additive.
+REVENUE SUBSETS.  Three Swedish VAT rates discriminate revenue type on a
+restaurant P&L. They are SUBSETS of total revenue — never additive — and
+should add up close to (but not necessarily exactly) the revenue total because
+some revenue may be untagged or sit in "övriga intäkter":
+
+  25 % moms → alcohol & non-food drinks      → alcohol_revenue
+  12 % moms → dine-in food (sit-down service) → dine_in_revenue
+   6 % moms → takeaway food (platform-led)    → takeaway_revenue
+
+Wolt, Foodora, and Uber Eats invoices arrive at 6 % VAT — they are takeaway
+even if the label says only "Försäljning Wolt" without explicit moms. If you
+see Wolt/Foodora/UberEats in the label OR a generic 6 %-moms revenue line,
+classify as takeaway.
+
+ALCOHOL/FOOD COST SPLIT.  alcohol_cost is a SUBSET of food_cost, never additive.
 The Performance page displays "food only = food_cost − alcohol_cost" alongside
 alcohol_cost so the owner sees their margin split. If you can't tell from labels
 whether a 4xxx line is alcohol vs food, default the line to food and leave
@@ -345,29 +369,31 @@ VALIDATION.  Before submitting:
   1. SUM(all line items whose BAS account ∈ revenue range) must equal rollup.revenue within 2% — otherwise raise confidence='medium' and add warning
   2. For each monthly rollup, net_profit = revenue − food − staff − other − depreciation + financial. Compute yourself and compare; fix sign errors before submitting.
   3. alcohol_cost ≤ food_cost. If your computed alcohol exceeds food, you've double-counted — re-check.
-  4. Skip "Summa…" / "Total…" / "S:a" subtotal rows when listing line items (they'd double-count).
-  5. Monthly revenue under 10 000 SEK or over 100 000 000 SEK almost always means scale misread — re-check the header before submitting.
+  4. dine_in_revenue + takeaway_revenue + alcohol_revenue ≤ revenue. Each subset capped at total revenue. If they sum to MORE than revenue, you've double-counted (e.g. a "Total försäljning" row got included alongside its component VAT rows).
+  5. Skip "Summa…" / "Total…" / "S:a" subtotal rows when listing line items (they'd double-count).
+  6. Monthly revenue under 10 000 SEK or over 100 000 000 SEK almost always means scale misread — re-check the header before submitting.
 
 EXAMPLE (single-month Resultatrapport, Vero restaurant, mars 2026, scale: SEK).
 
 Visible PDF rows:
-  3010 Försäljning mat 12% moms      485 200
-  3015 Försäljning alkohol 25% moms  178 400
-  Summa intäkter                     663 600
-  4015 Inköp livsmedel              -156 300
-  4020 Inköp dryck/alkohol           -84 100
-  Summa varuinköp                   -240 400
-  7010 Löner                        -198 500
-  7510 Sociala avgifter              -62 400
-  Summa personalkostnader           -260 900
-  5010 Lokalhyra                     -45 000
-  5040 El                            -12 800
-  6310 Försäkringar                   -3 200
-  6530 Redovisningstjänster           -8 500
-  Summa övriga externa kostnader     -69 500
-  7820 Avskrivningar inventarier     -15 000
-  8410 Räntekostnader                 -2 800
-  Resultat före skatt                 74 000
+  3010 Försäljning mat 12% moms          412 800
+  3012 Försäljning Wolt/Foodora 6% moms   72 400
+  3015 Försäljning alkohol 25% moms      178 400
+  Summa intäkter                         663 600
+  4015 Inköp livsmedel                  -156 300
+  4020 Inköp dryck/alkohol               -84 100
+  Summa varuinköp                       -240 400
+  7010 Löner                            -198 500
+  7510 Sociala avgifter                  -62 400
+  Summa personalkostnader               -260 900
+  5010 Lokalhyra                         -45 000
+  5040 El                                -12 800
+  6310 Försäkringar                       -3 200
+  6530 Redovisningstjänster               -8 500
+  Summa övriga externa kostnader         -69 500
+  7820 Avskrivningar inventarier         -15 000
+  8410 Räntekostnader                     -2 800
+  Resultat före skatt                     74 000
 
 Correct submit_extraction call:
   doc_type: "pnl_monthly"
@@ -376,30 +402,39 @@ Correct submit_extraction call:
   periods: [{
     year: 2026, month: 3,
     rollup: {
-      revenue: 663600, food_cost: 240400, alcohol_cost: 84100,
-      staff_cost: 260900, other_cost: 69500, depreciation: 15000,
-      financial: -2800, net_profit: 74800
+      revenue: 663600,
+      dine_in_revenue: 412800, takeaway_revenue: 72400, alcohol_revenue: 178400,
+      food_cost: 240400, alcohol_cost: 84100,
+      staff_cost: 260900, other_cost: 69500,
+      depreciation: 15000, financial: -2800,
+      net_profit: 74800
     }
   }]
   annual_lines: [
-    { label: "Försäljning mat 12% moms",     amount: 485200, account: 3010 },
-    { label: "Försäljning alkohol 25% moms", amount: 178400, account: 3015 },
-    { label: "Inköp livsmedel",              amount: 156300, account: 4015 },
-    { label: "Inköp dryck/alkohol",          amount:  84100, account: 4020 },
-    { label: "Löner",                        amount: 198500, account: 7010 },
-    { label: "Sociala avgifter",             amount:  62400, account: 7510 },
-    { label: "Lokalhyra",                    amount:  45000, account: 5010 },
-    { label: "El",                           amount:  12800, account: 5040 },
-    { label: "Försäkringar",                 amount:   3200, account: 6310 },
-    { label: "Redovisningstjänster",         amount:   8500, account: 6530 },
-    { label: "Avskrivningar inventarier",    amount:  15000, account: 7820 },
-    { label: "Räntekostnader",               amount:  -2800, account: 8410 }
+    { label: "Försäljning mat 12% moms",         amount: 412800, account: 3010 },
+    { label: "Försäljning Wolt/Foodora 6% moms", amount:  72400, account: 3012 },
+    { label: "Försäljning alkohol 25% moms",     amount: 178400, account: 3015 },
+    { label: "Inköp livsmedel",                  amount: 156300, account: 4015 },
+    { label: "Inköp dryck/alkohol",              amount:  84100, account: 4020 },
+    { label: "Löner",                            amount: 198500, account: 7010 },
+    { label: "Sociala avgifter",                 amount:  62400, account: 7510 },
+    { label: "Lokalhyra",                        amount:  45000, account: 5010 },
+    { label: "El",                               amount:  12800, account: 5040 },
+    { label: "Försäkringar",                     amount:   3200, account: 6310 },
+    { label: "Redovisningstjänster",             amount:   8500, account: 6530 },
+    { label: "Avskrivningar inventarier",        amount:  15000, account: 7820 },
+    { label: "Räntekostnader",                   amount:  -2800, account: 8410 }
   ]
 
-Note: net_profit declared 74000 vs computed 74800 — the 800 discrepancy is OK
-within tolerance (declared rounded). Subtotal rows ("Summa…") were dropped.
-Räntekostnader carries a negative amount because financial items are signed.
-alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020). Correct.`
+Notes on the example:
+  • Three revenue subsets sum to total: 412 800 + 72 400 + 178 400 = 663 600 = revenue ✓
+  • takeaway_revenue (72 400) is the 6 %-moms line — Wolt/Foodora platform delivery
+  • dine_in_revenue (412 800) is the 12 %-moms line — sit-down food
+  • alcohol_revenue (178 400) is the 25 %-moms line
+  • alcohol_cost (84 100 = 4020 line) ≤ food_cost (240 400 = 4015 + 4020) ✓
+  • net_profit declared 74 000 vs computed 74 800: the 800 diff is within tolerance (rounded subtotal in the source PDF)
+  • Räntekostnader is negative because financial items are signed
+  • All "Summa…" rows excluded from annual_lines to avoid double-counting`
 
   // Tool definition — enforces the JSON shape at the protocol level.
   // tool_choice forces Claude to respond with a structured tool call
@@ -428,17 +463,22 @@ alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020
                 type: 'object',
                 required: ['revenue', 'food_cost', 'staff_cost', 'other_cost', 'depreciation', 'financial', 'net_profit'],
                 properties: {
-                  revenue:      { type: 'number' },
-                  food_cost:    { type: 'number' },
+                  revenue:          { type: 'number' },
+                  // Revenue subsets — each is a portion of `revenue` discriminated
+                  // by Swedish VAT rate. Optional for backwards-compat with old
+                  // extractions — backfilled from line items where absent (M029).
+                  dine_in_revenue:  { type: 'number' },   // 12% moms
+                  takeaway_revenue: { type: 'number' },   // 6% moms (Wolt, Foodora etc)
+                  alcohol_revenue:  { type: 'number' },   // 25% moms
+                  food_cost:        { type: 'number' },
                   // alcohol_cost is a SUBSET of food_cost (the 25%-VAT drinks
-                  // portion). Optional for backwards-compat with old extractions
-                  // — backfilled from line items if absent.
-                  alcohol_cost: { type: 'number' },
-                  staff_cost:   { type: 'number' },
-                  other_cost:   { type: 'number' },
-                  depreciation: { type: 'number' },
-                  financial:    { type: 'number' },
-                  net_profit:   { type: 'number' },
+                  // portion of cost-of-goods). Backfilled from line items if absent.
+                  alcohol_cost:     { type: 'number' },
+                  staff_cost:       { type: 'number' },
+                  other_cost:       { type: 'number' },
+                  depreciation:     { type: 'number' },
+                  financial:        { type: 'number' },
+                  net_profit:       { type: 'number' },
                 },
               },
             },
@@ -491,6 +531,19 @@ alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020
       if (alc > food + 1) {
         issues.push(`${tag} alcohol_cost ${Math.round(alc)} exceeds food_cost ${Math.round(food)} — alcohol must be a subset of food, not additive`)
       }
+      // Revenue subsets must each be ≤ revenue and the three together
+      // shouldn't exceed revenue (would mean a "Total försäljning" subtotal
+      // got included alongside its components).
+      const dineIn   = Number(r.dine_in_revenue)  || 0
+      const takeaway = Number(r.takeaway_revenue) || 0
+      const alcRev   = Number(r.alcohol_revenue)  || 0
+      const subsetSum = dineIn + takeaway + alcRev
+      if (subsetSum > rev * 1.02 + 100) {
+        issues.push(`${tag} revenue subsets (dine-in ${Math.round(dineIn)} + takeaway ${Math.round(takeaway)} + alcohol ${Math.round(alcRev)}) sum to ${Math.round(subsetSum)} — exceeds total revenue ${Math.round(rev)}, likely a subtotal row counted twice`)
+      }
+      if (dineIn > rev + 1)   issues.push(`${tag} dine_in_revenue ${Math.round(dineIn)} exceeds revenue ${Math.round(rev)}`)
+      if (takeaway > rev + 1) issues.push(`${tag} takeaway_revenue ${Math.round(takeaway)} exceeds revenue ${Math.round(rev)}`)
+      if (alcRev > rev + 1)   issues.push(`${tag} alcohol_revenue ${Math.round(alcRev)} exceeds revenue ${Math.round(rev)}`)
       if (period.month && period.month >= 1 && period.month <= 12) {
         if (rev > 0 && rev < 10_000) {
           issues.push(`${tag} revenue ${Math.round(rev)} SEK is suspiciously low — possible scale misdetection`)
@@ -647,7 +700,8 @@ alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020
     } else {
       // Compute per-category category totals across all months.
       const catTotals: Record<string, number> = {
-        revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, alcohol_cost: 0,
+        revenue: 0, food_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0,
+        alcohol_cost: 0, dine_in_revenue: 0, takeaway_revenue: 0, alcohol_revenue: 0,
       }
       for (const p of parsed.periods) {
         for (const cat of Object.keys(catTotals)) {
@@ -716,7 +770,13 @@ alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020
   }
 
   function emptyRollup() {
-    return { revenue: 0, food_cost: 0, alcohol_cost: 0, staff_cost: 0, other_cost: 0, depreciation: 0, financial: 0, net_profit: 0 }
+    return {
+      revenue: 0, dine_in_revenue: 0, takeaway_revenue: 0, alcohol_revenue: 0,
+      food_cost: 0, alcohol_cost: 0,
+      staff_cost: 0, other_cost: 0,
+      depreciation: 0, financial: 0,
+      net_profit: 0,
+    }
   }
 
   let periodsRaw: any[] = []
@@ -735,14 +795,17 @@ alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020
       return {
         year, month, lines,
         rollup: {
-          revenue:      Number(rollupRaw.revenue     ?? 0) || 0,
-          food_cost:    Number(rollupRaw.food_cost   ?? 0) || 0,
-          alcohol_cost: Number(rollupRaw.alcohol_cost?? 0) || 0,
-          staff_cost:   Number(rollupRaw.staff_cost  ?? 0) || 0,
-          other_cost:   Number(rollupRaw.other_cost  ?? 0) || 0,
-          depreciation: Number(rollupRaw.depreciation?? 0) || 0,
-          financial:    Number(rollupRaw.financial   ?? 0) || 0,
-          net_profit:   Number(rollupRaw.net_profit  ?? 0) || 0,
+          revenue:          Number(rollupRaw.revenue          ?? 0) || 0,
+          dine_in_revenue:  Number(rollupRaw.dine_in_revenue  ?? 0) || 0,
+          takeaway_revenue: Number(rollupRaw.takeaway_revenue ?? 0) || 0,
+          alcohol_revenue:  Number(rollupRaw.alcohol_revenue  ?? 0) || 0,
+          food_cost:        Number(rollupRaw.food_cost        ?? 0) || 0,
+          alcohol_cost:     Number(rollupRaw.alcohol_cost     ?? 0) || 0,
+          staff_cost:       Number(rollupRaw.staff_cost       ?? 0) || 0,
+          other_cost:       Number(rollupRaw.other_cost       ?? 0) || 0,
+          depreciation:     Number(rollupRaw.depreciation     ?? 0) || 0,
+          financial:        Number(rollupRaw.financial        ?? 0) || 0,
+          net_profit:       Number(rollupRaw.net_profit       ?? 0) || 0,
         },
       }
     })
@@ -759,14 +822,17 @@ alcohol_cost (84100 = the 4020 line) is ≤ food_cost (240400 = sum of 4015+4020
   const mainRollup = periods.length === 1
     ? periods[0].rollup
     : periods.reduce((acc: any, p: any) => ({
-        revenue:      acc.revenue      + p.rollup.revenue,
-        food_cost:    acc.food_cost    + p.rollup.food_cost,
-        alcohol_cost: acc.alcohol_cost + p.rollup.alcohol_cost,
-        staff_cost:   acc.staff_cost   + p.rollup.staff_cost,
-        other_cost:   acc.other_cost   + p.rollup.other_cost,
-        depreciation: acc.depreciation + p.rollup.depreciation,
-        financial:    acc.financial    + p.rollup.financial,
-        net_profit:   acc.net_profit   + p.rollup.net_profit,
+        revenue:          acc.revenue          + p.rollup.revenue,
+        dine_in_revenue:  acc.dine_in_revenue  + p.rollup.dine_in_revenue,
+        takeaway_revenue: acc.takeaway_revenue + p.rollup.takeaway_revenue,
+        alcohol_revenue:  acc.alcohol_revenue  + p.rollup.alcohol_revenue,
+        food_cost:        acc.food_cost        + p.rollup.food_cost,
+        alcohol_cost:     acc.alcohol_cost     + p.rollup.alcohol_cost,
+        staff_cost:       acc.staff_cost       + p.rollup.staff_cost,
+        other_cost:       acc.other_cost       + p.rollup.other_cost,
+        depreciation:     acc.depreciation     + p.rollup.depreciation,
+        financial:        acc.financial        + p.rollup.financial,
+        net_profit:       acc.net_profit       + p.rollup.net_profit,
       }), emptyRollup())
   const mainLines = periods.length === 1 ? periods[0].lines : []
 

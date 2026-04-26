@@ -24,14 +24,20 @@ import {
 } from '@/lib/finance/conventions'
 
 export interface ExtractionRollup {
-  revenue?:      number | string | null
-  food_cost?:    number | string | null
-  alcohol_cost?: number | string | null   // optional — extractor populates from VAT classifier
-  staff_cost?:   number | string | null
-  other_cost?:   number | string | null
-  depreciation?: number | string | null
-  financial?:    number | string | null
-  net_profit?:   number | string | null   // ignored — we always recompute from components
+  revenue?:          number | string | null
+  // Revenue subsets — each is a portion of `revenue` discriminated by
+  // Swedish VAT rate (M029). Optional for backwards-compat; fall back to
+  // summing line items by subcategory.
+  dine_in_revenue?:  number | string | null   // 12% moms
+  takeaway_revenue?: number | string | null   // 6% moms (Wolt/Foodora etc)
+  alcohol_revenue?:  number | string | null   // 25% moms
+  food_cost?:        number | string | null
+  alcohol_cost?:     number | string | null   // subset of food_cost
+  staff_cost?:       number | string | null
+  other_cost?:       number | string | null
+  depreciation?:     number | string | null
+  financial?:        number | string | null
+  net_profit?:       number | string | null   // ignored — we always recompute from components
 }
 
 export interface ExtractionLineItem {
@@ -46,15 +52,18 @@ export interface ExtractionLineItem {
 }
 
 export interface ProjectedRollup {
-  revenue:      number
-  food_cost:    number
-  alcohol_cost: number
-  staff_cost:   number
-  other_cost:   number
-  depreciation: number
-  financial:    number
-  net_profit:   number
-  margin_pct:   number
+  revenue:          number
+  dine_in_revenue:  number
+  takeaway_revenue: number
+  alcohol_revenue:  number
+  food_cost:        number
+  alcohol_cost:     number
+  staff_cost:       number
+  other_cost:       number
+  depreciation:     number
+  financial:        number
+  net_profit:       number
+  margin_pct:       number
 }
 
 // Subcategory labels that count as alcohol/beverage on the cost side. Mirrors
@@ -72,6 +81,24 @@ function alcoholFromLines(lines: ExtractionLineItem[] | null | undefined): numbe
     if (l?.category !== 'food_cost') continue
     const sub = String(l?.subcategory ?? '').toLowerCase()
     if (ALCOHOL_SUBCATS.has(sub)) sum += toMoney(l?.amount)
+  }
+  return sum
+}
+
+// Revenue-subset fallbacks for backwards-compat. The extractor populates
+// dine_in_revenue / takeaway_revenue / alcohol_revenue at the rollup level
+// going forward (M029); for older extractions we sum the corresponding line
+// items by VAT-derived subcategory.
+function revenueSubsetFromLines(
+  lines: ExtractionLineItem[] | null | undefined,
+  subcatMatch: (sub: string) => boolean,
+): number {
+  if (!Array.isArray(lines)) return 0
+  let sum = 0
+  for (const l of lines) {
+    if (l?.category !== 'revenue') continue
+    if (!subcatMatch(String(l?.subcategory ?? '').toLowerCase())) continue
+    sum += toMoney(l?.amount)
   }
   return sum
 }
@@ -99,6 +126,23 @@ export function projectRollup(
   const alcoholRaw  = r.alcohol_cost == null ? alcoholFromLines(lines) : asCost(r.alcohol_cost)
   const alcohol_cost = Math.min(alcoholRaw, food_cost)
 
+  // Revenue subsets — same backwards-compat strategy: prefer top-level rollup
+  // (post-M029), fall back to line items by VAT-derived subcategory. Each
+  // clamped to total revenue so storage never holds an "subset > total"
+  // inconsistency.
+  const dineInRaw   = r.dine_in_revenue  == null
+    ? revenueSubsetFromLines(lines, sub => sub === 'food' || sub === 'dine_in')
+    : asRevenue(r.dine_in_revenue)
+  const takeawayRaw = r.takeaway_revenue == null
+    ? revenueSubsetFromLines(lines, sub => sub === 'takeaway')
+    : asRevenue(r.takeaway_revenue)
+  const alcRevRaw   = r.alcohol_revenue  == null
+    ? revenueSubsetFromLines(lines, sub => sub === 'alcohol' || sub === 'beverage' || sub === 'drinks')
+    : asRevenue(r.alcohol_revenue)
+  const dine_in_revenue  = Math.min(dineInRaw,   revenue)
+  const takeaway_revenue = Math.min(takeawayRaw, revenue)
+  const alcohol_revenue  = Math.min(alcRevRaw,   revenue)
+
   const components: RollupComponents = {
     revenue, food_cost, staff_cost, other_cost, depreciation, financial,
   }
@@ -108,14 +152,17 @@ export function projectRollup(
   // Round at the boundary so storage values are clean money. Internal math
   // happens at full precision above; only the persisted shape rounds.
   return {
-    revenue:      Math.round(revenue),
-    food_cost:    Math.round(food_cost),
-    alcohol_cost: Math.round(alcohol_cost),
-    staff_cost:   Math.round(staff_cost),
-    other_cost:   Math.round(other_cost),
-    depreciation: Math.round(depreciation),
-    financial:    Math.round(financial),
-    net_profit:   Math.round(net_profit),
+    revenue:          Math.round(revenue),
+    dine_in_revenue:  Math.round(dine_in_revenue),
+    takeaway_revenue: Math.round(takeaway_revenue),
+    alcohol_revenue:  Math.round(alcohol_revenue),
+    food_cost:        Math.round(food_cost),
+    alcohol_cost:     Math.round(alcohol_cost),
+    staff_cost:       Math.round(staff_cost),
+    other_cost:       Math.round(other_cost),
+    depreciation:     Math.round(depreciation),
+    financial:        Math.round(financial),
+    net_profit:       Math.round(net_profit),
     margin_pct,
   }
 }

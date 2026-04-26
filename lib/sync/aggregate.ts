@@ -161,9 +161,11 @@ export async function aggregateMetrics(
     ),
     db.from('tracker_data')
       // depreciation/financial/alcohol_cost added in M028 (FIXES.md §0n).
-      // The aggregator must read them so monthly_metrics.net_profit accounts
-      // for full P&L (was silently dropping depreciation pre-M028).
-      .select('period_year, period_month, revenue, food_cost, alcohol_cost, staff_cost, rent_cost, other_cost, depreciation, financial, net_profit, source')
+      // dine_in_revenue/takeaway_revenue/alcohol_revenue added in M029
+      // (FIXES.md §0o). All read here so downstream consumers (memo,
+      // budget, scheduling AI prompts) can reach them through monthly_metrics
+      // without re-summing line items.
+      .select('period_year, period_month, revenue, dine_in_revenue, takeaway_revenue, alcohol_revenue, food_cost, alcohol_cost, staff_cost, rent_cost, other_cost, depreciation, financial, net_profit, source')
       .eq('business_id', businessId)
       .gte('period_year', parseInt(fromDate.slice(0, 4)))
       .lte('period_year', parseInt(toDate.slice(0, 4))),

@@ -324,6 +324,10 @@ async function applyMonthly(db: any, args: {
       period_year:       year,
       period_month:      month,
       revenue:           projected.revenue,
+      // VAT-rate revenue subsets (M029): each is a portion of `revenue`.
+      dine_in_revenue:   projected.dine_in_revenue,
+      takeaway_revenue:  projected.takeaway_revenue,
+      alcohol_revenue:   projected.alcohol_revenue,
       food_cost:         projected.food_cost,
       alcohol_cost:      projected.alcohol_cost,
       staff_cost:        projected.staff_cost,

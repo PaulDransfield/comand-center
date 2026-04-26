@@ -1,10 +1,20 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending
+> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending · M029 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M029 — Revenue VAT-rate split (dine_in / takeaway / alcohol)
+**File:** `M029-REVENUE-VAT-SPLIT.sql` (repo root)
+**Purpose:** part of FIXES.md §0o. Promotes the Swedish VAT-rate revenue split (12% = dine-in food, 6% = takeaway / Wolt-Foodora, 25% = alcohol) to first-class columns on `tracker_data`, matching what `revenue_logs` already has from the POS side. Surfaces takeaway revenue as a distinct slice so owners can see platform-delivery share (Wolt/Foodora take ~30% commission, so 100k of takeaway ≠ 100k of margin contribution).
+Three concerns in one migration:
+  1. Adds `dine_in_revenue`, `takeaway_revenue`, `alcohol_revenue` columns to `tracker_data`. Each is a SUBSET of `revenue` (never additive).
+  2. Re-tags existing `tracker_line_items`: rows whose label contains "6% moms" or matches Wolt/Foodora/UberEats get `subcategory='takeaway'` (was 'food' from the legacy classifyByVat). 25%-moms rows that didn't get tagged get `subcategory='alcohol'`. Idempotent.
+  3. Backfills the new columns from the re-tagged line items per (business, year, month). Caps each subset at total revenue (defensive against rounding).
+**Safety:** all `ADD COLUMN` use `IF NOT EXISTS`. UPDATE statements include `IS DISTINCT FROM` guards so re-runs are no-ops. Backfill only writes when current value is 0. Wrapped in `BEGIN; … COMMIT;`.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Verification queries at the bottom show the new columns + a backfilled-row count + the re-tagged subcategory distribution.
 
 ### M028 — Fortnox proper fix (depreciation/financial/alcohol_cost + supersede)
 **File:** `M028-FORTNOX-PROPER-FIX.sql` (repo root)

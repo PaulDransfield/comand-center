@@ -3,6 +3,45 @@ Last updated: 2026-04-26
 
 ---
 
+## 0o. Takeaway revenue invisible — three-VAT-rate revenue split (2026-04-26)
+
+**Symptom:** Performance page revenue donut showed two buckets (food, alcohol). Takeaway revenue from Wolt/Foodora was lumped into food, hiding the platform-delivery share entirely. Owners couldn't see what % of revenue carried the ~30% Wolt/Foodora commission.
+
+**Root cause:** Swedish VAT rates encode three different revenue types on a restaurant P&L:
+  - 25 % moms → alcohol & non-food drinks
+  - 12 % moms → dine-in food (sit-down)
+  - 6 % moms → takeaway food (Wolt, Foodora, Uber Eats)
+
+The pre-2026-04-26 `classifyByVat()` lumped 12 % and 6 % both as `subcategory='food'`. So takeaway lines lost their distinct identity at the line-item level. The Performance page revenue split also bucketed `'food'` and `'takeaway'` together. End result: takeaway revenue was technically captured but invisible.
+
+**Fixes (M029 + code, four pieces):**
+
+1. **M029 migration** adds `dine_in_revenue`, `takeaway_revenue`, `alcohol_revenue` columns to `tracker_data`. Each is a SUBSET of `revenue` (never additive). Re-tags existing line items where label contains "6% moms" / "Wolt" / "Foodora" / "Uber Eats" → `subcategory='takeaway'`. Backfills the new tracker_data columns from the re-tagged line items per (business, year, month). Defensive clamp: each subset ≤ total revenue.
+
+2. **`classifyByVat`** in `extract-worker/route.ts` updated: 6% → `subcategory='takeaway'` (was 'food'). Also catches platform-name labels directly ("Försäljning Wolt" without VAT suffix). 25% and 12% unchanged.
+
+3. **System prompt + tool schema** expanded:
+   - Tool schema now declares `dine_in_revenue`, `takeaway_revenue`, `alcohol_revenue` in the rollup (optional for backwards-compat).
+   - System prompt has explicit "REVENUE SUBSETS" block calling out the three VAT rates with Wolt/Foodora as the takeaway example.
+   - Few-shot example updated to include a 6%-moms Wolt/Foodora line so Claude sees the pattern with all three buckets.
+   - Added a validation rule: `dine_in + takeaway + alcohol ≤ revenue + 2%` (catches "Total försäljning" subtotal getting included alongside its components).
+
+4. **Read sites use the rollup directly.** `projectRollup` populates the three new fields (with line-item fallback for backwards-compat); `apply()` writes them; `/api/tracker` reads and returns them; the Performance page reads them straight from tracker_data instead of summing line items at render time. Aggregator picks them up too so downstream consumers (memo, AI prompts) can reach them via monthly_metrics queries.
+
+**Performance page now shows three indented sub-rows under Revenue:**
+  - Dine-in (12% moms)
+  - Takeaway (6% moms / Wolt-Foodora) — only shown when non-zero
+  - Alcohol (25% moms)
+
+**Manual steps required (Paul):**
+
+1. Open Supabase SQL Editor → paste `M029-REVENUE-VAT-SPLIT.sql` → Run. The 3 verify queries at the end show: backfilled-row counts, the new column definitions, and the re-tagged subcategory distribution across all line items.
+2. Open Performance page for any Vero month with platform delivery — takeaway should now show as a distinct row in the breakdown table, with the 6% VAT amount. If it doesn't, the source PDF probably bundled food + takeaway under one line; future re-uploads will get it right because the new prompt + few-shot specifically teach Claude to look for the 6% rate.
+
+**Why this should hold:** every fix targets a root cause. The classifier now respects the VAT rate as authoritative on the revenue side just like it does on the cost side. The schema matches what `revenue_logs` already exposed for POS data — Fortnox and PK now describe revenue with the same vocabulary. Backfill made historical data visible without forcing re-uploads.
+
+---
+
 ## 0n. Fortnox extraction pipeline — Tier 2 rebuild (2026-04-26)
 
 **Symptom:** Performance page numbers didn't reconcile with the source PDFs. Net profit looked too high on every Fortnox month. After re-upload of a corrected PDF, the original data sometimes lingered. Multi-month annual reports rejected via the UI weren't actually unwound.

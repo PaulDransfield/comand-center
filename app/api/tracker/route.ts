@@ -77,6 +77,12 @@ export async function GET(req: NextRequest) {
     const alcohol_cost = Number(manual?.alcohol_cost ?? 0)
     const depreciation = Number(manual?.depreciation ?? 0)
     const financial    = Number(manual?.financial    ?? 0)
+    // Revenue subsets — VAT-rate slices of total revenue (M029). Each is
+    // ≤ revenue. dine_in + takeaway + alcohol may equal revenue or be slightly
+    // less if some revenue is uncategorised ("övriga intäkter").
+    const dine_in_revenue  = Number(manual?.dine_in_revenue  ?? 0)
+    const takeaway_revenue = Number(manual?.takeaway_revenue ?? 0)
+    const alcohol_revenue  = Number(manual?.alcohol_revenue  ?? 0)
 
     // If revenue or staff was overridden by synced data, the persisted
     // net_profit no longer reflects current truth. Recompute using the
@@ -103,6 +109,9 @@ export async function GET(req: NextRequest) {
       period_year:  year,
       period_month: m,
       revenue,
+      dine_in_revenue,
+      takeaway_revenue,
+      alcohol_revenue,
       food_cost,
       alcohol_cost,
       staff_cost,

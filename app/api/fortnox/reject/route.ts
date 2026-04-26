@@ -60,8 +60,9 @@ export async function POST(req: NextRequest) {
     // ── Clear tracker_data rows that came from THIS upload ───────────────
     // Use fortnox_upload_id as the discriminator so manual entries aren't
     // touched. Resets source to 'manual' and zeros the Fortnox-derived
-    // overhead/depreciation/financial columns. revenue/food/staff stay so
-    // the row isn't dropped if the user wants to keep manual numbers.
+    // overhead/depreciation/financial/revenue-subset columns. revenue/food/
+    // staff stay so the row isn't dropped if the user wants to keep manual
+    // numbers.
     await db.from('tracker_data')
       .update({
         source:            'manual',
@@ -70,6 +71,9 @@ export async function POST(req: NextRequest) {
         depreciation:      0,
         financial:         0,
         alcohol_cost:      0,
+        dine_in_revenue:   0,
+        takeaway_revenue:  0,
+        alcohol_revenue:   0,
       })
       .eq('fortnox_upload_id', upload.id)
 

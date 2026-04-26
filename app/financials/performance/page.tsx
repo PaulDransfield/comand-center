@@ -43,12 +43,14 @@ interface PeriodKey {
 
 interface PeriodData {
   revenue:      number
-  // Revenue split derived from tracker_line_items subcategory tags — only
-  // present when the Fortnox labels differentiate by VAT rate (25% =
-  // alcohol, 12% = food). Totals may not sum exactly to `revenue` because
-  // line items can miss rows; treat as "of the portion we could split".
-  revenue_food:    number
-  revenue_alcohol: number
+  // Revenue split by Swedish VAT rate (M029). Each is a SUBSET of `revenue`,
+  // never additive. Sum may be slightly less than total revenue if some
+  // revenue is uncategorised ("övriga intäkter"). Read straight from
+  // tracker_data — no longer derived from line items at render time.
+  revenue_dine_in:  number   // 12% moms — sit-down food
+  revenue_takeaway: number   // 6% moms — Wolt/Foodora etc
+  revenue_alcohol:  number   // 25% moms — alcohol & non-food drinks
+  revenue_food:     number   // dine-in + takeaway (back-compat for callers)
   has_revenue_split: boolean
   food_cost:    number      // total cost of goods (food + alcohol combined)
   alcohol_cost: number      // subset of food_cost tagged as beverages/alcohol
@@ -59,6 +61,7 @@ interface PeriodData {
   margin_pct:   number | null
   food_pct:     number | null
   alcohol_pct:  number | null
+  takeaway_pct: number | null
   staff_pct:    number | null
   overheads_pct: number | null
   // Breakdown of overheads by subcategory for the donut + table
@@ -66,6 +69,7 @@ interface PeriodData {
   // Data completeness flags — used to show `—` and explain honestly.
   has_food:      boolean
   has_alcohol:   boolean
+  has_takeaway:  boolean
   has_overheads: boolean
 }
 
@@ -224,49 +228,45 @@ function aggregateMonths(
   includeMonths: (yr: number, mo: number) => boolean,
 ): PeriodData {
   let revenue = 0, food = 0, alcoholCost = 0, staff = 0, overheads = 0, depreciation = 0, financial = 0
+  let revenueDineIn = 0, revenueTakeaway = 0, revenueAlcohol = 0
   let netSum = 0
   let anyFood = false, anyOverheads = false
   for (const r of trackerRows) {
     if (!includeMonths(r.period_year, r.period_month)) continue
-    revenue      += Number(r.revenue      ?? 0)
-    food         += Number(r.food_cost    ?? 0)
-    // alcohol_cost reads STRAIGHT FROM tracker_data (M028 column). Pre-M028
-    // rows are backfilled from line items by the migration. Used to be
-    // recomputed here from line items every render — fragile when items were
-    // missing or misclassified. See FIXES.md §0n.
-    alcoholCost  += Number(r.alcohol_cost ?? 0)
-    staff        += Number(r.staff_cost   ?? 0)
-    overheads    += Number(r.other_cost   ?? 0)
-    depreciation += Number(r.depreciation ?? 0)
-    financial    += Number(r.financial    ?? 0)
-    // Trust the persisted net_profit too — projectRollup applied the
-    // canonical formula at write time. Summing them here gives the
-    // multi-month period total directly.
-    netSum       += Number(r.net_profit   ?? 0)
+    revenue          += Number(r.revenue           ?? 0)
+    food             += Number(r.food_cost         ?? 0)
+    // VAT-rate revenue subsets read STRAIGHT FROM tracker_data (M029
+    // columns). Pre-M029 rows are backfilled from line items by the
+    // migration. The Performance page used to re-derive this from line
+    // items every render — fragile when items were missing or
+    // misclassified. See FIXES.md §0o.
+    alcoholCost      += Number(r.alcohol_cost      ?? 0)
+    revenueDineIn    += Number(r.dine_in_revenue   ?? 0)
+    revenueTakeaway  += Number(r.takeaway_revenue  ?? 0)
+    revenueAlcohol   += Number(r.alcohol_revenue   ?? 0)
+    staff            += Number(r.staff_cost        ?? 0)
+    overheads        += Number(r.other_cost        ?? 0)
+    depreciation     += Number(r.depreciation      ?? 0)
+    financial        += Number(r.financial         ?? 0)
+    // Trust the persisted net_profit — projectRollup applied the canonical
+    // formula at write time. Summing across months gives the period total.
+    netSum           += Number(r.net_profit        ?? 0)
     if (Number(r.food_cost  ?? 0) > 0) anyFood      = true
     if (Number(r.other_cost ?? 0) > 0) anyOverheads = true
   }
-  // Revenue split — Performance page still derives food vs alcohol revenue
-  // from line items (tracker_data has no separate column for it). 25%-VAT
-  // lines = alcohol revenue, 12%-VAT lines = food revenue. The cost-side
-  // alcohol split now comes from the rollup column.
-  let revenueFood = 0, revenueAlcohol = 0
-  for (const li of lineItems) {
-    if (!includeMonths(li.period_year, li.period_month)) continue
-    if (li.category !== 'revenue') continue
-    const sub = (li.subcategory ?? '').toLowerCase()
-    const amt = Number(li.amount ?? 0)
-    if (sub === 'alcohol' || sub === 'beverage' || sub === 'drinks') revenueAlcohol += amt
-    else if (sub === 'food' || sub === 'takeaway')                    revenueFood    += amt
-  }
+  // food revenue (dine-in + takeaway) — kept as a back-compat alias for
+  // any caller that wants "all food revenue regardless of channel".
+  const revenueFood = revenueDineIn + revenueTakeaway
   // Defensive clamp — projectRollup also clamps on write, but doubling up
   // here costs nothing and protects against legacy rows that might violate.
   alcoholCost = Math.min(alcoholCost, food)
   const foodOnly = food - alcoholCost
-  // Revenue split is only meaningful if at least one side has data AND
-  // the sum is within a sensible band of the authoritative revenue
-  // (±15% — anything beyond that suggests incomplete line items).
-  const splitSum = revenueFood + revenueAlcohol
+  // Revenue split is only meaningful if at least one bucket has data AND
+  // the sum is within a sensible band of the authoritative revenue (±15% —
+  // anything beyond that suggests incomplete extraction). The three subsets
+  // are dine-in (12%) + takeaway (6%) + alcohol (25%); remainder is
+  // "övriga intäkter" (other income).
+  const splitSum = revenueDineIn + revenueTakeaway + revenueAlcohol
   const hasRevenueSplit = splitSum > 0 && revenue > 0 && Math.abs(splitSum - revenue) / revenue < 0.15
   // Subcategory split for the donut + breakdown table — only use line items
   // whose Fortnox account is in the 5000-6999 "Övriga externa kostnader"
@@ -312,8 +312,10 @@ function aggregateMonths(
   const marginPct = revenue > 0 ? (netMargin / revenue) * 100 : null
   return {
     revenue,
-    revenue_food:      revenueFood,
+    revenue_dine_in:   revenueDineIn,
+    revenue_takeaway:  revenueTakeaway,
     revenue_alcohol:   revenueAlcohol,
+    revenue_food:      revenueFood,   // dine-in + takeaway, back-compat
     has_revenue_split: hasRevenueSplit,
     food_cost:      food,
     alcohol_cost:   alcoholCost,
@@ -325,13 +327,15 @@ function aggregateMonths(
     // food_pct is the COMBINED COGS ratio (food + alcohol) — industry
     // benchmarks (28-32%) apply to total cost-of-goods, not just food.
     // alcohol_pct breaks out the beverage portion for display.
-    food_pct:       revenue > 0 ? (food / revenue)        * 100 : null,
-    alcohol_pct:    revenue > 0 ? (alcoholCost / revenue) * 100 : null,
-    staff_pct:      revenue > 0 ? (staff / revenue)       * 100 : null,
-    overheads_pct:  revenue > 0 ? (overheads / revenue)   * 100 : null,
+    food_pct:       revenue > 0 ? (food / revenue)            * 100 : null,
+    alcohol_pct:    revenue > 0 ? (alcoholCost / revenue)     * 100 : null,
+    takeaway_pct:   revenue > 0 ? (revenueTakeaway / revenue) * 100 : null,
+    staff_pct:      revenue > 0 ? (staff / revenue)           * 100 : null,
+    overheads_pct:  revenue > 0 ? (overheads / revenue)       * 100 : null,
     overhead_split: split,
     has_food:       anyFood,
     has_alcohol:    alcoholCost > 0,
+    has_takeaway:   revenueTakeaway > 0,
     has_overheads:  anyOverheads,
   }
 }
@@ -351,10 +355,15 @@ function aggregateDaily(dailyRows: any[]): PeriodData {
   const splitSum = revFood + revBev
   const hasSplit = splitSum > 0 && revenue > 0 && Math.abs(splitSum - revenue) / revenue < 0.15
   const net = revenue - staff
+  // daily_metrics doesn't carry a takeaway split (PK groups food + takeaway
+  // both as 'food'-side revenue), so the weekly view shows the dine-in /
+  // alcohol pair only; takeaway stays at 0 for now.
   return {
     revenue,
-    revenue_food:      revFood,
+    revenue_dine_in:   revFood,
+    revenue_takeaway:  0,
     revenue_alcohol:   revBev,
+    revenue_food:      revFood,
     has_revenue_split: hasSplit,
     food_cost:      0,
     alcohol_cost:   0,
@@ -365,11 +374,13 @@ function aggregateDaily(dailyRows: any[]): PeriodData {
     margin_pct:     revenue > 0 ? (net / revenue) * 100 : null,
     food_pct:       null,
     alcohol_pct:    null,
+    takeaway_pct:   null,
     staff_pct:      revenue > 0 ? (staff / revenue) * 100 : null,
     overheads_pct:  null,
     overhead_split: { rent: 0, utilities: 0, other: 0 },
     has_food:       false,
     has_alcohol:    false,
+    has_takeaway:   false,
     has_overheads:  false,
   }
 }
@@ -1259,15 +1270,23 @@ function BreakdownTable({ data, compare, compareLabel }: {
   const rows: any[] = [
     { label: 'Revenue',    kr: data.revenue,    swatch: UX.navy, ccKr: compare?.revenue, compareable: true },
   ]
-  // Revenue split (food vs alcohol) — only shown when the data source
-  // actually differentiates, which happens when Fortnox labels carry the
-  // VAT rate (25% = alcohol, 12% = food) or when PK sale data has the
-  // food_revenue/bev_revenue split. Indented under the Revenue row so
-  // it's clearly a sub-breakdown, not a double-counted total.
+  // Revenue split by Swedish VAT rate (M029) — three buckets: dine-in food
+  // (12%), takeaway / Wolt / Foodora (6%), alcohol (25%). Each is a SUBSET
+  // of total revenue, indented under the Revenue row so it's clearly a
+  // sub-breakdown not a double-counted total. Only shown when the rollup
+  // actually has the split — for older PDFs that didn't have all three VAT
+  // buckets the row is omitted.
   if (data.has_revenue_split) {
     rows.push(
-      { label: '  · Food revenue',    kr: data.revenue_food,    swatch: 'transparent', ccKr: compare?.revenue_food,    compareable: true, indented: true },
-      { label: '  · Alcohol revenue', kr: data.revenue_alcohol, swatch: 'transparent', ccKr: compare?.revenue_alcohol, compareable: true, indented: true },
+      { label: '  · Dine-in (12% moms)',     kr: data.revenue_dine_in,  swatch: 'transparent', ccKr: compare?.revenue_dine_in,  compareable: true, indented: true },
+    )
+    if (data.has_takeaway || (compare?.revenue_takeaway ?? 0) > 0) {
+      rows.push(
+        { label: '  · Takeaway (6% moms / Wolt-Foodora)', kr: data.revenue_takeaway, swatch: 'transparent', ccKr: compare?.revenue_takeaway, compareable: true, indented: true },
+      )
+    }
+    rows.push(
+      { label: '  · Alcohol (25% moms)',     kr: data.revenue_alcohol,  swatch: 'transparent', ccKr: compare?.revenue_alcohol,  compareable: true, indented: true },
     )
   }
   rows.push(
