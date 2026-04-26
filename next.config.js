@@ -19,6 +19,17 @@ const nextConfig = {
   // detected" but the function still runs without externalisation).
   experimental: {
     serverComponentsExternalPackages: ['pdfjs-dist', '@napi-rs/canvas'],
+    // pdfjs-dist's legacy entry (pdf.mjs) dynamic-imports the worker file
+    // (pdf.worker.mjs) at runtime — even when we set disableWorker:true the
+    // "fake worker" path still loads the worker code via import. Next.js's
+    // serverless tracing only copies statically-imported files, so the
+    // worker .mjs gets dropped from /var/task/node_modules. Force-include
+    // it so the import resolves at runtime in production.
+    outputFileTracingIncludes: {
+      '/api/fortnox/extract-worker': [
+        './node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs',
+      ],
+    },
   },
 
   // Webpack: ignore the optional canvas import so pdfjs's bundler probes

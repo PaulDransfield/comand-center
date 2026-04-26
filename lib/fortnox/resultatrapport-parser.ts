@@ -161,11 +161,28 @@ async function extractTextItems(pdfBuffer: Uint8Array): Promise<TextItem[]> {
   //
   // We unconditionally disable the worker to take path #2. Reliability beats
   // theoretical speedup for our payload sizes.
-  // pdfjs validates workerSrc as a string, so we set it to an empty string
-  // when running inline. Combined with disableWorker:true below, pdfjs
-  // skips the worker setup entirely and runs in-process.
+  // pdfjs's "fake worker" path still dynamic-imports the worker file even
+  // when disableWorker is true — it just runs the worker code in the same
+  // thread instead of spawning a process. So we MUST point workerSrc at a
+  // real, accessible file. require.resolve finds the right node_modules
+  // path; pathToFileURL converts to a file:// URL (Windows + serverless
+  // both require this).
+  //
+  // For Next.js serverless, the worker file is force-included via
+  // experimental.outputFileTracingIncludes in next.config.js so the
+  // require.resolve target actually exists in /var/task/node_modules.
   if (pdfjs.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = ''
+    try {
+      const { pathToFileURL } = await import('node:url')
+      const { createRequire } = await import('node:module')
+      // createRequire from import.meta.url so this works in ESM context too.
+      const req = typeof require !== 'undefined' ? require : createRequire(import.meta.url)
+      const workerPath = req.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+      pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href
+    } catch {
+      // Last-ditch fallback: leave empty and hope pdfjs's inline worker works.
+      pdfjs.GlobalWorkerOptions.workerSrc = ''
+    }
   }
 
   const loadingTask = pdfjs.getDocument({
