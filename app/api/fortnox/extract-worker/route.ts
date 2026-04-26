@@ -216,7 +216,12 @@ async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promi
   try {
     const { parseResultatrapport } = await import('@/lib/fortnox/resultatrapport-parser')
     const parsedResult = await parseResultatrapport(pdfBytes)
-    if (parsedResult.ok && parsedResult.extraction.confidence === 'high') {
+    // Use parser output for both 'high' AND 'medium' confidence. 'medium'
+    // means the parser succeeded but flagged a soft warning (e.g. alcohol_
+    // cost > food_cost from a stock-change credit) — the data is still
+    // fully reconciled and far more accurate than the AI's per-column
+    // guess on a 12-column table. Only fall through to Claude on 'low'.
+    if (parsedResult.ok && parsedResult.extraction.confidence !== 'low') {
       const det = parsedResult.extraction
       // Map parser output → existing extracted_json shape so apply +
       // projectRollup don't need to know which path produced this row.

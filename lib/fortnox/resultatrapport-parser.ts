@@ -678,8 +678,14 @@ export async function parseResultatrapport(pdfBuffer: Uint8Array | Buffer): Prom
       confidence = 'medium'
     }
     if (p.rollup.alcohol_cost > p.rollup.food_cost + 1) {
-      warnings.push(`${p.year}-${String(p.month).padStart(2,'0')}: alcohol_cost > food_cost`)
-      confidence = 'medium'
+      // alcohol_cost is a SUBSET of food_cost in our schema, but the source
+      // PDF can legitimately have alcohol-purchase amount > total food cost
+      // when a stock-change credit (account 4990 +Y) reduces general food
+      // without affecting alcohol purchases. This is faithful extraction of
+      // an unusual but real accounting situation, not an extraction error.
+      // Warn but don't drop confidence — projectRollup clamps the displayed
+      // value at write time. See FIXES.md §0q.
+      warnings.push(`${p.year}-${String(p.month).padStart(2,'0')}: alcohol_cost > food_cost (likely stock-change credit on 4990; clamp will apply on write)`)
     }
   }
 
