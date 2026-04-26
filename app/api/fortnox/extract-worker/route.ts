@@ -213,15 +213,16 @@ async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promi
   // reconciles. Any failure mode (unknown layout, scanned image PDF,
   // parse error, low confidence) falls through to the Claude path below.
   await writeProgress({ phase: 'parsing', message: 'Parsing PDF with deterministic parser…', percent: 15 })
-  // Bypass Vercel's noisy log view — write diagnostic milestones directly
-  // into the upload's error_message field so we can read them via SQL.
-  // Each milestone overwrites the previous one; the FINAL value tells us
-  // exactly where execution got to.
+  // Bypass Vercel's noisy log view — write diagnostic milestones into the
+  // EXTRACTION_JOBS row's error_message field. fortnox_uploads.error_message
+  // gets overwritten by the final Claude write to null on success, hiding
+  // the markers. extraction_jobs.error_message is only touched on retry/
+  // failure, so our parser-path markers persist after a successful run.
   async function debugMark(stage: string) {
     try {
-      await db.from('fortnox_uploads')
+      await db.from('extraction_jobs')
         .update({ error_message: `[parser-debug] ${stage} @ ${new Date().toISOString()}` })
-        .eq('id', job.upload_id)
+        .eq('id', job.id)
     } catch { /* best-effort */ }
   }
 
