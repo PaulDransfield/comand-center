@@ -3,6 +3,30 @@ Last updated: 2026-04-26
 
 ---
 
+## 0s. Sync button silently no-op for stuck-error integrations — now self-healing (2026-04-26)
+
+**Symptom:** Sync button in the sidebar appeared to do nothing — no toast, no network request, no errors. Saturday 2026-04-25 sales never appeared in daily_metrics. Recurrence of the FIXES §0i pattern.
+
+**Root cause:** All 7 of Vero/Rosali's integrations were stuck in `status='error'` from a pre-`d60d193` code path that wrote 'error' on transient failures. M023 backfilled the existing rows once on 2026-04-23, but new rows accumulated again afterward. The current engine (post-d60d193) doesn't WRITE 'error' anymore — it only writes 'connected' (success) or 'needs_reauth' (auth failure) — so the source has been removed. But existing 'error' rows remained wedged because every sync entry point filtered `status IN ('connected', 'needs_reauth')` — explicitly excluding 'error'. With no integrations passing the filter, `/api/resync` returned `{ok: true, synced: 0}` and the sync button silently did nothing. Cron paths skipped them too. PK never got polled for Saturday's data.
+
+**Two-step fix:**
+
+1. **Immediate unwedge (one-off SQL):**
+   ```sql
+   UPDATE integrations SET status = 'connected' WHERE status = 'error';
+   ```
+   Same as M023 — flips stuck rows back so sync paths pick them up.
+
+2. **Architectural fix (prevents recurrence) — `lib/sync/eligibility.ts`:**
+   `isEligibleForSync` now treats `status='error'` as always probe-eligible. The engine's per-endpoint timeout + retry bounds cost if upstream is genuinely down. On success, engine line 1199 resets `status='connected'` — self-heals on first successful probe. All four entry points (master-sync, catchup-sync, /api/resync, /api/sync/today) updated their `.in('status', [...])` filter to include `'error'` so error-state rows actually flow into the eligibility filter.
+
+**Why this should hold:** the engine no longer creates `status='error'` rows in the first place (only 'connected' or 'needs_reauth'). But if any code path or manual SQL or future regression creates one, the system now self-heals on the next cron tick (≤1h) instead of requiring manual SQL intervention. Three integration states now have proper recovery paths:
+- `connected`: always sync (happy path)
+- `needs_reauth`: probe with 6h backoff (transient auth blips heal)
+- `error`: probe every tick, self-heal on first success
+
+---
+
 ## 0r. Partial POS revenue overrode full Fortnox revenue (2026-04-26)
 
 **Symptom:** After the deterministic Resultatrapport parser landed and Vero's 2025 annual was re-extracted, Performance page Nov 2025 still showed wrong numbers — revenue 476 638 kr against 1 126 523 kr of costs, producing an absurd −137 % margin. Fortnox tracker_data had revenue 1 623 900 kr (correct, matching the source PDF). Yet `/api/tracker` was returning 476 638.
