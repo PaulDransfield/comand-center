@@ -38,119 +38,14 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
 import { log }          from '@/lib/log/structured'
+import { classifyByAccount, classifyLabel, classifyByVat } from '@/lib/fortnox/classify'
 
 export const runtime     = 'nodejs'
 export const maxDuration = 300      // Haiku on a 12-month PDF fits in 300 s with the compact schema
 
-// ── Swedish label → internal subcategory lookup ──────────────────────
-const SV_SUB = new Map<string, { category: string; subcategory: string }>([
-  ['försäljning',             { category: 'revenue', subcategory: 'food' }],
-  ['försäljning livsmedel',   { category: 'revenue', subcategory: 'food' }],
-  ['försäljning dryck',       { category: 'revenue', subcategory: 'beverage' }],
-  ['försäljning alkohol',     { category: 'revenue', subcategory: 'alcohol' }],
-  ['övriga intäkter',         { category: 'revenue', subcategory: 'other' }],
-  // Cost of goods / food. These labels vary a lot on real Fortnox P&Ls —
-  // expanded 2026-04-23 after FIXES §0k found "Varuinköp" falling through
-  // and being double-counted into overheads.
-  ['råvaror',                    { category: 'food_cost', subcategory: 'raw_materials' }],
-  ['råvaror och förnödenheter',  { category: 'food_cost', subcategory: 'raw_materials' }],
-  ['handelsvaror',               { category: 'food_cost', subcategory: 'goods_for_resale' }],
-  ['varuinköp',                  { category: 'food_cost', subcategory: 'goods' }],
-  ['inköp varor',                { category: 'food_cost', subcategory: 'goods' }],
-  ['inköp material och varor',   { category: 'food_cost', subcategory: 'goods' }],
-  ['inköp av material och varor',{ category: 'food_cost', subcategory: 'goods' }],
-  ['inköp livsmedel',            { category: 'food_cost', subcategory: 'food' }],
-  ['inköp av livsmedel',         { category: 'food_cost', subcategory: 'food' }],
-  ['livsmedel',                  { category: 'food_cost', subcategory: 'food' }],
-  ['livsmedelsinköp',            { category: 'food_cost', subcategory: 'food' }],
-  ['drycker',                    { category: 'food_cost', subcategory: 'beverages' }],
-  ['dryckesinköp',               { category: 'food_cost', subcategory: 'beverages' }],
-  ['kostnad sålda varor',        { category: 'food_cost', subcategory: 'cogs' }],
-  ['kostnader för sålda varor',  { category: 'food_cost', subcategory: 'cogs' }],
-  ['kostnad för sålda varor',    { category: 'food_cost', subcategory: 'cogs' }],
-  ['personalkostnader',       { category: 'staff_cost', subcategory: 'salaries' }],
-  ['löner',                   { category: 'staff_cost', subcategory: 'salaries' }],
-  ['sociala avgifter',        { category: 'staff_cost', subcategory: 'payroll_tax' }],
-  ['arbetsgivaravgifter',     { category: 'staff_cost', subcategory: 'payroll_tax' }],
-  ['pensionskostnader',       { category: 'staff_cost', subcategory: 'pension' }],
-  ['lokalhyra',               { category: 'other_cost', subcategory: 'rent' }],
-  ['lokalkostnader',          { category: 'other_cost', subcategory: 'rent' }],
-  ['el',                      { category: 'other_cost', subcategory: 'utilities' }],
-  ['värme',                   { category: 'other_cost', subcategory: 'utilities' }],
-  ['energikostnader',         { category: 'other_cost', subcategory: 'utilities' }],
-  ['vatten',                  { category: 'other_cost', subcategory: 'utilities' }],
-  ['städning',                { category: 'other_cost', subcategory: 'cleaning' }],
-  ['reparationer',            { category: 'other_cost', subcategory: 'repairs' }],
-  ['förbrukningsinventarier', { category: 'other_cost', subcategory: 'consumables' }],
-  ['kontorsmaterial',         { category: 'other_cost', subcategory: 'office_supplies' }],
-  ['telefon',                 { category: 'other_cost', subcategory: 'telecom' }],
-  ['internet',                { category: 'other_cost', subcategory: 'telecom' }],
-  ['porto',                   { category: 'other_cost', subcategory: 'postage' }],
-  ['datorkostnader',          { category: 'other_cost', subcategory: 'software' }],
-  ['programvaror',            { category: 'other_cost', subcategory: 'software' }],
-  ['it-kostnader',            { category: 'other_cost', subcategory: 'software' }],
-  ['reklam',                  { category: 'other_cost', subcategory: 'marketing' }],
-  ['marknadsföring',          { category: 'other_cost', subcategory: 'marketing' }],
-  ['representation',          { category: 'other_cost', subcategory: 'entertainment' }],
-  ['bankavgifter',            { category: 'other_cost', subcategory: 'bank_fees' }],
-  ['konsultarvoden',          { category: 'other_cost', subcategory: 'consulting' }],
-  ['redovisning',             { category: 'other_cost', subcategory: 'accounting' }],
-  ['revisorsarvoden',         { category: 'other_cost', subcategory: 'audit' }],
-  ['försäkringar',            { category: 'other_cost', subcategory: 'insurance' }],
-  ['frakter',                 { category: 'other_cost', subcategory: 'shipping' }],
-  ['bilkostnader',            { category: 'other_cost', subcategory: 'vehicles' }],
-  ['övriga externa kostnader',{ category: 'other_cost', subcategory: 'other' }],
-  ['avskrivningar',           { category: 'depreciation', subcategory: 'depreciation' }],
-  ['räntekostnader',          { category: 'financial', subcategory: 'interest' }],
-  ['ränteintäkter',           { category: 'financial', subcategory: 'interest_income' }],
-  ['finansiella poster',      { category: 'financial', subcategory: 'other' }],
-])
-
-function classifyLabel(label: string): { category: string; subcategory: string | null } {
-  const key = label.trim().toLowerCase()
-  if (SV_SUB.has(key)) return SV_SUB.get(key)!
-  for (const [k, v] of SV_SUB.entries()) if (key.includes(k)) return v
-  return { category: 'other_cost', subcategory: null }
-}
-
-// Swedish VAT rates encode product/service classification on a restaurant
-// Fortnox P&L. The three rates the owner cares about:
-//   25 %  — alcohol, non-food drinks (standard rate)
-//   12 %  — dine-in food (restaurant-reduced rate)
-//    6 %  — takeaway food incl. platform delivery (Wolt, Foodora, Uber Eats)
-//
-// Pre-M029 (FIXES.md §0o) we lumped 12 % and 6 % together under 'food',
-// silently hiding takeaway revenue inside dine-in. Now they're distinct
-// so the Performance page revenue donut can show three buckets.
-//
-// Also matches platform-name labels directly because some bookkeepers tag
-// the line "Försäljning Wolt" without the moms suffix.
-function classifyByVat(label: string): { subcategory: string | null } | null {
-  const key = label.trim().toLowerCase()
-  if (/\b25\s*%?\s*moms\b/.test(key))  return { subcategory: 'alcohol' }
-  if (/\b12\s*%?\s*moms\b/.test(key))  return { subcategory: 'food' }
-  if (/\b6\s*%?\s*moms\b/.test(key))   return { subcategory: 'takeaway' }
-  // Platform-delivery labels: bookkeepers sometimes drop the VAT suffix.
-  if (/\b(wolt|foodora|uber\s*eats)\b/.test(key)) return { subcategory: 'takeaway' }
-  return null
-}
-
-// Swedish BAS chart-of-accounts ranges. The account number is the ONLY
-// authoritative signal for category on a Fortnox P&L — label alone is
-// ambiguous (e.g. "Inköp livsmedel" and "Varuinköp" both mean food cost
-// but neither matches the 3 food-cost keys in SV_SUB, so they'd fall
-// back to other_cost and double-count against tracker_data.food_cost).
-// See FIXES.md §0k for the incident this prevents going forward.
-function classifyByAccount(acct: number | null): { category: string; subcategory: string | null } | null {
-  if (acct == null || !Number.isFinite(acct)) return null
-  if (acct >= 3000 && acct <= 3999) return { category: 'revenue',      subcategory: null }
-  if (acct >= 4000 && acct <= 4999) return { category: 'food_cost',    subcategory: 'goods' }
-  if (acct >= 5000 && acct <= 6999) return { category: 'other_cost',   subcategory: null }
-  if (acct >= 7000 && acct <= 7999) return { category: 'staff_cost',   subcategory: null }
-  if (acct >= 8900 && acct <= 8999) return { category: 'depreciation', subcategory: 'depreciation' }
-  if (acct >= 8000 && acct <= 8899) return { category: 'financial',    subcategory: 'other' }
-  return null
-}
+// Classifiers (classifyByAccount, classifyLabel, classifyByVat) live in
+// lib/fortnox/classify.ts so the deterministic Resultatrapport parser and
+// this AI extractor share the exact same rules — no drift between paths.
 
 // Backoff schedule — 30 s, 2 min, 10 min. Keeps failing-fast behaviour
 // visible (user sees 'failed' quickly for bad input) without burning
@@ -304,7 +199,121 @@ async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promi
   if (dlErr || !blob) throw new Error(`Storage download failed: ${dlErr?.message ?? 'no blob'}`)
 
   const arrayBuffer = await blob.arrayBuffer()
+  const pdfBytes    = new Uint8Array(arrayBuffer)
   const base64      = Buffer.from(arrayBuffer).toString('base64')
+
+  // ── Try the deterministic Resultatrapport parser FIRST ────────────────────
+  // For Fortnox Resultatrapport PDFs the table layout is stable enough to
+  // extract with positional PDF parsing — no LLM needed. ~100 ms vs Claude's
+  // ~30 s, ~0 SEK vs ~3 SEK, and per-month line items are READ from the
+  // monthly columns instead of estimated by proportional distribution from
+  // the year total. See FIXES.md §0q.
+  //
+  // Only used when the parser succeeds with confidence='high' AND the math
+  // reconciles. Any failure mode (unknown layout, scanned image PDF,
+  // parse error, low confidence) falls through to the Claude path below.
+  await writeProgress({ phase: 'parsing', message: 'Parsing PDF with deterministic parser…', percent: 15 })
+  try {
+    const { parseResultatrapport } = await import('@/lib/fortnox/resultatrapport-parser')
+    const parsedResult = await parseResultatrapport(pdfBytes)
+    if (parsedResult.ok && parsedResult.extraction.confidence === 'high') {
+      const det = parsedResult.extraction
+      // Map parser output → existing extracted_json shape so apply +
+      // projectRollup don't need to know which path produced this row.
+      const mainRollup = det.periods.length === 1
+        ? det.periods[0].rollup
+        : det.periods.reduce((acc: any, p: any) => {
+            for (const k of Object.keys(p.rollup)) acc[k] = (acc[k] ?? 0) + p.rollup[k]
+            return acc
+          }, {
+            revenue: 0, dine_in_revenue: 0, takeaway_revenue: 0, alcohol_revenue: 0,
+            food_cost: 0, alcohol_cost: 0, staff_cost: 0, other_cost: 0,
+            depreciation: 0, financial: 0, net_profit: 0,
+          })
+      const detPeriods = det.periods.map(p => ({
+        year:   p.year,
+        month:  p.month,
+        rollup: p.rollup,
+        lines:  p.lines.map(l => ({
+          label:           l.label,
+          label_sv:        l.label,
+          amount:          l.amount,
+          fortnox_account: l.account,
+          category:        l.category,
+          subcategory:     l.subcategory,
+        })),
+      }))
+      const extraction = {
+        doc_type:       det.doc_type,
+        period:         det.periods.length === 1 ? { year: det.periods[0].year, month: det.periods[0].month } : { year: det.periods[0]?.year ?? null, month: null },
+        periods:        detPeriods,
+        business_hint:  null,
+        rollup:         mainRollup,
+        lines:          det.periods.length === 1 ? detPeriods[0].lines : [],
+        confidence:     det.confidence,
+        warnings:       [...det.warnings, '[parser] Extracted by deterministic Resultatrapport parser (no LLM)'],
+        scale_detected: det.scale_detected,
+        extraction_method: 'deterministic_parser',
+      }
+
+      await writeProgress({ phase: 'finalising', message: 'Writing parsed extraction…', percent: 95 })
+
+      const pYear  = det.periods[0]?.year ?? null
+      const pMonth = det.periods.length > 1 ? null : (det.periods[0]?.month ?? null)
+      const { error: finalUpdateErr } = await db.from('fortnox_uploads').update({
+        doc_type:           det.doc_type,
+        period_year:        pYear,
+        period_month:       pMonth,
+        extracted_json:     extraction,
+        extraction_model:   'deterministic_parser_v1',
+        extraction_cost_kr: 0,
+        status:             'extracted',
+        extracted_at:       new Date().toISOString(),
+        error_message:      null,
+      }).eq('id', job.upload_id)
+      if (finalUpdateErr) {
+        throw new Error(`fortnox_uploads update failed (parser path): ${finalUpdateErr.message}`)
+      }
+
+      log.info('extract-worker parsed via deterministic parser', {
+        route:        'fortnox/extract-worker',
+        upload_id:    job.upload_id,
+        org_id:       job.org_id,
+        doc_type:     det.doc_type,
+        periods:      det.periods.length,
+        annual_lines: det.annual_lines.length,
+        method:       'deterministic_parser',
+      })
+
+      return {
+        upload_id:      job.upload_id,
+        doc_type:       det.doc_type,
+        period:         { year: pYear, month: pMonth },
+        line_count:     det.periods.reduce((n, p) => n + p.lines.length, 0),
+        input_tokens:   0,
+        output_tokens:  0,
+        method:         'deterministic_parser',
+      }
+    }
+    // Parser ran but didn't reach 'high' confidence — fall through to Claude.
+    if (parsedResult.ok) {
+      log.info('extract-worker parser confidence too low, using LLM', {
+        route: 'fortnox/extract-worker', upload_id: job.upload_id,
+        parser_confidence: parsedResult.extraction.confidence,
+        parser_warnings: parsedResult.extraction.warnings.slice(0, 3),
+      })
+    } else {
+      log.info('extract-worker parser declined PDF, using LLM', {
+        route: 'fortnox/extract-worker', upload_id: job.upload_id,
+        reason: parsedResult.reason,
+      })
+    }
+  } catch (e: any) {
+    // Parser threw — fall through to Claude. Don't fail the whole extraction.
+    log.warn('extract-worker parser crashed, using LLM', {
+      route: 'fortnox/extract-worker', upload_id: job.upload_id, error: e?.message,
+    })
+  }
 
   await writeProgress({ phase: 'extracting', message: 'Extracting with Sonnet 4.6 + extended thinking…', percent: 20 })
 

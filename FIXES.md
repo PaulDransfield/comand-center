@@ -3,6 +3,32 @@ Last updated: 2026-04-26
 
 ---
 
+## 0q. Deterministic Resultatrapport parser replaces LLM for known format (2026-04-26)
+
+**Symptom:** annual 2025 Resultatrapport extracted via Sonnet showed several months with missing data (e.g. November had no alcohol_revenue / alcohol_cost) even after the M029 / M030 prompt + retry improvements. Re-extraction didn't help. Owner verified the source PDF clearly labels the months and account codes.
+
+**Root cause:** the AI is the wrong tool for this document. Multi-column tabular PDFs (12 monthly columns + Ack. column + per-row BAS account + label) are a known LLM failure mode — column boundaries shift, the right-most monthly column gets confused with "Ack.", per-month values get dropped or duplicated. Sonnet 4.6 + extended thinking reduces but doesn't eliminate this. Resultatrapport is structured enough to parse deterministically; we were paying ~3 SEK + 30 s per PDF for AI flexibility on a problem that doesn't need it.
+
+**Architectural fix — hybrid extraction:**
+
+1. **`lib/fortnox/resultatrapport-parser.ts`** — TypeScript parser using `pdfjs-dist`. Reads PDF text with positional info, groups items into rows by Y-coordinate, identifies the column-header row (matches Swedish month names + "Ack."), extracts per-month amounts at each column's X position, applies the shared classifiers from `lib/fortnox/classify.ts`. Output shape matches the AI extraction exactly so `apply()` and `projectRollup` don't change.
+
+2. **`lib/fortnox/classify.ts`** — shared classifier module. `classifyByAccount` (BAS authoritative), `classifyLabel` (Swedish keyword fallback), `classifyByVat` (25/12/6 % moms → alcohol/dine_in/takeaway). Both the parser and the AI extract-worker import from here so the rules stay consistent.
+
+3. **`extract-worker` runs the parser FIRST.** On `confidence='high'` AND math reconciles → use parser output, skip Claude entirely. On low confidence / parse error / unknown layout → fall through to existing Claude flow. Result: known formats (Resultatrapport) are deterministic, fast, free; unknown formats (supplier invoices, custom layouts) still get the LLM treatment. Pattern reference: Pilot, Bench, Truewind — all use rule-based parsers for known statement formats and LLM only for unusual ones.
+
+4. **`tests/fortnox-fixtures/`** — folder for real PDFs (gitignored — they contain customer financial data) + a `README.md` explaining the workflow + `expected.json` (committed; numbers only) for golden-test reference values.
+
+5. **`scripts/test-fortnox-parser.ts`** — CLI harness. `npx tsx scripts/test-fortnox-parser.ts path/to/report.pdf` parses + prints per-month rollup table + reconciliation report (sum of months vs annual line items). Used to validate the parser against real Vero/Rosali PDFs before relying on it.
+
+**What this fixes:** Resultatrapport extraction becomes deterministic. Same PDF always produces same output. Per-month line items are READ from the actual monthly columns, not estimated by proportional distribution from the year total. November (and any other miscolumn-extracted month) reads correctly because there's no LLM to misalign columns.
+
+**What remains as Claude's job:** any PDF that isn't a Resultatrapport (supplier invoices, sales reports, VAT declarations, custom layouts), plus low-confidence parser results that the parser itself flagged for review.
+
+**Manual step required (Paul):** drop one monthly + one annual Resultatrapport PDF into `tests/fortnox-fixtures/` so the parser is validated against real data. Then `npx tsx scripts/test-fortnox-parser.ts tests/fortnox-fixtures/annual-2025.pdf` to confirm output matches the source PDF. After that, freeze the expected values in `expected.json` for regression tests.
+
+---
+
 ## 0p. "Food cost" label showed food-only number on Performance page (2026-04-26)
 
 **Symptom:** Performance page Cost breakdown / Waterfall / Full breakdown all showed a "Food cost" row with an unreasonably small percentage (e.g. 4.7 % for an alcohol-heavy restaurant), then a separate "Alcohol" row at the same level. The label "Food cost" was carrying `food_only_cost` (food − alcohol) but every owner reads "Food cost" as total cost-of-goods. Paul flagged: "when showing the food cost it should include all food".

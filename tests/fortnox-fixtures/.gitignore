@@ -1,0 +1,8 @@
+# Real Fortnox PDFs contain customer financial data — never commit them.
+# Each developer drops their own copies in locally.
+*.pdf
+
+# Allow expected-values JSON (numbers only, no PII) and the README.
+!expected.json
+!README.md
+!.gitignore
