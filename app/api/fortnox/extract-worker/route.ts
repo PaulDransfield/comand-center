@@ -213,9 +213,19 @@ async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promi
   // reconciles. Any failure mode (unknown layout, scanned image PDF,
   // parse error, low confidence) falls through to the Claude path below.
   await writeProgress({ phase: 'parsing', message: 'Parsing PDF with deterministic parser…', percent: 15 })
+  console.log('[PARSER-DEBUG] About to import resultatrapport-parser')
   try {
-    const { parseResultatrapport } = await import('@/lib/fortnox/resultatrapport-parser')
+    const parserModule = await import('@/lib/fortnox/resultatrapport-parser')
+    console.log('[PARSER-DEBUG] Import succeeded, parseResultatrapport=', typeof parserModule.parseResultatrapport)
+    const { parseResultatrapport } = parserModule
+    console.log('[PARSER-DEBUG] About to call parseResultatrapport, pdfBytes len=', pdfBytes.length)
     const parsedResult = await parseResultatrapport(pdfBytes)
+    console.log('[PARSER-DEBUG] parseResultatrapport returned:', JSON.stringify({
+      ok: parsedResult.ok,
+      confidence: parsedResult.ok ? parsedResult.extraction.confidence : null,
+      reason: !parsedResult.ok ? parsedResult.reason : null,
+      periods: parsedResult.ok ? parsedResult.extraction.periods.length : 0,
+    }))
     // Use parser output for both 'high' AND 'medium' confidence. 'medium'
     // means the parser succeeded but flagged a soft warning (e.g. alcohol_
     // cost > food_cost from a stock-change credit) — the data is still
@@ -315,6 +325,7 @@ async function runExtraction(db: any, job: any, writeProgress: (p: any) => Promi
     }
   } catch (e: any) {
     // Parser threw — fall through to Claude. Don't fail the whole extraction.
+    console.error('[PARSER-DEBUG] Parser crashed:', e?.message, e?.stack?.split('\n').slice(0, 5).join(' | '))
     log.warn('extract-worker parser crashed, using LLM', {
       route: 'fortnox/extract-worker', upload_id: job.upload_id, error: e?.message,
     })
