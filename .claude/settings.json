@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cd /c/Users/Chicce/Desktop/comand-center && git status --porcelain | grep -q . && git add -A && git commit -m \"auto-checkpoint: $(date '+%Y-%m-%d %H:%M')\" && git push 2>/dev/null || true",
+            "command": "cd /c/Users/Chicce/Desktop/comand-center && (git status --porcelain | grep -q . && git add -A && git commit -m \"auto-checkpoint: $(date '+%Y-%m-%d %H:%M')\" || true) && (git push 2>&1 | tail -3 || echo \"[auto-push] FAILED — local commits NOT on GitHub. Recover: git pull --rebase && git push\")",
             "statusMessage": "Auto-pushing changes to GitHub...",
             "timeout": 30
           }
