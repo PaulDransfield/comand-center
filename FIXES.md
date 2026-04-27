@@ -3,6 +3,40 @@ Last updated: 2026-04-27
 
 ---
 
+## 0jj. /scheduling page sent zero-valued context for forward-looking weeks (2026-04-27)
+
+**Symptom:** When the scheduling page's date picker landed on a future week (Week 18 = 27 Apr–3 May, picked on 27 Apr morning before any of those days had happened), the inline context sent to AskAI looked like:
+```
+Period: 2026-04-27 to 2026-05-03
+Days analysed: 0
+Total labour hours: 0h
+Total labour cost: 0 kr
+Total revenue: 0 kr
+```
+Claude correctly interpreted those zeros as "no data" and asked the user to provide a forecast — even though the contextBuilder enrichments (forecast, schedule, trend) had already injected the right numbers right below.
+
+**Root cause:** the page-level inline summary doesn't distinguish between "this period happened and was empty" (zeros are real) vs "this period hasn't happened yet" (zeros are placeholders). Claude saw the zeros first and anchored on them.
+
+**Fix:** when `summary.days_analyzed === 0` AND `summary.total_revenue === 0` AND `fromDate >= today`, replace the zero-valued lines with an explicit "FUTURE PERIOD" preamble that includes an instruction to Claude: zero actuals are expected, use the forecast/schedule/trend blocks injected below.
+
+**Why this should hold:** future-period detection is deterministic (date comparison). The instruction line tells Claude exactly what to do when the period is forward-looking, and the contextBuilder has the data to back it up. The non-future path is unchanged — page-level context for past/current periods still works the way it did.
+
+---
+
+## 0kk. AskAI org-wide pages were silently scoped to one business via localStorage (2026-04-27)
+
+**Symptom:** AskAI reads `cc_selected_biz` from localStorage on every request and sends it as `business_id`. On `/group` (which is intentionally org-wide), this means:
+- The `forecast`, `comparison`, `trend`, `anomaly`, `staff_individual`, `cost`, `food_lines`, `staff_lines`, `schedule`, `department` enrichments all silently scope to whatever single business the user last viewed.
+- A question like "which location is worst this month" was getting forecast/trend data for one business only — defeats the point of being on `/group`.
+
+The dedicated `group` enrichment in `contextBuilder.ts` correctly bypasses business scope (it iterates `org_id`'s businesses), so cross-business YTD data was always present. But the OTHER enrichments were silently lying.
+
+**Fix:** new optional `orgScope` boolean prop on `AskAI`. When true, it sends `business_id: null` instead of the localStorage value, so per-business enrichments skip cleanly and only the org-scoped `group` enrichment fires. Wired on `/group/page.tsx`. Other pages keep the default (single-business) behaviour.
+
+**Why this should hold:** the prop is opt-in — every existing AskAI usage is unaffected. Only pages that legitimately span the whole org need to flip it. Future org-wide pages just add `orgScope` to their AskAI tag.
+
+---
+
 ## 0ii. Stripe price env vars not configured for new plan tiers (2026-04-27)
 
 **Symptom:** The 2026-04-23 pricing overhaul (`founding`, `solo`, `group`, `chain` + `ai_addon`) shipped with the right code but the corresponding `STRIPE_PRICE_*` env vars were never added to Vercel. `.env.example` still listed the old `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO`. Result: clicking "Upgrade" on the upgrade page returned a 500 (`Stripe price not configured. Add STRIPE_PRICE_X to your environment variables.`) — handled gracefully by the route, but blocked any new customer signup.

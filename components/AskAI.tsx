@@ -61,9 +61,18 @@ interface Props {
   page:    string
   context: string             // plain-text summary of the page data built by the parent
   tier?:   'light' | 'full'   // 'light' routes through Haiku (cheap). Defaults to 'full' (Sonnet).
+  /**
+   * When true, do NOT scope server-side enrichments to the localStorage
+   * business. Use on org-wide pages like /group where the question may
+   * span every business in the org — pinning to one business causes
+   * the forecast/comparison/trend enrichments to silently exclude the
+   * other businesses' data. The `group` enrichment in contextBuilder is
+   * org-scoped already and runs regardless. (FIXES §0kk.)
+   */
+  orgScope?: boolean
 }
 
-export default function AskAI({ page, context, tier = 'full' }: Props) {
+export default function AskAI({ page, context, tier = 'full', orgScope = false }: Props) {
   const [open,     setOpen]     = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input,    setInput]    = useState('')
@@ -106,7 +115,12 @@ export default function AskAI({ page, context, tier = 'full' }: Props) {
       // Pass the currently-selected business so the server can enrich
       // the context with Fortnox line items when the question is about
       // costs / overheads / subscriptions / etc.
-      const bizId = typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null
+      // orgScope=true overrides this — used on /group so org-wide
+      // enrichments fire instead of being silently scoped to a single
+      // business in localStorage.
+      const bizId = orgScope
+        ? null
+        : (typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null)
       const res  = await fetch('/api/ask', {
         method:  'POST',
         headers: {

@@ -311,12 +311,22 @@ export default function GroupPage() {
         )}
       </div>
 
+      {/*
+        FIXES §0kk: orgScope=true means the server-side enrichments
+        (forecast / comparison / trend / etc) won't be silently scoped
+        to whatever single business is in localStorage. The group
+        enrichment in contextBuilder fetches all businesses for the org
+        and adds a YTD cross-business view automatically when the
+        question matches "which location" / "all locations" etc.
+      */}
       <AskAI
         page="group"
+        orgScope
         context={summary ? [
           `Period: ${period.label} (${period.from} to ${period.to})`,
           `${summary.business_count} locations · revenue ${fmtKr(summary.total_revenue)} · labour ${fmtKr(summary.total_staff_cost)} (${fmtPct(summary.group_labour_pct)}) · margin ${fmtPct(summary.group_margin_pct)}`,
           businesses.map((b: any) => `${b.name}: ${fmtKr(b.revenue)} rev · ${fmtPct(b.labour_pct)} labour · ${fmtPct(b.margin_pct)} margin · ${b.hours}h`).join('\n'),
+          `[NOTE TO CLAUDE: this view is ORG-WIDE, not single-business. The user may compare locations or ask which is best/worst. business_id was deliberately not sent so cross-business enrichments fire correctly.]`,
         ].join('\n') : 'No data yet'}
       />
     </AppShell>

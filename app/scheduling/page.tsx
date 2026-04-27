@@ -492,24 +492,50 @@ export default function SchedulingPage() {
       )}
 
       {/* Contextual AI — updated wording to match new terminology */}
+      {/*
+        FIXES §0jj (2026-04-27): when the displayed period is forward-
+        looking (Week 18 selected before any of those days have happened),
+        every actual is 0. Sending `Total revenue: 0 kr` etc. to the AI
+        used to make Claude anchor on those zeros and reply "no data
+        available" — even though the contextBuilder enrichments
+        (forecast, schedule, trend) had injected the right numbers.
+        Fix: when the period has zero days of actuals AND the date range
+        is in the future, send an explicit "future period" preamble
+        instead of zero-valued summary lines. The enrichments handle the
+        rest.
+      */}
       <AskAI
         page="scheduling"
-        context={summary ? [
-          `Period: ${fromDate} to ${toDate}`,
-          `Days analysed: ${summary.days_analyzed}`,
-          labourPct !== null ? `Labour cost % of revenue: ${fmtPct(labourPct)} (target ${labourTarget}%)` : '',
-          `Average revenue per labour hour: ${summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : 'N/A'}`,
-          `Total labour hours: ${fmtH(summary.total_hours)}`,
-          `Total labour cost: ${fmtKr(totalCost)}`,
-          `Total revenue: ${fmtKr(summary.total_revenue)}`,
-          summary.best_weekday  ? `Most efficient day: ${summary.best_weekday.label} (${fmtKr(summary.best_weekday.avg_rev_per_hour)}/hr)`  : '',
-          summary.worst_weekday ? `Least efficient day: ${summary.worst_weekday.label} (${fmtKr(summary.worst_weekday.avg_rev_per_hour)}/hr)` : '',
-          leanCount > 0            ? `Lean days (doing a lot with scheduled hours): ${weekdays.filter((w: any) => w.uiStatus === 'lean').map((w: any) => w.label).join(', ')}` : '',
-          overstaffedList.length   ? `Overstaffed days: ${overstaffedList.join(', ')}` : '',
-          weekdays.filter((w: any) => w.days_with_data >= 2).length > 0
-            ? `By weekday: ${weekdays.filter((w: any) => w.days_with_data >= 2).map((w: any) => `${w.label}: ${fmtKr(w.avg_rev_per_hour ?? 0)}/hr (${w.avg_hours}h avg, ${w.uiStatus})`).join('; ')}`
-            : '',
-        ].filter(Boolean).join('\n') : 'No scheduling data loaded yet'}
+        context={(() => {
+          if (!summary) return 'No scheduling data loaded yet'
+          const isFuturePeriod =
+            (summary.days_analyzed ?? 0) === 0 &&
+            (summary.total_revenue ?? 0) === 0 &&
+            fromDate >= new Date().toISOString().slice(0, 10)
+          if (isFuturePeriod) {
+            return [
+              `Period: ${fromDate} to ${toDate} (FUTURE PERIOD — has not happened yet)`,
+              `Labour cost target: ${labourTarget}%`,
+              `[INSTRUCTION TO CLAUDE: zero actuals are EXPECTED for a future period — do NOT respond "no data". Use the forecast/schedule/trend blocks below to predict and recommend. The user wants forward-looking advice.]`,
+            ].join('\n')
+          }
+          return [
+            `Period: ${fromDate} to ${toDate}`,
+            `Days analysed: ${summary.days_analyzed}`,
+            labourPct !== null ? `Labour cost % of revenue: ${fmtPct(labourPct)} (target ${labourTarget}%)` : '',
+            `Average revenue per labour hour: ${summary.avg_rev_per_hour ? fmtKr(summary.avg_rev_per_hour) : 'N/A'}`,
+            `Total labour hours: ${fmtH(summary.total_hours)}`,
+            `Total labour cost: ${fmtKr(totalCost)}`,
+            `Total revenue: ${fmtKr(summary.total_revenue)}`,
+            summary.best_weekday  ? `Most efficient day: ${summary.best_weekday.label} (${fmtKr(summary.best_weekday.avg_rev_per_hour)}/hr)`  : '',
+            summary.worst_weekday ? `Least efficient day: ${summary.worst_weekday.label} (${fmtKr(summary.worst_weekday.avg_rev_per_hour)}/hr)` : '',
+            leanCount > 0            ? `Lean days (doing a lot with scheduled hours): ${weekdays.filter((w: any) => w.uiStatus === 'lean').map((w: any) => w.label).join(', ')}` : '',
+            overstaffedList.length   ? `Overstaffed days: ${overstaffedList.join(', ')}` : '',
+            weekdays.filter((w: any) => w.days_with_data >= 2).length > 0
+              ? `By weekday: ${weekdays.filter((w: any) => w.days_with_data >= 2).map((w: any) => `${w.label}: ${fmtKr(w.avg_rev_per_hour ?? 0)}/hr (${w.avg_hours}h avg, ${w.uiStatus})`).join('; ')}`
+              : '',
+          ].filter(Boolean).join('\n')
+        })()}
       />
     </AppShell>
   )
