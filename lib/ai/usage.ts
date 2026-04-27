@@ -648,7 +648,7 @@ export async function logAiRequest(db: Db, params: {
         : null,
       input_tokens:     input,
       output_tokens:    output,
-      total_cost_usd:   cost_usd,
+      cost_usd,
       cost_sek,
       duration_ms:      params.duration_ms ?? null,
     })

@@ -41,7 +41,7 @@ async function run() {
   // Last 24h rows
   const { data: day } = await db
     .from('ai_request_log')
-    .select('org_id, total_cost_usd, cost_sek, input_tokens, output_tokens, model, tier')
+    .select('org_id, cost_usd, cost_sek, input_tokens, output_tokens, model, tier')
     .gte('created_at', since24h)
 
   // Last 7d rows (for moving-average comparison)
@@ -54,7 +54,7 @@ async function run() {
 
   const sumDay = dayRows.reduce((a: any, r: any) => ({
     queries:  a.queries + 1,
-    cost_usd: a.cost_usd + Number(r.total_cost_usd ?? 0),
+    cost_usd: a.cost_usd + Number(r.cost_usd ?? 0),
     cost_sek: a.cost_sek + Number(r.cost_sek       ?? 0),
     tokens:   a.tokens + Number(r.input_tokens ?? 0) + Number(r.output_tokens ?? 0),
   }), { queries: 0, cost_usd: 0, cost_sek: 0, tokens: 0 })

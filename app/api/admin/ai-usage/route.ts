@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const [dailyRes, recentRes, boostersRes, byUserRes] = await Promise.all([
       // Daily rollup for the last 31 days
       db.from('ai_request_log')
-        .select('created_at, total_cost_usd, cost_sek, input_tokens, output_tokens, model, tier, request_type')
+        .select('created_at, cost_usd, cost_sek, input_tokens, output_tokens, model, tier, request_type')
         .eq('org_id', orgId)
         .gte('created_at', monthStart)
         .order('created_at', { ascending: false }),
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       queries:    arr.length,
       input_tok:  arr.reduce((s: number, r: any) => s + Number(r.input_tokens  ?? 0), 0),
       output_tok: arr.reduce((s: number, r: any) => s + Number(r.output_tokens ?? 0), 0),
-      cost_usd:   Math.round(arr.reduce((s: number, r: any) => s + Number(r.total_cost_usd ?? 0), 0) * 10000) / 10000,
+      cost_usd:   Math.round(arr.reduce((s: number, r: any) => s + Number(r.cost_usd ?? 0), 0) * 10000) / 10000,
       cost_sek:   Math.round(arr.reduce((s: number, r: any) => s + Number(r.cost_sek       ?? 0), 0) * 100) / 100,
     })
 
@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
   // ── GLOBAL ROLLUP ───────────────────────────────────────────────────────────
   const [monthRes, orgsRes, boostersRes] = await Promise.all([
     db.from('ai_request_log')
-      .select('org_id, total_cost_usd, cost_sek, input_tokens, output_tokens, model, tier, created_at')
+      .select('org_id, cost_usd, cost_sek, input_tokens, output_tokens, model, tier, created_at')
       .gte('created_at', monthStart),
     db.from('organisations').select('id, name, plan'),
     db.from('ai_booster_purchases')
@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
 
   const sum = (arr: any[]) => ({
     queries:  arr.length,
-    cost_usd: Math.round(arr.reduce((s: number, r: any) => s + Number(r.total_cost_usd ?? 0), 0) * 10000) / 10000,
+    cost_usd: Math.round(arr.reduce((s: number, r: any) => s + Number(r.cost_usd ?? 0), 0) * 10000) / 10000,
     cost_sek: Math.round(arr.reduce((s: number, r: any) => s + Number(r.cost_sek       ?? 0), 0) * 100) / 100,
   })
 
@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
     const k = r.org_id ?? 'unknown'
     if (!byOrg[k]) byOrg[k] = { org_id: k, org_name: (orgMap.get(k) as any)?.name ?? k.slice(0, 8), plan: (orgMap.get(k) as any)?.plan ?? 'unknown', queries: 0, cost_usd: 0, cost_sek: 0 }
     byOrg[k].queries  += 1
-    byOrg[k].cost_usd += Number(r.total_cost_usd ?? 0)
+    byOrg[k].cost_usd += Number(r.cost_usd ?? 0)
     byOrg[k].cost_sek += Number(r.cost_sek       ?? 0)
   }
   const topSpenders = Object.values(byOrg)

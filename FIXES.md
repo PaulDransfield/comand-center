@@ -50,6 +50,30 @@ Loaded every row from the last 24 hours into Node and summed in JS. At 50 custom
 
 **Why this should hold:** The query is now an index-only scan against a 24h window. Cost is independent of customer count — it grows with rows in the window, which is bounded by the global kill-switch itself. Self-limiting.
 
+### 0w.3 — Bonus: `logAiRequest` was inserting into a non-existent column (silent for months)
+
+**Symptom:** Applying M033 in Supabase failed with `column "total_cost_usd" does not exist`. Column inspection showed the live `ai_request_log` schema uses `cost_usd` (singular), NOT `total_cost_usd` as `sql/M012-orphan-tables.sql` and `supabase_schema.sql` in this repo suggested.
+
+**Root cause:** The production `ai_request_log` table was created from an older path (the legacy `ai-service.js` reference scaffold inserts `cost_usd:` directly — line 163), and `lib/ai/usage.ts::logAiRequest` was written against the wrong-name from the M012 file. Every Claude call has been throwing `column does not exist` inside the try/catch around the INSERT — caught and logged to `console.error`, never blocking the request, never visible in the UI. So:
+  - `ai_request_log` has no rows for any of the calls made through `logAiRequest`. Per-query auditing was effectively off.
+  - The /admin/ai-usage page showed empty data (it SELECTs `total_cost_usd`).
+  - The /api/cron/ai-daily-report email was always "0 queries · 0 kr".
+  - The /api/gdpr export silently dropped the `cost_usd` column from the AI section.
+
+**Confirmed in production:** column inspection on 2026-04-27 returned `cost_usd numeric` and no `total_cost_usd`.
+
+**Fix (same commit as 0w.1 / 0w.2):**
+- M033 SUM uses `cost_usd`.
+- `lib/ai/usage.ts:651` INSERT field renamed `total_cost_usd: cost_usd` → `cost_usd`.
+- `app/api/admin/ai-usage/route.ts` — 3 references switched.
+- `app/api/cron/ai-daily-report/route.ts` — 2 references switched.
+- `app/api/gdpr/route.ts` — 1 reference switched.
+- The 3 surviving `total_cost_usd` references in `monitoring.js`, `stripe-integration.js`, and `app/api/stripe/usage/route.ts` are against the `ai_usage` table (a separate monthly aggregate from M012, NOT `ai_request_log`) — that table does have `total_cost_usd` and is correct as-is.
+
+**Why this should hold:** The repo's `sql/M012-orphan-tables.sql` and `supabase_schema.sql` are now misleading documentation of the production schema. M033 includes a comment block flagging the cost_usd column name + the date the live schema was verified. If anyone "fixes" the column reference back to `total_cost_usd` because they read M012, the test in M033's verify block (`SELECT … FROM ai_request_log LIMIT 1` would fail) catches it on apply.
+
+**Backfill:** none possible — every silent-fail INSERT was lost. From the next deploy forward, `ai_request_log` will populate normally. The /admin/ai-usage page will start showing rows the next day. No customer-visible impact (this was an internal audit table, not the cap-enforcement table — `ai_usage_daily.query_count` still ticked correctly via `incrementAiUsage`).
+
 ### Migration / verification
 
 - M033 must be applied in Supabase before the new code reaches production. If not applied, both functions fall back to the legacy paths (kill-switch open + non-atomic gate) and log a warning.

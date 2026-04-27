@@ -21,7 +21,7 @@
 --
 -- 2) Full table scan of ai_request_log on every AI call.
 --    Pre-fix lib/ai/usage.ts lines 160-166 read every row from the last
---    24 h and summed total_cost_usd in JS. At 50 customers × 50 calls/day
+--    24 h and summed cost_usd in JS. At 50 customers × 50 calls/day
 --    that's 2,500 rows fetched per AI call — quadratic-ish in customer
 --    count and falls over before we onboard the next batch.
 --
@@ -99,11 +99,17 @@ COMMENT ON FUNCTION public.increment_ai_usage_checked(UUID, DATE, INT) IS
 -- ── 2) Rolling 24h global spend (kill-switch denominator) ──────────────────
 -- Single SUM against the index below — replaces the lib/ai/usage.ts table
 -- scan that loaded every row and summed in JS.
+-- NOTE: The production ai_request_log column is `cost_usd`, NOT `total_cost_usd`
+-- as the M012 file in this repo suggests — that file was never the canonical
+-- creator. M013 (which extended the existing table) implies the table was
+-- already created with the cost_usd name elsewhere. Confirmed via
+-- information_schema dump on 2026-04-27. Do not "fix" this back to
+-- total_cost_usd without re-checking the live schema.
 CREATE OR REPLACE FUNCTION public.ai_spend_24h_global_usd()
 RETURNS NUMERIC
 LANGUAGE sql STABLE
 AS $$
-  SELECT COALESCE(SUM(total_cost_usd), 0)::NUMERIC
+  SELECT COALESCE(SUM(cost_usd), 0)::NUMERIC
     FROM public.ai_request_log
    WHERE created_at > now() - interval '24 hours';
 $$;
@@ -113,7 +119,7 @@ GRANT EXECUTE ON FUNCTION public.ai_spend_24h_global_usd()
   TO authenticated, service_role;
 
 COMMENT ON FUNCTION public.ai_spend_24h_global_usd() IS
-  'SUM(total_cost_usd) on ai_request_log for last 24h. Used by checkAiLimit kill-switch gate; replaces full-table scan.';
+  'SUM(cost_usd) on ai_request_log for last 24h. Used by checkAiLimit kill-switch gate; replaces full-table scan.';
 
 -- ── 3) Hot index for the rolling-window sums ───────────────────────────────
 -- Powers ai_spend_24h_global_usd() and the per-org monthly ceiling SELECT

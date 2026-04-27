@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     safeSelect(db, 'supplier_mappings',          orgId),
     safeSelect(db, 'ai_usage',                   orgId),
     safeSelect(db, 'ai_usage_daily',             orgId),
-    safeSelect(db, 'ai_request_log',             orgId, 'id,request_type,model,input_tokens,output_tokens,total_cost_usd,created_at'),
+    safeSelect(db, 'ai_request_log',             orgId, 'id,request_type,model,input_tokens,output_tokens,cost_usd,created_at'),
     safeSelect(db, 'sync_log',                   orgId),
     safeSelect(db, 'onboarding_progress',        orgId),
     safeSelect(db, 'support_notes',              orgId),
