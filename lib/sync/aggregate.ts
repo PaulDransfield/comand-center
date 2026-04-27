@@ -4,10 +4,17 @@
 // Called after every sync to keep daily_metrics, monthly_metrics, dept_metrics up to date
 //
 // Source priority:
-//   Revenue:    POS (revenue_logs) > Fortnox > manual (tracker_data)
+//   Revenue:    POS (revenue_logs) > Fortnox (tracker_data, source='fortnox') > manual (tracker_data, source='manual')
 //   Staff cost: PK actual (cost_actual) > PK estimated > Fortnox (7xxx) > manual
 //   Food cost:  Fortnox (4xxx) > manual (tracker_data)
 //   Other cost: Fortnox > manual
+//
+// Important: a tracker_data row with source='manual' NEVER outranks POS
+// for revenue, regardless of POS completeness. Manual is a baseline only —
+// used when POS has zero days for the month. Pre-FIXES.md §0x, an early
+// onboarding manual row of 115 k blocked the aggregator from surfacing
+// 1.6 M of real April POS data because the 90 % completeness gate fell
+// back to "trackerRev > 0 → Fortnox wins" without checking source.
 
 import { createAdminClient } from '@/lib/supabase/server'
 
@@ -407,14 +414,22 @@ export async function aggregateMetrics(
     const posIsComplete = posCompletenessPct >= POS_COMPLETE_THRESHOLD
 
     // Revenue source priority:
-    //   1. POS if it covered ≥90 % of the month (complete)
-    //   2. Fortnox if POS is partial AND Fortnox has data
-    //   3. POS partial if no Fortnox data
-    //   4. None
-    const trackerRev = Number(tracker?.revenue ?? 0)
+    //   1. Manual tracker_data NEVER outranks POS (FIXES §0x). If POS has
+    //      any days for the month, POS wins — manual is a baseline only.
+    //   2. POS if it covered ≥90 % of the month (complete)
+    //   3. Fortnox if POS is partial AND Fortnox has data
+    //   4. POS partial if no Fortnox data
+    //   5. None
+    const trackerRev      = Number(tracker?.revenue ?? 0)
+    const trackerIsManual = tracker?.source === 'manual'
     let revenue: number
     let rev_source: string
-    if (a.hasRev && (posIsComplete || trackerRev === 0)) {
+    if (trackerIsManual && a.hasRev) {
+      // Manual + any POS days → POS wins, regardless of completeness.
+      // Closes the "stale onboarding entry blocks live POS" footgun.
+      revenue = a.revenue
+      rev_source = posIsComplete ? 'pos' : 'pos_partial'
+    } else if (a.hasRev && (posIsComplete || trackerRev === 0)) {
       revenue = a.revenue
       rev_source = posIsComplete ? 'pos' : 'pos_partial'
     } else if (trackerRev > 0) {

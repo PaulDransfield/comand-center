@@ -3,6 +3,55 @@ Last updated: 2026-04-27
 
 ---
 
+## 0x. Manual tracker_data row blocked POS revenue in current month (2026-04-27)
+
+**Symptom:** Paul reported that for April 2026 (current month) his revenue surfaces were out of sync — the dashboard hero showed real POS-derived revenue (804 k visible / 1.6 M in raw `revenue_logs`) while P&L, Budget, and Forecast all showed 115 737 kr. Three pages, one wrong number.
+
+**Confirmed in production via SQL diagnostic:**
+- `tracker_data` for Vero April 2026: `source='manual'`, `revenue=115 737`, `staff_cost=41 488`, written 2026-04-07 (probably onboarding/test entry).
+- `monthly_metrics` for April 2026: `revenue=115 737`, `rev_source='fortnox'` ← MISLABELLED — the row was manual, not Fortnox.
+- `revenue_logs` SUM April 2026: 1 609 552 kr across 19 distinct days.
+- No Fortnox upload for April 2026 (would expect to be after month-end anyway).
+
+**Root cause:** `lib/sync/aggregate.ts:414-429` decides revenue source via:
+```
+if (POS hasRev AND (posComplete OR trackerRev === 0))    → POS
+else if (trackerRev > 0)                                  → Fortnox
+else if (POS hasRev)                                      → POS partial
+else                                                      → none
+```
+The 90 % POS-completeness threshold (M031, FIXES §0r) was designed to prevent partial-month POS data from overriding a closed-books Fortnox upload for HISTORICAL months (Vero Nov 2025 = -137 % margin bug). It works for that case. But the branch checks `trackerRev > 0` without checking `tracker.source` — so a `source='manual'` row with revenue=115 737 satisfies "trackerRev > 0" and gets the same priority as a Fortnox-applied row would.
+
+For April 2026 (current month, day 27 of 30, 19 POS days = 63 % completeness, below 90 %) the logic resolved as: POS partial → falls through → trackerRev=115 737 → Fortnox-priority wins → monthly_metrics gets 115 737 with `rev_source='fortnox'` (mislabel).
+
+Three pages downstream all read monthly_metrics — they had no way to recover.
+
+**Fix:** New early branch in `aggregate.ts`. Manual tracker_data NEVER outranks POS. If POS has any days for the month, POS wins regardless of completeness:
+```
+if (trackerIsManual AND POS hasRev)                       → POS (manual is baseline only)
+else if ([existing POS-complete branch])                  → POS
+else if (trackerRev > 0)                                  → Fortnox  ← only fires when source='fortnox'
+else if (POS hasRev)                                      → POS partial
+else                                                      → none
+```
+The Fortnox/Manual discrimination is `tracker?.source === 'manual'` — already a column in `tracker_data` written by `projectRollup` (Fortnox apply) and the manual entry route.
+
+**Cleanup needed (Paul):** after deploy, trigger re-aggregate so April 2026 monthly_metrics is rebuilt:
+```sql
+-- Optionally first delete the inert manual row (no longer load-bearing after fix):
+DELETE FROM tracker_data
+ WHERE business_id = '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99'
+   AND period_year = 2026 AND period_month = 4
+   AND source = 'manual';
+```
+Then `POST /api/admin/reaggregate` for the affected business + year, or wait for the next sync cycle (master-sync 05:00 UTC).
+
+**Side observation flagged for later:** `revenue_logs` SUM = 1.61 M but the dashboard hero shows 804 k. That's roughly 2× — probably either (a) a re-sync wrote duplicate rows that the aggregator's per-date dedup catches but a raw SUM doesn't, or (b) the dashboard reads only one provider while the SUM crosses all of them. Worth investigating after the main fix lands. Not blocking.
+
+**Why this should hold:** the discriminator is the explicit `source` column on `tracker_data` — write surface is well-controlled (only `projectRollup` writes 'fortnox'; manual entry route writes 'manual'). For a regression to happen, someone would have to either rename the column or change `projectRollup` to write 'manual' — neither is easy to do accidentally. The change is also consistent with how `staff_cost` already works (line 436: PK always wins over tracker, regardless of source).
+
+---
+
 ## 0w. AI quota TOCTOU + 24h table scan (2026-04-27)
 
 **Two related bugs flagged by REVIEW §1.4 — fixed in the same commit (M033 + lib/ai/usage.ts).**
