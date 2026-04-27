@@ -47,6 +47,11 @@ export const COMPARISON_KEYWORDS = /\b(compare|comparison|vs|versus|same\s+(week
 export const TREND_KEYWORDS      = /\b(trend(s|ing|ed)?|rolling|last\s+(4|6|8|12)\s+(weeks|months)|getting\s+(better|worse)|declin(ing|e|ed)|improv(ing|ed|ement)|momentum|trajectory|over\s+time|past\s+(few|3|4|6)\s+(weeks|months))\b/i
 export const ANOMALY_KEYWORDS    = /\b(why\s+(is|did|are|was|were)|what\s+(changed|happened)|reason|cause(s|d|es)?|anomal(y|ies|ous)|unusual|spike(d|s)?|surge(d|s)?|drop(ped|s)?|jump(ed|s)?|crash(ed|es)?|out\s+of\s+line|off\s+vs)\b/i
 export const DEPARTMENT_KEYWORDS = /\b(department(s)?|dept(s)?|kitchen|bar|bella|carne|asp|which\s+(area|location)|by\s+dept|per\s+department|location\s+breakdown|each\s+location)\b/i
+export const BUDGET_KEYWORDS     = /\b(budget(s|ed)?|target(s|ed)?|on\s+(track|budget|target)|vs\s+plan|allowance|over\s*(budget|spend)|under\s*(budget|spend)|am\s+i\s+on|how\s+much\s+(can|left)|spend\s+vs)\b/i
+export const ACCURACY_KEYWORDS   = /\b(accura(te|cy)|accurate|how\s+(off|wrong|right)|forecast\s+(error|accuracy|miss)|missed?\s+(by|the)|calibrat|how\s+reliable|trust(worthy)?\s+(is|the)\s+forecast|bias)\b/i
+export const WEATHER_KEYWORDS    = /\b(weather|rain(y|s|ed|ing)?|sunny?|cold|hot|warm|temp(erature)?|forecast\s+(for|the)\s+(weekend|week)|will\s+(it|the\s+weather)|°c|degrees)\b/i
+export const STAFF_INDIV_KEYWORDS = /\b(who(\s+is|\s+are|'s)?|which\s+(staff|employee|person|member)|individual|by\s+(staff|employee|person)|most\s+(expensive|hours|overtime|late)|overtime|late\s+(arrival|shifts?)|highest\s+(cost|hours))\b/i
+export const GROUP_KEYWORDS      = /\b(which\s+(location|business|restaurant|venue|site)|all\s+(locations|businesses|sites)|across\s+(my|all|the)\s+(business|location|venue|restaurant)|group(\s+wide|-wide)?|portfolio|combined|aggregate|total\s+across)\b/i
 
 export interface BuildContextOptions {
   /** Total prompt-context character budget. Default 8000 (~3 200 input tokens). */
@@ -59,7 +64,9 @@ export interface BuildContextOptions {
   businessId: string | null
 }
 
-export type EnrichmentTag = 'cost' | 'forecast' | 'comparison' | 'trend' | 'anomaly' | 'department' | 'schedule'
+export type EnrichmentTag =
+  | 'cost' | 'forecast' | 'comparison' | 'trend' | 'anomaly' | 'department' | 'schedule'
+  | 'budget' | 'pk_forecast' | 'accuracy' | 'weather' | 'staff_individual' | 'group' | 'food_lines' | 'staff_lines'
 
 export interface BuiltContext {
   context: string
@@ -88,8 +95,8 @@ export async function buildAskContext(
   question: string,
   opts: BuildContextOptions,
 ): Promise<BuiltContext> {
-  const maxChars         = opts.maxChars ?? 8000
-  const enrichmentBudget = opts.enrichmentBudget ?? 3000
+  const maxChars         = opts.maxChars ?? 10000
+  const enrichmentBudget = opts.enrichmentBudget ?? 5000
   const baseBudget       = maxChars - enrichmentBudget
 
   let context = (rawContext ?? '').trim()
@@ -118,11 +125,20 @@ export async function buildAskContext(
     if (block.length > remainingBudget + trimmed.length) enrichmentsTruncated.push(tag)
   }
 
-  // ── COST ENRICHMENT ───────────────────────────────────────────────────────
-  // 12 months of tracker_line_items in the other_cost bucket. Pre-existing
-  // since session 12; pulled into the new shared-budget composer for
-  // consistency.
-  if (opts.businessId && remainingBudget > 200 && COST_KEYWORDS.test(question)) {
+  // ── COST / FOOD-LINES / STAFF-LINES ENRICHMENT ────────────────────────────
+  // tracker_line_items in the categories the question implies. Originally
+  // this was other_cost only (session 12); now extended so "why is food cost
+  // up" or "what's driving the staff line" get the same line-item drill.
+  // Determined per-question by inspecting the keywords. Each category
+  // returns its own block so Claude knows the scope.
+  const wantsCostLines  = COST_KEYWORDS.test(question)
+  const wantsFoodLines  = /\b(food\s+cost|cogs|inventory|råvar|råvaror|ingredient|leverant|supplier|ölet?|drycker|alcohol\s+cost)\b/i.test(question)
+  const wantsStaffLines = /\b(staff\s+cost|payroll|wages?|salar(y|ies)|löner?|lönek|pension|payroll\s+tax|sociala\s+avgift)\b/i.test(question)
+  const wantedLineCats = new Set<string>()
+  if (wantsCostLines)  wantedLineCats.add('other_cost')
+  if (wantsFoodLines)  wantedLineCats.add('food_cost')
+  if (wantsStaffLines) wantedLineCats.add('staff_cost')
+  if (opts.businessId && remainingBudget > 200 && wantedLineCats.size) {
     try {
       const yearFrom = new Date().getFullYear() - 1
       const { data: lines } = await db
@@ -130,25 +146,32 @@ export async function buildAskContext(
         .select('period_year, period_month, category, subcategory, label_sv, amount')
         .eq('org_id',      opts.orgId)
         .eq('business_id', opts.businessId)
-        .eq('category',    'other_cost')
+        .in('category',    Array.from(wantedLineCats))
         .gte('period_year', yearFrom)
         .order('period_year', { ascending: false })
         .order('period_month', { ascending: false })
         .order('amount',      { ascending: false })
-        .limit(60)
+        .limit(80)
       if (lines?.length) {
-        const formatted = lines
-          .map((l: any) => {
+        // Group by category so the AI can scope its answer.
+        const byCat: Record<string, any[]> = {}
+        for (const l of lines) {
+          if (!byCat[l.category]) byCat[l.category] = []
+          if (byCat[l.category].length < 25) byCat[l.category].push(l)
+        }
+        for (const [cat, rows] of Object.entries(byCat)) {
+          const formatted = rows.map((l: any) => {
             const period = l.period_month && l.period_month > 0
               ? `${MONTHS[l.period_month - 1]} ${l.period_year}`
               : `${l.period_year} (annual)`
             const sub = l.subcategory ? ` [${l.subcategory}]` : ''
             return `  - ${period}: ${l.label_sv}${sub} — ${fmt(l.amount)} kr`
-          })
-          .join('\n')
-        attach('cost', `\n\nOverhead line items (other_cost, from Fortnox PDFs — BUSINESS-WIDE, not split by department):\n${formatted}`)
+          }).join('\n')
+          const tag: EnrichmentTag = cat === 'food_cost' ? 'food_lines' : cat === 'staff_cost' ? 'staff_lines' : 'cost'
+          attach(tag, `\n\n${cat} line items (last 12 months from Fortnox PDFs — BUSINESS-WIDE, top 25 by amount):\n${formatted}`)
+        }
       }
-    } catch (e: any) { warnings.push('cost enrichment failed: ' + (e?.message ?? 'unknown')) }
+    } catch (e: any) { warnings.push('line-items enrichment failed: ' + (e?.message ?? 'unknown')) }
   }
 
   // ── FORECAST ENRICHMENT ───────────────────────────────────────────────────
@@ -345,6 +368,203 @@ export async function buildAskContext(
         attach('department', `\n\nDepartment breakdown (last 3 months per dept, current year — DEPT-level revenue + staff only; food_cost & overheads stay business-wide per SCOPE_NOTE):\n${lines}`)
       }
     } catch (e: any) { warnings.push('department enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── BUDGET ENRICHMENT ─────────────────────────────────────────────────────
+  // Targets the user has set on /budget. Lets the AI answer "am I tracking
+  // against May target", "how much budget do I have left for marketing".
+  if (opts.businessId && remainingBudget > 200 && BUDGET_KEYWORDS.test(question)) {
+    try {
+      const yNow = new Date().getUTCFullYear()
+      const { data: budgets } = await db
+        .from('budgets')
+        .select('year, month, revenue_target, food_cost_target, staff_cost_target, other_cost_target, net_profit_target')
+        .eq('org_id', opts.orgId).eq('business_id', opts.businessId)
+        .eq('year', yNow)
+        .order('month', { ascending: true })
+      if (budgets?.length) {
+        const lines = budgets.map((b: any) => {
+          const parts = [
+            b.revenue_target    ? `rev ${fmt(b.revenue_target)}`         : null,
+            b.staff_cost_target ? `staff ${fmt(b.staff_cost_target)}`    : null,
+            b.food_cost_target  ? `food ${fmt(b.food_cost_target)}`      : null,
+            b.other_cost_target ? `other ${fmt(b.other_cost_target)}`    : null,
+            b.net_profit_target ? `net ${fmt(b.net_profit_target)}`      : null,
+          ].filter(Boolean).join(' | ')
+          return `  - ${MONTHS[b.month - 1]} ${b.year}: ${parts}`
+        }).join('\n')
+        attach('budget', `\n\nBudget targets for ${yNow} (set by owner on /budget — compare against monthly_metrics actuals to compute on-track status):\n${lines}`)
+      }
+    } catch (e: any) { warnings.push('budget enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── PK SALE FORECAST ENRICHMENT ───────────────────────────────────────────
+  // Personalkollen's own short-term sale forecast — sometimes more accurate
+  // than our model on a 7–14 day horizon since it incorporates real-time
+  // booking signals from the venue's POS layer. Surfaces alongside our
+  // /forecasts table so Claude can compare "model says X, PK says Y".
+  if (opts.businessId && remainingBudget > 200 && (FORECAST_KEYWORDS.test(question) || /\b(personalkollen|pk\s+forecast|venue\s+forecast)\b/i.test(question))) {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const horizon = new Date(Date.now() + 21 * 86400_000).toISOString().slice(0, 10)
+      const { data: pk } = await db
+        .from('pk_sale_forecasts')
+        .select('forecast_date, amount, workplace_url')
+        .eq('org_id', opts.orgId).eq('business_id', opts.businessId)
+        .gte('forecast_date', today)
+        .lte('forecast_date', horizon)
+        .order('forecast_date', { ascending: true })
+        .limit(200)
+      if (pk?.length) {
+        const byDate: Record<string, number> = {}
+        for (const r of pk) byDate[r.forecast_date] = (byDate[r.forecast_date] ?? 0) + Number(r.amount ?? 0)
+        const dates = Object.keys(byDate).sort()
+        const total = dates.reduce((s, d) => s + byDate[d], 0)
+        const lines = dates.slice(0, 14).map(d => `  - ${d}: ${fmt(byDate[d])} kr`).join('\n')
+        attach('pk_forecast', `\n\nPersonalkollen's own sale forecast (next ~21 days, summed across departments — venue-side estimate, often more accurate short-horizon than our model):\n${lines}\n  TOTAL window: ${fmt(total)} kr across ${dates.length} days`)
+      }
+    } catch (e: any) { warnings.push('pk_forecast enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── ACCURACY ENRICHMENT ───────────────────────────────────────────────────
+  // forecast_calibration latest row + recent ai_forecast_outcomes hits/misses.
+  // Lets Claude be honest about how reliable its own forecasts have been
+  // ("my last 5 monthly forecasts were on average +8 % over actual").
+  if (opts.businessId && remainingBudget > 200 && ACCURACY_KEYWORDS.test(question)) {
+    try {
+      const [calRes, outcomesRes] = await Promise.all([
+        db.from('forecast_calibration')
+          .select('accuracy_pct, bias_factor, calibrated_at')
+          .eq('business_id', opts.businessId)
+          .order('calibrated_at', { ascending: false })
+          .limit(1),
+        db.from('ai_forecast_outcomes')
+          .select('surface, period_year, period_month, suggested_revenue, actual_revenue, revenue_error_pct, revenue_direction, owner_reaction')
+          .eq('business_id', opts.businessId)
+          .not('actuals_resolved_at', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(8),
+      ])
+      const cal      = calRes.data?.[0]
+      const outcomes = outcomesRes.data ?? []
+      if (cal || outcomes.length) {
+        let block = '\n\nForecast accuracy track record:'
+        if (cal) {
+          block += `\n  - Latest calibration (${cal.calibrated_at?.slice(0, 10)}): accuracy ${cal.accuracy_pct ?? '—'}%, rolling bias factor ${cal.bias_factor ?? '—'} (1.00 = unbiased, >1 = forecast undershot, <1 = forecast overshot)`
+        }
+        if (outcomes.length) {
+          const lines = outcomes.slice(0, 6).map((o: any) =>
+            `    · ${o.surface} ${MONTHS[(o.period_month ?? 1) - 1]} ${o.period_year}: forecast ${fmt(o.suggested_revenue)} kr → actual ${fmt(o.actual_revenue)} kr (${o.revenue_error_pct ?? '—'}% ${o.revenue_direction ?? ''})`
+          ).join('\n')
+          block += `\n  - Last ${outcomes.length} resolved AI suggestions:\n${lines}`
+        }
+        attach('accuracy', block)
+      }
+    } catch (e: any) { warnings.push('accuracy enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── WEATHER ENRICHMENT ────────────────────────────────────────────────────
+  // weather_daily for last 7 + next 7 days. Temperature, precip, wind, code.
+  // Lets Claude answer "will Friday's rain hurt revenue" or "was last
+  // weekend's drop weather-driven".
+  if (opts.businessId && remainingBudget > 200 && WEATHER_KEYWORDS.test(question)) {
+    try {
+      const since   = new Date(Date.now() - 7  * 86400_000).toISOString().slice(0, 10)
+      const horizon = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10)
+      const { data: w } = await db
+        .from('weather_daily')
+        .select('date, temp_min, temp_max, temp_avg, precip_mm, wind_max, weather_code')
+        .eq('business_id', opts.businessId)
+        .gte('date', since)
+        .lte('date', horizon)
+        .order('date', { ascending: true })
+        .limit(30)
+      if (w?.length) {
+        const lines = w.map((d: any) =>
+          `  - ${d.date}: ${d.temp_min}°/${d.temp_max}°C, ${d.precip_mm ?? 0}mm rain, wind ${d.wind_max ?? 0}m/s (WMO ${d.weather_code ?? '—'})`
+        ).join('\n')
+        attach('weather', `\n\nWeather (past 7 + next 14 days, business-local timezone):\n${lines}\n[Note: precip > 5 mm typically reduces walk-in by 10–25 %; over 10 mm by 25–50 %. Use historical correlation to caveat predictions.]`)
+      }
+    } catch (e: any) { warnings.push('weather enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── STAFF INDIVIDUAL ENRICHMENT ───────────────────────────────────────────
+  // Per-staff aggregates for last 30 days — top 10 by cost. Powers "who has
+  // the most overtime", "who's late most often". Names truncated.
+  if (opts.businessId && remainingBudget > 200 && STAFF_INDIV_KEYWORDS.test(question)) {
+    try {
+      const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10)
+      const { data: shifts } = await db
+        .from('staff_logs')
+        .select('staff_uid, staff_name, hours_worked, cost_actual, estimated_salary, is_late, ob_supplement_kr, staff_group')
+        .eq('org_id', opts.orgId).eq('business_id', opts.businessId)
+        .gte('shift_date', since)
+        .not('pk_log_url', 'like', '%_scheduled')
+        .or('cost_actual.gt.0,estimated_salary.gt.0')
+        .limit(2000)
+      if (shifts?.length) {
+        const byStaff: Record<string, { name: string; dept: string | null; hours: number; cost: number; shifts: number; late: number; ob: number }> = {}
+        for (const s of shifts) {
+          const k = s.staff_uid ?? s.staff_name ?? 'unknown'
+          if (!byStaff[k]) byStaff[k] = { name: (s.staff_name ?? k).slice(0, 24), dept: s.staff_group ?? null, hours: 0, cost: 0, shifts: 0, late: 0, ob: 0 }
+          byStaff[k].hours  += Number(s.hours_worked ?? 0)
+          byStaff[k].cost   += Number(s.cost_actual ?? 0) > 0 ? Number(s.cost_actual) : Number(s.estimated_salary ?? 0)
+          byStaff[k].shifts += 1
+          if (s.is_late) byStaff[k].late += 1
+          byStaff[k].ob    += Number(s.ob_supplement_kr ?? 0)
+        }
+        const top = Object.values(byStaff).sort((a, b) => b.cost - a.cost).slice(0, 10)
+        const lines = top.map(p =>
+          `  - ${p.name}${p.dept ? ` (${p.dept})` : ''}: ${Math.round(p.hours * 10) / 10}h, ${fmt(p.cost)} kr across ${p.shifts} shifts | late ${p.late}× | OB ${fmt(p.ob)} kr`
+        ).join('\n')
+        attach('staff_individual', `\n\nTop 10 staff by cost (last 30 days, actual shifts only — excludes scheduled-but-not-worked):\n${lines}`)
+      }
+    } catch (e: any) { warnings.push('staff_individual enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── GROUP / CROSS-BUSINESS ENRICHMENT ─────────────────────────────────────
+  // When the org has multiple businesses AND the question is group-scoped
+  // ("which location is worst"), fetch monthly_metrics for every business
+  // for the current year. Bypasses the businessId scope of every other
+  // enrichment by design — this is the one cross-cutting view.
+  if (remainingBudget > 200 && GROUP_KEYWORDS.test(question)) {
+    try {
+      const { data: bizList } = await db
+        .from('businesses')
+        .select('id, name, is_active')
+        .eq('org_id', opts.orgId)
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+      if (bizList && bizList.length > 1) {
+        const yNow = new Date().getUTCFullYear()
+        const { data: rows } = await db
+          .from('monthly_metrics')
+          .select('business_id, year, month, revenue, staff_cost, food_cost, net_profit, margin_pct, labour_pct')
+          .eq('org_id', opts.orgId)
+          .eq('year', yNow)
+          .in('business_id', bizList.map((b: any) => b.id))
+          .order('month', { ascending: true })
+          .limit(500)
+        const nameById: Record<string, string> = {}
+        for (const b of bizList) nameById[b.id] = b.name
+        const byBiz: Record<string, any[]> = {}
+        for (const r of rows ?? []) {
+          if (!byBiz[r.business_id]) byBiz[r.business_id] = []
+          byBiz[r.business_id].push(r)
+        }
+        const blocks = Object.entries(byBiz).map(([bid, recs]) => {
+          const ytdRev    = recs.reduce((s, r: any) => s + Number(r.revenue ?? 0),    0)
+          const ytdProfit = recs.reduce((s, r: any) => s + Number(r.net_profit ?? 0), 0)
+          const ytdLabour = recs.reduce((s, r: any) => s + Number(r.staff_cost ?? 0), 0)
+          const ytdMargin = ytdRev > 0 ? Math.round((ytdProfit / ytdRev) * 1000) / 10 : 0
+          const ytdLabPct = ytdRev > 0 ? Math.round((ytdLabour / ytdRev) * 1000) / 10 : 0
+          return `  - ${nameById[bid] ?? bid.slice(0, 8)}: YTD rev ${fmt(ytdRev)} kr, net ${fmt(ytdProfit)} kr (${ytdMargin}%), labour ${ytdLabPct}%`
+        }).join('\n')
+        if (blocks) {
+          attach('group', `\n\nCross-business view (${yNow} YTD across ${bizList.length} active businesses in this org):\n${blocks}\n[Use this when the user asks "which location is worst" / "compare locations". Per-business detail requires switching to that business in the sidebar.]`)
+        }
+      }
+    } catch (e: any) { warnings.push('group enrichment failed: ' + (e?.message ?? 'unknown')) }
   }
 
   return {

@@ -15,13 +15,21 @@ The data exists — `forecasts`, `monthly_metrics` (prior years), `anomaly_alert
 
 | Tag | Trigger keywords | Data fetched | Budget hint |
 |---|---|---|---|
-| `cost` | overhead, rent, subscription, lokalhyra, försäkring, line item, margin | last 12 mo of `tracker_line_items` (other_cost), top 60 by amount | unchanged from session 12 |
+| `cost` | overhead, rent, subscription, lokalhyra, försäkring, line item, margin | last 12 mo of `tracker_line_items` (other_cost), top 25 by amount | ~500 chars |
+| `food_lines` | food cost, COGS, råvaror, ingredient, leverantör, supplier, alcohol cost | last 12 mo of `tracker_line_items` (food_cost), top 25 by amount | ~500 chars |
+| `staff_lines` | staff cost, payroll, wages, lön, pension, payroll tax, sociala avgifter | last 12 mo of `tracker_line_items` (staff_cost), top 25 by amount | ~500 chars |
 | `forecast` | forecast, predict, next week/month, upcoming, hours to cut, labour %, will i, going to | full current-year `forecasts` table + prior-year same-month actuals | ~600 chars |
 | `schedule` | schedul(e/ed/ing), hours to cut, how many hours, hit X%, staff next week, roster, shifts this/next, this/next week | next 14 days of `staff_logs WHERE pk_log_url LIKE '%_scheduled'` — forward-looking PLANNED hours + estimated cost, by date, with totals + blended rate | ~700 chars |
 | `comparison` | compare, vs, same period last year, YoY, year-over-year, growth | prior-year `monthly_metrics` (12 rows) for YoY anchoring | ~600 chars |
 | `trend` | trend, trending, last 4/6/8 weeks, getting better/worse, rolling, momentum | last 6 months of `monthly_metrics` (oldest first for direction) | ~500 chars |
 | `anomaly` | why is, what changed, why did, reason, cause, anomal, spike, drop, jump | last 30 days of un-dismissed `anomaly_alerts` with description + deviation | ~600 chars |
 | `department` | department, dept, kitchen, bar, bella, carne, asp, by dept, location breakdown | current-year `dept_metrics` grouped by dept (last 3 months per dept) | ~700 chars |
+| `budget` | budget, target, on track, vs plan, allowance, over/under spend, am i on | current-year `budgets` rows — owner-set monthly targets for compare-vs-actual | ~500 chars |
+| `pk_forecast` | (same as `forecast`) + personalkollen, pk forecast, venue forecast | next 21 days of `pk_sale_forecasts` summed per date — venue's own short-horizon model, often more accurate than ours week-out | ~500 chars |
+| `accuracy` | accurate, accuracy, how off/wrong/right, forecast error, missed by, calibrat, bias | latest `forecast_calibration` row + last 8 resolved `ai_forecast_outcomes` for hit/miss honesty | ~600 chars |
+| `weather` | weather, rain, sunny, cold, hot, temperature, °c, will it, forecast for the weekend | `weather_daily` last 7 + next 14 days (temp / precip / wind / WMO code) with rain-impact heuristic | ~700 chars |
+| `staff_individual` | who, which staff/employee/person, individual, by staff, most expensive/hours/overtime/late | per-staff aggregates from `staff_logs` last 30 days, top 10 by cost (hours, cost, shifts, late count, OB) | ~700 chars |
+| `group` | which location/business, all locations, across my businesses, group-wide, portfolio, combined | YTD `monthly_metrics` per business in the org — cross-cutting view, only fires when org has 2+ active businesses | ~500 chars |
 
 All enrichments wrapped in try/catch — failure degrades to base context unchanged; a missing table or schema drift never blocks the AI call. Logged to console (`[ask] enrichments fired: forecast,comparison`) for debugging.
 
