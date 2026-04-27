@@ -1,6 +1,17 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied
+> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Pending — apply when ready
+
+### M032 — Fortnox supersede chain join table
+**File:** `M032-FORTNOX-SUPERSEDE-CHAIN.sql` (repo root)
+**Purpose:** part of FIXES.md §0v (Sprint 1 Task 3). Adds `fortnox_supersede_links(child_id, parent_id, period_year, period_month)` so multi-month upload supersede chains preserve every period's parent. Pre-M032, `applyMonthly` overwrote the column-level `supersedes_id` / `superseded_by_id` on each iteration → only the last period's parent survived. Reject path now walks the join table to restore predecessors per-period; pre-fix it would only restore one predecessor for a multi-month rejected upload, leaving other periods data-less.
+**Backwards compat:** column-level `supersedes_id` / `superseded_by_id` on `fortnox_uploads` remain; single-month uploads still write them accurately. Reject route falls back to the column when no link rows exist (older supersede chains pre-M032).
+**Safety:** CREATE TABLE IF NOT EXISTS, indexes IF NOT EXISTS. RLS enabled with no SELECT/INSERT policy → service-role only access. Verify queries at the bottom confirm the column shape + index list.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ---
 

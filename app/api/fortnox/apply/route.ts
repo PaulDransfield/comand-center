@@ -287,9 +287,23 @@ async function applyMonthly(db: any, args: {
   // it as superseded by THIS upload. Old line items get cleared by
   // source_upload_id below — no period_month filter (fixes the multi-month
   // bug from FIXES.md §0n where rejecting an annual report didn't clean up).
+  //
+  // M032 (FIXES §0v): per-period link is recorded in fortnox_supersede_links
+  // so multi-month uploads preserve every period's parent. Pre-M032 the
+  // column-level supersedes_id / superseded_by_id were overwritten on each
+  // iteration → only the LAST period's parent survived. The columns are
+  // kept for backwards compat with single-month uploads (where one
+  // iteration = one column value, accurate). On multi-month uploads the
+  // columns end up holding the last period's parent — non-load-bearing,
+  // join table is now the source of truth.
+  //
+  // org_id filter added M032: defence-in-depth. Without it, a tenant-isolation
+  // bug elsewhere could cause a prior-applied lookup to find an upload from
+  // a different org with the same (business, year, month) shape.
   const { data: priorApplied } = await db
     .from('fortnox_uploads')
     .select('id')
+    .eq('org_id', orgId)
     .eq('business_id', businessId)
     .eq('period_year', year)
     .eq('period_month', month)
@@ -300,6 +314,28 @@ async function applyMonthly(db: any, args: {
   let supersededId: string | undefined
   if (priorApplied?.id) {
     supersededId = priorApplied.id
+
+    // Per-period link — survives multi-period iteration. Insert is
+    // best-effort (composite PK collision means we already linked this
+    // child→parent for this period, which is fine).
+    const { error: linkErr } = await db
+      .from('fortnox_supersede_links')
+      .insert({
+        child_id:     uploadId,
+        parent_id:    priorApplied.id,
+        period_year:  year,
+        period_month: month,
+      })
+    if (linkErr && linkErr.code !== '23505') {
+      // Log but don't block — supersede column writes below still happen,
+      // and the PK collision case (23505) is just an idempotent re-apply.
+      log.warn('fortnox-apply supersede link insert failed', {
+        route: 'fortnox/apply', upload_id: uploadId,
+        prior_id: priorApplied.id, year, month,
+        error: linkErr.message, code: linkErr.code,
+      })
+    }
+
     await db.from('fortnox_uploads')
       .update({
         status:           'superseded',

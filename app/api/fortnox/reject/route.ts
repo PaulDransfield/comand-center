@@ -80,19 +80,41 @@ export async function POST(req: NextRequest) {
     affectedYears = Array.from(new Set(touchedPeriods.map(p => p.year)))
   }
 
-  // If this upload was itself superseding a prior one, walk the chain back —
-  // the predecessor returns to 'applied' so the rejected upload's data is
-  // replaced by the prior version's data, not by a hole.
+  // If this upload was itself superseding prior ones, restore them per-period.
+  // M032 (FIXES §0v): walk fortnox_supersede_links instead of the column-level
+  // superseded_by_id. The column only retained the LAST period's parent on
+  // multi-month uploads — so a rejected multi-month upload would only restore
+  // ONE predecessor period, leaving the other 11 periods with no parent and
+  // no data. The join table keeps every (child, parent, year, month) edge.
+  //
+  // Multiple distinct parent uploads may show up here when a single child
+  // multi-month upload superseded uploads from different earlier batches
+  // (e.g. one annual + one monthly correction). De-dup by parent_id before
+  // restoring so we don't update the same row twice.
   if (upload.status === 'applied') {
-    const { data: predecessor } = await db
-      .from('fortnox_uploads')
-      .select('id')
-      .eq('superseded_by_id', upload.id)
-      .maybeSingle()
-    if (predecessor?.id) {
+    const { data: links } = await db
+      .from('fortnox_supersede_links')
+      .select('parent_id')
+      .eq('child_id', upload.id)
+
+    const parentIds = Array.from(new Set((links ?? []).map((l: any) => l.parent_id).filter(Boolean)))
+
+    // Backwards-compat: if no link rows (pre-M032 supersede chains), fall
+    // back to the column-level lookup so older rejected uploads still
+    // restore SOMETHING — the last period's parent at minimum.
+    if (parentIds.length === 0) {
+      const { data: predecessor } = await db
+        .from('fortnox_uploads')
+        .select('id')
+        .eq('superseded_by_id', upload.id)
+        .maybeSingle()
+      if (predecessor?.id) parentIds.push(predecessor.id)
+    }
+
+    for (const parentId of parentIds) {
       await db.from('fortnox_uploads')
         .update({ status: 'applied', superseded_by_id: null })
-        .eq('id', predecessor.id)
+        .eq('id', parentId)
       // Re-apply the predecessor's data so tracker_data + line items reflect it.
       try {
         const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://comandcenter.se'
@@ -102,7 +124,7 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json',
             'Cookie':       req.headers.get('cookie') ?? '',
           },
-          body: JSON.stringify({ upload_id: predecessor.id }),
+          body: JSON.stringify({ upload_id: parentId }),
         }).catch(() => {})
       } catch { /* non-fatal — admin can re-apply manually */ }
     }

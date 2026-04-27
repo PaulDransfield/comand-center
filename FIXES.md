@@ -3,6 +3,27 @@ Last updated: 2026-04-27
 
 ---
 
+## 0v. Multi-month supersede chain only kept the last period's parent (2026-04-27)
+
+**Symptom:** External code review (REVIEW §1.3) flagged that `applyMonthly` writes `supersedes_id` on the current upload row inside the period loop. For a 12-period multi-month upload, that's 12 overwrites — only the LAST period's parent ends up stored. Reject of such an upload could only restore ONE predecessor period, leaving the other periods with no parent and effectively no data.
+
+**Confirmed in production:** Rosali had two `applied` multi-month uploads (`Resultatrapport 2025.pdf` and `Resultatrapport_Asp_2603.pdf`) for overlapping periods — both with `supersedes_id` and `superseded_by_id` NULL despite the second clearly being applied AFTER the first. The supersede relationship was lost on every iteration but the last (and probably the last didn't find a prior, leaving NULLs throughout).
+
+**Fix — per-period join table:**
+
+1. **M032 migration** adds `fortnox_supersede_links(child_id, parent_id, period_year, period_month, created_at)` with composite PK and indexes on both `child_id` and `parent_id`. RLS enabled, no policy → service-role only. Apply route inserts one row per iteration.
+2. **`apply.ts::applyMonthly`** now writes to the join table on every period iteration (idempotent — composite PK means a re-apply is a no-op via `code='23505'` swallow). Column-level `supersedes_id` / `superseded_by_id` writes are kept for backwards compat with single-month uploads (one iteration → one column value, accurate). On multi-month uploads the columns end up holding the LAST period's parent — non-load-bearing, documented in code; the join table is the source of truth.
+3. **`apply.ts::applyMonthly` prior-applied lookup** also gains an `org_id` filter (defence-in-depth — without it a tenant-isolation bug elsewhere could match an upload from a different org with the same `(business, year, month)` shape).
+4. **`reject.ts`** now walks `fortnox_supersede_links.child_id = upload.id` to find ALL parents, deduplicates by parent_id, and restores each one. Falls back to column-level `superseded_by_id` lookup when no link rows exist (older supersede chains pre-M032 still restore the last period's parent at minimum).
+
+**What this does NOT yet fix:** the prior-applied lookup still uses `.eq('period_month', month)` on `fortnox_uploads`, which doesn't match multi-month uploads (their `period_month` is NULL on the row). So a NEW multi-month upload superseding an OLDER multi-month upload still won't link them at the join-table level. The two Rosali uploads above are exactly this case — fixing it requires looking up via `tracker_data.fortnox_upload_id` for the affected period instead. **Deferred to Sprint 2** as a follow-up; documented in code.
+
+**Why this should hold:** every period of every multi-month upload now records its parent (when one exists). Reject paths restore every parent. Backwards compat with single-month and pre-M032 chains is preserved. The known multi-month-to-multi-month gap is documented and queued, not silent.
+
+**Manual step required (Paul):** apply `M032-FORTNOX-SUPERSEDE-CHAIN.sql` in Supabase SQL Editor before this code reaches production-critical use. Verify query at the bottom of the SQL confirms table + indexes + columns.
+
+---
+
 ## 0u. Multi-org users blocked from auth by `.single()` on organisation_members (2026-04-27)
 
 **Symptom:** External code review (REVIEW §1.2) flagged that `lib/auth/get-org.ts` and `lib/supabase/server.ts::getRequestAuth` were both calling `.single()` on `organisation_members` keyed only by `user_id`. PostgREST's `.single()` throws when the result set has more or fewer than exactly one row. For any user with ≥2 memberships (an accountant servicing multiple client orgs, a consolidating-group user, or a staff user added to two restaurants under different orgs), the query throws and the helper returns `null` — the user appears unauthenticated forever, with no UI surface explaining why.
