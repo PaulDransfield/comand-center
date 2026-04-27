@@ -1,18 +1,18 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-26 | M022 applied · M023 applied · M024 applied · M027 applied · M028 pending · M029 pending · M030 pending · M031 pending
+> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
-## Pending — apply when ready
+## Applied — for reference
 
-### M031 — POS completeness signal (`pos_days_with_revenue`)
+### M031 — POS completeness signal (`pos_days_with_revenue`) ✅ applied 2026-04-26
 **File:** `M031-POS-COMPLETENESS.sql` (repo root)
 **Purpose:** part of FIXES.md §0r. Adds `monthly_metrics.pos_days_with_revenue INT` so the aggregator can detect partial-month POS coverage and prefer Fortnox tracker_data when POS only synced a fraction of the month. Without this, partial POS revenue (e.g. PK integration added mid-month) would override full Fortnox revenue in `monthly_metrics`, producing absurd margins on the Performance page (Vero Nov 2025 showed −137 % margin from POS-revenue-vs-Fortnox-costs mismatch).
 **Backfill:** counts distinct dates with non-zero revenue per (business, year, month) from `daily_metrics` and writes to the new column. Idempotent.
 **To apply:** open Supabase SQL Editor, paste file contents, run. Verification query at the end lists 2025 months by coverage % so you can spot the partial-month rows that the aggregator will now route to Fortnox.
 
-### M030 — Re-categorise misclassified line items (one-off cleanup)
+### M030 — Re-categorise misclassified line items (one-off cleanup) ✅ applied 2026-04-26
 **File:** `M030-RECATEGORIZE-LINE-ITEMS.sql` (repo root)
 **Purpose:** companion to the FIXES.md §0o postscript fix in `extract-worker/route.ts::enrichLines`. Pre-fix, when the AI tagged a line as one category (e.g. 'revenue') but the Swedish label clearly meant another (e.g. 'reklam' = marketing → other_cost), the AI category was kept. Surfaced by the M029 verify query as 13 rows of `category='revenue' subcategory='marketing'` (50k kr).
 **Mappings (all idempotent):**
@@ -23,7 +23,7 @@
 **Safety:** UPDATE only flips `category`; subcategory + amount + label stay untouched. Wrapped in `BEGIN; … COMMIT;`. Verify queries at the end show the post-fix distribution and confirm `revenue` bucket is now clean (food/takeaway/alcohol/null only).
 **To apply:** open Supabase SQL Editor, paste file contents, run.
 
-### M029 — Revenue VAT-rate split (dine_in / takeaway / alcohol)
+### M029 — Revenue VAT-rate split (dine_in / takeaway / alcohol) ✅ applied 2026-04-26
 **File:** `M029-REVENUE-VAT-SPLIT.sql` (repo root)
 **Purpose:** part of FIXES.md §0o. Promotes the Swedish VAT-rate revenue split (12% = dine-in food, 6% = takeaway / Wolt-Foodora, 25% = alcohol) to first-class columns on `tracker_data`, matching what `revenue_logs` already has from the POS side. Surfaces takeaway revenue as a distinct slice so owners can see platform-delivery share (Wolt/Foodora take ~30% commission, so 100k of takeaway ≠ 100k of margin contribution).
 Three concerns in one migration:
@@ -33,7 +33,7 @@ Three concerns in one migration:
 **Safety:** all `ADD COLUMN` use `IF NOT EXISTS`. UPDATE statements include `IS DISTINCT FROM` guards so re-runs are no-ops. Backfill only writes when current value is 0. Wrapped in `BEGIN; … COMMIT;`.
 **To apply:** open Supabase SQL Editor, paste file contents, run. Verification queries at the bottom show the new columns + a backfilled-row count + the re-tagged subcategory distribution.
 
-### M028 — Fortnox proper fix (depreciation/financial/alcohol_cost + supersede)
+### M028 — Fortnox proper fix (depreciation/financial/alcohol_cost + supersede) ✅ applied 2026-04-26
 **File:** `M028-FORTNOX-PROPER-FIX.sql` (repo root)
 **Purpose:** part of FIXES.md §0n (Tier 2 architectural rebuild of the Fortnox extraction pipeline). Three concerns in one migration:
   1. Adds `depreciation`, `financial`, `alcohol_cost` columns to `tracker_data`. The first two were referenced everywhere but never existed in the schema; the apply route silently dropped them, /api/tracker silently overstated profit by the depreciation amount on every Fortnox month. `alcohol_cost` is promoted to a first-class rollup column so the Performance page reads the food/alcohol split from the rollup instead of summing line items.
