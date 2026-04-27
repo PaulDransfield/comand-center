@@ -10,8 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe                        from 'stripe'
-import { getOrgFromRequest }         from '@/lib/auth/get-org'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' })
@@ -21,7 +20,7 @@ export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
-  const auth = await getOrgFromRequest(req)
+  const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // max 20 portal requests per user per hour

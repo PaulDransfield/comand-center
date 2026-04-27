@@ -16,8 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe                        from 'stripe'
-import { getOrgFromRequest }         from '@/lib/auth/get-org'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
 import { orgRateLimit }              from '@/lib/middleware/org-rate-limit'
 import { PLANS }                     from '@/lib/stripe/config'
@@ -28,7 +27,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 
 export async function POST(req: NextRequest) {
   // ── 1. Auth ────────────────────────────────────────────────────
-  const auth = await getOrgFromRequest(req)
+  const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // ── 2. Rate limits ────────────────────────────────────────────

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { runSync }                   from '@/lib/sync/engine'
+import { checkCronSecret }           from '@/lib/admin/check-secret'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -23,16 +24,21 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  // FIXES §0ee (Sprint 2 Task 8): switched from hand-rolled secret check
+  // to checkCronSecret. The previous code accepted a hardcoded fallback
+  // 'commandcenter123' — same string was killed across admin routes on
+  // 2026-04-22 (FIXES §0g) but this caller was missed. Anyone who had
+  // ever read the source could trigger a sync without auth.
+  if (!checkCronSecret(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const params   = req.nextUrl.searchParams
-  const secret   = req.headers.get('x-cron-secret') ?? params.get('secret')
   const provider = params.get('provider')
   const orgId    = params.get('org_id')
   const from     = params.get('from')     ?? undefined
   const to       = params.get('to')       ?? undefined
   const integId  = params.get('integration_id') ?? undefined
-
-  if (secret !== process.env.CRON_SECRET && secret !== 'commandcenter123')
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!provider || !orgId)
     return NextResponse.json({ error: 'provider and org_id required' }, { status: 400 })
 

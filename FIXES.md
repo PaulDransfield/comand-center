@@ -3,6 +3,72 @@ Last updated: 2026-04-27
 
 ---
 
+## Sprint 2 — code-review remainder (§0ee – §0hh)
+
+External review's deferred Tasks 6–10 from CLAUDE-CODE-HANDOFF.md (Task 10 — root cleanup — skipped, deferred). Each landed as one commit referencing its own §-section. Total ~half a day. Goals: kill duplicate auth helper, harden Stripe plan resolution, standardise cron auth, prevent Vercel from cancelling background work.
+
+---
+
+## 0ee. Inline cron-auth + hardcoded fallback secret in /api/sync (2026-04-27)
+
+**Symptom:** `app/api/sync/route.ts:34` (GET handler) had `if (secret !== process.env.CRON_SECRET && secret !== 'commandcenter123')`. The same hardcoded fallback was killed across admin routes on 2026-04-22 (FIXES §0g) but this caller was missed. Anyone who had ever read the source could trigger a sync without auth. Same hardcoded string also appeared as a fallback in `app/api/admin/sync-history/route.ts:22` when calling the cron route.
+
+A second handler (`/api/agents/onboarding-success`) used a hand-rolled inline header check with no timing-safe comparison and no support for the `x-vercel-cron=1` trusted-scheduler short-circuit.
+
+**Fix (Sprint 2 Task 8):**
+- Both handlers now use `checkCronSecret` from `lib/admin/check-secret.ts` — timing-safe, supports header + bearer + query-param + Vercel-cron header.
+- Hardcoded `'commandcenter123'` fallback removed in `/api/sync` GET. CRON_SECRET env var is now the only accepted secret.
+- `/api/admin/sync-history` no longer falls back to the hardcoded string when calling the cron route — refuses with 500 if CRON_SECRET is unset (correct outcome for a misconfigured deploy).
+
+**Why this should hold:** every cron-protected entry point now goes through one helper. `grep -rn "CRON_SECRET" app/` should show only `checkCronSecret` callers + the env-var-presence check (which exists for misconfiguration detection, not for auth).
+
+---
+
+## 0ff. Aggregator fire-and-forget could be cancelled by Vercel (2026-04-27)
+
+**Symptom:** `app/api/fortnox/{apply,reject}/route.ts` calls `aggregateMetrics(...).catch(...)` without `await` and without `waitUntil`. Vercel's serverless runtime is allowed to terminate the lambda the moment the response closes — meaning the aggregator promise can be cancelled mid-flight, leaving `monthly_metrics` stale until the next nightly sync.
+
+This is hard to detect from outside: the route returns 200, the user sees "applied", but downstream pages keep reading the pre-apply values until the cron runs. Symptom in production was rare (most uploads complete fast enough that the lambda hadn't been recycled), but it's the kind of bug that bites at the worst time.
+
+**Fix (Sprint 2 Task 9):** wrapped each fire-and-forget in `waitUntil` from `@vercel/functions`. Three call sites in `apply/route.ts` (multi-month aggregator + multi-month cost-intel + single-month aggregator + single-month cost-intel) and one loop in `reject/route.ts` (per-affected-year aggregator). The pattern matches existing usage in `app/api/fortnox/extract/route.ts`.
+
+**Why this should hold:** `waitUntil` is Vercel's documented escape hatch for exactly this case. The function still returns immediately (browser doesn't wait), but the runtime guarantees the promise gets time to resolve. Stays valid as long as we're on Vercel; if we ever migrate platforms, the equivalent is `event.waitUntil` on Cloudflare Workers, or just `await` inline with adjusted maxDuration.
+
+---
+
+## 0gg. Stripe webhook silently downgraded subscriptions to 'solo' (2026-04-27)
+
+**Symptom:** `app/api/stripe/webhook/route.ts` resolved the plan via `sub.metadata?.plan || 'solo'`. Two failure modes:
+1. Any subscription missing `metadata.plan` silently became Solo regardless of what was actually paid for. Live customers on Group / Chain who somehow lost metadata (webhook replay, SDK update, manual edit in Stripe dashboard) would silently downgrade to Solo — including their AI quota.
+2. Metadata is set client-side at checkout-session creation. A future flow that forgets to set it produces wrong plans on every signup.
+
+**Root cause:** metadata is convenient but not authoritative. Stripe's `price.id` IS authoritative — it's set by the server-side checkout flow, can't drift, and maps deterministically to a plan tier.
+
+**Fix (Sprint 2 Task 7):**
+- New helper `planFromPriceId(priceId)` in `lib/stripe/config.ts` walks `PLANS`, resolves each plan's `stripe_price_env` and `stripe_price_annual_env` via `process.env[name]`, and returns the matching plan key (or null).
+- Webhook handler now resolves plan via: `planFromPriceId(sub.items.data[0].price.id) ?? sub.metadata?.plan`. Falls back to metadata for old test subs from before the price-env vars were wired up. If both are absent, refuses to write and logs an error rather than silently defaulting.
+- If `price.id` and `metadata.plan` disagree, logs a warning and trusts `price.id`.
+
+**Why this should hold:** `price.id` is the source of truth. The fallback to metadata exists for legacy subs only and is logged when used so we know when it fires. The "neither matched" branch refuses to write rather than silently picking a default — a future Stripe-side glitch surfaces as a missing-update instead of a wrong-update.
+
+---
+
+## 0hh. Two auth helpers — one with subtly weaker validation (2026-04-27)
+
+**Symptom:** Two separate auth helpers existed: `lib/supabase/server.ts::getRequestAuth` (used by ~40 routes) and `lib/auth/get-org.ts::getOrgFromRequest` (used by 4 routes — fortnox integration + 3 stripe routes). Same return shape, different validation logic. A fix made in one didn't propagate to the other (e.g. the multi-org `.maybeSingle()` fix in Sprint 1 Task 2 had to be applied to both files manually).
+
+The duplicate also had a `requireRole` helper that nothing imported — dead code.
+
+**Fix (Sprint 2 Task 6):**
+- All 4 callers migrated to `getRequestAuth` (drop-in: same return shape with `userId / orgId / role / plan`).
+- `lib/auth/get-org.ts` deleted.
+- `requireRole` was unused — gone with the file.
+- One auth helper. Future fixes only have to land in one place.
+
+**Why this should hold:** the file is gone. A future regression would require someone to deliberately recreate the duplicate, which they wouldn't because every existing route now uses the canonical helper. The Sprint 1 Task 2 invariant (multi-org `.maybeSingle()` + earliest-membership) lives in only one file now and can't drift.
+
+---
+
 ## Sprint 1.5 perf quick-wins (§0z – §0dd)
 
 External performance review on 2026-04-26 surfaced 4 quick wins (~1 day total). Shipped together as Sprint 1.5 because they're independent of the Sprint 1 correctness/security work but share the codebase snapshot. Each lands as its own commit referencing its own §-section here. Bigger items (server-component migration, `dept_daily_metrics` pre-aggregate, SWR rollout) deferred to their own sprints.

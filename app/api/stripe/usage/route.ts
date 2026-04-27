@@ -8,12 +8,11 @@
 // Returns: { plan, trialDaysLeft, hasSubscription, costUsdThisMonth, meters }
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getOrgFromRequest }         from '@/lib/auth/get-org'
-import { createAdminClient }         from '@/lib/supabase/server'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { getLimits }                 from '@/lib/stripe/config'
 
 export async function GET(req: NextRequest) {
-  const auth = await getOrgFromRequest(req)
+  const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   const supabase  = createAdminClient()

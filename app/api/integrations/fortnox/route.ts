@@ -20,8 +20,7 @@
 //   You store their access_token per-org, encrypted in the integrations table.
 
 import { NextRequest, NextResponse }  from 'next/server'
-import { createAdminClient }          from '@/lib/supabase/server'
-import { getOrgFromRequest }          from '@/lib/auth/get-org'
+import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { encrypt, decrypt }           from '@/lib/integrations/encryption'
 import { rateLimit }                  from '@/lib/middleware/rate-limit'
 import { verifyOauthConnectToken }    from '@/lib/admin/oauth-link'
@@ -97,7 +96,7 @@ export async function GET(req: NextRequest) {
       orgId      = payload.orgId
       businessId = payload.businessId ?? ''
     } else {
-      const auth = await getOrgFromRequest(req)
+      const auth = await getRequestAuth(req)
       if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
       orgId      = auth.orgId
       businessId = searchParams.get('business_id') ?? ''
@@ -243,7 +242,7 @@ async function handleCallback(req: NextRequest) {
 // for the current and previous month, then updates tracker_data.
 
 export async function POST(req: NextRequest) {
-  const auth = await getOrgFromRequest(req)
+  const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   // max 20 requests per user per hour

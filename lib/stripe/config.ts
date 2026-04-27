@@ -304,6 +304,35 @@ export function getLimits(planName: string): PlanLimits {
   return getPlan(planName).limits
 }
 
+/**
+ * Reverse-lookup a plan key from a Stripe price ID.
+ *
+ * Why: the webhook used to do `sub.metadata?.plan || 'solo'` — wrong on
+ * two fronts. (1) `'solo'` is a real plan tier, so any subscription
+ * missing metadata silently became Solo regardless of what was actually
+ * paid for. (2) The metadata is set client-side at checkout-session
+ * creation; if a future flow forgets to set it (or the SDK strips it on
+ * a webhook replay), every subscription downgrades. Stripe's price.id
+ * is server-controlled and cannot drift — that's the safer source of truth.
+ *
+ * Walks PLANS, resolves each `stripe_price_env` / `stripe_price_annual_env`
+ * via `process.env[name]`, and matches against the supplied price ID.
+ * Returns null if no plan owns this price (caller decides whether to
+ * fall back to metadata or warn loudly).
+ *
+ * FIXES §0gg (Sprint 2 Task 7).
+ */
+export function planFromPriceId(priceId: string | null | undefined): string | null {
+  if (!priceId) return null
+  for (const [planKey, plan] of Object.entries(PLANS)) {
+    const monthly = plan.stripe_price_env ? process.env[plan.stripe_price_env] : null
+    const annual  = plan.stripe_price_annual_env ? process.env[plan.stripe_price_annual_env] : null
+    if (monthly && monthly === priceId) return planKey
+    if (annual  && annual  === priceId) return planKey
+  }
+  return null
+}
+
 // Annual pricing: 10 months price for 12 months (2 months free = ~17% off)
 export function annualPrice(plan: Plan): number | null {
   if (!plan.price_sek) return null

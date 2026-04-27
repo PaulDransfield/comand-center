@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe                        from 'stripe'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { log }                       from '@/lib/log/structured'
+import { planFromPriceId }           from '@/lib/stripe/config'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-04-10' })
 
@@ -123,11 +124,29 @@ async function handleEvent(event: Stripe.Event, supabase: any) {
     case 'customer.subscription.updated': {
       const sub   = event.data.object as Stripe.Subscription
       const orgId = sub.metadata?.org_id
-      const plan  = sub.metadata?.plan || 'solo'
 
       if (!orgId) {
         console.warn(`Subscription ${sub.id} has no org_id metadata — skipping`)
         return
+      }
+
+      // FIXES §0gg (Sprint 2 Task 7): resolve plan from price.id, not
+      // metadata. The previous `sub.metadata?.plan || 'solo'` silently
+      // downgraded any subscription missing metadata to Solo regardless
+      // of what was actually paid for. price.id is server-controlled and
+      // can't drift, so it's the source of truth. Metadata stays as the
+      // fallback for old test subs from before the price-env vars were
+      // wired up; if both are absent we abort instead of guessing.
+      const priceId = sub.items?.data?.[0]?.price?.id ?? null
+      const planFromPrice = planFromPriceId(priceId)
+      const plan = planFromPrice ?? sub.metadata?.plan ?? null
+
+      if (!plan) {
+        console.error(`Subscription ${sub.id} price ${priceId} matches no known plan and metadata.plan is unset — refusing to write`)
+        return
+      }
+      if (planFromPrice && sub.metadata?.plan && planFromPrice !== sub.metadata.plan) {
+        console.warn(`Subscription ${sub.id}: price.id maps to "${planFromPrice}" but metadata.plan says "${sub.metadata.plan}" — trusting price.id`)
       }
 
       await updateOrg(supabase, orgId, {

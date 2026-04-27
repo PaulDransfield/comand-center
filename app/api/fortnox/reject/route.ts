@@ -10,6 +10,7 @@
 // rows and silently left annual line items behind forever.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -141,10 +142,16 @@ export async function POST(req: NextRequest) {
   // for hours after a rejection until the next nightly aggregator pass.
   if (affectedYears.length) {
     try {
+      // FIXES §0ff (Sprint 2 Task 9): wrap each per-year re-aggregate in
+      // waitUntil so Vercel keeps the lambda alive past the response close.
+      // Without this, multi-year rejected uploads can leave monthly_metrics
+      // partially stale until the next nightly aggregator pass.
       const { aggregateMetrics } = await import('@/lib/sync/aggregate')
       for (const year of affectedYears) {
-        aggregateMetrics(auth.orgId, upload.business_id, `${year}-01-01`, `${year}-12-31`)
-          .catch((e: any) => console.warn('[fortnox/reject] re-aggregate failed:', e?.message))
+        waitUntil(
+          aggregateMetrics(auth.orgId, upload.business_id, `${year}-01-01`, `${year}-12-31`)
+            .catch((e: any) => console.warn('[fortnox/reject] re-aggregate failed:', e?.message))
+        )
       }
     } catch { /* non-fatal */ }
   }

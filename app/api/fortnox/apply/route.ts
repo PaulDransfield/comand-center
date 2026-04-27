@@ -12,6 +12,7 @@
 // (org, business, year, month) index added in the migration.
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { log } from '@/lib/log/structured'
 import { projectRollup } from '@/lib/finance/projectRollup'
@@ -118,16 +119,25 @@ export async function POST(req: NextRequest) {
         const minYear = Math.min(...years), maxYear = Math.max(...years)
         const fromD = `${minYear}-01-01`
         const toD   = `${maxYear}-12-31`
+        // FIXES §0ff (Sprint 2 Task 9): wrapped in waitUntil so Vercel
+        // doesn't kill the lambda the moment the response closes. Without
+        // this, the aggregator promise can be cancelled mid-flight,
+        // leaving monthly_metrics stale until the next nightly sync.
         const { aggregateMetrics } = await import('@/lib/sync/aggregate')
-        aggregateMetrics(auth.orgId, upload.business_id, fromD, toD)
-          .catch((e: any) => console.warn('[fortnox/apply] re-aggregate failed:', e?.message))
+        waitUntil(
+          aggregateMetrics(auth.orgId, upload.business_id, fromD, toD)
+            .catch((e: any) => console.warn('[fortnox/apply] re-aggregate failed:', e?.message))
+        )
       }
     } catch { /* non-fatal */ }
 
     try {
       const { runCostIntel } = await import('@/lib/agents/cost-intelligence')
-      runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
-        .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
+      // FIXES §0ff (Sprint 2 Task 9): same waitUntil reasoning.
+      waitUntil(
+        runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
+          .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
+      )
     } catch { /* non-fatal */ }
 
     log.info('fortnox-apply complete', {
@@ -227,15 +237,21 @@ export async function POST(req: NextRequest) {
   try {
     const fromD = `${year}-01-01`
     const toD   = `${year}-12-31`
+    // FIXES §0ff (Sprint 2 Task 9): wrapped in waitUntil — see multi-month
+    // branch above for the cancellation-on-response-close rationale.
     const { aggregateMetrics } = await import('@/lib/sync/aggregate')
-    aggregateMetrics(auth.orgId, upload.business_id, fromD, toD)
-      .catch((e: any) => console.warn('[fortnox/apply] re-aggregate failed:', e?.message))
+    waitUntil(
+      aggregateMetrics(auth.orgId, upload.business_id, fromD, toD)
+        .catch((e: any) => console.warn('[fortnox/apply] re-aggregate failed:', e?.message))
+    )
   } catch { /* non-fatal */ }
 
   try {
     const { runCostIntel } = await import('@/lib/agents/cost-intelligence')
-    runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
-      .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
+    waitUntil(
+      runCostIntel({ orgId: auth.orgId, businessId: upload.business_id, db })
+        .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
+    )
   } catch { /* non-fatal */ }
 
   log.info('fortnox-apply complete', {

@@ -5,12 +5,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { checkCronSecret } from '@/lib/admin/check-secret'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
-  const secret = req.headers.get('x-cron-secret') ?? req.headers.get('authorization')?.replace('Bearer ', '')
-  if (secret !== process.env.CRON_SECRET) {
+  // FIXES §0ee (Sprint 2 Task 8): standardised on checkCronSecret. The
+  // helper accepts the same two header shapes (x-cron-secret, Authorization
+  // Bearer) plus the x-vercel-cron=1 trusted-scheduler short-circuit, which
+  // the inline check missed.
+  if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
