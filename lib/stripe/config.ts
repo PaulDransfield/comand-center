@@ -305,6 +305,32 @@ export function getLimits(planName: string): PlanLimits {
 }
 
 /**
+ * Boot-time check that every active plan has both env vars wired up.
+ * Safe to call from any server module; only logs (never throws). Use
+ * from a route's first request or a startup-time check. Returns the
+ * list of missing env var names so callers can decide what to do.
+ *
+ * FIXES §0ii (Sprint 2 follow-up): the upgrade flow used to silently
+ * fall back to a 500 only when a user actually clicked "Upgrade". This
+ * surfaces the misconfig at first request instead.
+ */
+export function checkStripePriceEnvs(): string[] {
+  const missing: string[] = []
+  for (const [key, plan] of Object.entries(PLANS)) {
+    if (plan.legacy) continue                 // skip starter/pro aliases
+    if (key === 'trial' || key === 'past_due' || key === 'enterprise') continue
+    if (plan.stripe_price_env && !process.env[plan.stripe_price_env]) {
+      missing.push(plan.stripe_price_env)
+    }
+    if (plan.stripe_price_annual_env && !process.env[plan.stripe_price_annual_env]) {
+      missing.push(plan.stripe_price_annual_env)
+    }
+  }
+  if (!process.env.STRIPE_PRICE_AI_ADDON) missing.push('STRIPE_PRICE_AI_ADDON')
+  return missing
+}
+
+/**
  * Reverse-lookup a plan key from a Stripe price ID.
  *
  * Why: the webhook used to do `sub.metadata?.plan || 'solo'` — wrong on

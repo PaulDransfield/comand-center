@@ -3,6 +3,20 @@ Last updated: 2026-04-27
 
 ---
 
+## 0ii. Stripe price env vars not configured for new plan tiers (2026-04-27)
+
+**Symptom:** The 2026-04-23 pricing overhaul (`founding`, `solo`, `group`, `chain` + `ai_addon`) shipped with the right code but the corresponding `STRIPE_PRICE_*` env vars were never added to Vercel. `.env.example` still listed the old `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO`. Result: clicking "Upgrade" on the upgrade page returned a 500 (`Stripe price not configured. Add STRIPE_PRICE_X to your environment variables.`) — handled gracefully by the route, but blocked any new customer signup.
+
+**Fix:**
+- `.env.example` updated with the 9 expected env var names + commented amounts (founding/solo/group/chain × monthly+annual + ai_addon).
+- New `checkStripePriceEnvs()` helper in `lib/stripe/config.ts` returns the list of missing env var names.
+- `app/api/stripe/checkout/route.ts` calls it once per cold start and logs `[stripe/checkout] missing Stripe price env vars: X, Y` so misconfigured deploys surface in Vercel logs immediately, instead of only when a user clicks Upgrade.
+- Resolution requires Paul to: (1) create the Products + Prices in Stripe Dashboard, (2) paste the `price_*` IDs into Vercel env vars. Code can't do this — Stripe Prices have business semantics (currency, interval, amount) that need explicit config.
+
+**Why this should hold:** future plan additions follow the same pattern (`stripe_price_env` + `stripe_price_annual_env` on the `Plan` interface). Adding a new tier to `PLANS` without wiring its env vars will surface in the next cold-start log within ~5 min instead of staying silent until a user notices.
+
+---
+
 ## Sprint 2 — code-review remainder (§0ee – §0hh)
 
 External review's deferred Tasks 6–10 from CLAUDE-CODE-HANDOFF.md (Task 10 — root cleanup — skipped, deferred). Each landed as one commit referencing its own §-section. Total ~half a day. Goals: kill duplicate auth helper, harden Stripe plan resolution, standardise cron auth, prevent Vercel from cancelling background work.

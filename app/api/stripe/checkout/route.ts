@@ -19,13 +19,29 @@ import Stripe                        from 'stripe'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
 import { orgRateLimit }              from '@/lib/middleware/org-rate-limit'
-import { PLANS }                     from '@/lib/stripe/config'
+import { PLANS, checkStripePriceEnvs } from '@/lib/stripe/config'
+
+// One-shot config check the first time this route is hit per cold start.
+// Logs missing STRIPE_PRICE_* env vars to console.warn so misconfigured
+// deploys are visible in Vercel logs instead of waiting for a user to
+// click "Upgrade" and hit a 500.
+let _envCheckLogged = false
+function logEnvCheckOnce() {
+  if (_envCheckLogged) return
+  _envCheckLogged = true
+  const missing = checkStripePriceEnvs()
+  if (missing.length) {
+    console.warn(`[stripe/checkout] missing Stripe price env vars: ${missing.join(', ')} — checkout will 500 for affected plans until set in Vercel`)
+  }
+}
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2024-04-10',
 })
 
 export async function POST(req: NextRequest) {
+  logEnvCheckOnce()
+
   // ── 1. Auth ────────────────────────────────────────────────────
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
