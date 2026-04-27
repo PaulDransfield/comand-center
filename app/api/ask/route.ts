@@ -103,6 +103,9 @@ export async function POST(req: NextRequest) {
   })
   context = built.context
   for (const w of built.warnings) console.warn('[ask]', w)
+  if (built.enrichmentsApplied.length) {
+    console.log('[ask] enrichments fired:', built.enrichmentsApplied.join(','))
+  }
 
   // ── 3. Atomic check + increment of daily query limit (M033, FIXES §0w) ──
   // Increment happens HERE — before Claude is called — so 100 parallel tabs

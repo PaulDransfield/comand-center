@@ -3,6 +3,45 @@ Last updated: 2026-04-27
 
 ---
 
+## 0y. AI context blind spots — full keyword-trigger sweep (2026-04-27)
+
+**Symptom:** Paul asked the scheduling AskAI "predict revenue for this week, how many hours to cut to hit 25 % staff cost?" The AI replied "No revenue data has come through for Week 18 yet — every department shows 0 kr" and asked Paul to provide the forecast manually. Same blind-spot pattern existed across 14 other AskAI surfaces (audit by Explore agent on 2026-04-27).
+
+**Root cause:** Every page that wraps AskAI builds its own inline context summary scoped to the currently-displayed period. Forward-looking, year-over-year, trend, anomaly-root-cause, and dept-breakdown questions need data OUTSIDE that window. The page never sends it; Claude correctly says "I don't have that".
+
+The data exists — `forecasts`, `monthly_metrics` (prior years), `anomaly_alerts`, `dept_metrics` are all populated and indexed. The pages just don't include them in context.
+
+**Fix:** Six keyword-triggered enrichments in `lib/ai/contextBuilder.ts`. Each fetches a small slice of the relevant table on demand. Multiple enrichments can fire on a single question; they share a 3 000-char total budget. The pre-existing COST enrichment (session 12) is the template; the new five follow the same pattern:
+
+| Tag | Trigger keywords | Data fetched | Budget hint |
+|---|---|---|---|
+| `cost` | overhead, rent, subscription, lokalhyra, försäkring, line item, margin | last 12 mo of `tracker_line_items` (other_cost), top 60 by amount | unchanged from session 12 |
+| `forecast` | forecast, predict, next week/month, upcoming, hours to cut, labour %, will i, going to | full current-year `forecasts` table + prior-year same-month actuals | ~600 chars |
+| `comparison` | compare, vs, same period last year, YoY, year-over-year, growth | prior-year `monthly_metrics` (12 rows) for YoY anchoring | ~600 chars |
+| `trend` | trend, trending, last 4/6/8 weeks, getting better/worse, rolling, momentum | last 6 months of `monthly_metrics` (oldest first for direction) | ~500 chars |
+| `anomaly` | why is, what changed, why did, reason, cause, anomal, spike, drop, jump | last 30 days of un-dismissed `anomaly_alerts` with description + deviation | ~600 chars |
+| `department` | department, dept, kitchen, bar, bella, carne, asp, by dept, location breakdown | current-year `dept_metrics` grouped by dept (last 3 months per dept) | ~700 chars |
+
+All enrichments wrapped in try/catch — failure degrades to base context unchanged; a missing table or schema drift never blocks the AI call. Logged to console (`[ask] enrichments fired: forecast,comparison`) for debugging.
+
+**Test plan (Paul, after deploy):**
+1. `/scheduling/ai`: ask "predict revenue for week 18, how many hours to cut to hit 25 % staff cost?". Expect Claude to use the forecast block + last 6 weeks trend, give an actual hours number, NOT ask Paul for the forecast.
+2. `/dashboard`: ask "how does this week compare to same week last year?". Expect Claude to reference 2025 monthly_metrics rows from the comparison enrichment.
+3. `/financials/performance`: ask "is my margin trending up over the last 4 months?". Expect Claude to read the trend block, give direction + delta.
+4. `/tracker`: ask "why did my food cost spike last month?". Expect Claude to reference recent anomaly_alerts (if any) plus the cost enrichment line items.
+5. `/group`: ask "which location is dragging down margin most?". Expect Claude to compare locations using its existing summary (this one is unchanged — group page still needs its own multi-business fetcher; out of scope here).
+6. `/dashboard`: ask "how is the bar doing?". Expect Claude to read the dept_metrics block and answer with bar-specific revenue + labour %.
+
+**Why this should hold:** every blind spot now resolves through a single file, with explicit keyword regexes. Adding a new enrichment = add a regex export + a fetcher block + slot it into the composer. Pages stop carrying the burden of pre-fetching context for every question shape; the central builder owns it. Future pages inherit all six enrichments for free as long as they pass `business_id` and the user phrases the question naturally.
+
+**Known limits / not covered by this sweep:**
+- `/group` page asking cross-business "which location is worst" — needs a separate enrichment that takes a list of business_ids; current builder is single-business only. Deferred.
+- Staff-level questions ("who has overtime", "who's late most often") — would need a staff_logs enrichment with row-level detail. Risky for prompt size at scale; deferred until requested.
+- Time-period mismatch on `/financials/performance` (user viewing week, asks about quarter) — not a blind spot per se; AI will use whatever the page sent. Add granularity label to context if it bites.
+- Mid-conversation context refresh — Claude still has only the original question's context. If the user follow-up asks about something the keyword didn't catch, no re-enrichment. Acceptable for now.
+
+---
+
 ## 0x. Manual tracker_data row blocked POS revenue in current month (2026-04-27)
 
 **Symptom:** Paul reported that for April 2026 (current month) his revenue surfaces were out of sync — the dashboard hero showed real POS-derived revenue (804 k visible / 1.6 M in raw `revenue_logs`) while P&L, Budget, and Forecast all showed 115 737 kr. Three pages, one wrong number.
