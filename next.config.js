@@ -1,6 +1,15 @@
 // next.config.js
 const { withSentryConfig } = require('@sentry/nextjs')
 
+// Bundle analyzer — runs only when ANALYZE=true is set on the build. Zero
+// runtime impact, dev-only inspection. Usage:
+//   ANALYZE=true npm run build
+// Then open the generated reports under .next/analyze/ in a browser.
+// FIXES §0nn — added 2026-04-28 to find what's in the 163 kB shared chunk.
+const withBundleAnalyzer = require('@next/bundle-analyzer')({
+  enabled: process.env.ANALYZE === 'true',
+})
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -89,7 +98,9 @@ const nextConfig = {
 // Sentry wraps the config to auto-instrument API routes and server components.
 // tunnelRoute proxies Sentry traffic through our own domain so ad-blockers
 // don't block error reports.
-module.exports = withSentryConfig(nextConfig, {
+// withBundleAnalyzer is the outer wrapper — it inspects the final config
+// (post-Sentry) and emits the visualisation reports when ANALYZE=true.
+module.exports = withBundleAnalyzer(withSentryConfig(nextConfig, {
   // NOTE: this is the SENTRY org slug (from sentry.io/settings/). It is
   // intentionally different from our Vercel org slug (`paul-7076s-projects`).
   // Getting this wrong makes the release-upload step 404 silently — symptom
@@ -113,4 +124,4 @@ module.exports = withSentryConfig(nextConfig, {
   // Proxy Sentry calls through /monitoring so adblockers don't block them
   tunnelRoute: '/monitoring',
 
-})
+}))

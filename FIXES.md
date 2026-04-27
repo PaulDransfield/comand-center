@@ -3,6 +3,51 @@ Last updated: 2026-04-27
 
 ---
 
+## 0nn. Bundle analyzer wired + audit findings (2026-04-28)
+
+**Why:** External perf review (2026-04-26) suggested running `@next/bundle-analyzer` to find any heavy dependencies hiding in the shared First Load JS. Set up + ran the audit.
+
+**Setup:**
+- Added `@next/bundle-analyzer` as devDep.
+- Wired into `next.config.js` (gated on `ANALYZE=true`, no runtime impact).
+- Added `npm run analyze` script.
+- Outer wrapper order: `withBundleAnalyzer(withSentryConfig(nextConfig, …))` so it inspects the post-Sentry config.
+
+**Findings (run 2026-04-28):**
+
+| Package | Total parsed | Notes |
+|---|---|---|
+| (app code) | 711 kB | spread across all per-page chunks |
+| next | 549 kB | unavoidable framework |
+| posthog-js | 175 kB | **already lazy-loaded** via `import('posthog-js')` in lib/analytics/posthog.ts — appears in async chunk `9da6db1e…js`, NOT in shared First Load |
+| @sentry/core | 170 kB | bulk in async chunks; baseline ~25 kB in shared First Load |
+| react-dom | 126 kB | unavoidable |
+| @supabase/auth-js | 93 kB | used everywhere — can't easily lazy |
+| @sentry-internal/browser-utils | 52 kB | Sentry support |
+| @sentry/browser | 44 kB | Sentry browser layer |
+| @supabase/postgrest-js | 29 kB | core query API, unavoidable |
+| @supabase/storage-js | 24 kB | only used by uploads — could split if it's in shared chunk |
+| @supabase/realtime-js | 21 kB | only used by Realtime subscribers — could split if it's in shared chunk |
+| @sentry/nextjs | 19 kB | Sentry Next.js integration |
+
+**Shared chunks (the 163 kB First Load):**
+- `chunks/2742-…js` (106 kB) — Next.js framework + Sentry baseline
+- `chunks/fd9d1056-…js` (54 kB) — pure Next.js framework
+
+**Verdict:** the shared First Load is already lean — there's no obvious package to extract. Real optimisation now requires:
+1. Migrating to server components (cuts the per-page client JS that imports React + supabase-js)
+2. Or reducing Sentry's footprint by hand-picking integrations (medium effort, ~25 kB possible)
+
+PostHog and AskAI — the two big "should be lazy" candidates the review identified — are already correctly lazy-loaded. The audit confirms no easy wins remain at the bundle-config level.
+
+**To re-run anytime:**
+```
+npm run analyze
+```
+Then open `.next/analyze/client.html` in a browser to see the treemap.
+
+---
+
 ## 0mm. `.gte().lte()` on date columns — bug no longer reproduces (2026-04-28)
 
 **Symptom:** External perf review (2026-04-26) pushed back on the CLAUDE.md §10b rule that bans `.gte().lte()` chains on `date` columns. The original incident on 2026-04-18 was real — Apr 17 rows existed in the DB but the JS-client range chain returned 6 fewer rows than the workaround (`.gte()` + JS filter). The reviewer claimed "more likely date-string format" — speculative, no test.
