@@ -42,6 +42,7 @@ type Db = any
 // prompt and slow Claude's response.
 export const COST_KEYWORDS       = /\b(cost|overhead|overheads|subscription|subscribe|bank|fees|fee|rent|lokalhyra|software|saas|bokio|fortnox|insurance|försäkring|prenumeration|utilit|electric|marketing|accounting|audit|margin|other[_\s]cost|line[_\s]item)s?\b/i
 export const FORECAST_KEYWORDS   = /\b(forecast(s|ed|ing)?|predict(s|ed|ion|ions|ing)?|next\s*(week|month|quarter)|this\s+week|upcoming|expect(s|ed|ing)?|will\s+(i|we|he|she|it|they|the)|going\s+to|gonna|project(s|ed|ion|ions|ing)?|hours?\s+to\s+cut|cut\s+hours?|hit\s+\d+\s*%|labour\s*%|staff\s*cost\s*(of|%|target)|coming\s+(week|month)|target|aim(ing)?\s+for|plan(ned|ning)?\s+for)\b/i
+export const SCHEDULE_KEYWORDS   = /\b(schedul(e|ed|ing)|hours?\s+to\s+cut|cut\s+hours?|how\s+many\s+hours?|hit\s+\d+\s*%|staff\s+(this|next|the)\s+week|labour\s*%|labour\s+cost|overstaffed|understaffed|roster|shifts?\s+(this|next)|next\s+week|this\s+week)\b/i
 export const COMPARISON_KEYWORDS = /\b(compare|comparison|vs|versus|same\s+(week|month|period|time|day)\s+last\s+year|year[\s-]*over[\s-]*year|yoy|growth|vs\.?\s+last\s+year|vs\.?\s+(jan|feb|mar|apr|maj|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{4}|how\s+does\s+.*compare|compared\s+to)\b/i
 export const TREND_KEYWORDS      = /\b(trend(s|ing|ed)?|rolling|last\s+(4|6|8|12)\s+(weeks|months)|getting\s+(better|worse)|declin(ing|e|ed)|improv(ing|ed|ement)|momentum|trajectory|over\s+time|past\s+(few|3|4|6)\s+(weeks|months))\b/i
 export const ANOMALY_KEYWORDS    = /\b(why\s+(is|did|are|was|were)|what\s+(changed|happened)|reason|cause(s|d|es)?|anomal(y|ies|ous)|unusual|spike(d|s)?|surge(d|s)?|drop(ped|s)?|jump(ed|s)?|crash(ed|es)?|out\s+of\s+line|off\s+vs)\b/i
@@ -58,7 +59,7 @@ export interface BuildContextOptions {
   businessId: string | null
 }
 
-export type EnrichmentTag = 'cost' | 'forecast' | 'comparison' | 'trend' | 'anomaly' | 'department'
+export type EnrichmentTag = 'cost' | 'forecast' | 'comparison' | 'trend' | 'anomaly' | 'department' | 'schedule'
 
 export interface BuiltContext {
   context: string
@@ -186,6 +187,54 @@ export async function buildAskContext(
         attach('forecast', `\n\nForecasts for ${yNow} (from forecasts table, model = trailing average + seasonality) — alongside ${yPrev} actuals for anchoring:\n${lines}\n[INSTRUCTION TO CLAUDE: when the user asks a forward-looking question (predict, next week, hours to cut, hit X% labour) and the inline page context shows zero values for the future period — that's expected, the period hasn't happened yet. USE these forecasts (or prior-year same-month actual) as the revenue baseline. DO NOT respond "no data available" or ask the user for the forecast — you have it here. Pick the most relevant month from the table above based on what they asked.]`)
       }
     } catch (e: any) { warnings.push('forecast enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── SCHEDULE ENRICHMENT ───────────────────────────────────────────────────
+  // Forward-looking SCHEDULED shifts from staff_logs (where pk_log_url ends
+  // in '_scheduled'). These are rosters posted for upcoming dates that the
+  // aggregator deliberately excludes from `daily_metrics` (those track
+  // ACTUALS only). Without this, the AI knows the revenue forecast but has
+  // no visibility into what's already on the schedule, so it can't compute
+  // "hours to cut to hit X% labour" — it has to ask the user.
+  //
+  // Sums: scheduled hours + estimated salary, by date, today + next 14 days.
+  if (opts.businessId && remainingBudget > 200 && SCHEDULE_KEYWORDS.test(question)) {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const horizon = new Date(Date.now() + 14 * 86400_000).toISOString().slice(0, 10)
+      const { data: scheduled } = await db
+        .from('staff_logs')
+        .select('shift_date, hours_worked, estimated_salary, cost_actual, staff_group')
+        .eq('org_id', opts.orgId).eq('business_id', opts.businessId)
+        .gte('shift_date', today)
+        .lte('shift_date', horizon)
+        .like('pk_log_url', '%_scheduled')
+        .order('shift_date', { ascending: true })
+        .limit(2000)
+      if (scheduled?.length) {
+        const byDate: Record<string, { hours: number; cost: number; shifts: number }> = {}
+        for (const s of scheduled) {
+          const d = s.shift_date
+          if (!byDate[d]) byDate[d] = { hours: 0, cost: 0, shifts: 0 }
+          byDate[d].hours += Number(s.hours_worked ?? 0)
+          // Use cost_actual when present (rare for future dates), else
+          // estimated_salary (the planned-cost figure PK returns for posted
+          // shifts that haven't happened yet).
+          const c = Number(s.cost_actual ?? 0) > 0 ? Number(s.cost_actual) : Number(s.estimated_salary ?? 0)
+          byDate[d].cost += c
+          byDate[d].shifts += 1
+        }
+        const dates = Object.keys(byDate).sort()
+        const totalHours = dates.reduce((s, d) => s + byDate[d].hours, 0)
+        const totalCost  = dates.reduce((s, d) => s + byDate[d].cost,  0)
+        const lines = dates.slice(0, 14).map(d => {
+          const r = byDate[d]
+          return `  - ${d}: ${r.shifts} shifts, ${Math.round(r.hours * 10) / 10}h scheduled, ${fmt(r.cost)} kr est. cost`
+        }).join('\n')
+        const avgRate = totalHours > 0 ? Math.round(totalCost / totalHours) : null
+        attach('schedule', `\n\nForward-looking SCHEDULED shifts (today + next 14 days, from PK roster — these are PLANNED hours, not actuals; cost is PK's estimated_salary):\n${lines}\n  TOTAL: ${Math.round(totalHours * 10) / 10}h scheduled, ${fmt(totalCost)} kr est. cost${avgRate ? `, ~${avgRate} kr/h blended` : ''}\n[INSTRUCTION TO CLAUDE: when computing "hours to cut to hit X% labour", use this scheduled cost vs the forecast revenue. Formula: target_cost = forecast_revenue × X%; hours_to_cut = (current_scheduled_cost − target_cost) / blended_rate. If totalHours = 0, the user hasn't posted a roster yet — say so.]`)
+      }
+    } catch (e: any) { warnings.push('schedule enrichment failed: ' + (e?.message ?? 'unknown')) }
   }
 
   // ── COMPARISON ENRICHMENT ─────────────────────────────────────────────────

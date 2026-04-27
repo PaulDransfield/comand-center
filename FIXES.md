@@ -17,6 +17,7 @@ The data exists — `forecasts`, `monthly_metrics` (prior years), `anomaly_alert
 |---|---|---|---|
 | `cost` | overhead, rent, subscription, lokalhyra, försäkring, line item, margin | last 12 mo of `tracker_line_items` (other_cost), top 60 by amount | unchanged from session 12 |
 | `forecast` | forecast, predict, next week/month, upcoming, hours to cut, labour %, will i, going to | full current-year `forecasts` table + prior-year same-month actuals | ~600 chars |
+| `schedule` | schedul(e/ed/ing), hours to cut, how many hours, hit X%, staff next week, roster, shifts this/next, this/next week | next 14 days of `staff_logs WHERE pk_log_url LIKE '%_scheduled'` — forward-looking PLANNED hours + estimated cost, by date, with totals + blended rate | ~700 chars |
 | `comparison` | compare, vs, same period last year, YoY, year-over-year, growth | prior-year `monthly_metrics` (12 rows) for YoY anchoring | ~600 chars |
 | `trend` | trend, trending, last 4/6/8 weeks, getting better/worse, rolling, momentum | last 6 months of `monthly_metrics` (oldest first for direction) | ~500 chars |
 | `anomaly` | why is, what changed, why did, reason, cause, anomal, spike, drop, jump | last 30 days of un-dismissed `anomaly_alerts` with description + deviation | ~600 chars |
