@@ -65,7 +65,18 @@ export async function getOrgFromRequest(request: Request): Promise<OrgContext | 
 
   if (!userId) return null
 
-  // Look up org membership
+  // Look up org membership.
+  //
+  // Multi-org selection: pick the EARLIEST-joined org deterministically.
+  // .single() previously threw for any user with ≥2 memberships, making
+  // them appear unauthenticated forever — invisible bug today (Paul has
+  // one org) but blocks the first accountant or consolidating-group
+  // customer from logging in.
+  //
+  // TODO: replace with explicit org selection (cookie or query param) when
+  // we add multi-org users. Today this picks the user's earliest membership;
+  // that's deterministic but won't let an accountant switch between client
+  // orgs. Mirror change in lib/supabase/server.ts::getRequestAuth.
   const { data: membership } = await supabase
     .from('organisation_members')
     .select(`
@@ -77,7 +88,9 @@ export async function getOrgFromRequest(request: Request): Promise<OrgContext | 
       )
     `)
     .eq('user_id', userId)
-    .single()
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
 
   if (!membership) return null
 

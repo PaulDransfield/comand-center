@@ -3,6 +3,25 @@ Last updated: 2026-04-27
 
 ---
 
+## 0u. Multi-org users blocked from auth by `.single()` on organisation_members (2026-04-27)
+
+**Symptom:** External code review (REVIEW §1.2) flagged that `lib/auth/get-org.ts` and `lib/supabase/server.ts::getRequestAuth` were both calling `.single()` on `organisation_members` keyed only by `user_id`. PostgREST's `.single()` throws when the result set has more or fewer than exactly one row. For any user with ≥2 memberships (an accountant servicing multiple client orgs, a consolidating-group user, or a staff user added to two restaurants under different orgs), the query throws and the helper returns `null` — the user appears unauthenticated forever, with no UI surface explaining why.
+
+**Why it slipped:** Paul is currently the only user, with one org membership. The bug is invisible until the first multi-org user signs up. REVIEW noted this as the blocker for the first accountant onboarding.
+
+**Fix:**
+
+1. Both helpers (`lib/supabase/server.ts:108-119` and `lib/auth/get-org.ts:80-95`) changed from `.single()` to `.maybeSingle()` with `.order('created_at', { ascending: true }).limit(1)` chained before. Schema confirmed: `organisation_members.created_at TIMESTAMPTZ DEFAULT now()` exists with a default, so the ordering is deterministic for every existing row and every future insert.
+2. **Org-selection rule (Sprint 1):** earliest-joined membership wins. This is a stable, predictable choice that doesn't require new schema or UI. An accountant with 5 client orgs gets bounced into whichever they joined first.
+3. **Comment block in both files** flagging the limitation: future work needs explicit org selection (cookie or query param) before we can let an accountant *switch* between client orgs. For now they can only see their oldest one.
+4. The duplicate auth-helper file (`lib/auth/get-org.ts` vs `lib/supabase/server.ts::getRequestAuth`) is intentionally NOT consolidated in this sprint — that's Task 6 in the handoff and requires migrating every API route that uses `getOrgFromRequest`.
+
+**Why this should hold:** the multi-membership case now produces a deterministic result instead of an exception. New code paths that lookup membership should use the same `.order('created_at').limit(1).maybeSingle()` pattern (or, when we add explicit org selection, route through a new shared helper that takes an org id as input). The TODO comments in both files name the next step explicitly so the deferred work is discoverable.
+
+**No DB changes. No new dependencies.**
+
+---
+
 ## 0t. Middleware silently failed open on every authenticated route except /dashboard (2026-04-27)
 
 **Symptom:** External code review flagged that `middleware.ts` was using a substring match on cookie names (`c.name.includes('auth')`) as its session check, was logging every cookie name on every request via `console.log`, and only protected `/dashboard`. Every other authenticated route (`/staff`, `/tracker`, `/financials/performance`, `/scheduling`, `/budget`, `/alerts`, `/departments`, `/invoices`, `/integrations`, `/notebook`, `/settings`, `/forecast`, `/revenue`, `/overheads`, `/group`, `/weather`, `/ai`) was rendering its layout shell to unauthenticated visitors. API routes returned 401 once the page tried to fetch data, but the chrome (sidebar, page titles, route names) was leaking what features exist to anyone with the URL.
