@@ -20,7 +20,9 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
-import AskAI from '@/components/AskAI'
+import dynamicImport from 'next/dynamic'
+// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 import PageHero from '@/components/ui/PageHero'
 import AttentionPanel from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'

@@ -3,6 +3,72 @@ Last updated: 2026-04-27
 
 ---
 
+## 0mm. `.gte().lte()` on date columns — bug no longer reproduces (2026-04-28)
+
+**Symptom:** External perf review (2026-04-26) pushed back on the CLAUDE.md §10b rule that bans `.gte().lte()` chains on `date` columns. The original incident on 2026-04-18 was real — Apr 17 rows existed in the DB but the JS-client range chain returned 6 fewer rows than the workaround (`.gte()` + JS filter). The reviewer claimed "more likely date-string format" — speculative, no test.
+
+**Investigation:** built `scripts/diag-gte-lte-bug.mjs` — a head-to-head test that runs three identical date-range queries against `revenue_logs` and compares row counts:
+1. `.gte().lte()` chain (the suspect pattern)
+2. `.gte()` + JS in-memory filter (the workaround)
+3. `and(...)` group syntax (alternative bound expression)
+
+Script aligns the top boundary with the latest row date in the table so the bug actually has a chance to manifest.
+
+**Result (run 2026-04-28 against Vero):**
+```
+Testing range 2026-03-26 → 2026-04-25 on revenue_logs for Vero
+1. .gte().lte() chain   → 136 rows
+2. .gte() + JS filter   → 136 rows
+3. and(...) group       → 136 rows
+Rows ON top boundary date (2026-04-25): 6
+```
+
+All three counts agree, including the 6 boundary rows. **The bug does NOT reproduce on current Supabase.**
+
+**Possible explanations:** Supabase fixed it server-side between Apr 18 and Apr 28; or the original diagnosis was wrong and something else dropped those rows; or a transient client-side quirk that's no longer present.
+
+**Resolution:**
+- CLAUDE.md §10b updated: "historical bug, no longer reproduces" — workaround is now defensive belt-and-braces, not a hard rule.
+- `scripts/diag-gte-lte-bug.mjs` kept as a regression check. Re-run before any future cleanup that wants to drop the workaround.
+- Existing workaround calls in `lib/sync/aggregate.ts` and `/api/metrics/daily` left in place — no perf cost, future-proof against regression. Don't aggressively rewrite them.
+- New code may use either pattern. The rule no longer blocks `.gte().lte()` chains.
+
+**Why this should hold:** evidence-based update. If Supabase ever regresses, the script will catch it on next run. The workaround in existing critical routes stays untouched as a defensive layer.
+
+---
+
+## 0ll. AskAI bundled into every authenticated page's First Load (2026-04-28)
+
+**Symptom:** External perf review noted no usage of `next/dynamic` anywhere. `AskAI` was imported as a top-level static import in 9 authenticated pages (/dashboard, /financials/performance, /forecast, /group, /overheads, /revenue, /scheduling, /staff, /tracker). Every page paid for its ~5 kB minified gzip chunk + transitive deps in initial JS, even though the component is hidden behind a floating button click that most users never tap.
+
+**Fix:** converted all 9 imports to `next/dynamic` with `ssr: false` + `loading: () => null`:
+```ts
+import dynamicImport from 'next/dynamic'
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+```
+Renamed the import as `dynamicImport` because 8 of 9 pages already declared `export const dynamic = 'force-dynamic'` and the import would shadow it.
+
+**Build before/after:**
+| Page | First Load Before | After | Δ |
+|---|---|---|---|
+| /dashboard | 251 kB | 247 kB | -4 kB |
+| /financials/performance | 249 kB | 246 kB | -3 kB |
+| /forecast | 242 kB | 239 kB | -3 kB |
+| /group | 243 kB | 239 kB | -4 kB |
+| /overheads | 244 kB | 241 kB | -3 kB |
+| /revenue | 244 kB | 241 kB | -3 kB |
+| /scheduling | 248 kB | 245 kB | -3 kB |
+| /staff | 245 kB | 241 kB | -4 kB |
+| /tracker | 244 kB | 240 kB | -4 kB |
+
+Per-page `Page` size went up ~1 kB (the dynamic wrapper) but net First Load dropped 3-4 kB per page. The AskAI chunk is now fetched on demand the first time a user clicks the floating button on any page, then cached for the rest of the session.
+
+**Why this should hold:** the import pattern is consistent (search `dynamicImport(() => import('@/components/AskAI')` to find all 9). Future pages should follow the same pattern — adding a static `import AskAI` would silently regress this win. No tooling enforces it; it's a convention.
+
+**Behavioural change:** the very first click on the AskAI button on any page incurs a brief delay (~50-100 ms) while the chunk loads. After that it's instant. This is the standard tradeoff for code splitting and doesn't affect any user who never opens the panel.
+
+---
+
 ## 0jj. /scheduling page sent zero-valued context for forward-looking weeks (2026-04-27)
 
 **Symptom:** When the scheduling page's date picker landed on a future week (Week 18 = 27 Apr–3 May, picked on 27 Apr morning before any of those days had happened), the inline context sent to AskAI looked like:

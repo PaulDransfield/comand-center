@@ -298,11 +298,21 @@ curl -X POST "http://localhost:3000/api/cron/anomaly-check" -H "Authorization: B
 
 These two patterns have caused production outages. Every new query must follow them.
 
-### Never chain `.gte().lte()` on a `date` column
+### `.gte().lte()` on a `date` column — historical bug, no longer reproduces
 
-Supabase/PostgREST silently drops top-boundary rows when both `.gte()` and `.lte()` are chained on a column of type `date`. No error, no warning, just missing rows. An `.eq()` on the same date works fine.
+> **Status update 2026-04-28:** the bug does NOT reproduce against current Supabase. Verified via `scripts/diag-gte-lte-bug.mjs` — all three query patterns (`.gte().lte()` chain, `.gte()` + JS filter, `and(...)` group) return identical row counts including rows on the top boundary. Either Supabase fixed it server-side, or the original 2026-04-18 incident had a different root cause that was misdiagnosed. **The workaround in `lib/sync/aggregate.ts` and `/api/metrics/daily` is now defensive belt-and-braces, not a hard rule.**
+>
+> Re-run the script before any future cleanup that drops the workaround:
+> ```
+> node scripts/diag-gte-lte-bug.mjs
+> ```
+> If it ever reports a mismatch again, the rule comes back in full force.
 
-**Bad:**
+Original incident notes (kept for context — symptom was real even if cause is now uncertain):
+
+Supabase/PostgREST appeared to silently drop top-boundary rows when both `.gte()` and `.lte()` were chained on a column of type `date`. Apr 17 rows existed in the DB and SQL editor saw them, but the JS-client range chain returned exactly 6 fewer rows. An `.eq()` on the same date worked fine. As of 2026-04-28 we cannot reproduce.
+
+**Old bad pattern (no longer demonstrably broken, but defensive code in some routes still avoids it):**
 ```ts
 db.from('revenue_logs').gte('revenue_date', from).lte('revenue_date', to)
 ```

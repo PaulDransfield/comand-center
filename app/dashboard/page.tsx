@@ -6,7 +6,12 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
-import AskAI from '@/components/AskAI'
+import dynamicImport from 'next/dynamic'
+// AskAI is a floating button + slide-in panel — only used after the user
+// clicks. Lazy-load it (FIXES §0ll) so its ~30 KB doesn't sit in this
+// page's First Load JS for users who never open it. ssr:false because
+// it reads localStorage at mount.
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 import OverviewChart, { PeriodOption } from '@/components/dashboard/OverviewChart'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
