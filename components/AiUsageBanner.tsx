@@ -61,7 +61,7 @@ export default function AiUsageBanner() {
 
   async function fetchUsage() {
     try {
-      const r = await fetch('/api/me/usage', { cache: 'no-store' })
+      const r = await fetch('/api/me/usage')
       if (r.status === 401) { setState(null); return }
       const j = await r.json()
       setState(j)

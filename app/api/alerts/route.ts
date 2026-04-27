@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+  // FIXES §0bb (Sprint 1.5) — bounded SWR; PATCH route below is uncached.
+  return NextResponse.json(data ?? [], {
+    headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' },
+  })
 }
 
 export async function PATCH(req: NextRequest) {

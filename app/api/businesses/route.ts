@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
   })
 
   return NextResponse.json(shaped, {
-    headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' }
+    // FIXES §0bb (Sprint 1.5) — businesses list rarely changes; bounded SWR.
+    headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' }
   })
 }

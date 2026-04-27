@@ -515,7 +515,7 @@ export default function PerformancePage() {
     let cancelled = false
     Promise.all(
       ranges.map(r =>
-        fetch(`/api/metrics/daily?business_id=${bizId}&from=${r.from}&to=${r.to}`, { cache: 'no-store' })
+        fetch(`/api/metrics/daily?business_id=${bizId}&from=${r.from}&to=${r.to}`)
           .then(x => x.ok ? x.json() : { rows: [] })
           .then(j => ({ key: r.key, rows: j?.rows ?? [] })),
       ),

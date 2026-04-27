@@ -1,10 +1,21 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending
+> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M034 — Performance indexes for revenue_logs + staff_logs (Sprint 1.5)
+**File:** `M034-PERF-INDEXES.sql` (repo root)
+**Purpose:** part of FIXES.md §0z (Sprint 1.5 Task 1). Both `revenue_logs` and `staff_logs` had ZERO indexes in any tracked migration — they pre-date the M008 summary-tables migration and were never retrofitted. `/api/departments` paginates through full table scans of both on every dashboard load. With <10k rows total today the seq scan is invisible; at 50 customers × 2yr history (~200k+ rows) it becomes the slowest query in the system. Adds 4 indexes:
+  - `idx_revenue_logs_org_biz_date` on `(org_id, business_id, revenue_date)` — primary hot path
+  - `idx_revenue_logs_org_provider_date` on `(org_id, provider, revenue_date)` — secondary filter (`.in('provider', ...)`)
+  - `idx_staff_logs_org_biz_date` on `(org_id, business_id, shift_date)` — primary hot path
+  - `idx_staff_logs_org_group_date` on `(org_id, staff_group, shift_date)` — secondary filter (`.in('staff_group', deptNames)`)
+**Production note:** the file ships with two variants. The `CREATE INDEX IF NOT EXISTS` (non-CONCURRENT) variant is uncommented and safe to run as a single SQL statement at current data volume (negligible lock duration with <10k rows). The `CREATE INDEX CONCURRENTLY` variants are commented out — use those for true production rollout when row counts grow, and run each statement individually (CONCURRENTLY can't run inside a transaction block).
+**Safety:** `CREATE INDEX IF NOT EXISTS` — idempotent. Non-destructive. Verification query at the bottom lists the 4 expected `idx_*_date` rows.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M033 — Atomic AI quota gate + 24h global-spend RPC
 **File:** `M033-INCREMENT-AI-USAGE-ATOMIC.sql` (repo root)

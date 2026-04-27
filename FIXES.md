@@ -3,6 +3,77 @@ Last updated: 2026-04-27
 
 ---
 
+## Sprint 1.5 perf quick-wins (§0z – §0dd)
+
+External performance review on 2026-04-26 surfaced 4 quick wins (~1 day total). Shipped together as Sprint 1.5 because they're independent of the Sprint 1 correctness/security work but share the codebase snapshot. Each lands as its own commit referencing its own §-section here. Bigger items (server-component migration, `dept_daily_metrics` pre-aggregate, SWR rollout) deferred to their own sprints.
+
+---
+
+## 0z. revenue_logs and staff_logs had zero indexes — full-table scans on every dashboard load (2026-04-27)
+
+**Symptom:** External perf review observed that `/api/departments` (called on every dashboard load) reads `revenue_logs` and `staff_logs` via paginated full-table scans, with NO indexes on either table. Invisible today with <10k total rows; becomes the slowest query in the system at 50 customers × 2yr history (~200k+ rows).
+
+**Root cause:** both tables pre-date the M008 summary-tables migration. Indexes were added to the new summary tables (`daily_metrics`, `dept_metrics`, `monthly_metrics`) but never retrofitted to the underlying logs.
+
+**Fix:** M034 adds 4 indexes:
+- `revenue_logs(org_id, business_id, revenue_date)` — primary hot path
+- `revenue_logs(org_id, provider, revenue_date)` — secondary filter (`.in('provider', ...)`)
+- `staff_logs(org_id, business_id, shift_date)` — primary hot path
+- `staff_logs(org_id, staff_group, shift_date)` — secondary filter (`.in('staff_group', deptNames)`)
+
+No code changes — query plans pick up the indexes automatically.
+
+**Production note:** the file ships both `IF NOT EXISTS` (single-shot, safe at current volume) and `CONCURRENTLY` (no exclusive table lock, required at scale) variants. CONCURRENTLY can't run inside a transaction block — paste each statement individually if using that path.
+
+**Why this should hold:** every query shape `/api/departments` uses is now covered. New endpoints reading these tables MUST add their own index if they introduce a different shape — don't silently rely on these.
+
+---
+
+## 0aa. No preconnect to Supabase — first API call paid full TLS handshake (2026-04-27)
+
+**Symptom:** every page load's first API call took an extra ~100–200 ms for DNS + TLS handshake to `*.supabase.co`. On dashboard cold load this is in series before the first useful byte.
+
+**Fix:** added `<link rel="preconnect">` and `<link rel="dns-prefetch">` to `app/layout.tsx` pointing at the project's Supabase URL. Browser opens the handshake during HTML parse, so the first API call resolves into a warm connection.
+
+**Note:** the URL is hardcoded to match the existing pattern in `lib/supabase/server.ts:56` and `app/api/onboarding/setup-request/route.ts:78`. When the broader project-ref-from-env-var refactor happens (REVIEW.md §2.8), update all three places at once. The hardcoded comment in `layout.tsx` is the breadcrumb.
+
+---
+
+## 0bb. cache: 'no-store' on dashboard fetches — every back-button refetched everything (2026-04-27)
+
+**Symptom:** every dashboard back-button or tab-switch refetched all 4 API calls (~400 ms wasted per navigation). The `no-store` setting was added historically (see earlier FIXES around the aggregator-staleness incident) because a stale `daily_metrics` snapshot was being served from browser cache after the aggregator updated. The fix-with-a-hammer was no-store; the right fix is bounded `Cache-Control`.
+
+**Root cause:** `cache: 'no-store'` on the client overrides whatever the server says. Both ends were demanding "never cache" → every navigation paid the full network round-trip.
+
+**Fix:**
+- 6 read-only API routes now return `Cache-Control: private, max-age=15, stale-while-revalidate=60`. Routes: `/api/metrics/daily`, `/api/departments`, `/api/businesses`, `/api/me/usage`, `/api/me/plan`, `/api/alerts` (GET only — PATCH stays uncached).
+- Removed `cache: 'no-store'` from the matching client callers: `app/dashboard/page.tsx`, `app/financials/performance/page.tsx`, `components/AiUsageBanner.tsx`, `components/PlanGate.tsx`, `components/ui/SidebarV2.tsx`.
+- `private` scope = browser cache only, never CDN. Per-user data stays per-user.
+- `max-age=15` = back-button + tab-switch feel instant; staleness bounded.
+- `stale-while-revalidate=60` = if a stale entry is served, browser revalidates in background within the next 60s.
+
+**Routes intentionally NOT changed:** `/api/sync/today`, `/api/ask`, `/api/admin/*`, `/api/fortnox/*`, all POST/PATCH paths. State-mutating or freshness-sensitive paths keep no-store.
+
+**Why this should hold:** worst-case staleness window is 15s, which is shorter than any aggregator-run cycle (`master-sync` runs once daily; on-demand sync runs throttled to 10-min minimum). If a "stale after sync" recurrence shows up, fix from the writer side (cache-bust query param or `Cache-Control: no-cache` response on the next request) — do NOT revert to `no-store` globally.
+
+---
+
+## 0cc. (skipped — xlsx/docx already lazy-loaded)
+
+External perf review flagged xlsx/docx/pdf-parse as bundle-size wins via dynamic import. Investigation showed `lib/documents/extractor.ts` already uses `await import('xlsx')` (server-side, lazy). The `docx` npm package is in package.json but never imported (extractor uses manual ZIP parsing). `pdf-parse` is referenced only in a comment. None of these libs are in the client bundle. No fix needed — the review's recommendation predated the actual code.
+
+---
+
+## 0dd. Sentry replay sample-rate config was inert — removed dead config (2026-04-27)
+
+**Symptom:** External perf review flagged `@sentry/nextjs` as a potential ~100 KB bundle bloat from the Replay integration. Inspection showed `instrumentation-client.ts` had `replaysOnErrorSampleRate: 1.0` and `replaysSessionSampleRate: 0.0` set, but the `Sentry.replayIntegration()` was never installed. Modern `@sentry/nextjs` doesn't ship Replay in default integrations — so the rate config was inert and Replay was not in the bundle.
+
+**Fix:** removed the two dead options from `instrumentation-client.ts` and replaced with a comment block explaining that if crash replays are wanted later, both the `replayIntegration()` AND the rate options need to be added — they go together.
+
+**Bundle impact:** none (Replay was already absent). This is a config cleanup, not a perf change. Documented here so future-Paul doesn't re-add inert options.
+
+---
+
 ## 0y. AI context blind spots — full keyword-trigger sweep (2026-04-27)
 
 **Symptom:** Paul asked the scheduling AskAI "predict revenue for this week, how many hours to cut to hit 25 % staff cost?" The AI replied "No revenue data has come through for Week 18 yet — every department shows 0 kr" and asked Paul to provide the forecast manually. Same blind-spot pattern existed across 14 other AskAI surfaces (audit by Explore agent on 2026-04-27).

@@ -16,10 +16,12 @@ Sentry.init({
 
   tracesSampleRate: 0.1,
 
-  // Replay a short video of the DOM when a crash happens. 0 % session-replay
-  // outside crashes keeps Sentry's replay quota untouched in normal usage.
-  replaysOnErrorSampleRate: 1.0,
-  replaysSessionSampleRate: 0.0,
+  // Replay integration is intentionally NOT installed (would add ~100 KB
+  // gzipped to every client bundle). The replay sample-rate options that
+  // used to live here were inert without the integration, so removed.
+  // If we ever want crash replays, add `Sentry.replayIntegration()` to
+  // an `integrations: [...]` array AND restore the rate options.
+  // (Sprint 1.5 perf cleanup, FIXES §0dd.)
 
   environment: process.env.NODE_ENV,
   enabled:     process.env.NODE_ENV === 'production' && !!DSN,

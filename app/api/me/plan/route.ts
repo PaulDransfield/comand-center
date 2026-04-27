@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       plan:            null,
       requiresUpgrade: true,
       reason:          'no_org',
-    }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
+    }, { headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' } })
   }
 
   const plan            = String(org.plan ?? 'trial')
@@ -59,5 +59,7 @@ export async function GET(req: NextRequest) {
     trialEnd:        org.trial_end ?? null,
     requiresUpgrade,
     reason:          requiresUpgrade ? (plan === 'past_due' ? 'past_due' : 'needs_plan') : null,
-  }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
+  // FIXES §0bb (Sprint 1.5) — plan rarely changes; bounded SWR.
+  // 401 path keeps no-store via the explicit early return above.
+  }, { headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' } })
 }

@@ -41,7 +41,7 @@ export default function PlanGate() {
     let cancelled = false
     async function check() {
       try {
-        const r = await fetch('/api/me/plan', { cache: 'no-store' })
+        const r = await fetch('/api/me/plan')
         if (!r.ok) return                         // 401 etc. — middleware handles auth
         const j = await r.json()
         if (cancelled) return

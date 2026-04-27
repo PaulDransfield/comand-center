@@ -225,17 +225,19 @@ function DashboardInner() {
     const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
     const prev = viewMode === 'week' ? getWeekBounds(weekOffset - 1) : getMonthBounds(monthOffset - 1)
 
-    // cache: 'no-store' — the browser was happily serving a pre-fix snapshot of
-    // these responses even after the DB was updated. Aggregator runs cheap, users
-    // reload the dashboard manually, no benefit to HTTP-caching these calls.
-    const noStore: RequestInit = { cache: 'no-store' }
+    // FIXES §0bb (Sprint 1.5): the four endpoints below now return
+    // Cache-Control: private, max-age=15, stale-while-revalidate=60.
+    // Browser handles bounded freshness — back-button + tab-switch are
+    // instant, worst-case staleness window is 15s (shorter than any
+    // aggregator-run cycle). cache: 'no-store' on the client would
+    // override the server header, so it's removed here.
     Promise.all([
       // Pre-computed daily metrics (reads from summary tables)
-      fetch(`/api/metrics/daily?from=${curr.from}&to=${curr.to}&${biz}`, noStore).then(r => r.json()).catch(() => ({})),
-      fetch(`/api/metrics/daily?from=${prev.from}&to=${prev.to}&${biz}`, noStore).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/metrics/daily?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      fetch(`/api/metrics/daily?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
       // Departments (still reads from raw tables — has per-dept breakdown)
-      fetch(`/api/departments?from=${curr.from}&to=${curr.to}&${biz}`, noStore).then(r => r.json()).catch(() => ({})),
-      fetch('/api/alerts', noStore).then(r => r.json()).catch(() => []),
+      fetch(`/api/departments?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
+      fetch('/api/alerts').then(r => r.json()).catch(() => []),
     ]).then(([curr_, prev_, deptRes, alertRes]) => {
       // Map daily_metrics field names to what the dashboard expects
       const rows = (curr_.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct }))

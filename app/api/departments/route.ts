@@ -264,6 +264,7 @@ export async function GET(req: NextRequest) {
     date_from:   dateFrom,
     date_to:     dateTo,
   }, {
-    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+    // FIXES §0bb (Sprint 1.5) — see /api/metrics/daily for rationale.
+    headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' },
   })
 }

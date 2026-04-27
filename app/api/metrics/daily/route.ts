@@ -83,11 +83,14 @@ export async function GET(req: NextRequest) {
     worst_day: worstDay ? { date: worstDay.date, pct: worstDay.labour_pct, staff_cost: worstDay.staff_cost, revenue: worstDay.revenue } : null,
   }
 
-  // Cache-Control: no-store prevents browsers + Vercel edge from serving a stale
-  // snapshot after aggregation re-runs. Without this, a dashboard that opened
-  // before a fresh sync will show pre-sync numbers indefinitely (hard refresh
-  // reloads the HTML but doesn't always evict fetched JSON).
+  // FIXES §0bb (Sprint 1.5): swapped no-store for bounded SWR. private =
+  // browser cache only (per-user data, never CDN); 15s max-age makes
+  // back-button + tab-switch instant; SWR=60s serves cached while
+  // background-revalidating. Worst-case staleness window is 15s, which
+  // is shorter than any aggregator-run cycle. If a "stale after sync"
+  // bug recurs, fix from the writer side (cache-busting query param) —
+  // do NOT revert to no-store globally.
   return NextResponse.json({ rows, summary }, {
-    headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' },
+    headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' },
   })
 }

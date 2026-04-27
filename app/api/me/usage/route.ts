@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
       plan:    auth.plan,
       blocked: true,
       reason:  (gate as any).body?.reason,
-    }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
+    }, { headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' } })
   }
 
   return NextResponse.json({
@@ -45,5 +45,5 @@ export async function GET(req: NextRequest) {
     monthly_ceiling_sek: gate.monthly_ceiling_sek,
     warning:         gate.warning ?? null,
     monthly_warning: gate.monthly_warning ?? null,
-  }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
+  }, { headers: { 'Cache-Control': 'private, max-age=15, stale-while-revalidate=60' } })
 }

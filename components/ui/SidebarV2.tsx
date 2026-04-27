@@ -114,7 +114,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
     if (!selected) return
     async function fetchAlertCount() {
       try {
-        const r = await fetch('/api/alerts', { cache: 'no-store' })
+        const r = await fetch('/api/alerts')
         if (!r.ok) return
         const list = await r.json()
         if (!Array.isArray(list)) return
