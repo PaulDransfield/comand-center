@@ -3,6 +3,67 @@ Last updated: 2026-04-27
 
 ---
 
+## 0w. AI quota TOCTOU + 24h table scan (2026-04-27)
+
+**Two related bugs flagged by REVIEW §1.4 — fixed in the same commit (M033 + lib/ai/usage.ts).**
+
+### 0w.1 — TOCTOU on the per-org daily AI cap
+
+**Symptom:** External code review caught that `/api/ask` does:
+```
+checkAiLimit         → SELECT current count
+(call Claude, ~30 s)
+incrementAiUsage     → UPDATE +1
+```
+Fire 100 parallel `/api/ask` requests in the same second — every one passes the SELECT before any UPDATE lands. The advertised "20 queries/day" cap turns into "20 + concurrent burst factor" with no upper bound. Worst-case Anthropic bill multiplies by burst factor before the daily cap actually clamps.
+
+**Why it slipped:** Single-user testing never produced burst. Two paying customers, mostly serial usage, so cap drift never showed in `ai_request_log`. Would have surfaced the first time a malicious script (or just a runaway Notebook page that fires AI on every keystroke) hit the endpoint.
+
+**Root cause:** Two-step gate has a race window the size of the Claude latency (~30 s). Even an honest user on a flaky connection can trigger duplicate increments by retrying mid-flight.
+
+**Fix:**
+1. New Postgres RPC `increment_ai_usage_checked(org_id, date, limit)` does `INSERT … ON CONFLICT DO UPDATE` in one statement and returns `(new_count, allowed)`. M033 adds it.
+2. New TS function `checkAndIncrementAiLimit()` in `lib/ai/usage.ts` calls the RPC. On `allowed=false` it decrements (`query_count - 1`) so the rejected attempt doesn't tick the counter — only the first request that crosses the cap pays.
+3. `/api/ask` switched from `checkAiLimit + incrementAiUsage` to `checkAndIncrementAiLimit`. Increment now happens BEFORE the Claude call.
+4. Old `checkAiLimit` + `incrementAiUsage` retained and `@deprecated`-tagged for cron-driven AI agents (anomaly explainer, weekly digest, monthly forecast calibration). They run serially under cron locks, so TOCTOU isn't an attack surface.
+
+**Behaviour change:** On Claude failure (transient Anthropic error, timeout) the attempt now still counts against the daily cap. That's slightly punishing on flaky Anthropic days, but the alternative is a refund-on-error path that opens the same race we're closing. Accept the small over-count.
+
+**Why this should hold:** Postgres serialises writes to a row through the unique constraint on `(org_id, date)`. Two concurrent `INSERT … ON CONFLICT DO UPDATE` calls cannot both return the same `query_count` — second one waits, sees the incremented value, returns N+1. The decrement-on-reject path is the only window left and it's already inside the response so the burst can't double-spend.
+
+### 0w.2 — Full table scan of `ai_request_log` on every AI call
+
+**Symptom:** `lib/ai/usage.ts:160-166` (pre-fix) ran:
+```ts
+const { data } = await db.from('ai_request_log').select('total_cost_usd').gte('created_at', since)
+const globalSpend = data.reduce(sum)
+```
+Loaded every row from the last 24 hours into Node and summed in JS. At 50 customers × 50 calls/day that's 2,500 rows fetched per AI call — ~125,000 rows/day fetched just to compute the kill-switch denominator. Quadratic-ish in customer count, falls over before 50.
+
+**Root cause:** Built when there was 1 customer and ~10 rows/day. "Sum it in JS" was fine. Never updated when usage scaled.
+
+**Fix:**
+1. New RPC `ai_spend_24h_global_usd()` does the SUM in Postgres against `idx_ai_request_log_created_at` (DESC). Returns one number.
+2. New composite index `idx_ai_request_log_org_created_at` for the per-org monthly-ceiling query (`WHERE org_id=? AND created_at>=?`).
+3. `checkAiLimit` and `checkAndIncrementAiLimit` both call the RPC instead of the table scan.
+4. RPC missing → fail OPEN (kill-switch disabled, per-org cap still gates abuse) so an unmigrated environment isn't bricked.
+
+**Why this should hold:** The query is now an index-only scan against a 24h window. Cost is independent of customer count — it grows with rows in the window, which is bounded by the global kill-switch itself. Self-limiting.
+
+### Migration / verification
+
+- M033 must be applied in Supabase before the new code reaches production. If not applied, both functions fall back to the legacy paths (kill-switch open + non-atomic gate) and log a warning.
+- Verify in Supabase after running M033:
+  ```sql
+  SELECT proname FROM pg_proc WHERE proname IN ('increment_ai_usage_checked','ai_spend_24h_global_usd');
+  -- expected: both rows present
+  SELECT indexname FROM pg_indexes WHERE tablename = 'ai_request_log';
+  -- expected: idx_ai_request_log_created_at + idx_ai_request_log_org_created_at present
+  ```
+- Manual burst test (Paul, after deploy): open 5 incognito tabs, fire `/api/ask` simultaneously while the org is at `query_count = limit - 2`. Expect: 2 succeed, 3 return 429 with `reason: 'daily_cap'`, `ai_usage_daily.query_count` ends exactly at `limit` (NOT `limit + 3`).
+
+---
+
 ## 0v. Multi-month supersede chain only kept the last period's parent (2026-04-27)
 
 **Symptom:** External code review (REVIEW §1.3) flagged that `applyMonthly` writes `supersedes_id` on the current upload row inside the period loop. For a 12-period multi-month upload, that's 12 overwrites — only the LAST period's parent ends up stored. Reject of such an upload could only restore ONE predecessor period, leaving the other periods with no parent and effectively no data.

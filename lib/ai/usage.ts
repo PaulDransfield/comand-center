@@ -3,14 +3,30 @@
 // Use from any API route that calls Claude (ask, budget generate, budget analyse, …)
 // so every AI call counts against the org's daily plan limit uniformly.
 //
-// Flow:
-//   1. const gate = await checkAiLimit(db, orgId, plan)
-//      if (!gate.ok) return NextResponse.json({ ...gate.body }, { status: 429 })
-//   2. call Claude
-//   3. await incrementAiUsage(db, orgId)
+// Two flows live here:
 //
-// All schema: ai_usage_daily (org_id, date, query_count), upsert via RPC increment_ai_usage
-// with manual upsert fallback.
+//   Burst-sensitive callers (any user-triggered endpoint — /api/ask, budget,
+//   tracker narrative, …) MUST use checkAndIncrementAiLimit():
+//     const gate = await checkAndIncrementAiLimit(db, orgId, plan)
+//     if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
+//     // call Claude
+//     // logAiRequest()
+//   It runs an atomic INSERT … ON CONFLICT DO UPDATE via RPC, so 100 parallel
+//   tabs cannot all pass the gate before any increment lands. Decrements on
+//   over-limit so the rejected attempt doesn't tick the counter.
+//
+//   Cron-driven AI agents (anomaly explainer, weekly digest, monthly forecast
+//   calibration) can keep using the legacy two-step:
+//     const gate = await checkAiLimit(db, orgId, plan)   // @deprecated
+//     if (!gate.ok) return …
+//     // call Claude
+//     await incrementAiUsage(db, orgId)
+//   They run serially from a cron lock, so TOCTOU isn't an attack surface.
+//
+// Schema: ai_usage_daily (org_id, date, query_count) with UNIQUE (org_id, date).
+// Atomic path: RPC increment_ai_usage_checked (M033). Global kill-switch
+// SUM uses RPC ai_spend_24h_global_usd (also M033) instead of the prior
+// table-scan-and-sum-in-JS that fell over above ~50 customers.
 
 import { getPlan } from '@/lib/stripe/config'
 import { calcCostUsd, usdToSek } from '@/lib/ai/cost'
@@ -148,6 +164,10 @@ export async function getEffectiveDailyLimit(
 // Unlimited plans (Group / Enterprise / anything with ai_queries_per_day === Infinity)
 // use the safety cap above rather than truly unlimited.
 // If planKey is omitted, looks it up from organisations.plan.
+//
+// @deprecated for user-facing endpoints — use checkAndIncrementAiLimit() so the
+// gate is atomic against burst (100 parallel /api/ask tabs). This two-step
+// version is still fine for cron-triggered AI agents that run serially.
 export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Promise<LimitGate> {
   let effectivePlanKey: string = planKey ?? 'trial'
   if (!planKey) {
@@ -157,12 +177,19 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
 
   // Gate 1 — global kill-switch. Stops all AI company-wide when 24 h spend
   // exceeds MAX_DAILY_GLOBAL_USD. Cheapest check, run first.
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-  const { data: globalRows } = await db
-    .from('ai_request_log')
-    .select('total_cost_usd')
-    .gte('created_at', since)
-  const globalSpend = (globalRows ?? []).reduce((s: number, r: any) => s + Number(r.total_cost_usd ?? 0), 0)
+  // M033 (FIXES §0w): replaced the prior full table scan + sum-in-JS with
+  // an RPC that does the SUM in Postgres against idx_ai_request_log_created_at.
+  // The old path fetched every row in the last 24 h on every AI call, which
+  // was O(N customers × calls/day) per request — fine at 2 paying customers,
+  // would have fallen over before 50.
+  const { data: globalSpendRpc, error: globalSpendErr } = await db.rpc('ai_spend_24h_global_usd')
+  let globalSpend = Number(globalSpendRpc ?? 0)
+  if (globalSpendErr) {
+    // RPC missing (M033 not applied yet) — fail OPEN so a missing migration
+    // doesn't block every AI call. The per-org daily cap still gates abuse.
+    console.warn('[ai] ai_spend_24h_global_usd RPC unavailable — kill-switch open:', globalSpendErr.message)
+    globalSpend = 0
+  }
   const globalCap   = globalDailyCapUsd()
   if (globalSpend >= globalCap) {
     return {
@@ -266,6 +293,217 @@ export async function checkAiLimit(db: Db, orgId: string, planKey?: string): Pro
   }
   if (monthly_warning?.severity === 'warn') {
     const monthKey = today().slice(0, 7)   // 'YYYY-MM'
+    notifyThreshold(db, orgId, 'monthly_90', monthKey).catch(() => {})
+  }
+
+  return {
+    ok: true,
+    limit,
+    used,
+    booster,
+    monthly_used_sek:    Math.round(monthSpendSek * 100) / 100,
+    monthly_ceiling_sek: monthCeiling,
+    warning,
+    monthly_warning,
+  }
+}
+
+/**
+ * Atomic check + increment for the per-org daily AI cap.
+ *
+ * Why this exists (FIXES §0w):
+ *   The legacy two-step (checkAiLimit → call Claude → incrementAiUsage) is
+ *   TOCTOU-prone: 100 parallel /api/ask requests all pass the SELECT before
+ *   any UPDATE lands, blowing the daily cap by the burst factor and
+ *   uncapping cost in the worst case.
+ *
+ * Flow:
+ *   1. Run gate 1 (global kill-switch) and gate 2 (monthly cost ceiling)
+ *      using the same logic as checkAiLimit. These are not burst-sensitive
+ *      — they're org-wide rolling sums, so a few extra calls past the
+ *      ceiling on race are acceptable. Doing them BEFORE the increment
+ *      means an org over its monthly ceiling doesn't burn its daily quota.
+ *   2. Resolve the effective daily limit (plan + active boosters).
+ *   3. Call increment_ai_usage_checked(orgId, today, limit) RPC. This does
+ *      INSERT … ON CONFLICT DO UPDATE in one statement and returns the
+ *      post-increment count + an `allowed` flag.
+ *   4. If !allowed, decrement so the rejected attempt doesn't tick the
+ *      counter — only the first request that crosses the cap pays.
+ *      Without this, a burst of 100 rejected requests would lock the org
+ *      out of legitimate calls until midnight.
+ *
+ * Returns the same LimitGate shape as checkAiLimit so callers can swap
+ * with no other changes. On `ok: true`, the increment has already happened
+ * — DO NOT also call incrementAiUsage().
+ */
+export async function checkAndIncrementAiLimit(
+  db: Db,
+  orgId: string,
+  planKey?: string,
+): Promise<LimitGate> {
+  let effectivePlanKey: string = planKey ?? 'trial'
+  if (!planKey) {
+    const { data } = await db.from('organisations').select('plan').eq('id', orgId).maybeSingle()
+    effectivePlanKey = data?.plan ?? 'trial'
+  }
+
+  // Gate 1 — global kill-switch (same RPC as checkAiLimit).
+  const { data: globalSpendRpc, error: globalSpendErr } = await db.rpc('ai_spend_24h_global_usd')
+  let globalSpend = Number(globalSpendRpc ?? 0)
+  if (globalSpendErr) {
+    console.warn('[ai] ai_spend_24h_global_usd RPC unavailable — kill-switch open:', globalSpendErr.message)
+    globalSpend = 0
+  }
+  const globalCap = globalDailyCapUsd()
+  if (globalSpend >= globalCap) {
+    return {
+      ok:     false,
+      status: 503,
+      body: {
+        error:           'AI temporarily paused across CommandCenter — please try again shortly.',
+        reason:          'global_kill_switch',
+        contact_support: true,
+      },
+    }
+  }
+
+  // Gate 2 — per-plan monthly cost ceiling.
+  const monthStart = new Date()
+  monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0)
+  const { data: monthRows } = await db
+    .from('ai_request_log')
+    .select('cost_sek')
+    .eq('org_id', orgId)
+    .gte('created_at', monthStart.toISOString())
+  const monthSpendSek = (monthRows ?? []).reduce((s: number, r: any) => s + Number(r.cost_sek ?? 0), 0)
+  const monthCeiling  = monthlyCeilingFor(effectivePlanKey)
+  if (monthSpendSek >= monthCeiling) {
+    return {
+      ok:     false,
+      status: 429,
+      body: {
+        error:           'Monthly AI cost ceiling reached. Please contact support to review usage.',
+        reason:          'monthly_ceiling',
+        plan:            effectivePlanKey,
+        used:            Math.round(monthSpendSek),
+        limit:           monthCeiling,
+        contact_support: true,
+      },
+    }
+  }
+
+  // Gate 3 — atomic per-day query cap via RPC.
+  const { total: limit, booster } = await getEffectiveDailyLimit(db, orgId, effectivePlanKey)
+  const d = today()
+
+  let postCount: number = 0
+  let allowed:   boolean = true
+  try {
+    const { data: rpcRows, error: rpcErr } = await db.rpc('increment_ai_usage_checked', {
+      p_org_id: orgId,
+      p_date:   d,
+      p_limit:  limit,
+    })
+    if (rpcErr) throw rpcErr
+    // Postgres RETURNS TABLE comes back as an array of rows.
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows
+    postCount = Number(row?.new_count ?? 0)
+    allowed   = Boolean(row?.allowed)
+  } catch (e: any) {
+    // RPC missing (M033 not applied yet) — fall back to the legacy two-step
+    // so an unmigrated environment still rate-limits, just non-atomically.
+    if (!(globalThis as any).__aiCheckedRpcWarned) {
+      console.warn('[ai] increment_ai_usage_checked RPC unavailable, falling back to non-atomic gate:', e?.message || e)
+      ;(globalThis as any).__aiCheckedRpcWarned = true
+    }
+    const { data: usage } = await db
+      .from('ai_usage_daily')
+      .select('query_count')
+      .eq('org_id', orgId)
+      .eq('date', d)
+      .maybeSingle()
+    const used = usage?.query_count ?? 0
+    if (used >= limit) {
+      return {
+        ok:     false,
+        status: 429,
+        body: {
+          error:   'Daily AI query limit reached',
+          reason:  'daily_cap',
+          limit,
+          used,
+          plan:    effectivePlanKey,
+          booster,
+          upgrade: true,
+        },
+      }
+    }
+    await incrementAiUsage(db, orgId)
+    postCount = used + 1
+    allowed   = true
+  }
+
+  if (!allowed) {
+    // Burst-rejected — undo the increment so we don't starve legitimate
+    // calls for the rest of the day. Only the first request that crosses
+    // the cap should count against the quota.
+    try {
+      await db.from('ai_usage_daily')
+        .update({ query_count: Math.max(0, postCount - 1) })
+        .eq('org_id', orgId)
+        .eq('date', d)
+    } catch (e: any) {
+      console.warn('[ai] post-reject decrement failed:', e?.message || e)
+    }
+    return {
+      ok:     false,
+      status: 429,
+      body: {
+        error:   'Daily AI query limit reached',
+        reason:  'daily_cap',
+        limit,
+        used:    Math.max(0, postCount - 1),
+        plan:    effectivePlanKey,
+        booster,
+        upgrade: true,
+      },
+    }
+  }
+
+  // Allowed — surface the same warning ladders as checkAiLimit so the UI
+  // can render the approaching-cap nudge.
+  const used = postCount
+  const dailyPct = limit > 0 ? used / limit : 0
+  let warning: LimitGateOk['warning']
+  if (dailyPct >= DAILY_WARN_THRESHOLD) {
+    warning = { used, limit, percent: Math.round(dailyPct * 100), severity: 'warn' }
+  } else if (dailyPct >= DAILY_INFO_THRESHOLD) {
+    warning = { used, limit, percent: Math.round(dailyPct * 100), severity: 'info' }
+  }
+
+  const monthlyPct = monthCeiling > 0 ? monthSpendSek / monthCeiling : 0
+  let monthly_warning: LimitGateOk['monthly_warning']
+  if (monthlyPct >= MONTHLY_WARN_THRESHOLD) {
+    monthly_warning = {
+      used_sek:    Math.round(monthSpendSek * 100) / 100,
+      ceiling_sek: monthCeiling,
+      percent:     Math.round(monthlyPct * 100),
+      severity:    'warn',
+    }
+  } else if (monthlyPct >= MONTHLY_INFO_THRESHOLD) {
+    monthly_warning = {
+      used_sek:    Math.round(monthSpendSek * 100) / 100,
+      ceiling_sek: monthCeiling,
+      percent:     Math.round(monthlyPct * 100),
+      severity:    'info',
+    }
+  }
+
+  if (warning?.severity === 'warn') {
+    notifyThreshold(db, orgId, 'daily_80', d).catch(() => {})
+  }
+  if (monthly_warning?.severity === 'warn') {
+    const monthKey = d.slice(0, 7)
     notifyThreshold(db, orgId, 'monthly_90', monthKey).catch(() => {})
   }
 

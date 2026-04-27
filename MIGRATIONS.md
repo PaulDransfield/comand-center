@@ -1,10 +1,21 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending
+> Last updated: 2026-04-27 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M033 — Atomic AI quota gate + 24h global-spend RPC
+**File:** `M033-INCREMENT-AI-USAGE-ATOMIC.sql` (repo root)
+**Purpose:** part of FIXES.md §0w (Sprint 1 Tasks 4 + 5). Two related fixes in one migration:
+  1. `increment_ai_usage_checked(org_id, date, limit)` — atomic `INSERT … ON CONFLICT DO UPDATE` returning `(new_count, allowed)`. Closes the TOCTOU window where 100 parallel `/api/ask` requests could all pass `checkAiLimit` before any increment landed and blow the per-org daily cap by the burst factor. Caller decrements when `allowed=false` so the rejected attempt doesn't tick the counter.
+  2. `ai_spend_24h_global_usd()` — Postgres-side SUM for the global kill-switch denominator. Replaces the prior full table scan + sum-in-JS that pulled every row from the last 24 h on every AI call (~125k rows/day fetched at 50 customers). Single index scan now.
+  3. Hot indexes for both rolling-window queries: `idx_ai_request_log_created_at` (DESC) for the global rolling sum, `idx_ai_request_log_org_created_at` for the per-org monthly ceiling check.
+  4. Belt-and-braces `ALTER TABLE ai_usage_daily ADD CONSTRAINT … UNIQUE (org_id, date)` if missing — the ON CONFLICT path needs it. M002 should have added it; this is for environments rebuilt from older snapshots.
+**Backwards compat:** legacy `checkAiLimit` + `incrementAiUsage` retained and `@deprecated`-tagged in `lib/ai/usage.ts`. Cron-driven AI agents (anomaly explainer, weekly digest, monthly forecast calibration) still use them — they run serially under cron locks so TOCTOU isn't an attack surface. RPC missing → both code paths fail OPEN (kill-switch disabled, fall back to non-atomic gate) so an unmigrated environment isn't bricked.
+**Safety:** `CREATE OR REPLACE FUNCTION` + `CREATE INDEX IF NOT EXISTS`. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the bottom list the new functions, indexes, and the unique constraint.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Then manual burst test (FIXES §0w end): open 5 incognito tabs at `query_count = limit - 2`, fire `/api/ask` simultaneously, expect 2 succeed + 3 return 429 + counter ends at exactly `limit`.
 
 ### M032 — Fortnox supersede chain join table
 **File:** `M032-FORTNOX-SUPERSEDE-CHAIN.sql` (repo root)

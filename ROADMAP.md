@@ -1,8 +1,31 @@
 # ROADMAP.md — CommandCenter
-> Version 8.3 | Updated: 2026-04-23 | Session 12 ✅ (PK hardening + AI layer upgrade + Performance page)
-> Active focus: mobile deployment (Capacitor + Apple/Google enrolment — see session 12 notes)
+> Version 8.5 | Updated: 2026-04-27 | Session 14 ✅ (Sprint 1 remediation — middleware + multi-org + supersede chain + atomic AI quota)
+> Active focus: Sprint 2 (Tasks 6–10 from external code review)
 > UX redesign: phase 10 shipped (Performance page replaces Cashflow)
 > Read alongside CLAUDE.md and FIXES.md
+
+---
+
+## Session 14 — 2026-04-27 shipped (Sprint 1 of external code review)
+
+External code review (`REVIEW.md`) flagged 5 critical/high issues. All landed this session. See `CLAUDE-CODE-HANDOFF.md` for the original tasking.
+
+- **Task 1 — middleware rewritten** (FIXES §0t). Original task was "delete middleware" — pre-flight check found pages are `'use client'` with no server-side redirect, so deletion would have regressed `/dashboard` from "redirect to login" to "broken shell + 401 fetches". Rewrote `middleware.ts` to do cheap structural JWT validation (~88 lines, no `console.log`, no Supabase network call) on an explicit allowlist of 17 protected prefixes. New `lib/auth/session-cookie.ts` handles all three @supabase/ssr cookie shapes including chunked cookies. Cryptographic check stays in `getRequestAuth`.
+- **Task 2 — multi-org `.single()` fix** (FIXES §0u). Both `lib/supabase/server.ts` and `lib/auth/get-org.ts` switched to `.maybeSingle()` with `.order('created_at', ascending: true).limit(1)` on `organisation_members`. A user with ≥2 org memberships no longer 401s; they land in their oldest org. Comment block flags the future explicit-org-switcher work.
+- **Task 3 — Fortnox supersede chain join table** (FIXES §0v, M032 pending). New `fortnox_supersede_links(child_id, parent_id, period_year, period_month)`. apply() inserts one row per period iteration; reject() walks the table to restore EVERY parent on multi-month uploads. Pre-fix the column-level `supersedes_id` was overwritten on every iteration, leaving multi-month chains with only the last period's parent recorded.
+- **Task 4 — atomic AI quota gate** (FIXES §0w, M033 pending). `/api/ask` switched from two-step `checkAiLimit + incrementAiUsage` to atomic `checkAndIncrementAiLimit()` via new `increment_ai_usage_checked` RPC. Closes the TOCTOU window where 100 parallel requests could blow the per-org daily cap by the burst factor. Cron-driven AI agents keep using the legacy two-step (now `@deprecated`) since they run serially under cron locks.
+- **Task 5 — kill-switch table-scan removal** (FIXES §0w extension, same migration). New `ai_spend_24h_global_usd()` RPC + `idx_ai_request_log_created_at` (DESC) + `idx_ai_request_log_org_created_at`. Replaces the prior `db.from('ai_request_log').select('total_cost_usd').gte('created_at', since)` table scan that fetched ~2,500 rows per AI call at 50 customers.
+
+**Migrations pending Paul application in Supabase:** M032, M033.
+
+**Sprint 2 (Tasks 6–10, deferred from this sprint):**
+- Task 6 — consolidate the two auth helpers (delete `lib/auth/get-org.ts`); requires migrating every API route using `getOrgFromRequest`.
+- Task 7 — Stripe webhook `'solo'` plan default → look up plan from `price.id`.
+- Task 8 — standardise on `checkCronSecret` in the 3 inline-`!==` cron handlers.
+- Task 9 — wrap aggregator fire-and-forget in `waitUntil`.
+- Task 10 — move root cruft to `archive/`.
+
+Sprint 2 owner pick is Paul's call — Task 7 is the most user-visible (wrong plan = wrong AI quota), Task 6 is the largest blast radius.
 
 ---
 

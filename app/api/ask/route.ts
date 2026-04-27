@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS }     from '@/lib/ai/models'
-import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
+import { checkAndIncrementAiLimit, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE }                from '@/lib/ai/scope'
 import { INDUSTRY_BENCHMARKS, VOICE, DATA_GAPS } from '@/lib/ai/rules'
 import { buildAskContext }           from '@/lib/ai/contextBuilder'
@@ -104,9 +104,12 @@ export async function POST(req: NextRequest) {
   context = built.context
   for (const w of built.warnings) console.warn('[ask]', w)
 
-  // ── 3. Check daily query limit (shared helper in lib/ai/usage.ts) ────────
+  // ── 3. Atomic check + increment of daily query limit (M033, FIXES §0w) ──
+  // Increment happens HERE — before Claude is called — so 100 parallel tabs
+  // can't all pass the gate before the counter ticks. On Claude failure the
+  // attempt still counts; that's the desired behaviour for rate limiting.
   const supabase = createAdminClient()
-  const gate = await checkAiLimit(supabase, auth.orgId, auth.plan)
+  const gate = await checkAndIncrementAiLimit(supabase, auth.orgId, auth.plan)
   if (!gate.ok) return NextResponse.json(gate.body, { status: gate.status })
 
   // ── 4. Call Claude ─────────────────────────────────────────────
@@ -135,9 +138,7 @@ export async function POST(req: NextRequest) {
     })
     answer = (response.content[0] as any).text ?? 'No response'
 
-    // ── 5. Increment daily counter (gates the daily cap) ──────
-    await incrementAiUsage(supabase, auth.orgId)
-
+    // ── 5. (Counter was already incremented atomically in step 3.) ────
     // ── 6. Write full audit row — tokens, cost, user, duration ─
     const inputTokens  = (response as any).usage?.input_tokens  ?? 0
     const outputTokens = (response as any).usage?.output_tokens ?? 0
