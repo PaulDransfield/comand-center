@@ -1,5 +1,37 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-26
+Last updated: 2026-04-27
+
+---
+
+## 0t. Middleware silently failed open on every authenticated route except /dashboard (2026-04-27)
+
+**Symptom:** External code review flagged that `middleware.ts` was using a substring match on cookie names (`c.name.includes('auth')`) as its session check, was logging every cookie name on every request via `console.log`, and only protected `/dashboard`. Every other authenticated route (`/staff`, `/tracker`, `/financials/performance`, `/scheduling`, `/budget`, `/alerts`, `/departments`, `/invoices`, `/integrations`, `/notebook`, `/settings`, `/forecast`, `/revenue`, `/overheads`, `/group`, `/weather`, `/ai`) was rendering its layout shell to unauthenticated visitors. API routes returned 401 once the page tried to fetch data, but the chrome (sidebar, page titles, route names) was leaking what features exist to anyone with the URL.
+
+**Why it slipped:** the original middleware was scaffolded around `/dashboard` alone, and pages were never given a server-side auth check because the (then-just-/dashboard) middleware was assumed to cover them. As routes were added, no one revisited the matcher.
+
+**Initial proposal was to delete middleware entirely** and rely on per-page server-side redirects. Pre-flight check during this fix found that no authenticated page actually has a server-side redirect — they're all `'use client'` shells that fetch data and lean on API 401s. Deletion would have regressed `/dashboard` to "broken shell + 401 fetches" without fixing any other route. Reverted to a rewrite (see `Task1-REVISED.md` for the decision trail).
+
+**Fix — rewrite middleware to do real (cheap) structural validation across all authenticated routes:**
+
+1. **Extracted shared cookie reader to `lib/auth/session-cookie.ts`.** Three pure functions: `readSessionCookie` (joins chunked `sb-<ref>-auth-token.N` cookies), `extractAccessToken` (handles all three @supabase/ssr storage shapes), `isJwtStructurallyValid` (parses JWT, checks `exp` claim with 60s clock skew, no crypto, no network — Edge-safe).
+2. **Rewrote `middleware.ts`** to use the new util. ~80 lines of real logic. No logging, no substring matching. Protected-prefix list explicit (`isProtectedPath` allowlist of 18 prefixes). Excludes `/admin/*` (own auth flow), auth pages, public legal pages, `/api/*` (do their own auth via `getRequestAuth`), and Next internals.
+3. **Did NOT add `auth.getUser(token)` to middleware** — that's a network call to Supabase on every navigation, 100–300 ms each, costly at scale. Cryptographic validation continues to happen server-side in `getRequestAuth` on every API call. A forged JWT passes middleware but fails the first API request.
+4. **Did NOT migrate to Next.js route groups** (`app/(authed)/layout.tsx` with a server-component auth check). That's the proper long-term answer but it's a 20-page reorganisation and was deferred to a future sprint focused on SSR auth consolidation.
+
+**Test plan (Paul runs these in incognito after deploy):**
+
+1. `https://comandcenter.se/staff` → must 302 to `/login?redirectTo=%2Fstaff`
+2. Same for: `/tracker`, `/financials/performance`, `/budget`, `/scheduling/ai`, `/departments`, `/invoices`, `/integrations`, `/notebook`, `/settings`, `/forecast`, `/alerts`, `/overheads/upload`, `/revenue`, `/group`, `/weather`
+3. `/dashboard` → must redirect (was already; confirms regression-free)
+4. `/login`, `/reset-password`, `/terms`, `/privacy` → must NOT redirect (public pages)
+5. `/admin` → must NOT redirect from middleware (admin has its own ADMIN_SECRET flow)
+6. `/api/me` → must NOT redirect; returns 401 instead (API routes excluded by `isProtectedPath`)
+7. Logged-in session, visit `/` → must redirect to `/dashboard`
+8. Logged-in session, visit `/staff` → must render normally, no redirect
+
+**Why this should hold:** middleware now (a) covers every authenticated prefix explicitly via a single source of truth (`isProtectedPath`), (b) validates the cookie's JWT exp claim instead of substring-matching its name, (c) doesn't log, (d) shares its cookie-parsing logic with `getRequestAuth` so a future @supabase/ssr cookie-format change updates both at once. The remaining gap (forged-but-structurally-valid cookies pass middleware) is closed by the API layer, which is the security-critical gate anyway.
+
+**No DB changes. No new dependencies. No new env vars.**
 
 ---
 

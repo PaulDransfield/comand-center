@@ -48,25 +48,32 @@ If yes — proceed. Update the `MIGRATIONS.md` header to flip the four entries f
 
 ---
 
-## Task 1 — fix `middleware.ts` [CRITICAL, ~30 min]
+## Task 1 — REVISED — minimal session-validating middleware
 
-**Why:** It only protects `/dashboard`, the "session check" is a substring match on cookie names (set a cookie called `auth` and you pass), and it console-logs every cookie name on every request. Either it does its job or it doesn't exist.
+> Replaces the original Task 1.
+> Reason: prerequisite check failed — page-level redirects don't exist, so deleting middleware would have regressed `/dashboard` from "redirect to login" to "broken shell + 401 fetches" while leaving every other authenticated page (already broken — middleware never covered them) still leaking layout shell to logged-out users.
+> Decision: rewrite middleware to do the job properly, broaden coverage to all authenticated routes. Route-group reorganisation deferred to a future sprint.
 
-**Decision:** delete it. Per-route `getRequestAuth` already enforces auth on every API call, and the page server components already redirect via their own checks. Adding a real JWT-validating middleware is more work than the value warrants right now (and will be revisited when SSR auth is consolidated).
+**Approach:** small Next.js middleware that does cheap structural validation of the Supabase session cookie on every authenticated route. If the cookie is absent, malformed, or its JWT `exp` claim is in the past → redirect to `/login?redirectTo=...`. Otherwise let through. Cryptographic check stays in `getRequestAuth`. Edge-safe, no Supabase network call, no logging.
 
 **Steps:**
 
-1. Read `middleware.ts` and confirm what's actually there matches what `REVIEW.md §2.7` describes.
-2. Read 3 page server components (e.g. `app/staff/page.tsx`, `app/tracker/page.tsx`, `app/financials/performance/page.tsx`) and confirm they redirect to `/login` when unauthenticated. If any do not, **stop** and tell Paul — that page is publicly leaking layout shell and we need a different approach.
-3. If the page-level redirects are in place: delete `middleware.ts`. That's it. Next.js will simply have no middleware.
-4. Verify the build still works: `npm run build`.
-5. Manually test: open an incognito window, hit `https://comandcenter.se/dashboard` — should redirect to `/login`. Same for `/staff`, `/tracker`, `/admin`. (Paul does this; you write the test plan into `FIXES.md`.)
-6. Add `FIXES.md §0t` documenting the change.
+1. Create `lib/auth/session-cookie.ts` with three exported functions: `readSessionCookie` (joins chunked cookies), `extractAccessToken` (handles all three @supabase/ssr storage shapes), `isJwtStructurallyValid` (parses JWT, checks `exp` with 60s clock skew).
+2. Rewrite `middleware.ts` to use the util. Explicit `isProtectedPath` allowlist of all 17 authenticated prefixes. Excludes `/admin/*`, auth pages, public legal pages, `/api/*`, Next internals.
+3. Confirm `getRequestAuth` doesn't import from middleware. Don't refactor it to use the new util in this task.
+4. `npm run build` — should pass.
+5. Manual verification (Paul): incognito visits to `/staff`, `/tracker`, `/financials/performance`, `/budget`, `/scheduling/ai`, `/departments`, `/invoices`, `/integrations`, `/notebook`, `/settings`, `/forecast`, `/alerts`, `/overheads/upload`, `/revenue`, `/group`, `/weather`, `/dashboard` all 302 → `/login?redirectTo=...`. `/login`, `/reset-password`, `/terms`, `/privacy`, `/admin`, `/api/me` do NOT redirect. Logged-in `/` → `/dashboard`. Logged-in `/staff` renders normally.
+6. Add `FIXES.md §0t` documenting the change (Symptom / Why it slipped / Initial proposal / Fix / Why this should hold).
 
 **Acceptance criteria:**
-- `middleware.ts` no longer exists.
+- `middleware.ts` exists, ~80 lines, no `console.log`.
+- `lib/auth/session-cookie.ts` exists with three exported functions.
+- `npx tsc --noEmit` passes (no worse than baseline).
 - `npm run build` passes.
 - Test plan in `FIXES.md §0t`.
+- All manual verification steps pass when Paul deploys.
+
+**Full revised spec:** see `Task1-REVISED.md` at repo root.
 
 ---
 
