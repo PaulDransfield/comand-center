@@ -41,11 +41,11 @@ type Db = any
 // owners use day-to-day. Expand conservatively — false positives bloat the
 // prompt and slow Claude's response.
 export const COST_KEYWORDS       = /\b(cost|overhead|overheads|subscription|subscribe|bank|fees|fee|rent|lokalhyra|software|saas|bokio|fortnox|insurance|försäkring|prenumeration|utilit|electric|marketing|accounting|audit|margin|other[_\s]cost|line[_\s]item)s?\b/i
-export const FORECAST_KEYWORDS   = /\b(forecast|predict|prediction|next\s*(week|month|quarter)|upcoming|expect|expected|will\s+i|going\s+to|project(ed|ion)?|hours?\s+to\s+cut|labour\s*%|coming\s+(week|month))\b/i
-export const COMPARISON_KEYWORDS = /\b(compare|vs|versus|same\s+(week|month|period|time)\s+last\s+year|year[\s-]*over[\s-]*year|yoy|growth|vs\.?\s+last\s+year|vs\.?\s+(jan|feb|mar|apr|maj|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{4})\b/i
-export const TREND_KEYWORDS      = /\b(trend|trending|rolling|last\s+(4|6|8|12)\s+(weeks|months)|getting\s+(better|worse)|declin(ing|e)|improv(ing|ed)|momentum|trajectory|over\s+time)\b/i
-export const ANOMALY_KEYWORDS    = /\b(why\s+(is|did|are)|what\s+(changed|happened)|reason|cause|caus(ed|es)|anomal|unusual|spike|surge|drop(ped)?|jump(ed)?|crash(ed)?|out\s+of\s+line)\b/i
-export const DEPARTMENT_KEYWORDS = /\b(department|departments|dept|kitchen|bar|bella|carne|asp|which\s+(area|location)|by\s+dept|per\s+department|location\s+breakdown|each\s+location)\b/i
+export const FORECAST_KEYWORDS   = /\b(forecast(s|ed|ing)?|predict(s|ed|ion|ions|ing)?|next\s*(week|month|quarter)|this\s+week|upcoming|expect(s|ed|ing)?|will\s+(i|we|he|she|it|they|the)|going\s+to|gonna|project(s|ed|ion|ions|ing)?|hours?\s+to\s+cut|cut\s+hours?|hit\s+\d+\s*%|labour\s*%|staff\s*cost\s*(of|%|target)|coming\s+(week|month)|target|aim(ing)?\s+for|plan(ned|ning)?\s+for)\b/i
+export const COMPARISON_KEYWORDS = /\b(compare|comparison|vs|versus|same\s+(week|month|period|time|day)\s+last\s+year|year[\s-]*over[\s-]*year|yoy|growth|vs\.?\s+last\s+year|vs\.?\s+(jan|feb|mar|apr|maj|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{4}|how\s+does\s+.*compare|compared\s+to)\b/i
+export const TREND_KEYWORDS      = /\b(trend(s|ing|ed)?|rolling|last\s+(4|6|8|12)\s+(weeks|months)|getting\s+(better|worse)|declin(ing|e|ed)|improv(ing|ed|ement)|momentum|trajectory|over\s+time|past\s+(few|3|4|6)\s+(weeks|months))\b/i
+export const ANOMALY_KEYWORDS    = /\b(why\s+(is|did|are|was|were)|what\s+(changed|happened)|reason|cause(s|d|es)?|anomal(y|ies|ous)|unusual|spike(d|s)?|surge(d|s)?|drop(ped|s)?|jump(ed|s)?|crash(ed|es)?|out\s+of\s+line|off\s+vs)\b/i
+export const DEPARTMENT_KEYWORDS = /\b(department(s)?|dept(s)?|kitchen|bar|bella|carne|asp|which\s+(area|location)|by\s+dept|per\s+department|location\s+breakdown|each\s+location)\b/i
 
 export interface BuildContextOptions {
   /** Total prompt-context character budget. Default 8000 (~3 200 input tokens). */
@@ -183,7 +183,7 @@ export async function buildAskContext(
             : ` | ${yPrev}: no data`
           return `  - ${MONTHS[f.period_month - 1]} ${f.period_year}: forecast ${fmt(f.revenue_forecast)} kr (margin ${f.margin_forecast ?? '—'}%, based on ${f.based_on_months} months)${priorStr}`
         }).join('\n')
-        attach('forecast', `\n\nForecasts for ${yNow} (from forecasts table, model = trailing average + seasonality) — alongside ${yPrev} actuals for anchoring:\n${lines}\n[Note: forecasts are point estimates. Same-week-last-year is a more reliable single anchor than the model average.]`)
+        attach('forecast', `\n\nForecasts for ${yNow} (from forecasts table, model = trailing average + seasonality) — alongside ${yPrev} actuals for anchoring:\n${lines}\n[INSTRUCTION TO CLAUDE: when the user asks a forward-looking question (predict, next week, hours to cut, hit X% labour) and the inline page context shows zero values for the future period — that's expected, the period hasn't happened yet. USE these forecasts (or prior-year same-month actual) as the revenue baseline. DO NOT respond "no data available" or ask the user for the forecast — you have it here. Pick the most relevant month from the table above based on what they asked.]`)
       }
     } catch (e: any) { warnings.push('forecast enrichment failed: ' + (e?.message ?? 'unknown')) }
   }
