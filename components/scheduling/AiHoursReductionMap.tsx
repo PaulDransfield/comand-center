@@ -47,21 +47,25 @@ interface Props {
   fmtHrs:        (h: number) => string
 }
 
-// Status colors per the design spec — pulled from the prompt's color
-// callouts so the look is consistent regardless of UX token shifts later.
+// FIXES §0qq: switched from the design-prompt's custom palette to the
+// existing UX semantic tokens (lib/constants/tokens.ts) so this component
+// matches the rest of the app. Status colours map to greenInk / amberInk /
+// ink5; surfaces use pageBg / cardBg / borderSoft.
 const C = {
-  green:  '#0F6E56',
-  amber:  '#BA7517',
-  gray:   '#B4B2A9',
-  ink:    UX.ink1,
-  ink2:   UX.ink2,
-  ink3:   UX.ink3,
-  ink4:   UX.ink4,
-  bgPage: '#fafbf7',                    // page background — soft warm-neutral
-  bgCard: '#ffffff',
-  bgBar:  '#f3f1ec',                    // bar track — slightly warmer than card
-  border: 'rgba(17,24,39,0.08)',
-  amberBg: '#fdf3df',
+  green:   UX.greenInk,
+  greenBg: UX.greenBg,
+  amber:   UX.amberInk,
+  amberBg: UX.amberBg,
+  amberBorder: UX.amberBorder,
+  gray:    UX.ink5,                     // separators / disabled tone — closes / no-change rows
+  ink:     UX.ink1,
+  ink2:    UX.ink2,
+  ink3:    UX.ink3,
+  ink4:    UX.ink4,
+  bgPage:  UX.pageBg,                   // matches body bg in app/layout.tsx
+  bgCard:  UX.cardBg,
+  bgBar:   UX.borderSoft,               // bar track — same neutral used elsewhere as separator surface
+  border:  UX.border,
 }
 
 const WEEKDAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
