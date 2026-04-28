@@ -1,17 +1,10 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 pending
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
-
-### M035 — Agent settings table for kill switch (Admin v2 PR 6)
-**File:** `M035-ADMIN-AGENT-SETTINGS.sql` (repo root)
-**Purpose:** part of FIXES.md §0ag (Admin v2 PR 6). Creates `agent_settings(key TEXT PK, is_active BOOLEAN, last_changed_at, last_changed_by, last_change_reason)`. Seeds the 6 known agent keys (anomaly_detection / forecast_calibration / scheduling_optimization / monday_briefing / onboarding_success / supplier_price_creep) with `is_active=true`. The Admin v2 Agents tab toggles `is_active` to globally kill an agent.
-**Caveat:** cron handlers DO NOT yet check this column. PR 6 ships the table + admin surface so the kill switch is visible and audited; wiring the crons to honour `is_active=false` is a small follow-up PR. Until then the agents tab clearly shows "Cron handlers will need a follow-up PR to honour this".
-**Safety:** `CREATE TABLE IF NOT EXISTS` + `INSERT … ON CONFLICT DO NOTHING`. Idempotent. RLS enabled with no policy → service-role only. Verify query at the bottom lists the 6 seeded rows.
-**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M033 — Atomic AI quota gate + 24h global-spend RPC
 **File:** `M033-INCREMENT-AI-USAGE-ATOMIC.sql` (repo root)
@@ -34,6 +27,12 @@
 ---
 
 ## Applied — for reference
+
+### M035 — Agent settings table for kill switch (Admin v2 PR 6) ✅ applied 2026-04-28
+**File:** `M035-ADMIN-AGENT-SETTINGS.sql` (repo root)
+**Purpose:** part of FIXES.md §0ag. Created `agent_settings(key TEXT PK, is_active BOOLEAN, last_changed_at, last_changed_by, last_change_reason)`. Seeded the 6 known agent keys with `is_active=true`. The Admin v2 Agents tab toggles `is_active` to globally kill an agent.
+**Verified 2026-04-28:** all 6 seed rows present (anomaly_detection / forecast_calibration / monday_briefing / onboarding_success / scheduling_optimization / supplier_price_creep), all `is_active=true`.
+**Caveat:** cron handlers DO NOT yet check this column. The kill switch is visible + audited via the v2 Agents tab; wiring the crons to honour `is_active=false` is a small follow-up PR.
 
 ### M034 — Performance indexes for revenue_logs + staff_logs (Sprint 1.5) ✅ applied 2026-04-27
 **File:** `M034-PERF-INDEXES.sql` (repo root)
