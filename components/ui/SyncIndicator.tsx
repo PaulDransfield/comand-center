@@ -103,22 +103,38 @@ export default function SyncIndicator({
       } else if (j.synced === 0 && j.errors === 0) {
         setToast(j.message ?? 'No integrations connected — check Settings')
       } else if (j.errors > 0) {
-        setToast(`Synced with ${j.errors} error${j.errors === 1 ? '' : 's'} — check admin health`)
+        // Extract unique provider names from the failing integrations + show
+        // the first error message inline so the user knows what's actually
+        // wrong without opening DevTools. Console-log the full detail too.
+        const failed = (Array.isArray(j.detail) ? j.detail : []).filter((d: any) => d?.error)
+        const providers = Array.from(new Set(failed.map((d: any) => d.provider))).join(', ')
+        const firstMsg  = failed[0]?.error ?? ''
+        const truncated = firstMsg.length > 100 ? firstMsg.slice(0, 100) + '…' : firstMsg
+        setToast(
+          `Synced with ${j.errors} error${j.errors === 1 ? '' : 's'}` +
+          (providers ? ` (${providers})` : '') +
+          (truncated ? `: ${truncated}` : '')
+        )
+        // Full detail in the console for debugging.
+        console.warn('[sync] errors:', failed)
       } else {
         setToast('Synced — reloading…')
       }
       setNow(Date.now())
-      // Reload the page after a successful sync so dashboard/staff/revenue
-      // pages pick up the freshly-written daily_metrics rows without the
-      // user having to manually refresh.
-      if (r.ok && j.synced > 0 && j.errors === 0) {
-        setTimeout(() => window.location.reload(), 1200)
+      // Reload after sync. Previously only reloaded on errors==0, but partial
+      // success (some integrations succeeded, some didn't) still wrote new
+      // rows that the dashboard should pick up. Now reload whenever any
+      // integration synced successfully, so the data DOES update even with
+      // some errors. Owner sees the error toast for ~6s before reload.
+      const succeeded = (Array.isArray(j.detail) ? j.detail : []).filter((d: any) => !d?.error).length
+      if (r.ok && succeeded > 0) {
+        setTimeout(() => window.location.reload(), j.errors > 0 ? 4000 : 1200)
       }
     } catch (e: any) {
       setToast('Sync failed — ' + (e?.message ?? 'network'))
     }
     setBusy(false)
-    setTimeout(() => setToast(''), 6000)
+    setTimeout(() => setToast(''), 8000)   // longer so Paul has time to read
   }
 
   const dotColour = busy ? UX.indigoLight : fresh ? '#10b981' : UX.amberInk
