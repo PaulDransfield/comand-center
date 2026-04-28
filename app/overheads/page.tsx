@@ -217,6 +217,27 @@ export default function OverheadsPage() {
                 {[2023, 2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
               </select>
               <button
+                onClick={() => router.push('/overheads/review')}
+                style={{
+                  padding: '5px 11px', background: 'white',
+                  border: `1px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody,
+                  fontWeight: UX.fwMedium, color: UX.ink2, cursor: 'pointer',
+                  position: 'relative' as const,
+                }}
+                title="Open the cost-review queue"
+              >
+                Cost review
+                {Number(reviewProj?.pending_count ?? 0) > 0 && (
+                  <span style={{
+                    marginLeft: 6, padding: '1px 7px', borderRadius: 999,
+                    background: '#1e40af', color: 'white',
+                    fontSize: 10, fontWeight: 700,
+                  }}>
+                    {reviewProj.pending_count}
+                  </span>
+                )}
+              </button>
+              <button
                 onClick={() => router.push('/overheads/upload')}
                 style={{
                   padding: '5px 11px', background: UX.indigo, color: 'white',
