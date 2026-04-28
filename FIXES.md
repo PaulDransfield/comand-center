@@ -3,6 +3,42 @@ Last updated: 2026-04-27
 
 ---
 
+## Admin Console Rebuild (§0ab onwards)
+
+Multi-PR migration of the internal admin tooling (12 PRs, 4–6 weeks). Plan + rules in `Admin-Console-Rebuild-Plan.md`. New surface ships under `/admin/v2/*` and `/api/admin/v2/*`; old `/admin/*` stays untouched until the cut-over PR (PR 12).
+
+Hard rules: never edit existing admin files, never delete admin API routes, never use localStorage for admin auth (sessionStorage only), every mutation goes through `recordAdminAction`, dangerous mutations require typed reason field.
+
+---
+
+## 0ab. Admin v2 — PR 1: foundation (2026-04-28)
+
+**Scope:** scaffolding only. No new functionality, no new API routes. The chassis the rest of the PRs hang off.
+
+**Created:**
+- `app/admin/v2/layout.tsx` — shared layout, mounts AdminNavV2 + CommandPalette, runs client-side admin-auth check (sessionStorage `admin_auth`), bounces to `/admin/login?next=…` if absent. Max-width 1280 container.
+- `components/admin/v2/AdminNavV2.tsx` — 6-tab nav (Overview, Customers, Agents, Health, Audit, Tools). Mirrors existing `AdminNav.tsx` visual pattern. Includes "V2" pill badge so Paul can tell which version he's on during the migration.
+- `components/admin/v2/CommandPalette.tsx` — STUB. Native `<dialog>` element opens on Cmd/Ctrl+K, closes on Esc/backdrop. Empty input shows "search lands in PR 11". No real search wiring yet.
+- `lib/admin/v2/types.ts` — `AdminGuardResult`, `OrgSummary`, `IntegrationSummary`, `HealthProbe`, `Incident`, `KpiStat`, `IntegrationStatus`, `HealthSeverity`, `IncidentKind`. Pulled from existing route shapes — none invented.
+- `lib/admin/v2/api-client.ts` — `adminFetch<T>()` thin wrapper. Reads `x-admin-secret` from sessionStorage, sends as header, on 401 redirects to `/admin/login?next=…&reason=expired`. Replaces the boilerplate every existing admin page repeats.
+- `lib/admin/v2/use-admin-data.ts` — `useAdminData<T>(url, opts)` hook. Vanilla `useEffect` + state. NOT SWR (per the plan's hard rule — SWR is its own decision). Returns `{ data, error, loading, refetch }`.
+
+**Routes (placeholders only):**
+- `app/admin/v2/page.tsx` — redirects to `/admin/v2/overview`.
+- `app/admin/v2/{overview,customers,agents,health,audit,tools}/page.tsx` — each renders a "Coming in PR N" placeholder card.
+
+**Verified:**
+- `git status` shows ONLY new files under `app/admin/v2/`, `components/admin/v2/`, `lib/admin/v2/`. Zero existing `app/admin/*` or `app/api/admin/*` files modified or deleted.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes.
+- /admin/v2/overview loads, nav renders, placeholder shows.
+- ⌘K opens the dialog stub; Esc closes; backdrop click closes; "Close" button closes.
+- Existing /admin/* surface (overview, customers, agents, audit, health, customers/[orgId], etc.) is completely untouched.
+
+**Why this should hold:** the entire v2 surface is in three new directories. Cut-over (PR 12) is the only PR that edits old admin files (just to update redirects). Rollback at any PR is `rm -rf app/admin/v2 components/admin/v2 lib/admin/v2 app/api/admin/v2` and the old admin still runs.
+
+---
+
 ## 0uu. Aggregator overwrote monthly_metrics with partial-window data (2026-04-28)
 
 **Symptom:** Paul reported `/budget` and `/tracker` showing wrong April actuals. SQL diagnostic showed `monthly_metrics.revenue` for April = **268,143** despite revenue_logs containing ~1.6M raw / ~812k after dedup across 20 days. Earlier in the day a manual re-aggregate had set the value correctly to ~804k. Something between then and now wiped it.
