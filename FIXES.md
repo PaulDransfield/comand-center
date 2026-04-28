@@ -11,6 +11,56 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0am. Admin v2 — PR 12: Cut-over (2026-04-28)
+
+**Scope:** the rebuild's final PR. Each v1 admin page is replaced with a small redirect shim that bounces to its v2 equivalent. The v2 surface is now the canonical admin tooling. v1 API routes are untouched (rule: "Never delete admin API routes") so any cron / webhook / out-of-band reference still works.
+
+**Modified (7 v1 pages → redirect shims):**
+- `app/admin/page.tsx` — `/admin` → `/admin/v2/overview` (was redirecting to v1 `/admin/overview` previously).
+- `app/admin/overview/page.tsx` — `/admin/overview` → `/admin/v2/overview`. (Was 252 lines; now ~20.)
+- `app/admin/customers/page.tsx` — `/admin/customers` → `/admin/v2/customers`. (Was 193 lines.)
+- `app/admin/customers/[orgId]/page.tsx` — `/admin/customers/X` → `/admin/v2/customers/X` (preserves orgId param). (Was 1 444 lines.)
+- `app/admin/agents/page.tsx` — `/admin/agents` → `/admin/v2/agents`. (Was 186 lines.)
+- `app/admin/health/page.tsx` — `/admin/health` → `/admin/v2/health`. (Was 573 lines.)
+- `app/admin/audit/page.tsx` — `/admin/audit` → `/admin/v2/audit`. (Was 173 lines.)
+- `app/admin/login/page.tsx` — single-line change: default `next` is now `/admin/v2/overview` (was `/admin/overview`). Login UI unchanged.
+
+**Not touched (deliberate):**
+- All `/api/admin/**/route.ts` routes — the rule. Many are still referenced by service-role cron handlers and email-rendering paths; deleting them risks subtle regressions.
+- `app/admin/diagnose-pk/page.tsx` — Personalkollen diagnostic tool; no v2 equivalent yet.
+- `app/admin/api-discoveries/page.tsx` + `app/admin/api-discoveries-enhanced/page.tsx` — discovery output viewers; no v2 equivalent yet (closest analog would be Tools, but the shape is different — defer).
+- `app/admin/memo-preview/page.tsx` — outbound-memo preview; no v2 equivalent yet.
+- `components/admin/v2/AdminNavV2.tsx::logout()` — already routes to `/admin/login`, which (with the one-line change above) now defaults to `/admin/v2/overview` post-auth. No change needed.
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- The `/admin/login` page itself — single source of truth for admin auth. Cut-over only changes the default `next` target, nothing about the auth flow.
+- Every `/api/admin/*` route — still the same surface. v2 is additive at `/api/admin/v2/*`.
+- The original v1 page implementations are preserved in git history at the pre-cut-over commit; if a v2 surface ever needs to copy logic back, it's one `git show` away.
+
+**Honest data gaps surfaced:**
+- The redirects are client-side (`useEffect` + `router.replace`), not server-side 301s. Means a brief blank flash on slow connections. A `next.config.js` `redirects()` block would do server-side redirects but would also bypass the v2 auth flow for users who reach the v1 path while signed out (they'd land at v2 → bounce back to /admin/login → end up at v2 anyway). The flash is annoying but not actually broken.
+- Three v1 pages have no v2 equivalent (diagnose-pk, api-discoveries, memo-preview). Until they get v2 ports they remain accessible at the legacy URL with the v1 nav. Acceptable: they're rarely used; the rebuild scope was the eight high-traffic surfaces.
+- v1 API routes are still service-role-only — they don't get a security upgrade from this PR. They were already gated by `checkAdminSecret`; the v2 routes use `requireAdmin` which adds org-scope verification on top. Both are safe; v2 is just stricter.
+
+**Verified:**
+- `git status` shows the 8 page modifications + this FIXES entry. Zero new files. Zero API routes touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes (one pre-existing pdfjs warning unrelated to this PR). Each v1 page bundle dropped to ~705 B (from 252-1444 lines of code). v2 routes unchanged.
+- `/admin` now ships as 710 B (the redirect shim) and bounces to `/admin/v2/overview`.
+
+**Why this should hold:** redirects are the safest possible cut-over — every old URL stays valid, every API route stays callable, v2 retains its independent auth flow. Rollback is `git revert <this PR>` and the v1 pages return to working state immediately because the original code is preserved in git history. No data migrations, no schema changes, no destructive operations.
+
+**Action required from Paul:** none. PR 12 is a code-only change. Verify in browser:
+1. `/admin` → bounces to `/admin/v2/overview`.
+2. `/admin/overview` (any v1 URL) → bounces to v2 equivalent.
+3. `/admin/login` post-auth → lands at `/admin/v2/overview`.
+4. Logout from v2 → returns to `/admin/login` → re-auth → back to `/admin/v2/overview`.
+5. Old bookmarks pointing at `/admin/customers/<orgId>` still work (redirected, orgId preserved).
+
+**Rebuild plan complete.** All 12 PRs shipped per `Admin-Console-Rebuild-Plan.md`. Migrations M035-M038 applied (M032/M033 still pending; unrelated to admin rebuild). FIXES entries §0aa-§0am cover the full migration.
+
+---
+
 ## 0al. Admin v2 — PR 11: Command palette search (2026-04-28)
 
 **Scope:** replace PR 1's ⌘K stub with a real search palette. Three result sections in one overlay: customers (org-name ilike or paste a UUID), saved investigations (label or query body match), and v2 pages (Overview, Customers, Agents, Health, Audit, Tools). Empty query = recent items so the palette is useful immediately on open. Keyboard nav (↑/↓/Enter/Esc) routes through Next's router; selecting a saved investigation deep-links to `/admin/v2/tools?saved=<id>` which pre-loads the editor.

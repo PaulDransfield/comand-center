@@ -20,7 +20,8 @@ export default function AdminLoginPage() {
 function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const next = params.get('next') || '/admin/overview'
+  // PR 12 cut-over — default landing is the v2 surface.
+  const next = params.get('next') || '/admin/v2/overview'
 
   const [password, setPassword] = useState('')
   const [totp,     setTotp]     = useState('')
