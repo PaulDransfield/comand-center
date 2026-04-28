@@ -1273,7 +1273,18 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
 
   } catch (e: any) {
     status = 'error'
-    result = { error: e.message }
+    // Robust error-message extraction — empty / non-Error throws were
+    // landing in integrations.last_error as null, leaving us blind to
+    // what actually broke. Always capture SOMETHING usable.
+    const errorMsg = (e?.message && String(e.message).trim())
+      || (typeof e === 'string' ? e : '')
+      || (e?.name ? `${e.name}${e?.code ? ` (${e.code})` : ''}` : '')
+      || (e?.code ? `code:${e.code}` : '')
+      || 'unknown error (empty exception)'
+    result = { error: errorMsg }
+    // Override e.message so the downstream paths that read it write
+    // the resolved message instead of the empty original.
+    e.message = errorMsg
 
     // Auth-expired sits in a different bucket from generic sync errors: no
     // amount of retrying will fix a revoked token. Flip the integration's
@@ -1347,10 +1358,20 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
         }
       } catch (markErr: any) {
         console.error('Could not mark integration needs_reauth:', markErr?.message)
-        await db.from('integrations').update({ last_error: e.message }).eq('id', integ.id)
+        await db.from('integrations').update({
+          status:     'error',
+          last_error: e.message,
+        }).eq('id', integ.id)
       }
     } else {
-      await db.from('integrations').update({ last_error: e.message }).eq('id', integ.id)
+      // Non-auth error path. Explicitly write status='error' so the row's
+      // state reflects reality — previously we only updated last_error, so
+      // a row could sit at status='connected' with last_error showing the
+      // last failure, confusing operators.
+      await db.from('integrations').update({
+        status:     'error',
+        last_error: e.message,
+      }).eq('id', integ.id)
     }
   }
 
