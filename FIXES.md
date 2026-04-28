@@ -11,6 +11,43 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0ag. Admin v2 — PR 6: Agents tab (2026-04-28)
+
+**Scope:** AI agents operational view. List of all agent definitions with active state + last run + 24h/7d run counts + per-agent kill switch. Recent failures panel below.
+
+**Created:**
+- `M035-ADMIN-AGENT-SETTINGS.sql` — new `agent_settings` table (key TEXT PK, is_active BOOLEAN, last_changed_at, last_changed_by, last_change_reason). Seeded with the 6 known agent keys with is_active=true. Pending Paul's apply.
+- `app/api/admin/v2/agents/route.ts` — GET returns agents list (active state from agent_settings + last_run + run counts) + recent_failures from `sync_log` where status != success. POST flips `agent_settings.is_active` after audit. Reason ≥10 chars enforced. Gracefully degrades when M035 hasn't been applied: read returns `settings_persisted: false`, the UI shows a banner pointing to the migration, write returns a clear "table missing — run M035" error instead of 500.
+- `app/admin/v2/agents/page.tsx` — table per agent with state pill, run counts, last-change reason inline, kill/re-enable button per row. Recent failures panel below. "Currently running" panel acknowledges the data gap explicitly rather than faking it.
+
+**Modified:**
+- `MIGRATIONS.md` — header + Pending block updated for M035.
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- `lib/admin/audit.ts::recordAdminAction` + `ADMIN_ACTIONS.AGENT_TOGGLE`. Every kill/re-enable lands in `admin_audit_log` with payload.reason + payload.surface='admin_v2'.
+- The existing 6 agent definitions are mirrored in the v2 route — duplicated rather than imported because the old route is `// @ts-nocheck` and the type fence matters.
+
+**Honest data gaps surfaced (deliberate, not glossed over):**
+- "Currently running" panel — no `agent_run_log` table exists. We don't know what's in flight. Surfaced as an em-dash + explanatory text rather than fake "running" data.
+- Success rate — agent output tables only record successes. Failed runs aren't in the DB. We show 24h/7d run counts as a more honest signal than a fake-100% success rate.
+- Cron honouring kill — flipping `is_active=false` does NOT yet stop the cron from firing. The kill state is recorded + audited; wiring `if (!isActive) return` checks into each cron handler is a small follow-up PR. The kill-switch modal description tells the user this explicitly.
+
+**Per-agent BLOCKED state preserved:**
+`supplier_price_creep` has `blocked: true` (waiting on Fortnox dev program). The kill button is disabled with a tooltip — same UX as the old admin.
+
+**Verified:**
+- `git status` shows only v2 + migration changes. Zero existing admin files touched.
+- `npx tsc --noEmit` clean. `npm run build` passes.
+- Page renders before M035 applied: shows the warning banner + every row reads `settings_persisted: false`. Toggle button still appears but POST returns the clear "M035 missing" error.
+- After M035 applies: kill button writes audit row + flips `agent_settings.is_active`. Re-enable inverse.
+
+**Why this should hold:** the v2 route is read-only on agent output tables (no schema changes) and write-only on the new `agent_settings` table (which doesn't exist anywhere else). The route's degraded-mode handling means the page works even when M035 hasn't shipped — just without persistence.
+
+**Action required from Paul before kill switches persist:**
+Apply `M035-ADMIN-AGENT-SETTINGS.sql` in Supabase SQL Editor. Idempotent + verify query at the bottom.
+
+---
+
 ## 0af. Admin v2 — PR 5: Customer detail completed (2026-04-28)
 
 **Scope:** finished customer-detail. 5 remaining sub-tabs (Billing, Users, Sync history, Audit, Danger zone) + 3 right-rail subscription actions (Extend trial, Issue credit, Change plan) + 2 danger-zone actions (Hard delete, Revoke sessions). All 8 sub-tabs from PR 4's planned shape now live.
