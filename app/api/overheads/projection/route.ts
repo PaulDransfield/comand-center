@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { computeNetProfit, computeMarginPct } from '@/lib/finance/conventions'
+import { expireDeferredFlags } from '@/lib/overheads/expire-deferred'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,6 +44,10 @@ export async function GET(req: NextRequest) {
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
   const db = createAdminClient()
+
+  // PR 5: expire any deferred flags whose 30-day snooze has elapsed BEFORE
+  // we sum, so the projection numbers reflect current pending state.
+  await expireDeferredFlags(db, auth.orgId, businessId)
 
   // ── Resolve "the period to project against" ──────────────────────────────
   // Caller can pin a specific year+month via query params; otherwise use the

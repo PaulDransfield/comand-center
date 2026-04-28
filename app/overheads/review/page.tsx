@@ -157,6 +157,25 @@ export default function OverheadReviewPage() {
     }
   }
 
+  async function reexplain(flagId: string) {
+    setError(null)
+    try {
+      const r = await fetch(`/api/overheads/explain/${flagId}`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
+      // Patch the local flag with the fresh explanation so the card updates
+      // immediately without a full reload.
+      setFlags(prev => prev.map(f => f.id === flagId
+        ? { ...f, ai_explanation: j.ai_explanation, ai_confidence: j.ai_confidence }
+        : f))
+    } catch (e: any) {
+      setError(e?.message ?? 'Re-explain failed')
+    }
+  }
+
   async function runBackfill() {
     if (!bizId || backfilling) return
     setBackfilling(true)
@@ -277,6 +296,7 @@ export default function OverheadReviewPage() {
               onEssential={() => decide(g.latest.id, 'essential')}
               onDismiss={(reason) => decide(g.latest.id, 'dismissed', reason)}
               onDefer={() => decide(g.latest.id, 'deferred')}
+              onReexplain={() => reexplain(g.latest.id)}
             />
           ))}
         </div>
@@ -289,16 +309,18 @@ export default function OverheadReviewPage() {
 //   FlagCard
 // ────────────────────────────────────────────────────────────────────
 
-function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer }: {
+function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, onReexplain }: {
   flag:         Flag
   otherPeriods: Flag[]
   busy:         boolean
   onEssential: () => void
   onDismiss:   (reason?: string) => void
   onDefer:     () => void
+  onReexplain: () => Promise<void>
 }) {
   const [showDismissModal, setShowDismissModal] = useState<boolean>(false)
   const [dismissReason,    setDismissReason]    = useState<string>('')
+  const [reexplaining,     setReexplaining]     = useState<boolean>(false)
 
   const tone = FLAG_TONE[flag.flag_type] ?? FLAG_TONE.new_supplier
   // Sign-correct % for PRICE flags. The bug was: prepending "+" then letting
@@ -309,6 +331,21 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer }:
     label = `PRICE ${pct >= 0 ? '+' : ''}${pct}%`
   }
   const periodLabel = `${MONTHS_SHORT[flag.period_month - 1]} ${flag.period_year}`
+
+  // Confidence interpretation: <0.5 = low (we'd rather not pretend),
+  // 0.5-0.79 = medium (no badge), >=0.8 = high (no badge — assumed quality).
+  const conf = typeof flag.ai_confidence === 'number' ? flag.ai_confidence : null
+  const showLowConfBadge = conf !== null && conf < 0.5
+
+  async function handleReexplain() {
+    if (reexplaining) return
+    setReexplaining(true)
+    try {
+      await onReexplain()
+    } finally {
+      setReexplaining(false)
+    }
+  }
 
   return (
     <div style={{
@@ -332,7 +369,41 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer }:
             {flag.ai_explanation && (
               <span style={{ display: 'block', marginTop: 4, color: UX.ink4, fontStyle: 'italic' as const }}>
                 {flag.ai_explanation}
+                {showLowConfBadge && (
+                  <span style={{
+                    marginLeft: 6, padding: '1px 6px', borderRadius: 999,
+                    background: '#f3f4f6', color: '#6b7280',
+                    fontSize: 9, fontWeight: 600, fontStyle: 'normal' as const,
+                  }}>
+                    LOW CONFIDENCE
+                  </span>
+                )}
+                <button
+                  onClick={handleReexplain}
+                  disabled={reexplaining}
+                  style={{
+                    marginLeft: 6, background: 'transparent', border: 'none',
+                    fontSize: 10, color: UX.ink4, cursor: reexplaining ? 'wait' : 'pointer',
+                    fontStyle: 'normal' as const, textDecoration: 'underline' as const,
+                  }}
+                  title="Regenerate AI explanation with full 12-month history"
+                >
+                  {reexplaining ? '…' : 're-explain'}
+                </button>
               </span>
+            )}
+            {!flag.ai_explanation && (
+              <button
+                onClick={handleReexplain}
+                disabled={reexplaining}
+                style={{
+                  marginTop: 4, background: 'transparent', border: 'none', padding: 0,
+                  fontSize: 11, color: UX.ink4, cursor: reexplaining ? 'wait' : 'pointer',
+                  textDecoration: 'underline' as const, display: 'block',
+                }}
+              >
+                {reexplaining ? 'Generating…' : 'Generate AI explanation'}
+              </button>
             )}
             {otherPeriods.length > 0 && (
               <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: UX.ink4 }}>

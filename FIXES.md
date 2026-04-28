@@ -3,6 +3,66 @@ Last updated: 2026-04-28
 
 ---
 
+## 0as. Overhead Review System — PR 5: Polish (2026-04-28)
+
+**Scope:** the four highest-value polish items from the deferred list. Skips fuzzy supplier dedup (the existing suffix-stripping in `normaliseSupplier` already catches Spotify-vs-Spotify-AB; broader fuzzy-matching has too high a false-positive risk on Swedish Fortnox labels) and line-item override (genuine edge case, defer until real-world data shows it matters).
+
+**Created:**
+- `lib/overheads/expire-deferred.ts` — `expireDeferredFlags(db, orgId, businessId)`. One UPDATE per call: flips `resolution_status='deferred' WHERE defer_until < now()` back to `'pending'` and clears `defer_until`. Best-effort, scoped per business, sub-millisecond at our row counts.
+- `app/api/overheads/explain/[flagId]/route.ts` — POST. On-demand re-explanation with full context: 12 months of supplier history (matched by normalised name), industry benchmarks, business profile. Overwrites the persisted `ai_explanation` + `ai_confidence`. The history goes into the prompt's `reason` slot as a compact `2025-11=12450, 2025-10=11200, …` line so the function signature didn't need to change.
+
+**Modified:**
+- `app/api/overheads/flags/route.ts` — calls `expireDeferredFlags` at the top of GET so the queue always reflects current state without a cron.
+- `app/api/overheads/projection/route.ts` — same expire call before the pending-flag sum so the dashboard projection stays accurate.
+- `lib/overheads/review-worker.ts::runExplanationPass` — loads `industry_benchmarks` rows and passes them through to `explainOverheadFlags`. The AI prompt already had a benchmark slot from PR 4; this PR fills it.
+- `app/overheads/review/page.tsx`:
+  - Added `reexplain(flagId)` handler that POSTs `/api/overheads/explain/<id>` and patches local state on success.
+  - Each `FlagCard` now shows a "re-explain" link next to the AI explanation (regenerates with full history). For flags that don't have an explanation yet, shows "Generate AI explanation" instead.
+  - **Confidence badge:** `LOW CONFIDENCE` chip renders next to explanations where `ai_confidence < 0.5`. Confidence ≥ 0.5 shows no badge — clutter-free for the common case.
+
+**Reused:**
+- `explainOverheadFlags` from PR 4 (one-shot with same shape).
+- `normaliseSupplier` + `pickDisplayLabel` from `lib/overheads/normalise.ts` for the supplier history lookup.
+- `industry_benchmarks` table — same source `/api/overheads/benchmarks` already reads from.
+- The `unstable_noStore` + `getRequestAuth` + `createAdminClient` pattern matches every other `/api/overheads/*` route.
+
+**Why inline-on-read instead of cron for defer-expiry:** a daily cron would mean users see stale "deferred" flags for up to 24 h after their snooze elapsed, which contradicts the deferred-flag UX promise ("snooze for 30 days"). Inline guarantees the queue is current the moment the owner opens it. Cost is one tiny scoped UPDATE per page load — sub-ms at our scale. The contextBuilder slice in `/api/ask` doesn't yet call the helper; if the owner asks chat about overheads without first visiting `/overheads/review`, expired-deferred flags won't surface in the AI's view. Acceptable; minor edge case.
+
+**Honest gaps surfaced:**
+- **Supplier fuzzy dedup deliberately skipped.** Swedish Fortnox labels like "Försäkringsbolaget X" vs "Försäkringsbolaget Y" can be different parties — Levenshtein/trigram match would conflate them. The existing suffix-strip handles the common AB/Ltd/Oy case. If real-world data shows missed dedups, owner can manually merge classifications in a future PR.
+- **Line-item override (rare two-purpose suppliers) deliberately skipped.** Adds a per-line decision UX for an edge case (Spotify-as-marketing-vs-software). Defer until we see evidence it matters.
+- **Re-explain doesn't show progress detail.** Just "…" while in flight — owner doesn't see whether the call timed out vs is still thinking. Would need a streaming endpoint to fix properly. Acceptable for v1.
+- **Re-explain has no rate limit.** Owner could spam-click and burn AI budget. The 45s timeout caps individual cost; per-org daily AI quota gate (M033) still applies. Adding an explicit per-flag debounce would be belt-and-braces.
+- **Confidence threshold is hardcoded at 0.5.** Tuneable later if real-world output shows the threshold is wrong.
+- **Explain endpoint history match is by normalised name only.** If Fortnox tags the same supplier under two slightly different labels across months (e.g. typo in one month's invoice), some history points get missed. The same approximation that limits the worker's price-spike check.
+
+**Verified:**
+- `git status` shows: 2 new files (helper + endpoint), 4 modified, FIXES + tsbuild cache. Zero existing routes broken.
+- `npx tsc --noEmit` clean. `npm run build` passes. New endpoint shipped: `/api/overheads/explain/[flagId]`. Review page bundle 4.97 → 5.34 kB.
+- `expireDeferredFlags` returns `{ expired: count }` so callers can log if desired (currently no caller logs — the operation is silent and best-effort).
+
+**Action required from Paul:** none. Code-only change. Defer-expiry now self-heals; benchmarks land in the next AI pass; "re-explain" is live on the review page.
+
+**Test plan:**
+1. Defer a flag (click "Defer 30d") → it disappears from the queue. Set its `defer_until` in Supabase to a past timestamp manually (e.g. `UPDATE overhead_flags SET defer_until = now() - interval '1 minute' WHERE id = '…'`). Refresh `/overheads/review` → flag re-surfaces as pending.
+2. On any pending flag with an existing AI explanation → click **re-explain** → "…" briefly → fresh explanation appears. Confidence may shift if benchmarks/history change the model's read.
+3. On a flag with no AI explanation → click **Generate AI explanation** → fresh text appears.
+4. If AI produces a low-confidence answer, the `LOW CONFIDENCE` chip renders next to it.
+5. Re-apply a Fortnox upload → next worker run includes benchmark context (verify by inspecting `ai_explanation` on a flag for a category with peer median data — should reference the median if relevant).
+
+**Overhead review feature — PRs complete:**
+| PR | Scope | Status |
+|---|---|---|
+| 1 | M039 schema + read APIs | ✅ |
+| 2 | Detection worker + apply-route enqueue | ✅ |
+| 3 | UI + decide/backfill APIs + dashboard hero card | ✅ + 3.1 real-data fixes |
+| 4 | AI explanation + /api/ask context slice | ✅ |
+| 5 | Polish (defer-expiry, benchmarks, confidence UI, re-explain) | ✅ |
+
+**Next: sync-state centralization** (per Paul's earlier ask — `lib/integrations/state.ts` + `integration_state_log` audit table + retirement playbook).
+
+---
+
 ## 0ar. Overhead Review System — PR 4: AI explanation + /api/ask context slice (2026-04-28)
 
 **Scope:** the AI layer of the feature. Each pending flag gets a one-sentence explanation from Sonnet 4.6 with extended thinking; `/api/ask` gains awareness of the pending queue so chat questions like "where can I save?" name specific suppliers without any prompt engineering.

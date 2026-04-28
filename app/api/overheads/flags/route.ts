@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { expireDeferredFlags } from '@/lib/overheads/expire-deferred'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +40,10 @@ export async function GET(req: NextRequest) {
   }
 
   const db = createAdminClient()
+
+  // PR 5: revive any deferred flags whose 30-day snooze has expired BEFORE
+  // we read so the queue reflects current state. Best-effort.
+  await expireDeferredFlags(db, auth.orgId, businessId)
 
   let q = db
     .from('overhead_flags')

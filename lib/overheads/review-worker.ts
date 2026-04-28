@@ -280,6 +280,25 @@ async function runExplanationPass(
     .eq('period_month', month)
     .maybeSingle()
 
+  // Load industry benchmarks (anonymised peer medians per subcategory) so
+  // the AI can say "Lokalhyra at 250k is 40% above the Stockholm median"
+  // when relevant. Best-effort: if the table doesn't exist or is empty
+  // we just skip benchmark context.
+  let benchmarks: Record<string, { median_kr: number; sample_size: number }> = {}
+  try {
+    const { data: benchRows } = await db
+      .from('industry_benchmarks')
+      .select('subcategory, median_kr, sample_size')
+    for (const b of (benchRows ?? []) as any[]) {
+      if (b?.subcategory && Number.isFinite(Number(b.median_kr))) {
+        benchmarks[b.subcategory] = {
+          median_kr:   Number(b.median_kr),
+          sample_size: Number(b.sample_size ?? 0),
+        }
+      }
+    }
+  } catch { /* table missing — fine */ }
+
   const { explainOverheadFlags } = await import('./ai-explanation')
   const explanations = await explainOverheadFlags({
     db,
@@ -288,6 +307,7 @@ async function runExplanationPass(
     business: {
       business_name:        biz?.name ?? 'this business',
       total_overheads_sek:  rollup?.other_cost ? Number(rollup.other_cost) : undefined,
+      benchmarks:           Object.keys(benchmarks).length > 0 ? benchmarks : undefined,
     },
   })
   if (explanations.length === 0) return
