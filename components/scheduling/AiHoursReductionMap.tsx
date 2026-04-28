@@ -246,6 +246,65 @@ export default function AiHoursReductionMap(props: Props) {
         </div>
       </div>
 
+      {/* ─── Action card — "implement now" CTA ─────────────────────────── */}
+      {/* Only renders when there are real changes to apply. Bridges the
+          gap between "AI says cut X" and "actually edit the roster in PK"
+          — clicking opens Personalkollen in a new tab. The "Apply N ready
+          days" button at the bottom is for AFTER you've made the changes
+          in PK and want to record them as accepted in CommandCenter. */}
+      {greenRows.length > 0 && (
+        <div style={{
+          background:    C.bgCard,
+          border:        `1px solid ${C.border}`,
+          borderLeft:    `4px solid ${C.green}`,
+          borderRadius:  UX.r_lg,
+          padding:       '18px 24px',
+          marginBottom:  16,
+          display:       'flex',
+          gap:           20,
+          alignItems:    'center',
+          justifyContent:'space-between',
+          flexWrap:      'wrap' as const,
+        }}>
+          <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+            <div style={eyebrow}>READY TO IMPLEMENT</div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: C.ink, marginTop: 6, letterSpacing: '-0.01em' }}>
+              Open Personalkollen and trim {greenRows.length} day{greenRows.length === 1 ? '' : 's'} ·{' '}
+              <span style={{ color: C.green }}>save {fmt(weekSavingsKr)}</span>
+            </div>
+            <div style={{ fontSize: 12, color: C.ink3, marginTop: 4 }}>
+              {greenRows.map(r => `${dayLabel(r.date).split(' ')[0]} −${fmtHrs(r.deltaH)}`).join(' · ')}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <a
+              href="https://personalkollen.se/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background:     C.green,
+                color:          'white',
+                border:         'none',
+                borderRadius:   UX.r_md,
+                padding:        '12px 22px',
+                fontSize:       14,
+                fontWeight:     500,
+                cursor:         'pointer',
+                textDecoration: 'none',
+                display:        'inline-flex',
+                alignItems:     'center',
+                gap:            8,
+                whiteSpace:     'nowrap' as const,
+              }}
+              title="Opens Personalkollen in a new tab — make the cuts there, then come back and click Apply to record them"
+            >
+              Open Personalkollen
+              <span aria-hidden style={{ fontSize: 16, marginTop: -2 }}>↗</span>
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* ─── Section eyebrow above the day list ────────────────────────── */}
       <div style={{ ...eyebrow, marginBottom: 8 }}>
         DAY-BY-DAY · {rangeLabel.toUpperCase()}
