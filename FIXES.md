@@ -11,6 +11,50 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0ai. Admin v2 — PR 8: Audit tab (2026-04-28)
+
+**Scope:** explorer over `admin_audit_log`. Filter by action / org / actor / surface / date range; keyset-paginated (Load 50 more); CSV export of the active filter set with a hard 10 000-row cap.
+
+**Created:**
+- `app/api/admin/v2/audit/route.ts` — GET. Query params: `action`, `org_id`, `actor` (ilike), `surface` (`admin_v1` | `admin_v2`), `from`, `to`, `cursor`, `limit` (default 50, cap 200). Orders `(created_at DESC, id DESC)`; cursor is base64url JSON of the last row's `{ created_at, id }`. Pagination is via PostgREST `or()` row-constructor inequality (`created_at.lt.X` OR `(created_at.eq.X AND id.lt.Y)`) — keyset is O(log n) per page regardless of depth, important because `admin_audit_log` is append-only and grows linearly forever. Surface filter routes through `payload->>surface`. Org-name enrichment via one extra `organisations` lookup (skipped when no rows reference an org). Returns `table_missing: true` with a banner-friendly note when M010 hasn't been applied, instead of a raw 500.
+- `app/api/admin/v2/audit/export/route.ts` — GET. Same filter shape, no cursor. Hard caps the result at 10 000 rows and prepends `# WARNING: result truncated …` if the cap was hit. CSV columns: `created_at, action, actor, surface, org_id, org_name, integration_id, target_type, target_id, ip_address, user_agent, payload_json`. `payload_json` is the full JSONB stringified — keeps the export reversible without flattening every action's bespoke payload. Response has `text/csv; charset=utf-8` + `Content-Disposition: attachment` + `X-Row-Count` + `X-Truncated` headers. No streaming — at 10 k rows × ~12 columns the body stays inside Vercel's response budget.
+- `app/admin/v2/audit/page.tsx` — replaces PR 1's placeholder. Filter bar with draft-then-Apply pattern (no fetch on every keystroke). Filter dropdown sourced from `ADMIN_ACTIONS` constant so the vocabulary stays in lockstep with `recordAdminAction`. Action pill colour-coded by danger class (red for `hard_delete` / `integration_delete`, amber for elevated actions like `impersonate`, blue otherwise). Each row expands into a detail panel with the full payload pretty-printed. CSV export uses raw `fetch` instead of `adminFetch` so the response is read as a Blob and triggered as a browser download.
+
+**Modified:**
+- `FIXES.md` — this entry.
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- `requireAdmin(req)` — orgless admin guard (audit is global view, not customer-scoped).
+- `ADMIN_ACTIONS` const from `lib/admin/audit.ts` — single source of truth for the filter dropdown options.
+- `adminFetch` + `readAdminSecret` from `lib/admin/v2/api-client.ts` — same `x-admin-secret` header pattern as every other v2 endpoint.
+- The org-name enrichment shape mirrors the v1 audit-log route's `orgMap` join.
+- `isMissingTable(err)` graceful-degradation pattern — same shape used in v1 audit route + PR 7 health probes.
+
+**Honest data gaps surfaced:**
+- Surface filter classifies anything without `payload.surface === 'admin_v2'` as `admin_v1`, including older rows that pre-date the `surface` field entirely. A row written before PR 6 will read "admin_v1" even if the action originally happened from a script. There's no clean way to retroactively fix this — the surface field simply didn't exist. UI honestly labels it as "admin_v1" rather than "unknown" since for filter-purposes that's the correct bucket.
+- Actor field is opaque text — currently every row reads `'admin'` because we have one shared admin secret, not per-user admin accounts. The filter is in place for when we add admin user accounts, but until then it's a no-op.
+
+**Verified:**
+- `git status` shows only v2 + FIXES changes. Zero existing admin files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes; `/admin/v2/audit` (4.79 kB), `/api/admin/v2/audit`, `/api/admin/v2/audit/export` all routed.
+- Dropdown options match `Object.values(ADMIN_ACTIONS).sort()` so additions to the const automatically appear in the filter UI.
+
+**Why this should hold:** route is read-only across the board (no schema changes, no mutations, no audit writes — auditing the audit table is silly and would create infinite recursion at the wrong abstraction). All filters are exact-match or ilike, no SQL injection surface. Keyset pagination + the existing `admin_audit_org_idx` / `admin_audit_action_idx` / `admin_audit_date_idx` indexes mean even a million-row table answers each page in <50 ms.
+
+**Action required from Paul:** none. M010 was applied long ago. Test plan below.
+
+**Test plan:**
+1. Hit `/admin/v2/audit`. Default view shows last 50 rows ordered newest-first.
+2. Apply `Action: agent_toggle` filter → click Apply → only PR-6 kill-switch rows render. Click "View" on one row → payload expands showing `{ key, was_active, now_active, reason, surface: 'admin_v2' }`.
+3. Apply `Surface: admin_v2` → only rows from v2-originated mutations.
+4. Set date `From` to a week ago, `To` to today → result narrows.
+5. Click "Load 50 more" at the bottom → next page appended; URL stays the same (cursor only on the wire).
+6. Click "Export CSV (current filters)" → browser downloads `admin-audit-<timestamp>.csv`. Open it: header row + one data row per filtered audit entry. `payload_json` column contains the full JSONB stringified.
+7. Reset → all filters cleared, fresh fetch.
+
+---
+
 ## 0ah. Admin v2 — PR 7: Health tab (2026-04-28)
 
 **Scope:** global system health. Single page surfacing six probes: Crons (last run + status per Vercel cron), Migrations (applied/pending count from MIGRATIONS.md header), RLS (per-table rowsecurity + policy count + anomaly flag), Sentry (24h error count via stats API), Anthropic (last 24h spend vs prior 24h vs global cap, via M033 RPC), Stripe (24h `stripe_processed_events` activity + stuck rows). Refresh button. 60s in-process cache.
