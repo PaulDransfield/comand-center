@@ -88,6 +88,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // ── Flag side ───────────────────────────────────────────────────────────
+  // 'essential' / 'dismissed' decisions are supplier-wide (the classification
+  // applies to all periods), so bulk-resolve every pending flag for this
+  // supplier in this business — not just the one the user clicked. Without
+  // this, a supplier flagged across 5 months would leave 4 stale rows in the
+  // queue after the owner already made the call.
+  // 'deferred' is per-flag (snooze this specific instance only).
   const update: Record<string, any> = {
     resolution_status: DECISION_TO_RESOLUTION[decision],
     resolved_at:       new Date().toISOString(),
@@ -99,14 +105,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     update.defer_until = null
   }
 
-  const { data: updated, error: fErr } = await db
+  let updateQuery = db
     .from('overhead_flags')
     .update(update)
-    .eq('id', flagId)
     .eq('org_id', auth.orgId)
+    .eq('business_id', flag.business_id)
+    .eq('resolution_status', 'pending')
+
+  if (decision === 'deferred') {
+    // Only snooze this specific flag.
+    updateQuery = updateQuery.eq('id', flagId)
+  } else {
+    // Bulk-resolve every pending flag for this supplier across all periods.
+    updateQuery = updateQuery.eq('supplier_name_normalised', flag.supplier_name_normalised)
+  }
+
+  const { data: updatedRows, error: fErr } = await updateQuery
     .select('id, supplier_name, flag_type, amount_sek, period_year, period_month, resolution_status, resolved_at, defer_until')
-    .single()
   if (fErr) return NextResponse.json({ error: fErr.message }, { status: 500 })
 
-  return NextResponse.json({ flag: updated })
+  return NextResponse.json({
+    flags_resolved: (updatedRows ?? []).length,
+    flag: (updatedRows ?? []).find((r: any) => r.id === flagId) ?? null,
+    bulk_supplier:  decision !== 'deferred' ? flag.supplier_name : null,
+  })
 }

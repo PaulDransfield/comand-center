@@ -1,17 +1,18 @@
 'use client'
 // app/overheads/review/page.tsx
 //
-// Owner-facing review queue for overhead flags. Pulls /api/overheads/flags,
-// renders one card per pending flag with three decision buttons. Decisions
-// hit /api/overheads/flags/[id]/decide and remove the flag from the list
-// optimistically. First-run backfill banner offers to mark all existing
-// suppliers as essential so the queue isn't drowning the owner on day one.
+// Owner-facing review queue for overhead flags. One card per supplier
+// (not per flag) — decisions are supplier-wide so showing five Lokalhyra
+// rows from five different months would mean five clicks for one
+// decision. The card surfaces the LATEST period's data plus a
+// "also flagged in: …" footer if the supplier appears in multiple
+// periods.
 //
-// FIXES.md §0ap.
+// FIXES.md §0ap (initial), §0aq (real-data fixes).
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import PageHero from '@/components/ui/PageHero'
 import { UX } from '@/lib/constants/tokens'
@@ -122,15 +123,19 @@ export default function OverheadReviewPage() {
     if (deciding) return
     setDeciding(flagId)
     setError(null)
-    // Optimistic — pull the flag amount before removing for projection-update.
     const flag = flags.find(f => f.id === flagId)
-    setFlags(prev => prev.filter(f => f.id !== flagId))
-    if (flag && decision !== 'essential') {
-      // 'essential' doesn't reduce savings; dismissed + deferred still
-      // remove the row from pending so optimistically deduct from total.
-      setTotalSavings(s => Math.max(0, s - Number(flag.amount_sek)))
-    } else if (flag && decision === 'essential') {
-      setTotalSavings(s => Math.max(0, s - Number(flag.amount_sek)))
+    // Optimistic: 'deferred' removes only this flag (per-flag snooze).
+    // 'essential' / 'dismissed' bulk-resolve every pending flag for the
+    // supplier — mirror that in local state so the UI doesn't lag.
+    if (decision === 'deferred') {
+      setFlags(prev => prev.filter(f => f.id !== flagId))
+      if (flag) setTotalSavings(s => Math.max(0, s - Number(flag.amount_sek)))
+    } else if (flag) {
+      const removedAmount = flags
+        .filter(f => f.supplier_name_normalised === flag.supplier_name_normalised)
+        .reduce((s, f) => s + Number(f.amount_sek), 0)
+      setFlags(prev => prev.filter(f => f.supplier_name_normalised !== flag.supplier_name_normalised))
+      setTotalSavings(s => Math.max(0, s - removedAmount))
     }
 
     try {
@@ -174,22 +179,63 @@ export default function OverheadReviewPage() {
     }
   }
 
-  const periodLabel = flags.length > 0
-    ? `${MONTHS_SHORT[flags[0].period_month - 1]} ${flags[0].period_year}`
-    : ''
+  // Group flags by supplier_name_normalised. Decisions are supplier-wide,
+  // so showing N cards for N months of the same supplier creates N×decision
+  // fatigue. The grouped card surfaces the LATEST period's flag data with
+  // the absolute amount + a footer listing other periods this supplier
+  // showed up in.
+  const grouped = useMemo(() => {
+    const map = new Map<string, { latest: Flag; others: Flag[]; latestKey: number }>()
+    for (const f of flags) {
+      const key = f.supplier_name_normalised
+      const periodKey = f.period_year * 100 + f.period_month  // sortable
+      const cur = map.get(key)
+      if (!cur || periodKey > cur.latestKey) {
+        const others = cur ? [...cur.others, cur.latest] : []
+        map.set(key, { latest: f, others, latestKey: periodKey })
+      } else {
+        cur.others.push(f)
+      }
+    }
+    // Order by latest amount desc — biggest savings opportunities first.
+    return Array.from(map.values())
+      .sort((a, b) => Number(b.latest.amount_sek) - Number(a.latest.amount_sek))
+  }, [flags])
+
+  // "At stake" = sum of LATEST amount per unique supplier. Showing the raw
+  // sum across all periods would multi-count Lokalhyra appearing 5 months in
+  // a row.
+  const dedupedAtStake = useMemo(
+    () => grouped.reduce((s, g) => s + Number(g.latest.amount_sek), 0),
+    [grouped],
+  )
+
+  // Period summary — flags can span multiple months when the worker was
+  // first kicked off across a year of historical data. Show range or single.
+  const periodLabel = useMemo(() => {
+    if (grouped.length === 0) return ''
+    const periods = grouped.map(g => g.latestKey)
+    const earliestKey = Math.min(...periods)
+    const latestKey   = Math.max(...periods)
+    const earliest = `${MONTHS_SHORT[(earliestKey % 100) - 1]} ${Math.floor(earliestKey / 100)}`
+    const latest   = `${MONTHS_SHORT[(latestKey   % 100) - 1]} ${Math.floor(latestKey   / 100)}`
+    return earliest === latest ? latest : `${earliest} – ${latest}`
+  }, [grouped])
 
   return (
     <AppShell>
       <PageHero
         eyebrow="OVERHEADS REVIEW"
         headline={
-          flags.length > 0
-            ? `${flags.length} flag${flags.length === 1 ? '' : 's'} pending · ${fmtKr(totalSavings)}/mo at stake`
+          grouped.length > 0
+            ? `${grouped.length} supplier${grouped.length === 1 ? '' : 's'} pending · ${fmtKr(dedupedAtStake)}/mo at stake`
             : tableMissing
               ? 'Run M039 to enable cost review'
               : 'All caught up — nothing pending review.'
         }
-        context={flags.length > 0 ? periodLabel : undefined}
+        context={grouped.length > 0
+          ? `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${periodLabel}`
+          : undefined}
       />
 
       <div style={{ padding: '0 24px 40px', maxWidth: 960, margin: '0 auto' }}>
@@ -213,23 +259,24 @@ export default function OverheadReviewPage() {
           />
         )}
 
-        {loading && flags.length === 0 && (
+        {loading && grouped.length === 0 && (
           <Empty text="Loading flags…" />
         )}
 
-        {!loading && !tableMissing && flags.length === 0 && (
+        {!loading && !tableMissing && grouped.length === 0 && (
           <Empty text="Your costs look stable. Nothing to review this period." />
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
-          {flags.map(f => (
+          {grouped.map(g => (
             <FlagCard
-              key={f.id}
-              flag={f}
-              busy={deciding === f.id}
-              onEssential={() => decide(f.id, 'essential')}
-              onDismiss={(reason) => decide(f.id, 'dismissed', reason)}
-              onDefer={() => decide(f.id, 'deferred')}
+              key={g.latest.id}
+              flag={g.latest}
+              otherPeriods={g.others}
+              busy={deciding === g.latest.id}
+              onEssential={() => decide(g.latest.id, 'essential')}
+              onDismiss={(reason) => decide(g.latest.id, 'dismissed', reason)}
+              onDefer={() => decide(g.latest.id, 'deferred')}
             />
           ))}
         </div>
@@ -242,9 +289,10 @@ export default function OverheadReviewPage() {
 //   FlagCard
 // ────────────────────────────────────────────────────────────────────
 
-function FlagCard({ flag, busy, onEssential, onDismiss, onDefer }: {
-  flag:       Flag
-  busy:       boolean
+function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer }: {
+  flag:         Flag
+  otherPeriods: Flag[]
+  busy:         boolean
   onEssential: () => void
   onDismiss:   (reason?: string) => void
   onDefer:     () => void
@@ -253,9 +301,14 @@ function FlagCard({ flag, busy, onEssential, onDismiss, onDefer }: {
   const [dismissReason,    setDismissReason]    = useState<string>('')
 
   const tone = FLAG_TONE[flag.flag_type] ?? FLAG_TONE.new_supplier
-  const label = tone.label === 'PRICE +%' && flag.prior_avg_sek
-    ? `PRICE +${Math.round(((flag.amount_sek - flag.prior_avg_sek) / flag.prior_avg_sek) * 100)}%`
-    : tone.label
+  // Sign-correct % for PRICE flags. The bug was: prepending "+" then letting
+  // a negative pct render as "+-43%". Render the sign from the number itself.
+  let label = tone.label
+  if (tone.label === 'PRICE +%' && flag.prior_avg_sek) {
+    const pct = Math.round(((flag.amount_sek - flag.prior_avg_sek) / flag.prior_avg_sek) * 100)
+    label = `PRICE ${pct >= 0 ? '+' : ''}${pct}%`
+  }
+  const periodLabel = `${MONTHS_SHORT[flag.period_month - 1]} ${flag.period_year}`
 
   return (
     <div style={{
@@ -272,6 +325,7 @@ function FlagCard({ flag, busy, onEssential, onDismiss, onDefer }: {
               padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
               background: tone.bg, color: tone.fg,
             }}>{label}</span>
+            <span style={{ fontSize: 11, color: UX.ink4, fontWeight: 500 }}>{periodLabel}</span>
           </div>
           <div style={{ fontSize: 12, color: UX.ink3, lineHeight: 1.5 }}>
             {flag.reason ?? '—'}
@@ -280,13 +334,24 @@ function FlagCard({ flag, busy, onEssential, onDismiss, onDefer }: {
                 {flag.ai_explanation}
               </span>
             )}
+            {otherPeriods.length > 0 && (
+              <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: UX.ink4 }}>
+                Also flagged in {otherPeriods
+                  .sort((a, b) => (b.period_year * 100 + b.period_month) - (a.period_year * 100 + a.period_month))
+                  .slice(0, 4)
+                  .map(o => `${MONTHS_SHORT[o.period_month - 1]} ${o.period_year}`)
+                  .join(', ')}
+                {otherPeriods.length > 4 && ` +${otherPeriods.length - 4} more`}
+                <span style={{ color: UX.ink4 }}> · one decision applies to all</span>
+              </span>
+            )}
           </div>
         </div>
         <div style={{ textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
           <div style={{ fontSize: 18, fontWeight: 500, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>
             {fmtKr(flag.amount_sek)}
           </div>
-          <div style={{ fontSize: 11, color: UX.ink4 }}>this period</div>
+          <div style={{ fontSize: 11, color: UX.ink4 }}>{periodLabel}</div>
         </div>
       </div>
 

@@ -30,6 +30,8 @@ import { normaliseSupplier, pickDisplayLabel } from './normalise'
 const PRICE_SPIKE_THRESHOLD = 0.15  // 15% above baseline triggers re-flag
 const ONE_OFF_HIGH_PCT      = 0.05  // single line ≥5% of monthly overheads
 const VOLATILE_MULTIPLIER   = 2     // unclassified swing > 30% (PRICE_SPIKE × 2)
+const MIN_FLAG_AMOUNT_SEK   = 500   // don't flag noise on tiny absolute amounts
+const MIN_VOLATILE_DIFF_SEK = 1500  // volatility flag only if absolute change matters
 
 export interface ReviewArgs {
   orgId:      string
@@ -141,6 +143,12 @@ export async function runOverheadReview(args: ReviewArgs): Promise<ReviewResult>
 
   // ── 5. Apply rules per supplier ─────────────────────────────────────────
   for (const [normKey, agg] of grouped) {
+    // Skip refunds / credits / zero-amount lines — they're not overspend.
+    if (agg.amount <= 0) continue
+    // Skip noise on tiny lines (cleaning supplies for 50 kr that swing 200%
+    // are not material to a restaurant's bottom line).
+    if (agg.amount < MIN_FLAG_AMOUNT_SEK) continue
+
     const classification = classMap.get(normKey)
     const histRows       = historyMap.get(normKey) ?? []
     const nonZeroHist    = histRows.filter(h => h.amount > 0)
@@ -162,8 +170,13 @@ export async function runOverheadReview(args: ReviewArgs): Promise<ReviewResult>
           flagType = 'new_supplier'
           reason   = 'First time this line has appeared.'
         }
-      } else if (priorAvg && Math.abs(agg.amount - priorAvg) / priorAvg > PRICE_SPIKE_THRESHOLD * VOLATILE_MULTIPLIER) {
-        // Recurring but volatile — surface for owner review with the spike framing.
+      } else if (
+        priorAvg
+        && Math.abs(agg.amount - priorAvg) / priorAvg > PRICE_SPIKE_THRESHOLD * VOLATILE_MULTIPLIER
+        && Math.abs(agg.amount - priorAvg) >= MIN_VOLATILE_DIFF_SEK
+      ) {
+        // Recurring but volatile AND the absolute change is material — surface
+        // it. The MIN_VOLATILE_DIFF_SEK floor stops "200 → 600 (+200%)" noise.
         flagType = 'price_spike'
         reason   = `Volatile cost: 12-mo avg ${Math.round(priorAvg)} kr vs ${Math.round(agg.amount)} kr now.`
       } else {
@@ -174,7 +187,8 @@ export async function runOverheadReview(args: ReviewArgs): Promise<ReviewResult>
     } else if (classification.status === 'essential') {
       // Compare to the snapshot taken at decision time, falling back to history.
       const baseline = classification.baseline ?? priorAvg
-      if (baseline && agg.amount > baseline * (1 + PRICE_SPIKE_THRESHOLD)) {
+      if (baseline && agg.amount > baseline * (1 + PRICE_SPIKE_THRESHOLD)
+                   && (agg.amount - baseline) >= MIN_VOLATILE_DIFF_SEK) {
         const pct = Math.round(((agg.amount - baseline) / baseline) * 100)
         flagType = 'price_spike'
         reason   = `Up ${pct}% vs baseline (${Math.round(baseline)} kr).`

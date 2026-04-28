@@ -3,6 +3,41 @@ Last updated: 2026-04-28
 
 ---
 
+## 0aq. Overhead Review — PR 3 real-data fixes (2026-04-28)
+
+**Trigger:** owner re-applied 12 months of Fortnox data. PR 3 surfaced 113 flags across multiple periods totalling 2.2M kr "at stake". Real data exposed five issues that mocks didn't.
+
+**Issues + fixes:**
+
+1. **`PRICE +-43%` literal display bug.** When the diff was negative (price drop), code prepended `+` then rendered the negative number, producing `+-43%`. Fix in `app/overheads/review/page.tsx`: render the sign from the number itself (`pct >= 0 ? '+' : ''` so negative numbers carry their own `-`).
+
+2. **Negative-amount flags for credits/refunds.** `Telefoni` showed up at `-800 kr` flagged as a price spike. Refunds and credits aren't overspend. Fix in `lib/overheads/review-worker.ts`: `if (agg.amount <= 0) continue` before any rule evaluation.
+
+3. **Same supplier flagged 5+ times across periods.** `Lokalhyra` appeared 5+ times because the worker writes one flag per (business, upload, supplier, type) — each Fortnox month = its own flag row. Decisions are per-supplier, so showing 5 rows for one decision = 5× fatigue. Fix:
+   - **Page-side grouping:** `useMemo` groups flags by `supplier_name_normalised`, surfaces the LATEST period's data, footnotes other periods ("Also flagged in Nov, Oct, Sep · one decision applies to all"). Sorted by latest amount desc — biggest savings opportunities first.
+   - **API-side bulk resolve:** the decide route now updates ALL pending flags for the supplier when the decision is `essential` or `dismissed`. `deferred` stays per-flag (snooze this specific instance). Returns `{ flags_resolved: N, bulk_supplier: name }` so the client can confirm.
+   - **Page-side optimistic update:** clicking Essential/Dismiss on a card removes EVERY pending flag with that supplier's normalised name from local state, not just the clicked row.
+
+4. **"At stake" total over-counted across periods.** Showing 2.2M kr/mo when several months of Lokalhyra at ~150-300k each were summed. Fix: page now derives the at-stake total from `dedupedAtStake = sum of LATEST amount per unique supplier`, with the supplemental note `113 flags across Sep – Dec 2025` shown as context.
+
+5. **Volatility threshold too aggressive.** Lines like "200 → 600 kr (+200%)" were flagging despite trivial absolute size. Fix in worker: added `MIN_FLAG_AMOUNT_SEK = 500` (skip current-month total under 500 kr) and `MIN_VOLATILE_DIFF_SEK = 1500` (volatility flag requires absolute change ≥ 1500 kr too). Same minimum-diff floor applied to the essential-supplier price-spike check so a 16% increase on a 700 kr line doesn't flag.
+
+**Modified:**
+- `lib/overheads/review-worker.ts` — added `MIN_FLAG_AMOUNT_SEK` + `MIN_VOLATILE_DIFF_SEK` constants and the early-skip on negative/tiny amounts.
+- `app/api/overheads/flags/[id]/decide/route.ts` — bulk-resolve all pending flags for the supplier on essential/dismissed; deferred stays per-flag.
+- `app/overheads/review/page.tsx` — grouping logic, sign-correct PRICE label, period stamp on each card, "also flagged in" footer, deduped at-stake total in the hero, optimistic bulk-remove on decision.
+
+**Honest gaps:**
+- Existing flag rows from before this fix are still in the DB. They'll auto-resolve when the owner makes a decision via bulk-resolve, OR on next worker run if the supplier no longer triggers a rule (negative amounts, tiny lines now skipped). No backfill cleanup needed.
+- "Also flagged in" only surfaces the 4 most recent periods + a `+N more` count. Click-through to a per-supplier history view is a stretch goal.
+- Volatility threshold tuning is still heuristic. May need per-business tunability later. Not now.
+
+**Verified:** TypeScript clean, build passes, `/overheads/review` 4.48 → 4.97 kB (grouping + extra render). No schema change.
+
+**Action required from Paul:** none — pure code fix. Refresh `/overheads/review` and the queue should consolidate dramatically. The "Mark all essential" backfill banner is still recommended for the first-pass cleanup; once it runs, future months only re-flag genuine outliers.
+
+---
+
 ## 0ap. Overhead Review System — PR 3: UI (2026-04-28)
 
 **Scope:** the user-facing layer. Owner can now actually use the feature: see flags, decide on each one, watch the savings projection update on the dashboard hero card and on `/overheads`. Backfill banner handles the first-run-mass-flagging case so an established business with 12 months of unreviewed costs isn't drowned.
