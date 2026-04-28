@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('forecast-calibration', async () => {
 
   const started = Date.now()
   const db = createAdminClient()
@@ -235,6 +237,7 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
+  })
 }
 
 

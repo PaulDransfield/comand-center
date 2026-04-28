@@ -37,6 +37,8 @@ async function handle(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('catchup-sync', async () => {
 
   const runStarted = Date.now()
   const db = createAdminClient()
@@ -180,6 +182,7 @@ async function handle(req: NextRequest) {
     skipped,
     date_range: `${from7} to ${toDate}`,
     error_detail: errors.slice(0, 10).map(e => ({ provider: e.provider, integration_id: e.integration_id, error: e.error })),
+  })
   })
 }
 

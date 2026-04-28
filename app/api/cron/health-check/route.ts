@@ -25,6 +25,8 @@ export async function GET(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('health-check', async () => {
 
   const supabase = createAdminClient()
   const started  = Date.now()
@@ -126,6 +128,7 @@ export async function GET(req: NextRequest) {
     alerts_sent: alertsSent,
     duration_ms,
     timestamp:   new Date().toISOString(),
+  })
   })
 }
 

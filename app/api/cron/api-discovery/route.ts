@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('api-discovery', async () => {
 
   const started = Date.now()
   log.info('api-discovery start', { route: 'cron/api-discovery' })
@@ -126,4 +128,5 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
+  })
 }

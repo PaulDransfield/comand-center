@@ -17,6 +17,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('supplier-price-creep', async () => {
 
   const started = Date.now()
   const db = createAdminClient()
@@ -117,6 +119,7 @@ export async function POST(req: NextRequest) {
       note: 'Agent skeleton complete — waiting for Fortnox OAuth approval',
     }, { status: 500 })
   }
+  })
 }
 
 // Vercel Cron dispatches GET — delegate to the same handler.

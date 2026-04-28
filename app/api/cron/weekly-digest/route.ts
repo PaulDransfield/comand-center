@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('weekly-digest', async () => {
 
   const started = Date.now()
   log.info('weekly-digest start', { route: 'cron/weekly-digest' })
@@ -198,6 +200,7 @@ export async function POST(req: NextRequest) {
     memos_generated: memosGenerated,
     errors:          errors.length ? errors : undefined,
     week:            weekLabel,
+  })
   })
 }
 

@@ -211,19 +211,66 @@ async function probeSentry() {
   if (!token) {
     return { configured: false, note: 'Set SENTRY_AUTH_TOKEN to enable Sentry health.' }
   }
-  // Sentry's stats endpoint. Single 24h bucket.
   try {
-    const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000)
-    const url = `https://sentry.io/api/0/projects/${orgSlug}/${projSlug}/stats/?stat=received&resolution=1d&since=${since}`
-    const r = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
-      // 5s timeout via AbortController — Sentry can be slow.
-      signal: AbortSignal.timeout(5000),
-    })
-    if (!r.ok) return { configured: true, ok: false, error: `Sentry HTTP ${r.status}` }
-    const arr = await r.json()                                         // [[ts, count], …]
-    const total = Array.isArray(arr) ? arr.reduce((s: number, p: any) => s + Number(p?.[1] ?? 0), 0) : 0
-    return { configured: true, ok: true, errors_24h: total }
+    const sinceISO = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+    // Two parallel calls:
+    //   1. /issues/ — top error issues in the last 24h with title + count.
+    //      Filtered to is:unresolved level:error so transactions/breadcrumbs
+    //      don't inflate the number (the previous /stats/?stat=received
+    //      probe counted every event including non-errors, which is why
+    //      "34 errors/24h" reported on the Health tab last week was mostly
+    //      noise — it was the total event volume, not error count).
+    //   2. /stats/ — kept as the "events received" volume for context.
+    const issuesUrl = `https://sentry.io/api/0/projects/${orgSlug}/${projSlug}/issues/?statsPeriod=24h&query=${encodeURIComponent('is:unresolved level:[error,fatal]')}&limit=5&sort=freq`
+    const statsUrl  = `https://sentry.io/api/0/projects/${orgSlug}/${projSlug}/stats/?stat=received&resolution=1d&since=${Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000)}`
+
+    const [issuesRes, statsRes] = await Promise.all([
+      fetch(issuesUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      }),
+      fetch(statsUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(5000),
+      }),
+    ])
+
+    if (!issuesRes.ok && !statsRes.ok) {
+      return { configured: true, ok: false, error: `Sentry HTTP ${issuesRes.status}/${statsRes.status}` }
+    }
+
+    let topIssues: Array<{ title: string; count: number; level: string; permalink: string; first_seen: string; culprit: string }> = []
+    let errorEventCount = 0
+    if (issuesRes.ok) {
+      const issues = await issuesRes.json()
+      if (Array.isArray(issues)) {
+        topIssues = issues.slice(0, 5).map((i: any) => ({
+          title:      String(i?.title ?? i?.metadata?.value ?? 'unknown').slice(0, 200),
+          count:      Number(i?.count ?? 0),
+          level:      String(i?.level ?? 'error'),
+          permalink:  String(i?.permalink ?? ''),
+          first_seen: String(i?.firstSeen ?? ''),
+          culprit:    String(i?.culprit ?? '').slice(0, 200),
+        }))
+        errorEventCount = topIssues.reduce((s, i) => s + i.count, 0)
+      }
+    }
+
+    let totalEvents = 0
+    if (statsRes.ok) {
+      const arr = await statsRes.json()
+      totalEvents = Array.isArray(arr) ? arr.reduce((s: number, p: any) => s + Number(p?.[1] ?? 0), 0) : 0
+    }
+
+    return {
+      configured:     true,
+      ok:             true,
+      errors_24h:     errorEventCount,                              // real error count
+      total_events_24h: totalEvents,                                // includes transactions/breadcrumbs
+      top_issues:     topIssues,
+      since:          sinceISO,
+    }
   } catch (e: any) {
     return { configured: true, ok: false, error: e?.message ?? 'sentry probe failed' }
   }

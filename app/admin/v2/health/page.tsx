@@ -28,7 +28,16 @@ interface HealthResponse {
     tables: Array<{ table_name: string; rls_enabled: boolean; policy_count: number; is_anomaly: boolean }>
     note?: string; error?: string
   }
-  sentry:    { configured: boolean; ok?: boolean; errors_24h?: number; note?: string; error?: string }
+  sentry:    {
+    configured: boolean
+    ok?: boolean
+    errors_24h?: number
+    total_events_24h?: number
+    top_issues?: Array<{ title: string; count: number; level: string; permalink: string; first_seen: string; culprit: string }>
+    since?: string
+    note?: string
+    error?: string
+  }
   anthropic: {
     ok: boolean; rpc_used?: boolean
     last_24h_usd?: number; prior_24h_usd?: number; delta_pct?: number | null
@@ -224,21 +233,76 @@ function RlsSection({ data }: { data: HealthResponse['rls'] }) {
 // ─── Sentry ────────────────────────────────────────────────────────────────
 
 function SentrySection({ data }: { data: HealthResponse['sentry'] }) {
+  const errors = data.errors_24h ?? 0
+  const events = data.total_events_24h ?? 0
+  const topIssues = data.top_issues ?? []
   return (
-    <Card title="Sentry" subtitle="Last 24h error count from Sentry's project stats API.">
+    <Card title="Sentry" subtitle="Top unresolved error/fatal issues + total event volume in the last 24h.">
       {!data.configured ? (
         <Body>{data.note}</Body>
       ) : data.ok === false ? (
         <Banner tone="bad" text={`Sentry probe failed: ${data.error}`} />
       ) : (
-        <div style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-          <Stat
-            label="Errors (24h)"
-            value={String(data.errors_24h ?? 0)}
-            tone={(data.errors_24h ?? 0) > 50 ? 'bad' : (data.errors_24h ?? 0) > 10 ? 'warn' : 'good'}
-          />
-          <Stat label="" value="(p50 + top message in a follow-up)" small />
-        </div>
+        <>
+          <div style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+            <Stat
+              label="Errors (24h)"
+              value={String(errors)}
+              tone={errors > 50 ? 'bad' : errors > 10 ? 'warn' : 'good'}
+            />
+            <Stat
+              label="All events (24h)"
+              value={String(events)}
+              small
+            />
+          </div>
+          {topIssues.length > 0 && (
+            <div style={{ padding: '0 16px 14px' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: '0.06em', marginBottom: 8 }}>
+                Top unresolved (by frequency)
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                {topIssues.map((iss, i) => (
+                  <a
+                    key={i}
+                    href={iss.permalink || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '8px 10px', background: '#f9fafb',
+                      border: '1px solid #f3f4f6', borderRadius: 6,
+                      textDecoration: 'none', color: 'inherit',
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1, marginRight: 10 }}>
+                      <div style={{ fontSize: 12, color: '#111', fontWeight: 500, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
+                        {iss.title}
+                      </div>
+                      {iss.culprit && (
+                        <div style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'ui-monospace, monospace', marginTop: 2, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
+                          {iss.culprit}
+                        </div>
+                      )}
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, color: iss.level === 'fatal' ? '#991b1b' : '#92400e',
+                      background: iss.level === 'fatal' ? '#fee2e2' : '#fef3c7',
+                      padding: '2px 8px', borderRadius: 999,
+                    }}>
+                      {iss.count}×
+                    </span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+          {topIssues.length === 0 && errors === 0 && (
+            <div style={{ padding: '0 16px 14px', fontSize: 11, color: '#9ca3af' }}>
+              No unresolved error/fatal issues in the last 24h.
+            </div>
+          )}
+        </>
       )}
     </Card>
   )

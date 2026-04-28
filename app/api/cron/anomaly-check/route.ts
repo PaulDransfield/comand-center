@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('anomaly-check', async () => {
 
   const started = Date.now()
   try {
@@ -81,6 +83,7 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
+  })
 }
 
 // Vercel Cron dispatches GET — delegate to the same handler.

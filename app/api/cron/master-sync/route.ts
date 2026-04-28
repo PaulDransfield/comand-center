@@ -23,6 +23,8 @@ export async function GET(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('master-sync', async () => {
 
   const runStarted = Date.now()
   const db = createAdminClient()
@@ -142,5 +144,6 @@ export async function GET(req: NextRequest) {
     date_range: `${from90} to ${toDate}`,
     concurrency: CONCURRENCY,
     results,
+  })
   })
 }

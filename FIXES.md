@@ -3,6 +3,35 @@ Last updated: 2026-04-28
 
 ---
 
+## 0au. Sentry probe upgrade + cron-handler wrapping (2026-04-28)
+
+**Two operational wins bundled together:**
+
+### 1. Sentry probe surfaces top issues, not raw event count
+
+The Health tab's `Errors (24h)` was showing 34 events, which sounded alarming but was actually the total `received` event volume — including transactions and breadcrumbs, not just exceptions. Real error count was hidden.
+
+**Modified `app/api/admin/v2/health/route.ts::probeSentry`:**
+- Now makes two parallel calls: `/projects/<org>/<proj>/issues/?statsPeriod=24h&query=is:unresolved level:[error,fatal]` for actionable issues (top 5 by frequency) + the existing `/stats/?stat=received` for context.
+- Returns `errors_24h` (real error+fatal count from issues), `total_events_24h` (raw event volume), `top_issues[]` (title, count, level, permalink, culprit, first_seen).
+
+**Modified `app/admin/v2/health/page.tsx::SentrySection`:**
+- Two stats: real `Errors (24h)` (tone-coloured: good <10, warn 10-50, bad >50) + small `All events (24h)` for context.
+- Top-5 issues list rendered as clickable cards (Sentry permalink), with level-coloured count chips (`fatal` red, `error` amber). Owner can jump straight to the failing issue without alt-tabbing to Sentry.
+
+### 2. Cron handlers wrapped in `withCronLog`
+
+The Health tab's Crons section was showing "NEVER LOGGED" for every row because no handler had been opted into the `withCronLog` wrapper from PR 7 of the admin rebuild. Closed that loop.
+
+**Wrapped all 12 production crons** (per `vercel.json`):
+- master-sync, catchup-sync, anomaly-check, health-check, weekly-digest, forecast-calibration, supplier-price-creep, scheduling-optimization, onboarding-success, api-discovery, api-discovery-enhanced, customer-health-scoring.
+
+Pattern per handler: dynamic-import the wrapper after the auth check (so unauthorized hits don't pollute the log), wrap the existing body. 3 lines added per file. Auth still happens outside the wrapped block so `cron_run_log` only records actual work attempts.
+
+**Verified:** `npx tsc --noEmit` clean. `npm run build` passes. Next time each cron fires, a `cron_run_log` row lands and the Health tab populates with real `last_status` / `last_started` data.
+
+---
+
 ## 0at. Sync-state centralization (2026-04-28)
 
 **Trigger:** Paul's frustration with daily sync incidents. Each fix had been correct in isolation but the underlying problem was structural — `integrations.status` had 8+ writers with subtly different contracts that drifted independently. `filterEligible` said "probe rows in error/needs_reauth"; `runSync` had a redundant `status='connected'` filter that rejected the same rows. Catch blocks updated `last_error` but not `status`. Inzii was killed but its 5 orphaned integration rows kept generating "synced with 6 errors" toasts every day for a week. Each incident took manual SQL to clear.

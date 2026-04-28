@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('onboarding-success', async () => {
 
   const started = Date.now()
   log.info('onboarding-success start', { route: 'cron/onboarding-success' })
@@ -280,6 +282,7 @@ Format as plain text email body (no HTML).`
       timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
+  })
 }
 
 

@@ -19,6 +19,8 @@ export async function POST(req: NextRequest) {
   if (!checkCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+  const { withCronLog } = await import('@/lib/cron/log')
+  return withCronLog('scheduling-optimization', async () => {
 
   const started = Date.now()
   log.info('scheduling-optimization start', { route: 'cron/scheduling-optimization' })
@@ -291,6 +293,7 @@ Format as bullet points with concrete actions.`
       timestamp: new Date().toISOString(),
     }, { status: 500 })
   }
+  })
 }
 
 
