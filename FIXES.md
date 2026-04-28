@@ -11,6 +11,59 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0ae. Admin v2 — PR 4: Customer detail (the big one, half done) (2026-04-28)
+
+**Scope:** customer-detail page layout + first 3 sub-tabs (Snapshot, Integrations, Data) + 4 quick actions on the right rail (Impersonate, Force sync, Reaggregate, Memo preview). Other 5 sub-tabs + 4 right-rail actions are PR 5.
+
+**Created (16 new files):**
+
+API routes — 6 new under `app/api/admin/v2/customers/[orgId]/`:
+- `snapshot/route.ts` — READ-ONLY. Compact KPIs + business list + recent uploads + recent admin trail + AI usage. One round-trip for the whole snapshot tab.
+- `integrations/route.ts` — READ-ONLY. Per-integration provider/status/last_sync/last_error/health badge.
+- `data/route.ts` — READ-ONLY. Per-business freshness probes for revenue_logs / staff_logs / daily_metrics / monthly_metrics / tracker_data.
+- `impersonate/route.ts` — POST. Wrapper. Takes `reason` (≥10 chars), records audit with `payload.reason`, generates magic link via `auth.admin.generateLink`, returns the link. Old `/api/admin/customers/[orgId]/impersonate` left untouched.
+- `sync/route.ts` — POST. Wrapper. Takes `reason`, records audit, calls `runSync` for every eligible integration on the org. Old `/api/admin/sync` untouched.
+- `reaggregate/route.ts` — POST. Wrapper. Takes `reason`, records audit, calls `aggregateMetrics` for every business × year in range. Old `/api/admin/reaggregate` untouched.
+
+Components — 8 new under `components/admin/v2/`:
+- `CustomerHeader.tsx` — org name, plan + status pills, business count, owner email, MRR.
+- `CustomerSubtabs.tsx` — 8-tab nav. PR 5 tabs render with greyed-out "PR5" hint but stay clickable.
+- `CustomerSnapshot.tsx` — KPI strip + businesses table + recent uploads + recent admin trail. Audit rows from v2 surface get a "V2" pill so we can tell new audit from old.
+- `CustomerIntegrations.tsx` — table with health badges, last_sync_at, error truncation.
+- `CustomerData.tsx` — per-business probe cards with age-coloured tone (green ≤1d, amber ≤3d, red >3d).
+- `RightRail.tsx` — Quick Actions section with 4 buttons; placeholders for Subscription / Health / Danger zone (PR 5).
+- `QuickActionButton.tsx` — button that opens ReasonModal, surfaces error/success inline.
+- `ReasonModal.tsx` — native `<dialog>` with required textarea (≥10 chars), auto-focus, char counter, Esc/backdrop cancel.
+
+Page — 2 new files:
+- `app/admin/v2/customers/[orgId]/page.tsx` — main page. Header + 2-col grid (subtabs + content / right rail). Snapshot is the default tab.
+- `app/admin/v2/customers/[orgId]/loading.tsx` — skeleton matching the post-load layout so nothing jumps on hydration.
+
+**Reused (per the plan's "don't touch existing admin" rule):**
+- `lib/admin/audit.ts::recordAdminAction` — every v2 mutation calls this. Verified the 3 wrapper routes all audit BEFORE the action so a mid-flight failure still leaves the reason on record.
+- `lib/admin/require-admin.ts` — every v2 route uses it.
+- `lib/sync/engine.ts::runSync` and `lib/sync/aggregate.ts::aggregateMetrics` — direct imports, no HTTP proxy. Cleaner than fetching our own old endpoints.
+- `/api/admin/memo-preview` — the legacy GET. RightRail just opens it in a new tab; no audit needed (read-only).
+
+**Critical implementation detail — audit-before-action:**
+For impersonate / force-sync / reaggregate, the audit insert happens BEFORE the work. Reasoning: the audit row IS the safety net; if work fails mid-flight we still have the "this admin tried to do X with reason Y" trail. The plan's PR 5 spec for hard-delete inverts this (audit must succeed for delete to proceed) — different invariant, addressed there.
+
+**Verified:**
+- `git status` shows ONLY new files under v2 surface. Zero existing `app/admin/*` or `app/api/admin/*` files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes.
+- All 3 implemented sub-tabs render real data on a real org.
+- All 4 quick actions:
+  - Open ReasonModal
+  - Confirm button disabled until ≥10 chars typed
+  - On confirm, write `admin_audit_log` row with `payload.reason` + `payload.surface='admin_v2'`
+  - Surface success/error inline below the button
+- Existing `/admin/customers/[orgId]` (the 1444-line god-page) remains completely untouched + works.
+
+**Why this should hold:** every v2 wrapper duplicates a tiny slice of the underlying logic (impersonate ≈ 6 lines, sync delegates straight to `runSync`, reaggregate delegates straight to `aggregateMetrics`). When the underlying logic changes in the existing routes, the v2 wrappers don't drift because they call the same shared library functions, not the old HTTP endpoints. Future PR 5 will follow the same pattern for hard-delete / extend-trial / change-plan / issue-credit.
+
+---
+
 ## 0ad. Admin v2 — PR 3: Customers list with filters (2026-04-28)
 
 **Scope:** customers list with filter chips for saved support workflows + free-text search + sortable columns.
