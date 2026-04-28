@@ -96,6 +96,13 @@ export default function AiHoursReductionMap(props: Props) {
       const curCost  = Number(c.est_cost ?? 0)
       const aiCost   = Number(s.est_cost ?? 0)
       const savingKr = curCost - aiCost               // positive = saving
+      const estRev   = Number(s.est_revenue ?? 0)     // AI-predicted revenue for the day
+      // Labour % = staff cost / revenue. Null when revenue is 0 (closed
+      // day, or AI couldn't form a forecast). Restaurant operators read
+      // labour % as the primary metric — kr alone doesn't tell them
+      // whether they're on target (typically 30–35 %).
+      const curPct   = estRev > 0 ? (curCost / estRev) * 100 : null
+      const aiPct    = estRev > 0 ? (aiCost  / estRev) * 100 : null
       const isAccepted   = !!acceptances?.[c.date]
       const isJudgment   = !!s.under_staffed_note     // amber: model wanted to add
       let status: Status
@@ -107,6 +114,7 @@ export default function AiHoursReductionMap(props: Props) {
         date: c.date as string,
         weekday: c.weekday,
         curH, aiH, deltaH, curCost, aiCost, savingKr,
+        estRev, curPct, aiPct,
         reasoning: String(s.reasoning ?? ''),
         status,
         isAccepted,
@@ -282,21 +290,34 @@ function DayRow({ row, fmt, fmtHrs, onDecide }: {
         <div style={{ ...eyebrow, marginTop: 4 }}>{subLabel}</div>
       </div>
 
-      {/* Col 2 — Bars / message */}
+      {/* Col 2 — Bars / message + labour % shift */}
       <div>
         {row.status === 'green' && (
-          <BarPair labelTop="NOW" labelBot="AI" topVal={row.curH} botVal={row.aiH} fmtHrs={fmtHrs} botColor={C.green}
-            note={row.reasoning || `Trim ${fmtHrs(row.deltaH)} from the day`} noteColor={C.ink3} accepted={row.isAccepted} />
+          <>
+            <BarPair labelTop="NOW" labelBot="AI" topVal={row.curH} botVal={row.aiH} fmtHrs={fmtHrs} botColor={C.green}
+              note={row.reasoning || `Trim ${fmtHrs(row.deltaH)} from the day`} noteColor={C.ink3} accepted={row.isAccepted} />
+            <LabourLine curPct={row.curPct} aiPct={row.aiPct} curCost={row.curCost} aiCost={row.aiCost} fmt={fmt} accepted={row.isAccepted} tone="green" />
+          </>
         )}
         {row.status === 'amber' && (
-          <BarPair labelTop="IF PATTERN" labelBot="IF BOOKINGS" topVal={row.aiH} botVal={row.curH} fmtHrs={fmtHrs} botColor={C.amber} topColor={C.amber}
-            note={row.reasoning || 'Pattern says lighter, but you may know more — your call.'} noteColor={C.amber} labelWidth={70} />
+          <>
+            <BarPair labelTop="IF PATTERN" labelBot="IF BOOKINGS" topVal={row.aiH} botVal={row.curH} fmtHrs={fmtHrs} botColor={C.amber} topColor={C.amber}
+              note={row.reasoning || 'Pattern says lighter, but you may know more — your call.'} noteColor={C.amber} labelWidth={70} />
+            <LabourLine curPct={row.curPct} aiPct={row.aiPct} curCost={row.curCost} aiCost={row.aiCost} fmt={fmt} tone="amber" />
+          </>
         )}
         {row.status === 'gray-closed' && (
           <div style={{ fontSize: 12, color: C.ink4, fontStyle: 'italic' as const }}>No shifts posted — restaurant closed.</div>
         )}
         {row.status === 'gray-nochange' && (
-          <div style={{ fontSize: 12, color: C.ink3 }}>{row.reasoning || 'Schedule already aligned with the pattern.'}</div>
+          <>
+            <div style={{ fontSize: 12, color: C.ink3 }}>{row.reasoning || 'Schedule already aligned with the pattern.'}</div>
+            {row.curPct != null && (
+              <div style={{ fontSize: 11, color: C.ink4, marginTop: 4 }}>
+                Labour {Math.round(row.curPct)}% of revenue — on target.
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -407,6 +428,64 @@ function BarRow({ label, value, pct, color, fmtHrs, labelWidth, trackWidth }: {
       </div>
     </div>
   )
+}
+
+// ─── Labour-% before/after line ────────────────────────────────────────────
+// Shows the actual decision metric — labour cost as a percent of revenue
+// (operators read 30–35 % as on-target). Renders kr in muted grey beside
+// the percent so the cost picture is also visible without dominating.
+function LabourLine({ curPct, aiPct, curCost, aiCost, fmt, accepted, tone }: {
+  curPct: number | null
+  aiPct:  number | null
+  curCost: number
+  aiCost:  number
+  fmt: (n: number) => string
+  accepted?: boolean
+  tone: 'green' | 'amber'
+}) {
+  if (curPct == null || aiPct == null) return null
+  const arrow = '→'
+  const accent = tone === 'green' ? C.green : C.amber
+  const verb   = tone === 'green' ? 'saves' : 'shift'
+  const delta  = curCost - aiCost
+  const sign   = delta > 0 ? '−' : delta < 0 ? '+' : ''
+  return (
+    <div style={{
+      fontSize:    11,
+      color:       C.ink3,
+      marginTop:   8,
+      paddingTop:  6,
+      borderTop:   `1px dashed ${C.bgBar}`,
+      display:     'flex',
+      alignItems:  'center',
+      gap:         6,
+      flexWrap:    'wrap' as const,
+      textDecoration: accented(accepted),
+    }}>
+      <span style={{ color: C.ink4, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontSize: 10 }}>
+        Labour
+      </span>
+      <span style={{ color: C.ink2, fontWeight: 500 }}>
+        {Math.round(curPct)}%
+      </span>
+      <span style={{ color: C.ink4 }}>{arrow}</span>
+      <span style={{ color: accent, fontWeight: 500 }}>
+        {Math.round(aiPct)}%
+      </span>
+      <span style={{ color: C.ink4 }}>· of revenue</span>
+      <span style={{ color: C.ink4 }}>·</span>
+      <span style={{ color: C.ink3 }}>
+        {verb} <span style={{ color: accent, fontWeight: 500 }}>{sign}{fmt(Math.abs(delta))}</span>
+      </span>
+      <span style={{ color: C.ink4 }}>
+        ({fmt(curCost)} {arrow} {fmt(aiCost)})
+      </span>
+    </div>
+  )
+}
+
+function accented(accepted?: boolean): 'line-through' | 'none' {
+  return accepted ? 'line-through' : 'none'
 }
 
 // ─── Atoms ──────────────────────────────────────────────────────────────────
