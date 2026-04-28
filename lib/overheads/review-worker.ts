@@ -227,5 +227,80 @@ export async function runOverheadReview(args: ReviewArgs): Promise<ReviewResult>
     }
   }
 
+  // ── 6. AI explanation pass (PR 4) ───────────────────────────────────────
+  // Single Sonnet call per period that fills ai_explanation + ai_confidence
+  // for every flag we just wrote (or any pending flag still missing one).
+  // Best-effort — if the AI call fails or times out, the flags stay
+  // explanation-less and the rule reason is the only context the owner
+  // sees. The `reason` field is already human-readable; the AI just adds
+  // colour.
+  try {
+    await runExplanationPass(db, orgId, businessId, year, month)
+  } catch (e: any) {
+    console.warn('[overhead-review] explanation pass failed:', e?.message)
+  }
+
   return out
+}
+
+// ── AI explanation pass ─────────────────────────────────────────────────────
+async function runExplanationPass(
+  db: any,
+  orgId: string,
+  businessId: string,
+  year: number,
+  month: number,
+): Promise<void> {
+  // Find pending flags for this period that don't have an explanation yet.
+  const { data: needsExplanation, error: fErr } = await db
+    .from('overhead_flags')
+    .select('id, supplier_name, flag_type, reason, amount_sek, prior_avg_sek, period_year, period_month')
+    .eq('org_id', orgId)
+    .eq('business_id', businessId)
+    .eq('period_year',  year)
+    .eq('period_month', month)
+    .eq('resolution_status', 'pending')
+    .is('ai_explanation', null)
+    .limit(50)
+  if (fErr || !needsExplanation || needsExplanation.length === 0) return
+
+  // Pull business name + monthly overhead total for context.
+  const { data: biz } = await db
+    .from('businesses')
+    .select('name')
+    .eq('id', businessId)
+    .maybeSingle()
+
+  const { data: rollup } = await db
+    .from('tracker_data')
+    .select('other_cost')
+    .eq('org_id', orgId)
+    .eq('business_id', businessId)
+    .eq('period_year',  year)
+    .eq('period_month', month)
+    .maybeSingle()
+
+  const { explainOverheadFlags } = await import('./ai-explanation')
+  const explanations = await explainOverheadFlags({
+    db,
+    orgId,
+    flags:    needsExplanation,
+    business: {
+      business_name:        biz?.name ?? 'this business',
+      total_overheads_sek:  rollup?.other_cost ? Number(rollup.other_cost) : undefined,
+    },
+  })
+  if (explanations.length === 0) return
+
+  // Apply each explanation. Sequential is fine — there are <= 50 of them.
+  for (const ex of explanations) {
+    await db.from('overhead_flags')
+      .update({
+        ai_explanation: ex.explanation,
+        ai_confidence:  ex.confidence,
+      })
+      .eq('id', ex.flag_id)
+      .eq('org_id', orgId)
+      .is('ai_explanation', null)   // don't overwrite a manual edit
+  }
 }

@@ -67,6 +67,7 @@ export interface BuildContextOptions {
 export type EnrichmentTag =
   | 'cost' | 'forecast' | 'comparison' | 'trend' | 'anomaly' | 'department' | 'schedule'
   | 'budget' | 'pk_forecast' | 'accuracy' | 'weather' | 'staff_individual' | 'group' | 'food_lines' | 'staff_lines'
+  | 'overhead_review'
 
 export interface BuiltContext {
   context: string
@@ -172,6 +173,52 @@ export async function buildAskContext(
         }
       }
     } catch (e: any) { warnings.push('line-items enrichment failed: ' + (e?.message ?? 'unknown')) }
+  }
+
+  // ── OVERHEAD REVIEW ENRICHMENT (PR 4) ─────────────────────────────────────
+  // Pending overhead-review flags + projected savings. Fires on the same
+  // COST keywords as the line-item drill, plus "save" / "cut" / "where can
+  // I" patterns that aren't strictly cost-vocabulary but mean the same
+  // thing in conversation. Cheap (single small SELECT) and small (~150
+  // tokens) so it's safe to land alongside other enrichments.
+  const wantsSavingTalk = /\b(save|saving|cut|reduce|trim|where\s+can\s+i|opportunit)/i.test(question)
+  if (opts.businessId && remainingBudget > 150 && (wantsCostLines || wantsSavingTalk)) {
+    try {
+      const { data: flags } = await db
+        .from('overhead_flags')
+        .select('supplier_name, amount_sek, flag_type, period_year, period_month, ai_explanation')
+        .eq('org_id', opts.orgId)
+        .eq('business_id', opts.businessId)
+        .eq('resolution_status', 'pending')
+      if (flags && flags.length > 0) {
+        // Dedup latest amount per supplier — matches the dashboard math.
+        const latestPer = new Map<string, { amount: number; flag_type: string; ai: string | null; key: number }>()
+        for (const f of flags as any[]) {
+          const periodKey = Number(f.period_year) * 100 + Number(f.period_month)
+          const prev = latestPer.get(f.supplier_name)
+          if (!prev || periodKey > prev.key) {
+            latestPer.set(f.supplier_name, {
+              amount:    Number(f.amount_sek ?? 0),
+              flag_type: String(f.flag_type),
+              ai:        f.ai_explanation ?? null,
+              key:       periodKey,
+            })
+          }
+        }
+        const totalSavings = Array.from(latestPer.values()).reduce((s, v) => s + v.amount, 0)
+        const top3 = Array.from(latestPer.entries())
+          .sort((a, b) => b[1].amount - a[1].amount)
+          .slice(0, 3)
+        const top3Lines = top3.map(([name, v]) => {
+          const aiBit = v.ai ? ` (${v.ai})` : ''
+          return `  - ${name} — ${fmt(v.amount)} kr/mo (${v.flag_type})${aiBit}`
+        }).join('\n')
+        attach(
+          'overhead_review',
+          `\n\nOverhead-review queue (BUSINESS-WIDE, supplier-deduped): ${latestPer.size} pending flag${latestPer.size === 1 ? '' : 's'} worth ~${fmt(totalSavings)} kr/mo if all cancelled. Top 3:\n${top3Lines}\n[INSTRUCTION TO CLAUDE: when the user asks "where can I save?" or similar, use these flags as the concrete answer. They go to /overheads/review to make decisions. NEVER tell them to cut a specific item — present the options and let the owner decide.]`,
+        )
+      }
+    } catch (e: any) { warnings.push('overhead-review enrichment failed: ' + (e?.message ?? 'unknown')) }
   }
 
   // ── FORECAST ENRICHMENT ───────────────────────────────────────────────────

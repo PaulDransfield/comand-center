@@ -3,6 +3,54 @@ Last updated: 2026-04-28
 
 ---
 
+## 0ar. Overhead Review System — PR 4: AI explanation + /api/ask context slice (2026-04-28)
+
+**Scope:** the AI layer of the feature. Each pending flag gets a one-sentence explanation from Sonnet 4.6 with extended thinking; `/api/ask` gains awareness of the pending queue so chat questions like "where can I save?" name specific suppliers without any prompt engineering.
+
+**Created:**
+- `lib/overheads/ai-explanation.ts` — `explainOverheadFlags({ db, orgId, flags, business })`. Single Sonnet 4.6 call with `thinking: { type: 'enabled', budget_tokens: 2000 }` + tool use (`submit_flag_explanations`). Per-flag output: `{ flag_id, explanation (≤140 chars), confidence (0-1) }`. 45-second AbortController timeout. Best-effort: failure returns `[]` and the worker continues. Cost-logged via `logAiRequest({ request_type: 'overhead_review_explanation' })` so the AI dashboard tracks spend like any other agent.
+
+**Modified:**
+- `lib/overheads/review-worker.ts` — added a 6th step `runExplanationPass` that runs after the rule-based detection writes flags. Pulls only pending flags with `ai_explanation IS NULL` (idempotent — re-runs don't re-spend on already-explained flags). Loads business name + month's `tracker_data.other_cost` for context. Updates each flag with `.is('ai_explanation', null)` guard so a manually-edited explanation isn't overwritten by a later worker run.
+- `lib/ai/contextBuilder.ts` — added `'overhead_review'` to `EnrichmentTag`. New enrichment block fires on COST keywords OR `wantsSavingTalk` (`/\bsave|cut|reduce|trim|where can i|opportunit/i`). Single SELECT, deduped per supplier (matches dashboard math), writes ~150 tokens covering pending count + total monthly savings + top-3 suppliers with their amounts and AI explanations. Includes an explicit instruction to Claude: "use these flags as the concrete answer — never tell them to cut a specific item, present the options".
+
+**Reused (per the established pattern):**
+- `AI_MODELS.ANALYSIS` (Sonnet 4.6) — same model the cost-intelligence agent and budget AI use.
+- `logAiRequest` — same cost-logging helper every existing AI call uses.
+- The cost-intel `submitInsightsTool` shape was the template for `submit_flag_explanations` — proven structured-output pattern with the SDK.
+- Tool use enforcement (`tool_choice: { type: 'tool', name: ... }`) matches FIXES §0y "tool use replaces regex-JSON" canonical practice.
+- The contextBuilder `attach(tag, block)` helper + shared `enrichmentBudget` accounting — same shape every other enrichment uses.
+- The 12-month rolling history + business-name lookup pattern from review-worker's existing rule pipeline.
+- `SCOPE_NOTE` invariant — overheads are business-wide, the slice tags itself BUSINESS-WIDE so the AI can't misattribute to a department.
+
+**Honest data gaps surfaced:**
+- **Deferred flags don't get re-explained on snooze-expiry** — when a deferred flag returns to `pending`, its `ai_explanation` from the original run sticks. Acceptable for now; explanations are stable for the same supplier + flag_type. A "regenerate explanation" button on `/overheads/review` is a stretch goal.
+- **Industry benchmarks not yet wired in** — the `BusinessContext.benchmarks` field exists in the function signature but `runExplanationPass` doesn't populate it. Would let Claude say "Lokalhyra at 250k/mo is 40% above Stockholm restaurant median" when wired. Easy follow-up: pull from `/api/overheads/benchmarks` in the worker.
+- **Per-flag re-explanation has no API** — if the owner clicks "explain this" on the review page, there's nothing to call. The plan called for `POST /api/overheads/explain/[flagId]` for on-demand deep reasoning. Deferred to PR 5 (polish).
+- **Confidence isn't shown in the UI** — `ai_confidence` is captured but the `FlagCard` only renders `ai_explanation`. Adding a `(0.7)` after the explanation or a "low confidence" badge for <0.5 is one line. Deferred to PR 5.
+- **Context slice fires only with explicit savings/cost vocabulary** — a question like "what's eating my margin?" won't trigger it. Wider keyword regex would catch more, but risks false positives bloating prompts. Tuning later if needed.
+
+**Verified:**
+- `git status` shows: 1 new lib file, 2 modified lib files, FIXES + tsbuild cache. Zero existing routes broken.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes (the pre-existing pdfjs warning is unrelated).
+- `runExplanationPass` is wrapped in try/catch in the worker — if Anthropic is down or the SDK blows up, the worker still returns success with the rule-based flags.
+
+**Why this should hold:** AI is purely additive to PR 2's rule layer. Failures degrade gracefully — flags work without explanations, the rule reason is already human-readable. The UI was already wired in PR 3 (`{flag.ai_explanation && <span>{...}</span>}` block in `FlagCard`), so no UI changes needed in PR 4. The `/api/ask` slice extends the existing keyword-router; no new endpoint, no new prompt. Cost-bounded: 1 call per period per business at apply time, idempotency-guarded so re-applies don't re-spend.
+
+**Action required from Paul:** none. Code-only change. Next time a Fortnox upload is applied, flags will get AI explanations within ~5 seconds of the apply response. Existing flags from before this PR can be backfilled by re-applying their source upload (worker re-runs idempotently and fills the missing explanations).
+
+**Test plan:**
+1. Re-apply an already-applied Fortnox upload (the worker is idempotent — won't write duplicate flags).
+2. Wait ~10 seconds. Refresh `/overheads/review`. Each flag card should show an italicised AI explanation under the rule reason.
+3. Open `/ai` chat. Ask "where can I save money?" or "any overhead I should cut?". Response should name specific suppliers from the queue with kr/mo amounts.
+4. Ask "what's my biggest overhead?" — slice should fire and Claude should answer using the top-3 list.
+5. Verify cost log: `SELECT * FROM ai_request_log WHERE request_type='overhead_review_explanation' ORDER BY created_at DESC LIMIT 5;` should show ~$0.05 entries per apply.
+
+**Next PR (PR 5 — polish):** supplier-name fuzzy dedup (Spotify vs Spotify AB), defer-with-snooze re-surface cron, line-item override (rare two-purpose suppliers), confidence badges, on-demand "explain this" button. **Note:** sync-state centralization (per Paul's separate ask) ships AFTER PR 5.
+
+---
+
 ## 0aq. Overhead Review — PR 3 real-data fixes (2026-04-28)
 
 **Trigger:** owner re-applied 12 months of Fortnox data. PR 3 surfaced 113 flags across multiple periods totalling 2.2M kr "at stake". Real data exposed five issues that mocks didn't.
