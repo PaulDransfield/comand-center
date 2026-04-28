@@ -1235,17 +1235,19 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
       }
     }
 
-    // Update integration last_sync. Also reset status to 'connected' so a
-    // previous flip to 'error' or 'needs_reauth' doesn't permanently exclude
-    // the integration from resync/BackgroundSync/catchup — all three filter
-    // on status='connected'. Before this fix, a one-off failure would stick
-    // the integration in error state even after subsequent syncs succeeded.
-    await db.from('integrations').update({
-      last_sync_at:       now.toISOString(),
-      last_error:         null,
-      status:             'connected',
-      reauth_notified_at: null,
-    }).eq('id', integ.id)
+    // Update integration last_sync via the canonical state module. Encodes
+    // the success-transition shape (status='connected', last_error=null,
+    // last_sync_at=now, reauth_notified_at=null) and writes one audit row.
+    // Replaces the direct UPDATE that pre-dated lib/integrations/state.ts.
+    const totalRecordsForState = Object.values(result ?? {})
+      .filter((v: any) => typeof v === 'number')
+      .reduce((s: number, v: any) => s + v, 0)
+    const { setIntegrationState } = await import('@/lib/integrations/state')
+    await setIntegrationState(db, integ.id, 'sync_succeeded', {
+      recordsSynced: totalRecordsForState,
+      durationMs:    Date.now() - start,
+      actor:         'sync_engine',
+    })
 
     if (provider === 'personalkollen' && result.shifts > 0 && !integ.last_sync_at) {
       try {
@@ -1300,15 +1302,16 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
           .eq('id', integ.id)
           .maybeSingle()
 
-        // reauth_notified_at refreshed on EVERY auth failure (not just on
-        // transition) so the auto-recovery probe in lib/sync/eligibility.ts
-        // can use it as a backoff timer — otherwise master-sync would retry
-        // a permanently-broken integration every 5 minutes.
-        await db.from('integrations').update({
-          status:             'needs_reauth',
-          last_error:         e.message,
-          reauth_notified_at: new Date().toISOString(),
-        }).eq('id', integ.id)
+        // Auth-failure transition via the canonical state module — encodes
+        // status='needs_reauth' + last_error + reauth_notified_at in one
+        // shot and writes the audit-log entry. Replaces the direct UPDATE.
+        const { setIntegrationState } = await import('@/lib/integrations/state')
+        await setIntegrationState(db, integ.id, 'sync_failed_auth', {
+          errorMessage: e.message,
+          errorCode:    e?.code ?? null,
+          actor:        'sync_engine',
+          extra:        { http_status: e?.httpStatus ?? null },
+        })
 
         // One email per reauth event. We only (re)send if the integration
         // wasn't already in needs_reauth state on the previous run.
@@ -1358,20 +1361,26 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
         }
       } catch (markErr: any) {
         console.error('Could not mark integration needs_reauth:', markErr?.message)
-        await db.from('integrations').update({
-          status:     'error',
-          last_error: e.message,
-        }).eq('id', integ.id)
+        // Fallback to retryable-error transition via the state module so we
+        // still capture the original error in last_error + audit log.
+        const { setIntegrationState } = await import('@/lib/integrations/state')
+        await setIntegrationState(db, integ.id, 'sync_failed_retryable', {
+          errorMessage: e.message,
+          errorCode:    e?.code ?? null,
+          actor:        'sync_engine',
+          extra:        { fallback_after_auth_path: true, mark_err: markErr?.message ?? null },
+        })
       }
     } else {
-      // Non-auth error path. Explicitly write status='error' so the row's
-      // state reflects reality — previously we only updated last_error, so
-      // a row could sit at status='connected' with last_error showing the
-      // last failure, confusing operators.
-      await db.from('integrations').update({
-        status:     'error',
-        last_error: e.message,
-      }).eq('id', integ.id)
+      // Non-auth error path — canonical transition via the state module.
+      // Replaces the direct UPDATE that pre-dated lib/integrations/state.ts.
+      // Encodes status='error' + last_error in one shot + writes audit log.
+      const { setIntegrationState } = await import('@/lib/integrations/state')
+      await setIntegrationState(db, integ.id, 'sync_failed_retryable', {
+        errorMessage: e.message,
+        errorCode:    e?.code ?? null,
+        actor:        'sync_engine',
+      })
     }
   }
 

@@ -53,6 +53,11 @@ export interface IntegrationLite {
 }
 
 export function isEligibleForSync(integ: IntegrationLite, now: number = Date.now()): boolean {
+  // 'retired' is permanent — provider was killed (e.g. Inzii 2026-04-20).
+  // Never probe; the row stays in the DB only so historical joins resolve.
+  // Re-activating means manually clearing the status (`manual_reset` via
+  // the state module).
+  if (integ.status === 'retired') return false
   if (integ.status === 'connected') return true
   if (integ.status === 'needs_reauth') {
     const lastProbe = integ.reauth_notified_at ? new Date(integ.reauth_notified_at).getTime() : 0

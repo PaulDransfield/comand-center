@@ -1,10 +1,19 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 applied · M033 applied · M034 applied · M035 applied · M036 applied · M037 applied · M038 applied · M039 pending
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 applied · M033 applied · M034 applied · M035 applied · M036 applied · M037 applied · M038 applied · M039 applied · M040 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M040 — Integration state log + canonical status vocabulary
+**File:** `M040-INTEGRATION-STATE-LOG.sql` (repo root)
+**Purpose:** part of FIXES.md §0at (sync-state centralization). Two pieces in one migration:
+  1. CHECK constraint on `integrations.status` enforcing the canonical vocabulary `('connected', 'needs_reauth', 'error', 'retired')`. Rogue rows are coerced to `'error'` before the constraint is added so the migration never fails on existing data.
+  2. New `integration_state_log` table — append-only audit of every state transition with `(prev_status, new_status, prev_last_error, new_last_error, context jsonb)`. Three indexes: per-integration history, per-org cross-table scan, and a partial index on failure transitions for rapid "find every wedge in the last hour" queries.
+**Backwards compat:** all existing code paths continue to work — direct UPDATEs are still allowed (the constraint just rejects garbage status values). The new `lib/integrations/state.ts` module is the recommended path for new code; existing callers migrate file-by-file.
+**Safety:** wrapped in `BEGIN; … COMMIT;`. Constraint creation is idempotent (drops + re-adds). Pre-coerces invalid statuses before the CHECK adds. Verification queries at the bottom: index list + constraint definition + status distribution.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M039 — Overhead review system (PR 1: schema only)
 **File:** `M039-OVERHEAD-REVIEW.sql` (repo root)

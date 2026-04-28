@@ -3,6 +3,75 @@ Last updated: 2026-04-28
 
 ---
 
+## 0at. Sync-state centralization (2026-04-28)
+
+**Trigger:** Paul's frustration with daily sync incidents. Each fix had been correct in isolation but the underlying problem was structural — `integrations.status` had 8+ writers with subtly different contracts that drifted independently. `filterEligible` said "probe rows in error/needs_reauth"; `runSync` had a redundant `status='connected'` filter that rejected the same rows. Catch blocks updated `last_error` but not `status`. Inzii was killed but its 5 orphaned integration rows kept generating "synced with 6 errors" toasts every day for a week. Each incident took manual SQL to clear.
+
+**Fix:** centralize all integration state writes through a single module + audit every transition + add a 'retired' status so killed providers stop polluting the queue.
+
+**Created:**
+- `M040-INTEGRATION-STATE-LOG.sql` — pending. Adds CHECK constraint enforcing `status IN ('connected','needs_reauth','error','retired')` (pre-coerces rogue rows to `'error'` first so the migration never fails). Creates `integration_state_log` append-only audit table with `(prev_status, new_status, prev_last_error, new_last_error, transition, context jsonb, occurred_at)`. Three indexes: per-integration timeline, per-org cross-scan, and a partial index on failure-transitions for fast "find every wedge in the last hour" queries.
+- `lib/integrations/state.ts` — `setIntegrationState(db, integrationId, transition, context?)`. Single function. Encodes the only valid (status, last_error, last_sync_at, reauth_notified_at) shape per transition, so no caller has to remember which fields go together. Includes `resolveErrorMessage(e)` that handles empty/non-Error throws — the source of every "last_error IS NULL while status='error'" black hole. Also exports `getIntegrationHistory(integrationId, limit)` for admin tooling.
+- `lib/integrations/retire.ts` — `retireProvider(db, providerName, opts)`. The clean way to kill a provider: flips every row to status='retired' via the state module, audits each one. Replaces the old "leave them in 'error' and hope nobody notices" pattern that produced the inzii orphan mess.
+
+**Modified:**
+- `lib/sync/eligibility.ts` — `isEligibleForSync` now skips `status='retired'` (permanent — never probe). The 'connected' / 'needs_reauth' / 'error' rules unchanged.
+- `lib/sync/engine.ts` — replaced three direct UPDATEs to `integrations` with state-module calls:
+  - Success path: `setIntegrationState(integ.id, 'sync_succeeded', { recordsSynced, durationMs })` — encodes status='connected' + last_error=null + last_sync_at=now + reauth_notified_at=null.
+  - Auth-error path: `setIntegrationState(integ.id, 'sync_failed_auth', { errorMessage, errorCode, extra: { http_status } })` — encodes status='needs_reauth' + last_error + reauth_notified_at=now.
+  - Non-auth error path: `setIntegrationState(integ.id, 'sync_failed_retryable', { errorMessage, errorCode })` — encodes status='error' + last_error.
+  - Fallback after a failed mark-needs-reauth attempt: same retryable transition (preserves the original error in audit log).
+
+**Reused:**
+- The existing `runSync(orgId, provider, from, to, integrationId)` signature — no breaking change to callers.
+- The reauth-email path in engine.ts — only the state-update call changed; the email logic is untouched.
+- The hourly `/api/cron/health-check` — already probes connected integrations; complements (doesn't replace) the new state module.
+- The v2 Tools SQL runner (PR 9 of admin rebuild) — admin can query `integration_state_log` directly without needing a custom UI yet.
+
+**Honest gaps surfaced:**
+- **No new cron for "stuck-state alerting"** — `/api/cron/health-check` already probes; the state module captures everything to the audit log; the email-on-auth-failure already exists. A new "integrations stuck for >7d → email" cron would be a polish addition but isn't load-bearing today.
+- **No admin v2 UI for the audit log** — using the v2 Tools SQL runner suffices for now. A dedicated "Integration history" sub-tab on customer-detail would be a clean next step but isn't blocking.
+- **Direct UPDATEs still possible** — the CHECK constraint catches invalid statuses but the state module isn't enforced via lint or a DB trigger. Trust + code review for new sites.
+- **State module is async-only** — adds ~3-5ms per call (one extra SELECT for prev-state, one INSERT to the log). Acceptable for sync paths that already do many round-trips. Wouldn't be appropriate inside a tight loop.
+- **`integration_state_log` grows unboundedly** — at current sync volume (~7 integrations × 25 syncs/day = ~175 rows/day = ~64k/yr) it'll be small for years. A retention policy (drop rows >2 years old) is easy to add when needed.
+
+**Verified:**
+- `git status` shows: 1 new SQL file, 2 new lib files, 2 modified lib files, 2 docs files, tsbuild cache. Zero existing routes broken.
+- `npx tsc --noEmit` clean. `npm run build` passes (pre-existing pdfjs warning unrelated).
+- The state module is import-on-use (`await import('@/lib/integrations/state')`) inside engine.ts so existing call sites that haven't been touched still work — gradual migration is safe.
+
+**Why this should kill the recurrence class:**
+1. **Single writer** — every status mutation goes through one function. The "filterEligible says probe, runSync rejects" contract drift can't recur because both now derive from the same status vocabulary, enforced at the DB by CHECK constraint.
+2. **Robust error capture** — `resolveErrorMessage` falls back through `e.message → string throw → name+code → JSON-stringified` so we never write `last_error: null` again. Diagnostic black holes were the root of every "we have no idea what broke" incident this week.
+3. **Audit trail** — every transition is logged with prev/new state + context. When a sync wedges, the operator can see the exact sequence: when did it last succeed, what error tipped it into 'error', has anything tried to recover it since.
+4. **Retirement vocabulary** — killing a provider (Inzii, Swess, future) goes through `retireProvider()` which marks every row 'retired' atomically. Eligibility skips 'retired' permanently. No more orphan accumulation.
+
+**Action required from Paul:**
+1. Apply `M040-INTEGRATION-STATE-LOG.sql` in Supabase SQL Editor.
+2. (Optional but recommended) run a quick retire of any future-killed providers via a one-shot script:
+   ```ts
+   // Example for a future feature kill:
+   import { retireProvider } from '@/lib/integrations/retire'
+   await retireProvider(db, 'swess', { reason: 'API discontinued', actor: 'paul' })
+   ```
+
+**Test plan:**
+1. Apply M040.
+2. Click sync from the dashboard → check `integration_state_log` in Supabase: should have rows for every PK integration showing the success transition with `records_synced` + `duration_ms` in context.
+3. Trigger a sync failure (e.g. revoke a PK token) → click sync → log shows `sync_failed_auth` transition with the error message captured cleanly.
+4. Run `SELECT status, COUNT(*) FROM integrations GROUP BY status;` — every row should be in the canonical four-status set.
+5. Try to UPDATE a row to `status = 'wedged'` (invalid) directly in SQL Editor → CHECK constraint rejects.
+
+**Retirement playbook (for future feature kills):**
+Whenever a provider is retired in the codebase (e.g. the inzii kill on 2026-04-20), include a one-shot retire call in the same PR:
+```ts
+import { retireProvider } from '@/lib/integrations/retire'
+await retireProvider(db, '<provider>', { reason: '<why>', actor: 'system' })
+```
+This keeps the integration rows in the DB for historical joins (sync_log, tracker_data) but removes them from active sync. Eligibility skips 'retired' rows permanently. No orphan accumulation.
+
+---
+
 ## 0as. Overhead Review System — PR 5: Polish (2026-04-28)
 
 **Scope:** the four highest-value polish items from the deferred list. Skips fuzzy supplier dedup (the existing suffix-stripping in `normaliseSupplier` already catches Spotify-vs-Spotify-AB; broader fuzzy-matching has too high a false-positive risk on Swedish Fortnox labels) and line-item override (genuine edge case, defer until real-world data shows it matters).
