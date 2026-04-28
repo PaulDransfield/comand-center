@@ -19,10 +19,13 @@ export const dynamic    = 'force-dynamic'
 export const maxDuration = 120
 
 // In-memory per-business lock. Adequate for single-region Vercel; if we go
-// multi-region we can back this with Supabase. At 3-minute throttle a
-// determined user can still trigger ~20 syncs/hour which is fine.
-const LAST_SYNC: Record<string, number> = {}
-const COOLDOWN_MS = 3 * 60 * 1000
+// multi-region we can back this with Supabase. Two-tier cooldown: full
+// 3-minute lock on success (protects upstream APIs from repeat work), 30s
+// lock when every integration errored (lets the owner retry quickly while
+// debugging without the cooldown being a wall).
+const LAST_SYNC: Record<string, { at: number; cooldownMs: number }> = {}
+const COOLDOWN_SUCCESS_MS = 3 * 60 * 1000
+const COOLDOWN_FAILURE_MS = 30 * 1000
 
 export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
@@ -42,14 +45,16 @@ export async function POST(req: NextRequest) {
 
   // Rate limit
   const lastRun = LAST_SYNC[bizId]
-  if (lastRun && Date.now() - lastRun < COOLDOWN_MS) {
-    const waitSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastRun)) / 1000)
+  if (lastRun && Date.now() - lastRun.at < lastRun.cooldownMs) {
+    const waitSec = Math.ceil((lastRun.cooldownMs - (Date.now() - lastRun.at)) / 1000)
     return NextResponse.json({
       error:    `Sync already ran recently. Try again in ${waitSec}s.`,
       retry_in: waitSec,
     }, { status: 429 })
   }
-  LAST_SYNC[bizId] = Date.now()
+  // Optimistically set the success-cooldown — re-set below if everything
+  // errored so the next attempt is allowed sooner.
+  LAST_SYNC[bizId] = { at: Date.now(), cooldownMs: COOLDOWN_SUCCESS_MS }
 
   // User-clicked "Sync now" deserves a stronger probe than cron: if the
   // integration is in needs_reauth we still try (subject to the 6 h backoff
@@ -107,6 +112,12 @@ export async function POST(req: NextRequest) {
   }))
 
   const errors = results.filter(r => r.error)
+
+  // If every integration errored, downgrade the cooldown so the user can
+  // retry quickly without waiting 3 minutes for a sync that wrote nothing.
+  if (errors.length === results.length && results.length > 0) {
+    LAST_SYNC[bizId] = { at: Date.now(), cooldownMs: COOLDOWN_FAILURE_MS }
+  }
 
   return NextResponse.json({
     ok:         errors.length === 0,
