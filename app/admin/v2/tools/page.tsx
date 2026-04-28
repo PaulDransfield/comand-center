@@ -95,13 +95,36 @@ export default function ToolsPage() {
       const r = await adminFetch<SavedListResponse>('/api/admin/v2/tools/saved')
       setSaved(r.items)
       setSavedMissing(r.table_missing)
+      return r
     } catch (e: any) {
       // Silent — saved investigations are optional context, not blocking.
       console.warn('[tools] load saved failed:', e?.message)
+      return null
     }
   }
 
   useEffect(() => { loadSaved() }, [])
+
+  // Deep-link from the command palette: /admin/v2/tools?saved=<id>
+  // pre-loads that saved query into the editor on mount. Strips the
+  // query param from the URL after loading so the user can run / edit
+  // without the deep-link sticking around.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    const id  = url.searchParams.get('saved')
+    if (!id) return
+    ;(async () => {
+      const list = await loadSaved()
+      const hit  = list?.items.find(s => s.id === id)
+      if (hit) {
+        setQuery(hit.query)
+        // Clean the URL so reloads don't reload the deep link.
+        url.searchParams.delete('saved')
+        window.history.replaceState({}, '', url.toString())
+      }
+    })()
+  }, [])
 
   function pushHistory(entry: HistoryEntry) {
     setHistory(prev => {

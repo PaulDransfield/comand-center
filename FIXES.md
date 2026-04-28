@@ -11,6 +11,48 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0al. Admin v2 — PR 11: Command palette search (2026-04-28)
+
+**Scope:** replace PR 1's ⌘K stub with a real search palette. Three result sections in one overlay: customers (org-name ilike or paste a UUID), saved investigations (label or query body match), and v2 pages (Overview, Customers, Agents, Health, Audit, Tools). Empty query = recent items so the palette is useful immediately on open. Keyboard nav (↑/↓/Enter/Esc) routes through Next's router; selecting a saved investigation deep-links to `/admin/v2/tools?saved=<id>` which pre-loads the editor.
+
+**Created:**
+- `app/api/admin/v2/search/route.ts` — single GET, three sections in one round-trip. Customer search: `.ilike('name', '%q%')` for human strings, `.or('name.ilike.%q%,id.eq.<q>')` when q looks like a UUID prefix (8+ chars, hex). Saved-investigations search: pulls the most-recently-used 50 rows then filters in JS on label OR query (avoids needing a server-side `or(label.ilike,query.ilike)` which gets noisy with the JSONB-style escaping). Pages list is static (`PAGES` const) and filtered server-side so the response shape stays uniform across query types. Each section caps at 10. Empty q → most-recent 10 customers + most-recent 5 saved + all pages.
+
+**Modified:**
+- `components/admin/v2/CommandPalette.tsx` — full rewrite. Native `<dialog>` retained (focus trap + Esc free). Input fires onChange → 150 ms debounce → fetch. Results flatten into a single linear nav list so ↑/↓ moves seamlessly across sections. Active row highlighted on hover and keyboard focus. Enter activates → `router.push(item.href)` → palette closes via `<dialog>.close()`. Saved-investigations section shows an inline warning banner if `saved_table_missing` (M038 unapplied) instead of just being empty.
+- `app/admin/v2/tools/page.tsx` — added a `useEffect` that reads `?saved=<id>` on mount, fetches the saved list, finds the matching item, sets the editor's query, then `history.replaceState` strips the param so reloads don't re-trigger. Falls back silently if the ID isn't found (e.g. someone deleted the investigation between palette open and click).
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- `requireAdmin(req)` (orgless) — palette is global.
+- `adminFetch` — same `x-admin-secret` pathway.
+- `Object.values(ADMIN_ACTIONS).sort()` — not used here, but worth noting: actions are NOT in the palette. The palette routes you to a customer (where actions live in the right rail) or a page; actions are scoped, not global.
+- The PR 1 `<dialog>` shape (boxShadow, borderRadius, max dimensions) — kept verbatim so the palette feels visually consistent across the rebuild.
+
+**Honest data gaps surfaced:**
+- Action search (e.g. typing "impersonate" to surface the action across customers) is NOT in PR 11. Admin actions are inherently scoped to a specific org (impersonating "the customer" doesn't mean anything), so surfacing them in a global palette would lie about applicability. The right path — typing a customer name lands you in their detail page, action runs from there.
+- Result ranking is naive: alphabetical within each section, no fuzzy scoring. Acceptable for the current scale (<100 customers, <50 saved investigations); a cmdk-style fuzzy matcher would be over-engineering.
+- "Search by integration" (e.g. typing "fortnox" to find every customer with a Fortnox integration) is NOT supported. Possible follow-up: extend the search RPC to join `integrations`. Defer until needed.
+
+**Verified:**
+- `git status` shows the search route, the rewritten palette, the Tools deep-link wiring, and FIXES. No existing v1 admin files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes (one pre-existing pdfjs warning unrelated to PR 11). New route `/api/admin/v2/search` ships. Tools bundle 5.74 → 5.83 kB (deep-link logic).
+
+**Why this should hold:** palette is read-only across the board (no mutations, no schema changes). Failure modes: search route 5xx → palette shows the error banner without breaking the rest of the layout; saved-table-missing → inline warning + still-functional customers/pages sections; deep-link not found → silently falls back to the default editor query. None of these failures degrade the rest of /admin/v2.
+
+**Action required from Paul:** none. No new migration. M038 (PR 10) is the prerequisite for the saved-investigations section, which Paul has already applied.
+
+**Test plan:**
+1. Hit ⌘K on any /admin/v2 page → palette opens, focused on input, "Recent customers" + "Recent saved investigations" + "Pages" all populate.
+2. Type "vero" → customers section filters live to anything with "vero" in the org name.
+3. Press ↓↓↓ → highlight moves through customers → saved → pages. Enter on a customer → palette closes, navigates to that customer's detail page.
+4. Reopen ⌘K → type a saved investigation's label → ↓ to it → Enter → lands on `/admin/v2/tools?saved=<id>`, editor pre-loaded, URL cleaned to `/admin/v2/tools` after load.
+5. Reopen ⌘K → paste a full UUID → that org appears as the only customer match (regex routes the UUID through `id.eq` instead of name-ilike).
+6. Esc closes the palette anywhere. Backdrop click also closes.
+7. ⌘K again from a deep page (e.g. customer detail) → re-opens cleanly, search scoped globally.
+
+---
+
 ## 0ak. Admin v2 — PR 10: Saved investigations + customer notes (2026-04-28)
 
 **Scope:** two related additions sharing one migration. (1) Customer-detail gets a real Notes sub-tab — threaded admin-only notes with pin / edit / soft-delete. (2) The Tools tab gets a Save… button + "Saved" sidebar section so investigations from the SQL runner can be recalled later, optionally tagged to a specific customer.
