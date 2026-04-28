@@ -22,6 +22,7 @@ import { CustomerBilling } from '@/components/admin/v2/CustomerBilling'
 import { CustomerUsers } from '@/components/admin/v2/CustomerUsers'
 import { CustomerSyncHistory } from '@/components/admin/v2/CustomerSyncHistory'
 import { CustomerAudit } from '@/components/admin/v2/CustomerAudit'
+import { CustomerNotes } from '@/components/admin/v2/CustomerNotes'
 import { CustomerDangerZone } from '@/components/admin/v2/CustomerDangerZone'
 import { RightRail } from '@/components/admin/v2/RightRail'
 
@@ -87,6 +88,7 @@ function renderSubtab(tab: SubTab, orgId: string, orgName: string, onComplete: (
     case 'billing':      return <CustomerBilling orgId={orgId} />
     case 'users':        return <CustomerUsers orgId={orgId} />
     case 'sync_history': return <CustomerSyncHistory orgId={orgId} />
+    case 'notes':        return <CustomerNotes orgId={orgId} />
     case 'audit':        return <CustomerAudit orgId={orgId} />
     case 'danger':       return <CustomerDangerZone orgId={orgId} orgName={orgName} onComplete={onComplete} />
   }

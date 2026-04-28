@@ -13,11 +13,12 @@ export type SubTab =
   | 'billing'
   | 'users'
   | 'sync_history'
+  | 'notes'
   | 'audit'
   | 'danger'
 
-// All 8 sub-tabs ship live as of PR 5. The `pr` field is kept for posterity
-// in case we need to revert to a "coming soon" treatment later.
+// All sub-tabs ship live as of PR 10 (Notes added). The `pr` field is kept
+// for posterity in case we need to revert to a "coming soon" treatment later.
 const TABS: Array<{ key: SubTab; label: string; pr: number }> = [
   { key: 'snapshot',     label: 'Snapshot',      pr: 4 },
   { key: 'integrations', label: 'Integrations',  pr: 4 },
@@ -25,11 +26,12 @@ const TABS: Array<{ key: SubTab; label: string; pr: number }> = [
   { key: 'billing',      label: 'Billing',       pr: 5 },
   { key: 'users',        label: 'Users',         pr: 5 },
   { key: 'sync_history', label: 'Sync history',  pr: 5 },
+  { key: 'notes',        label: 'Notes',         pr: 10 },
   { key: 'audit',        label: 'Audit',         pr: 5 },
   { key: 'danger',       label: 'Danger zone',   pr: 5 },
 ]
-// The "future" treatment below now triggers only for tabs at PR>5 (none).
-const FUTURE_PR_THRESHOLD = 5
+// The "future" treatment below now triggers only for tabs at PR>10 (none).
+const FUTURE_PR_THRESHOLD = 10
 
 export function CustomerSubtabs({ active, onChange }: { active: SubTab; onChange: (t: SubTab) => void }) {
   return (

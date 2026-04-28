@@ -16,6 +16,9 @@ export const ADMIN_ACTIONS = {
   TOGGLE_ACTIVE:    'toggle_active',
   HARD_DELETE:      'hard_delete',
   NOTE_ADD:         'note_add',
+  NOTE_EDIT:        'note_edit',
+  NOTE_DELETE:      'note_delete',
+  NOTE_PIN:         'note_pin',
   // Integrations
   INTEGRATION_ADD:        'integration_add',
   INTEGRATION_KEY_EDIT:   'integration_key_edit',
@@ -29,7 +32,9 @@ export const ADMIN_ACTIONS = {
   AGENT_TOGGLE:    'agent_toggle',
   MASTER_SYNC:     'master_sync',
   // Tooling
-  SQL_RUN:         'sql_run',
+  SQL_RUN:               'sql_run',
+  INVESTIGATION_SAVE:    'investigation_save',
+  INVESTIGATION_DELETE:  'investigation_delete',
 } as const
 
 export type AdminAction = typeof ADMIN_ACTIONS[keyof typeof ADMIN_ACTIONS]

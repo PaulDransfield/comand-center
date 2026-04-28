@@ -1,10 +1,19 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied · M036 pending · M037 pending
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied · M036 applied · M037 applied · M038 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M038 — Admin v2 PR 10 (saved investigations + customer notes)
+**File:** `M038-ADMIN-NOTES-AND-SAVED-QUERIES.sql` (repo root)
+**Purpose:** part of FIXES.md §0ak (Admin Console Rebuild PR 10). Two related tables in one migration:
+  1. `admin_notes(id, org_id, parent_id, body, created_by, created_at, updated_at, pinned, deleted_at)` — first-class threaded notes for the customer-detail Notes sub-tab. Notes used to live as `note_add` rows on `admin_audit_log.payload` which made editing/deleting/threading/pinning impossible. Index `(org_id, pinned DESC, created_at DESC) WHERE deleted_at IS NULL` is the hot path for the sub-tab list. Soft-delete keeps the row for compliance.
+  2. `admin_saved_queries(id, label, query, notes, org_id, created_by, created_at, last_used_at, run_count)` — saved Tools-tab investigations. Optional `org_id` (FK with ON DELETE SET NULL) ties an investigation to a customer. Index on `(last_used_at DESC NULLS LAST, created_at DESC)` for the Tools sidebar.
+**Backwards compat:** /api/admin/v2/customers/[orgId]/notes (GET/POST/edit/delete/pin) and /api/admin/v2/tools/saved degrade gracefully when the tables are missing — surface clear "run M038" banners rather than 500. Old `note_add` audit rows from any pre-M038 manual notes (none exist today; the route was placeholder-only) stay readable in the Audit tab as historical records.
+**Safety:** `CREATE TABLE IF NOT EXISTS`, indexes IF NOT EXISTS. Both have RLS enabled with no policy → service-role only. CHECK constraints on body/label/query length so an accidental dump doesn't bloat the table. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the end: relation sizes + index list.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M037 — Admin v2 Tools support (read-only SQL runner RPC)
 **File:** `M037-ADMIN-SQL-RUNNER.sql` (repo root)

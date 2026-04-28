@@ -11,6 +11,63 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0ak. Admin v2 — PR 10: Saved investigations + customer notes (2026-04-28)
+
+**Scope:** two related additions sharing one migration. (1) Customer-detail gets a real Notes sub-tab — threaded admin-only notes with pin / edit / soft-delete. (2) The Tools tab gets a Save… button + "Saved" sidebar section so investigations from the SQL runner can be recalled later, optionally tagged to a specific customer.
+
+**Created:**
+- `M038-ADMIN-NOTES-AND-SAVED-QUERIES.sql` — pending. Two tables (admin_notes + admin_saved_queries), service-role only, with appropriate composite indexes for the hot paths (`(org_id, pinned DESC, created_at DESC) WHERE deleted_at IS NULL` for notes; `(last_used_at DESC NULLS LAST, created_at DESC)` for saved queries). Soft-delete on notes; hard-delete on saved queries (audit row already captured label + chars).
+- `app/api/admin/v2/customers/[orgId]/notes/route.ts` — GET (list, pinned-first, newest-first, soft-deleted hidden) + POST (create, validates parent_id belongs to same org, max 8 000 chars).
+- `app/api/admin/v2/customers/[orgId]/notes/[noteId]/route.ts` — POST (edit body, updates updated_at) + DELETE (soft-delete via deleted_at). Both verify the note belongs to the claimed org.
+- `app/api/admin/v2/customers/[orgId]/notes/[noteId]/pin/route.ts` — POST toggle (defaults to flip; explicit `{ pinned: bool }` overrides).
+- `app/api/admin/v2/tools/saved/route.ts` — GET (list, optional `?org_id=` filter, org-name enrichment) + POST (create, validates label 1-120 chars, query 1-50k chars, notes 0-4k chars; verifies `org_id` exists if supplied).
+- `app/api/admin/v2/tools/saved/[id]/route.ts` — DELETE (hard delete + audit).
+- `components/admin/v2/CustomerNotes.tsx` — Notes sub-tab UI. Composer at the top, list below. Each note has pin/edit/reply/delete buttons inline. Replies are oldest-first (reads chronologically) and indented with a left-border. Edit and reply are mutually exclusive (clicking edit cancels any active reply, vice versa).
+
+**Modified:**
+- `lib/admin/audit.ts` — added `NOTE_EDIT`, `NOTE_DELETE`, `NOTE_PIN`, `INVESTIGATION_SAVE`, `INVESTIGATION_DELETE` to `ADMIN_ACTIONS`. NOTE_ADD already existed from the earlier admin work; reused as-is.
+- `components/admin/v2/CustomerSubtabs.tsx` — added `'notes'` between `sync_history` and `audit`. `FUTURE_PR_THRESHOLD` bumped to 10 (no future-only tabs left).
+- `app/admin/v2/customers/[orgId]/page.tsx` — imported `CustomerNotes`, wired into the renderSubtab switch.
+- `app/admin/v2/tools/page.tsx` — added the **Save…** button next to **Run query**, the modal (label / org_id / notes fields + query preview), and the **Saved (N)** sidebar section above Sample queries. Each saved row shows label + run_count + last-used timestamp + a × delete button. Loading the saved list is best-effort — failures log to console rather than block the page.
+- `MIGRATIONS.md` + `FIXES.md` — updated.
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- `requireAdmin(req, { orgId })` — same scoping pattern every customer-detail v2 endpoint already uses.
+- `recordAdminAction` — same audit shape as PR 5/6/8/9.
+- `adminFetch` — same `x-admin-secret` pathway.
+- The PR 5 sub-tab pattern (component file + entry in `CustomerSubtabs.tsx` + case in `renderSubtab`) was followed verbatim.
+- `isMissingTable(err)` migration-pending degradation — same shape used in every prior v2 read endpoint.
+
+**Honest data gaps surfaced:**
+- Saved queries do NOT yet bump `last_used_at` / `run_count` when re-run. The schema has the columns and the SQL-runner route knows the saved_query_id concept; wiring the bump into POST `/api/admin/v2/tools/sql` is a small follow-up. For now `last_used_at` only updates on save (server-side default).
+- `created_by` is hard-coded `'admin'` — same limitation as the audit table. Will become meaningful when per-admin accounts ship.
+- Notes have no @-mention / link-preview / markdown rendering. Plain text only — `whitespace: pre-wrap` preserves line breaks but anything fancier would invite XSS surface for no gain (it's admin-only).
+
+**Verified:**
+- `git status` shows v2 files + lib/admin/audit.ts + components/admin/v2/* + docs + tsbuild cache. No existing v1 admin files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes; new routes shipped: `/api/admin/v2/customers/[orgId]/notes`, `/notes/[noteId]`, `/notes/[noteId]/pin`, `/api/admin/v2/tools/saved`, `/saved/[id]`. Tools page bundle 4.22 → 5.74 kB (modal + saved section).
+- Action vocabulary remains consistent — Audit tab dropdown picks up the 5 new actions automatically because it sources from `Object.values(ADMIN_ACTIONS).sort()`.
+
+**Why this should hold:** all writes are scope-checked (`requireAdmin(req, { orgId })` for notes; orgless `requireAdmin(req)` plus optional org_id existence check for saved queries). Cross-tenant note replies blocked by parent-id same-org verification. Soft-delete preserves the audit trail. Tools sidebar's saved-queries fetch is fail-quiet so a missing M038 doesn't block the SQL runner itself.
+
+**Action required from Paul:** apply `M038-ADMIN-NOTES-AND-SAVED-QUERIES.sql` in Supabase SQL Editor. Idempotent + verify queries at the bottom dump relation sizes and the index list.
+
+**Test plan (after M038 applies):**
+1. Open any customer detail page → click **Notes** sub-tab. Empty state.
+2. Type a note in the composer → **Post note**. It appears immediately at the top.
+3. Click **Pin** on it → highlighted with amber border, sorts to top.
+4. Click **Edit** → textarea appears with body. Change text, **Save** → "edited" timestamp shows.
+5. Click **Reply** → indented composer appears. Type, **Reply** → reply renders below the parent indented.
+6. **Delete** root note → confirm dialog → vanishes (still in DB with deleted_at set, plus a NOTE_DELETE audit row).
+7. Open `/admin/v2/audit`, filter `Action: note_add` → see PR 10 rows with `surface: admin_v2`.
+8. Open `/admin/v2/tools` → write any SELECT → click **Save…** → modal with label / org_id / notes fields + query preview.
+9. Save with a label → modal closes, sidebar Saved section now shows `Saved (1)`.
+10. Click the saved row → query loads back into the editor.
+11. Click × on the saved row → confirm → vanishes. Audit log shows `investigation_delete`.
+
+---
+
 ## 0aj. Admin v2 — PR 9: Tools tab (read-only SQL runner) (2026-04-28)
 
 **Scope:** ad-hoc query tool for the admin. Textarea + Run button + result table + last-10 sessionStorage history + 5 sample queries. Read-only enforced at three layers (JS regex, RPC regex, SELECT-subquery wrapper). Every successful run is audited; failed validations are not (they never touched data).

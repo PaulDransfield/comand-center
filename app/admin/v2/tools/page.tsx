@@ -1,7 +1,8 @@
 'use client'
 // app/admin/v2/tools/page.tsx
 // PR 9 — Admin v2 Tools tab. Read-only SQL runner with sessionStorage history.
-// FIXES.md §0aj.
+// PR 10 — adds Saved investigations (admin_saved_queries / M038).
+// FIXES.md §0aj + §0ak.
 
 import { useEffect, useState } from 'react'
 import { adminFetch } from '@/lib/admin/v2/api-client'
@@ -22,6 +23,25 @@ interface HistoryEntry {
   rowCount: number
   ms:       number
   ok:       boolean
+}
+
+interface SavedQuery {
+  id:           string
+  label:        string
+  query:        string
+  notes:        string | null
+  org_id:       string | null
+  org_name:     string | null
+  created_by:   string
+  created_at:   string
+  last_used_at: string | null
+  run_count:    number
+}
+
+interface SavedListResponse {
+  items:         SavedQuery[]
+  table_missing: boolean
+  note?:         string
 }
 
 const HISTORY_KEY   = 'admin_v2_tools_sql_history'
@@ -50,6 +70,14 @@ export default function ToolsPage() {
   const [errorKind, setErrorKind] = useState<string | null>(null)
   const [result,    setResult]    = useState<SqlSuccess | null>(null)
   const [history,   setHistory]   = useState<HistoryEntry[]>([])
+  const [saved,         setSaved]         = useState<SavedQuery[]>([])
+  const [savedMissing,  setSavedMissing]  = useState<boolean>(false)
+  const [showSaveModal, setShowSaveModal] = useState<boolean>(false)
+  const [saveLabel,     setSaveLabel]     = useState<string>('')
+  const [saveOrgId,     setSaveOrgId]     = useState<string>('')
+  const [saveNotes,     setSaveNotes]     = useState<string>('')
+  const [saving,        setSaving]        = useState<boolean>(false)
+  const [saveError,     setSaveError]     = useState<string | null>(null)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -61,6 +89,19 @@ export default function ToolsPage() {
       }
     } catch {}
   }, [])
+
+  async function loadSaved() {
+    try {
+      const r = await adminFetch<SavedListResponse>('/api/admin/v2/tools/saved')
+      setSaved(r.items)
+      setSavedMissing(r.table_missing)
+    } catch (e: any) {
+      // Silent — saved investigations are optional context, not blocking.
+      console.warn('[tools] load saved failed:', e?.message)
+    }
+  }
+
+  useEffect(() => { loadSaved() }, [])
 
   function pushHistory(entry: HistoryEntry) {
     setHistory(prev => {
@@ -152,6 +193,13 @@ export default function ToolsPage() {
               </label>
               <span style={{ fontSize: 11, color: '#9ca3af' }}>{query.length.toLocaleString()} chars · ⌘/Ctrl-Enter to run</span>
               <div style={{ flex: 1 }} />
+              <button
+                onClick={() => { setSaveLabel(''); setSaveOrgId(''); setSaveNotes(''); setSaveError(null); setShowSaveModal(true) }}
+                disabled={query.trim().length === 0}
+                style={btnSecondary(query.trim().length === 0)}
+              >
+                Save…
+              </button>
               <button onClick={run} disabled={running || query.trim().length === 0} style={btnPrimary(running || query.trim().length === 0)}>
                 {running ? 'Running…' : 'Run query'}
               </button>
@@ -173,6 +221,34 @@ export default function ToolsPage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14 }}>
+          <SidebarCard
+            title={`Saved (${saved.length})`}
+            action={savedMissing ? <span style={{ fontSize: 10, color: '#92400e' }} title="Run M038">M038?</span> : null}
+          >
+            {savedMissing && (
+              <div style={{ fontSize: 11, color: '#92400e', padding: '4px 4px' }}>Run M038 to enable saving.</div>
+            )}
+            {!savedMissing && saved.length === 0 && (
+              <div style={{ fontSize: 11, color: '#9ca3af', padding: '8px 4px' }}>No saved investigations yet. Use "Save…" after writing a query.</div>
+            )}
+            {saved.map(s => (
+              <SavedRow
+                key={s.id}
+                item={s}
+                onLoad={() => setQuery(s.query)}
+                onDelete={async () => {
+                  if (!confirm(`Delete saved query "${s.label}"?`)) return
+                  try {
+                    await adminFetch(`/api/admin/v2/tools/saved/${s.id}`, { method: 'DELETE' })
+                    await loadSaved()
+                  } catch (e: any) {
+                    alert(e?.message ?? 'Failed to delete')
+                  }
+                }}
+              />
+            ))}
+          </SidebarCard>
+
           <SidebarCard title="Sample queries">
             {SAMPLES.map(s => (
               <button key={s.label} onClick={() => setQuery(s.query)} style={sidebarItemBtn} title={s.query}>
@@ -206,8 +282,161 @@ export default function ToolsPage() {
           </SidebarCard>
         </div>
       </div>
+
+      {showSaveModal && (
+        <SaveModal
+          query={query}
+          label={saveLabel} setLabel={setSaveLabel}
+          orgId={saveOrgId} setOrgId={setSaveOrgId}
+          notes={saveNotes} setNotes={setSaveNotes}
+          saving={saving}
+          error={saveError}
+          onCancel={() => setShowSaveModal(false)}
+          onConfirm={async () => {
+            const labelTrim = saveLabel.trim()
+            if (!labelTrim) { setSaveError('Label is required'); return }
+            setSaving(true)
+            setSaveError(null)
+            try {
+              await adminFetch('/api/admin/v2/tools/saved', {
+                method: 'POST',
+                body:   JSON.stringify({
+                  label:  labelTrim,
+                  query,
+                  notes:  saveNotes.trim() || null,
+                  org_id: saveOrgId.trim() || null,
+                }),
+              })
+              setShowSaveModal(false)
+              await loadSaved()
+            } catch (e: any) {
+              setSaveError(e?.message ?? 'Save failed')
+            } finally {
+              setSaving(false)
+            }
+          }}
+        />
+      )}
     </div>
   )
+}
+
+// ────────────────────────────────────────────────────────────────────
+//   SavedRow + SaveModal
+// ────────────────────────────────────────────────────────────────────
+
+function SavedRow({ item, onLoad, onDelete }: { item: SavedQuery; onLoad: () => void; onDelete: () => void }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' as const, padding: '6px 8px', borderRadius: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button onClick={onLoad} style={{ ...sidebarItemBtn, padding: 0, flex: 1, color: '#374151', fontWeight: 500 }} title={item.query}>
+          <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>{item.label}</span>
+        </button>
+        <button onClick={onDelete} style={{ background: 'transparent', border: 'none', color: '#d1d5db', cursor: 'pointer', fontSize: 14, padding: '0 4px' }} title="Delete">×</button>
+      </div>
+      <div style={{ fontSize: 10, color: '#9ca3af', display: 'flex', gap: 6, marginTop: 2 }}>
+        {item.org_name && <span title={item.org_id ?? ''} style={{ color: '#1e40af' }}>{item.org_name}</span>}
+        {item.run_count > 0 && <span>{item.run_count} run{item.run_count === 1 ? '' : 's'}</span>}
+        {item.last_used_at && <span>· last {fmtTime(item.last_used_at)}</span>}
+      </div>
+    </div>
+  )
+}
+
+function SaveModal(props: {
+  query:  string
+  label:  string;  setLabel:  (s: string) => void
+  orgId:  string;  setOrgId:  (s: string) => void
+  notes:  string;  setNotes:  (s: string) => void
+  saving: boolean
+  error:  string | null
+  onCancel:  () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div
+      onClick={e => { if (e.target === e.currentTarget) props.onCancel() }}
+      style={{
+        position: 'fixed' as const, inset: 0, background: 'rgba(17, 24, 39, 0.5)', backdropFilter: 'blur(2px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20,
+      }}
+    >
+      <div style={{ background: 'white', borderRadius: 12, padding: 20, width: 480, maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto' as const }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#111', margin: '0 0 4px 0' }}>Save investigation</h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 16px 0' }}>Saves the current query to admin_saved_queries. Optional org tag ties it to a specific customer.</p>
+
+        <Field label="Label" required>
+          <input
+            value={props.label}
+            onChange={e => props.setLabel(e.target.value)}
+            placeholder="e.g. Vero — investigate Sept revenue gap"
+            maxLength={120}
+            style={inputStyle}
+            autoFocus
+          />
+        </Field>
+
+        <Field label="Org ID (optional)" hint="UUID — leaves the query global if blank">
+          <input
+            value={props.orgId}
+            onChange={e => props.setOrgId(e.target.value)}
+            placeholder="e917d4b8-…"
+            style={{ ...inputStyle, fontFamily: 'ui-monospace, monospace' }}
+          />
+        </Field>
+
+        <Field label="Notes (optional)" hint="What were you investigating? Leave a hint for future-you.">
+          <textarea
+            value={props.notes}
+            onChange={e => props.setNotes(e.target.value)}
+            rows={3}
+            maxLength={4000}
+            style={{ ...inputStyle, resize: 'vertical' as const, lineHeight: 1.5 }}
+          />
+        </Field>
+
+        <Field label="Query preview">
+          <pre style={{
+            background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 7, padding: 10,
+            fontSize: 11, fontFamily: 'ui-monospace, monospace', color: '#374151', maxHeight: 140, overflow: 'auto' as const,
+            margin: 0, whiteSpace: 'pre-wrap' as const,
+          }}>
+            {props.query}
+          </pre>
+        </Field>
+
+        {props.error && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: 7, padding: '6px 10px', fontSize: 12, marginTop: 8 }}>
+            {props.error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button onClick={props.onCancel} disabled={props.saving} style={btnSecondary(props.saving)}>Cancel</button>
+          <button onClick={props.onConfirm} disabled={props.saving || props.label.trim().length === 0} style={btnPrimary(props.saving || props.label.trim().length === 0)}>
+            {props.saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 4 }}>
+        {label}{required && <span style={{ color: '#dc2626', marginLeft: 2 }}>*</span>}
+      </label>
+      {children}
+      {hint && <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>{hint}</div>}
+    </div>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: 7,
+  fontSize: 13, color: '#111', boxSizing: 'border-box' as const,
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -313,6 +542,14 @@ function btnPrimary(disabled: boolean): React.CSSProperties {
     padding: '7px 14px', background: disabled ? '#d1d5db' : '#111827', color: 'white',
     border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 500,
     cursor: disabled ? 'not-allowed' : 'pointer',
+  }
+}
+
+function btnSecondary(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '6px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 7,
+    fontSize: 12, fontWeight: 500, color: '#374151',
+    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
   }
 }
 
