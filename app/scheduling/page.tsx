@@ -329,6 +329,24 @@ export default function SchedulingPage() {
             { label: 'Operations' },
             { label: 'Scheduling', active: true },
           ]}
+          rightSlot={
+            <a
+              href="/scheduling/v2"
+              style={{
+                fontSize:     12,
+                color:        UX.indigo,
+                fontWeight:   UX.fwMedium,
+                textDecoration: 'none',
+                padding:      '6px 10px',
+                border:       `0.5px solid ${UX.indigoLight}`,
+                borderRadius: UX.r_md,
+                background:   UX.indigoBg,
+              }}
+              title="Preview the new hours-first AI scheduling layout"
+            >
+              Try the new layout →
+            </a>
+          }
         />
 
         {/* SchPageHero removed 2026-04-23 — the new AI schedule panel's

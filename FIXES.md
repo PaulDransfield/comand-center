@@ -3,6 +3,39 @@ Last updated: 2026-04-27
 
 ---
 
+## 0pp. New AI scheduling layout — preview route /scheduling/v2 (2026-04-28)
+
+**Why:** the existing `AiSchedulePanel` (848 lines, table-style) buries the "how many hours can I cut" question in narrative + per-day rows of equal weight. Paul wanted a hours-first, confidence-grouped layout where each day's status (ready / needs decision / unchanged / closed) is colour-coded and a Now/AI bar pair makes the cut size visually obvious.
+
+**Decision:** built as a parallel preview route at `/scheduling/v2`, NOT a replacement of the original page. Reasoning:
+- The new design references concepts (split decision, "ready to apply" group action) that exist in today's API output but need a different read of the data.
+- Hardcoding the day data (as the original design prompt suggested) would have shipped fake numbers to live customers.
+- A preview route lets us drive the new layout with real `/api/scheduling/ai-suggestion` data and compare side-by-side without touching the working production panel.
+
+**What shipped:**
+- `components/scheduling/AiHoursReductionMap.tsx` — new layout. 7-day list with colour-coded left borders, Now/AI horizontal bar pairs, top-right total saved hours, bottom-bar Apply CTA.
+- `app/scheduling/v2/page.tsx` — preview route. Same range tabs, AppShell, AskAI as the original. Reuses the existing `/api/scheduling/ai-suggestion` + `/api/scheduling/accept-all` endpoints.
+- `app/scheduling/page.tsx` — added "Try the new layout →" link in the TopBar's right slot for easy comparison.
+- Sidebar lazy-loaded, AskAI lazy-loaded (Sprint 1.5 patterns).
+
+**Status classification (client-side, from existing fields):**
+- `green` (ready to apply): `delta_hours <= -2` — clear cut
+- `amber` (needs your call): `under_staffed_note === true` — model wanted to add but the asymmetric rule (FIXES § scheduling memory) blocked it
+- `gray-closed`: `current.hours === 0` — no shifts posted
+- `gray-nochange`: `|delta_hours| < 2` — tolerance band, schedule already aligned
+
+**Apply wiring:** "Apply N ready days" button calls `/api/scheduling/accept-all` with the green-status rows, same payload shape as the original AiSchedulePanel uses. "Decide" button on amber rows is currently a stub `alert()` — the booking-vs-pattern drilldown modal is out of scope for this build.
+
+**Out of scope (intentionally):**
+- The amber decision drilldown modal (Wednesday-style booking-vs-pattern explorer)
+- Per-day Accept (only group Apply for now — the original page still has per-day on `/scheduling`)
+- Mobile layout tuning
+- Replacing the original `AiSchedulePanel` — explicit decision to keep both live
+
+**Why this should hold:** the preview route is fully isolated. Failure of the new layout doesn't affect the original `/scheduling` page. Acceptances written via `/api/scheduling/accept-all` flow into the same `scheduling_acceptances` table either page reads from, so the two pages stay in sync. Removing the preview later is a single-PR delete.
+
+---
+
 ## 0oo. /upgrade page had no desktop sidebar entry (2026-04-28)
 
 **Symptom:** Paul noticed there was no obvious way to reach the subscription / upgrade page from the desktop sidebar nav. The page existed at `app/upgrade/page.tsx` and was reachable via:
