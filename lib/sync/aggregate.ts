@@ -337,9 +337,49 @@ export async function aggregateMetrics(
   //   Rent cost   = tracker_data.rent_cost
   // rev_source / cost_source fields record which feeder won for this month
   // so the UI can tell operators which numbers are accountant-authoritative.
+  //
+  // FIXES §0uu (2026-04-28): build monthlyAcc from the FULL month's
+  // daily_metrics in DB, NOT from this run's narrow dailyRows. Otherwise
+  // a sync called with a 7-day window (catchup-sync's from7) overwrites
+  // monthly_metrics.revenue with only-the-last-7-days, wiping the
+  // full-month value the previous wider sync wrote. Symptom: April 2026
+  // dropped from 812k (correct, full month) to 268k (last 7 days only)
+  // overnight when catchup-sync ran. Re-aggregate fixed it temporarily,
+  // then the next catchup-sync wiped it again.
+  const monthsTouched = new Set<string>()
+  for (const r of dailyRows) monthsTouched.add(r.date.slice(0, 7))  // 'YYYY-MM'
+  for (const t of trackerRows) {
+    if (t.period_month && t.period_month >= 1 && t.period_month <= 12) {
+      monthsTouched.add(`${t.period_year}-${String(t.period_month).padStart(2, '0')}`)
+    }
+  }
+  // Re-fetch FULL month of daily_metrics for every touched month. Uses the
+  // rows we just upserted plus any earlier days that aren't in this run's
+  // window. Cost: 1 query per touched month (typically 1–3 months).
+  const fullMonthDailyRows: any[] = []
+  for (const ym of monthsTouched) {
+    const [yStr, mStr] = ym.split('-')
+    const y = parseInt(yStr), m = parseInt(mStr)
+    if (!y || !m) continue
+    const lastDay = new Date(y, m, 0).getDate()
+    const monthFrom = `${yStr}-${mStr}-01`
+    const monthTo   = `${yStr}-${mStr}-${String(lastDay).padStart(2, '0')}`
+    const { data, error } = await db
+      .from('daily_metrics')
+      .select('date, revenue, covers, tips, food_revenue, bev_revenue, staff_cost, hours_worked, shifts, late_shifts, ob_supplement')
+      .eq('org_id', orgId)
+      .eq('business_id', businessId)
+      .gte('date', monthFrom)
+      .lte('date', monthTo)
+    if (error) {
+      console.warn('[aggregate] full-month daily fetch failed', { ym, error: error.message })
+      continue
+    }
+    if (data) fullMonthDailyRows.push(...data)
+  }
 
   const monthlyAcc: Record<string, any> = {}
-  for (const row of dailyRows) {
+  for (const row of fullMonthDailyRows) {
     const y = parseInt(row.date.slice(0, 4))
     const m = parseInt(row.date.slice(5, 7))
     const key = `${y}-${m}`
@@ -356,21 +396,29 @@ export async function aggregateMetrics(
       daysWithRevenue: new Set<string>(),
     }
     const a = monthlyAcc[key]
-    a.revenue      += row.revenue
-    a.covers       += row.covers
-    a.tips         += row.tips
-    a.food_revenue += row.food_revenue
-    a.bev_revenue  += row.bev_revenue
-    a.staff_cost   += row.staff_cost
-    a.hours        += row.hours_worked
-    a.shifts       += row.shifts
-    a.late         += row.late_shifts
-    a.ob           += row.ob_supplement
-    if (row.revenue > 0) {
+    // Coerce — Supabase returns numeric columns as strings (see toNum
+    // helper higher in this file). fullMonthDailyRows came from a fresh
+    // SELECT so all fields arrive as strings; without coercion the
+    // += operator concatenates and Math.round on the result returns NaN
+    // → the upsert lands as 0. Same class of bug as the daily upsert
+    // had pre-fix.
+    const revN = Number(row.revenue      ?? 0) || 0
+    const cstN = Number(row.staff_cost   ?? 0) || 0
+    a.revenue      += revN
+    a.covers       += Number(row.covers       ?? 0) || 0
+    a.tips         += Number(row.tips         ?? 0) || 0
+    a.food_revenue += Number(row.food_revenue ?? 0) || 0
+    a.bev_revenue  += Number(row.bev_revenue  ?? 0) || 0
+    a.staff_cost   += cstN
+    a.hours        += Number(row.hours_worked ?? 0) || 0
+    a.shifts       += Number(row.shifts       ?? 0) || 0
+    a.late         += Number(row.late_shifts  ?? 0) || 0
+    a.ob           += Number(row.ob_supplement?? 0) || 0
+    if (revN > 0) {
       a.hasRev = true
       a.daysWithRevenue.add(row.date)
     }
-    if (row.staff_cost > 0) a.hasStaff = true
+    if (cstN > 0) a.hasStaff = true
   }
 
   const trackerByMonth: Record<string, any> = {}

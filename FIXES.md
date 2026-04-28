@@ -3,6 +3,41 @@ Last updated: 2026-04-27
 
 ---
 
+## 0uu. Aggregator overwrote monthly_metrics with partial-window data (2026-04-28)
+
+**Symptom:** Paul reported `/budget` and `/tracker` showing wrong April actuals. SQL diagnostic showed `monthly_metrics.revenue` for April = **268,143** despite revenue_logs containing ~1.6M raw / ~812k after dedup across 20 days. Earlier in the day a manual re-aggregate had set the value correctly to ~804k. Something between then and now wiped it.
+
+**Per-day deduped reconstruction proved the math:** summing the deduped values for ONLY 2026-04-21 → 2026-04-28 (the 8 most recent days) produced exactly 268,143. Confirms `monthly_metrics` got rewritten with last-7-days totals, not full-month.
+
+**Root cause:** `lib/sync/aggregate.ts` built `monthlyAcc` from THIS RUN'S `dailyRows` only — the rows derived from the narrow date window passed to `aggregateMetrics(orgId, businessId, fromDate, toDate)`. Then it upserted that as the monthly row. So:
+- Year-wide call (e.g. `/api/admin/reaggregate`): monthlyAcc reflects 12 months → monthly_metrics = full-month value ✅
+- 7-day call (catchup-sync's `from7`): monthlyAcc for the touched month reflects only those 7 days → upsert OVERWRITES the prior full-month value with the partial sum ❌
+- 1-day call (sync/today): monthly_metrics gets just today's revenue ❌
+
+The bug only surfaced now because catchup-sync runs on a schedule. Every cron tick was wiping the morning's correct value.
+
+**Fix:** in `aggregateMetrics`, after upserting `daily_metrics` for the run's window, **re-read the FULL month's `daily_metrics` from DB** for any month touched by the run. Build `monthlyAcc` from those full-month rows instead of from this-run's narrow `dailyRows`. Cost: 1 query per touched month (typically 1–3 months), trivial at any volume.
+
+Coerced all DB-returned numeric fields with `Number(... ?? 0)` because Supabase returns `numeric` columns as strings — without coercion the `+=` would concatenate and `Math.round` would land 0 (the same class of bug the per-day write path already documents).
+
+**Why this should hold:** `monthly_metrics` is now derived from canonical persisted `daily_metrics`, not from the live working-set of the current sync. Narrow-window syncs still update only their own date range in `daily_metrics`, then the monthly aggregate reflects the full month including all earlier days. The pattern is the same single-writer / trusted-reads invariant `projectRollup` follows for tracker_data — `daily_metrics` is the canonical day-level store, `monthly_metrics` is a derived view.
+
+**Cleanup needed (Paul, after this deploys):** April 2026 still shows 268k from the broken run. Re-trigger the year-wide reaggregate to restore it:
+
+```powershell
+$secret = (Get-Content C:\Users\Chicce\Desktop\comand-center\.env.local | Select-String '^ADMIN_SECRET=' | ForEach-Object { ($_ -split '=', 2)[1].Trim('"').Trim() })
+Invoke-RestMethod -Method Post `
+  -Uri 'https://comandcenter.se/api/admin/reaggregate' `
+  -Headers @{ 'x-admin-secret' = $secret; 'Content-Type' = 'application/json' } `
+  -Body '{"business_id":"0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99","from_year":2026}'
+```
+
+After this fix lands, the next scheduled cron tick won't wipe it back — every aggregate run reads full-month from daily_metrics and upserts correctly.
+
+Other businesses (Rosali) likely affected the same way — same reaggregate command with their business_id will fix any historical drift.
+
+---
+
 ## 0rr. New AI scheduling layout committed as default (2026-04-28)
 
 Followup to §0pp. After Paul reviewed the preview route at `/scheduling/v2` he approved the new layout. Promoted to default:
