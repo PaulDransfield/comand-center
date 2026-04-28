@@ -457,22 +457,91 @@ function DashboardInner() {
           <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
         ) : (
           <>
-            <OverviewHero
-              viewMode={viewMode}
-              curr={curr}
-              currM={currM}
-              totalRev={totalRev}
-              totalLabour={totalLabour}
-              prevRev={prevRev}
-              prevLabour={prevLabour}
-              totalHours={totalHours}
-              revPerHour={revPerHour}
-              labourPct={labourPct}
-              targetPct={targetPct}
-              aiSaving={aiSched?.summary?.saving_kr ?? 0}
-              fmtKr={fmtKr}
-              fmtPct={fmtPct}
-            />
+            {/*
+              FIXES §0tt (2026-04-28): top-of-dashboard split — week summary
+              (left) sits next to AI scheduling savings card (right).
+              When AI has no saving (saving_kr <= 0) the right slot is null
+              and OverviewHero takes the full grid width via grid-column.
+              On narrow viewports the grid wraps to a single column.
+            */}
+            {(() => {
+              const aiSaving = Number(aiSched?.summary?.saving_kr ?? 0)
+              const aiCutH   = Number(aiSched?.summary?.current_hours ?? 0) - Number(aiSched?.summary?.suggested_hours ?? 0)
+              const hasSaving = aiSaving > 0
+              return (
+                <div style={{
+                  display:             'grid',
+                  gridTemplateColumns: hasSaving ? 'minmax(0, 1fr) minmax(280px, 360px)' : '1fr',
+                  gap:                 12,
+                  alignItems:          'stretch',
+                  marginBottom:        12,
+                }}>
+                  <OverviewHero
+                    viewMode={viewMode}
+                    curr={curr}
+                    currM={currM}
+                    totalRev={totalRev}
+                    totalLabour={totalLabour}
+                    prevRev={prevRev}
+                    prevLabour={prevLabour}
+                    totalHours={totalHours}
+                    revPerHour={revPerHour}
+                    labourPct={labourPct}
+                    targetPct={targetPct}
+                    aiSaving={aiSaving}
+                    fmtKr={fmtKr}
+                    fmtPct={fmtPct}
+                  />
+                  {hasSaving && (
+                    <a
+                      href="/scheduling"
+                      style={{
+                        display:        'flex',
+                        flexDirection:  'column' as const,
+                        justifyContent: 'space-between',
+                        background:     UX.cardBg,
+                        border:         `1px solid ${UX.border}`,
+                        borderLeft:     `4px solid ${UX.greenInk}`,
+                        borderRadius:   UX.r_lg,
+                        padding:        '18px 20px',
+                        textDecoration: 'none',
+                        color:          'inherit',
+                        cursor:         'pointer',
+                        transition:     'box-shadow 0.15s',
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)')}
+                      onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
+                    >
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: UX.ink4 }}>
+                          AI SCHEDULING SAVINGS · NEXT WEEK
+                        </div>
+                        <div style={{ fontSize: 24, fontWeight: 500, color: UX.greenInk, marginTop: 8, letterSpacing: '-0.02em' }}>
+                          {fmtKr(aiSaving)}
+                        </div>
+                        {aiCutH > 0.5 && (
+                          <div style={{ fontSize: 12, color: UX.ink3, marginTop: 4 }}>
+                            {Math.round(aiCutH * 10) / 10}h cut · day-by-day plan inside
+                          </div>
+                        )}
+                      </div>
+                      <div style={{
+                        marginTop:    14,
+                        display:      'inline-flex',
+                        alignItems:   'center',
+                        gap:          6,
+                        color:        UX.greenInk,
+                        fontSize:     13,
+                        fontWeight:   500,
+                      }}>
+                        Open scheduling
+                        <span aria-hidden style={{ fontSize: 14 }}>→</span>
+                      </div>
+                    </a>
+                  )}
+                </div>
+              )
+            })()}
 
             <OverviewChart
               days={viewMode === 'week' ? weekDays : monthDays}
@@ -520,75 +589,6 @@ function DashboardInner() {
               />
             </div>
 
-            {/*
-              FIXES §0ss (2026-04-28): full-width CTA card bridging the
-              dashboard to /scheduling when the AI has a real cut to apply.
-              Same hero-style as AiHoursReductionMap so the two pages feel
-              like one workflow. Only renders when:
-                - aiSched data is loaded
-                - net saving > 0 (something actually to apply)
-              On click → /scheduling, where the labour-ratio hero +
-              Open Personalkollen card render the full plan.
-            */}
-            {(() => {
-              const aiSaving = Number(aiSched?.summary?.saving_kr ?? 0)
-              const aiCutH   = Number(aiSched?.summary?.current_hours ?? 0) - Number(aiSched?.summary?.suggested_hours ?? 0)
-              if (!(aiSaving > 0)) return null
-              return (
-                <a
-                  href="/scheduling"
-                  style={{
-                    display:        'flex',
-                    alignItems:     'center',
-                    justifyContent: 'space-between',
-                    gap:            20,
-                    flexWrap:       'wrap' as const,
-                    background:     UX.cardBg,
-                    border:         `1px solid ${UX.border}`,
-                    borderLeft:     `4px solid ${UX.greenInk}`,
-                    borderRadius:   UX.r_lg,
-                    padding:        '18px 24px',
-                    marginBottom:   16,
-                    textDecoration: 'none',
-                    color:          'inherit',
-                    cursor:         'pointer',
-                    transition:     'box-shadow 0.15s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)')}
-                  onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
-                >
-                  <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-                    <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: UX.ink4 }}>
-                      AI SCHEDULING SAVINGS · NEXT WEEK
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 500, color: UX.ink1, marginTop: 6, letterSpacing: '-0.01em' }}>
-                      Trim <span style={{ color: UX.greenInk }}>{fmtKr(aiSaving)}</span> from next week's hours
-                      {aiCutH > 0.5 && <span style={{ color: UX.ink3, fontWeight: 400 }}> · {Math.round(aiCutH * 10) / 10}h cut</span>}
-                    </div>
-                    <div style={{ fontSize: 12, color: UX.ink3, marginTop: 4 }}>
-                      Open scheduling to see the day-by-day plan and implement the changes.
-                    </div>
-                  </div>
-                  <span
-                    style={{
-                      background:     UX.greenInk,
-                      color:          'white',
-                      borderRadius:   UX.r_md,
-                      padding:        '12px 22px',
-                      fontSize:       14,
-                      fontWeight:     500,
-                      display:        'inline-flex',
-                      alignItems:     'center',
-                      gap:            8,
-                      whiteSpace:     'nowrap' as const,
-                    }}
-                  >
-                    Open scheduling
-                    <span aria-hidden style={{ fontSize: 16, marginTop: -2 }}>→</span>
-                  </span>
-                </a>
-              )
-            })()}
           </>
         )}
 
