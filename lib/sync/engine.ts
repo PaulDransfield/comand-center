@@ -1105,21 +1105,29 @@ export async function runSync(orgId: string, provider: string, fromDate?: string
   const from    = fromDate ?? new Date(now.getFullYear() - 2, 0, 1).toISOString().slice(0,10) // 2 years back
   const to      = toDate   ?? now.toISOString().slice(0,10)
 
-  // Get integration — if businessId provided, get specific one, else get first connected
-  // Get specific integration by ID if provided, otherwise get first connected
+  // Get integration. When the caller passes an explicit integrationId we
+  // trust their eligibility check (lib/sync/eligibility.ts) — that helper
+  // is the single source of truth for "is this row worth probing", and it
+  // INCLUDES status='error' / 'needs_reauth' rows so transient failures can
+  // self-heal. Enforcing status='connected' here meant /api/resync would
+  // skip every legacy-wedged 'error' row even though the caller had just
+  // determined it eligible — exactly what surfaced as "No connected
+  // personalkollen integration" on Vero (status='error' from pre-d60d193).
+  // The org-default fetch (no integrationId) keeps the status='connected'
+  // filter — it's looking for "any working PK", which is a different
+  // question and should genuinely skip non-connected rows.
   let integ: any = null
   if (integrationId) {
     const { data } = await db
       .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at, pk_sync_cursors')
+      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at, pk_sync_cursors, status')
       .eq('id', integrationId)
-      .eq('status', 'connected')
       .maybeSingle()
     integ = data
   } else {
     const { data } = await db
       .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at, pk_sync_cursors')
+      .select('id, org_id, business_id, credentials_enc, provider, last_sync_at, pk_sync_cursors, status')
       .eq('org_id', orgId)
       .eq('provider', provider)
       .eq('status', 'connected')
