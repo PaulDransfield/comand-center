@@ -61,17 +61,17 @@ export async function GET(req: NextRequest) {
   } else {
     const { data: latest, error: lErr } = await db
       .from('tracker_data')
-      .select('year, month')
+      .select('period_year, period_month')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
-      .order('year',  { ascending: false })
-      .order('month', { ascending: false })
+      .order('period_year',  { ascending: false })
+      .order('period_month', { ascending: false })
       .limit(1)
       .maybeSingle()
     if (lErr) return NextResponse.json({ error: lErr.message }, { status: 500 })
     if (latest) {
-      year  = Number(latest.year)
-      month = Number(latest.month)
+      year  = Number(latest.period_year)
+      month = Number(latest.period_month)
     } else {
       // No data at all — fall back to current calendar month so the
       // empty-state numbers (zeros) still render in a sensible period.
@@ -87,8 +87,8 @@ export async function GET(req: NextRequest) {
     .select('revenue, food_cost, staff_cost, other_cost, depreciation, financial, net_profit, margin_pct')
     .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
-    .eq('year', year)
-    .eq('month', month)
+    .eq('period_year', year)
+    .eq('period_month', month)
     .maybeSingle()
 
   if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 })
