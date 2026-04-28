@@ -6,6 +6,7 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
+import { OverheadReviewCard } from '@/components/OverheadReviewCard'
 import dynamicImport from 'next/dynamic'
 // AskAI is a floating button + slide-in panel — only used after the user
 // clicks. Lazy-load it (FIXES §0ll) so its ~30 KB doesn't sit in this
@@ -160,6 +161,7 @@ function DashboardInner() {
   const [showUpgrade, setShowUpgrade] = useState(false)
   const [upgradePlan, setUpgradePlan] = useState('')
   const [aiSched,     setAiSched]     = useState<any>(null)
+  const [overheadProj, setOverheadProj] = useState<any>(null)
   // Previous-period daily_metrics rows — used for per-day "Prev" whiskers
   // + per-day deltas in the OverviewChart.
   const [prevDailyRows, setPrevDailyRows] = useState<any[]>([])
@@ -249,6 +251,19 @@ function DashboardInner() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [bizId, viewMode, weekOffset, monthOffset])
+
+  // FIXES §0ap: overhead-review projection. Independent of view mode —
+  // always reads current calendar month since flags are tied to Fortnox
+  // upload periods, not the dashboard's week/month nav.
+  useEffect(() => {
+    if (!bizId) { setOverheadProj(null); return }
+    let cancelled = false
+    fetch(`/api/overheads/projection?business_id=${bizId}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled && j && !j.error) setOverheadProj(j) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [bizId])
 
   // Load data whenever biz, period, or view changes
   useEffect(() => {
@@ -541,7 +556,14 @@ function DashboardInner() {
               // the retrospective card when there's actual revenue;
               // closed/empty periods get nothing.
               const hasRetrospective = !hasPredictive && totalRev > 0 && labourPct > 0
-              const showCard = hasPredictive || hasRetrospective
+              // FIXES §0ap: overhead-review card sits alongside the labour
+              // card in the right rail. Show only when there's a pending
+              // queue + non-zero savings (no point telling the owner about
+              // 0 kr potential — they'd ignore it).
+              const hasOverheadCard = !!overheadProj
+                && Number(overheadProj?.pending_count ?? 0) > 0
+                && Number(overheadProj?.savings?.total_sek ?? 0) > 0
+              const showCard = hasPredictive || hasRetrospective || hasOverheadCard
               return (
                 <div style={{
                   display:             'grid',
@@ -567,6 +589,8 @@ function DashboardInner() {
                     fmtPct={fmtPct}
                   />
 
+                  {showCard && (
+                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
                   {hasPredictive && (
                     <a
                       href="/scheduling"
@@ -645,6 +669,10 @@ function DashboardInner() {
                       </a>
                     )
                   })()}
+
+                  {hasOverheadCard && <OverheadReviewCard data={overheadProj} />}
+                    </div>
+                  )}
                 </div>
               )
             })()}

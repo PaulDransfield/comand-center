@@ -3,6 +3,61 @@ Last updated: 2026-04-28
 
 ---
 
+## 0ap. Overhead Review System — PR 3: UI (2026-04-28)
+
+**Scope:** the user-facing layer. Owner can now actually use the feature: see flags, decide on each one, watch the savings projection update on the dashboard hero card and on `/overheads`. Backfill banner handles the first-run-mass-flagging case so an established business with 12 months of unreviewed costs isn't drowned.
+
+**Created:**
+- `app/api/overheads/flags/[id]/decide/route.ts` — POST `{ decision: 'essential' | 'dismissed' | 'deferred', reason? }`. Upserts overhead_classifications by `(business_id, supplier_name_normalised)` (essential and dismissed paths). Deferred snoozes the flag for 30 days without classifying. Re-deciding the same flag is allowed and overwrites — owner changing their mind is normal. Records `decided_by = auth.userId`.
+- `app/api/overheads/backfill/route.ts` — POST `{ business_id, months?: 12 }`. Reads all unique normalised suppliers from tracker_line_items in the rolling N-month window, inserts overhead_classifications with `status='essential'`, `backfill=true`, baseline_avg_sek = avg of non-zero monthly totals. Skips suppliers already classified. Resolves matching pending flags as `accepted`. Returns `{ suppliers_marked_essential, flags_resolved, already_classified }`.
+- `app/overheads/review/page.tsx` — owner-facing review queue. Loads flags, renders one card per pending flag with three buttons (Essential / Plan to cancel / Defer 30d). Plan-to-cancel opens a modal with optional notes. Optimistic remove on decision; reload on error. First-run banner: when `>10` ever-flagged + 0 resolved, offers "mark all 12-month suppliers as essential" via the backfill endpoint.
+- `components/OverheadReviewCard.tsx` — dashboard hero-rail card mirroring the scheduling labour card (same `schedCardLink` shape, eyebrow → big-number transition → body → savings footer → CTA). Margin-percent transition matches the labour card's revenue-percent transition for visual consistency.
+
+**Modified:**
+- `app/dashboard/page.tsx` — added `useState<any>(null)` for `overheadProj`, parallel `useEffect` fetching `/api/overheads/projection`, conditional render of `OverheadReviewCard` (gated on `pending_count > 0 AND total_savings_sek > 0`). Right rail wrapped in `display:flex,flexDirection:column,gap:12` so labour + overhead cards stack cleanly when both have something to show.
+- `app/overheads/page.tsx` — added `reviewProj` state, parallel projection fetch, two new cards above the existing month-filter: (1) review-queue summary banner (clickable, blue, only when pending_count > 0); (2) 4-column projection grid (Current / After cancelling / Saving / Net margin) — always visible when overheads exist.
+
+**Reused:**
+- `getRequestAuth` + `createAdminClient` — same auth/db pattern as every other `/api/overheads/*` route.
+- `normaliseSupplier` + `pickDisplayLabel` from PR 2's `lib/overheads/normalise.ts` for backfill consistency with the worker.
+- `UX` tokens + `fmtKr` — single source of truth for design colours and Swedish-formatted money.
+- The PR 2 worker's UNIQUE constraint on `overhead_classifications(business_id, supplier_name_normalised)` powers the backfill's "skip already-classified" check via a single load + Set.diff.
+- `schedCardLink` / `schedCardEyebrow` / `schedCardCta` styles — `OverheadReviewCard` mirrors these so the two cards look like a series.
+- The `localStorage cc_selected_biz` cross-page business-ID convention.
+
+**Honest data gaps surfaced:**
+- **Backfill banner heuristic is approximate.** It triggers on `>10 total flags AND 0 resolved`. Could miss the case where someone has 5 flags and is overwhelmed; could fire on a power user who has 11 unrelated flags they want to review individually. Acceptable for v1 — owner can dismiss the banner manually.
+- **`onConflict: 'business_id,supplier_name_normalised'` in the decide route** — Supabase JS upsert needs the exact column-name string. If the unique-constraint name changes server-side, this string needs updating in lockstep. Belt-and-braces: the M039 migration has the constraint declared inline so they can't drift.
+- **Projection on `/overheads` always fetches even if Fortnox isn't connected.** Returns zeros + the projection card hides itself via the `current.overheads_sek > 0` guard. One extra round-trip for non-Fortnox businesses; acceptable.
+- **Optimistic deduction on dismiss** — when the owner clicks "Plan to cancel", the projection-savings UI on `/overheads/review` updates instantly without re-fetching. If the API write fails, the optimistic state is reverted via a full reload. Acceptable race; not material at the data scales involved.
+- **No "edit past decision" UI.** Once a supplier is marked essential, there's no way (this PR) to flip it back to dismissed without waiting for the worker to re-flag it on a price spike. Stretch goal in PR 5.
+
+**Verified:**
+- `git status` shows the new SQL-touching routes + lib + components + page modifications + FIXES + tsbuild cache. No existing files broken.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes; new routes shipped: `/api/overheads/flags/[id]/decide`, `/api/overheads/backfill`. New page: `/overheads/review` (4.48 kB). Dashboard bundle 9.32 → 9.8 kB (the OverheadReviewCard import + projection fetch). `/overheads` bundle 8.64 → 9.15 kB.
+
+**Why this should hold:** every mutation goes through the existing service-role auth path (`getRequestAuth` returns the orgId, every write filters/scopes by that). The decide route's upsert is keyed on `(business_id, supplier_name_normalised)` so duplicate decides are idempotent (the row is overwritten with the latest, which matches the "owner changed mind" semantic). Backfill uses `INSERT (not upsert)` plus a pre-fetched `existingSet` so already-classified suppliers stay untouched. Worker (PR 2) idempotency via M039's UNIQUE on overhead_flags means re-uploading Fortnox doesn't double-flag. Three independent failures would be required to corrupt state.
+
+**Action required from Paul:** none new — M039 already applied. To exercise:
+1. `/overheads` should show two new cards above the month filter (review-queue banner if pending; projection grid always).
+2. `/overheads/review` should list pending flags with three buttons each. Decisions persist.
+3. Dashboard's right rail should now show the green-bordered Overhead Review card next to (or below) the labour card when both have something to surface.
+4. `/api/fortnox/apply` re-fires the worker so applying any upload populates flags; then `/overheads/review` populates immediately on next visit.
+
+**Test plan:**
+1. Visit `/overheads/review` for a business with no flags → "All caught up" empty state.
+2. Re-apply a Fortnox upload (any month) → triggers PR 2 worker → flags appear.
+3. On `/overheads/review` if flags > 10: backfill banner shows. Click "Mark all essential" → spinner → banner replaced with success message → flag list shrinks to just the price-spike / new-this-month outliers.
+4. Click **Essential** on a flag → it disappears from the queue. Revisit `/overheads` → projection numbers update (savings drops by that amount, projected matches).
+5. Click **Plan to cancel** → modal → optional reason → Confirm → flag disappears. Projection now includes that supplier in the dismissed-still-billing line, savings tally updates.
+6. Click **Defer 30d** → flag disappears. Worker re-flags it on next apply (M039's UNIQUE constraint is on `(source_upload_id)` so a NEW upload's flags don't collide with the old deferred one).
+7. Visit `/dashboard` → if pending_count > 0 and savings > 0, the Overhead Review card appears next to/below the labour card. Click → routes to `/overheads/review`.
+
+**Next PR (PR 4):** AI explanation pass on flags + contextBuilder slice for `/api/ask`. Lets Claude answer "where can I save money?" with the pending-flag summary inline.
+
+---
+
 ## 0ao. Overhead Review System — PR 2: detection worker (2026-04-28)
 
 **Scope:** wires the rule-based detection logic to `/api/fortnox/apply` so every applied period gets scanned for flags. No AI in this PR — pure rules; AI explanation lands in PR 4. The worker is fired via `waitUntil` after the rollup write, mirroring the existing cost-intel + re-aggregate fire-and-forget pattern. No new cron, no new queue table — the work is fast (one or two SELECTs + a handful of inserts) and best-effort: a failure here doesn't block apply.

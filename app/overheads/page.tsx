@@ -94,6 +94,8 @@ export default function OverheadsPage() {
   const [recon,      setRecon]      = useState<AttentionItem[]>([])
   // VAT projection — next filing estimate
   const [vat,        setVat]        = useState<any>(null)
+  // Overhead-review projection (PR 3) — current vs after-cancel numbers
+  const [reviewProj, setReviewProj] = useState<any>(null)
 
   // Hydrate selected business from sidebar
   useEffect(() => {
@@ -117,7 +119,7 @@ export default function OverheadsPage() {
     if (!bizId) return
     setLoading(true)
     try {
-      const [liRes, prevRes, mmRes, ciRes, bRes, rRes, vRes] = await Promise.all([
+      const [liRes, prevRes, mmRes, ciRes, bRes, rRes, vRes, opRes] = await Promise.all([
         fetch(`/api/overheads/line-items?business_id=${bizId}&year_from=${year}&year_to=${year}&category=other_cost`, { cache: 'no-store' }),
         fetch(`/api/overheads/line-items?business_id=${bizId}&year_from=${year - 1}&year_to=${year - 1}&category=other_cost`, { cache: 'no-store' }),
         fetch(`/api/metrics/monthly?business_id=${bizId}&year=${year}`, { cache: 'no-store' }),
@@ -125,6 +127,7 @@ export default function OverheadsPage() {
         fetch(`/api/overheads/benchmarks`, { cache: 'no-store' }),
         fetch(`/api/overheads/reconciliation?business_id=${bizId}`, { cache: 'no-store' }),
         fetch(`/api/overheads/vat-projection?business_id=${bizId}`, { cache: 'no-store' }),
+        fetch(`/api/overheads/projection?business_id=${bizId}`, { cache: 'no-store' }),
       ])
       const lj = await liRes.json().catch(() => ({}))
       const pj = await prevRes.json().catch(() => ({}))
@@ -133,6 +136,8 @@ export default function OverheadsPage() {
       const bj = await bRes.json().catch(() => ({}))
       const rj = await rRes.json().catch(() => ({}))
       const vj = await vRes.json().catch(() => ({}))
+      const opj = await opRes.json().catch(() => ({}))
+      setReviewProj(opj && !opj.error ? opj : null)
       setVat(vj && !vj.error ? vj : null)
       setRows(Array.isArray(lj.rows) ? lj.rows : [])
       setSubs(Array.isArray(lj.subcategories) ? lj.subcategories : [])
@@ -252,6 +257,57 @@ export default function OverheadsPage() {
             ]} />
           ) : undefined}
         />
+
+        {/* Review queue + projection cards (PR 3 — overhead-review feature) */}
+        {reviewProj && Number(reviewProj?.pending_count ?? 0) > 0 && (
+          <div
+            onClick={() => router.push('/overheads/review')}
+            style={{
+              background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
+              padding: '12px 16px', marginBottom: 12, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1e3a8a' }}>
+                {reviewProj.pending_count} flag{reviewProj.pending_count === 1 ? '' : 's'} pending review
+              </div>
+              <div style={{ fontSize: 12, color: '#1e40af', marginTop: 2 }}>
+                ~{fmtKr(reviewProj?.savings?.total_sek ?? 0)}/mo potential savings
+              </div>
+            </div>
+            <div style={{ fontSize: 13, color: '#1e3a8a', fontWeight: 500 }}>Review →</div>
+          </div>
+        )}
+
+        {reviewProj && Number(reviewProj?.current?.overheads_sek ?? 0) > 0 && (
+          <div style={{
+            background: 'white', border: `1px solid ${UX.borderSoft}`, borderRadius: 10,
+            padding: '14px 18px', marginBottom: 12,
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, alignItems: 'baseline',
+          }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>Current overheads</div>
+              <div style={{ fontSize: 18, fontWeight: 500, color: UX.ink1, marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(reviewProj.current.overheads_sek)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>After cancelling dismissed</div>
+              <div style={{ fontSize: 18, fontWeight: 500, color: UX.greenInk, marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(reviewProj.projected.overheads_sek)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>Saving</div>
+              <div style={{ fontSize: 18, fontWeight: 500, color: UX.greenInk, marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>
+                {Number(reviewProj?.savings?.total_sek ?? 0) > 0 ? `–${fmtKr(reviewProj.savings.total_sek)}/mo` : '—'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>Net margin</div>
+              <div style={{ fontSize: 18, fontWeight: 500, color: UX.ink1, marginTop: 2 }}>
+                {Math.round(reviewProj.current.margin_pct)}% → <span style={{ color: UX.greenInk }}>{Math.round(reviewProj.projected.margin_pct)}%</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Month filter */}
         {rows.length > 0 && (
