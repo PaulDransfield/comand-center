@@ -107,18 +107,20 @@ export async function GET(req: NextRequest) {
     financial:    Number(rollup?.financial ?? 0),
   }
 
-  // ── Pending flag total ────────────────────────────────────────────────────
-  // Decisions are supplier-wide, so the projection sums the LATEST amount
-  // per unique supplier across ALL pending periods (not scoped to the
-  // resolved period). Matches the at-stake math on /overheads/review and
-  // the bulk-resolve semantic on the decide endpoint.
+  // ── Pending flag totals (per-category split) ─────────────────────────────
+  // Decisions are supplier-wide. Sum the LATEST amount per (supplier,
+  // category) across all pending periods. Per-category split keeps the
+  // net_profit math correct: food savings reduce food_cost, overhead
+  // savings reduce other_cost.
   let pendingFlagsTotal = 0
   let pendingCount      = 0
+  let pendingOther      = 0
+  let pendingFood       = 0
   let flagsTableMissing = false
   {
     const { data: flags, error } = await db
       .from('overhead_flags')
-      .select('supplier_name_normalised, amount_sek, period_year, period_month')
+      .select('supplier_name_normalised, category, amount_sek, period_year, period_month')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('resolution_status', 'pending')
@@ -126,17 +128,22 @@ export async function GET(req: NextRequest) {
       if (isMissingTable(error)) flagsTableMissing = true
       else return NextResponse.json({ error: error.message }, { status: 500 })
     } else if (flags) {
-      // Dedup: keep the latest period's amount per supplier.
-      const latestPerSupplier = new Map<string, { key: number; amount: number }>()
+      const latestPerSupplier = new Map<string, { key: number; amount: number; category: string }>()
       for (const f of flags as any[]) {
+        const cat = f.category ?? 'other_cost'
+        const compositeKey = `${f.supplier_name_normalised}::${cat}`
         const periodKey = Number(f.period_year) * 100 + Number(f.period_month)
-        const cur = latestPerSupplier.get(f.supplier_name_normalised)
+        const cur = latestPerSupplier.get(compositeKey)
         if (!cur || periodKey > cur.key) {
-          latestPerSupplier.set(f.supplier_name_normalised, { key: periodKey, amount: Number(f.amount_sek ?? 0) })
+          latestPerSupplier.set(compositeKey, { key: periodKey, amount: Number(f.amount_sek ?? 0), category: cat })
         }
       }
       pendingCount      = latestPerSupplier.size
-      pendingFlagsTotal = Array.from(latestPerSupplier.values()).reduce((s, v) => s + v.amount, 0)
+      for (const v of latestPerSupplier.values()) {
+        pendingFlagsTotal += v.amount
+        if (v.category === 'food_cost') pendingFood  += v.amount
+        else                            pendingOther += v.amount
+      }
     }
   }
 
@@ -180,8 +187,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const projectedSavings  = pendingFlagsTotal + dismissedStillBilling
-  const projectedOther    = Math.max(0, current.other_cost - projectedSavings)
+  // dismissedStillBilling currently scopes to category='other_cost' line
+  // items only — keep that for backwards compat (food-cost dismissed
+  // tracking is a polish item; baseline cost is the pending flag savings).
+  const otherSavings  = pendingOther + dismissedStillBilling
+  const foodSavings   = pendingFood   // no dismissed-still-billing for food yet
+  const projectedOther    = Math.max(0, current.other_cost - otherSavings)
+  const projectedFood     = Math.max(0, current.food_cost  - foodSavings)
+  const projectedSavings  = otherSavings + foodSavings
 
   const currentNetProfit  = rollup
     ? Number(rollup.net_profit)
@@ -190,26 +203,38 @@ export async function GET(req: NextRequest) {
     ? Number(rollup.margin_pct)
     : computeMarginPct(currentNetProfit, current.revenue)
 
-  const projectedNetProfit = computeNetProfit({ ...current, other_cost: projectedOther })
+  // Recompute net_profit with BOTH categories' reductions applied.
+  const projectedNetProfit = computeNetProfit({
+    ...current,
+    other_cost: projectedOther,
+    food_cost:  projectedFood,
+  })
   const projectedMarginPct = computeMarginPct(projectedNetProfit, current.revenue)
 
   return NextResponse.json({
     period: { year, month },
     current: {
-      overheads_sek: Math.round(current.other_cost),
-      revenue_sek:   Math.round(current.revenue),
+      overheads_sek:  Math.round(current.other_cost),
+      food_cost_sek:  Math.round(current.food_cost),
+      revenue_sek:    Math.round(current.revenue),
       net_profit_sek: Math.round(currentNetProfit),
-      margin_pct:    currentMarginPct,
+      margin_pct:     currentMarginPct,
     },
     projected: {
-      overheads_sek: Math.round(projectedOther),
+      overheads_sek:  Math.round(projectedOther),
+      food_cost_sek:  Math.round(projectedFood),
       net_profit_sek: Math.round(projectedNetProfit),
-      margin_pct:    projectedMarginPct,
+      margin_pct:     projectedMarginPct,
     },
     savings: {
       total_sek:           Math.round(projectedSavings),
       from_pending_flags:  Math.round(pendingFlagsTotal),
       from_dismissed_still_billing: Math.round(dismissedStillBilling),
+      // Per-category split for UIs that need to show distinct buckets.
+      by_category: {
+        other_cost: Math.round(otherSavings),
+        food_cost:  Math.round(foodSavings),
+      },
     },
     pending_count:               pendingCount,
     flags_table_missing:         flagsTableMissing,

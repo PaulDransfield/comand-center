@@ -3,6 +3,54 @@ Last updated: 2026-04-28
 
 ---
 
+## 0av. Overhead review extended to food costs (2026-04-28)
+
+**Scope:** extends the existing 5-PR overhead-review feature to also flag food-cost line items. Same UI, same review queue, same decision verbs (Essential / Plan to cancel / Defer 30d). New `FOOD` badge on each card distinguishes the two. Owner makes ONE decision per (supplier, category) pair — a "Konsultarvoden" classified essential as `other_cost` doesn't accidentally suppress an unrelated `food_cost` line with the same Swedish label.
+
+**Created:**
+- `M041-OVERHEAD-FOOD-CATEGORY.sql` — pending. Adds `category` column to both review tables with `CHECK (category IN ('other_cost', 'food_cost'))`. Replaces auto-named UNIQUE constraints with category-aware named ones. Two new indexes for category filtering.
+
+**Modified:**
+- `lib/overheads/review-worker.ts` — refactored `runOverheadReview` to loop over categories (defaults to both). Extracted per-category detection into `detectForCategory(...)` so the rule logic runs once per category with category-scoped classifications + history. `food_cost` flags get the same five rule types (`new_supplier`, `price_spike`, `dismissed_reappeared`, `one_off_high`, volatile detection) — semantics identical, just scoped to a different line stream. Existing callers (apply route) need no change; the default categories cover both.
+- `app/api/overheads/flags/[id]/decide/route.ts` — decide endpoint reads + writes `category`. Upsert keyed by `(business_id, supplier_name_normalised, category)` so cross-category collisions can't happen. Bulk-resolve also scopes by category.
+- `app/api/overheads/backfill/route.ts` — pulls both categories' line items in one query, aggregates keyed by `(supplier, category)` so a supplier in both gets two essential classifications. Resolves matching pending flags per-category.
+- `app/api/overheads/flags/route.ts` — surfaces `category` in the GET response shape.
+- `app/api/overheads/projection/route.ts` — splits pending savings by category. Returns `current.food_cost_sek` alongside `overheads_sek`, `projected.food_cost_sek`, `savings.by_category.{ other_cost, food_cost }`. Net-profit math now reduces BOTH `other_cost` AND `food_cost` correctly per pending savings.
+- `app/overheads/review/page.tsx` — added `FOOD` / `OVERHEAD` category badge per flag card (amber for food, grey for overhead). Card grouping now keys on `(supplier, category)` so same-name across categories renders as two distinct cards. Optimistic decide-remove also category-scoped.
+
+**Reused:**
+- The entire PR 2-5 architecture (rule engine, AI explanation pass, defer-expiry sweep, "re-explain" endpoint). Each works per-flag and is naturally category-agnostic — no changes needed inside those paths.
+- `normaliseSupplier` + `pickDisplayLabel` from `lib/overheads/normalise.ts` — same normalisation rules apply.
+- The dashboard `OverheadReviewCard` reads from `/api/overheads/projection` which now returns the combined savings number — card automatically picks up food-cost flags without UI changes.
+
+**Honest gaps surfaced:**
+- **Dashboard card label still says "OVERHEADS REVIEW"** — at small flag counts the combined number is fine but at scale this should split into "Overheads · X kr" + "Food · Y kr". Cleanup item, not blocking.
+- **`/overheads` projection card uses combined savings** — same issue. Reads `savings.total_sek`. The split is available in the response (`savings.by_category`) for when we want to show two columns.
+- **`dismissedStillBilling` calc only scans `category='other_cost'`** — food-cost dismissed-but-still-billing isn't tracked yet. Bounded oversight: dismissed food suppliers (rare in practice for restaurants — they don't usually dismiss food vendors) won't count toward savings until cancelled. Pending flags still surface them on the next apply.
+- **AI explanation prompt is category-naive** — the same `explainOverheadFlags` function handles both categories. The prompt doesn't say "this is a food-cost line" so Claude infers from the supplier name (Swedish ones like "Råvaror" → meat are obvious; ambiguous ones like "Konsultarvoden" depend on context). Quality should still be reasonable but tuning is a follow-up.
+- **Category UNIQUE-key migration is destructive on duplicates** — if any same-(business, supplier_normalised) pair exists in both categories pre-M041, both rows survive with the new key; they would have already conflicted under the old key. M041's existence-check on rogue rows handles edge cases.
+- **No category filter on the review page** — owner sees both food and overhead flags interleaved, sorted by amount. Could add a "Food / Overheads / All" toggle if real-world usage shows it's needed.
+
+**Verified:**
+- `git status` shows: 1 new SQL file, 5 modified files (worker, decide, backfill, flags, projection), 1 page modification, FIXES + tsbuild cache.
+- `npx tsc --noEmit` clean. `npm run build` passes.
+- The default `runOverheadReview()` call now scans both categories — apply route unchanged.
+
+**Why this should hold:** category is propagated end-to-end (DB schema, worker, decide, backfill, projection, UI). The CHECK constraint at the DB layer prevents a third value from creeping in. The natural-key UNIQUE constraints are category-scoped so the worker's idempotent inserts can't conflict across categories. UI grouping mirrors the back-end key shape.
+
+**Action required from Paul:**
+1. Apply `M041-OVERHEAD-FOOD-CATEGORY.sql` in Supabase SQL Editor.
+2. Re-apply any Fortnox upload (or wait for the next cron run) → worker now scans food-cost line items too. Food-cost flags surface in `/overheads/review` with the amber `FOOD` badge.
+
+**Test plan:**
+1. Apply M041. `\d overhead_classifications` should show category column + the new natural-key constraint.
+2. Re-apply a Fortnox upload that has food-cost line items. `SELECT category, COUNT(*) FROM overhead_flags GROUP BY category` should show both categories present.
+3. Visit `/overheads/review` — food-cost flags appear with amber `FOOD` badge alongside grey `OVERHEAD` badges.
+4. Decide a food flag as `Essential` → `overhead_classifications` row written with `category='food_cost'`. Same supplier under `other_cost` is independent.
+5. `GET /api/overheads/projection?business_id=X` → response now includes `current.food_cost_sek`, `savings.by_category.food_cost`, etc.
+
+---
+
 ## 0au. Sentry probe upgrade + cron-handler wrapping (2026-04-28)
 
 **Two operational wins bundled together:**

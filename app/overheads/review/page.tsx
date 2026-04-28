@@ -23,6 +23,7 @@ interface Flag {
   id:                       string
   supplier_name:            string
   supplier_name_normalised: string
+  category:                 'other_cost' | 'food_cost'
   flag_type:                'new_supplier' | 'price_spike' | 'dismissed_reappeared' | 'one_off_high' | 'duplicate_supplier'
   reason:                   string | null
   amount_sek:               number
@@ -31,6 +32,11 @@ interface Flag {
   period_month:             number
   ai_explanation:           string | null
   ai_confidence:            number | null
+}
+
+const CATEGORY_TONE: Record<string, { bg: string; fg: string; label: string }> = {
+  other_cost: { bg: '#f3f4f6', fg: '#374151', label: 'OVERHEAD' },
+  food_cost:  { bg: '#fef3c7', fg: '#92400e', label: 'FOOD' },
 }
 
 interface FlagsResponse {
@@ -131,10 +137,15 @@ export default function OverheadReviewPage() {
       setFlags(prev => prev.filter(f => f.id !== flagId))
       if (flag) setTotalSavings(s => Math.max(0, s - Number(flag.amount_sek)))
     } else if (flag) {
+      // Bulk-resolve scoped to (supplier, category) — matches the decide
+      // endpoint's category-aware bulk update.
+      const flagCategory = flag.category ?? 'other_cost'
       const removedAmount = flags
-        .filter(f => f.supplier_name_normalised === flag.supplier_name_normalised)
+        .filter(f => f.supplier_name_normalised === flag.supplier_name_normalised
+                  && (f.category ?? 'other_cost') === flagCategory)
         .reduce((s, f) => s + Number(f.amount_sek), 0)
-      setFlags(prev => prev.filter(f => f.supplier_name_normalised !== flag.supplier_name_normalised))
+      setFlags(prev => prev.filter(f => !(f.supplier_name_normalised === flag.supplier_name_normalised
+                                       && (f.category ?? 'other_cost') === flagCategory)))
       setTotalSavings(s => Math.max(0, s - removedAmount))
     }
 
@@ -206,7 +217,10 @@ export default function OverheadReviewPage() {
   const grouped = useMemo(() => {
     const map = new Map<string, { latest: Flag; others: Flag[]; latestKey: number }>()
     for (const f of flags) {
-      const key = f.supplier_name_normalised
+      // Key by (supplier, category) — M041 made decisions category-scoped,
+      // so a supplier appearing in both food_cost and other_cost should
+      // surface as two separate cards.
+      const key = `${f.supplier_name_normalised}::${f.category ?? 'other_cost'}`
       const periodKey = f.period_year * 100 + f.period_month  // sortable
       const cur = map.get(key)
       if (!cur || periodKey > cur.latestKey) {
@@ -362,6 +376,15 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
               padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
               background: tone.bg, color: tone.fg,
             }}>{label}</span>
+            {(() => {
+              const cat = CATEGORY_TONE[flag.category] ?? CATEGORY_TONE.other_cost
+              return (
+                <span style={{
+                  padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+                  background: cat.bg, color: cat.fg,
+                }}>{cat.label}</span>
+              )
+            })()}
             <span style={{ fontSize: 11, color: UX.ink4, fontWeight: 500 }}>{periodLabel}</span>
           </div>
           <div style={{ fontSize: 12, color: UX.ink3, lineHeight: 1.5 }}>

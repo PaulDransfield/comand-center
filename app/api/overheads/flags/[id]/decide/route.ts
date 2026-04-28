@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // Load the flag, verify scope.
   const { data: flag, error: lErr } = await db
     .from('overhead_flags')
-    .select('id, org_id, business_id, supplier_name, supplier_name_normalised, amount_sek, prior_avg_sek')
+    .select('id, org_id, business_id, supplier_name, supplier_name_normalised, amount_sek, prior_avg_sek, category')
     .eq('id', flagId)
     .eq('org_id', auth.orgId)
     .maybeSingle()
@@ -67,13 +67,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const baseline = Number(flag.amount_sek)
     const status   = decision  // 'essential' or 'dismissed'
 
-    // Upsert by (business_id, supplier_name_normalised). If a row already
-    // exists (e.g. owner changed essential → dismissed), update it.
+    // Upsert keyed by (business_id, supplier_name_normalised, category) —
+    // M041 added category to the natural key so a supplier classified
+    // essential as 'other_cost' doesn't suppress the same name under
+    // 'food_cost' (e.g. a vendor that bills both).
+    const category = flag.category ?? 'other_cost'
     const { error: cErr } = await db.from('overhead_classifications').upsert({
       org_id:                   flag.org_id,
       business_id:              flag.business_id,
       supplier_name:            flag.supplier_name,
       supplier_name_normalised: flag.supplier_name_normalised,
+      category,
       status,
       decided_by:               auth.userId,
       decided_at:               new Date().toISOString(),
@@ -82,7 +86,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       baseline_set_at:          new Date().toISOString(),
       backfill:                 false,
     }, {
-      onConflict: 'business_id,supplier_name_normalised',
+      onConflict: 'business_id,supplier_name_normalised,category',
     })
     if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 })
   }
@@ -116,8 +120,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Only snooze this specific flag.
     updateQuery = updateQuery.eq('id', flagId)
   } else {
-    // Bulk-resolve every pending flag for this supplier across all periods.
-    updateQuery = updateQuery.eq('supplier_name_normalised', flag.supplier_name_normalised)
+    // Bulk-resolve every pending flag for this supplier IN THIS CATEGORY
+    // across all periods. Category-scoping (M041) means a "Konsultarvoden"
+    // marked essential as other_cost doesn't accidentally clear pending
+    // food_cost flags for an unrelated line with the same Swedish label.
+    updateQuery = updateQuery
+      .eq('supplier_name_normalised', flag.supplier_name_normalised)
+      .eq('category', flag.category ?? 'other_cost')
   }
 
   const { data: updatedRows, error: fErr } = await updateQuery

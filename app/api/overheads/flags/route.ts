@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
 
   let q = db
     .from('overhead_flags')
-    .select('id, supplier_name, supplier_name_normalised, flag_type, reason, amount_sek, prior_avg_sek, period_year, period_month, surfaced_at, resolution_status, resolved_at, resolved_by, defer_until, ai_explanation, ai_confidence')
+    .select('id, supplier_name, supplier_name_normalised, category, flag_type, reason, amount_sek, prior_avg_sek, period_year, period_month, surfaced_at, resolution_status, resolved_at, resolved_by, defer_until, ai_explanation, ai_confidence')
     .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
     .order('surfaced_at', { ascending: false })

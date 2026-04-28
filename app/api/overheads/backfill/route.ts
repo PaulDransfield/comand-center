@@ -53,21 +53,24 @@ export async function POST(req: NextRequest) {
   let   startM   = endM - months + 1
   while (startM < 1) { startM += 12; startY -= 1 }
 
-  // Single query, filter the partial-year edges in JS.
+  // Pull both categories' line items in one query — M041 added a category
+  // column and the natural-key UNIQUE now includes it, so a single supplier
+  // appearing in both food_cost and other_cost gets two classification rows.
   const { data: lines, error: lErr } = await db
     .from('tracker_line_items')
-    .select('label_sv, label_en, amount, period_year, period_month, fortnox_account')
+    .select('label_sv, label_en, amount, period_year, period_month, fortnox_account, category')
     .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
-    .eq('category', 'other_cost')
+    .in('category', ['other_cost', 'food_cost'])
     .gte('period_year', startY)
     .lte('period_year', endY)
     .limit(50_000)
   if (lErr) return NextResponse.json({ error: lErr.message }, { status: 500 })
 
-  // Aggregate amount-by-supplier-by-month (for baseline avg).
-  type AggKey = string  // normalised supplier name
-  type Monthly = { display: string; perMonth: Map<string, number> }
+  // Aggregate keyed by (normKey, category). Same supplier name in two
+  // categories produces two distinct aggregation buckets.
+  type AggKey = string  // normalised supplier name + category
+  type Monthly = { display: string; category: string; perMonth: Map<string, number> }
   const agg = new Map<AggKey, Monthly>()
   for (const ln of (lines ?? []) as any[]) {
     // Edge filters: trim to the rolling window.
@@ -77,11 +80,13 @@ export async function POST(req: NextRequest) {
     const display = pickDisplayLabel(ln)
     const key     = normaliseSupplier(display)
     if (!key) continue
+    const category = ln.category ?? 'other_cost'
 
+    const aggKey = `${key}::${category}`
     const monthKey = `${ln.period_year}-${ln.period_month}`
-    const cur = agg.get(key) ?? { display, perMonth: new Map<string, number>() }
+    const cur = agg.get(aggKey) ?? { display, category, perMonth: new Map<string, number>() }
     cur.perMonth.set(monthKey, (cur.perMonth.get(monthKey) ?? 0) + Number(ln.amount ?? 0))
-    agg.set(key, cur)
+    agg.set(aggKey, cur)
   }
 
   if (agg.size === 0) {
@@ -93,20 +98,23 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  // Load existing classifications so we can skip already-decided suppliers.
+  // Load existing classifications across both categories so we can skip
+  // already-decided suppliers.
   const { data: existing, error: eErr } = await db
     .from('overhead_classifications')
-    .select('supplier_name_normalised')
+    .select('supplier_name_normalised, category')
     .eq('org_id', auth.orgId)
     .eq('business_id', businessId)
   if (eErr) return NextResponse.json({ error: eErr.message }, { status: 500 })
-  const existingSet = new Set((existing ?? []).map((r: any) => r.supplier_name_normalised))
+  const existingSet = new Set((existing ?? []).map((r: any) => `${r.supplier_name_normalised}::${r.category ?? 'other_cost'}`))
 
-  // Build the upsert rows: only suppliers without an existing classification.
+  // Build the upsert rows: only (supplier, category) pairs without an
+  // existing classification.
   const rowsToInsert: any[] = []
   let alreadyClassified = 0
-  for (const [key, m] of agg) {
-    if (existingSet.has(key)) { alreadyClassified++; continue }
+  for (const [aggKey, m] of agg) {
+    if (existingSet.has(aggKey)) { alreadyClassified++; continue }
+    const [normKey] = aggKey.split('::')
     const nonZero = Array.from(m.perMonth.values()).filter(v => v > 0)
     const baseline = nonZero.length > 0
       ? nonZero.reduce((s, v) => s + v, 0) / nonZero.length
@@ -115,7 +123,8 @@ export async function POST(req: NextRequest) {
       org_id:                   auth.orgId,
       business_id:              businessId,
       supplier_name:            m.display,
-      supplier_name_normalised: key,
+      supplier_name_normalised: normKey,
+      category:                 m.category,
       status:                   'essential',
       decided_by:               auth.userId,
       decided_at:               new Date().toISOString(),
@@ -135,23 +144,30 @@ export async function POST(req: NextRequest) {
     suppliersMarked = count ?? rowsToInsert.length
   }
 
-  // Resolve any pending flags whose supplier we just classified as essential.
-  const newlyEssentialKeys = rowsToInsert.map(r => r.supplier_name_normalised)
+  // Resolve any pending flags whose (supplier, category) we just classified
+  // as essential. Done as one OR'd update for compactness.
   let flagsResolved = 0
-  if (newlyEssentialKeys.length > 0) {
-    const { error: fErr, count } = await db
-      .from('overhead_flags')
-      .update({
-        resolution_status: 'accepted',
-        resolved_at:       new Date().toISOString(),
-        resolved_by:       auth.userId,
-      }, { count: 'exact' })
-      .eq('org_id', auth.orgId)
-      .eq('business_id', businessId)
-      .eq('resolution_status', 'pending')
-      .in('supplier_name_normalised', newlyEssentialKeys)
-    if (fErr) return NextResponse.json({ error: fErr.message }, { status: 500 })
-    flagsResolved = count ?? 0
+  if (rowsToInsert.length > 0) {
+    // PostgREST has no clean `(a, b) IN ((..,..),(..,..))`, so iterate per
+    // category — at most 2 calls (other_cost, food_cost).
+    for (const cat of ['other_cost', 'food_cost'] as const) {
+      const keys = rowsToInsert.filter(r => r.category === cat).map(r => r.supplier_name_normalised)
+      if (keys.length === 0) continue
+      const { error: fErr, count } = await db
+        .from('overhead_flags')
+        .update({
+          resolution_status: 'accepted',
+          resolved_at:       new Date().toISOString(),
+          resolved_by:       auth.userId,
+        }, { count: 'exact' })
+        .eq('org_id', auth.orgId)
+        .eq('business_id', businessId)
+        .eq('resolution_status', 'pending')
+        .eq('category', cat)
+        .in('supplier_name_normalised', keys)
+      if (fErr) return NextResponse.json({ error: fErr.message }, { status: 500 })
+      flagsResolved += count ?? 0
+    }
   }
 
   return NextResponse.json({
