@@ -140,6 +140,24 @@ export async function POST(req: NextRequest) {
       )
     } catch { /* non-fatal */ }
 
+    // FIXES §0an: detect overhead-review flags per applied period. Best-effort,
+    // background — never blocks the apply response. Per-period awaits run
+    // sequentially inside the waitUntil so logs stay coherent if any period fails.
+    try {
+      const { runOverheadReview } = await import('@/lib/overheads/review-worker')
+      waitUntil((async () => {
+        for (const p of periodsArr) {
+          const y = Number(p.year), m = Number(p.month)
+          if (!y || !m) continue
+          try {
+            await runOverheadReview({ orgId: auth.orgId, businessId: upload.business_id, year: y, month: m, uploadId: upload.id, db })
+          } catch (e: any) {
+            console.warn(`[overhead-review] ${y}-${m} background run failed:`, e?.message)
+          }
+        }
+      })())
+    } catch { /* non-fatal */ }
+
     log.info('fortnox-apply complete', {
       route:       'fortnox/apply',
       duration_ms: Date.now() - started,
@@ -253,6 +271,18 @@ export async function POST(req: NextRequest) {
         .catch((e: any) => console.warn('[cost-intel] background run failed:', e?.message))
     )
   } catch { /* non-fatal */ }
+
+  // FIXES §0an: detect overhead-review flags. Skips annual uploads
+  // (isAnnual = no tracker_data write, no rolled-up line items to scan).
+  if (!isAnnual && year && month) {
+    try {
+      const { runOverheadReview } = await import('@/lib/overheads/review-worker')
+      waitUntil(
+        runOverheadReview({ orgId: auth.orgId, businessId: upload.business_id, year: Number(year), month: Number(month), uploadId: upload.id, db })
+          .catch((e: any) => console.warn('[overhead-review] background run failed:', e?.message))
+      )
+    } catch { /* non-fatal */ }
+  }
 
   log.info('fortnox-apply complete', {
     route:       'fortnox/apply',

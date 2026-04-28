@@ -3,6 +3,62 @@ Last updated: 2026-04-28
 
 ---
 
+## 0ao. Overhead Review System — PR 2: detection worker (2026-04-28)
+
+**Scope:** wires the rule-based detection logic to `/api/fortnox/apply` so every applied period gets scanned for flags. No AI in this PR — pure rules; AI explanation lands in PR 4. The worker is fired via `waitUntil` after the rollup write, mirroring the existing cost-intel + re-aggregate fire-and-forget pattern. No new cron, no new queue table — the work is fast (one or two SELECTs + a handful of inserts) and best-effort: a failure here doesn't block apply.
+
+**Created:**
+- `lib/overheads/normalise.ts` — `normaliseSupplier(label)` (lowercase, strip company suffixes, drop punctuation, collapse whitespace, preserve Swedish characters) + `pickDisplayLabel(line)` (label_sv → label_en → `account-XXXX` fallback). Idempotent.
+- `lib/overheads/review-worker.ts` — `runOverheadReview({ orgId, businessId, year, month, uploadId, db })`. Loads the period's `category='other_cost'` line items, groups by normalised label, loads classifications + rolling 12-month history in two more queries, applies the rules, inserts flags. UNIQUE-constraint violation (code 23505) is swallowed as expected idempotent re-runs. Returns `{ flags_written, suppliers_processed, skipped_essential, errors }` for callers that want to log it.
+
+**Modified:**
+- `app/api/fortnox/apply/route.ts` — added two `waitUntil(runOverheadReview(...))` calls, one in the multi-period branch (sequential per-period await inside a single async wrapper so logs read coherently) and one in the single-period branch (skipped for annual uploads since they don't write tracker_data). Both wrapped in `try { } catch { /* non-fatal */ }` so an import failure doesn't break apply.
+
+**Reused:**
+- The `waitUntil` + best-effort error catch pattern from the existing aggregator and cost-intel calls in `apply/route.ts`. Adding a third async task fits the existing shape.
+- M028's supersede cleanup: superseded uploads delete their old line items by `source_upload_id`. The `ON DELETE CASCADE` on `overhead_flags.line_item_id` (from M039) auto-cleans the old flags. No app-side cleanup added here.
+- M039's UNIQUE constraint on `overhead_flags(business_id, source_upload_id, supplier_name_normalised, flag_type)` for idempotency. Re-running the worker on the same upload is a no-op.
+
+**Detection rules (mirroring the plan):**
+| When | Flag type | Reason |
+|---|---|---|
+| No classification + no history | `new_supplier` (or `one_off_high` if ≥5% of monthly overheads) | "First time this line has appeared." |
+| No classification + recurring + volatile (>30% swing) | `price_spike` | "Volatile cost: 12-mo avg X kr vs Y kr now." |
+| No classification + recurring + stable | `new_supplier` | "Recurring spend not yet reviewed." |
+| Classified essential + amount > baseline × 1.15 | `price_spike` | "Up N% vs baseline." |
+| Classified essential + within 15% | _(skipped silently)_ | — |
+| Classified dismissed | `dismissed_reappeared` | "Was marked plan-to-cancel; still in books." |
+
+Baseline source: `overhead_classifications.baseline_avg_sek` (snapshot at decision time, set in PR 3) → falls back to the rolling 12-month non-zero average if absent.
+
+**Honest gaps surfaced:**
+- **Duplicate-supplier detection is deferred to PR 5.** Fuzzy matching between two similarly-named suppliers in the same period (e.g. "Spotify" + "Spotify AB" if normalisation didn't catch it) needs Levenshtein or trigram — adds dependency for a polish-tier feature.
+- **No retry on failure.** If the worker errors (DB blip), the period gets no flags until the next apply. Acceptable: re-running apply re-runs the worker idempotently.
+- **No per-business tunable thresholds.** 15% spike, 5% one-off — both hardcoded constants. Per-business override deferred until real usage shows the need.
+- **First-run on an established business will flag everything as new_supplier.** Backfill flow (PR 3) addresses this with the "mark all 47 existing as essential" banner before the queue overwhelms the owner.
+- **Annual uploads (`pnl_annual`) are skipped.** They don't write tracker_data, so there's nothing for the worker to scan. Detection only triggers for monthly + multi-month (the canonical Fortnox shapes).
+
+**Verified:**
+- `git status` shows two new lib files, one modified apply route, FIXES + tsbuild cache. Zero existing tests broken.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes; `/api/fortnox/apply` compiles with the new imports.
+- Mental test cases: empty period → returns immediately, no rows touched. New business first apply → every supplier gets `new_supplier` flag. Re-apply same upload → UNIQUE swallows duplicates, `flags_written` = 0. Essential supplier with 20% price increase → `price_spike` flag with calculated reason.
+
+**Why this should hold:** worker writes via service-role (admin client passed in), so RLS is bypassed for writes — this is intentional, the same pattern existing agents use. Reads from `tracker_line_items` filter by `(org_id, business_id)` so cross-tenant data can't leak. The `waitUntil` wrapper means worker failures log a warning but never surface to the user as a failed apply.
+
+**Action required from Paul:** none for PR 2 — code-only change. To exercise it: re-apply or apply a Fortnox upload (any monthly or multi-month), then `curl /api/overheads/flags?business_id=<id>` should now return real flag rows.
+
+**Test plan:**
+1. Pick a test business with Fortnox uploads (Vero or Rosali). Re-apply an existing upload via the admin or `/overheads/upload` path → background worker fires.
+2. After ~5 seconds, `GET /api/overheads/flags?business_id=<vero>` → should return one row per detected line.
+3. Each flag's `flag_type` should match expectations: brand-new test data → `new_supplier`; existing P&L → mostly `new_supplier` (no classifications yet); price changes vs prior months → `price_spike`.
+4. Re-trigger apply for the same upload → `flags_written: 0` in worker logs (UNIQUE swallows). No duplicate rows.
+5. Inspect a flag's `prior_avg_sek` field — should be the 12-month rolling non-zero average for that label, or null for genuinely new lines.
+
+**Next PR (PR 3):** UI — `/overheads/review` page, decide API, dashboard hero card, projection card on `/overheads`. Backfill banner ("mark all existing essential") lives in PR 3 too.
+
+---
+
 ## 0an. Overhead Review System — PR 1: schema + read APIs (2026-04-28)
 
 **Scope:** first PR of a 5-PR feature that surfaces non-essential overheads for owner review, persists their decisions, and projects savings on the dashboard. PR 1 ships only the schema + read endpoints — no detection logic yet, no UI yet. Reads return `table_missing: true` until M039 applies; once it does, they return correctly-shaped empty data until PR 2's worker writes flags.
