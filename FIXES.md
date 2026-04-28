@@ -11,6 +11,42 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0ac. Admin v2 — PR 2: Overview tab (2026-04-28)
+
+**Scope:** the new overview page. Two distinct sections: incidents strip (top) + business KPIs (below).
+
+**Created:**
+- `app/api/admin/v2/incidents/route.ts` — new READ-ONLY route. `requireAdmin` guarded. Returns `{ incidents: Incident[], generated_at }`. Three categories shipping in PR 2:
+  - `stuck_integration` — integrations with status `error`/`needs_reauth` for active orgs, plus connected-but-silent-for-24h
+  - `data_stale` — orgs with at least one connected integration but no `daily_metrics` row in last 48h
+  - `ai_cost_outlier` — orgs whose 24h AI cost > 5× their 7-day median (and > 5 SEK absolute, to avoid false positives on tiny baselines)
+  Sorted critical → warn → info, then newest within tier.
+- `components/admin/v2/IncidentRow.tsx` — single clickable row: severity dot + org name + title + meta + arrow. Hover state lifts the background. Click → href.
+- `components/admin/v2/KpiStrip.tsx` — reusable stat-card grid. Pre-formatted values. Tone applies a coloured border accent + value tint. Will be reused on customer detail in PR 4.
+
+**Modified:**
+- `app/admin/v2/overview/page.tsx` — full implementation. Two sections, each with loading/error/empty states.
+
+**Reused (per the plan's "don't build a new API for KPIs" rule):**
+- `/api/admin/overview` (existing) — KPI source. The existing `KPI` shape is used verbatim; the `KpiStrip` component renders it visually but the route is unchanged.
+
+**Deferred from the plan's incident list (noted in code):**
+- `token_expiring` → no explicit "expires in 7d" signal in our schema. PK / Fortnox tokens manifest as `needs_reauth` status when they fail, which is already captured by `stuck_integration`. Adding a true token-expiry heuristic needs a Fortnox refresh-token expiry timestamp we don't currently store.
+- `stripe_webhook_backlog` → the two-phase dedup pattern the plan references (`processed_at IS NULL` rows older than 5 min) hasn't shipped. Current Stripe webhook does single-phase dedup. Re-add when the two-phase pattern lands.
+- `pending_migration` → reading MIGRATIONS.md from disk in an API route is fiddly. Defer to a follow-up that reads it via a build-time constant or a tiny `pending_migrations` view.
+
+**Verified:**
+- `git status` shows only changes to v2 surface (one modified `app/admin/v2/overview/page.tsx` + new files under `app/api/admin/v2/`, `components/admin/v2/`). Zero existing `/admin/*` or `/api/admin/*` files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes.
+- /admin/v2/overview renders both sections from real data on first load.
+- Empty incidents state shows "Nothing on fire ✓" in green.
+- Each incident row is a working link (currently to `/admin/customers/[orgId]` — will swap to `/admin/v2/...` in PR 4).
+
+**Why this should hold:** the incidents route is read-only and well-bounded. New incident kinds slot into the `Incident` type union and a new branch in the route handler. The KPI strip is dumb (pre-formatted values), so changes to the existing `/api/admin/overview` shape can be absorbed in `buildKpiItems()` without touching the strip component.
+
+---
+
 ## 0ab. Admin v2 — PR 1: foundation (2026-04-28)
 
 **Scope:** scaffolding only. No new functionality, no new API routes. The chassis the rest of the PRs hang off.
