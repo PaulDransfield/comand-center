@@ -1,12 +1,18 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied · M036 applied · M037 applied · M038 pending
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 applied · M033 applied · M034 applied · M035 applied · M036 applied · M037 applied · M038 applied
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
 
-### M038 — Admin v2 PR 10 (saved investigations + customer notes)
+_(none — all queued migrations applied 2026-04-28; see "Applied — Sprint 1 + Admin v2 batch" below)_
+
+---
+
+## Applied — Sprint 1 + Admin v2 batch (2026-04-28)
+
+### M038 — Admin v2 PR 10 (saved investigations + customer notes) ✅ applied 2026-04-28
 **File:** `M038-ADMIN-NOTES-AND-SAVED-QUERIES.sql` (repo root)
 **Purpose:** part of FIXES.md §0ak (Admin Console Rebuild PR 10). Two related tables in one migration:
   1. `admin_notes(id, org_id, parent_id, body, created_by, created_at, updated_at, pinned, deleted_at)` — first-class threaded notes for the customer-detail Notes sub-tab. Notes used to live as `note_add` rows on `admin_audit_log.payload` which made editing/deleting/threading/pinning impossible. Index `(org_id, pinned DESC, created_at DESC) WHERE deleted_at IS NULL` is the hot path for the sub-tab list. Soft-delete keeps the row for compliance.
@@ -15,14 +21,14 @@
 **Safety:** `CREATE TABLE IF NOT EXISTS`, indexes IF NOT EXISTS. Both have RLS enabled with no policy → service-role only. CHECK constraints on body/label/query length so an accidental dump doesn't bloat the table. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the end: relation sizes + index list.
 **To apply:** open Supabase SQL Editor, paste file contents, run.
 
-### M037 — Admin v2 Tools support (read-only SQL runner RPC)
+### M037 — Admin v2 Tools support (read-only SQL runner RPC) ✅ applied 2026-04-28
 **File:** `M037-ADMIN-SQL-RUNNER.sql` (repo root)
 **Purpose:** part of FIXES.md §0aj (Admin Console Rebuild PR 9 — Tools tab). Adds `admin_run_sql(p_query TEXT, p_limit INTEGER) RETURNS JSONB`. Validates that the query starts with `SELECT / WITH / TABLE / VALUES / EXPLAIN`, rejects any embedded semicolon (multi-statement guard), rejects every write/DDL/control keyword as a whole word (INSERT, UPDATE, DELETE, MERGE, DROP, ALTER, CREATE, TRUNCATE, GRANT, COPY, DO, CALL, VACUUM, ANALYZE, LOCK, SET, BEGIN, COMMIT, etc.), then wraps in `SELECT * FROM (user_query LIMIT N) t` so the only valid output is a row-set. `STABLE` is NOT used because plpgsql with `EXECUTE` can't be marked STABLE/IMMUTABLE; `SECURITY DEFINER` + `SET search_path = public, pg_catalog`. Sets `statement_timeout=10s` + `lock_timeout=2s` per call so a runaway query can't wedge a Supabase connection.
 **Backwards compat:** /api/admin/v2/tools/sql gracefully degrades when the RPC is missing — surfaces a clear "M037 missing" banner rather than 500. JS-side regex validation is the primary defence; the RPC's checks are belt-and-braces.
 **Safety:** `CREATE OR REPLACE FUNCTION`, wrapped in `BEGIN; … COMMIT;`. EXECUTE granted only to `service_role` (REVOKE ALL FROM PUBLIC first). Smoke-test queries at the bottom of the file (paste each individually): two should succeed, two should fail with `forbidden keyword` / `multi-statement` errors.
 **To apply:** open Supabase SQL Editor, paste file contents, run.
 
-### M036 — Admin v2 Health support (cron_run_log + RLS-health RPC)
+### M036 — Admin v2 Health support (cron_run_log + RLS-health RPC) ✅ applied 2026-04-28
 **File:** `M036-ADMIN-HEALTH-CONFIG.sql` (repo root)
 **Purpose:** part of FIXES.md §0ah (Admin Console Rebuild PR 7 — Health tab). Two related pieces in one migration:
   1. `cron_run_log(id, cron_name, started_at, finished_at, status, error, meta)` — table written by the new `lib/cron/log.ts::withCronLog` wrapper. The Admin v2 Health tab reads the most-recent row per `cron_name` to surface "last ran X ago / status / error". Two indexes: `(cron_name, started_at DESC)` for the hot per-cron lookup and `(status, started_at DESC)` for failure listings. RLS enabled; service-role only (no policy).
@@ -31,7 +37,7 @@
 **Safety:** `CREATE TABLE IF NOT EXISTS`, indexes IF NOT EXISTS, `CREATE OR REPLACE FUNCTION`. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the end list `cron_run_log` size, confirm the function exists, and dump any current RLS anomalies (rows with `rowsecurity=true` and 0 policies).
 **To apply:** open Supabase SQL Editor, paste file contents, run.
 
-### M033 — Atomic AI quota gate + 24h global-spend RPC
+### M033 — Atomic AI quota gate + 24h global-spend RPC ✅ applied 2026-04-28
 **File:** `M033-INCREMENT-AI-USAGE-ATOMIC.sql` (repo root)
 **Purpose:** part of FIXES.md §0w (Sprint 1 Tasks 4 + 5). Two related fixes in one migration:
   1. `increment_ai_usage_checked(org_id, date, limit)` — atomic `INSERT … ON CONFLICT DO UPDATE` returning `(new_count, allowed)`. Closes the TOCTOU window where 100 parallel `/api/ask` requests could all pass `checkAiLimit` before any increment landed and blow the per-org daily cap by the burst factor. Caller decrements when `allowed=false` so the rejected attempt doesn't tick the counter.
@@ -42,7 +48,7 @@
 **Safety:** `CREATE OR REPLACE FUNCTION` + `CREATE INDEX IF NOT EXISTS`. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the bottom list the new functions, indexes, and the unique constraint.
 **To apply:** open Supabase SQL Editor, paste file contents, run. Then manual burst test (FIXES §0w end): open 5 incognito tabs at `query_count = limit - 2`, fire `/api/ask` simultaneously, expect 2 succeed + 3 return 429 + counter ends at exactly `limit`.
 
-### M032 — Fortnox supersede chain join table
+### M032 — Fortnox supersede chain join table ✅ applied 2026-04-28
 **File:** `M032-FORTNOX-SUPERSEDE-CHAIN.sql` (repo root)
 **Purpose:** part of FIXES.md §0v (Sprint 1 Task 3). Adds `fortnox_supersede_links(child_id, parent_id, period_year, period_month)` so multi-month upload supersede chains preserve every period's parent. Pre-M032, `applyMonthly` overwrote the column-level `supersedes_id` / `superseded_by_id` on each iteration → only the last period's parent survived. Reject path now walks the join table to restore predecessors per-period; pre-fix it would only restore one predecessor for a multi-month rejected upload, leaving other periods data-less.
 **Backwards compat:** column-level `supersedes_id` / `superseded_by_id` on `fortnox_uploads` remain; single-month uploads still write them accurately. Reject route falls back to the column when no link rows exist (older supersede chains pre-M032).
