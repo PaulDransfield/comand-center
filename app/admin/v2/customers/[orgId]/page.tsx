@@ -18,6 +18,11 @@ import { CustomerSubtabs, type SubTab } from '@/components/admin/v2/CustomerSubt
 import { CustomerSnapshot } from '@/components/admin/v2/CustomerSnapshot'
 import { CustomerIntegrations } from '@/components/admin/v2/CustomerIntegrations'
 import { CustomerData } from '@/components/admin/v2/CustomerData'
+import { CustomerBilling } from '@/components/admin/v2/CustomerBilling'
+import { CustomerUsers } from '@/components/admin/v2/CustomerUsers'
+import { CustomerSyncHistory } from '@/components/admin/v2/CustomerSyncHistory'
+import { CustomerAudit } from '@/components/admin/v2/CustomerAudit'
+import { CustomerDangerZone } from '@/components/admin/v2/CustomerDangerZone'
 import { RightRail } from '@/components/admin/v2/RightRail'
 
 interface SnapshotPayload {
@@ -62,45 +67,29 @@ export default function CustomerDetailPage({ params }: { params: { orgId: string
       }}>
         <main style={{ minWidth: 0 }}>
           <CustomerSubtabs active={activeTab} onChange={setActiveTab} />
-          {renderSubtab(activeTab, orgId)}
+          {renderSubtab(activeTab, orgId, snapshot.data?.org?.name ?? orgId, onActionComplete)}
         </main>
-        <RightRail orgId={orgId} onActionComplete={onActionComplete} />
+        <RightRail
+          orgId={orgId}
+          currentPlan={snapshot.data?.org?.plan}
+          onActionComplete={onActionComplete}
+        />
       </div>
     </div>
   )
 }
 
-function renderSubtab(tab: SubTab, orgId: string) {
+function renderSubtab(tab: SubTab, orgId: string, orgName: string, onComplete: () => void) {
   switch (tab) {
     case 'snapshot':     return <CustomerSnapshot orgId={orgId} />
     case 'integrations': return <CustomerIntegrations orgId={orgId} />
     case 'data':         return <CustomerData orgId={orgId} />
-    case 'billing':
-    case 'users':
-    case 'sync_history':
-    case 'audit':
-    case 'danger':
-      return <SubtabPlaceholder tab={tab} />
+    case 'billing':      return <CustomerBilling orgId={orgId} />
+    case 'users':        return <CustomerUsers orgId={orgId} />
+    case 'sync_history': return <CustomerSyncHistory orgId={orgId} />
+    case 'audit':        return <CustomerAudit orgId={orgId} />
+    case 'danger':       return <CustomerDangerZone orgId={orgId} orgName={orgName} onComplete={onComplete} />
   }
-}
-
-function SubtabPlaceholder({ tab }: { tab: SubTab }) {
-  return (
-    <div style={{
-      padding:    40,
-      background: 'white',
-      border:     '1px solid #e5e7eb',
-      borderRadius: 10,
-      textAlign:  'center' as const,
-    }}>
-      <div style={{ fontSize: 13, fontWeight: 500, color: '#111', marginBottom: 4 }}>
-        {tab.replace('_', ' ')} — Coming in PR 5
-      </div>
-      <div style={{ fontSize: 11, color: '#9ca3af' }}>
-        Foundation + 3 sub-tabs ship in PR 4. Billing, Users, Sync history, Audit, Danger zone follow.
-      </div>
-    </div>
-  )
 }
 
 function HeaderSkeleton() {

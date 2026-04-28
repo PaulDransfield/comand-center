@@ -9,10 +9,21 @@
 // Each dangerous action goes through QuickActionButton → ReasonModal,
 // which forces a ≥10-char reason that gets persisted to admin_audit_log.
 
+import { useState } from 'react'
 import { adminFetch } from '@/lib/admin/v2/api-client'
 import { QuickActionButton } from './QuickActionButton'
+import { ReasonModal } from './ReasonModal'
 
-export function RightRail({ orgId, onActionComplete }: { orgId: string; onActionComplete?: () => void }) {
+interface RightRailProps {
+  orgId:           string
+  currentPlan?:    string
+  onActionComplete?: () => void
+}
+
+const PLAN_OPTIONS = ['founding', 'solo', 'group', 'chain', 'trial', 'past_due', 'enterprise']
+const TRIAL_DAY_OPTIONS = [7, 14, 30]
+
+export function RightRail({ orgId, currentPlan, onActionComplete }: RightRailProps) {
   // ── Action handlers — all v2 wrappers, all audit-logged ─────────────
 
   async function impersonate(reason: string) {
@@ -112,20 +123,200 @@ export function RightRail({ orgId, onActionComplete }: { orgId: string; onAction
 
       {/* ─── Subscription (PR 5) ───────────────────────────────────── */}
       <Section title="Subscription">
-        <Placeholder text="Change plan · Extend trial · Issue credit — PR 5" />
+        <ExtendTrialAction orgId={orgId} onComplete={onActionComplete} />
+        <IssueCreditAction orgId={orgId} onComplete={onActionComplete} />
+        <ChangePlanAction orgId={orgId} currentPlan={currentPlan} onComplete={onActionComplete} />
       </Section>
 
-      {/* ─── Health probes (PR 7-ish) ──────────────────────────────── */}
+      {/* ─── Danger zone is now its own sub-tab (PR 5) ──────────────── */}
       <Section title="Health probes">
-        <Placeholder text="Per-org health checks — PR 5" />
-      </Section>
-
-      {/* ─── Danger zone (PR 5) ────────────────────────────────────── */}
-      <Section title="Danger zone" tone="danger">
-        <Placeholder text="Hard delete · Revoke sessions · Force-flush — PR 5" />
+        <Placeholder text="Per-org probes land in a follow-up PR" />
       </Section>
     </aside>
   )
+}
+
+// ─── Subscription action atoms ──────────────────────────────────────────────
+
+function ExtendTrialAction({ orgId, onComplete }: { orgId: string; onComplete?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [days, setDays] = useState<number>(14)
+  const [busy, setBusy] = useState(false)
+  const [info, setInfo] = useState<string | null>(null)
+  const [err,  setErr]  = useState<string | null>(null)
+
+  async function handleConfirm(reason: string) {
+    setBusy(true); setErr(null); setInfo(null)
+    try {
+      const r = await adminFetch<{ trial_end: string; days_added: number }>(
+        `/api/admin/v2/customers/${orgId}/extend-trial`,
+        { method: 'POST', body: JSON.stringify({ reason, days }) },
+      )
+      setOpen(false)
+      setInfo(`Trial extended by ${r.days_added}d → ends ${r.trial_end}`)
+      onComplete?.()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Extend failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+        <select
+          value={days}
+          onChange={e => setDays(Number(e.target.value))}
+          style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 5, fontSize: 12, background: 'white' }}
+        >
+          {TRIAL_DAY_OPTIONS.map(d => <option key={d} value={d}>{d} days</option>)}
+        </select>
+        <button
+          onClick={() => setOpen(true)}
+          disabled={busy}
+          style={{ flex: 1, padding: '8px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 13, fontWeight: 500, color: '#111', cursor: busy ? 'not-allowed' : 'pointer', textAlign: 'left' as const }}
+        >
+          Extend trial
+        </button>
+      </div>
+      {info && <ActionInfo text={info} />}
+      {err  && <ActionError text={err} />}
+      <ReasonModal
+        open={open}
+        title={`Extend trial by ${days} days`}
+        description="Pushes trial_end forward. Anchored on whichever is later: today, or current trial_end. Audit-logged."
+        confirmLabel="Extend"
+        busy={busy}
+        onConfirm={handleConfirm}
+        onCancel={() => { if (!busy) setOpen(false) }}
+      />
+    </div>
+  )
+}
+
+function IssueCreditAction({ orgId, onComplete }: { orgId: string; onComplete?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [amountStr, setAmountStr] = useState<string>('500')
+  const [busy, setBusy] = useState(false)
+  const [info, setInfo] = useState<string | null>(null)
+  const [err,  setErr]  = useState<string | null>(null)
+
+  async function handleConfirm(reason: string) {
+    const amount = Math.round(Number(amountStr))
+    if (!Number.isFinite(amount) || amount <= 0) { setErr('Amount must be > 0'); return }
+    setBusy(true); setErr(null); setInfo(null)
+    try {
+      await adminFetch(`/api/admin/v2/customers/${orgId}/issue-credit`, {
+        method: 'POST',
+        body:   JSON.stringify({ reason, amount_sek: amount }),
+      })
+      setOpen(false)
+      setInfo(`Credit recorded: ${amount} kr (issue from Stripe dashboard separately)`)
+      onComplete?.()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Credit failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+        <input
+          type="number"
+          value={amountStr}
+          onChange={e => setAmountStr(e.target.value)}
+          min={1}
+          style={{ width: 70, padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 5, fontSize: 12, fontFamily: 'inherit' }}
+        />
+        <span style={{ fontSize: 11, color: '#6b7280' }}>kr</span>
+        <button
+          onClick={() => setOpen(true)}
+          disabled={busy}
+          style={{ flex: 1, padding: '8px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 13, fontWeight: 500, color: '#111', cursor: busy ? 'not-allowed' : 'pointer', textAlign: 'left' as const }}
+        >
+          Issue credit
+        </button>
+      </div>
+      {info && <ActionInfo text={info} />}
+      {err  && <ActionError text={err} />}
+      <ReasonModal
+        open={open}
+        title={`Issue ${amountStr} kr credit`}
+        description="Records a billing_events row marking the credit. Issuing the actual Stripe credit happens from the Stripe dashboard separately — this is the bookkeeping mirror."
+        confirmLabel="Record credit"
+        busy={busy}
+        onConfirm={handleConfirm}
+        onCancel={() => { if (!busy) setOpen(false) }}
+      />
+    </div>
+  )
+}
+
+function ChangePlanAction({ orgId, currentPlan, onComplete }: { orgId: string; currentPlan?: string; onComplete?: () => void }) {
+  const [open, setOpen]       = useState(false)
+  const [newPlan, setNewPlan] = useState<string>(currentPlan ?? 'solo')
+  const [busy, setBusy]       = useState(false)
+  const [info, setInfo]       = useState<string | null>(null)
+  const [err,  setErr]        = useState<string | null>(null)
+
+  async function handleConfirm(reason: string) {
+    setBusy(true); setErr(null); setInfo(null)
+    try {
+      const r = await adminFetch<{ plan: string; previous_plan: string }>(
+        `/api/admin/v2/customers/${orgId}/change-plan`,
+        { method: 'POST', body: JSON.stringify({ reason, new_plan: newPlan }) },
+      )
+      setOpen(false)
+      setInfo(`Plan changed: ${r.previous_plan} → ${r.plan}`)
+      onComplete?.()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Plan change failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+        <select
+          value={newPlan}
+          onChange={e => setNewPlan(e.target.value)}
+          style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 5, fontSize: 12, background: 'white' }}
+        >
+          {PLAN_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <button
+          onClick={() => setOpen(true)}
+          disabled={busy || newPlan === currentPlan}
+          style={{ flex: 1, padding: '8px 12px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 7, fontSize: 13, fontWeight: 500, color: newPlan === currentPlan ? '#9ca3af' : '#111', cursor: (busy || newPlan === currentPlan) ? 'not-allowed' : 'pointer', textAlign: 'left' as const }}
+        >
+          Change plan
+        </button>
+      </div>
+      {info && <ActionInfo text={info} />}
+      {err  && <ActionError text={err} />}
+      <ReasonModal
+        open={open}
+        title={`Change plan to "${newPlan}"`}
+        description="Manual override. Stripe is the source of truth for paid plans via webhooks; this endpoint is for special cases (downgrading to past_due, putting an account on enterprise until billing catches up). Audit-logged with before/after."
+        confirmLabel="Change plan"
+        busy={busy}
+        onConfirm={handleConfirm}
+        onCancel={() => { if (!busy) setOpen(false) }}
+      />
+    </div>
+  )
+}
+
+function ActionInfo({ text }: { text: string }) {
+  return <div style={{ marginTop: 6, padding: '6px 8px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 5, fontSize: 11, color: '#15803d' }}>{text}</div>
+}
+function ActionError({ text }: { text: string }) {
+  return <div style={{ marginTop: 6, padding: '6px 8px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, fontSize: 11, color: '#b91c1c' }}>{text}</div>
 }
 
 function Section({ title, children, tone }: { title: string; children: React.ReactNode; tone?: 'danger' }) {

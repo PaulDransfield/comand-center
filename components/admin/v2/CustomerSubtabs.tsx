@@ -16,6 +16,8 @@ export type SubTab =
   | 'audit'
   | 'danger'
 
+// All 8 sub-tabs ship live as of PR 5. The `pr` field is kept for posterity
+// in case we need to revert to a "coming soon" treatment later.
 const TABS: Array<{ key: SubTab; label: string; pr: number }> = [
   { key: 'snapshot',     label: 'Snapshot',      pr: 4 },
   { key: 'integrations', label: 'Integrations',  pr: 4 },
@@ -26,6 +28,8 @@ const TABS: Array<{ key: SubTab; label: string; pr: number }> = [
   { key: 'audit',        label: 'Audit',         pr: 5 },
   { key: 'danger',       label: 'Danger zone',   pr: 5 },
 ]
+// The "future" treatment below now triggers only for tabs at PR>5 (none).
+const FUTURE_PR_THRESHOLD = 5
 
 export function CustomerSubtabs({ active, onChange }: { active: SubTab; onChange: (t: SubTab) => void }) {
   return (
@@ -38,7 +42,8 @@ export function CustomerSubtabs({ active, onChange }: { active: SubTab; onChange
     }}>
       {TABS.map(t => {
         const isActive = active === t.key
-        const isFuture = t.pr > 4
+        const isFuture = t.pr > FUTURE_PR_THRESHOLD
+        const isDanger = t.key === 'danger'
         return (
           <button
             key={t.key}
@@ -48,10 +53,12 @@ export function CustomerSubtabs({ active, onChange }: { active: SubTab; onChange
               padding:        '10px 14px',
               border:         'none',
               background:     'transparent',
-              borderBottom:   isActive ? '2px solid #1a1f2e' : '2px solid transparent',
+              borderBottom:   isActive ? `2px solid ${isDanger ? '#dc2626' : '#1a1f2e'}` : '2px solid transparent',
               fontSize:       13,
               fontWeight:     isActive ? 600 : 500,
-              color:          isActive ? '#111' : (isFuture ? '#d1d5db' : '#6b7280'),
+              color:          isActive
+                ? (isDanger ? '#dc2626' : '#111')
+                : (isFuture ? '#d1d5db' : (isDanger ? '#b91c1c' : '#6b7280')),
               cursor:         'pointer',
               whiteSpace:     'nowrap' as const,
               transition:     'color 0.15s, border-color 0.15s',

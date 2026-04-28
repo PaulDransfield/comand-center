@@ -11,6 +11,54 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0af. Admin v2 — PR 5: Customer detail completed (2026-04-28)
+
+**Scope:** finished customer-detail. 5 remaining sub-tabs (Billing, Users, Sync history, Audit, Danger zone) + 3 right-rail subscription actions (Extend trial, Issue credit, Change plan) + 2 danger-zone actions (Hard delete, Revoke sessions). All 8 sub-tabs from PR 4's planned shape now live.
+
+**Created (16 new files, 3 modified):**
+
+API routes — 9 new under `app/api/admin/v2/customers/[orgId]/`:
+- `billing/route.ts` — READ-ONLY. Stripe IDs + last 50 `billing_events` rows. Returns Stripe-Dashboard deep-link.
+- `users/route.ts` — READ-ONLY. organisation_members joined with auth.users (last_sign_in_at, email_confirmed_at).
+- `sync_history/route.ts` — READ-ONLY. Last 50 `sync_log` rows for the org.
+- `audit/route.ts` — READ-ONLY. Last 100 `admin_audit_log` rows scoped to the org. v2-surface entries get a "V2" pill in the UI.
+- `extend-trial/route.ts` — POST. Reason + days (1–90). Anchors new trial_end on max(today, current_end). Audit-logged with before/after dates.
+- `issue-credit/route.ts` — POST. Reason + amount_sek (1–100,000). Writes a `billing_events` row of type `credit_issued`. Does NOT push to Stripe — the admin issues the actual Stripe credit from the dashboard separately; this is the bookkeeping mirror.
+- `change-plan/route.ts` — POST. Reason + new_plan (must exist in PLANS). Audit-logged with previous/new plan. Manual override — Stripe webhook is still the source of truth for paid plans.
+- `hard-delete/route.ts` — POST. Reason + typed_confirm (must equal org name exactly). **Audit row written FIRST, MUST succeed before delete proceeds** (reverses the usual non-fatal-audit pattern — for hard delete the audit IS the safety net). Internally proxies to existing `/api/admin/customers/[orgId]/delete` for the 300+ line cascade purge.
+- `revoke-sessions/route.ts` — POST. Reason. Calls `auth.admin.signOut(userId)` for every member. Audit-logged with user count + per-user results.
+
+Components — 6 new under `components/admin/v2/`:
+- `TypedConfirmModal.tsx` — extends ReasonModal pattern. Reason textarea (≥10 chars) + typed-confirmation field that must match `expectedConfirm` exactly. Confirm button only enables when both pass. Reset state on every open so a previous attempt doesn't carry typed text into the next session. Distinct visual treatment (red banner + red confirm button).
+- `CustomerBilling.tsx` — Stripe IDs grid + recent billing_events table + Stripe Dashboard link.
+- `CustomerUsers.tsx` — table with email, role, last sign-in age, joined date, status pills (UNCONFIRMED / STALE / OK).
+- `CustomerSyncHistory.tsx` — sync_log table with status pills, duration, error truncation.
+- `CustomerAudit.tsx` — collapsible rows. Click expands to JSON payload. Reason text shown italicised under the action label. v2 entries get a V2 pill.
+- `CustomerDangerZone.tsx` — three cards (Hard delete, Revoke sessions, Force-flush placeholder). Hard delete uses TypedConfirmModal; revoke uses ReasonModal. Force-flush is documented as "available in a follow-up" because the cascade list needs verification before it ships safely.
+
+Modified — 3 files:
+- `RightRail.tsx` — replaced PR 5 placeholder with three working subscription actions: ExtendTrialAction (days dropdown 7/14/30), IssueCreditAction (amount input + kr label), ChangePlanAction (plan select). Each opens its own ReasonModal and shows inline success/error.
+- `CustomerSubtabs.tsx` — removed the "PR5" greyed-out treatment (all tabs are live now); added red border accent for the Danger tab when active so it visually self-warns.
+- `app/admin/v2/customers/[orgId]/page.tsx` — wired the 5 new sub-tab components, passed `currentPlan` + `orgName` through.
+
+**Critical invariant — hard delete audit must succeed:**
+Per the plan, hard delete inverts the usual "audit failures are non-fatal" pattern. We re-implement a strict version inline (raw INSERT into admin_audit_log, return 500 on error) before proxying to the cascade endpoint. If the audit insert fails, the delete does not run. Documented in code with a long comment so a future cleanup doesn't switch it back to `recordAdminAction` (which intentionally swallows write failures).
+
+**Force-flush deferred:**
+The plan asked for hard delete + revoke sessions + force-flush in the danger zone. Hard delete + revoke shipped fully. Force-flush (wipe all sync data, keep org structure) shows as a card with a "available in a follow-up" notice — semantics need a documented cascade list before it ships safely. Adding it after PR 5 is straightforward — same TypedConfirmModal pattern + audit-first.
+
+**Verified:**
+- `git status` shows only changes to v2 surface. Zero existing `app/admin/*` or `app/api/admin/*` files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes.
+- All 8 sub-tabs render real data on a real org.
+- All right-rail subscription actions write `admin_audit_log` rows with `payload.reason` + `payload.surface='admin_v2'`.
+- TypedConfirmModal: starting to type then closing the modal does NOT fire the action (state resets on next open).
+
+**Why this should hold:** every mutation goes through `requireAdmin` + `recordAdminAction` + a typed reason. The hard-delete strict-audit invariant is documented in the route file so a future refactor can't accidentally weaken it. The force-flush gap is explicit (placeholder UI + comment) rather than silent.
+
+---
+
 ## 0ae. Admin v2 — PR 4: Customer detail (the big one, half done) (2026-04-28)
 
 **Scope:** customer-detail page layout + first 3 sub-tabs (Snapshot, Integrations, Data) + 4 quick actions on the right rail (Impersonate, Force sync, Reaggregate, Memo preview). Other 5 sub-tabs + 4 right-rail actions are PR 5.
