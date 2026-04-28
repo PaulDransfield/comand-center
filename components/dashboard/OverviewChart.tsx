@@ -26,6 +26,10 @@ interface DayRow {
   dayIdx?:    number
   isToday:    boolean
   isFuture:   boolean
+  // FIXES §0xx: hasActualData = a daily_metrics row exists for this date.
+  // isClosed = past day with no row (restaurant closed). Set by parent.
+  hasActualData?: boolean
+  isClosed?:    boolean
   pred: {
     est_revenue:  number
     planned_cost: number
@@ -125,9 +129,29 @@ function effectiveAiCost(d: DayRow): number {
 }
 
 // Per-day margin value used for the line. Null = break.
+// FIXES §0xx: handle CLOSED days explicitly. Pre-fix this only checked
+// `revenue > 0` and fell through to predicted on any zero-revenue day —
+// closed past days inherited the AI forecast (~100k phantom gross).
+//
+// Order matters:
+//   1. Closed past day → 0 (real, draws line at zero)
+//   2. Day has actual data → real gross (revenue - staff_cost)
+//   3. Day has prediction → predicted gross (drawn dashed via dayMarginKind)
+//   4. Nothing → null (line breaks)
 function dayMargin(d: DayRow): number | null {
-  if (d.revenue > 0) return d.revenue - d.staff_cost
+  if (d.isClosed) return 0
+  if (d.hasActualData) return d.revenue - d.staff_cost
   if (d.pred?.est_revenue > 0) return d.pred.est_revenue - effectiveAiCost(d)
+  return null
+}
+
+// Classifies the kind of value dayMargin returns so the chart can split
+// the line into solid (real / closed) and dashed (predicted) segments.
+type MarginKind = 'real' | 'pred'
+function dayMarginKind(d: DayRow): MarginKind | null {
+  if (d.isClosed)      return 'real'
+  if (d.hasActualData) return 'real'
+  if (d.pred?.est_revenue > 0) return 'pred'
   return null
 }
 
@@ -556,32 +580,66 @@ export default function OverviewChart({
             )
           })}
 
-          {/* Gross margin line — broken at filtered-out / null-margin days */}
+          {/* Gross margin line — split into segments by kind so actual/closed
+              segments are SOLID and predicted segments are DASHED.
+              FIXES §0xx (2026-04-28). Markers also kind-coded:
+                - real (actual or closed): solid filled circle
+                - predicted: hollow circle (ring) so the eye reads "guess" */}
           {(() => {
-            const segments: Array<Array<{ x: number; y: number }>> = []
-            let current: Array<{ x: number; y: number }> = []
+            type Pt = { x: number; y: number; kind: MarginKind; isClosed: boolean; date: string }
+            const segments: Array<{ kind: MarginKind; points: Pt[] }> = []
+            let current: { kind: MarginKind; points: Pt[] } | null = null
             days.forEach((d, i) => {
               const inFilter = !hasFilter || selected.has(d.date)
               const m = dayMargin(d)
-              if (!inFilter || m == null) {
-                if (current.length) { segments.push(current); current = [] }
+              const k = dayMarginKind(d)
+              if (!inFilter || m == null || k == null) {
+                if (current) { segments.push(current); current = null }
                 return
               }
-              current.push({ x: xAt(i), y: yAt(m) })
+              const pt: Pt = { x: xAt(i), y: yAt(m), kind: k, isClosed: !!d.isClosed, date: d.date }
+              if (current && current.kind !== k) {
+                // Kind transition (real → pred or vice versa). Push the
+                // current segment, then start a new one with the previous
+                // point overlapped so the line stays visually connected.
+                segments.push(current)
+                const last = current.points[current.points.length - 1]
+                current = { kind: k, points: last ? [{ ...last, kind: k }] : [] }
+              }
+              if (!current) current = { kind: k, points: [] }
+              current.points.push(pt)
             })
-            if (current.length) segments.push(current)
+            if (current) segments.push(current)
+            const allPoints = segments.flatMap(s => s.points)
             return (
               <>
                 {segments.map((seg, i) => {
-                  if (seg.length < 2) return null
-                  const path = seg.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-                  return <path key={`seg${i}`} d={path} stroke={C.mar} strokeWidth={2} strokeLinejoin="round" fill="none" />
-                })}
-                {segments.flat().map((p, i) => {
-                  const isHovered = hoverDate && days.find(d => d.date === hoverDate) && Math.abs(xAt(days.findIndex(d => d.date === hoverDate)) - p.x) < 0.01
+                  if (seg.points.length < 2) return null
+                  const path = seg.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
                   return (
-                    <circle key={`c${i}`} cx={p.x} cy={p.y} r={isHovered ? 4 : markerR} fill={C.mar} />
+                    <path
+                      key={`seg${i}`}
+                      d={path}
+                      stroke={C.mar}
+                      strokeWidth={2}
+                      strokeLinejoin="round"
+                      fill="none"
+                      strokeDasharray={seg.kind === 'pred' ? '4,3' : undefined}
+                      opacity={seg.kind === 'pred' ? 0.7 : 1}
+                    />
                   )
+                })}
+                {allPoints.map((p, i) => {
+                  const isHovered = hoverDate && p.date === hoverDate
+                  const r = isHovered ? 4 : markerR
+                  // Predicted: hollow ring. Closed: small solid square-ish marker.
+                  // Real-with-data: solid filled circle (existing behaviour).
+                  if (p.kind === 'pred') {
+                    return (
+                      <circle key={`c${i}`} cx={p.x} cy={p.y} r={r} stroke={C.mar} strokeWidth={1.5} fill="white" />
+                    )
+                  }
+                  return <circle key={`c${i}`} cx={p.x} cy={p.y} r={r} fill={C.mar} />
                 })}
               </>
             )
@@ -635,7 +693,8 @@ export default function OverviewChart({
         <LegendItem kind="striped"  label="Revenue (predicted)" />
         <LegendItem kind="swatch"   color={C.lab}  label="Labour cost" />
         <LegendItem kind="dashed"   color="#6b7280" label="AI forecast" />
-        <LegendItem kind="line"     color={C.mar}  label="Gross margin" />
+        <LegendItem kind="line"     color={C.mar}  label="Gross margin (actual)" />
+        <LegendItem kind="dashed"   color={C.mar}  label="Gross margin (predicted)" />
       </div>
 
       {/* Tip text */}
@@ -846,7 +905,13 @@ function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmt
         <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: C.ttMute }}>
           {dateLabel}
         </div>
-        {hasPred && (
+        {/* FIXES §0xx: priority CLOSED > PREDICTED. Closed days are
+            past-real, just at zero — they should NOT show the predicted
+            badge. */}
+        {day.isClosed && (
+          <span style={{ fontSize: 9, background: '#6b7280', color: 'white', padding: '1px 6px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>CLOSED</span>
+        )}
+        {!day.isClosed && hasPred && (
           <span style={{ fontSize: 9, background: C.revAccent, color: 'white', padding: '1px 6px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>PREDICTED</span>
         )}
       </div>

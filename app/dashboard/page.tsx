@@ -346,13 +346,24 @@ function DashboardInner() {
   // Each day gets a matching `prevDay` — same weekday-index offset in the
   // previous period. Lets the chart render per-day "Prev" whiskers / deltas
   // without another fetch.
+  // FIXES §0xx (2026-04-28): track hasActualData + isClosed per day so the
+  // chart can distinguish CLOSED past days from FUTURE days. Both have
+  // revenue=0; without this distinction the gross-margin line falls
+  // through to predicted values for closed days (Apr 3-4 of any month
+  // showed phantom 100k+ gross). Closed = past day with no daily_metrics
+  // row at all (the aggregator only writes rows when there's revenue or
+  // staff_cost > 0). Today gets a grace pass — PK might not have synced
+  // yet — so isClosed = !isFuture && !isToday && !hasActualData.
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d   = new Date(curr.mon)
     d.setDate(curr.mon.getDate() + i)
     const ds  = localDate(d)
-    const row = dailyRows.find(r => r.date === ds) ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
+    const found = dailyRows.find(r => r.date === ds)
+    const row = found ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
     const isToday   = ds === localDate(now)
     const isFuture  = d > now
+    const hasActualData = !!found
+    const isClosed  = !isFuture && !isToday && !hasActualData
     const pred      = predByDate[ds] ?? null
     // Matching day one week earlier
     const prev = getWeekBounds(weekOffset - 1)
@@ -360,16 +371,19 @@ function DashboardInner() {
     const pds  = localDate(pd)
     const pRow = prevDailyRows.find(r => r.date === pds)
     const prevDay = pRow ? { revenue: pRow.revenue ?? 0, staff_cost: pRow.staff_cost ?? 0 } : null
-    return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture, pred, prevDay }
+    return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture, hasActualData, isClosed, pred, prevDay }
   })
 
   const monthDays = Array.from({ length: currM.daysInMonth }, (_, i) => {
     const d   = new Date(currM.firstDay)
     d.setDate(i + 1)
     const ds  = localDate(d)
-    const row = dailyRows.find(r => r.date === ds) ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
+    const found = dailyRows.find(r => r.date === ds)
+    const row = found ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
     const isToday  = ds === localDate(now)
     const isFuture = d > now
+    const hasActualData = !!found
+    const isClosed  = !isFuture && !isToday && !hasActualData
     const dayIdx   = (d.getDay() + 6) % 7 // 0=Mon
     const pred     = predByDate[ds] ?? null
     // Matching day in previous month (same calendar day; last day if prev is shorter)
@@ -379,7 +393,7 @@ function DashboardInner() {
     const prevDate = `${prevM.year}-${String(prevM.month).padStart(2, '0')}-${String(prevDom).padStart(2, '0')}`
     const pRow = prevDailyRows.find(r => r.date === prevDate)
     const prevDay = pRow ? { revenue: pRow.revenue ?? 0, staff_cost: pRow.staff_cost ?? 0 } : null
-    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, dayIdx, pred, prevDay }
+    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, hasActualData, isClosed, dayIdx, pred, prevDay }
   })
 
   // ── Available periods for the chart's dropdown ──────────────────────────
