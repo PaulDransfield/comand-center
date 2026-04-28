@@ -519,6 +519,76 @@ function DashboardInner() {
                 })}
               />
             </div>
+
+            {/*
+              FIXES §0ss (2026-04-28): full-width CTA card bridging the
+              dashboard to /scheduling when the AI has a real cut to apply.
+              Same hero-style as AiHoursReductionMap so the two pages feel
+              like one workflow. Only renders when:
+                - aiSched data is loaded
+                - net saving > 0 (something actually to apply)
+              On click → /scheduling, where the labour-ratio hero +
+              Open Personalkollen card render the full plan.
+            */}
+            {(() => {
+              const aiSaving = Number(aiSched?.summary?.saving_kr ?? 0)
+              const aiCutH   = Number(aiSched?.summary?.current_hours ?? 0) - Number(aiSched?.summary?.suggested_hours ?? 0)
+              if (!(aiSaving > 0)) return null
+              return (
+                <a
+                  href="/scheduling"
+                  style={{
+                    display:        'flex',
+                    alignItems:     'center',
+                    justifyContent: 'space-between',
+                    gap:            20,
+                    flexWrap:       'wrap' as const,
+                    background:     UX.cardBg,
+                    border:         `1px solid ${UX.border}`,
+                    borderLeft:     `4px solid ${UX.greenInk}`,
+                    borderRadius:   UX.r_lg,
+                    padding:        '18px 24px',
+                    marginBottom:   16,
+                    textDecoration: 'none',
+                    color:          'inherit',
+                    cursor:         'pointer',
+                    transition:     'box-shadow 0.15s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)')}
+                  onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
+                >
+                  <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: UX.ink4 }}>
+                      AI SCHEDULING SAVINGS · NEXT WEEK
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 500, color: UX.ink1, marginTop: 6, letterSpacing: '-0.01em' }}>
+                      Trim <span style={{ color: UX.greenInk }}>{fmtKr(aiSaving)}</span> from next week's hours
+                      {aiCutH > 0.5 && <span style={{ color: UX.ink3, fontWeight: 400 }}> · {Math.round(aiCutH * 10) / 10}h cut</span>}
+                    </div>
+                    <div style={{ fontSize: 12, color: UX.ink3, marginTop: 4 }}>
+                      Open scheduling to see the day-by-day plan and implement the changes.
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      background:     UX.greenInk,
+                      color:          'white',
+                      borderRadius:   UX.r_md,
+                      padding:        '12px 22px',
+                      fontSize:       14,
+                      fontWeight:     500,
+                      display:        'inline-flex',
+                      alignItems:     'center',
+                      gap:            8,
+                      whiteSpace:     'nowrap' as const,
+                    }}
+                  >
+                    Open scheduling
+                    <span aria-hidden style={{ fontSize: 16, marginTop: -2 }}>→</span>
+                  </span>
+                </a>
+              )
+            })()}
           </>
         )}
 
