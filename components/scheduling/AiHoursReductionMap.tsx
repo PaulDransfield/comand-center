@@ -135,6 +135,20 @@ export default function AiHoursReductionMap(props: Props) {
   const amberPotentialKr = amberRows.reduce((s, r) => s + Math.max(r.savingKr, 0), 0)
   const amberPotentialH  = amberRows.reduce((s, r) => s + Math.max(r.deltaH, 0), 0)
 
+  // ── Weekly labour-% shift (the "pop out" metric) ─────────────────────────
+  // Sum across ALL days that have a forecasted revenue — not just green —
+  // so the headline shows the genuine end-state if the user applies the
+  // green recs (amber/no-change/closed days stay at their current cost).
+  // Cost denominator: sum of curCost (no change) + greenRows.aiCost (cuts).
+  // Revenue denominator: sum of estRev across all days that had one.
+  const weekRev = rows.reduce((s, r) => s + (r.estRev || 0), 0)
+  const weekCurCost = rows.reduce((s, r) => s + r.curCost, 0)
+  const weekAiCost  = rows.reduce((s, r) => s + (r.status === 'green' && !r.isAccepted ? r.aiCost : r.curCost), 0)
+  const weekCurPct = weekRev > 0 ? (weekCurCost / weekRev) * 100 : null
+  const weekAiPct  = weekRev > 0 ? (weekAiCost  / weekRev) * 100 : null
+  const weekDeltaPct = (weekCurPct != null && weekAiPct != null) ? weekCurPct - weekAiPct : null
+  const weekSavingsKr = weekCurCost - weekAiCost
+
   // ── Apply handler — flips green rows to accepted via existing endpoint ──
   const [applying, setApplying] = useState(false)
   async function handleApplyAll() {
@@ -168,24 +182,74 @@ export default function AiHoursReductionMap(props: Props) {
   return (
     <div style={{ background: C.bgPage, padding: 24, borderRadius: UX.r_lg, maxWidth: 960 }}>
 
-      {/* ─── Top bar ────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-        <div>
-          <div style={eyebrow}>HOUR REDUCTIONS · {rangeLabel.toUpperCase()}</div>
-          <div style={{ fontSize: 22, fontWeight: 500, color: C.ink, letterSpacing: '-0.01em', marginTop: 4 }}>
-            Trim where the data agrees
+      {/* ─── Hero results card — the "pop out" weekly bottom line ──────── */}
+      {/* This is the headline result: applying the green recs shifts the
+          week's labour ratio from X% to Y% of revenue. Sized large + boxed
+          so the customer sees the impact immediately, before scrolling
+          through the per-day details. */}
+      <div style={{
+        background:   C.bgCard,
+        border:       `1px solid ${C.border}`,
+        borderLeft:   weekDeltaPct != null && weekDeltaPct > 0.1 ? `4px solid ${C.green}` : `1px solid ${C.border}`,
+        borderRadius: UX.r_lg,
+        padding:      '20px 24px',
+        marginBottom: 16,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' as const }}>
+          {/* Left: the headline labour-shift */}
+          <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+            <div style={eyebrow}>{rangeLabel.toUpperCase()} · LABOUR RATIO IMPACT</div>
+            {weekCurPct != null && weekAiPct != null ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 8, flexWrap: 'wrap' as const }}>
+                  <span style={{ fontSize: 32, fontWeight: 500, color: C.ink2, letterSpacing: '-0.02em' }}>
+                    {Math.round(weekCurPct)}%
+                  </span>
+                  <span style={{ fontSize: 22, color: C.ink4 }}>→</span>
+                  <span style={{ fontSize: 32, fontWeight: 500, color: weekDeltaPct! > 0.1 ? C.green : C.ink2, letterSpacing: '-0.02em' }}>
+                    {Math.round(weekAiPct)}%
+                  </span>
+                  <span style={{ fontSize: 13, color: C.ink3, marginLeft: 4 }}>
+                    of revenue
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: C.ink3, marginTop: 6 }}>
+                  Current schedule · After applying {greenRows.length} ready day{greenRows.length === 1 ? '' : 's'}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 14, color: C.ink3, marginTop: 8 }}>
+                No revenue forecast available — labour ratio can't be computed yet.
+              </div>
+            )}
           </div>
-        </div>
-        <div style={{ textAlign: 'right' as const }}>
-          <div style={{ fontSize: 24, fontWeight: 500, color: C.ink, letterSpacing: '-0.01em' }}>
-            {totalSavedH > 0.5 ? `−${fmtHrs(totalSavedH)}` : '—'}
+
+          {/* Right: the supporting stats */}
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' as const, alignItems: 'flex-start' }}>
+            <HeroStat
+              label="SAVES"
+              value={weekSavingsKr > 0 ? fmt(weekSavingsKr) : '—'}
+              accent={weekSavingsKr > 0 ? C.green : C.ink3}
+            />
+            <HeroStat
+              label="HOURS CUT"
+              value={totalSavedH > 0.5 ? `−${fmtHrs(totalSavedH)}` : '—'}
+              accent={totalSavedH > 0.5 ? C.green : C.ink3}
+            />
+            <HeroStat
+              label="DAYS"
+              value={`${greenRows.length} ready${amberRows.length ? ` · ${amberRows.length} amber` : ''}`}
+              accent={C.ink2}
+              small
+            />
           </div>
-          <div style={{ ...eyebrow, marginTop: 4 }}>{rangeLabel.toUpperCase()}'S REDUCTION</div>
         </div>
       </div>
 
-      {/* hairline */}
-      <div style={{ height: 1, background: C.border, marginBottom: 14 }} />
+      {/* ─── Section eyebrow above the day list ────────────────────────── */}
+      <div style={{ ...eyebrow, marginBottom: 8 }}>
+        DAY-BY-DAY · {rangeLabel.toUpperCase()}
+      </div>
 
       {/* ─── Legend ────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const, marginBottom: 16, fontSize: 12, color: C.ink3 }}>
@@ -489,6 +553,24 @@ function accented(accepted?: boolean): 'line-through' | 'none' {
 }
 
 // ─── Atoms ──────────────────────────────────────────────────────────────────
+
+function HeroStat({ label, value, accent, small }: { label: string; value: string; accent: string; small?: boolean }) {
+  return (
+    <div style={{ minWidth: small ? 110 : 90 }}>
+      <div style={eyebrow}>{label}</div>
+      <div style={{
+        fontSize:      small ? 14 : 22,
+        fontWeight:    500,
+        color:         accent,
+        letterSpacing: '-0.01em',
+        marginTop:     6,
+        whiteSpace:    'nowrap' as const,
+      }}>
+        {value}
+      </div>
+    </div>
+  )
+}
 
 function LegendItem({ dot, text }: { dot: string; text: string }) {
   return (
