@@ -3,6 +3,33 @@ Last updated: 2026-04-27
 
 ---
 
+## 0rr. New AI scheduling layout committed as default (2026-04-28)
+
+Followup to §0pp. After Paul reviewed the preview route at `/scheduling/v2` he approved the new layout. Promoted to default:
+
+- `app/scheduling/page.tsx` now imports `AiHoursReductionMap` instead of `AiSchedulePanel`. JSX prop list trimmed to the new component's smaller signature.
+- "Try the new layout →" pill removed from the TopBar (no longer needed).
+- `app/scheduling/v2/` directory deleted (preview route gone).
+- `components/scheduling/AiSchedulePanel.tsx` kept on disk for one cycle in case rollback is needed — single import swap restores. Can be deleted in a follow-up if the new layout sticks.
+- The page-level `acceptDay` / `undoDay` / `undoBatch` callbacks are unused now (the new component only fires `acceptAll`). Left in place pending the per-day Accept story coming back via the amber decision drilldown — cleaner to keep them than reintroduce them later.
+
+**Behavioural change for users:** opening `/scheduling` now shows the labour-ratio impact hero card + "Open Personalkollen" action card + per-day reduction list + Apply CTA. The dense table-style row UI from `AiSchedulePanel` is gone. Per-day Accept is also temporarily gone — group Apply only — until the amber decision drilldown ships and re-introduces it.
+
+---
+
+## 0qq. Scheduling layout colour palette aligned to UX tokens (2026-04-28)
+
+Hot followup to §0pp. The original design prompt specified custom hex colours (`#0F6E56` green, `#BA7517` amber, `#B4B2A9` warm grey) that didn't match the rest of the app. Paul flagged the visual inconsistency. Swapped to the existing `lib/constants/tokens.ts` semantic tokens:
+
+- Status borders: `UX.greenInk` / `UX.amberInk` / `UX.ink5`
+- Surfaces: `UX.pageBg` / `UX.cardBg` / `UX.borderSoft` (neutral, matches dashboard / staff / financials)
+- Decide button: `UX.amberBg` background
+- Card border: `UX.border`
+
+Same layout structure, just consistent palette. The new component now reads as part of the same design system as every other authenticated page.
+
+---
+
 ## 0pp. New AI scheduling layout — preview route /scheduling/v2 (2026-04-28)
 
 **Why:** the existing `AiSchedulePanel` (848 lines, table-style) buries the "how many hours can I cut" question in narrative + per-day rows of equal weight. Paul wanted a hours-first, confidence-grouped layout where each day's status (ready / needs decision / unchanged / closed) is colour-coded and a Now/AI bar pair makes the cut size visually obvious.
