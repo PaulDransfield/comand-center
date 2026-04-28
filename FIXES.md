@@ -11,6 +11,36 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0ad. Admin v2 — PR 3: Customers list with filters (2026-04-28)
+
+**Scope:** customers list with filter chips for saved support workflows + free-text search + sortable columns.
+
+**Created:**
+- `app/api/admin/v2/customers/route.ts` — new READ-ONLY list endpoint. `requireAdmin` guarded. Accepts `?filter=<key>` (repeatable, AND-combined), `?search=<text>`, `?sort=<col>`, `?order=asc|desc`. Returns `{ customers, total, grand_total, filter_counts, applied_filters, applied_search, sort, order }`.
+  - Five filter keys: `needs_attention`, `trial_ending`, `high_ai`, `no_login_30d`, `active_subscription`
+  - Five sort columns: `name`, `plan`, `mrr`, `last_activity`, `created`
+  - Search hits org name + owner email (first member's auth email)
+  - `filter_counts` returned regardless of whether the chip is active so the UI can show counts on every chip
+  - MRR derived from `getPlan(planKey).price_sek` — same source the existing overview uses
+  - High-AI detection: `ai_usage_daily.query_count` for today / `getPlan().ai_queries_per_day` > 50 %
+  - No-login: queries `auth.users.last_sign_in_at` per org owner (1 admin call per unique user, fine at our ≤50-org scale)
+
+**Modified:**
+- `app/admin/v2/customers/page.tsx` — full implementation. Filter chips (toggleable, multi-select with AND), free-text search, sortable column headers (click to flip asc/desc), result count, status badges per row, "Open →" link to per-customer detail (placeholder until PR 4).
+
+**Why a new API route, not reuse:**
+Per the plan's explicit guidance — the existing `/api/admin/customers` returns a fixed shape, doesn't accept query params, doesn't compute MRR or AI-cap %. Filters + sort + search-against-email belong in the v2 endpoint. The old route stays untouched, used only by the old `/admin/customers` page (which is also untouched).
+
+**Verified:**
+- `git status` shows only changes to v2 surface (one modified `app/admin/v2/customers/page.tsx` + new `app/api/admin/v2/customers/`). Zero existing admin files touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes.
+- `/admin/v2/customers` lists all orgs, filter chips reduce results, free-text search filters, column sort flips, row click jumps to `/admin/v2/customers/[orgId]` (placeholder until PR 4).
+
+**Why this should hold:** the route is read-only and the UI is purely state-driven (URL is built from local state via useMemo, not the other way around). Adding a new filter is two changes: new key in `FilterKey` union + new branch in the route's classification block + chip in the page's CHIPS array.
+
+---
+
 ## 0ac. Admin v2 — PR 2: Overview tab (2026-04-28)
 
 **Scope:** the new overview page. Two distinct sections: incidents strip (top) + business KPIs (below).
