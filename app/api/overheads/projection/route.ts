@@ -42,19 +42,46 @@ export async function GET(req: NextRequest) {
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
-  // Default to current month if not supplied. Computed at request time so
-  // the route doesn't drift across midnights.
-  const now   = new Date()
-  const year  = yearStr  ? Number(yearStr)  : now.getFullYear()
-  const month = monthStr ? Number(monthStr) : now.getMonth() + 1
-
-  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-    return NextResponse.json({ error: 'invalid year/month' }, { status: 400 })
-  }
-
   const db = createAdminClient()
 
-  // ── Source-of-truth current rollup for this period ────────────────────────
+  // ── Resolve "the period to project against" ──────────────────────────────
+  // Caller can pin a specific year+month via query params; otherwise use the
+  // latest tracker_data row for this business. Naively defaulting to the
+  // current calendar month means a business that uploaded Dec 2025 data in
+  // April 2026 has no projection — wrong, since their LATEST applied period
+  // is Dec 2025 and that's what the dashboard card should reflect.
+  let year:  number
+  let month: number
+  if (yearStr && monthStr) {
+    year  = Number(yearStr)
+    month = Number(monthStr)
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+      return NextResponse.json({ error: 'invalid year/month' }, { status: 400 })
+    }
+  } else {
+    const { data: latest, error: lErr } = await db
+      .from('tracker_data')
+      .select('year, month')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .order('year',  { ascending: false })
+      .order('month', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (lErr) return NextResponse.json({ error: lErr.message }, { status: 500 })
+    if (latest) {
+      year  = Number(latest.year)
+      month = Number(latest.month)
+    } else {
+      // No data at all — fall back to current calendar month so the
+      // empty-state numbers (zeros) still render in a sensible period.
+      const now = new Date()
+      year  = now.getFullYear()
+      month = now.getMonth() + 1
+    }
+  }
+
+  // ── Source-of-truth rollup for the resolved period ───────────────────────
   const { data: rollup, error: rErr } = await db
     .from('tracker_data')
     .select('revenue, food_cost, staff_cost, other_cost, depreciation, financial, net_profit, margin_pct')
@@ -76,24 +103,35 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Pending flag total ────────────────────────────────────────────────────
+  // Decisions are supplier-wide, so the projection sums the LATEST amount
+  // per unique supplier across ALL pending periods (not scoped to the
+  // resolved period). Matches the at-stake math on /overheads/review and
+  // the bulk-resolve semantic on the decide endpoint.
   let pendingFlagsTotal = 0
   let pendingCount      = 0
   let flagsTableMissing = false
   {
     const { data: flags, error } = await db
       .from('overhead_flags')
-      .select('amount_sek')
+      .select('supplier_name_normalised, amount_sek, period_year, period_month')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
-      .eq('period_year',  year)
-      .eq('period_month', month)
       .eq('resolution_status', 'pending')
     if (error) {
       if (isMissingTable(error)) flagsTableMissing = true
       else return NextResponse.json({ error: error.message }, { status: 500 })
     } else if (flags) {
-      pendingCount       = flags.length
-      pendingFlagsTotal  = flags.reduce((s: number, f: any) => s + Number(f.amount_sek ?? 0), 0)
+      // Dedup: keep the latest period's amount per supplier.
+      const latestPerSupplier = new Map<string, { key: number; amount: number }>()
+      for (const f of flags as any[]) {
+        const periodKey = Number(f.period_year) * 100 + Number(f.period_month)
+        const cur = latestPerSupplier.get(f.supplier_name_normalised)
+        if (!cur || periodKey > cur.key) {
+          latestPerSupplier.set(f.supplier_name_normalised, { key: periodKey, amount: Number(f.amount_sek ?? 0) })
+        }
+      }
+      pendingCount      = latestPerSupplier.size
+      pendingFlagsTotal = Array.from(latestPerSupplier.values()).reduce((s, v) => s + v.amount, 0)
     }
   }
 
