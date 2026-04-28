@@ -465,9 +465,23 @@ function DashboardInner() {
               On narrow viewports the grid wraps to a single column.
             */}
             {(() => {
+              // Labour-ratio framing: your CURRENT schedule projects to X%
+              // of revenue; the AI recommendation brings it to Y%. Operators
+              // read 30–35% as on-target so a Y in that band reads as a
+              // clear "yes, do this" signal.
+              //
+              // Sum across the suggestion window (week / 2 weeks / etc),
+              // matching how AiHoursReductionMap computes its weekly hero.
               const aiSaving = Number(aiSched?.summary?.saving_kr ?? 0)
               const aiCutH   = Number(aiSched?.summary?.current_hours ?? 0) - Number(aiSched?.summary?.suggested_hours ?? 0)
-              const hasSaving = aiSaving > 0
+              const sugg     = (aiSched?.suggested as any[] | undefined) ?? []
+              const cur      = (aiSched?.current   as any[] | undefined) ?? []
+              const weekRev  = sugg.reduce((s, r) => s + Number(r.est_revenue ?? 0), 0)
+              const weekCur  = cur.reduce((s, r) => s + Number(r.est_cost ?? 0), 0)
+              const weekAi   = sugg.reduce((s, r) => s + Number(r.est_cost ?? 0), 0)
+              const curPct   = weekRev > 0 ? (weekCur / weekRev) * 100 : null
+              const aiPct    = weekRev > 0 ? (weekAi  / weekRev) * 100 : null
+              const hasSaving = aiSaving > 0 && curPct != null && aiPct != null
               return (
                 <div style={{
                   display:             'grid',
@@ -514,16 +528,29 @@ function DashboardInner() {
                     >
                       <div>
                         <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: UX.ink4 }}>
-                          AI SCHEDULING SAVINGS · NEXT WEEK
+                          NEXT WEEK · LABOUR PROJECTION
                         </div>
-                        <div style={{ fontSize: 24, fontWeight: 500, color: UX.greenInk, marginTop: 8, letterSpacing: '-0.02em' }}>
-                          {fmtKr(aiSaving)}
+                        {/* Current → AI ratio shift, the headline. */}
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
+                          <span style={{ fontSize: 26, fontWeight: 500, color: UX.ink2, letterSpacing: '-0.02em' }}>
+                            {Math.round(curPct!)}%
+                          </span>
+                          <span style={{ fontSize: 18, color: UX.ink4 }}>→</span>
+                          <span style={{ fontSize: 26, fontWeight: 500, color: UX.greenInk, letterSpacing: '-0.02em' }}>
+                            {Math.round(aiPct!)}%
+                          </span>
+                          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>
+                            of revenue
+                          </span>
                         </div>
-                        {aiCutH > 0.5 && (
-                          <div style={{ fontSize: 12, color: UX.ink3, marginTop: 4 }}>
-                            {Math.round(aiCutH * 10) / 10}h cut · day-by-day plan inside
-                          </div>
-                        )}
+                        <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
+                          Your current schedule projects to <span style={{ color: UX.ink2, fontWeight: 500 }}>{Math.round(curPct!)}%</span> labour.{' '}
+                          AI cuts bring it to <span style={{ color: UX.greenInk, fontWeight: 500 }}>{Math.round(aiPct!)}%</span>.
+                        </div>
+                        <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
+                          Saves <span style={{ color: UX.greenInk, fontWeight: 500 }}>{fmtKr(aiSaving)}</span>
+                          {aiCutH > 0.5 && <span> · {Math.round(aiCutH * 10) / 10}h cut</span>}
+                        </div>
                       </div>
                       <div style={{
                         marginTop:    14,
