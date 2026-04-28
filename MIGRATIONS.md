@@ -1,10 +1,19 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied · M036 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M036 — Admin v2 Health support (cron_run_log + RLS-health RPC)
+**File:** `M036-ADMIN-HEALTH-CONFIG.sql` (repo root)
+**Purpose:** part of FIXES.md §0ah (Admin Console Rebuild PR 7 — Health tab). Two related pieces in one migration:
+  1. `cron_run_log(id, cron_name, started_at, finished_at, status, error, meta)` — table written by the new `lib/cron/log.ts::withCronLog` wrapper. The Admin v2 Health tab reads the most-recent row per `cron_name` to surface "last ran X ago / status / error". Two indexes: `(cron_name, started_at DESC)` for the hot per-cron lookup and `(status, started_at DESC)` for failure listings. RLS enabled; service-role only (no policy).
+  2. `admin_health_rls()` RPC — returns one row per public-schema table with `(table_name, rls_enabled, policy_count, is_anomaly)`. Anomaly = RLS on but zero policies (table is fully locked to anon/authenticated). `STABLE`, `SECURITY DEFINER`, `SET search_path = public, pg_catalog`. EXECUTE granted only to `service_role`.
+**Backwards compat:** Health endpoint degrades gracefully if either piece is missing — surfaces a clear "run M036" banner rather than 500ing. `withCronLog` is non-fatal on logging failures so an un-applied environment isn't bricked. Existing cron handlers are NOT yet wrapped; they'll show "never logged" in the Health tab until a follow-up PR opts each one in (one-line change per handler).
+**Safety:** `CREATE TABLE IF NOT EXISTS`, indexes IF NOT EXISTS, `CREATE OR REPLACE FUNCTION`. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the end list `cron_run_log` size, confirm the function exists, and dump any current RLS anomalies (rows with `rowsecurity=true` and 0 policies).
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M033 — Atomic AI quota gate + 24h global-spend RPC
 **File:** `M033-INCREMENT-AI-USAGE-ATOMIC.sql` (repo root)

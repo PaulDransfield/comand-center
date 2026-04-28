@@ -1,5 +1,5 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-27
+Last updated: 2026-04-28
 
 ---
 
@@ -8,6 +8,53 @@ Last updated: 2026-04-27
 Multi-PR migration of the internal admin tooling (12 PRs, 4–6 weeks). Plan + rules in `Admin-Console-Rebuild-Plan.md`. New surface ships under `/admin/v2/*` and `/api/admin/v2/*`; old `/admin/*` stays untouched until the cut-over PR (PR 12).
 
 Hard rules: never edit existing admin files, never delete admin API routes, never use localStorage for admin auth (sessionStorage only), every mutation goes through `recordAdminAction`, dangerous mutations require typed reason field.
+
+---
+
+## 0ah. Admin v2 — PR 7: Health tab (2026-04-28)
+
+**Scope:** global system health. Single page surfacing six probes: Crons (last run + status per Vercel cron), Migrations (applied/pending count from MIGRATIONS.md header), RLS (per-table rowsecurity + policy count + anomaly flag), Sentry (24h error count via stats API), Anthropic (last 24h spend vs prior 24h vs global cap, via M033 RPC), Stripe (24h `stripe_processed_events` activity + stuck rows). Refresh button. 60s in-process cache.
+
+**Created:**
+- `M036-ADMIN-HEALTH-CONFIG.sql` — pending. Two pieces:
+  1. `cron_run_log` table + two indexes (`(cron_name, started_at DESC)` for hot per-cron lookup, `(status, started_at DESC)` for failure listings). RLS enabled, service-role only (no policy).
+  2. `admin_health_rls()` RPC — `STABLE`, `SECURITY DEFINER`, `SET search_path = public, pg_catalog`. Returns one row per public-schema table with `(table_name, rls_enabled, policy_count, is_anomaly)`. Anomaly = `rowsecurity=true` AND zero policies (table is fully locked to anon/authenticated). EXECUTE granted only to `service_role`.
+- `lib/cron/log.ts` — `withCronLog<T>(cronName, handler)` wrapper. Inserts a 'running' row, on success/error updates `finished_at + status + meta/error`. Non-fatal on logging failures (cron still runs even if `cron_run_log` is missing). NOT yet wired into existing cron handlers — that's a small follow-up PR (one-line change per handler). Health tab gracefully reports "never logged" until handlers opt in.
+- `app/api/admin/v2/health/route.ts` — single GET combining 6 probes:
+  - `probeCrons()` — joins the 12 `vercel.json` cron paths against the most-recent `cron_run_log` row per `cron_name`. When `cron_run_log` is missing, returns `log_table_present: false` with a banner-friendly note.
+  - `probeMigrations()` — reads `MIGRATIONS.md` header line via `fs/promises`, counts `Mxxx applied` and `Mxxx pending` tokens.
+  - `probeRls()` — calls `admin_health_rls` RPC. When RPC is missing, returns `rpc_present: false` with a clear note rather than 500.
+  - `probeSentry()` — uses `SENTRY_AUTH_TOKEN` env. When env missing, returns `configured: false` rather than failing.
+  - `probeAnthropic()` — calls `ai_spend_24h_global_usd` RPC (M033). Falls back to direct `SUM(cost_usd)` query if RPC missing. Computes prior-24h + delta_pct + pct_of_cap (vs `AI_DAILY_GLOBAL_CAP_USD` env, default $200).
+  - `probeStripe()` — counts `stripe_processed_events` last 24h + flags stuck rows (`processed_at IS NULL` older than 5 min).
+  - 60s in-process module-scoped cache (matches the pattern from PR 4 customer-detail dashboards). Response includes `cached: bool` + `age_ms` so the UI can show staleness.
+- `app/admin/v2/health/page.tsx` — six Card sections, each with loading/error/empty states. Refresh button + "data is N seconds old" indicator. Cron table shows status pills (SUCCESS / RUNNING / ERROR / NEVER LOGGED) with age coloring (red if older than 26h — daily-cron grace). RLS section shows total + anomaly count + a collapsible "all tables" list. Anthropic section shows last 24h / prior 24h / Δ% with cap-utilization tone. Each probe surfaces a banner pointing to the relevant migration when its supporting table/RPC is missing.
+
+**Modified:**
+- `MIGRATIONS.md` — header + new "M036 — Admin v2 Health support" entry in Pending block.
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- `requireAdmin(req, {})` — orgless-admin auth path (Health is a global view, not customer-scoped). No mutations, so no `recordAdminAction` calls.
+- `useAdminData<T>(url)` — same vanilla `useEffect` hook from PR 1. SWR explicitly excluded by the plan.
+- `cost_usd` column on `ai_request_log` — same column the Anthropic kill switch already uses (per FIXES §0w.3 — never `total_cost_usd`).
+- 60s in-process Map cache pattern — same shape as PR 4 customer-detail dashboards.
+
+**Honest data gaps surfaced (deliberate, not glossed over):**
+- "Last cron run" — every row reads "NEVER LOGGED" until a follow-up PR wraps each handler in `withCronLog`. The page header states this explicitly so the empty table isn't misread as "all crons broken".
+- Sentry — when `SENTRY_AUTH_TOKEN` env is unset, the panel says "not configured" rather than fabricating an error count. Keeps the wiring decision visible.
+- RLS anomalies — `is_anomaly` only fires the simplest case (RLS-on + zero policies). Tables with policies that are too permissive aren't flagged; that's a separate audit.
+- Anthropic prior-24h delta — when there's no spend in either window, delta_pct is `null` (not 0%). The UI renders "—" for null rather than misleading zeros.
+
+**Verified:**
+- `git status` shows only v2 + migration + FIXES + MIGRATIONS edits. Zero existing admin files touched.
+- `npx tsc --noEmit` clean.
+- Page renders before M036 applied: cron rows show "NEVER LOGGED", RLS section shows the "run M036" banner, Anthropic falls back to direct `SUM(cost_usd)` query.
+
+**Why this should hold:** Health route is read-only across the board (no mutations, no schema dependencies beyond M036's two new objects). Each probe is independently failure-tolerant: any one of them can return `error` and the other five still render. The 60s cache means the dashboard doesn't hammer Stripe / Sentry / Postgres on every refresh.
+
+**Action required from Paul before Health surfaces real data:**
+1. Apply `M036-ADMIN-HEALTH-CONFIG.sql` in Supabase SQL Editor. Idempotent + verify queries at the bottom.
+2. (Optional, follow-up) wrap existing cron handlers in `withCronLog` so the Crons section starts populating. One-line change per handler.
 
 ---
 
