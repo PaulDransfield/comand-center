@@ -38,7 +38,7 @@ type IconName =
   | 'overview' | 'group' | 'financials' | 'operations'
   | 'pnl' | 'budget' | 'forecast'
   | 'revenue' | 'staff' | 'scheduling' | 'departments'
-  | 'invoices' | 'alerts' | 'settings'
+  | 'invoices' | 'alerts' | 'settings' | 'plan'
 
 // Spec § Sidebar — 6 primary items + Invoices + Alerts + Settings.
 const NAV: NavItem[] = [
@@ -157,6 +157,11 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
   const currentKey = useMemo(() => {
     if (activeKey) return activeKey
     const p = pathname ?? ''
+    // Utility-bar paths (Settings + Subscription) live below the main NAV
+    // and aren't in the array — match them by pathname directly so the
+    // highlight still works without each page passing activeKey.
+    if (p === '/settings' || p.startsWith('/settings/')) return 'settings'
+    if (p === '/upgrade'  || p.startsWith('/upgrade/'))  return 'upgrade'
     // Longest-prefix match so sub-nav highlights correctly.
     const matches = NAV.filter((n): n is Extract<NavItem, { kind: 'link' }> => n.kind === 'link')
       .filter(n => p === n.href || p.startsWith(n.href + '/'))
@@ -352,8 +357,28 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
         })}
       </nav>
 
-      {/* Utility: Settings */}
+      {/* Utility: Subscription + Settings.
+         FIXES §0oo (2026-04-28): added Subscription button. Page existed
+         at /upgrade but was only reachable via the AI-quota banner or a
+         PlanGate redirect — paying customers had no obvious nav entry to
+         manage their plan. */}
       <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.06)', padding: '6px 6px' }}>
+        <button
+          onClick={() => router.push('/upgrade')}
+          title={collapsed ? 'Subscription' : undefined}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: 9, width: '100%', padding: collapsed ? '7px 0' : '6px 10px',
+            background: (currentKey === 'upgrade') ? UX.indigoTint : 'transparent',
+            border: 'none', borderRadius: UX.r_md,
+            color: (currentKey === 'upgrade') ? 'white' : 'rgba(255,255,255,0.55)',
+            fontSize: UX.fsBody, cursor: 'pointer', textAlign: 'left' as const,
+            marginBottom: 2,
+          }}
+        >
+          <SidebarIcon name="plan" size={14} color={currentKey === 'upgrade' ? UX.indigoLight : 'rgba(255,255,255,0.5)'} />
+          {!collapsed && <span>Subscription</span>}
+        </button>
         <button
           onClick={() => router.push('/settings')}
           title={collapsed ? 'Settings' : undefined}
@@ -430,5 +455,6 @@ function SidebarIcon({ name, size = 14, color = 'currentColor' }: { name: IconNa
     case 'invoices':    return <svg {...common}><path d="M6 3h9l3 3v15l-3-2-3 2-3-2-3 2V3z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
     case 'alerts':      return <svg {...common}><path d="M6 9a6 6 0 1112 0c0 4 2 5 2 7H4c0-2 2-3 2-7z"/><path d="M10 20a2 2 0 004 0"/></svg>
     case 'settings':    return <svg {...common}><circle cx="12" cy="12" r="2.4"/><path d="M19.4 12.9a7.5 7.5 0 000-1.8l2-1.5-2-3.4-2.3.8a7.5 7.5 0 00-1.6-.9l-.3-2.4h-4l-.3 2.4a7.5 7.5 0 00-1.6.9l-2.3-.8-2 3.4 2 1.5a7.5 7.5 0 000 1.8l-2 1.5 2 3.4 2.3-.8a7.5 7.5 0 001.6.9l.3 2.4h4l.3-2.4a7.5 7.5 0 001.6-.9l2.3.8 2-3.4z"/></svg>
+    case 'plan':        return <svg {...common}><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h3"/></svg>
   }
 }

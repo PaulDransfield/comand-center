@@ -3,6 +3,24 @@ Last updated: 2026-04-27
 
 ---
 
+## 0oo. /upgrade page had no desktop sidebar entry (2026-04-28)
+
+**Symptom:** Paul noticed there was no obvious way to reach the subscription / upgrade page from the desktop sidebar nav. The page existed at `app/upgrade/page.tsx` and was reachable via:
+- Mobile nav (had it)
+- AskAI panel "Upgrade" link (when AI quota hit)
+- AiUsageBanner CTA (at 80%+ usage)
+- PlanGate auto-redirect (trial / past_due orgs)
+
+…but a paying customer on desktop with no usage warnings had no nav entry to manage their plan, change tier, or buy the AI Booster.
+
+**Fix:** added a "Subscription" button to `components/ui/SidebarV2.tsx` directly above the Settings button in the utility footer. Same visual treatment as Settings (button-style, not a top-level nav row). New 'plan' icon (credit-card-with-strap-line). Highlights when on `/upgrade` via an extension to `currentKey` that recognises utility-bar paths (`/settings`, `/upgrade`) directly so no per-page `activeKey` plumbing is needed.
+
+While I was in there, fixed an adjacent latent bug: the existing Settings button used `currentKey === 'settings'` for its highlight, but Settings was never in the `NAV` array, so the highlight only worked when a page explicitly passed `activeKey="settings"` to `AppShell`. Most pages don't pass it, so Settings highlight was inconsistently broken. The new pathname-direct match in `currentKey` fixes both.
+
+**Why this should hold:** sidebar utility entries that aren't in `NAV` now have a single explicit branch in `currentKey`. Adding another utility item (e.g. "Help") follows the same pattern: add the path check at the top of the `useMemo`. Top-level `NAV` entries are still the canonical place for primary navigation.
+
+---
+
 ## 0nn. Bundle analyzer wired + audit findings (2026-04-28)
 
 **Why:** External perf review (2026-04-26) suggested running `@next/bundle-analyzer` to find any heavy dependencies hiding in the shared First Load JS. Set up + ran the audit.
