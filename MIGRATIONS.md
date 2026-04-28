@@ -1,10 +1,17 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied · M036 pending
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 pending · M033 pending · M034 applied · M035 applied · M036 pending · M037 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M037 — Admin v2 Tools support (read-only SQL runner RPC)
+**File:** `M037-ADMIN-SQL-RUNNER.sql` (repo root)
+**Purpose:** part of FIXES.md §0aj (Admin Console Rebuild PR 9 — Tools tab). Adds `admin_run_sql(p_query TEXT, p_limit INTEGER) RETURNS JSONB`. Validates that the query starts with `SELECT / WITH / TABLE / VALUES / EXPLAIN`, rejects any embedded semicolon (multi-statement guard), rejects every write/DDL/control keyword as a whole word (INSERT, UPDATE, DELETE, MERGE, DROP, ALTER, CREATE, TRUNCATE, GRANT, COPY, DO, CALL, VACUUM, ANALYZE, LOCK, SET, BEGIN, COMMIT, etc.), then wraps in `SELECT * FROM (user_query LIMIT N) t` so the only valid output is a row-set. `STABLE` is NOT used because plpgsql with `EXECUTE` can't be marked STABLE/IMMUTABLE; `SECURITY DEFINER` + `SET search_path = public, pg_catalog`. Sets `statement_timeout=10s` + `lock_timeout=2s` per call so a runaway query can't wedge a Supabase connection.
+**Backwards compat:** /api/admin/v2/tools/sql gracefully degrades when the RPC is missing — surfaces a clear "M037 missing" banner rather than 500. JS-side regex validation is the primary defence; the RPC's checks are belt-and-braces.
+**Safety:** `CREATE OR REPLACE FUNCTION`, wrapped in `BEGIN; … COMMIT;`. EXECUTE granted only to `service_role` (REVOKE ALL FROM PUBLIC first). Smoke-test queries at the bottom of the file (paste each individually): two should succeed, two should fail with `forbidden keyword` / `multi-statement` errors.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M036 — Admin v2 Health support (cron_run_log + RLS-health RPC)
 **File:** `M036-ADMIN-HEALTH-CONFIG.sql` (repo root)

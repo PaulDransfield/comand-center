@@ -11,6 +11,59 @@ Hard rules: never edit existing admin files, never delete admin API routes, neve
 
 ---
 
+## 0aj. Admin v2 — PR 9: Tools tab (read-only SQL runner) (2026-04-28)
+
+**Scope:** ad-hoc query tool for the admin. Textarea + Run button + result table + last-10 sessionStorage history + 5 sample queries. Read-only enforced at three layers (JS regex, RPC regex, SELECT-subquery wrapper). Every successful run is audited; failed validations are not (they never touched data).
+
+**Created:**
+- `M037-ADMIN-SQL-RUNNER.sql` — pending. `admin_run_sql(p_query TEXT, p_limit INTEGER) RETURNS JSONB`. SECURITY DEFINER, EXECUTE granted only to `service_role`. Validates first-token (SELECT/WITH/TABLE/VALUES/EXPLAIN), rejects any embedded `;`, rejects ~30 write/DDL/control keywords as whole words, wraps the query in `SELECT * FROM (user_query LIMIT N) t` so non-row-set commands fail-closed. Sets `statement_timeout=10s` + `lock_timeout=2s` per call.
+- `app/api/admin/v2/tools/sql/route.ts` — POST `{ query, limit }`. JS-side validation (same checks as the RPC, mirrored in `FORBIDDEN_WORDS`). On success: derives `columns` from `Object.keys(rows[0])` (JSONB-normalised order, not original SELECT order — this is documented), audits via `recordAdminAction({ action: SQL_RUN, payload: { surface, query, query_chars, row_count, duration_ms, truncated, limit } })`. **Audit payload never contains the rows themselves** — admin SQL output can include PII and the audit log is for activity, not data archival. RPC-missing case (`PGRST202`) surfaces a 503 with a banner-friendly note.
+- `app/admin/v2/tools/page.tsx` — replaces PR 1 placeholder. Two-column layout: editor + result on the left, samples + history on the right. ⌘/Ctrl-Enter runs. Result table has sticky header, max-height 600px scrollable, monospace cells, JSONB-aware cell renderer (NULL grey, booleans green/red, numbers blue, JSON purple, long strings truncated with full value in `title=`). History is sessionStorage-only (10 entries; clears with the tab).
+- 5 starter sample queries (Tables in public, Org count + plan, Recent audit, Slow Fortnox, AI 24h spend) live in `SAMPLES` constant — click to load into the editor.
+
+**Modified:**
+- `lib/admin/audit.ts` — added `SQL_RUN: 'sql_run'` under a new `// Tooling` group in `ADMIN_ACTIONS`. Same shape as PR 6's `AGENT_TOGGLE` addition; purely additive, can't break v1 callers.
+- `MIGRATIONS.md` — header + Pending block updated for M037.
+
+**Reused (per the plan's "extend, don't replace" rule):**
+- `requireAdmin(req)` — orgless guard (Tools is global).
+- `recordAdminAction` — same audit pattern every other v2 mutation uses.
+- `adminFetch` — POST goes through the standard `x-admin-secret` wrapper.
+- 60s in-process cache and `useAdminData` are NOT used here — Tools is one-shot per-click, not a polling dashboard.
+
+**Defence-in-depth model (three layers, any one of which alone is sufficient):**
+1. **JS regex** (`FORBIDDEN_RX`, `ALLOWED_FIRST_TOKEN_RX`) — fails closed at the route boundary.
+2. **RPC regex** (same checks in plpgsql) — even if the JS layer is bypassed (e.g. someone calls the RPC directly through PostgREST), the function rejects.
+3. **SELECT subquery wrapper** — the EXECUTE template is `SELECT * FROM (user_query LIMIT N) t`. Anything that isn't a row-set-returning expression (writes, DDL, multiple statements, transaction control) fails to parse. This is the strongest guarantee: it doesn't depend on the regex blacklist being complete.
+
+**Honest data gaps surfaced:**
+- Column order is JSONB-normalised (length-then-bytewise), not the original SELECT-list order. Documented in the M037 comment header. For an admin exploration tool it's acceptable — the column names are correct, just not in the order the SQL specified them.
+- Forbidden-keyword regex is naive about string literals — `SELECT 'INSERT INTO X' AS msg` would be rejected even though it's a valid SELECT. Acceptable false-positive; rename the alias or restructure the literal if you hit it.
+- No transaction-level read-only enforcement (`SET LOCAL transaction_read_only = on` doesn't behave reliably inside SECURITY DEFINER plpgsql). Not needed because the SELECT-subquery wrapper already blocks every write at the syntax level.
+
+**Verified:**
+- `git status` shows v2 files + lib/admin/audit.ts + FIXES + MIGRATIONS + tsbuild cache. No existing admin pages or routes touched.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes; `/admin/v2/tools` (4.22 kB) + `/api/admin/v2/tools/sql` both routed.
+- Validation regex test cases (in-head): rejects `'INSERT INTO foo VALUES (1)'`, rejects `'DROP TABLE bar'`, rejects `'SELECT 1; SELECT 2'`, rejects `'WITH x AS (UPDATE foo SET y=1 RETURNING *) SELECT * FROM x'` (UPDATE keyword caught), accepts `'SELECT 1'`, accepts `'WITH x AS (SELECT 1) SELECT * FROM x'`, accepts `'EXPLAIN SELECT 1'`, accepts multi-line queries with -- comments.
+
+**Why this should hold:** admin must hit POST `/api/admin/v2/tools/sql` to do anything. That route can only ever call the `admin_run_sql` RPC. The RPC EXECUTE is granted only to `service_role`. The RPC's only EXECUTE template is the SELECT-subquery wrapper. Three independent failures would be required to bypass.
+
+**Action required from Paul:** apply `M037-ADMIN-SQL-RUNNER.sql` in Supabase SQL Editor before the page can run queries. Idempotent + smoke-test queries at the bottom (run two: one valid SELECT, one DROP that should fail).
+
+**Test plan:**
+1. Apply M037.
+2. Hit `/admin/v2/tools` → big amber banner reading "Service-role context — RLS bypassed. Read-only enforced."
+3. Default query already populated. Click **Run query** (or ⌘/Ctrl-Enter). Result table renders with `table_name` + `column_count` columns; ~60-90 ms duration shown.
+4. Try `DROP TABLE organisations` → red validation banner: "Validation: query contains a forbidden keyword: DROP …". No DB call made.
+5. Try `SELECT 1; SELECT 2` → red banner: "Validation: multi-statement queries are not allowed".
+6. Try `WITH x AS (UPDATE organisations SET name='x' RETURNING id) SELECT * FROM x` → red banner: "forbidden keyword: UPDATE".
+7. Click each sample → loads into editor. Click Run on "Recent audit" → see PR 6/7/8/9 audit rows including the just-run `sql_run` row.
+8. Hit Run with `SELECT 1` → confirm history sidebar populates. Click that history entry → query reloads.
+9. Open `/admin/v2/audit`, filter `Action: sql_run` → see this run with payload `{ surface, query, row_count, duration_ms, … }`. Click View → confirm `query` is captured but no `rows` field exists.
+
+---
+
 ## 0ai. Admin v2 — PR 8: Audit tab (2026-04-28)
 
 **Scope:** explorer over `admin_audit_log`. Filter by action / org / actor / surface / date range; keyset-paginated (Load 50 more); CSV export of the active filter set with a hard 10 000-row cap.

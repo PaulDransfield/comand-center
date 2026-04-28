@@ -28,6 +28,8 @@ export const ADMIN_ACTIONS = {
   AGENT_RUN:       'agent_run',
   AGENT_TOGGLE:    'agent_toggle',
   MASTER_SYNC:     'master_sync',
+  // Tooling
+  SQL_RUN:         'sql_run',
 } as const
 
 export type AdminAction = typeof ADMIN_ACTIONS[keyof typeof ADMIN_ACTIONS]
