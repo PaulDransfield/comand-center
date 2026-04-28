@@ -104,6 +104,39 @@ function KpiCard({ label, value, sub, deltaVal, ok, href }: any) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 // Next 14 requires any client component using useSearchParams to sit inside a
 // <Suspense> boundary or the static prerender bails out at build time.
+// Shared styles for the scheduling card (predictive + retrospective modes
+// use the same layout). FIXES §0ww.
+const schedCardLink: React.CSSProperties = {
+  display:        'flex',
+  flexDirection:  'column' as const,
+  justifyContent: 'space-between',
+  background:     UX.cardBg,
+  border:         `1px solid ${UX.border}`,
+  borderLeft:     `4px solid ${UX.greenInk}`,
+  borderRadius:   UX.r_lg,
+  padding:        '18px 20px',
+  textDecoration: 'none',
+  color:          'inherit',
+  cursor:         'pointer',
+  transition:     'box-shadow 0.15s',
+}
+const schedCardEyebrow: React.CSSProperties = {
+  fontSize:      10,
+  fontWeight:    500,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase' as const,
+  color:         UX.ink4,
+}
+const schedCardCta: React.CSSProperties = {
+  marginTop:    14,
+  display:      'inline-flex',
+  alignItems:   'center',
+  gap:          6,
+  color:        UX.greenInk,
+  fontSize:     13,
+  fontWeight:   500,
+}
+
 export default function DashboardPage() {
   return (
     <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>}>
@@ -418,9 +451,15 @@ function DashboardInner() {
         )}
 
         {/* Stale data warning — shown when the freshest loaded row is before
-            yesterday, meaning the hourly catchup hasn't synced recent sales. */}
+            yesterday, meaning the hourly catchup hasn't synced recent sales.
+            FIXES §0vv (2026-04-28): only trigger when viewing the CURRENT
+            period. Without this gate, navigating to last week / last month
+            falsely flags the data as stale because the displayed period's
+            data is legitimately N days old by definition. */}
         {(() => {
           if (!dataAsOf || loading) return null
+          const isCurrentPeriod = (viewMode === 'week' && weekOffset === 0) || (viewMode === 'month' && monthOffset === 0)
+          if (!isCurrentPeriod) return null
           const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
           if (dataAsOf >= yesterday) return null
           const daysOld = Math.floor((Date.now() - new Date(dataAsOf + 'T23:59:59Z').getTime()) / 86_400_000)
@@ -465,13 +504,14 @@ function DashboardInner() {
               On narrow viewports the grid wraps to a single column.
             */}
             {(() => {
-              // Labour-ratio framing: your CURRENT schedule projects to X%
-              // of revenue; the AI recommendation brings it to Y%. Operators
-              // read 30–35% as on-target so a Y in that band reads as a
-              // clear "yes, do this" signal.
-              //
-              // Sum across the suggestion window (week / 2 weeks / etc),
-              // matching how AiHoursReductionMap computes its weekly hero.
+              // Labour-ratio scheduling card. Two modes:
+              //   1. Current period + AI recommendation → predictive shift
+              //      (e.g. 47% → 35%, save X kr)
+              //   2. Past period → retrospective (labour was X% of Y%
+              //      target — could have saved Z kr by hitting target)
+              // Card always renders so the user has continuity across
+              // period navigation. FIXES §0ww (2026-04-28).
+              const isCurrentPeriod = (viewMode === 'week' && weekOffset === 0) || (viewMode === 'month' && monthOffset === 0)
               const aiSaving = Number(aiSched?.summary?.saving_kr ?? 0)
               const aiCutH   = Number(aiSched?.summary?.current_hours ?? 0) - Number(aiSched?.summary?.suggested_hours ?? 0)
               const sugg     = (aiSched?.suggested as any[] | undefined) ?? []
@@ -481,11 +521,17 @@ function DashboardInner() {
               const weekAi   = sugg.reduce((s, r) => s + Number(r.est_cost ?? 0), 0)
               const curPct   = weekRev > 0 ? (weekCur / weekRev) * 100 : null
               const aiPct    = weekRev > 0 ? (weekAi  / weekRev) * 100 : null
-              const hasSaving = aiSaving > 0 && curPct != null && aiPct != null
+              const hasPredictive = isCurrentPeriod && aiSaving > 0 && curPct != null && aiPct != null
+              // Retrospective metrics — actual labour for the displayed
+              // period (already computed for OverviewHero). We only show
+              // the retrospective card when there's actual revenue;
+              // closed/empty periods get nothing.
+              const hasRetrospective = !hasPredictive && totalRev > 0 && labourPct > 0
+              const showCard = hasPredictive || hasRetrospective
               return (
                 <div style={{
                   display:             'grid',
-                  gridTemplateColumns: hasSaving ? 'minmax(0, 1fr) minmax(280px, 360px)' : '1fr',
+                  gridTemplateColumns: showCard ? 'minmax(0, 1fr) minmax(280px, 360px)' : '1fr',
                   gap:                 12,
                   alignItems:          'stretch',
                   marginBottom:        12,
@@ -506,31 +552,16 @@ function DashboardInner() {
                     fmtKr={fmtKr}
                     fmtPct={fmtPct}
                   />
-                  {hasSaving && (
+
+                  {hasPredictive && (
                     <a
                       href="/scheduling"
-                      style={{
-                        display:        'flex',
-                        flexDirection:  'column' as const,
-                        justifyContent: 'space-between',
-                        background:     UX.cardBg,
-                        border:         `1px solid ${UX.border}`,
-                        borderLeft:     `4px solid ${UX.greenInk}`,
-                        borderRadius:   UX.r_lg,
-                        padding:        '18px 20px',
-                        textDecoration: 'none',
-                        color:          'inherit',
-                        cursor:         'pointer',
-                        transition:     'box-shadow 0.15s',
-                      }}
+                      style={schedCardLink}
                       onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)')}
                       onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
                     >
                       <div>
-                        <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: UX.ink4 }}>
-                          NEXT WEEK · LABOUR PROJECTION
-                        </div>
-                        {/* Current → AI ratio shift, the headline. */}
+                        <div style={schedCardEyebrow}>NEXT WEEK · LABOUR PROJECTION</div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
                           <span style={{ fontSize: 26, fontWeight: 500, color: UX.ink2, letterSpacing: '-0.02em' }}>
                             {Math.round(curPct!)}%
@@ -539,9 +570,7 @@ function DashboardInner() {
                           <span style={{ fontSize: 26, fontWeight: 500, color: UX.greenInk, letterSpacing: '-0.02em' }}>
                             {Math.round(aiPct!)}%
                           </span>
-                          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>
-                            of revenue
-                          </span>
+                          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>of revenue</span>
                         </div>
                         <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
                           Your current schedule projects to <span style={{ color: UX.ink2, fontWeight: 500 }}>{Math.round(curPct!)}%</span> labour.{' '}
@@ -552,20 +581,56 @@ function DashboardInner() {
                           {aiCutH > 0.5 && <span> · {Math.round(aiCutH * 10) / 10}h cut</span>}
                         </div>
                       </div>
-                      <div style={{
-                        marginTop:    14,
-                        display:      'inline-flex',
-                        alignItems:   'center',
-                        gap:          6,
-                        color:        UX.greenInk,
-                        fontSize:     13,
-                        fontWeight:   500,
-                      }}>
-                        Open scheduling
-                        <span aria-hidden style={{ fontSize: 14 }}>→</span>
-                      </div>
+                      <div style={schedCardCta}>Open scheduling <span aria-hidden style={{ fontSize: 14 }}>→</span></div>
                     </a>
                   )}
+
+                  {hasRetrospective && (() => {
+                    const periodLabel = viewMode === 'week' ? `WEEK ${curr.weekNum}` : currM.label.toUpperCase()
+                    const onTarget    = labourPct <= targetPct
+                    // Could-have-saved math: actual labour cost vs target labour cost.
+                    // target_cost = revenue × target%
+                    // missed = totalLabour - target_cost (positive = overspent vs target)
+                    const targetCost  = totalRev * (targetPct / 100)
+                    const couldSave   = Math.max(0, totalLabour - targetCost)
+                    const accent      = onTarget ? UX.greenInk : UX.amberInk
+                    return (
+                      <a
+                        href="/scheduling"
+                        style={{ ...schedCardLink, borderLeft: `4px solid ${accent}` }}
+                        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)')}
+                        onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
+                      >
+                        <div>
+                          <div style={schedCardEyebrow}>{periodLabel} · LABOUR vs TARGET</div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
+                            <span style={{ fontSize: 26, fontWeight: 500, color: accent, letterSpacing: '-0.02em' }}>
+                              {Math.round(labourPct)}%
+                            </span>
+                            <span style={{ fontSize: 12, color: UX.ink3 }}>
+                              vs <span style={{ color: UX.ink2, fontWeight: 500 }}>{Math.round(targetPct)}%</span> target
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
+                            {onTarget ? (
+                              <>Labour was on target — well done.</>
+                            ) : (
+                              <>Labour ran <span style={{ color: accent, fontWeight: 500 }}>{Math.round(labourPct - targetPct)}pp over target</span>.</>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
+                            {onTarget
+                              ? <>No saving missed for this period.</>
+                              : <>Could have saved <span style={{ color: accent, fontWeight: 500 }}>{fmtKr(couldSave)}</span> by hitting target.</>
+                            }
+                          </div>
+                        </div>
+                        <div style={{ ...schedCardCta, color: accent }}>
+                          Open scheduling <span aria-hidden style={{ fontSize: 14 }}>→</span>
+                        </div>
+                      </a>
+                    )
+                  })()}
                 </div>
               )
             })()}
