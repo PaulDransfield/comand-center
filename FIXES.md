@@ -3,6 +3,51 @@ Last updated: 2026-04-28
 
 ---
 
+## 0an. Overhead Review System — PR 1: schema + read APIs (2026-04-28)
+
+**Scope:** first PR of a 5-PR feature that surfaces non-essential overheads for owner review, persists their decisions, and projects savings on the dashboard. PR 1 ships only the schema + read endpoints — no detection logic yet, no UI yet. Reads return `table_missing: true` until M039 applies; once it does, they return correctly-shaped empty data until PR 2's worker writes flags.
+
+**Created:**
+- `M039-OVERHEAD-REVIEW.sql` — pending. Two tables: `overhead_classifications` (persistent decisions per supplier per business — `essential` or `dismissed`) + `overhead_flags` (append-only flag history per period, idempotent via UNIQUE on (business_id, source_upload_id, supplier_name_normalised, flag_type)). Both follow the M018 RLS pattern (`org_id = ANY(current_user_org_ids())`). Six indexes total — one per hot path (lookup, dismissed-projection, pending-queue, supersede-cleanup, defer-snooze, idempotency PK). CASCADE on source_upload_id + line_item_id auto-cleans on hard-delete; supersede cleanup is app-side in PR 2.
+- `app/api/overheads/flags/route.ts` — GET. Lists pending flags for `?business_id=` (or all if `?include_resolved=1`). Returns `{ flags, total_pending, total_monthly_savings_sek, table_missing }`. 500-row cap. Empty + `table_missing: true` when M039 hasn't applied.
+- `app/api/overheads/projection/route.ts` — GET. Pure-arithmetic what-if. Reads tracker_data for the period (source-of-truth per Session 13 invariant — never recomputes net_profit). Sums pending flags + already-dismissed-still-billing line items as the savings figure. Returns `{ period, current: { overheads_sek, revenue_sek, net_profit_sek, margin_pct }, projected: { overheads_sek, net_profit_sek, margin_pct }, savings: { total_sek, from_pending_flags, from_dismissed_still_billing }, pending_count }`. Sign convention via `lib/finance/conventions.ts::computeNetProfit + computeMarginPct` — does NOT introduce a parallel formula.
+
+**Modified:** `MIGRATIONS.md` (header + new M039 entry).
+
+**Reused (per the established pattern):**
+- `getRequestAuth(req)` from `lib/supabase/server.ts` — same auth path every other `/api/overheads/*` route uses (line-items, benchmarks, reconciliation, vat-projection).
+- `createAdminClient()` for service-role reads — RLS is belt-and-braces; route-level scoping (`.eq('org_id', auth.orgId)`) is the actual gate.
+- `unstable_noStore()` per the project-wide rule for live-data routes (memory: feedback_nextjs_fetch_cache).
+- `isMissingTable(err)` graceful degradation — same shape used in every recent v2 admin route (M035-M038).
+- `computeNetProfit` / `computeMarginPct` — single source of truth for finance math.
+
+**Honest data gaps surfaced:**
+- No supplier-name normalised column on `tracker_line_items`. PR 1's projection endpoint lower-cases + substring-matches the line's `label_sv`/`label_en` against the dismissed-classification's `supplier_name_normalised`. Sufficient for PR 1; PR 2 adds proper normalisation in the worker (or via a generated column on tracker_line_items if join performance becomes an issue).
+- Decisions are owner-only — `decided_by` field is a free-text TEXT column. Role-based access deferred per Paul's call.
+- 15% price-spike threshold isn't in the schema — it's a worker-side constant in PR 2. Per-business tunability deferred until real usage data.
+- Projection assumes line-items in tracker_line_items match the canonical Fortnox revenue/cost split. Non-Fortnox costs (manual tracker_data entries, PK-derived) won't get flagged. Documented limitation.
+
+**Verified:**
+- `git status` shows new SQL file + 2 new API routes + MIGRATIONS + FIXES + tsbuild cache. No existing files mutated.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes; both routes shipped: `/api/overheads/flags` + `/api/overheads/projection`.
+- Read endpoints return correctly-shaped empty payloads when called pre-M039 (verified by following the `isMissingTable` branch in code).
+
+**Why this should hold:** zero mutations on day one. RLS is in place from the migration itself, not deferred. The worker writing flags (PR 2) and the decide API (PR 3) both go through service-role with `decided_by` recorded — RLS read policies still keep customer A from seeing customer B's flags via any future read path.
+
+**Action required from Paul:** apply `M039-OVERHEAD-REVIEW.sql` in Supabase SQL Editor. Idempotent + verify queries at the bottom dump relation sizes, the index list, and the RLS policy list.
+
+**Test plan (after M039):**
+1. `curl /api/overheads/flags?business_id=<vero>` → `{ flags: [], total_pending: 0, total_monthly_savings_sek: 0, table_missing: false }`.
+2. `curl /api/overheads/projection?business_id=<vero>` → `{ current: { overheads_sek: <real>, ... }, projected: { same as current }, savings: { total_sek: 0, ... }, pending_count: 0 }`.
+3. Pre-M039 (theoretical, since you'll apply right away): both endpoints return `table_missing: true` + an empty payload, never 500.
+
+**Next PR (PR 2):** detection worker. Enqueues from /api/fortnox/apply, runs through the existing dispatcher/worker (M017 pattern), writes flags. AI explanation deferred to PR 4.
+
+---
+
+---
+
 ## Admin Console Rebuild (§0ab onwards)
 
 Multi-PR migration of the internal admin tooling (12 PRs, 4–6 weeks). Plan + rules in `Admin-Console-Rebuild-Plan.md`. New surface ships under `/admin/v2/*` and `/api/admin/v2/*`; old `/admin/*` stays untouched until the cut-over PR (PR 12).

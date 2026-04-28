@@ -1,12 +1,21 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 applied · M033 applied · M034 applied · M035 applied · M036 applied · M037 applied · M038 applied
+> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 applied · M033 applied · M034 applied · M035 applied · M036 applied · M037 applied · M038 applied · M039 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
 
-_(none — all queued migrations applied 2026-04-28; see "Applied — Sprint 1 + Admin v2 batch" below)_
+### M039 — Overhead review system (PR 1: schema only)
+**File:** `M039-OVERHEAD-REVIEW.sql` (repo root)
+**Purpose:** part of FIXES.md §0an (Overhead Review feature PR 1 of 5). Two related tables:
+  1. `overhead_classifications(org_id, business_id, supplier_name, supplier_name_normalised, status, decided_by, decided_at, reason, baseline_avg_sek, baseline_set_at, backfill)` — persistent decisions per supplier per business. status ∈ {`essential`, `dismissed`}. UNIQUE (business_id, supplier_name_normalised). `dismissed` = "I plan to cancel this" (forward-looking). `baseline_avg_sek` is snapshotted at decision time so the price-spike re-flag rule has a stable comparator.
+  2. `overhead_flags(org_id, business_id, source_upload_id, line_item_id, supplier_name, supplier_name_normalised, flag_type, reason, amount_sek, prior_avg_sek, period_year, period_month, surfaced_at, resolution_status, resolved_at, resolved_by, defer_until, ai_explanation, ai_confidence)` — append-only history of what the worker flagged. UNIQUE (business_id, source_upload_id, supplier_name_normalised, flag_type) makes the worker idempotent. CASCADE on source_upload_id + line_item_id cleans up automatically when an upload is hard-deleted; supersede (status change, not delete) is handled app-side in /api/fortnox/apply (extending the existing supersede cleanup).
+**Indexes:** `(business_id, supplier_name_normalised)` for the hot lookup, `(business_id, status) WHERE status='dismissed'` for projection, `(business_id, surfaced_at DESC) WHERE resolution_status='pending'` for the review queue, `(business_id, period_year, period_month)` for supersede cleanup, `(defer_until) WHERE resolution_status='deferred'` for the defer-snooze sweep.
+**RLS:** both tables get the M018 pattern — SELECT policy `org_id = ANY(current_user_org_ids())`. No INSERT/UPDATE policies; the only write paths are the worker (PR 2, service-role) and the decide API (PR 3, service-role with `decided_by` recorded from the session).
+**Backwards compat:** /api/overheads/flags + /api/overheads/projection (PR 1) degrade gracefully when M039 isn't applied — return empty + `table_missing: true` + a banner-friendly note rather than 500. Same shape as the migration-pending pattern used in M035/M036/M037/M038.
+**Safety:** `CREATE TABLE IF NOT EXISTS`, indexes IF NOT EXISTS, `DROP POLICY IF EXISTS` before `CREATE POLICY`. CHECK constraints on status/flag_type/resolution_status keep bad data out. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the end: relation sizes + index list + policy list.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ---
 
