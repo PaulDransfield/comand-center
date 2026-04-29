@@ -25,9 +25,10 @@ import { UX } from '@/lib/constants/tokens'
 import SyncIndicator from './SyncIndicator'
 
 interface Business {
-  id:   string
-  name: string
-  city: string | null
+  id:         string
+  name:       string
+  city:       string | null
+  org_number: string | null
 }
 
 type NavItem =
@@ -73,6 +74,8 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
   const [showBizMenu, setShowBizMenu] = useState(false)
   const [userName,    setUserName]    = useState('')
   const [alertCount,  setAlertCount]  = useState(0)
+  const [orgInfo,     setOrgInfo]     = useState<{ org_number: string | null; org_number_display: string | null } | null>(null)
+  const [copiedTick,  setCopiedTick]  = useState<boolean>(false)
   const bizMenuRef = useRef<HTMLDivElement | null>(null)
 
   // ── Hydrate collapse state from localStorage ───────────────────────────────
@@ -105,6 +108,15 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
       setSelected(biz)
       localStorage.setItem('cc_selected_biz', biz.id)
     }).catch(() => {})
+    // PR §0ax: load the org-level org_number once, used as the fallback
+    // display when the selected business has no per-restaurant org-nr.
+    fetch('/api/settings/company-info', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.organisation) setOrgInfo({
+        org_number: j.organisation.org_number,
+        org_number_display: j.organisation.org_number_display,
+      }) })
+      .catch(() => {})
   }, [])
 
   // ── Alerts count polling ──────────────────────────────────────────────────
@@ -238,6 +250,47 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
             </span>
             <span aria-hidden style={{ color: 'rgba(255,255,255,0.45)', fontSize: UX.fsMicro }}>▾</span>
           </button>
+
+          {/* PR §0ax: org-nr below the business name. Per-business value
+              wins; falls back to the SaaS-org's number for single-AB
+              customers. Click-to-copy for fast paste into other portals. */}
+          {(() => {
+            const bizOrgNr = selected?.org_number
+              ? `${selected.org_number.slice(0, 6)}-${selected.org_number.slice(6)}`
+              : null
+            const fallback = orgInfo?.org_number_display ?? null
+            const display  = bizOrgNr ?? fallback
+            const raw      = selected?.org_number ?? orgInfo?.org_number ?? null
+            if (!display || !raw) return null
+            return (
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(raw)
+                    setCopiedTick(true)
+                    setTimeout(() => setCopiedTick(false), 1500)
+                  } catch {}
+                }}
+                title="Click to copy organisationsnummer"
+                style={{
+                  marginTop:   4,
+                  padding:     '3px 9px',
+                  background:  'transparent',
+                  border:      'none',
+                  color:       copiedTick ? '#86efac' : 'rgba(255,255,255,0.45)',
+                  fontSize:    UX.fsMicro,
+                  fontFamily:  'ui-monospace, monospace',
+                  cursor:      'pointer',
+                  letterSpacing: '0.02em',
+                  textAlign:   'left' as const,
+                  width:       '100%',
+                  transition:  'color 0.15s',
+                }}
+              >
+                {copiedTick ? 'Copied ✓' : display}
+              </button>
+            )
+          })()}
           {showBizMenu && businesses.length > 0 && (
             <div style={{
               position: 'absolute' as const, top: 'calc(100% + 2px)', left: 10, right: 10,

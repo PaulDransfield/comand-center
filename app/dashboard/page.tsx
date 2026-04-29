@@ -7,6 +7,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { OverheadReviewCard } from '@/components/OverheadReviewCard'
+import { OrgNumberBanner } from '@/components/OrgNumberBanner'
 import dynamicImport from 'next/dynamic'
 // AskAI is a floating button + slide-in panel — only used after the user
 // clicks. Lazy-load it (FIXES §0ll) so its ~30 KB doesn't sit in this
@@ -521,6 +522,10 @@ function DashboardInner() {
             One consolidated view for both week and month — the chart's own
             W/M toggle drives viewMode state, so a single render path serves
             both. Spec: DESIGN.md § 1. Overview. */}
+        {/* PR §0ax: org-nr soft-banner. Self-hides when org_number is set
+            or when the owner dismissed it within the 30-day grace. */}
+        <OrgNumberBanner />
+
         {loading ? (
           <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
         ) : (

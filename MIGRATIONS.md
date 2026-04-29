@@ -1,12 +1,17 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-29 | M022–M041 all applied. No migrations pending.
+> Last updated: 2026-04-29 | M022–M041 all applied · M042 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
 
-_(none — all queued migrations applied 2026-04-28 / 2026-04-29.)_
+### M042 — Swedish organisationsnummer on organisations + businesses
+**File:** `M042-COMPANY-ORG-NUMBER.sql` (repo root)
+**Purpose:** part of FIXES.md §0ax. Adds `org_number TEXT` to both `organisations` and `businesses` (10-digit format, CHECK-constrained `^[0-9]{10}$`). Required at signup going forward; existing customers get a 30-day grace tracked via `organisations.org_number_grace_started_at` (defaults to now() at migration time). `businesses.org_number` is optional — used when a customer runs multiple restaurants under separate ABs; falls back to the parent organisation's number otherwise. Two indexes for fast org-nr lookup from the command palette.
+**Backwards compat:** all existing rows get `org_number = NULL` and a fresh `grace_started_at = now()`. Soft banner on the dashboard nudges them; hard-block fires after 30 days. New signups go through validation in `lib/sweden/orgnr.ts` (Luhn-style checksum) — invalid entries rejected by the API.
+**Safety:** `ADD COLUMN IF NOT EXISTS`, idempotent CHECK, `IF NOT EXISTS` indexes. Wrapped in `BEGIN; … COMMIT;`. Verification queries at the end show column metadata + constraint definitions + the count of organisations missing org_number (the audience for the soft banner).
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ---
 

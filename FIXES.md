@@ -3,6 +3,59 @@ Last updated: 2026-04-28
 
 ---
 
+## 0ax. Swedish organisationsnummer on customer accounts (2026-04-29)
+
+**Scope:** mandatory company registration number for all customers. Required at signup going forward; 30-day grace + soft banner for existing customers, hard-block after. Visible click-to-copy in the sidebar so the owner can grab it for third-party portals without hunting through settings.
+
+**Created:**
+- `M042-COMPANY-ORG-NUMBER.sql` — pending. `org_number TEXT` on both `organisations` and `businesses` with `CHECK (^[0-9]{10}$)`. Plus `org_number_set_at` + `org_number_grace_started_at` on `organisations` for the soft-banner countdown. Two indexes for org-nr lookup.
+- `lib/sweden/orgnr.ts` — `normaliseOrgNr` (strip non-digits), `formatOrgNr` (XXXXXX-XXXX), `isValidOrgNrChecksum` (Luhn variant), `validateOrgNr` (full validation chain returning `{ ok, value | error }`).
+- `app/api/settings/company-info/route.ts` — GET returns the current org-nr + grace status; POST validates + writes. Powers the settings page and the soft banner's grace countdown.
+- `components/OrgNumberBanner.tsx` — soft banner shown on the dashboard when `org_number IS NULL`. Dismissable per session within the 30-day grace; non-dismissable + redder copy after grace expires. CTA routes to `/settings/company`.
+- `app/settings/company/page.tsx` — dedicated page with input + Luhn validation, save button, "why we need this" rationale block.
+
+**Modified:**
+- `app/api/auth/signup/route.ts` — accepts `orgNumber` from the form, validates via `validateOrgNr`, writes `org_number + org_number_set_at` on the organisations row. New signups can't bypass.
+- `app/(auth)/login/page.tsx` — added the org-nr input to the signup form (required, monospace, with helper copy).
+- `app/dashboard/page.tsx` — renders `<OrgNumberBanner />` above the hero/labour/overhead row. Self-hides when set or dismissed within grace.
+- `components/ui/SidebarV2.tsx` — added `org_number` to the Business interface, fetches the org-level org_number once, displays it below the business-name picker. Click-to-copy via `navigator.clipboard` with a "Copied ✓" green tick for 1.5s. Per-business value wins; falls back to the org's number for single-AB customers.
+
+**Reused:**
+- `getRequestAuth` + `createAdminClient` from the standard lib.
+- The PageHero / AppShell / UX-token shape already used by every settings page.
+- The existing `/api/businesses` endpoint already returned `org_number` (column has been on businesses for a while; M042's `IF NOT EXISTS` is a safe no-op for that table while adding the new fields to organisations).
+
+**Honest gaps:**
+- **Hard-block isn't wired yet** — banner goes red after grace expires but no actual feature is blocked. Adding the gate is one middleware check; deferred to slice 2 because it changes auth-flow behaviour and deserves its own deploy.
+- **Sidebar picker doesn't show per-business org-nrs in the dropdown menu** — only the currently-selected business's number renders. Multi-AB customers would benefit from seeing each in the picker. Deferred.
+- **No Stripe `customer_tax_ids` plumbing yet** — when a paying customer's org-nr is set, Stripe should sync it as a tax ID for VAT-compliant invoices. Slice 2.
+- **No admin v2 surface for the field yet** — admin can run a SQL query against the v2 Tools runner; a dedicated card on customer-detail is slice 2.
+- **Sole-proprietor PII concern not enforced via column-level encryption** — for ABs the org-nr is public, for sole proprietors it's their personnummer (PII). For now both stored plaintext (consistent with how Stripe and most SaaS handle it). Could add column-level encryption later if compliance requires.
+
+**Verified:**
+- `git status` shows: 1 new SQL, 1 new lib, 1 new API route, 1 new component, 1 new page, 5 modified files, docs + tsbuild cache.
+- `npx tsc --noEmit` clean. `npm run build` passes; new routes shipped: `/api/settings/company-info`, `/settings/company`.
+- Validator mentally self-tested: `5560360793` passes Luhn (positions 0,2,4,6,8 × 2 with digit-sum + positions 1,3,5,7 × 1, sum mod 10 = 7, 10 − 7 mod 10 = 3, matches position 9). Random "5566778899" fails.
+
+**Action required from Paul:**
+1. Apply `M042-COMPANY-ORG-NUMBER.sql` in Supabase SQL Editor.
+2. Visit `/settings/company` and enter your own org-nr. The banner will disappear from the dashboard once set.
+
+**Test plan (after M042 + you've added your own org-nr):**
+1. Visit `/dashboard` → banner gone.
+2. Open the sidebar's business picker → org-nr renders below the business name in monospace, dimmed. Click it → copies to clipboard, brief "Copied ✓" green tick.
+3. Visit `/login?mode=signup` → leave org-nr empty → submit blocked. Enter `5566778899` (random) → "Checksum failed". Enter `5560360793` → accepts.
+4. Visit `/settings/company` → input pre-fills with the formatted version. Edit + Save → "Saved" tick.
+
+**Slice 2 (deferred):**
+- Hard-block middleware gate on grace-expired accounts
+- Per-business org-nr inputs in the businesses-edit modal
+- Stripe `customer_tax_ids` sync on subscription creation
+- Admin v2 customer-detail card showing the org-nr + grace state
+- Command palette search by org-nr
+
+---
+
 ## 0av. Overhead review extended to food costs (2026-04-28)
 
 **Scope:** extends the existing 5-PR overhead-review feature to also flag food-cost line items. Same UI, same review queue, same decision verbs (Essential / Plan to cancel / Defer 30d). New `FOOD` badge on each card distinguishes the two. Owner makes ONE decision per (supplier, category) pair — a "Konsultarvoden" classified essential as `other_cost` doesn't accidentally suppress an unrelated `food_cost` line with the same Swedish label.

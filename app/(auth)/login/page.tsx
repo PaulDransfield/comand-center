@@ -31,6 +31,7 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [orgName,  setOrgName]  = useState('')
+  const [orgNumber, setOrgNumber] = useState('')
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -60,7 +61,7 @@ function LoginForm() {
     const res  = await fetch('/api/auth/signup', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ email, password, fullName, orgName }),
+      body:    JSON.stringify({ email, password, fullName, orgName, orgNumber }),
     })
     const data = await res.json()
 
@@ -123,6 +124,26 @@ function LoginForm() {
             <div style={{ marginBottom:'14px' }}>
               <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Restaurant / company name</label>
               <input className="input" type="text" placeholder="Vero Italiano AB" value={orgName} onChange={e => setOrgName(e.target.value)} required />
+            </div>
+          )}
+          {mode === 'signup' && (
+            <div style={{ marginBottom:'14px' }}>
+              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Organisationsnummer</label>
+              <input
+                className="input"
+                type="text"
+                placeholder="556677-8899"
+                value={orgNumber}
+                onChange={e => setOrgNumber(e.target.value)}
+                required
+                inputMode="numeric"
+                pattern="[0-9\\-]{10,11}"
+                title="10 digits, optionally formatted as XXXXXX-XXXX"
+                style={{ fontFamily: 'ui-monospace, monospace' }}
+              />
+              <div style={{ fontSize:'11px', color:'var(--ink-4)', marginTop:'4px' }}>
+                Required for VAT-compliant invoicing. 10 digits, e.g. 556677-8899.
+              </div>
             </div>
           )}
           <div style={{ marginBottom:'14px' }}>

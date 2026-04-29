@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
+import { validateOrgNr }             from '@/lib/sweden/orgnr'
 
 export async function POST(req: NextRequest) {
   // Rate-limit by IP — prevents signup flooding / org spam.
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
 
   // Validate that all required fields are present
-  const { email, password, fullName, orgName } = body ?? {}
+  const { email, password, fullName, orgName, orgNumber } = body ?? {}
   if (!email || !password || !orgName) {
     return NextResponse.json(
       { error: 'Email, password, and organisation name are required.' },
@@ -37,6 +38,17 @@ export async function POST(req: NextRequest) {
   if (password.length < 8) {
     return NextResponse.json(
       { error: 'Password must be at least 8 characters.' },
+      { status: 400 }
+    )
+  }
+
+  // Org-nr is mandatory at signup going forward (M042). Existing accounts
+  // get a 30-day grace via the org_number_grace_started_at column; new
+  // signups must supply a valid value.
+  const orgNrCheck = validateOrgNr(orgNumber)
+  if (!orgNrCheck.ok) {
+    return NextResponse.json(
+      { error: `Organisationsnummer: ${orgNrCheck.error}` },
       { status: 400 }
     )
   }
@@ -84,12 +96,14 @@ export async function POST(req: NextRequest) {
   const { data: org, error: orgError } = await supabase
     .from('organisations')
     .insert({
-      name:        orgName,
-      slug:        uniqueSlug,
-      plan:        'trial',
-      trial_start: now.toISOString(),
-      trial_end:   trialEnd.toISOString(),
-      is_active:   true,
+      name:               orgName,
+      slug:               uniqueSlug,
+      plan:               'trial',
+      trial_start:        now.toISOString(),
+      trial_end:          trialEnd.toISOString(),
+      is_active:          true,
+      org_number:         orgNrCheck.value,         // 10-digit form, no dashes
+      org_number_set_at:  now.toISOString(),
     })
     .select('id')
     .single()
