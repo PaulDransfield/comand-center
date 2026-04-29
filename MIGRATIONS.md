@@ -1,19 +1,25 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-28 | M022 applied · M023 applied · M024 applied · M027 applied · M028 applied · M029 applied · M030 applied · M031 applied · M032 applied · M033 applied · M034 applied · M035 applied · M036 applied · M037 applied · M038 applied · M039 applied · M040 pending · M041 pending
+> Last updated: 2026-04-29 | M022–M041 all applied. No migrations pending.
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
 
-### M041 — Overhead review: extend to food costs (category column)
+_(none — all queued migrations applied 2026-04-28 / 2026-04-29.)_
+
+---
+
+## Recently applied — for reference
+
+### M041 — Overhead review: extend to food costs (category column) ✅ applied 2026-04-28
 **File:** `M041-OVERHEAD-FOOD-CATEGORY.sql` (repo root)
 **Purpose:** part of FIXES.md §0av (food-cost extension of overhead-review). Adds `category TEXT NOT NULL DEFAULT 'other_cost'` to both `overhead_classifications` and `overhead_flags`, with `CHECK (category IN ('other_cost', 'food_cost'))`. Replaces the auto-named UNIQUE constraints with named ones that include category: `overhead_classifications_natural_key` on `(business_id, supplier_name_normalised, category)` and `overhead_flags_idempotency_key` on `(business_id, source_upload_id, supplier_name_normalised, flag_type, category)`. Adds two indexes for fast category filtering.
 **Backwards compat:** existing rows default to category='other_cost'. The detection worker still works for callers that don't specify categories — `runOverheadReview()` defaults to scanning both. The decide and backfill endpoints upsert with explicit category. The flags GET surfaces `category` in the response.
 **Safety:** `ADD COLUMN IF NOT EXISTS`, defensive constraint drops via DO block, idempotent CHECK adds. Wrapped in `BEGIN; … COMMIT;`. Verification queries dump column metadata + constraint definitions + (post-migration) the new natural keys.
 **To apply:** open Supabase SQL Editor, paste file contents, run.
 
-### M040 — Integration state log + canonical status vocabulary
+### M040 — Integration state log + canonical status vocabulary ✅ applied 2026-04-28
 **File:** `M040-INTEGRATION-STATE-LOG.sql` (repo root)
 **Purpose:** part of FIXES.md §0at (sync-state centralization). Two pieces in one migration:
   1. CHECK constraint on `integrations.status` enforcing the canonical vocabulary `('connected', 'needs_reauth', 'error', 'retired')`. Rogue rows are coerced to `'error'` before the constraint is added so the migration never fails on existing data.
