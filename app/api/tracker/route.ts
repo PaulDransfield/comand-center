@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,9 +18,17 @@ export async function GET(req: NextRequest) {
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
+  // M043: tracker is finance — managers without can_view_finances are denied.
+  const finForbidden = requireFinanceAccess(auth)
+  if (finForbidden) return finForbidden
+
   const { searchParams } = new URL(req.url)
   const businessId = searchParams.get('business_id')
   const year       = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()))
+
+  // M043: per-business scope enforcement.
+  const bizForbidden = requireBusinessAccess(auth, businessId)
+  if (bizForbidden) return bizForbidden
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
@@ -150,12 +159,20 @@ export async function POST(req: NextRequest) {
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
+  // M043: tracker writes are finance — managers without can_view_finances denied.
+  const finForbidden = requireFinanceAccess(auth)
+  if (finForbidden) return finForbidden
+
   const body = await req.json()
   const { business_id, period_year, period_month, revenue, food_cost, staff_cost } = body
 
   if (!business_id || !period_year || !period_month) {
     return NextResponse.json({ error: 'business_id, period_year, period_month required' }, { status: 400 })
   }
+
+  // M043: per-business scope.
+  const bizForbidden = requireBusinessAccess(auth, business_id)
+  if (bizForbidden) return bizForbidden
 
   const db         = createAdminClient()
   const rev        = Number(revenue ?? 0)

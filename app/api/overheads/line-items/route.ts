@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +29,10 @@ export async function GET(req: NextRequest) {
   const month      = u.searchParams.get('month')
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+
+  // M043: finance gate.
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
   let q = db

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { decrypt }                   from '@/lib/integrations/encryption'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -13,8 +14,15 @@ export async function GET(req: NextRequest) {
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
+  // M043: forecast is finance — manager without can_view_finances denied.
+  const finForbidden = requireFinanceAccess(auth)
+  if (finForbidden) return finForbidden
+
   const businessId = new URL(req.url).searchParams.get('business_id')
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+
+  const bizForbidden = requireBusinessAccess(auth, businessId)
+  if (bizForbidden) return bizForbidden
 
   const db   = createAdminClient()
   const year = new Date().getFullYear()

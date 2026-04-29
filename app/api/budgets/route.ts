@@ -5,18 +5,21 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 const getAuth = getRequestAuth
 
 export async function GET(req: NextRequest) {
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const { searchParams } = new URL(req.url)
   const businessId = searchParams.get('business_id')
   const year       = parseInt(searchParams.get('year') ?? String(new Date().getFullYear()))
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
 
@@ -188,6 +191,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await getAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const body = await req.json()
   const { business_id, year, month, ...targets } = body
@@ -195,6 +199,7 @@ export async function POST(req: NextRequest) {
   if (!business_id || !year || !month) {
     return NextResponse.json({ error: 'business_id, year and month required' }, { status: 400 })
   }
+  const bizForbidden = requireBusinessAccess(auth, business_id); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
   const { data, error } = await db

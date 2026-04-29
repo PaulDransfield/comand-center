@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { expireDeferredFlags } from '@/lib/overheads/expire-deferred'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +39,10 @@ export async function GET(req: NextRequest) {
   if (!businessId) {
     return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   }
+
+  // M043: overheads is finance — manager without can_view_finances denied.
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
 

@@ -1,5 +1,70 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-28
+Last updated: 2026-04-29
+
+---
+
+## 0ba. Manager role — slice 2 (admin Users sub-tab + API guards) (2026-04-29)
+
+**Scope:** the parts of the manager-role feature that turn slice 1's spine into something usable. Admin v2 customer-detail Users sub-tab now provisions members (no SQL needed). Critical finance API routes now enforce role + business scope server-side, closing the curl-bypass gap from slice 1.
+
+**Created:**
+- `app/api/admin/v2/customers/[orgId]/users/[userId]/route.ts` — PATCH (edit role / business_ids / can_view_finances) + DELETE (remove member). Last-owner-removal blocked. Both audit via `recordAdminAction` with new `member_update` / `member_remove` action types.
+
+**Modified:**
+- `app/api/admin/v2/customers/[orgId]/users/route.ts` — extended GET to surface `business_ids`, `can_view_finances`, `invited_at`, `last_active_at`. Added POST that creates the Supabase auth user (via admin createUser), inserts the membership row with role + scope + finance flag, triggers a password-reset email so the user sets their own password. Idempotent upsert on `(org_id, user_id)` so re-adding a removed user just reactivates the row.
+- `components/admin/v2/CustomerUsers.tsx` — full rewrite. Table now shows role pill, scope summary ("all" or "N businesses"), finance flag, last-active. Per-row Edit + Remove buttons. "Add member" button opens a modal with email + role + scope checkboxes + finance toggle. Edit modal mirrors the same fields. Last-owner-removal protected client-side too.
+- `lib/auth/require-role.ts` — added `requireFinanceAccess(auth)` and `requireOwnerRole(auth)` helpers. Two-line gate per route, no path-aware lookup needed.
+- `lib/admin/audit.ts` — added `MEMBER_INVITE`, `MEMBER_UPDATE`, `MEMBER_REMOVE` to `ADMIN_ACTIONS`.
+- Server-side guards on the high-value finance routes:
+  - `app/api/tracker/route.ts` — GET + POST
+  - `app/api/forecast/route.ts` — GET
+  - `app/api/budgets/route.ts` — GET + POST
+  - `app/api/overheads/flags/route.ts` — GET
+  - `app/api/overheads/projection/route.ts` — GET
+  - `app/api/overheads/line-items/route.ts` — GET
+
+**Reused:**
+- `getRequestAuth` already returns `role` + `businessIds` + `canViewFinances` after slice 1.
+- `requireAdmin(req, { orgId })` for the admin Users-sub-tab routes.
+- `recordAdminAction` for the audit trail.
+- The PR 5 admin v2 sub-tab pattern.
+- Supabase `auth.admin.createUser` + `auth.resetPasswordForEmail` — built-in, no custom email infra.
+
+**Honest gaps surfaced:**
+- **Not every finance route is guarded.** I covered the primary GETs/POSTs. Other endpoints — `tracker/narrative`, `tracker/accountant-summary`, `budgets/{analyse,coach,feedback,generate}`, `overheads/{backfill,benchmarks,reconciliation,vat-projection,explain,flags/[id]/decide}` — still inherit the basic "any authed user" check. UI never links a manager there. Same straightforward-pattern follow-up sweep when needed.
+- **Aggregator routes (`/api/businesses`, `/api/group`) don't yet filter by `business_ids`.** Scoped manager would still see all businesses on these. Easy fix using `filterAccessibleBusinesses` from `lib/auth/permissions.ts`; deferred.
+- **Settings routes (`/api/settings/*`) aren't guarded server-side.** Page-level RoleGate covers the UI; API gate is the next belt-and-braces step.
+- **No middleware-level pre-render redirect.** RoleGate runs after mount → brief flash before forbidden content shows the fallback. Slice 3 work.
+- **Password-reset email depends on Supabase SMTP.** Response carries `reset_email_sent` so admin sees the truth. Concierge fallback: share a temporary password manually if email fails.
+- **No "view as manager" impersonation tool.** Existing customer-impersonation is owner-only. Extending to manager-impersonation is straightforward but deferred.
+
+**Verified:**
+- `git status` shows: 1 new route, 8 modified files, FIXES + tsbuild cache. Zero existing routes broken.
+- `npx tsc --noEmit` clean. `npm run build` passes.
+- Owner accounts: still see everything (`requireFinanceAccess` short-circuits on `role === 'owner'`).
+
+**Action required from Paul:** none new — M043 already applied. To test:
+1. `/admin/v2/customers/<orgId>` → Users sub-tab → "+ Add member".
+2. Fill email + role=manager + scope checkbox + finance toggle.
+3. Submit → response shows `reset_email_sent: true` if Supabase SMTP is wired. Manager checks email, sets password, signs in.
+4. Manager sees only the operations nav items. /tracker → "no access". `curl /api/tracker?business_id=…` → 403.
+
+**Test plan:**
+1. Create a test manager via the Users sub-tab. Scope to one business, finance off.
+2. Incognito window, log in as the manager.
+3. Sidebar: Overview, Revenue, Staff, Scheduling, Departments, Alerts. NOT Tracker, Budget, Forecast, Overheads, Invoices.
+4. `/tracker` → "no access".
+5. `curl GET /api/tracker?business_id=<scoped_business>` with manager's session → 403 (manager can't see finance regardless of scope).
+6. Switch role to owner via Edit modal → manager refreshes → full access restored.
+7. Toggle `can_view_finances=true` keeping role=manager → /tracker, /budget, /forecast accessible (settings/billing/AI still hidden).
+8. Remove the test member → they're locked out on next request.
+
+**Slice 3 (deferred):**
+- Sweep remaining finance routes for the guard
+- `filterAccessibleBusinesses` on aggregator routes
+- Middleware-level pre-render redirect
+- "View as manager" admin tool
+- Per-permission editor (vs the current role + can_view_finances)
 
 ---
 

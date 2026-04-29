@@ -71,3 +71,35 @@ export function requireBusinessAccess(auth: AuthOk, businessId: string | null | 
     error: 'Forbidden — this business is outside your assigned scope.',
   }, { status: 403 })
 }
+
+/**
+ * Lightweight gate for finance API routes. Easier to slot into existing
+ * routes than `requireRoleForRoute` because it doesn't reach for the
+ * pathname — just takes the auth subject and decides. Add right after
+ * the existing `getRequestAuth` call:
+ *
+ *   const auth = await getRequestAuth(req)
+ *   if (!auth) return ... 401
+ *   const finForbidden = requireFinanceAccess(auth)
+ *   if (finForbidden) return finForbidden
+ */
+export function requireFinanceAccess(auth: { role: string; canViewFinances: boolean }): NextResponse | null {
+  if (auth.role === 'owner') return null
+  if (auth.canViewFinances)  return null
+  return NextResponse.json({
+    error: 'Forbidden — finance pages require owner role or the can_view_finances permission.',
+    role:  auth.role,
+  }, { status: 403 })
+}
+
+/**
+ * Lightweight gate for owner-only routes (settings, billing, AI assistant,
+ * group view, admin). Mirrors `requireFinanceAccess` shape.
+ */
+export function requireOwnerRole(auth: { role: string }): NextResponse | null {
+  if (auth.role === 'owner') return null
+  return NextResponse.json({
+    error: 'Forbidden — this resource is owner-only.',
+    role:  auth.role,
+  }, { status: 403 })
+}

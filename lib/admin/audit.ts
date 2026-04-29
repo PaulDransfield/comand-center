@@ -35,6 +35,10 @@ export const ADMIN_ACTIONS = {
   SQL_RUN:               'sql_run',
   INVESTIGATION_SAVE:    'investigation_save',
   INVESTIGATION_DELETE:  'investigation_delete',
+  // Membership (M043 / FIXES §0az slice 2)
+  MEMBER_INVITE:         'member_invite',
+  MEMBER_UPDATE:         'member_update',
+  MEMBER_REMOVE:         'member_remove',
 } as const
 
 export type AdminAction = typeof ADMIN_ACTIONS[keyof typeof ADMIN_ACTIONS]
