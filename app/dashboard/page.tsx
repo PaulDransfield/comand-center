@@ -563,11 +563,14 @@ function DashboardInner() {
               const hasOverheadCard = !!overheadProj
                 && Number(overheadProj?.pending_count ?? 0) > 0
                 && Number(overheadProj?.savings?.total_sek ?? 0) > 0
-              const showCard = hasPredictive || hasRetrospective || hasOverheadCard
               return (
+                // FIXES §0aw: 3-column auto-fit grid so hero + labour + overhead
+                // cards sit as equal-size siblings instead of one wide hero +
+                // a tall right rail. minmax(280px, 1fr) wraps to 2-col then
+                // 1-col on narrower viewports.
                 <div style={{
                   display:             'grid',
-                  gridTemplateColumns: showCard ? 'minmax(0, 1fr) minmax(280px, 360px)' : '1fr',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
                   gap:                 12,
                   alignItems:          'stretch',
                   marginBottom:        12,
@@ -589,8 +592,6 @@ function DashboardInner() {
                     fmtPct={fmtPct}
                   />
 
-                  {showCard && (
-                    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
                   {hasPredictive && (
                     <a
                       href="/scheduling"
@@ -671,8 +672,6 @@ function DashboardInner() {
                   })()}
 
                   {hasOverheadCard && <OverheadReviewCard data={overheadProj} />}
-                    </div>
-                  )}
                 </div>
               )
             })()}
@@ -755,113 +754,104 @@ function OverviewHero({
   aiSaving,
   fmtKr, fmtPct,
 }: any) {
-  const isWeek = viewMode === 'week'
+  const isWeek  = viewMode === 'week'
   const eyebrow = isWeek
-    ? `THIS WEEK · ${curr.label ?? ''}`
-    : `THIS MONTH · ${currM.label ?? ''}`
+    ? `THIS WEEK · ${(curr.label ?? '').toUpperCase()}`
+    : `THIS MONTH · ${(currM.label ?? '').toUpperCase()}`
 
-  // Revenue delta vs previous period.
   const revDelta = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
-  const revTone: 'good' | 'bad' | 'neutral' =
-    revDelta == null ? 'neutral' : revDelta >= 0 ? 'good' : 'bad'
+  const margin   = Math.max(0, totalRev - totalLabour)
 
-  // Labour shape — "lean" = at or under target, "tight" = ≤ 5pp over, "hot" = > 5pp over.
-  const labourState =
-    totalRev <= 0 || labourPct == null       ? 'unknown'
-    : labourPct <= targetPct                 ? 'lean'
-    : labourPct <= targetPct + 5             ? 'tight'
-    :                                          'hot'
+  // Tone the headline number on revenue movement.
+  const revTone =
+    revDelta == null ? UX.ink2 :
+    revDelta >= 0    ? UX.greenInk :
+                       UX.redInk
+  const revArrow = revDelta == null ? '' : revDelta >= 0 ? '↑' : '↓'
+  const revPct   = revDelta == null ? null : Math.abs(Math.round(revDelta * 10) / 10)
 
-  // Headline construction — keep to a single sentence, ≤ 14 words target.
-  const headline = (() => {
-    if (totalRev <= 0) {
-      return (
-        <span>
-          Waiting on today's sync — revenue hasn't landed yet.
-        </span>
-      )
-    }
+  const labourState: 'lean' | 'tight' | 'hot' | 'unknown' =
+    totalRev <= 0 || labourPct == null ? 'unknown'
+    : labourPct <= targetPct           ? 'lean'
+    : labourPct <= targetPct + 5       ? 'tight'
+    :                                    'hot'
+  const labourColor =
+    labourState === 'lean'  ? UX.greenInk :
+    labourState === 'tight' ? UX.amberInk :
+    labourState === 'hot'   ? UX.redInk :
+                              UX.ink2
+
+  // Body sentence — single line, mirrors the labour/overhead card body.
+  const body = (() => {
+    if (totalRev <= 0) return <>Waiting on today's sync — revenue hasn't landed yet.</>
     if (revDelta != null) {
-      const sign = revDelta >= 0 ? '+' : ''
-      const deltaText = `${sign}${Math.round(revDelta * 10) / 10}%`
-      const deltaSpan = (
-        <span style={{
-          color: revTone === 'good' ? UX.greenInk : revTone === 'bad' ? UX.redInk : UX.ink1,
-          fontWeight: UX.fwMedium,
-        }}>
-          {deltaText}
-        </span>
-      )
       const direction = revDelta >= 0 ? 'ahead of' : 'behind'
       const ref       = isWeek ? 'last week' : 'last month'
-      const labourTail =
-        labourState === 'lean'  ? <>, labour running <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>lean</span>.</> :
-        labourState === 'tight' ? <>, labour tight at <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{fmtPct(labourPct)}</span>.</> :
-        labourState === 'hot'   ? <>, labour <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{fmtPct(labourPct)}</span> vs {targetPct}% target.</> :
-                                  <>.</>
-      return <span>Trading {deltaSpan} {direction} {ref}{labourTail}</span>
+      return (
+        <>
+          {direction === 'ahead of' ? 'Up' : 'Down'} {revPct}% on {ref}.
+          {labourState !== 'unknown' && (
+            <> Labour <span style={{ color: labourColor, fontWeight: 500 }}>{fmtPct(labourPct)}</span>{' '}
+              {labourState === 'lean'  ? <>(target {targetPct}%)</> :
+               labourState === 'tight' ? <>vs {targetPct}% target</> :
+                                         <>vs {targetPct}% target</>}.
+            </>
+          )}
+        </>
+      )
     }
-    // No prev-period baseline — state the absolute figures.
     return (
-      <span>
-        Revenue <span style={{ fontWeight: UX.fwMedium }}>{fmtKr(totalRev)}</span>
-        , margin <span style={{ fontWeight: UX.fwMedium }}>{fmtKr(Math.max(0, totalRev - totalLabour))}</span> this {isWeek ? 'week' : 'month'}.
-      </span>
+      <>
+        Margin <span style={{ fontWeight: 500 }}>{fmtKr(margin)}</span> this {isWeek ? 'week' : 'month'}.
+      </>
     )
   })()
 
-  // Context — one line: hours, rev/hour, and AI saving if any.
-  const contextParts: string[] = []
-  if (totalHours > 0)        contextParts.push(`${Math.round(totalHours)}h worked`)
-  if (revPerHour > 0)        contextParts.push(`${fmtKr(revPerHour)}/hr`)
-  if (aiSaving > 0)          contextParts.push(`AI sees ${fmtKr(aiSaving)} save next week`)
-  const context = contextParts.length ? contextParts.join(' · ') : undefined
-
-  // Right slot — 3 stats, per spec.
-  const margin = Math.max(0, totalRev - totalLabour)
-  const labourDelta = prevLabour > 0 ? ((totalLabour - prevLabour) / prevLabour) * 100 : null
-  const prevMargin  = prevRev - prevLabour
-  const marginDelta = prevMargin > 0 ? ((margin - prevMargin) / prevMargin) * 100 : null
-  const fmtDelta = (d: number | null): string | undefined =>
-    d == null ? undefined : `${d >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(d * 10) / 10)}%`
-
-  // Labour delta is inverted — lower is better for the business.
-  const labourTone: 'good' | 'bad' | 'neutral' =
-    labourDelta == null ? 'neutral' : labourDelta <= 0 ? 'good' : 'bad'
-  const marginTone: 'good' | 'bad' | 'neutral' =
-    marginDelta == null ? 'neutral' : marginDelta >= 0 ? 'good' : 'bad'
-
-  const stats = [
-    {
-      label: 'Revenue',
-      value: totalRev > 0 ? fmtKr(totalRev) : '—',
-      delta: fmtDelta(revDelta),
-      deltaTone: revTone as 'good' | 'bad' | 'neutral',
-      sub: prevRev > 0 ? `vs ${fmtKr(prevRev)}` : undefined,
-    },
-    {
-      label: 'Labour',
-      value: totalLabour > 0 ? fmtKr(totalLabour) : '—',
-      delta: fmtDelta(labourDelta),
-      deltaTone: labourTone,
-      sub: labourPct != null && totalRev > 0 ? fmtPct(labourPct) : undefined,
-    },
-    {
-      label: 'Margin',
-      value: totalRev > 0 ? fmtKr(margin) : '—',
-      delta: fmtDelta(marginDelta),
-      deltaTone: marginTone,
-      sub: totalRev > 0 ? fmtPct((margin / totalRev) * 100) : undefined,
-    },
-  ]
+  // Footer — compact stat strip, dashed top-border like the other cards.
+  const footerParts: string[] = []
+  if (totalHours > 0) footerParts.push(`${Math.round(totalHours)}h worked`)
+  if (revPerHour > 0) footerParts.push(`${fmtKr(revPerHour)}/hr`)
+  if (totalRev > 0)   footerParts.push(`${fmtKr(margin)} margin`)
+  const footer = footerParts.join(' · ')
 
   return (
-    <PageHero
-      eyebrow={eyebrow}
-      headline={headline}
-      context={context}
-      right={<SupportingStats items={stats} />}
-    />
+    <div
+      style={{
+        display:        'flex',
+        flexDirection:  'column' as const,
+        justifyContent: 'space-between',
+        background:     UX.cardBg,
+        border:         `1px solid ${UX.border}`,
+        borderLeft:     `4px solid ${revTone}`,
+        borderRadius:   UX.r_lg,
+        padding:        '18px 20px',
+        minHeight:      0,
+      }}
+    >
+      <div>
+        <div style={schedCardEyebrow}>{eyebrow}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
+          <span style={{ fontSize: 26, fontWeight: 500, color: revTone, letterSpacing: '-0.02em' }}>
+            {totalRev > 0 ? fmtKr(totalRev) : '—'}
+          </span>
+          {revPct != null && (
+            <span style={{ fontSize: 14, color: revTone, fontWeight: 500 }}>
+              {revArrow} {revPct}%
+            </span>
+          )}
+          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>revenue</span>
+        </div>
+        <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
+          {body}
+        </div>
+        {footer && (
+          <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
+            {footer}
+            {aiSaving > 0 && <span> · AI sees <span style={{ color: UX.greenInk, fontWeight: 500 }}>{fmtKr(aiSaving)}</span></span>}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
