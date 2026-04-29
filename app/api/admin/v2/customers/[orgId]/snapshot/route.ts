@@ -28,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: { orgId: strin
 
   const [orgRes, bizRes, uploadsRes, aiTodayRes, aiMonthRes, auditRes] = await Promise.all([
     db.from('organisations')
-      .select('id, name, plan, is_active, trial_end, created_at, billing_email, stripe_customer_id, stripe_subscription_id')
+      .select('id, name, plan, is_active, trial_end, created_at, billing_email, stripe_customer_id, stripe_subscription_id, org_number, org_number_set_at, org_number_grace_started_at')
       .eq('id', orgId)
       .maybeSingle(),
     db.from('businesses')
@@ -78,6 +78,9 @@ export async function GET(req: NextRequest, { params }: { params: { orgId: strin
       stripe_customer_id:     orgRes.data.stripe_customer_id,
       stripe_subscription_id: orgRes.data.stripe_subscription_id,
       mrr_sek:                plan.price_sek ?? 0,
+      org_number:             orgRes.data.org_number ?? null,
+      org_number_set_at:      orgRes.data.org_number_set_at ?? null,
+      org_number_grace_started_at: orgRes.data.org_number_grace_started_at ?? null,
     },
     businesses:        bizRes.data ?? [],
     recent_uploads:    uploadsRes.data ?? [],

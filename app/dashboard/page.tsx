@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
 import { OverheadReviewCard } from '@/components/OverheadReviewCard'
 import { OrgNumberBanner } from '@/components/OrgNumberBanner'
+import { OrgNumberGate } from '@/components/OrgNumberGate'
 import dynamicImport from 'next/dynamic'
 // AskAI is a floating button + slide-in panel — only used after the user
 // clicks. Lazy-load it (FIXES §0ll) so its ~30 KB doesn't sit in this
@@ -464,6 +465,7 @@ function DashboardInner() {
 
   return (
     <AppShell>
+      <OrgNumberGate>
       <div className="page-wrap">
 
         {/* ── Upgrade banner ──────────────────────────────────────────────── */}
@@ -742,6 +744,7 @@ function DashboardInner() {
           depts?.summary ? `Departments: ${(depts.departments ?? []).map((d: any) => `${d.name} ${d.revenue > 0 ? fmtKr(d.revenue) : 'no revenue'}`).join(', ')}` : '',
         ].filter(Boolean).join('\n') : 'No business selected'}
       />
+      </OrgNumberGate>
     </AppShell>
   )
 }

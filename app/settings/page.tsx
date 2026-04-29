@@ -153,10 +153,21 @@ export default function SettingsPage() {
   async function saveBizEdit() {
     if (!editingBiz?.id) return
     try {
+      // Normalise org_number client-side: strip non-digits. Server validates
+      // length + checksum and rejects if bad.
+      const orgNumber = editingBiz.org_number != null
+        ? String(editingBiz.org_number).replace(/\D/g, '') || null
+        : null
       const res = await fetch('/api/businesses/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: editingBiz.id, name: editingBiz.name, city: editingBiz.city, type: editingBiz.type }),
+        body: JSON.stringify({
+          business_id: editingBiz.id,
+          name: editingBiz.name,
+          city: editingBiz.city,
+          type: editingBiz.type,
+          org_number: orgNumber,
+        }),
       })
       if (res.ok) {
         setBusinesses(prev => prev.map(b => b.id === editingBiz.id ? { ...b, ...editingBiz } : b))
@@ -243,6 +254,20 @@ export default function SettingsPage() {
                           <select value={editingBiz.type ?? 'restaurant'} onChange={e => setEditingBiz({...editingBiz, type: e.target.value})} style={S.input}>
                             {RESTAURANT_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
                           </select>
+                        </div>
+                        <div style={{ marginBottom: 12 }}>
+                          <label style={S.label}>Organisationsnummer (optional)</label>
+                          <input
+                            value={editingBiz.org_number ?? ''}
+                            onChange={e => setEditingBiz({...editingBiz, org_number: e.target.value})}
+                            placeholder="556677-8899"
+                            inputMode="numeric"
+                            style={{ ...S.input, fontFamily: 'ui-monospace, monospace' }}
+                          />
+                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                            Only needed when this restaurant is its own legal entity (separate AB).
+                            Leave blank to inherit the parent organisation's number.
+                          </div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button onClick={() => saveBizEdit()} style={S.btn}>Save changes</button>

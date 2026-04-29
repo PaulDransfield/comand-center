@@ -65,6 +65,16 @@ export async function POST(req: NextRequest) {
   }
 
   const db = createAdminClient()
+
+  // Need stripe_customer_id for the Stripe sync below — fetch alongside the
+  // update target. Single round-trip: read first, then conditional update.
+  const { data: orgRow, error: readErr } = await db
+    .from('organisations')
+    .select('stripe_customer_id')
+    .eq('id', auth.orgId)
+    .maybeSingle()
+  if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
+
   const { error } = await db
     .from('organisations')
     .update({
@@ -75,9 +85,35 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Push the org-nr to Stripe so future invoices carry it as metadata.
+  // Best-effort: a Stripe outage shouldn't block the owner from setting
+  // the field locally. Failure logs to console + Sentry but the response
+  // still reports success on our side.
+  let stripeSynced = false
+  if (orgRow?.stripe_customer_id && process.env.STRIPE_SECRET_KEY) {
+    try {
+      const Stripe = (await import('stripe')).default
+      const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' as any })
+      await stripe.customers.update(orgRow.stripe_customer_id, {
+        metadata: {
+          org_number:         check.value,
+          org_number_display: formatOrgNr(check.value),
+          org_number_set_at:  new Date().toISOString(),
+        },
+      })
+      stripeSynced = true
+    } catch (e: any) {
+      // Common reasons: Stripe customer was deleted, key rotated, network blip.
+      // None of these should block the owner — we record the field locally
+      // and Stripe sync can be retried via "save again" later.
+      console.warn('[company-info] Stripe metadata sync failed:', e?.message)
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     org_number:         check.value,
     org_number_display: formatOrgNr(check.value),
+    stripe_synced:      stripeSynced,
   })
 }

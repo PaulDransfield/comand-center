@@ -15,6 +15,9 @@ interface SnapshotResponse {
     billing_email: string | null
     stripe_customer_id: string | null; stripe_subscription_id: string | null
     mrr_sek: number
+    org_number: string | null
+    org_number_set_at: string | null
+    org_number_grace_started_at: string | null
   }
   businesses: Array<{ id: string; name: string; city: string | null; is_active: boolean; created_at: string }>
   recent_uploads: Array<{ id: string; business_id: string; doc_type: string; status: string; period_year: number; period_month: number | null; applied_at: string | null; created_at: string }>
@@ -33,6 +36,26 @@ export function CustomerSnapshot({ orgId, onLoaded }: { orgId: string; onLoaded?
   if (error)   return <ErrorBox text={error} />
   if (!data)   return <Loading text="No data" />
 
+  // Org-nr grace state — same math as /api/settings/company-info but
+  // computed client-side from the snapshot data so we don't need a
+  // second round-trip.
+  const orgNrFmt = data.org.org_number
+    ? `${data.org.org_number.slice(0, 6)}-${data.org.org_number.slice(6)}`
+    : null
+  const graceStarted = data.org.org_number_grace_started_at
+    ? new Date(data.org.org_number_grace_started_at).getTime()
+    : 0
+  const graceEnds = graceStarted + 30 * 24 * 60 * 60 * 1000
+  const graceExpired = !data.org.org_number && graceStarted > 0 && Date.now() >= graceEnds
+  const orgNrTone: KpiStat['tone'] = data.org.org_number
+    ? 'good'
+    : graceExpired ? 'bad' : 'warn'
+  const orgNrSub = data.org.org_number
+    ? (data.org.org_number_set_at ? `set ${fmtDate(data.org.org_number_set_at)}` : 'set')
+    : graceExpired
+      ? 'grace expired'
+      : `${Math.max(0, Math.ceil((graceEnds - Date.now()) / (24 * 60 * 60 * 1000)))} days remaining`
+
   const kpis: KpiStat[] = [
     { label: 'MRR',           value: data.org.mrr_sek > 0 ? `${data.org.mrr_sek.toLocaleString('en-GB').replace(/,/g, ' ')} kr` : '—', tone: 'good' },
     { label: 'Businesses',    value: String(data.businesses.length), sub: `${data.businesses.filter(b => b.is_active).length} active` },
@@ -40,6 +63,7 @@ export function CustomerSnapshot({ orgId, onLoaded }: { orgId: string; onLoaded?
     { label: 'AI cost (mo)',  value: `${data.ai.monthly_cost_sek.toFixed(2)} kr`, sub: 'this calendar month' },
     { label: 'Created',       value: fmtDate(data.org.created_at) },
     { label: 'Trial end',     value: data.org.trial_end ? fmtDate(data.org.trial_end) : '—', tone: data.org.trial_end && data.org.plan === 'trial' ? 'warn' : 'neutral' },
+    { label: 'Org-nr',        value: orgNrFmt ?? '—', sub: orgNrSub, tone: orgNrTone },
   ]
 
   return (

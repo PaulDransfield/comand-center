@@ -52,29 +52,41 @@ export async function GET(req: NextRequest) {
   const db  = createAdminClient()
 
   // ── Customers ──────────────────────────────────────────────────────
+  // Three match types:
+  //   1. UUID-shaped query → id.eq exact
+  //   2. 10-digit numeric query → org_number exact (paste from external tool)
+  //   3. otherwise → name ilike substring
   let custQ = db.from('organisations')
-                .select('id, name, plan, created_at')
+                .select('id, name, plan, org_number, created_at')
                 .order('created_at', { ascending: false })
                 .limit(PER_SECTION)
   if (q.length > 0) {
-    // org-name ilike OR id-prefix match (admins routinely paste UUIDs)
-    if (q.length >= 8 && /^[0-9a-f-]+$/i.test(q)) {
+    const digitsOnly = q.replace(/\D/g, '')
+    if (q.length >= 8 && /^[0-9a-f-]+$/i.test(q) && q.includes('-')) {
+      // UUID
       custQ = db.from('organisations')
-                .select('id, name, plan, created_at')
+                .select('id, name, plan, org_number, created_at')
                 .or(`name.ilike.%${q}%,id.eq.${q}`)
+                .limit(PER_SECTION)
+    } else if (digitsOnly.length === 10) {
+      // Looks like a Swedish org-nr (10 digits, possibly with dash)
+      custQ = db.from('organisations')
+                .select('id, name, plan, org_number, created_at')
+                .or(`name.ilike.%${q}%,org_number.eq.${digitsOnly}`)
                 .limit(PER_SECTION)
     } else {
       custQ = db.from('organisations')
-                .select('id, name, plan, created_at')
+                .select('id, name, plan, org_number, created_at')
                 .ilike('name', `%${q}%`)
                 .limit(PER_SECTION)
     }
   }
   const { data: custRows, error: custErr } = await custQ
   const customers = !custErr && custRows ? custRows.map((r: any) => ({
-    id:   r.id,
-    name: r.name ?? r.id.slice(0, 8),
-    plan: r.plan ?? null,
+    id:         r.id,
+    name:       r.name ?? r.id.slice(0, 8),
+    plan:       r.plan ?? null,
+    org_number: r.org_number ?? null,
   })) : []
 
   // ── Saved investigations ──────────────────────────────────────────

@@ -3,6 +3,61 @@ Last updated: 2026-04-28
 
 ---
 
+## 0ay. Org-number slice 2 — hard-block, Stripe sync, admin surface, palette search, per-business edit (2026-04-29)
+
+**Scope:** completes the org-nr feature. After 30-day grace expires, the dashboard becomes a full-page "add your org-nr" lockout. Saving an org-nr also pushes to Stripe customer metadata so future invoices carry it. Admin v2 sees the field on customer-detail. Command palette searches by org-nr. Settings → Businesses lets you set per-restaurant org-nrs.
+
+**Created:**
+- `components/OrgNumberGate.tsx` — full-page lockout component. Wraps `<AppShell>` content on the dashboard. Fetches `/api/settings/company-info`, renders children if set or in-grace, else replaces with a yellow CTA card directing to `/settings/company`. Brief flash before fetch resolves; acceptable for the rare grace-expired state.
+
+**Modified:**
+- `app/dashboard/page.tsx` — wraps the `<AppShell>` body in `<OrgNumberGate>`.
+- `app/api/settings/company-info/route.ts` — POST now also pushes `{ org_number, org_number_display, org_number_set_at }` to the Stripe customer's metadata when `stripe_customer_id` exists. Best-effort: a Stripe outage doesn't block the local save. Response carries `stripe_synced: bool` so the UI can show confirmation later.
+- `app/api/admin/v2/search/route.ts` — customer search now matches on `org_number` when the query is exactly 10 digits (after stripping non-digits). UUID match unchanged. Response includes `org_number` per customer.
+- `components/admin/v2/CommandPalette.tsx` — customer rows display the org-nr next to the name (monospace, muted) when present.
+- `app/api/admin/v2/customers/[orgId]/snapshot/route.ts` — selects + returns `org_number, org_number_set_at, org_number_grace_started_at` on the org snapshot.
+- `components/admin/v2/CustomerSnapshot.tsx` — adds an "Org-nr" KPI tile showing the formatted number, set/grace state, with tone (good if set, warn if in grace, bad if grace expired).
+- `app/settings/page.tsx` — businesses-edit modal gains an Organisationsnummer field with monospace input + helper copy. Strips non-digits client-side before submit.
+- `app/api/businesses/update/route.ts` — accepts `org_number` in the patch, validates via `validateOrgNr` from `lib/sweden/orgnr.ts`. Empty string / null clears the field. CHECK constraint at the DB layer is the final guard.
+
+**Reused:**
+- `lib/sweden/orgnr.ts` from slice 1 — validator, normaliser, formatter.
+- `getRequestAuth`, `createAdminClient`, `validateOrgNr` standard imports.
+- The PageHero / AppShell / settings-style shape — UX consistent with slice 1.
+- `process.env.STRIPE_SECRET_KEY` — same env var the rest of the Stripe surface uses.
+
+**Honest gaps surfaced:**
+- **Gate only wraps the dashboard.** Other pages (financials, scheduling, departments) don't have the gate. A grace-expired user can still navigate to those if they bookmark. Could move to AppShell-level wrapping or middleware for full coverage; deferred.
+- **Stripe sync is metadata-only.** It doesn't create a Stripe `tax_id` (SE VAT format `SE${orgNr}01`) — that requires the customer to be VAT-registered, which we can't assume. Metadata is universal and gets included on invoices via Stripe's display rules. Adding a real `tax_id` is one more line of code for VAT-registered customers when we know which they are.
+- **Stripe sync runs on the request thread.** Adds 100-500ms to a save when Stripe is healthy. Could move to a background queue; not worth it at current scale.
+- **Per-business org-nr UI doesn't show validation feedback inline.** The server returns the error and the existing `alert()` surface displays it. Cleaner inline-validation would mean refactoring the businesses-edit modal more.
+- **No "Stripe sync failed" banner in the UI.** When `stripe_synced: false`, the save still succeeds locally but the user doesn't know. Edge case; recoverable by saving again later. Add visible feedback if it becomes a real problem.
+- **Admin v2 surface is read-only.** Admin can see the org-nr but can't edit it (would need a recordAdminAction-gated mutation). Out of scope for this slice.
+
+**Verified:**
+- `git status` shows: 1 new component, 7 modified files, FIXES + tsbuild cache. Zero existing routes broken.
+- `npx tsc --noEmit` clean. `npm run build` passes.
+- Hard-block tested mentally: existing customers with `grace_started_at = 2026-04-29` won't trip the gate until 2026-05-29. Backdating `org_number_grace_started_at` in SQL would test the lockout immediately.
+
+**Action required from Paul:** none — code-only PR, no migration. Stripe sync runs automatically next time you (or a customer) save the field via `/settings/company`. To test the hard-block manually:
+```sql
+UPDATE organisations
+   SET org_number = NULL,
+       org_number_grace_started_at = now() - interval '31 days'
+ WHERE id = 'e917d4b8-...';   -- your org
+```
+Refresh `/dashboard` → full-page lockout. Set the field again to recover.
+
+**Test plan:**
+1. ⌘K in admin → type a 10-digit org-nr → that customer surfaces.
+2. ⌘K in admin → type a customer's org-nr with the dash → still works (digits-only match).
+3. Visit `/admin/v2/customers/<orgId>` → snapshot KPI strip shows "Org-nr" tile (good/warn/bad tone).
+4. `/settings` → expand a business → "Edit details" → org-nr field appears under Type. Save invalid (e.g. "12345") → "Organisationsnummer: must be 10 digits" alert. Save valid → field updates, visible on next page load.
+5. Save your own org-nr again on `/settings/company` → response includes `stripe_synced: true` (assuming Stripe key is set). Verify in the Stripe dashboard → customer metadata now has `org_number`.
+6. Backdate `grace_started_at` (SQL above) → dashboard locks out → click CTA → lands on settings → set field → recover.
+
+---
+
 ## 0ax. Swedish organisationsnummer on customer accounts (2026-04-29)
 
 **Scope:** mandatory company registration number for all customers. Required at signup going forward; 30-day grace + soft banner for existing customers, hard-block after. Visible click-to-copy in the sidebar so the owner can grab it for third-party portals without hunting through settings.

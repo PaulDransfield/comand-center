@@ -20,14 +20,14 @@ import { adminFetch } from '@/lib/admin/v2/api-client'
 
 interface SearchResponse {
   q:         string
-  customers: Array<{ id: string; name: string; plan: string | null }>
+  customers: Array<{ id: string; name: string; plan: string | null; org_number: string | null }>
   saved:     Array<{ id: string; label: string; org_id: string | null; org_name: string | null; query_preview: string }>
   pages:     Array<{ key: string; label: string; href: string; hint?: string }>
   saved_table_missing: boolean
 }
 
 type Item =
-  | { kind: 'customer'; id: string;     name: string;  plan: string | null;  href: string }
+  | { kind: 'customer'; id: string;     name: string;  plan: string | null; org_number: string | null; href: string }
   | { kind: 'saved';    id: string;     label: string; org_name: string | null; preview: string; href: string }
   | { kind: 'page';     key: string;    label: string; hint?: string;        href: string }
 
@@ -101,7 +101,7 @@ export function CommandPalette() {
   const items: Item[] = useMemo(() => {
     if (!data) return []
     const out: Item[] = []
-    for (const c of data.customers) out.push({ kind: 'customer', id: c.id, name: c.name, plan: c.plan, href: `/admin/v2/customers/${c.id}` })
+    for (const c of data.customers) out.push({ kind: 'customer', id: c.id, name: c.name, plan: c.plan, org_number: c.org_number, href: `/admin/v2/customers/${c.id}` })
     for (const s of data.saved)     out.push({ kind: 'saved',    id: s.id, label: s.label, org_name: s.org_name, preview: s.query_preview, href: `/admin/v2/tools?saved=${s.id}` })
     for (const p of data.pages)     out.push({ kind: 'page',     key: p.key, label: p.label, hint: p.hint, href: p.href })
     return out
@@ -175,17 +175,25 @@ export function CommandPalette() {
           <>
             <Section title={q.length === 0 ? 'Recent customers' : 'Customers'} count={data.customers.length}>
               {data.customers.length === 0 && <Hint text={q.length === 0 ? 'No customers in DB.' : 'No customers match.'} />}
-              {data.customers.map((c, i) => (
-                <Row
-                  key={c.id}
-                  active={active === customerStart + i}
-                  onMouseEnter={() => setActive(customerStart + i)}
-                  onClick={() => activate(customerStart + i)}
-                >
-                  <RowMain>{c.name}</RowMain>
-                  <RowSub mono>{c.id.slice(0, 8)}…{c.plan ? ` · ${c.plan}` : ''}</RowSub>
-                </Row>
-              ))}
+              {data.customers.map((c, i) => {
+                const orgNrFmt = c.org_number
+                  ? `${c.org_number.slice(0, 6)}-${c.org_number.slice(6)}`
+                  : null
+                return (
+                  <Row
+                    key={c.id}
+                    active={active === customerStart + i}
+                    onMouseEnter={() => setActive(customerStart + i)}
+                    onClick={() => activate(customerStart + i)}
+                  >
+                    <RowMain>
+                      {c.name}
+                      {orgNrFmt && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280', fontFamily: 'ui-monospace, monospace' }}>{orgNrFmt}</span>}
+                    </RowMain>
+                    <RowSub mono>{c.id.slice(0, 8)}…{c.plan ? ` · ${c.plan}` : ''}</RowSub>
+                  </Row>
+                )
+              })}
             </Section>
 
             <Section
