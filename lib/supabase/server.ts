@@ -51,7 +51,14 @@ export function createAdminClient() {
 // session getter which misses some Supabase cookie formats silently).
 export async function getRequestAuth(
   req: NextRequest
-): Promise<{ userId: string; orgId: string; role: string; plan: string } | null> {
+): Promise<{
+  userId:             string
+  orgId:              string
+  role:               string
+  plan:               string
+  businessIds:        string[] | null     // null = unscoped (sees all businesses in org)
+  canViewFinances:    boolean
+} | null> {
   try {
     const BASE = 'sb-llzmixkrysduztsvmfzi-auth-token'
 
@@ -117,7 +124,7 @@ export async function getRequestAuth(
     // orgs. Mirror change in lib/auth/get-org.ts.
     const { data: m } = await adminDb
       .from('organisation_members')
-      .select('org_id, role, organisations(plan, is_active)')
+      .select('org_id, role, business_ids, can_view_finances, organisations(plan, is_active)')
       .eq('user_id', user.id)
       .order('created_at', { ascending: true })
       .limit(1)
@@ -128,10 +135,13 @@ export async function getRequestAuth(
     if (org && org.is_active === false) return null
 
     const result = {
-      userId: user.id,
-      orgId:  (m as any).org_id,
-      role:   (m as any).role || 'viewer',
-      plan:   org?.plan || 'trial',
+      userId:          user.id,
+      orgId:           (m as any).org_id,
+      role:            (m as any).role || 'viewer',
+      plan:            org?.plan || 'trial',
+      // M043: scoped access. null = unscoped, [...] = limited to those businesses.
+      businessIds:     ((m as any).business_ids ?? null) as string[] | null,
+      canViewFinances: !!(m as any).can_view_finances,
     }
 
     // Attach this customer to the current Sentry scope so any error captured

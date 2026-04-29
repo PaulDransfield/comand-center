@@ -1,10 +1,22 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-29 | M022–M041 all applied · M042 pending
+> Last updated: 2026-04-29 | M022–M041 all applied · M042 pending · M043 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M043 — Member roles + scoping (manager access)
+**File:** `M043-MEMBER-ROLES-AND-SCOPING.sql` (repo root)
+**Purpose:** part of FIXES.md §0az. Adds the columns + CHECK constraint that back the new manager role for customer staff. Existing rows keep `role='owner'` so no behaviour change for current users.
+  - `organisation_members.role` — pre-existing column. Coerced to `'owner'` for any null/legacy values, then CHECK-constrained to `('owner', 'manager', 'viewer')`.
+  - `organisation_members.business_ids UUID[]` — null = all businesses in the org (single-restaurant case + unscoped manager); array = limited to those businesses. Server-side filter applies on every business-scoped API.
+  - `organisation_members.can_view_finances BOOLEAN DEFAULT FALSE` — escape hatch for finance-trusted managers. False by default; managers don't see /tracker, /budget, /forecast, /overheads unless this is flipped.
+  - `organisation_members.invited_by`, `invited_at`, `last_active_at` — provisioning audit trail.
+  - Index `(org_id, role)` for fast member-list queries on the admin v2 Users sub-tab.
+**Backwards compat:** every pre-M043 user has `role='owner'`, `business_ids=NULL`, `can_view_finances=FALSE`. Owners ignore the flag (full access regardless). Managers don't exist yet so the new columns are inert until provisioned.
+**Safety:** all `ADD COLUMN IF NOT EXISTS`. Rogue role values pre-coerced to `'owner'` so the CHECK never fails on existing data. Wrapped in `BEGIN; … COMMIT;`.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M042 — Swedish organisationsnummer on organisations + businesses
 **File:** `M042-COMPANY-ORG-NUMBER.sql` (repo root)

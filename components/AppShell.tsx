@@ -13,6 +13,7 @@ import MobileNav from './MobileNav'
 import BackgroundSync from './BackgroundSync'
 import PlanGate from './PlanGate'
 import AiUsageBanner from './AiUsageBanner'
+import { RoleGate } from './RoleGate'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
@@ -50,7 +51,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           was doubling the spacing with the 148px SidebarV2. */}
       <div className="cc-main-content" style={{ flex: 1, minWidth: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <AiUsageBanner />
-        {children}
+        {/* M043: every page wrapped in AppShell goes through the role
+            gate. The gate is path-aware via usePathname() — pages the
+            current role can access render normally; forbidden pages
+            render the "no-access" fallback inline. */}
+        <RoleGate>
+          {children}
+        </RoleGate>
       </div>
 
       {/* Consent banner */}

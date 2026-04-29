@@ -3,6 +3,68 @@ Last updated: 2026-04-28
 
 ---
 
+## 0az. Manager role + scoped access — slice 1 (concierge model) (2026-04-29)
+
+**Scope:** spine of role-based access. Customer staff can be added as `manager` (operations only) instead of `owner` (full access). Managers don't see finance pages, settings, billing, or AI assistant by default. Concierge provisioning — Paul provisions via admin v2 (slice 2 ships the UI for that); for now slice 1 enforces the rule end-to-end so existing owner accounts work unchanged AND a manually-inserted member row would correctly limit their access.
+
+**Created:**
+- `M043-MEMBER-ROLES-AND-SCOPING.sql` — pending. CHECK on role vocabulary, new columns: `business_ids UUID[]` (null = all in org), `can_view_finances BOOLEAN DEFAULT FALSE`, `invited_by`, `invited_at`, `last_active_at`. Index on `(org_id, role)` for the admin v2 list.
+- `lib/auth/permissions.ts` — single source of truth for "which role can access which path". `MANAGER_ALLOW_PATHS` allow-list, `FINANCE_PATHS` (gated by `can_view_finances`), `OWNER_ONLY_PATHS` (never accessible to managers). Mirrored for API routes (`MANAGER_ALLOW_API_PATHS`, etc.). Exports `canAccessPath`, `canAccessBusiness`, `filterAccessibleBusinesses`. Failing-closed by default — adding a new page defaults to "managers can't see this" until explicitly added to the allow-list.
+- `lib/auth/require-role.ts` — `requireRoleForRoute(req)` for API routes. Wraps `getRequestAuth` and returns either the auth subject or a 403 NextResponse. Plus `requireBusinessAccess(auth, businessId)` for the per-business scoping check.
+- `app/api/auth/me/route.ts` — client-callable endpoint returning `{ userId, orgId, role, plan, business_ids, can_view_finances }`. Used by `RoleGate` and the sidebar nav-filter to keep client + server in agreement.
+- `components/RoleGate.tsx` — client wrapper that runs `canAccessPath` against the current pathname. Renders children if allowed, else a "no access" fallback inline.
+- `app/no-access/page.tsx` — standalone page version of the fallback for direct linking and middleware redirects.
+
+**Modified:**
+- `lib/supabase/server.ts::getRequestAuth` — return shape now includes `businessIds: string[] | null` and `canViewFinances: boolean`. SELECT extended to pull both. Existing callers continue to work; new callers can use the extra fields.
+- `components/AppShell.tsx` — `<RoleGate>` wraps `{children}`. Every page rendered inside AppShell now goes through the path-aware gate. /dashboard, /scheduling, etc. allowed for managers; /tracker, /budget, etc. blocked unless `can_view_finances=true`.
+- `components/ui/SidebarV2.tsx` — fetches `/api/auth/me` on mount, builds an `AuthSubject`, pre-filters the NAV array. Items the role can't access don't render. Section headers ("Financials", "Operations") with no following allowed items also hide so a manager doesn't see an empty "Financials" section.
+
+**Reused:**
+- The existing `getRequestAuth` chain (no new auth path).
+- The existing `organisation_members.role` column (just adds vocabulary CHECK).
+- AppShell as the universal wrapper — guards every page automatically.
+- `usePathname()` from next/navigation for the path-aware check.
+
+**Honest gaps surfaced:**
+- **Finance API routes aren't yet guarded server-side.** A manager with curl access could still hit `GET /api/tracker?business_id=X` and get JSON. Sidebar-hiding + `<RoleGate>` cover the UI surface; API guards are slice 2 (will be a sweep through `app/api/tracker`, `app/api/budgets/*`, `app/api/forecast`, `app/api/overheads/*`, `app/api/financials/*` adding `requireRoleForRoute(req)` at the top of each). The defence-in-depth piece.
+- **No Admin v2 UI for editing role/scope yet.** Paul currently has to set role/business_ids via SQL to test. Slice 2 ships the UI: admin v2 customer-detail Users sub-tab gains role select + business_ids checkboxes + "Add member" modal that creates the auth user via Supabase admin API and triggers a password-reset email.
+- **No middleware-level redirect.** `RoleGate` runs after the page mounts and there's a brief flash before the fetch resolves. For pages that show sensitive content immediately, this could leak data. For now, pages render skeletons/loading states that don't include sensitive data; once the gate resolves, the actual fetch fires (and the API guard catches anything that slipped through). Slice 2 / future hardening can add middleware-level role enforcement.
+- **Business-scope is set but not yet enforced on aggregator routes.** `/api/group`, `/api/businesses` currently return all businesses in the org regardless of `business_ids`. Slice 2 adds `filterAccessibleBusinesses` to those routes.
+- **`last_active_at` column added but not updated yet.** Will be best-effort updated on each authed request once we have a place to do that without slowing every API call.
+- **No "viewer" role implementation.** The role exists in the vocabulary CHECK but the permission rules treat it as more restrictive than manager (denies finance + many things) — refine when we actually need the role.
+
+**Verified:**
+- `git status` shows: 1 new SQL file, 4 new lib/component/route files, 3 modified files, FIXES + tsbuild cache. Zero existing routes broken.
+- `npx tsc --noEmit` clean. `npm run build` passes; new routes shipped: `/api/auth/me`, `/no-access`.
+- Existing owner accounts: behaviour unchanged. `getRequestAuth` returns `role='owner'` and `canAccessPath` short-circuits to true.
+
+**Why this should hold:** owner role is unchanged. New manager role is opt-in (no existing user becomes a manager). Allow-list approach means a new finance page added in the future won't accidentally be visible to managers — it falls into the "default deny" bucket until explicitly added.
+
+**Action required from Paul:**
+1. Apply `M043-MEMBER-ROLES-AND-SCOPING.sql` in Supabase SQL Editor.
+2. (Optional, manual test) insert a test manager row to verify the gate:
+   ```sql
+   -- After creating a Supabase auth user manually:
+   INSERT INTO organisation_members (org_id, user_id, role, business_ids, accepted_at)
+   VALUES (
+     'e917d4b8-635e-4be6-8af0-afc48c3c7450',  -- your org
+     '<auth_user_id>',
+     'manager',
+     ARRAY['0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99']::uuid[],  -- only Vero
+     now()
+   );
+   ```
+3. Sign in as that user → sidebar shows only the operations nav items, /tracker etc. show "no access".
+
+**Slice 2 (next):**
+- Admin v2 customer-detail Users sub-tab → role select, business_ids checkboxes, can_view_finances toggle, "Add member" modal that creates the auth user via Supabase admin API and triggers a password-reset email.
+- API route guards on every finance/owner-only route (sweep `/api/tracker`, `/api/budgets/*`, `/api/forecast`, `/api/overheads/*`, `/api/financials/*`, `/api/stripe/*`, `/api/upgrade`, `/api/group`, `/api/agents/*`).
+- `filterAccessibleBusinesses` applied to aggregator routes (`/api/group`, `/api/businesses` when scoped).
+- Middleware-level role redirect for the "no flash" guarantee.
+
+---
+
 ## 0ay. Org-number slice 2 — hard-block, Stripe sync, admin surface, palette search, per-business edit (2026-04-29)
 
 **Scope:** completes the org-nr feature. After 30-day grace expires, the dashboard becomes a full-page "add your org-nr" lockout. Saving an org-nr also pushes to Stripe customer metadata so future invoices carry it. Admin v2 sees the field on customer-detail. Command palette searches by org-nr. Settings → Businesses lets you set per-restaurant org-nrs.

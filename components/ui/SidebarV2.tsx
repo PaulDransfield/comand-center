@@ -23,6 +23,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UX } from '@/lib/constants/tokens'
 import SyncIndicator from './SyncIndicator'
+import { canAccessPath, type AuthSubject } from '@/lib/auth/permissions'
 
 interface Business {
   id:         string
@@ -76,6 +77,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
   const [alertCount,  setAlertCount]  = useState(0)
   const [orgInfo,     setOrgInfo]     = useState<{ org_number: string | null; org_number_display: string | null } | null>(null)
   const [copiedTick,  setCopiedTick]  = useState<boolean>(false)
+  const [authSubject, setAuthSubject] = useState<AuthSubject | null>(null)
   const bizMenuRef = useRef<HTMLDivElement | null>(null)
 
   // ── Hydrate collapse state from localStorage ───────────────────────────────
@@ -115,6 +117,16 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
       .then(j => { if (j?.organisation) setOrgInfo({
         org_number: j.organisation.org_number,
         org_number_display: j.organisation.org_number_display,
+      }) })
+      .catch(() => {})
+    // M043: load the auth subject so the sidebar can hide nav items the
+    // role doesn't permit. Also drives the business-picker scope below.
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (j?.userId) setAuthSubject({
+        role: j.role,
+        business_ids: j.business_ids,
+        can_view_finances: j.can_view_finances,
       }) })
       .catch(() => {})
   }, [])
@@ -335,9 +347,31 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
         />
       )}
 
-      {/* Nav */}
+      {/* Nav — pre-filter by role, then collapse empty section headers
+          so a manager doesn't see a "Financials" label with no entries. */}
       <nav style={{ flex: 1, padding: '8px 6px', overflowY: 'auto' as const }}>
-        {NAV.map((item, i) => {
+        {(() => {
+          // Build the filtered NAV: drop link items the role can't see;
+          // drop section headers that have no following links.
+          const filtered: typeof NAV = []
+          for (let i = 0; i < NAV.length; i++) {
+            const item = NAV[i]
+            if (item.kind === 'link') {
+              if (!authSubject || canAccessPath(authSubject, item.href)) {
+                filtered.push(item)
+              }
+              continue
+            }
+            // section: only emit if at least one following link is allowed
+            const followingLinks: typeof NAV = []
+            for (let j = i + 1; j < NAV.length && NAV[j].kind === 'link'; j++) {
+              followingLinks.push(NAV[j])
+            }
+            const hasAllowed = followingLinks.some(l => l.kind === 'link' && (!authSubject || canAccessPath(authSubject, (l as any).href)))
+            if (hasAllowed) filtered.push(item)
+          }
+          return filtered
+        })().map((item, i) => {
           if (item.kind === 'section') {
             if (collapsed) {
               // Render a thin divider instead of the section label
