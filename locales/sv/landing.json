@@ -1,0 +1,177 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "meta": {
+    "title":       "CommandCenter — Restaurang-intelligens för svenska restauranger",
+    "description": "AI-driven affärsintelligens för svenska restauranggrupper. Samla varje system din verksamhet bygger på i ett gränssnitt och låt AI tolka siffrorna så att du ser det som verkligen spelar roll."
+  },
+  "nav": {
+    "features":     "Funktioner",
+    "integrations": "Integrationer",
+    "pricing":      "Priser",
+    "logIn":        "Logga in",
+    "getStarted":   "Kom igång"
+  },
+  "hero": {
+    "badge":      "Byggt för svenska restauranggrupper",
+    "headlineA":  "Varje siffra som spelar roll,",
+    "headlineB":  "samlat på ett ställe.",
+    "subhead":    "Varje system din verksamhet bygger på, samlat på ett ställe — med AI som läser siffrorna, förklarar vad som förändras och hjälper dig se det som verkligen spelar roll.",
+    "ctaPrimary": "Säkra grundarplats",
+    "ctaPricing": "Se priser",
+    "stat1":      "10 platser",
+    "stat1Label": "Grundarkunder · 995 kr/mån",
+    "stat2":      "< 5 min",
+    "stat2Label": "Att koppla in Personalkollen",
+    "stat3":      "06:00",
+    "stat3Label": "Daglig auto-synk varje morgon"
+  },
+  "features": {
+    "eyebrow":    "Vad du får",
+    "headline":   "Allt en restaurangägare behöver veta",
+    "card1": {
+      "title": "Personalkostnad ner till varje timme",
+      "desc":  "Se faktiska arbetstimmar, OB-tillägg, sena ankomster och kostnad per avdelning. Direkt kopplat mot Personalkollen — ingen manuell export.",
+      "tag1":  "Personalkollen",
+      "tag2":  "OB-tillägg",
+      "tag3":  "Sen ankomst-spårning"
+    },
+    "card2": {
+      "title": "Intäkter och gäster, dagligen",
+      "desc":  "Följ daglig omsättning, gäster, fördelning mat/dryck och snittkonsumtion per gäst. Hitta dina mest lönsamma dagar och pass.",
+      "tag1":  "Daglig omsättning",
+      "tag2":  "Gäster",
+      "tag3":  "Mat/dryck-fördelning"
+    },
+    "card3": {
+      "title": "AI-assistent på varje sida",
+      "desc":  "Ställ frågor på vanlig svenska: \"Varför är marginalen ner denna månad?\" eller \"Vem hade mest övertid?\" — Claude svarar utifrån din faktiska data.",
+      "tag1":  "Claude AI",
+      "tag2":  "Kontextuella svar",
+      "tag3":  "Vardagsspråk"
+    },
+    "card4": {
+      "title": "Automatiska avvikelse-larm",
+      "desc":  "Nattlig analys upptäcker ovanliga kostnadstoppar eller intäktsfall och mejlar dig innan dagen börjar. Inget behov av att stirra på instrumentpaneler.",
+      "tag1":  "Nattlig genomgång",
+      "tag2":  "E-postlarm",
+      "tag3":  "Tröskelvärden"
+    },
+    "card5": {
+      "title": "Resultatrapport och prognos",
+      "desc":  "Månatlig resultatrapport med manuell registrering för kostnader som inte finns i Fortnox än. Intäktsprognoser kalibreras månadsvis mot ditt faktiska mönster.",
+      "tag1":  "Månadsresultat",
+      "tag2":  "Prognos",
+      "tag3":  "Budgetmål"
+    },
+    "card6": {
+      "title": "Veckovis schemainsikt",
+      "desc":  "Group-kunder får en AI-genererad personaloptimeringsrapport varje vecka — identifierar överbemannade pass och schemaläggningsineffektiviteter.",
+      "tag1":  "Group-abonnemang",
+      "tag2":  "Veckorapport",
+      "tag3":  "Optimering"
+    }
+  },
+  "integrations": {
+    "eyebrow":  "Integrationer",
+    "headline": "Din data, automatiskt.",
+    "subhead":  "Koppla in dina system en gång. CommandCenter synkar varje morgon kl. 06:00 — ingen export, ingen kopiera-och-klistra, inga kalkylblad.",
+    "pk":       "Personalkollen",
+    "pkDesc":   "Personalpass, timmar, kostnader",
+    "fortnox":  "Fortnox",
+    "fortnoxDesc":"Fakturor, leverantörskostnader",
+    "pos":      "Ditt kassasystem",
+    "posDesc":  "Ancon, Swess, Trivec",
+    "live":     "LIVE",
+    "soon":     "SNART",
+    "planned":  "PLANERAT",
+    "request":  "Fler integrationer under utveckling.",
+    "requestLink":"Önska din →"
+  },
+  "pricing": {
+    "eyebrow":   "Priser",
+    "headline":  "Betala från dag ett. Pris per restaurang.",
+    "subhead":   "Svenska operatörer köper inte leksaker. CommandCenter ersätter en del av det en konsult-CFO skulle ta betalt för — och fungerar medan du sover.",
+    "founding": {
+      "badge":       "Grundarkund · 10 platser",
+      "title":       "995 kr / månad — låst i 24 månader",
+      "body":        "Full Solo-nivå + det mesta av Group för de första 10 restaurangerna som skriver på. I utbyte: månatlig feedback, fallstudie-partnerskap och direkt linje till teamet. Övergår till 1 495 kr/mån permanent rabatt efter 24 månader.",
+      "cta":         "Säkra grundarplats",
+      "footnote":    "Ingen gratis testperiod. Betalt från dag ett."
+    },
+    "solo": {
+      "name":     "Solo",
+      "price":    "1 995",
+      "perMonth": "kr / mån",
+      "scope":    "En restaurang",
+      "feat1":    "1 restauranglokal",
+      "feat2":    "Fortnox PDF + Personalkollen",
+      "feat3":    "Alla AI-grundagenter",
+      "feat4":    "Avvikelse-larm + måndags-memo",
+      "feat5":    "Resultat, budget, prognos, omkostnader",
+      "feat6":    "30 AI-frågor / dag",
+      "feat7":    "E-postsupport · 5 användare",
+      "cta":      "Kom igång"
+    },
+    "group": {
+      "popular":  "Mest populär",
+      "name":     "Group",
+      "price":    "4 995",
+      "perMonth": "kr / mån",
+      "scope":    "2–5 restauranger",
+      "feat1":    "Upp till 5 lokaler",
+      "feat2":    "Allt i Solo",
+      "feat3":    "Flerlokal-summering + avdelningar",
+      "feat4":    "Veckovis schemaoptimering",
+      "feat5":    "Leverantörs-prishöjningslarm",
+      "feat6":    "Prioriterad support · 24h SLA",
+      "feat7":    "Kvartalsvis genomgång",
+      "feat8":    "100 AI-frågor / dag · 25 användare",
+      "cta":      "Kom igång"
+    },
+    "chain": {
+      "name":     "Chain",
+      "price":    "9 995",
+      "perMonth": "kr / mån+",
+      "scope":    "6+ restauranger",
+      "feat1":    "Obegränsat antal restauranger",
+      "feat2":    "Allt i Group",
+      "feat3":    "Dedikerad onboarding",
+      "feat4":    "Skräddarsydd Fortnox OAuth-konfiguration",
+      "feat5":    "API-åtkomst (när tillgängligt)",
+      "feat6":    "Obegränsad AI-användning",
+      "feat7":    "Obegränsat antal användare",
+      "cta":      "Kontakta oss"
+    },
+    "annualNote": "Årlig fakturering sparar ~17% (2 månader gratis). Faktura tillgänglig — standard för svensk B2B."
+  },
+  "finalCta": {
+    "headline": "Redo att se vad som verkligen händer i dina restauranger?",
+    "subhead":  "10 grundarplatser à 995 kr/mån, låsta i 24 månader. Inställning på under 5 minuter. Avbryt när som helst.",
+    "cta":      "Säkra grundarplats"
+  },
+  "footer": {
+    "tagline":  "AI-driven affärsintelligens för svenska restauranggrupper. Byggt i Sverige.",
+    "product":  "Produkt",
+    "company":  "Företag",
+    "legal":    "Juridik",
+    "links": {
+      "features":     "Funktioner",
+      "integrations": "Integrationer",
+      "pricing":      "Priser",
+      "changelog":    "Ändringslogg",
+      "about":        "Om oss",
+      "contact":      "Kontakt",
+      "terms":        "Användarvillkor",
+      "privacy":      "Integritetspolicy",
+      "subprocessors":"Underleverantörer",
+      "security":     "Säkerhet"
+    },
+    "provider":     "Leverantör",
+    "imprintBody":  "CommandCenter drivs av ComandCenter AB. Registrerat i Sverige. Org. nr: registrering pågår. Momsnr: registrering pågår. Registrerad adress: pågående. Kontakt: hello@comandcenter.se · Säkerhets- / sårbarhetsrapporter: security@comandcenter.se. För registrerad-rättigheter (GDPR art. 15–22) använd Data & Integritet i ditt konto. Tillsynsmyndighet: Integritetsskyddsmyndigheten (IMY). CommandCenter är en B2B-tjänst — ej avsedd för konsumenter.",
+    "copyright":    "© {year} ComandCenter AB. CommandCenter™ är en produkt av ComandCenter AB.",
+    "compliance":   "GDPR-kompatibel · Data lagras i EU (Frankfurt) · Svensk lag"
+  }
+}

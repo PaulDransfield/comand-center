@@ -1,0 +1,177 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "meta": {
+    "title":       "CommandCenter — Restaurant Intelligence for Swedish Restaurants",
+    "description": "AI-powered business intelligence for Swedish restaurant groups. Bring every system your business runs on into one place, and let AI make sense of the numbers so you can see what really matters."
+  },
+  "nav": {
+    "features":     "Features",
+    "integrations": "Integrations",
+    "pricing":      "Pricing",
+    "logIn":        "Log in",
+    "getStarted":   "Get started"
+  },
+  "hero": {
+    "badge":      "Built for Swedish restaurant groups",
+    "headlineA":  "Every number that matters,",
+    "headlineB":  "in one place.",
+    "subhead":    "Every system your business runs on, in one place — with AI that reads the numbers, explains what's changing, and helps you see what really matters.",
+    "ctaPrimary": "Claim founding spot",
+    "ctaPricing": "See pricing",
+    "stat1":      "10 spots",
+    "stat1Label": "Founding customers · 995 kr/mo",
+    "stat2":      "< 5 min",
+    "stat2Label": "To connect Personalkollen",
+    "stat3":      "06:00",
+    "stat3Label": "Daily auto-sync, every morning"
+  },
+  "features": {
+    "eyebrow":    "What you get",
+    "headline":   "Everything a restaurant owner needs to know",
+    "card1": {
+      "title": "Staff costs, down to the hour",
+      "desc":  "See actual hours worked, OB supplements, lateness, and cost per department. Connected directly to Personalkollen — no manual export needed.",
+      "tag1":  "Personalkollen",
+      "tag2":  "OB supplement",
+      "tag3":  "Lateness tracking"
+    },
+    "card2": {
+      "title": "Revenue and covers, daily",
+      "desc":  "Track daily revenue, covers, food/drink split, and average spend per guest. Spot which days and services are your most profitable.",
+      "tag1":  "Daily revenue",
+      "tag2":  "Covers",
+      "tag3":  "Food/drink split"
+    },
+    "card3": {
+      "title": "AI assistant on every page",
+      "desc":  "Ask questions in plain English: \"Why is my margin down this month?\" or \"Which staff member had the most overtime?\" — Claude answers based on your actual data.",
+      "tag1":  "Claude AI",
+      "tag2":  "Contextual answers",
+      "tag3":  "Plain language"
+    },
+    "card4": {
+      "title": "Automated anomaly alerts",
+      "desc":  "Nightly analysis detects unusual spikes in costs or drops in revenue and emails you before the day starts. No need to stare at dashboards.",
+      "tag1":  "Nightly scan",
+      "tag2":  "Email alerts",
+      "tag3":  "Threshold detection"
+    },
+    "card5": {
+      "title": "P&L tracker and forecast",
+      "desc":  "Monthly profit & loss with manual entry for costs not yet in Fortnox. Revenue forecasts calibrated monthly to your actual patterns.",
+      "tag1":  "Monthly P&L",
+      "tag2":  "Forecast",
+      "tag3":  "Budget targets"
+    },
+    "card6": {
+      "title": "Weekly scheduling insights",
+      "desc":  "Group plan customers get a weekly AI-generated staff optimisation report — identifying overstaffed shifts and scheduling inefficiencies.",
+      "tag1":  "Group plan",
+      "tag2":  "Weekly report",
+      "tag3":  "Optimisation"
+    }
+  },
+  "integrations": {
+    "eyebrow":  "Integrations",
+    "headline": "Your data, automatically.",
+    "subhead":  "Connect your systems once. CommandCenter syncs every morning at 06:00 — no exports, no copy-paste, no spreadsheets.",
+    "pk":       "Personalkollen",
+    "pkDesc":   "Staff shifts, hours, costs",
+    "fortnox":  "Fortnox",
+    "fortnoxDesc":"Invoices, supplier costs",
+    "pos":      "Your POS",
+    "posDesc":  "Ancon, Swess, Trivec",
+    "live":     "LIVE",
+    "soon":     "SOON",
+    "planned":  "PLANNED",
+    "request":  "More integrations in development.",
+    "requestLink":"Request yours →"
+  },
+  "pricing": {
+    "eyebrow":   "Pricing",
+    "headline":  "Pay from day one. Priced per restaurant.",
+    "subhead":   "Swedish operators don't buy toys. CommandCenter replaces a chunk of what a fractional CFO would charge you for — and it works while you sleep.",
+    "founding": {
+      "badge":       "Founding customer · 10 spots",
+      "title":       "995 kr / month — locked for 24 months",
+      "body":        "Full Solo tier + most of Group for the first 10 restaurants to sign on. In exchange: monthly feedback, case-study partnership, and a direct line to the team. Converts to 1,495 kr/mo permanent discount after 24 months.",
+      "cta":         "Claim founding spot",
+      "footnote":    "No free trial. Paid from day one."
+    },
+    "solo": {
+      "name":     "Solo",
+      "price":    "1 995",
+      "perMonth": "kr / mo",
+      "scope":    "Single restaurant",
+      "feat1":    "1 restaurant location",
+      "feat2":    "Fortnox PDF + Personalkollen",
+      "feat3":    "All core AI agents",
+      "feat4":    "Anomaly alerts + Monday Memo",
+      "feat5":    "P&L, budget, forecast, overheads",
+      "feat6":    "30 AI queries / day",
+      "feat7":    "Email support · 5 team seats",
+      "cta":      "Get started"
+    },
+    "group": {
+      "popular":  "Most popular",
+      "name":     "Group",
+      "price":    "4 995",
+      "perMonth": "kr / mo",
+      "scope":    "2–5 restaurants",
+      "feat1":    "Up to 5 locations",
+      "feat2":    "Everything in Solo",
+      "feat3":    "Multi-location rollup + Departments",
+      "feat4":    "Weekly scheduling optimisation",
+      "feat5":    "Supplier price-creep alerts",
+      "feat6":    "Priority support · 24h SLA",
+      "feat7":    "Quarterly review call",
+      "feat8":    "100 AI queries / day · 25 seats",
+      "cta":      "Get started"
+    },
+    "chain": {
+      "name":     "Chain",
+      "price":    "9 995",
+      "perMonth": "kr / mo+",
+      "scope":    "6+ restaurants",
+      "feat1":    "Unlimited restaurants",
+      "feat2":    "Everything in Group",
+      "feat3":    "Dedicated onboarding",
+      "feat4":    "Custom Fortnox OAuth setup",
+      "feat5":    "API access (when available)",
+      "feat6":    "Unlimited AI usage",
+      "feat7":    "Unlimited team seats",
+      "cta":      "Contact us"
+    },
+    "annualNote": "Annual billing saves ~17% (2 months free). Invoicing available — standard for Swedish B2B."
+  },
+  "finalCta": {
+    "headline": "Ready to see what's really going on in your restaurants?",
+    "subhead":  "10 founding spots at 995 kr/mo, locked for 24 months. Setup takes under 5 minutes. Cancel any time.",
+    "cta":      "Claim founding spot"
+  },
+  "footer": {
+    "tagline":  "AI-powered business intelligence for Swedish restaurant groups. Built in Sweden.",
+    "product":  "Product",
+    "company":  "Company",
+    "legal":    "Legal",
+    "links": {
+      "features":     "Features",
+      "integrations": "Integrations",
+      "pricing":      "Pricing",
+      "changelog":    "Changelog",
+      "about":        "About",
+      "contact":      "Contact",
+      "terms":        "Terms of service",
+      "privacy":      "Privacy policy",
+      "subprocessors":"Sub-processors",
+      "security":     "Security"
+    },
+    "provider":     "Provider",
+    "imprintBody":  "CommandCenter is operated by ComandCenter AB. Registered in Sweden. Org. nr: pending registration. Momsnr (VAT): pending registration. Registered address: pending. Contact: hello@comandcenter.se · Security / vulnerability reports: security@comandcenter.se. For data-subject requests (GDPR Art. 15–22) use the Data & Privacy section inside your account. Supervisory authority: Integritetsskyddsmyndigheten (IMY). CommandCenter is a B2B service — not intended for consumers.",
+    "copyright":    "© {year} ComandCenter AB. CommandCenter™ is a product of ComandCenter AB.",
+    "compliance":   "GDPR compliant · Data stored in EU (Frankfurt) · Swedish law"
+  }
+}

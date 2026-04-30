@@ -1,0 +1,177 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "meta": {
+    "title":       "CommandCenter — Restaurant-intelligens for nordiske restauranter",
+    "description": "AI-drevet forretningsintelligens for restaurantgrupper i Norden. Samle hvert system virksomheten din kjører på i ett sted, og la AI tolke tallene slik at du ser det som virkelig betyr noe."
+  },
+  "nav": {
+    "features":     "Funksjoner",
+    "integrations": "Integrasjoner",
+    "pricing":      "Priser",
+    "logIn":        "Logg inn",
+    "getStarted":   "Kom i gang"
+  },
+  "hero": {
+    "badge":      "Bygget for nordiske restaurantgrupper",
+    "headlineA":  "Hvert tall som betyr noe,",
+    "headlineB":  "samlet på ett sted.",
+    "subhead":    "Hvert system virksomheten din kjører på, samlet på ett sted — med AI som leser tallene, forklarer hva som endres og hjelper deg se det som virkelig betyr noe.",
+    "ctaPrimary": "Sikre grunnleggerplass",
+    "ctaPricing": "Se priser",
+    "stat1":      "10 plasser",
+    "stat1Label": "Grunnleggerkunder · 995 kr/mnd",
+    "stat2":      "< 5 min",
+    "stat2Label": "Å koble til Personalkollen",
+    "stat3":      "06:00",
+    "stat3Label": "Daglig auto-synk hver morgen"
+  },
+  "features": {
+    "eyebrow":    "Hva du får",
+    "headline":   "Alt en restauranteier trenger å vite",
+    "card1": {
+      "title": "Bemanningskostnader, time for time",
+      "desc":  "Se faktiske arbeidstimer, ubekvemstillegg, forsinkelser og kostnad per avdeling. Direkte koblet til Personalkollen — ingen manuell eksport.",
+      "tag1":  "Personalkollen",
+      "tag2":  "Ubekvemstillegg",
+      "tag3":  "Forsinkelse-sporing"
+    },
+    "card2": {
+      "title": "Inntekter og gjester, daglig",
+      "desc":  "Følg daglig omsetning, gjester, mat/drikke-fordeling og snittforbruk per gjest. Finn dine mest lønnsomme dager og skift.",
+      "tag1":  "Daglig omsetning",
+      "tag2":  "Gjester",
+      "tag3":  "Mat/drikke-fordeling"
+    },
+    "card3": {
+      "title": "AI-assistent på hver side",
+      "desc":  "Still spørsmål på vanlig norsk: \"Hvorfor er marginen ned denne måneden?\" eller \"Hvem hadde mest overtid?\" — Claude svarer basert på din faktiske data.",
+      "tag1":  "Claude AI",
+      "tag2":  "Kontekstuelle svar",
+      "tag3":  "Hverdagsspråk"
+    },
+    "card4": {
+      "title": "Automatiske avviksvarsler",
+      "desc":  "Nattlig analyse oppdager uvanlige kostnadstopper eller inntektsfall og sender deg e-post før dagen begynner. Ingen behov for å stirre på dashbord.",
+      "tag1":  "Nattlig gjennomgang",
+      "tag2":  "E-postvarsler",
+      "tag3":  "Terskelverdier"
+    },
+    "card5": {
+      "title": "Resultatregnskap og prognose",
+      "desc":  "Månedlig resultatregnskap med manuell registrering for kostnader som ikke er i Fortnox ennå. Inntektsprognoser kalibreres månedlig mot ditt faktiske mønster.",
+      "tag1":  "Månedsresultat",
+      "tag2":  "Prognose",
+      "tag3":  "Budsjettmål"
+    },
+    "card6": {
+      "title": "Ukentlig vaktplaninnsikt",
+      "desc":  "Group-kunder får en AI-generert bemanningsoptimaliseringsrapport hver uke — identifiserer overbemannede skift og ineffektivitet i vaktplanleggingen.",
+      "tag1":  "Group-abonnement",
+      "tag2":  "Ukerapport",
+      "tag3":  "Optimalisering"
+    }
+  },
+  "integrations": {
+    "eyebrow":  "Integrasjoner",
+    "headline": "Dataene dine, automatisk.",
+    "subhead":  "Koble til systemene dine én gang. CommandCenter synker hver morgen kl. 06:00 — ingen eksport, ingen kopier-og-lim, ingen regneark.",
+    "pk":       "Personalkollen",
+    "pkDesc":   "Vakter, timer, kostnader",
+    "fortnox":  "Fortnox",
+    "fortnoxDesc":"Fakturaer, leverandørkostnader",
+    "pos":      "Ditt POS",
+    "posDesc":  "Ancon, Swess, Trivec",
+    "live":     "LIVE",
+    "soon":     "SNART",
+    "planned":  "PLANLAGT",
+    "request":  "Flere integrasjoner under utvikling.",
+    "requestLink":"Be om din →"
+  },
+  "pricing": {
+    "eyebrow":   "Priser",
+    "headline":  "Betal fra dag én. Pris per restaurant.",
+    "subhead":   "Nordiske operatører kjøper ikke leketøy. CommandCenter erstatter en del av det en konsulent-CFO ville tatt betalt for — og virker mens du sover.",
+    "founding": {
+      "badge":       "Grunnleggerkunde · 10 plasser",
+      "title":       "995 kr / måned — låst i 24 måneder",
+      "body":        "Full Solo-nivå + mesteparten av Group for de første 10 restaurantene som signerer. I bytte: månedlig tilbakemelding, case-studie-partnerskap og direkte linje til teamet. Konverteres til 1 495 kr/mnd permanent rabatt etter 24 måneder.",
+      "cta":         "Sikre grunnleggerplass",
+      "footnote":    "Ingen gratis prøveperiode. Betalt fra dag én."
+    },
+    "solo": {
+      "name":     "Solo",
+      "price":    "1 995",
+      "perMonth": "kr / mnd",
+      "scope":    "Én restaurant",
+      "feat1":    "1 restaurantlokasjon",
+      "feat2":    "Fortnox PDF + Personalkollen",
+      "feat3":    "Alle AI-kjerneagenter",
+      "feat4":    "Avviksvarsler + mandagsmemo",
+      "feat5":    "Resultat, budsjett, prognose, faste kostnader",
+      "feat6":    "30 AI-spørringer / dag",
+      "feat7":    "E-poststøtte · 5 brukere",
+      "cta":      "Kom i gang"
+    },
+    "group": {
+      "popular":  "Mest populær",
+      "name":     "Group",
+      "price":    "4 995",
+      "perMonth": "kr / mnd",
+      "scope":    "2–5 restauranter",
+      "feat1":    "Opptil 5 lokasjoner",
+      "feat2":    "Alt i Solo",
+      "feat3":    "Flerlokasjons-rollup + avdelinger",
+      "feat4":    "Ukentlig vaktplan-optimalisering",
+      "feat5":    "Leverandør-prisøkningsvarsler",
+      "feat6":    "Prioritert støtte · 24t SLA",
+      "feat7":    "Kvartalsvis gjennomgang",
+      "feat8":    "100 AI-spørringer / dag · 25 brukere",
+      "cta":      "Kom i gang"
+    },
+    "chain": {
+      "name":     "Chain",
+      "price":    "9 995",
+      "perMonth": "kr / mnd+",
+      "scope":    "6+ restauranter",
+      "feat1":    "Ubegrenset antall restauranter",
+      "feat2":    "Alt i Group",
+      "feat3":    "Dedikert onboarding",
+      "feat4":    "Skreddersydd Fortnox OAuth-oppsett",
+      "feat5":    "API-tilgang (når tilgjengelig)",
+      "feat6":    "Ubegrenset AI-bruk",
+      "feat7":    "Ubegrenset antall brukere",
+      "cta":      "Kontakt oss"
+    },
+    "annualNote": "Årlig fakturering sparer ~17% (2 måneder gratis). Faktura tilgjengelig — standard for nordisk B2B."
+  },
+  "finalCta": {
+    "headline": "Klar til å se hva som virkelig skjer i restaurantene dine?",
+    "subhead":  "10 grunnleggerplasser à 995 kr/mnd, låst i 24 måneder. Oppsett på under 5 minutter. Avslutt når som helst.",
+    "cta":      "Sikre grunnleggerplass"
+  },
+  "footer": {
+    "tagline":  "AI-drevet forretningsintelligens for nordiske restaurantgrupper. Bygget i Norden.",
+    "product":  "Produkt",
+    "company":  "Selskap",
+    "legal":    "Juridisk",
+    "links": {
+      "features":     "Funksjoner",
+      "integrations": "Integrasjoner",
+      "pricing":      "Priser",
+      "changelog":    "Endringslogg",
+      "about":        "Om oss",
+      "contact":      "Kontakt",
+      "terms":        "Brukervilkår",
+      "privacy":      "Personvernerklæring",
+      "subprocessors":"Underleverandører",
+      "security":     "Sikkerhet"
+    },
+    "provider":     "Leverandør",
+    "imprintBody":  "CommandCenter drives av ComandCenter AB. Registrert i Sverige. Org. nr: under registrering. MVA-nr: under registrering. Registrert adresse: under arbeid. Kontakt: hello@comandcenter.se · Sikkerhets- / sårbarhetsrapporter: security@comandcenter.se. For registrert-rettigheter (GDPR art. 15–22) bruk Data & Personvern i kontoen din. Tilsynsmyndighet: Integritetsskyddsmyndigheten (IMY). CommandCenter er en B2B-tjeneste — ikke ment for forbrukere.",
+    "copyright":    "© {year} ComandCenter AB. CommandCenter™ er et produkt av ComandCenter AB.",
+    "compliance":   "GDPR-kompatibel · Data lagret i EU (Frankfurt) · Svensk lov"
+  }
+}

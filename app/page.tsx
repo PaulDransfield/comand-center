@@ -1,12 +1,20 @@
 // app/page.tsx — Public landing page
 // Shown to all visitors at comandcenter.se
 // Logged-in users see the nav link to dashboard; logged-out users see login/signup CTAs
+// i18n PR 5: server-rendered translations via getTranslations + a small
+// LanguageSelector client island in the nav so visitors can switch language
+// before signup.
 
 import Link from 'next/link'
+import { getTranslations } from 'next-intl/server'
+import { LanguageSelector } from '@/components/LanguageSelector'
 
-export const metadata = {
-  title: 'CommandCenter — Restaurant Intelligence for Swedish Restaurants',
-  description: 'AI-powered business intelligence for Swedish restaurant groups. Bring every system your business runs on into one place, and let AI make sense of the numbers so you can see what really matters.',
+export async function generateMetadata() {
+  const t = await getTranslations('landing.meta')
+  return {
+    title:       t('title'),
+    description: t('description'),
+  }
 }
 
 // ── DESIGN TOKENS (matching nextjs/app/globals.css) ───────────
@@ -36,7 +44,8 @@ const F = {
   mono:    `'DM Mono', 'Menlo', monospace`,
 }
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const t = await getTranslations('landing')
   return (
     <>
       {/* ── Google Fonts ── */}
@@ -164,18 +173,24 @@ export default function LandingPage() {
 
           {/* Nav links */}
           <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
-            <a href="#features" className="nav-link">Features</a>
-            <a href="#integrations" className="nav-link">Integrations</a>
-            <a href="#pricing" className="nav-link">Pricing</a>
+            <a href="#features" className="nav-link">{t('nav.features')}</a>
+            <a href="#integrations" className="nav-link">{t('nav.integrations')}</a>
+            <a href="#pricing" className="nav-link">{t('nav.pricing')}</a>
           </div>
 
           {/* CTAs */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Language selector — inline pills, dark tone for the navy navbar.
+                Sits to the left of the auth CTAs so visitors can switch
+                language before signing up. */}
+            <div className="nav-cta-login">
+              <LanguageSelector variant="inline" onTone="dark" />
+            </div>
             <Link href="/login" className="btn-outline-white nav-cta-login" style={{ padding: '8px 18px', fontSize: 13 }}>
-              Log in
+              {t('nav.logIn')}
             </Link>
             <Link href="/login?mode=signup&plan=founding" className="btn-white nav-cta-trial" style={{ padding: '8px 18px', fontSize: 13 }}>
-              Get started
+              {t('nav.getStarted')}
             </Link>
           </div>
         </div>
@@ -205,7 +220,7 @@ export default function LandingPage() {
             borderRadius: 20, padding: '5px 14px', marginBottom: 28,
           }}>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,.85)', fontFamily: F.body }}>
-              Built for Swedish restaurant groups
+              {t('hero.badge')}
             </span>
           </div>
 
@@ -215,8 +230,8 @@ export default function LandingPage() {
             fontSize: 'clamp(36px, 6vw, 60px)', color: 'white', lineHeight: 1.15,
             marginBottom: 20, letterSpacing: '-.01em',
           }}>
-            Every number that matters,<br />
-            <span style={{ fontStyle: 'normal', fontWeight: 400 }}>in one place.</span>
+            {t('hero.headlineA')}<br />
+            <span style={{ fontStyle: 'normal', fontWeight: 400 }}>{t('hero.headlineB')}</span>
           </h1>
 
           {/* Subheadline */}
@@ -225,17 +240,17 @@ export default function LandingPage() {
             color: 'rgba(255,255,255,.7)', lineHeight: 1.7,
             maxWidth: 620, margin: '0 auto 36px',
           }}>
-            Every system your business runs on, in one place — with AI that reads the numbers, explains what's changing, and helps you see what really matters.
+            {t('hero.subhead')}
           </p>
 
           {/* CTAs */}
           <div className="hero-btns" style={{ display: 'flex', justifyContent: 'center', gap: 12, marginBottom: 48 }}>
             <Link href="/login?mode=signup&plan=founding" className="btn-white">
-              Claim founding spot
+              {t('hero.ctaPrimary')}
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </Link>
             <a href="#pricing" className="btn-outline-white">
-              See pricing
+              {t('hero.ctaPricing')}
             </a>
           </div>
 
@@ -245,9 +260,9 @@ export default function LandingPage() {
             borderTop: '1px solid rgba(255,255,255,.12)', paddingTop: 36,
           }}>
             {[
-              { value: '10 spots', label: 'Founding customers · 995 kr/mo' },
-              { value: '< 5 min', label: 'To connect Personalkollen' },
-              { value: '06:00', label: 'Daily auto-sync, every morning' },
+              { value: t('hero.stat1'), label: t('hero.stat1Label') },
+              { value: t('hero.stat2'), label: t('hero.stat2Label') },
+              { value: t('hero.stat3'), label: t('hero.stat3Label') },
             ].map(s => (
               <div key={s.value} style={{ textAlign: 'center' }}>
                 <div style={{ fontFamily: F.display, fontSize: 24, color: 'white', fontWeight: 400, marginBottom: 4 }}>
@@ -270,53 +285,32 @@ export default function LandingPage() {
 
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: C.blue, marginBottom: 10, fontFamily: F.body }}>
-              What you get
+              {t('features.eyebrow')}
             </p>
             <h2 style={{ fontFamily: F.display, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 300, fontStyle: 'italic', color: C.navy, lineHeight: 1.25 }}>
-              Everything a restaurant owner needs to know
+              {t('features.headline')}
             </h2>
           </div>
 
           <div className="features-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
 
             {[
-              {
-                icon: '👥',
-                title: 'Staff costs, down to the hour',
-                desc: 'See actual hours worked, OB supplements, lateness, and cost per department. Connected directly to Personalkollen — no manual export needed.',
-                tags: ['Personalkollen', 'OB supplement', 'Lateness tracking'],
-              },
-              {
-                icon: '📊',
-                title: 'Revenue and covers, daily',
-                desc: 'Track daily revenue, covers, food/drink split, and average spend per guest. Spot which days and services are your most profitable.',
-                tags: ['Daily revenue', 'Covers', 'Food/drink split'],
-              },
-              {
-                icon: '🤖',
-                title: 'AI assistant on every page',
-                desc: 'Ask questions in plain English: "Why is my margin down this month?" or "Which staff member had the most overtime?" — Claude answers based on your actual data.',
-                tags: ['Claude AI', 'Contextual answers', 'Plain language'],
-              },
-              {
-                icon: '🔔',
-                title: 'Automated anomaly alerts',
-                desc: 'Nightly analysis detects unusual spikes in costs or drops in revenue and emails you before the day starts. No need to stare at dashboards.',
-                tags: ['Nightly scan', 'Email alerts', 'Threshold detection'],
-              },
-              {
-                icon: '📈',
-                title: 'P&L tracker and forecast',
-                desc: 'Monthly profit & loss with manual entry for costs not yet in Fortnox. Revenue forecasts calibrated monthly to your actual patterns.',
-                tags: ['Monthly P&L', 'Forecast', 'Budget targets'],
-              },
-              {
-                icon: '📅',
-                title: 'Weekly scheduling insights',
-                desc: 'Group plan customers get a weekly AI-generated staff optimisation report — identifying overstaffed shifts and scheduling inefficiencies.',
-                tags: ['Group plan', 'Weekly report', 'Optimisation'],
-              },
-            ].map(f => (
+              { icon: '👥', key: 'card1' },
+              { icon: '📊', key: 'card2' },
+              { icon: '🤖', key: 'card3' },
+              { icon: '🔔', key: 'card4' },
+              { icon: '📈', key: 'card5' },
+              { icon: '📅', key: 'card6' },
+            ].map(c => ({
+              icon:  c.icon,
+              title: t(`features.${c.key}.title`),
+              desc:  t(`features.${c.key}.desc`),
+              tags:  [
+                t(`features.${c.key}.tag1`),
+                t(`features.${c.key}.tag2`),
+                t(`features.${c.key}.tag3`),
+              ],
+            })).map(f => (
               <div key={f.title} className="feature-card">
                 <div style={{ fontSize: 32, marginBottom: 16 }}>{f.icon}</div>
                 <h3 style={{ fontFamily: F.display, fontSize: 20, fontWeight: 400, color: C.navy, marginBottom: 10, lineHeight: 1.3 }}>
@@ -347,13 +341,13 @@ export default function LandingPage() {
         <div style={{ maxWidth: 900, margin: '0 auto', textAlign: 'center' }}>
 
           <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: C.blue, marginBottom: 10, fontFamily: F.body }}>
-            Integrations
+            {t('integrations.eyebrow')}
           </p>
           <h2 style={{ fontFamily: F.display, fontSize: 'clamp(26px, 4vw, 36px)', fontWeight: 300, fontStyle: 'italic', color: C.navy, marginBottom: 12, lineHeight: 1.3 }}>
-            Your data, automatically.
+            {t('integrations.headline')}
           </h2>
           <p style={{ fontSize: 15, color: C.ink3, lineHeight: 1.7, marginBottom: 48, maxWidth: 560, margin: '0 auto 48px' }}>
-            Connect your systems once. CommandCenter syncs every morning at 06:00 — no exports, no copy-paste, no spreadsheets.
+            {t('integrations.subhead')}
           </p>
 
           <div className="integrations-row" style={{ display: 'flex', justifyContent: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 48 }}>
@@ -361,34 +355,34 @@ export default function LandingPage() {
             <div className="integration-pill">
               <div style={{ width: 36, height: 36, borderRadius: 8, background: '#E8F4FD', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🏢</div>
               <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>Personalkollen</div>
-                <div style={{ fontSize: 12, color: C.ink4 }}>Staff shifts, hours, costs</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{t('integrations.pk')}</div>
+                <div style={{ fontSize: 12, color: C.ink4 }}>{t('integrations.pkDesc')}</div>
               </div>
-              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: C.greenLt, color: C.green }}>LIVE</span>
+              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: C.greenLt, color: C.green }}>{t('integrations.live')}</span>
             </div>
 
             <div className="integration-pill">
               <div style={{ width: 36, height: 36, borderRadius: 8, background: '#FFF5E5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>📒</div>
               <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>Fortnox</div>
-                <div style={{ fontSize: 12, color: C.ink4 }}>Invoices, supplier costs</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{t('integrations.fortnox')}</div>
+                <div style={{ fontSize: 12, color: C.ink4 }}>{t('integrations.fortnoxDesc')}</div>
               </div>
-              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: C.amberLt, color: C.amber }}>SOON</span>
+              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: C.amberLt, color: C.amber }}>{t('integrations.soon')}</span>
             </div>
 
             <div className="integration-pill">
               <div style={{ width: 36, height: 36, borderRadius: 8, background: C.parchment, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🖥️</div>
               <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>Your POS</div>
-                <div style={{ fontSize: 12, color: C.ink4 }}>Ancon, Swess, Trivec</div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: C.ink }}>{t('integrations.pos')}</div>
+                <div style={{ fontSize: 12, color: C.ink4 }}>{t('integrations.posDesc')}</div>
               </div>
-              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: C.parchment, color: C.ink4, border: `1px solid ${C.border}` }}>PLANNED</span>
+              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: C.parchment, color: C.ink4, border: `1px solid ${C.border}` }}>{t('integrations.planned')}</span>
             </div>
 
           </div>
 
           <p style={{ fontSize: 13, color: C.ink4 }}>
-            More integrations in development. <a href="/login" style={{ color: C.blue }}>Request yours →</a>
+            {t('integrations.request')} <a href="/login" style={{ color: C.blue }}>{t('integrations.requestLink')}</a>
           </p>
 
         </div>
@@ -402,15 +396,13 @@ export default function LandingPage() {
 
           <div style={{ textAlign: 'center', marginBottom: 40 }}>
             <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: C.blue, marginBottom: 10, fontFamily: F.body }}>
-              Pricing
+              {t('pricing.eyebrow')}
             </p>
             <h2 style={{ fontFamily: F.display, fontSize: 'clamp(28px, 4vw, 40px)', fontWeight: 300, fontStyle: 'italic', color: C.navy, marginBottom: 12, lineHeight: 1.25 }}>
-              Pay from day one. Priced per restaurant.
+              {t('pricing.headline')}
             </h2>
             <p style={{ fontSize: 15, color: C.ink3, maxWidth: 620, margin: '0 auto' }}>
-              Swedish operators don&rsquo;t buy toys. CommandCenter replaces a
-              chunk of what a fractional CFO would charge you for — and it works
-              while you sleep.
+              {t('pricing.subhead')}
             </p>
           </div>
 
@@ -433,24 +425,21 @@ export default function LandingPage() {
                   background: 'rgba(255,255,255,.12)', color: 'white',
                   fontSize: 11, fontWeight: 700, letterSpacing: '.08em',
                   textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20,
-                }}>Founding customer · 10 spots</span>
+                }}>{t('pricing.founding.badge')}</span>
               </div>
               <h3 style={{ fontFamily: F.display, fontSize: 28, fontWeight: 400, fontStyle: 'italic', color: 'white', marginBottom: 6 }}>
-                995 kr / month — locked for 24 months
+                {t('pricing.founding.title')}
               </h3>
               <p style={{ fontSize: 14, color: 'rgba(255,255,255,.72)', lineHeight: 1.5, maxWidth: 620 }}>
-                Full Solo tier + most of Group for the first 10 restaurants to
-                sign on. In exchange: monthly feedback, case-study partnership,
-                and a direct line to the team. Converts to 1,495 kr/mo permanent
-                discount after 24 months.
+                {t('pricing.founding.body')}
               </p>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 180 }}>
               <Link href="/login?mode=signup&plan=founding" className="btn-white" style={{ justifyContent: 'center' }}>
-                Claim founding spot
+                {t('pricing.founding.cta')}
               </Link>
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', textAlign: 'center' }}>
-                No free trial. Paid from day one.
+                {t('pricing.founding.footnote')}
               </p>
             </div>
           </div>
@@ -459,22 +448,22 @@ export default function LandingPage() {
 
             {/* Solo */}
             <div className="pricing-card">
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>Solo</p>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>{t('pricing.solo.name')}</p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>1 995</span>
-                <span style={{ fontSize: 14, color: C.ink3 }}>kr / mo</span>
+                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>{t('pricing.solo.price')}</span>
+                <span style={{ fontSize: 14, color: C.ink3 }}>{t('pricing.solo.perMonth')}</span>
               </div>
-              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>Single restaurant</p>
+              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>{t('pricing.solo.scope')}</p>
               <div style={{ height: 1, background: C.border, marginBottom: 20 }} />
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {[
-                  '1 restaurant location',
-                  'Fortnox PDF + Personalkollen',
-                  'All core AI agents',
-                  'Anomaly alerts + Monday Memo',
-                  'P&L, budget, forecast, overheads',
-                  '30 AI queries / day',
-                  'Email support · 5 team seats',
+                  t('pricing.solo.feat1'),
+                  t('pricing.solo.feat2'),
+                  t('pricing.solo.feat3'),
+                  t('pricing.solo.feat4'),
+                  t('pricing.solo.feat5'),
+                  t('pricing.solo.feat6'),
+                  t('pricing.solo.feat7'),
                 ].map(item => (
                   <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: C.ink2 }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -483,7 +472,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <Link href="/login?mode=signup&plan=solo" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
-                Get started
+                {t('pricing.solo.cta')}
               </Link>
             </div>
 
@@ -494,24 +483,24 @@ export default function LandingPage() {
                 background: C.blue, color: 'white', fontSize: 11, fontWeight: 700,
                 letterSpacing: '.08em', textTransform: 'uppercase', padding: '4px 14px',
                 borderRadius: 20, whiteSpace: 'nowrap',
-              }}>Most popular</div>
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.55)', marginBottom: 8 }}>Group</p>
+              }}>{t('pricing.group.popular')}</div>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.55)', marginBottom: 8 }}>{t('pricing.group.name')}</p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: 'white' }}>4 995</span>
-                <span style={{ fontSize: 14, color: 'rgba(255,255,255,.55)' }}>kr / mo</span>
+                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: 'white' }}>{t('pricing.group.price')}</span>
+                <span style={{ fontSize: 14, color: 'rgba(255,255,255,.55)' }}>{t('pricing.group.perMonth')}</span>
               </div>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,.45)', marginBottom: 24 }}>2–5 restaurants</p>
+              <p style={{ fontSize: 13, color: 'rgba(255,255,255,.45)', marginBottom: 24 }}>{t('pricing.group.scope')}</p>
               <div style={{ height: 1, background: 'rgba(255,255,255,.15)', marginBottom: 20 }} />
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {[
-                  'Up to 5 locations',
-                  'Everything in Solo',
-                  'Multi-location rollup + Departments',
-                  'Weekly scheduling optimisation',
-                  'Supplier price-creep alerts',
-                  'Priority support · 24h SLA',
-                  'Quarterly review call',
-                  '100 AI queries / day · 25 seats',
+                  t('pricing.group.feat1'),
+                  t('pricing.group.feat2'),
+                  t('pricing.group.feat3'),
+                  t('pricing.group.feat4'),
+                  t('pricing.group.feat5'),
+                  t('pricing.group.feat6'),
+                  t('pricing.group.feat7'),
+                  t('pricing.group.feat8'),
                 ].map(item => (
                   <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: 'rgba(255,255,255,.85)' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -520,28 +509,28 @@ export default function LandingPage() {
                 ))}
               </ul>
               <Link href="/login?mode=signup&plan=group" className="btn-white" style={{ justifyContent: 'center' }}>
-                Get started
+                {t('pricing.group.cta')}
               </Link>
             </div>
 
             {/* Chain */}
             <div className="pricing-card">
-              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>Chain</p>
+              <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: C.ink4, marginBottom: 8 }}>{t('pricing.chain.name')}</p>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 4 }}>
-                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>9 995</span>
-                <span style={{ fontSize: 14, color: C.ink3 }}>kr / mo+</span>
+                <span style={{ fontFamily: F.display, fontSize: 38, fontWeight: 400, color: C.navy }}>{t('pricing.chain.price')}</span>
+                <span style={{ fontSize: 14, color: C.ink3 }}>{t('pricing.chain.perMonth')}</span>
               </div>
-              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>6+ restaurants</p>
+              <p style={{ fontSize: 13, color: C.ink4, marginBottom: 24 }}>{t('pricing.chain.scope')}</p>
               <div style={{ height: 1, background: C.border, marginBottom: 20 }} />
               <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
                 {[
-                  'Unlimited restaurants',
-                  'Everything in Group',
-                  'Dedicated onboarding',
-                  'Custom Fortnox OAuth setup',
-                  'API access (when available)',
-                  'Unlimited AI usage',
-                  'Unlimited team seats',
+                  t('pricing.chain.feat1'),
+                  t('pricing.chain.feat2'),
+                  t('pricing.chain.feat3'),
+                  t('pricing.chain.feat4'),
+                  t('pricing.chain.feat5'),
+                  t('pricing.chain.feat6'),
+                  t('pricing.chain.feat7'),
                 ].map(item => (
                   <li key={item} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: C.ink2 }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -550,7 +539,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <Link href="/login?mode=signup&plan=chain" className="btn-outline-navy" style={{ justifyContent: 'center' }}>
-                Contact us
+                {t('pricing.chain.cta')}
               </Link>
             </div>
 
@@ -558,7 +547,7 @@ export default function LandingPage() {
 
           {/* Annual note */}
           <p style={{ textAlign: 'center', fontSize: 13, color: C.ink4, marginTop: 24 }}>
-            Annual billing saves ~17% (2 months free). Invoicing available — standard for Swedish B2B.
+            {t('pricing.annualNote')}
           </p>
 
         </div>
@@ -578,14 +567,14 @@ export default function LandingPage() {
             fontWeight: 300, fontStyle: 'italic', color: 'white',
             lineHeight: 1.25, marginBottom: 16,
           }}>
-            Ready to see what&apos;s really going on in your restaurants?
+            {t('finalCta.headline')}
           </h2>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,.6)', marginBottom: 36, lineHeight: 1.7 }}>
-            10 founding spots at 995 kr/mo, locked for 24 months. Setup takes under 5 minutes. Cancel any time.
+            {t('finalCta.subhead')}
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap' }}>
             <Link href="/login?mode=signup&plan=founding" className="btn-white">
-              Claim founding spot
+              {t('finalCta.cta')}
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </Link>
           </div>
@@ -611,26 +600,31 @@ export default function LandingPage() {
                 <span style={{ fontFamily: F.display, fontSize: 15, color: 'white', fontWeight: 400 }}>CommandCenter</span>
               </div>
               <p style={{ fontSize: 13, color: 'rgba(255,255,255,.4)', lineHeight: 1.7, maxWidth: 240 }}>
-                AI-powered business intelligence for Swedish restaurant groups. Built in Sweden.
+                {t('footer.tagline')}
               </p>
             </div>
 
             {/* Product */}
             <div>
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 14 }}>Product</p>
-              {['Features', 'Integrations', 'Pricing', 'Changelog'].map(l => (
-                <div key={l} style={{ marginBottom: 10 }}>
-                  <a href="#" className="footer-link">{l}</a>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 14 }}>{t('footer.product')}</p>
+              {[
+                { label: t('footer.links.features'),     href: '#features' },
+                { label: t('footer.links.integrations'), href: '#integrations' },
+                { label: t('footer.links.pricing'),      href: '#pricing' },
+                { label: t('footer.links.changelog'),    href: '#' },
+              ].map(l => (
+                <div key={l.label} style={{ marginBottom: 10 }}>
+                  <a href={l.href} className="footer-link">{l.label}</a>
                 </div>
               ))}
             </div>
 
             {/* Company */}
             <div>
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 14 }}>Company</p>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 14 }}>{t('footer.company')}</p>
               {[
-                { label: 'About', href: '#' },
-                { label: 'Contact', href: '#' },
+                { label: t('footer.links.about'),   href: '#' },
+                { label: t('footer.links.contact'), href: '#' },
               ].map(l => (
                 <div key={l.label} style={{ marginBottom: 10 }}>
                   <a href={l.href} className="footer-link">{l.label}</a>
@@ -640,12 +634,12 @@ export default function LandingPage() {
 
             {/* Legal */}
             <div>
-              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 14 }}>Legal</p>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.35)', marginBottom: 14 }}>{t('footer.legal')}</p>
               {[
-                { label: 'Terms of service', href: '/terms' },
-                { label: 'Privacy policy', href: '/privacy' },
-                { label: 'Sub-processors', href: '/privacy#5' },
-                { label: 'Security',         href: '/security' },
+                { label: t('footer.links.terms'),         href: '/terms' },
+                { label: t('footer.links.privacy'),       href: '/privacy' },
+                { label: t('footer.links.subprocessors'), href: '/privacy#5' },
+                { label: t('footer.links.security'),      href: '/security' },
               ].map(l => (
                 <div key={l.label} style={{ marginBottom: 10 }}>
                   <a href={l.href} className="footer-link">{l.label}</a>
@@ -655,30 +649,24 @@ export default function LandingPage() {
 
           </div>
 
-          {/* Imprint — required by Lag (2002:562) §8 for Swedish commercial sites */}
+          {/* Imprint — required by Lag (2002:562) §8 for Swedish commercial sites.
+              Body comes through translations; emails / IMY link stay
+              hardcoded so they're never accidentally translated and the
+              click-targets are stable across locales. */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 20, paddingBottom: 16, fontSize: 12, color: 'rgba(255,255,255,.35)', lineHeight: 1.7 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>Provider</p>
+            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>{t('footer.provider')}</p>
             <p style={{ margin: 0 }}>
-              CommandCenter is operated by <strong style={{ color: 'rgba(255,255,255,.55)' }}>ComandCenter AB</strong>.
-              {' '}Registered in Sweden.
-              {' '}Org. nr: <span style={{ fontFamily: 'ui-monospace, monospace' }}>pending registration</span>.
-              {' '}Momsnr (VAT): <span style={{ fontFamily: 'ui-monospace, monospace' }}>pending registration</span>.
-              {' '}Registered address: <span style={{ fontStyle: 'italic' as const }}>pending</span>.
-              {' '}Contact: <a href="mailto:hello@comandcenter.se" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>hello@comandcenter.se</a>
-              {' '}· Security / vulnerability reports: <a href="mailto:security@comandcenter.se" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>security@comandcenter.se</a>.
-              {' '}For data-subject requests (GDPR Art. 15–22) use the Data &amp; Privacy section inside your account.
-              {' '}Supervisory authority: <a href="https://www.imy.se" target="_blank" rel="noreferrer" style={{ color: 'rgba(255,255,255,.55)', textDecoration: 'none' }}>Integritetsskyddsmyndigheten (IMY)</a>.
-              {' '}CommandCenter is a B2B service — not intended for consumers.
+              {t('footer.imprintBody')}
             </p>
           </div>
 
           {/* Bottom bar */}
           <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>
-              © {new Date().getFullYear()} ComandCenter AB. CommandCenter™ is a product of ComandCenter AB.
+              {t('footer.copyright', { year: new Date().getFullYear() })}
             </p>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,.3)' }}>
-              GDPR compliant · Data stored in EU (Frankfurt) · Swedish law
+              {t('footer.compliance')}
             </p>
           </div>
 
