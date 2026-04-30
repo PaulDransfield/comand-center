@@ -82,6 +82,38 @@
       "labour":   "Bemanning",
       "labourMsg":"prognose {pct} — åpne Vaktplan og kutt neste ukes timer.",
       "coach":    "Coach"
+    },
+    "modal": {
+      "title":      "AI-genererte budsjetter for {year}",
+      "subtitle":   "Gjennomgå, bruk så alle — eller lukk for å forkaste",
+      "strategy":   "Strategi:",
+      "monthLine":  "Mat {food}% · Bemanning {staff}% · Overskuddsmål {profit}",
+      "discard":    "Forkast",
+      "applying":   "Bruker…",
+      "applyAll":   "Bruk alle 12 måneder →"
+    },
+    "table": {
+      "month":         "Måned",
+      "progress":      "Fremgang mot budsjett",
+      "variance":      "Avvik",
+      "status":        "Status",
+      "save":          "Lagre",
+      "cancel":        "Avbryt",
+      "phRevenue":     "inntekt",
+      "phFood":        "mat %",
+      "phStaff":       "bemanning %",
+      "phProfit":      "overskudd",
+      "labelAct":      "fakt {amount}",
+      "labelBud":      "bud {amount}",
+      "noBudget":      "budsjett ikke satt",
+      "targetTip":     "Mål: {amount}",
+      "editAria":      "Rediger {month}-budsjett",
+      "setAria":       "Sett {month}-budsjett",
+      "status_notSet":   "IKKE SATT",
+      "status_noBudget": "INGEN BUDSJETT",
+      "status_noActuals":"INGEN FAKTISKE",
+      "status_onTrack":  "PÅ SPORET",
+      "status_offTrack": "AVVIKER"
     }
   },
   "forecast": {
@@ -108,7 +140,15 @@
       "missed":   "bommet på prognosen med {pct} — {actual} mot {forecast}.",
       "atRisk":   "prognosemargin {pct} — {rel} på {revenue} inntekt.",
       "belowAvg": "{pp}pp under årssnitt",
-      "belowFloor":"under 12%-gulvet"
+      "belowFloor":"under 12%-gulvet",
+      "panelTitle":"Prognosevarsler"
+    },
+    "chart": {
+      "header":   "Helårsinntekt",
+      "actual":   "Faktisk",
+      "forecast": "Prognose",
+      "emptyNoData":"Ingen prognose eller faktiske tall å plotte ennå. Den månedlige kalibreringen genererer prognoser fra fjorårets handelsdata — den kjører 1. hver måned, eller klikk <b>Oppdater prognose</b> over.",
+      "emptyOneMonth":"Kun 1 måned med faktiske tall og ingen prognose generert ennå. Kom tilbake etter 1. neste måned, eller kjør kalibreringen manuelt."
     }
   },
   "performance": {

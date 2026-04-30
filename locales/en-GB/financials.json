@@ -82,6 +82,38 @@
       "labour":   "Labour",
       "labourMsg":"projected at {pct} — open Scheduling and trim next week's hours.",
       "coach":    "Coach"
+    },
+    "modal": {
+      "title":      "AI-generated budgets for {year}",
+      "subtitle":   "Review, then apply all — or close to discard",
+      "strategy":   "Strategy:",
+      "monthLine":  "Food {food}% · Staff {staff}% · Profit target {profit}",
+      "discard":    "Discard",
+      "applying":   "Applying…",
+      "applyAll":   "Apply all 12 months →"
+    },
+    "table": {
+      "month":         "Month",
+      "progress":      "Progress vs budget",
+      "variance":      "Variance",
+      "status":        "Status",
+      "save":          "Save",
+      "cancel":        "Cancel",
+      "phRevenue":     "rev",
+      "phFood":        "food %",
+      "phStaff":       "staff %",
+      "phProfit":      "profit",
+      "labelAct":      "act {amount}",
+      "labelBud":      "bud {amount}",
+      "noBudget":      "budget not set",
+      "targetTip":     "Target: {amount}",
+      "editAria":      "Edit {month} budget",
+      "setAria":       "Set {month} budget",
+      "status_notSet":   "NOT SET",
+      "status_noBudget": "NO BUDGET",
+      "status_noActuals":"NO ACTUALS",
+      "status_onTrack":  "ON TRACK",
+      "status_offTrack": "OFF TRACK"
     }
   },
   "forecast": {
@@ -108,7 +140,15 @@
       "missed":   "missed forecast by {pct} — {actual} vs {forecast}.",
       "atRisk":   "margin forecast {pct} — {rel} on {revenue} revenue.",
       "belowAvg": "{pp}pp below year avg",
-      "belowFloor":"below 12% floor"
+      "belowFloor":"below 12% floor",
+      "panelTitle":"Forecast flags"
+    },
+    "chart": {
+      "header":   "Full-year revenue",
+      "actual":   "Actual",
+      "forecast": "Forecast",
+      "emptyNoData":"No forecast or actuals to plot yet. The monthly calibration cron generates forecasts from last year's trading data — it runs on the 1st of each month, or click <b>Refresh forecast</b> above.",
+      "emptyOneMonth":"Only 1 month of actuals and no forecast generated yet. Check back after the 1st of next month, or run the calibration manually."
     }
   },
   "performance": {

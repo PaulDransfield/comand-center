@@ -82,6 +82,38 @@
       "labour":   "Personal",
       "labourMsg":"prognos {pct} — öppna Schemaläggning och skär nästa veckas timmar.",
       "coach":    "Coach"
+    },
+    "modal": {
+      "title":      "AI-genererade budgetar för {year}",
+      "subtitle":   "Granska, tillämpa sedan alla — eller stäng för att kasta",
+      "strategy":   "Strategi:",
+      "monthLine":  "Mat {food}% · Personal {staff}% · Vinstmål {profit}",
+      "discard":    "Kasta",
+      "applying":   "Tillämpar…",
+      "applyAll":   "Tillämpa alla 12 månader →"
+    },
+    "table": {
+      "month":         "Månad",
+      "progress":      "Framsteg mot budget",
+      "variance":      "Avvikelse",
+      "status":        "Status",
+      "save":          "Spara",
+      "cancel":        "Avbryt",
+      "phRevenue":     "intäkt",
+      "phFood":        "mat %",
+      "phStaff":       "personal %",
+      "phProfit":      "vinst",
+      "labelAct":      "fakt {amount}",
+      "labelBud":      "bud {amount}",
+      "noBudget":      "budget ej satt",
+      "targetTip":     "Mål: {amount}",
+      "editAria":      "Redigera {month}-budget",
+      "setAria":       "Sätt {month}-budget",
+      "status_notSet":   "EJ SATT",
+      "status_noBudget": "INGEN BUDGET",
+      "status_noActuals":"INGA UTFALL",
+      "status_onTrack":  "PÅ SPÅR",
+      "status_offTrack": "AVVIKER"
     }
   },
   "forecast": {
@@ -108,7 +140,15 @@
       "missed":   "missade prognosen med {pct} — {actual} mot {forecast}.",
       "atRisk":   "prognostiserad marginal {pct} — {rel} på {revenue} intäkt.",
       "belowAvg": "{pp}pp under årsmedel",
-      "belowFloor":"under 12%-golvet"
+      "belowFloor":"under 12%-golvet",
+      "panelTitle":"Prognosvarningar"
+    },
+    "chart": {
+      "header":   "Helårsintäkt",
+      "actual":   "Faktiskt",
+      "forecast": "Prognos",
+      "emptyNoData":"Ingen prognos eller utfall att plotta än. Den månatliga kalibreringen genererar prognoser från förra årets handelsdata — den körs den 1:a varje månad, eller klicka <b>Uppdatera prognos</b> ovan.",
+      "emptyOneMonth":"Endast 1 månad utfall och ingen prognos genererad än. Kom tillbaka efter den 1:a nästa månad, eller kör kalibreringen manuellt."
     }
   },
   "performance": {
