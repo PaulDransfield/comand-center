@@ -47,6 +47,14 @@ export interface ExplainResult {
   confidence:  number   // 0-1
 }
 
+/** Failures on the explain pass attach a string here so callers can
+ *  surface the real reason instead of a generic "try again" message. */
+export const EXPLAIN_ERROR = Symbol.for('cc.overhead-ai.error')
+
+export interface ExplainResultsWithDiag extends Array<ExplainResult> {
+  [EXPLAIN_ERROR]?: string
+}
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export async function explainOverheadFlags(args: {
@@ -134,8 +142,13 @@ Confidence: 0.0-1.0. High (>0.8) when the explanation is concrete and supported 
     const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
     const parsed  = toolUse?.input as { explanations?: any[] } | undefined
     if (!parsed?.explanations || !Array.isArray(parsed.explanations)) {
-      console.warn('[overhead-ai] tool_use missing or malformed')
-      return []
+      console.warn('[overhead-ai] tool_use missing or malformed', {
+        stop_reason: response?.stop_reason,
+        content_types: (response?.content ?? []).map((b: any) => b?.type),
+      })
+      const out: ExplainResultsWithDiag = []
+      out[EXPLAIN_ERROR] = `Sonnet returned no tool_use block (stop_reason: ${response?.stop_reason ?? 'unknown'}). Content types received: ${(response?.content ?? []).map((b: any) => b?.type).join(', ') || 'none'}`
+      return out
     }
 
     // Best-effort cost log. Don't fail the worker on logging error.
@@ -158,7 +171,14 @@ Confidence: 0.0-1.0. High (>0.8) when the explanation is concrete and supported 
       }))
   } catch (e: any) {
     console.warn('[overhead-ai] explain failed:', e?.message ?? e)
-    return []
+    const out: ExplainResultsWithDiag = []
+    // Surface the real reason so the caller can show a useful error.
+    // Common causes: ANTHROPIC_API_KEY missing, rate limit, abort timeout (45s),
+    // 5xx from Anthropic, malformed prompt rejected.
+    out[EXPLAIN_ERROR] = e?.message
+      || (e?.name ? `${e.name}${e?.code ? ` (${e.code})` : ''}` : '')
+      || 'unknown error from Anthropic SDK'
+    return out
   } finally {
     clearTimeout(timeout)
   }

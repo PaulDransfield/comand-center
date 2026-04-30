@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
-import { explainOverheadFlags } from '@/lib/overheads/ai-explanation'
+import { explainOverheadFlags, EXPLAIN_ERROR } from '@/lib/overheads/ai-explanation'
 import { normaliseSupplier, pickDisplayLabel } from '@/lib/overheads/normalise'
 import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
@@ -135,8 +135,16 @@ export async function POST(req: NextRequest, { params }: { params: { flagId: str
   })
 
   if (explanations.length === 0) {
+    // Pull the underlying error message off the symbol-keyed slot so the
+    // client sees what actually broke (was previously a generic message
+    // that made every issue start with "we have no idea").
+    const realError = (explanations as any)[EXPLAIN_ERROR] as string | undefined
     return NextResponse.json({
-      error: 'AI explain failed — try again in a moment',
+      error: realError
+        ? `AI explain failed: ${realError}`
+        : 'AI explain failed — try again in a moment',
+      // Also include the raw error in a separate field for diagnostics.
+      diagnostic: realError ?? null,
     }, { status: 503 })
   }
 
