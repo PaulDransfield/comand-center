@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 interface CompanyInfoState {
   org_number:           string | null
@@ -22,6 +23,7 @@ const DISMISS_KEY = 'cc_orgnr_banner_dismissed'
 
 export function OrgNumberBanner() {
   const router = useRouter()
+  const t      = useTranslations('settings.orgNumberBanner')
   const [state,     setState]     = useState<CompanyInfoState | null>(null)
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
@@ -75,9 +77,7 @@ export function OrgNumberBanner() {
           color:    isExpired ? '#991b1b' : '#92400e',
           marginBottom: 2,
         }}>
-          {isExpired
-            ? 'Action required: add your organisationsnummer'
-            : 'Add your company\'s organisationsnummer'}
+          {isExpired ? t('expiredTitle') : t('softTitle')}
         </div>
         <div style={{
           fontSize: 12,
@@ -85,8 +85,8 @@ export function OrgNumberBanner() {
           lineHeight: 1.5,
         }}>
           {isExpired
-            ? 'Required for VAT-compliant invoicing. Some features will be blocked until added.'
-            : <>Required for VAT-compliant invoicing. {state.grace_days_remaining} day{state.grace_days_remaining === 1 ? '' : 's'} remaining before features are blocked.</>}
+            ? t('expiredBody')
+            : t('softBody', { days: state.grace_days_remaining })}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -98,7 +98,7 @@ export function OrgNumberBanner() {
               fontSize: 12, color: '#92400e', cursor: 'pointer',
             }}
           >
-            Later
+            {t('later')}
           </button>
         )}
         <button
@@ -110,7 +110,7 @@ export function OrgNumberBanner() {
             fontSize: 12, fontWeight: 500, cursor: 'pointer',
           }}
         >
-          Add now →
+          {t('addNow')}
         </button>
       </div>
     </div>

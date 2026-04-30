@@ -1,0 +1,145 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "page": {
+    "title":    "Innstillinger",
+    "subtitle": "Administrer restaurantene dine og leverandørregler"
+  },
+  "restaurants": {
+    "card":         "Restauranter",
+    "subtitle":     "Administrer restaurantlokasjonene dine",
+    "addLocation":  "+ Legg til lokasjon",
+    "empty":        "Ingen restauranter ennå",
+    "active":       "Aktiv",
+    "inactive":     "Inaktiv",
+    "noCity":       "Ingen by",
+    "defaultType":  "Restaurant",
+    "edit":         "Rediger detaljer",
+    "deactivate":   "Deaktiver",
+    "reactivate":   "Reaktiver",
+    "delete":       "Slett",
+    "modal": {
+      "title":         "Legg til restaurant",
+      "name":          "Restaurantens navn",
+      "namePlaceholder":"f.eks. Vero Italiano",
+      "city":          "By",
+      "cityPlaceholder":"Oslo",
+      "type":          "Type",
+      "saving":        "Lagrer…",
+      "submit":        "Legg til restaurant"
+    },
+    "edit_form": {
+      "name":          "Navn",
+      "city":          "By",
+      "type":          "Type",
+      "orgNumber":     "Organisasjonsnummer (valgfritt)",
+      "orgNumberHint": "Bare nødvendig hvis denne restauranten er sin egen juridiske person (eget AS). La stå tomt for å arve hovedorganisasjonens nummer.",
+      "save":          "Lagre endringer"
+    },
+    "confirm": {
+      "deactivate":      "Deaktiver \"{name}\"?",
+      "reactivate":      "Reaktiver \"{name}\"?",
+      "deleteOrDeactivate":"Slett eller deaktiver \"{name}\"?\n\nKlikk OK for å SLETTE PERMANENT (kan ikke angres)\nKlikk Avbryt for å gå tilbake",
+      "deletePermanent": "Er du sikker på at du vil slette \"{name}\" permanent?\nAll data for denne restauranten går tapt."
+    }
+  },
+  "supplier": {
+    "title":          "Leverandørregler",
+    "subtitle":       "Regler for å automatisk kategorisere leverandørfakturaer når Fortnox synker.",
+    "testHeader":     "Test en leverandør",
+    "testPlaceholder":"Skriv inn leverandørnavn…",
+    "test":           "Test",
+    "match":          "Treff: ",
+    "noMatch":        "Ingen matchende regel funnet",
+    "addHeader":      "Legg til regel",
+    "ifContains":     "Hvis leverandørnavnet inneholder",
+    "vendorPlaceholder":"f.eks. Vinmonopolet",
+    "categoryLabel":  "Kategori",
+    "addEntry":       "+ Legg til regel",
+    "activeRules":    "Aktive regler ({count})",
+    "loading":        "Laster…",
+    "emptyRules":     "Ingen regler ennå. Legg til din første regel over.",
+    "contains":       "Inneholder ",
+    "ruleArrow":      " → ",
+    "deleteRule":     "Slette denne regelen?",
+    "footnote":       "Regler brukes i prioritetsrekkefølge. Høyere prioritet = sjekkes først."
+  },
+  "categories": {
+    "food_beverage": "Mat og drikke",
+    "alcohol":       "Alkohol",
+    "staff":         "Bemanning",
+    "rent":          "Husleie & lokaler",
+    "cleaning":      "Renhold",
+    "repairs":       "Reparasjoner & vedlikehold",
+    "marketing":     "Markedsføring",
+    "utilities":     "Strøm og forbruk",
+    "admin":         "Administrasjon",
+    "other":         "Annet"
+  },
+  "digest": {
+    "title":    "Ukentlig sammendrag på e-post",
+    "subtitle": "Hver mandag kl. 07:00 mottar du et sammendrag av forrige uke — inntekter, kostnader, gjester og utestående fakturaer for alle restaurantene dine.",
+    "send":     "Send testsammendrag til min e-post"
+  },
+  "gdpr": {
+    "title":             "Data og personvern",
+    "subtitle":          "Administrer dataene dine i tråd med GDPR. Se vår",
+    "privacyPolicyLink": "Personvernerklæring",
+    "consentHeader":     "Samtykkeregister",
+    "consentLine":       "Personvernerklæring v{version} godtatt den {date}",
+    "noConsent":         "Intet samtykke registrert",
+    "ai": {
+      "title":    "Lagre AI-spørsmålstekst",
+      "subtitle": "Når på lagrer vi de første 100 tegnene av hvert AI-spørsmål for kvalitetsfeilsøking — beholdes 365 dager, synlig kun for supportteamet vårt. Når av lagrer vi modellen, tokenantall og kostnad (nødvendig for fakturering), men selve spørsmålsteksten lagres aldri."
+    },
+    "export": {
+      "title":    "Eksporter dataene dine",
+      "subtitle": "Last ned en komplett kopi av all data vi har om organisasjonen din — restauranter, resultatregnskap, vaktlogger, prognoser og fakturaer — i JSON-format.",
+      "preparing":"Forbereder eksport…",
+      "button":   "Last ned dataeksport"
+    },
+    "delete": {
+      "title":    "Slett kontoen din",
+      "subtitle": "Be om permanent sletting av all dataen din. Dette kan ikke angres. Vi behandler forespørselen din innen 30 dager og sender en bekreftelses-e-post. Merk: fakturaregister beholdes i 7 år som krevd av norsk lov.",
+      "button":   "Be om sletting av konto",
+      "confirmTitle":"Er du sikker?",
+      "confirmBody": "Dette vil permanent slette alle restauranter, finansielle data, vaktlogger, prognoser og integrasjonstilkoblinger. Dette kan ikke angres.",
+      "submit":   "Ja, slett alle dataene mine",
+      "submitting":"Sender…",
+      "submitted":"Forespørsel sendt"
+    }
+  },
+  "orgNumberBanner": {
+    "expiredTitle":  "Handling kreves: legg til organisasjonsnummeret ditt",
+    "softTitle":     "Legg til firmaets organisasjonsnummer",
+    "expiredBody":   "Kreves for MVA-kompatibel fakturering. Noen funksjoner blokkeres til dette legges til.",
+    "softBody":      "Kreves for MVA-kompatibel fakturering. {days, plural, one {# dag} other {# dager}} igjen før funksjoner blokkeres.",
+    "later":         "Senere",
+    "addNow":        "Legg til nå →"
+  },
+  "company": {
+    "eyebrow":  "INNSTILLINGER · FIRMA",
+    "context":  "Kreves for MVA-kompatible fakturaer, underleverandøravtaler og Fortnox-kryssverifisering.",
+    "headline": {
+      "set":         "Firmainfo — satt",
+      "expired":     "Handling kreves: legg til organisasjonsnummeret ditt",
+      "grace":       "Legg til organisasjonsnummeret ditt ({days, plural, one {# dag} other {# dager}} igjen)"
+    },
+    "expired":  "Frist utløpt.",
+    "expiredFollowup":"Noen funksjoner blokkeres til du legger til organisasjonsnummeret ditt nedenfor.",
+    "label":    "Organisasjonsnummer",
+    "hint":     "10 sifre — godtar formatert versjon (XXXXXX-XXXX) eller uformatert.",
+    "setOn":    "Satt den {date}",
+    "saved":    "Lagret",
+    "save":     "Lagre",
+    "saving":   "Lagrer…",
+    "update":   "Oppdater",
+    "saveFailed":"Lagring mislyktes",
+    "whyTitle": "Hvorfor vi trenger dette:",
+    "why1":     "MVA-kompatibel fakturering krever organisasjonsnummeret ditt på kvitteringer.",
+    "why2":     "Underleverandøravtaler (Supabase, Anthropic, Stripe, Resend) refererer til din juridiske enhet.",
+    "why3":     "Skiller firmaet ditt fra andre lignende navngitte virksomheter."
+  }
+}

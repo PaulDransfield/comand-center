@@ -2,6 +2,7 @@
 // @ts-nocheck
 export const dynamic = 'force-dynamic'
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import AiLimitReached from '@/components/AiLimitReached'
 import PageHero from '@/components/ui/PageHero'
@@ -32,6 +33,7 @@ function QuickStat({ label, value, tone }: { label: string; value: string; tone?
 }
 
 export default function BudgetPage() {
+  const t   = useTranslations('financials.budget')
   const now = new Date()
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [selected, setSelected]     = useState('')
@@ -336,17 +338,17 @@ export default function BudgetPage() {
 
         {/* PageHero — replaces the big header + KPI row */}
         <PageHero
-          eyebrow={`${year} BUDGET`}
+          eyebrow={t('eyebrowYearBudget', { year })}
           headline={headline}
           context={heroContext}
           right={
             <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' as const }}>
-              <TallyDot tone="good"    count={onTrack}         label="On track" />
-              <TallyDot tone="bad"     count={offTrack}        label="Off track" />
+              <TallyDot tone="good"    count={onTrack}         label={t('tally.onTrack')} />
+              <TallyDot tone="bad"     count={offTrack}        label={t('tally.offTrack')} />
               {loggedNoBudget > 0 && (
-                <TallyDot tone="info"  count={loggedNoBudget}  label="No budget" />
+                <TallyDot tone="info"  count={loggedNoBudget}  label={t('tally.noBudget')} />
               )}
-              <TallyDot tone="neutral" count={notStarted}      label="Not started" />
+              <TallyDot tone="neutral" count={notStarted}      label={t('tally.notStarted')} />
             </div>
           }
         />
@@ -482,7 +484,7 @@ export default function BudgetPage() {
           </div>
 
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+            <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
           ) : (() => {
             // Year-max drives the horizontal scale so every month's bar is
             // honestly proportional to the biggest month on the page — whether

@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "page": {
+    "title":      "Alerts",
+    "subtitle":   "Automatic anomaly detection · updated daily at 06:00",
+    "showAll":    "Show all",
+    "unreadOnly": "Unread only"
+  },
+  "kpi": {
+    "critical": "Critical",
+    "high":     "High",
+    "unread":   "Unread",
+    "total":    "Total"
+  },
+  "list": {
+    "loading":     "Loading…",
+    "allClear":    "All clear",
+    "empty":       "No active alerts. Click \"Run check now\" to scan for anomalies."
+  },
+  "card": {
+    "detected":    "Detected {created} · Period: {period} · AI-generated — review before acting",
+    "markRead":    "Mark read",
+    "dismiss":     "Dismiss"
+  },
+  "type": {
+    "revenue_drop":     "Revenue drop",
+    "food_cost_spike":  "Food cost spike",
+    "staff_cost_spike": "Staff cost spike",
+    "invoice_spike":    "Invoice anomaly",
+    "covers_drop":      "Covers drop"
+  },
+  "invoices": {
+    "page": {
+      "title":     "Invoices",
+      "subtitle":  "AI-powered extraction — drag a PDF to add",
+      "uploadPdf": "+ Upload PDF"
+    },
+    "kpi": {
+      "totalThisMonth": "Total this month",
+      "invoicesCount":  "{count, plural, one {# invoice} other {# invoices}}",
+      "overdue":        "Overdue",
+      "overdueCount":   "{count, plural, one {# invoice} other {# invoices}}",
+      "outstanding":    "{amount} outstanding",
+      "noneOverdue":    "None overdue",
+      "largestSupplier":"Largest supplier"
+    },
+    "drop": {
+      "extracting": "Extracting data with AI…",
+      "drop":       "Drop a PDF invoice here or click to upload",
+      "hint":       "AI reads vendor, amount, date, line items and VAT — takes about 10 seconds"
+    },
+    "filter": {
+      "all":     "All",
+      "paid":    "Paid",
+      "pending": "Pending",
+      "overdue": "Overdue"
+    },
+    "table": {
+      "loading":   "Loading…",
+      "emptyAll":  "No invoices yet — upload your first PDF above",
+      "emptyFilter":"No invoices match this filter",
+      "supplier":  "Supplier",
+      "date":      "Date",
+      "amount":    "Amount",
+      "category":  "Category",
+      "status":    "Status",
+      "delete":    "Delete",
+      "deleteConfirm": "Delete this invoice?"
+    },
+    "status": {
+      "pending": "Pending",
+      "paid":    "Paid",
+      "overdue": "Overdue"
+    }
+  }
+}

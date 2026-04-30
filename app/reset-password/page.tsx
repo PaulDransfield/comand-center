@@ -9,11 +9,13 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter }           from 'next/navigation'
+import { useTranslations }     from 'next-intl'
 import { createClient }        from '@/lib/supabase/client'
 
 export default function ResetPasswordPage() {
   const router   = useRouter()
   const supabase = createClient()
+  const t        = useTranslations('auth.reset')
 
   const [password,  setPassword]  = useState('')
   const [password2, setPassword2] = useState('')
@@ -27,7 +29,7 @@ export default function ResetPasswordPage() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
         // No session — link expired or already used
-        router.push('/login?error=' + encodeURIComponent('Reset link expired. Please request a new one.'))
+        router.push('/login?error=' + encodeURIComponent(t('linkExpired')))
       } else {
         setReady(true)
       }
@@ -38,8 +40,8 @@ export default function ResetPasswordPage() {
     e.preventDefault()
     setError('')
 
-    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
-    if (password !== password2) { setError('Passwords do not match.'); return }
+    if (password.length < 8) { setError(t('tooShort')); return }
+    if (password !== password2) { setError(t('mismatch')); return }
 
     setLoading(true)
     const { error } = await supabase.auth.updateUser({ password })
@@ -71,8 +73,8 @@ export default function ResetPasswordPage() {
           <span style={{ fontFamily:'var(--display)',fontSize:14,fontWeight:600,color:'var(--navy)' }}>CommandCenter</span>
         </div>
 
-        <h1 style={{ fontFamily:'var(--display)',fontSize:22,fontWeight:300,fontStyle:'italic',color:'var(--navy)',marginBottom:6 }}>Set new password</h1>
-        <p style={{ fontSize:13,color:'var(--ink-3)',marginBottom:22,lineHeight:1.5 }}>Choose a strong password for your account.</p>
+        <h1 style={{ fontFamily:'var(--display)',fontSize:22,fontWeight:300,fontStyle:'italic',color:'var(--navy)',marginBottom:6 }}>{t('title')}</h1>
+        <p style={{ fontSize:13,color:'var(--ink-3)',marginBottom:22,lineHeight:1.5 }}>{t('subtitle')}</p>
 
         {error && (
           <div style={{ background:'var(--red-lt)',border:'1px solid var(--red-mid)',borderRadius:8,padding:'10px 14px',fontSize:13,color:'var(--red)',marginBottom:16 }}>
@@ -83,24 +85,24 @@ export default function ResetPasswordPage() {
         <form onSubmit={handleSubmit} style={{ display:'flex',flexDirection:'column',gap:14 }}>
           <div>
             <label style={{ display:'block',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--ink-4)',marginBottom:5 }}>
-              New password
+              {t('newPassword')}
             </label>
             <input
-              className="input" type="password" placeholder="At least 8 characters" required minLength={8}
+              className="input" type="password" placeholder={t('newPasswordPlaceholder')} required minLength={8}
               value={password} onChange={e => setPassword(e.target.value)} autoFocus autoComplete="new-password"
             />
           </div>
           <div>
             <label style={{ display:'block',fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.08em',color:'var(--ink-4)',marginBottom:5 }}>
-              Confirm password
+              {t('confirm')}
             </label>
             <input
-              className="input" type="password" placeholder="Same password again" required
+              className="input" type="password" placeholder={t('confirmPlaceholder')} required
               value={password2} onChange={e => setPassword2(e.target.value)} autoComplete="new-password"
             />
           </div>
           <button type="submit" className="btn btn-primary btn-full" disabled={loading} style={{ marginTop:4 }}>
-            {loading ? <><span className="spin">⟳</span> Updating…</> : 'Update password'}
+            {loading ? <><span className="spin">⟳</span> {t('submitting')}</> : t('submit')}
           </button>
         </form>
 

@@ -6,6 +6,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -66,6 +67,7 @@ function KpiCard({ label, value, sub, deltaVal }: any) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RevenuePage() {
+  const t = useTranslations('operations.revenue')
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -235,7 +237,7 @@ export default function RevenuePage() {
         />
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
         ) : (
           <>
 

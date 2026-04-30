@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "crumb": {
+    "operations": "Drift",
+    "scheduling": "Vaktplan"
+  },
+  "loading":   "Laster vaktplandata…",
+  "noJoinedData": {
+    "title": "Ingen sammenkoblet data ennå",
+    "body":  "Vaktplaneffektivitet krever både ansattetimer (Personalkollen) og inntektsdata (POS) for samme datoer. Prøv å utvide datointervallet."
+  },
+  "ranges": {
+    "title":         "AI-utsikter",
+    "this_week":     "Denne uken",
+    "next_week":     "Neste uke",
+    "2w":            "2 uker",
+    "4w":            "4 uker",
+    "next_month":    "Neste måned",
+    "labelThisWeek": "Denne uken",
+    "labelNextWeek": "Neste uke",
+    "label2w":       "Neste 2 uker",
+    "label4w":       "Neste 4 uker",
+    "labelNextMonth":"Neste kalendermåned"
+  },
+  "status": {
+    "lean":         "Effektiv",
+    "leanHint":     "Høy inntekt per time — du får mye ut av timene som er satt opp.",
+    "on_target":    "På mål",
+    "on_targetHint":"Inntekt per arbeidstime innenfor ±20% av ukesnittet.",
+    "overstaffed":  "Overbemannet",
+    "overstaffedHint":"Inntekt per time er lav — flere timer planlagt enn etterspørselen krever. Vurder å kutte.",
+    "no_data":      "Ingen data",
+    "no_dataHint":  "Færre enn 2 dager med sammenkoblet data for denne ukedagen."
+  },
+  "drill": {
+    "headerEyebrow":  "{day} i {period}",
+    "loading":        "Laster…",
+    "error":          "Feil",
+    "totalsRevLabour":"{rev} inntekt · {labour} bemanning · {ratePerHour}",
+    "ratePerHourMissing": "—/t",
+    "subEyebrow":     "{count, plural, one {# dag} other {# dager}} · {staff} pers · {shifts} skift · {hours}",
+    "loadingDay":     "Laster dagsdetaljer…",
+    "byDate":         "Per dato",
+    "th":  {
+      "date":        "Dato",
+      "revenue":     "Inntekt",
+      "labour":      "Bemanning",
+      "hours":       "Timer",
+      "staff":       "Pers",
+      "revPerHr":    "Innt/t",
+      "name":        "Navn",
+      "department":  "Avdeling",
+      "shifts":      "Skift",
+      "cost":        "Kostnad",
+      "costPerHr":   "Kost/t"
+    },
+    "whoWorked":      "Hvem jobbet ({count})",
+    "noStaffShifts":  "Ingen ansatteskift registrert for disse datoene.",
+    "noDataForDay":   "Ingen data for {day} i denne perioden."
+  }
+}

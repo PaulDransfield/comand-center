@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review",
+    "_note":   "Sideoverskrifter + delte lastetilstander. Indre tekst på sidene er fortsatt engelsk; spores for oppfølgings-PR."
+  },
+  "tracker": {
+    "eyebrowYtd":     "YTD — {year}",
+    "eyebrowYtdMonths":"YTD — {year} · {count, plural, one {# MÅNED LOGGET} other {# MÅNEDER LOGGET}}",
+    "ytdProfit":      "YTD-resultat",
+    "loading":        "Laster…",
+    "loadingDaily":   "Laster dagsdata…"
+  },
+  "budget": {
+    "eyebrowYearBudget":"{year} BUDSJETT",
+    "tally": {
+      "onTrack":       "På sporet",
+      "offTrack":      "Avviker",
+      "noBudget":      "Ingen budsjett",
+      "notStarted":    "Ikke startet"
+    },
+    "loading":        "Laster…"
+  },
+  "forecast": {
+    "loading":        "Laster prognose…",
+    "loadingChart":   "Laster…"
+  },
+  "performance": {
+    "loading":        "Laster…"
+  },
+  "overheads": {
+    "loading":        "Laster faste kostnader…",
+    "loadingPanel":   "Laster…"
+  }
+}

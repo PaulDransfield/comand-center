@@ -1,0 +1,145 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "page": {
+    "title":    "Settings",
+    "subtitle": "Manage your restaurants and supplier mapping rules"
+  },
+  "restaurants": {
+    "card":         "Restaurants",
+    "subtitle":     "Manage your restaurant locations",
+    "addLocation":  "+ Add location",
+    "empty":        "No restaurants yet",
+    "active":       "Active",
+    "inactive":     "Inactive",
+    "noCity":       "No city",
+    "defaultType":  "Restaurant",
+    "edit":         "Edit details",
+    "deactivate":   "Deactivate",
+    "reactivate":   "Reactivate",
+    "delete":       "Delete",
+    "modal": {
+      "title":         "Add restaurant",
+      "name":          "Restaurant name",
+      "namePlaceholder":"e.g. Vero Italiano",
+      "city":          "City",
+      "cityPlaceholder":"Stockholm",
+      "type":          "Type",
+      "saving":        "Saving…",
+      "submit":        "Add restaurant"
+    },
+    "edit_form": {
+      "name":          "Name",
+      "city":          "City",
+      "type":          "Type",
+      "orgNumber":     "Organisationsnummer (optional)",
+      "orgNumberHint": "Only needed when this restaurant is its own legal entity (separate AB). Leave blank to inherit the parent organisation's number.",
+      "save":          "Save changes"
+    },
+    "confirm": {
+      "deactivate":      "Deactivate \"{name}\"?",
+      "reactivate":      "Reactivate \"{name}\"?",
+      "deleteOrDeactivate":"Delete or deactivate \"{name}\"?\n\nClick OK to PERMANENTLY DELETE (cannot be undone)\nClick Cancel to go back",
+      "deletePermanent": "Are you sure you want to permanently delete \"{name}\"?\nAll data for this restaurant will be lost."
+    }
+  },
+  "supplier": {
+    "title":          "Supplier Mapping",
+    "subtitle":       "Rules to automatically categorise supplier invoices when Fortnox syncs.",
+    "testHeader":     "Test a vendor",
+    "testPlaceholder":"Enter vendor name…",
+    "test":           "Test",
+    "match":          "Match: ",
+    "noMatch":        "No matching rule found",
+    "addHeader":      "Add entry rule",
+    "ifContains":     "If vendor name contains",
+    "vendorPlaceholder":"e.g. Systembolaget",
+    "categoryLabel":  "Category",
+    "addEntry":       "+ Add entry",
+    "activeRules":    "Active rules ({count})",
+    "loading":        "Loading…",
+    "emptyRules":     "No rules yet. Add your first rule above.",
+    "contains":       "Contains ",
+    "ruleArrow":      " → ",
+    "deleteRule":     "Delete this rule?",
+    "footnote":       "Rules are applied in priority order. Higher priority = checked first."
+  },
+  "categories": {
+    "food_beverage": "Food & Beverage",
+    "alcohol":       "Alcohol",
+    "staff":         "Staff",
+    "rent":          "Rent & Premises",
+    "cleaning":      "Cleaning",
+    "repairs":       "Repairs & Maintenance",
+    "marketing":     "Marketing",
+    "utilities":     "Utilities",
+    "admin":         "Administration",
+    "other":         "Other"
+  },
+  "digest": {
+    "title":    "Weekly Digest Email",
+    "subtitle": "Every Monday at 07:00 you receive a summary of last week — revenue, costs, covers, and outstanding invoices for all your restaurants.",
+    "send":     "Send test digest to my email"
+  },
+  "gdpr": {
+    "title":             "Data & Privacy",
+    "subtitle":          "Manage your data in accordance with GDPR. View our",
+    "privacyPolicyLink": "Privacy Policy",
+    "consentHeader":     "Consent records",
+    "consentLine":       "Privacy Policy v{version} accepted on {date}",
+    "noConsent":         "No consent recorded",
+    "ai": {
+      "title":    "Store AI question text",
+      "subtitle": "When on, we save the first 100 characters of each AI question for quality debugging — retained 365 days, visible only to our support team. When off, we keep the model, token counts and cost (needed for billing) but the question text itself is never stored."
+    },
+    "export": {
+      "title":    "Export your data",
+      "subtitle": "Download a complete copy of all data we hold for your organisation — restaurants, P&L, staff logs, forecasts and invoices — in JSON format.",
+      "preparing":"Preparing export…",
+      "button":   "Download data export"
+    },
+    "delete": {
+      "title":    "Delete your account",
+      "subtitle": "Request permanent deletion of all your data. This cannot be undone. We will process your request within 30 days and send a confirmation email. Note: billing records are retained for 7 years as required by Swedish law.",
+      "button":   "Request account deletion",
+      "confirmTitle":"Are you sure?",
+      "confirmBody": "This will permanently delete all restaurants, financial data, staff logs, forecasts and integration connections. This cannot be undone.",
+      "submit":   "Yes, delete all my data",
+      "submitting":"Submitting…",
+      "submitted":"Request submitted"
+    }
+  },
+  "orgNumberBanner": {
+    "expiredTitle":  "Action required: add your organisationsnummer",
+    "softTitle":     "Add your company's organisationsnummer",
+    "expiredBody":   "Required for VAT-compliant invoicing. Some features will be blocked until added.",
+    "softBody":      "Required for VAT-compliant invoicing. {days, plural, one {# day} other {# days}} remaining before features are blocked.",
+    "later":         "Later",
+    "addNow":        "Add now →"
+  },
+  "company": {
+    "eyebrow":  "SETTINGS · COMPANY",
+    "context":  "Required for VAT-compliant invoicing, sub-processor contracts, and Fortnox cross-verification.",
+    "headline": {
+      "set":         "Company info — set",
+      "expired":     "Action required: add your organisationsnummer",
+      "grace":       "Add your organisationsnummer ({days, plural, one {# day} other {# days}} remaining)"
+    },
+    "expired":  "Grace period expired.",
+    "expiredFollowup":"Some features will be blocked until you add your organisationsnummer below.",
+    "label":    "Organisationsnummer",
+    "hint":     "10 digits — accepts the formatted version (XXXXXX-XXXX) or unformatted.",
+    "setOn":    "Set on {date}",
+    "saved":    "Saved",
+    "save":     "Save",
+    "saving":   "Saving…",
+    "update":   "Update",
+    "saveFailed":"Save failed",
+    "whyTitle": "Why we need this:",
+    "why1":     "Swedish VAT-compliant invoicing requires your org-nr on receipts.",
+    "why2":     "Sub-processor agreements (Supabase, Anthropic, Stripe, Resend) reference your legal entity.",
+    "why3":     "Disambiguates your company from similarly-named businesses across Sweden."
+  }
+}

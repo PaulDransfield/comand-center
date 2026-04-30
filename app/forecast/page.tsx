@@ -17,6 +17,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -33,6 +34,7 @@ const MONTHS       = ['January','February','March','April','May','June','July','
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function ForecastPage() {
+  const t   = useTranslations('financials.forecast')
   const now           = new Date()
   const currentYear   = now.getFullYear()
   const currentMonth  = now.getMonth() + 1
@@ -181,7 +183,7 @@ export default function ForecastPage() {
 
   // ── Hero headline ─────────────────────────────────────────────────────────
   const headline = (() => {
-    if (loading) return <>Loading forecast…</>
+    if (loading) return <>{t('loading')}</>
     if (!data) return <>Forecast not available yet.</>
 
     // No forecast yet. Don't invent a projection — surface the real state.
@@ -416,6 +418,7 @@ export default function ForecastPage() {
 // "today" dashed line at the month boundary, coloured dots at each point.
 // ─────────────────────────────────────────────────────────────────────────────
 function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
+  const t = useTranslations('financials.forecast')
   const W   = 720
   const H   = 240
   const PL  = 46
@@ -588,7 +591,7 @@ function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
 
       {/* Loading overlay */}
       {loading && (
-        <text x={W / 2} y={H / 2} textAnchor="middle" fill={UX.ink4} fontSize={UX.fsBody}>Loading…</text>
+        <text x={W / 2} y={H / 2} textAnchor="middle" fill={UX.ink4} fontSize={UX.fsBody}>{t('loadingChart')}</text>
       )}
     </svg>
   )

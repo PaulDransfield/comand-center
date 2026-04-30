@@ -5,6 +5,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { OverheadReviewCard } from '@/components/OverheadReviewCard'
 import { OrgNumberBanner } from '@/components/OrgNumberBanner'
@@ -142,13 +143,45 @@ const schedCardCta: React.CSSProperties = {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div>}>
+    <Suspense fallback={<DashboardLoadingFallback />}>
       <DashboardInner />
     </Suspense>
   )
 }
 
+function DashboardLoadingFallback() {
+  const tCommon = useTranslations('common')
+  return (
+    <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>
+      {tCommon('state.loading')}
+    </div>
+  )
+}
+
 function DashboardInner() {
+  const tDash    = useTranslations('dashboard')
+  const tCommon  = useTranslations('common')
+  // Localised short month/day arrays, sourced from common.json.
+  // MONTHS/DAYS at module scope stay in English — they're used by the
+  // bounds helpers to build YYYY-MM-DD strings and labels we recompute
+  // here for display. Anything user-visible passes through these.
+  const monthsLocal = (tCommon.raw('time.monthsShort') as string[]) ?? MONTHS
+  // Build a localised label from a bounds object — week or month — using
+  // the same shape as getWeekBounds/getMonthBounds but with translated
+  // month names.
+  function formatMonthLabel(b: { year: number; month?: number; firstDay?: Date }): string {
+    const idx = b.month ? b.month - 1 : (b.firstDay?.getMonth() ?? 0)
+    return `${monthsLocal[idx]} ${b.year}`
+  }
+  function formatWeekRange(b: { mon: Date; year: number }): string {
+    const sun = new Date(b.mon)
+    sun.setDate(b.mon.getDate() + 6)
+    const mMon = monthsLocal[b.mon.getMonth()]
+    const sMon = monthsLocal[sun.getMonth()]
+    return mMon === sMon
+      ? `${b.mon.getDate()}–${sun.getDate()} ${mMon}`
+      : `${b.mon.getDate()} ${mMon} – ${sun.getDate()} ${sMon}`
+  }
   const [businesses,  setBusinesses]  = useState<any[]>([])
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [dataAsOf,    setDataAsOf]    = useState<string | null>(null)
@@ -420,14 +453,28 @@ function DashboardInner() {
     const out: PeriodOption[] = []
     for (let off = 0; off >= -6; off--) {
       const w = getWeekBounds(off)
-      out.push({ key: `w:${off}`, label: `Week ${w.weekNum} · ${w.label}`, view: 'week', dateFrom: w.from, dateTo: w.to })
+      out.push({
+        key: `w:${off}`,
+        label: tDash('period.weekLabel', { num: w.weekNum, range: formatWeekRange(w) }),
+        view: 'week',
+        dateFrom: w.from,
+        dateTo: w.to,
+      })
     }
     for (let off = 0; off >= -6; off--) {
       const m = getMonthBounds(off)
-      out.push({ key: `m:${off}`, label: m.label, view: 'month', dateFrom: m.from, dateTo: m.to })
+      out.push({
+        key: `m:${off}`,
+        label: formatMonthLabel(m),
+        view: 'month',
+        dateFrom: m.from,
+        dateTo: m.to,
+      })
     }
     return out
-  }, [/* only needs stable fn refs — dates computed from `now` at render */])
+  // monthsLocal changes per locale, so include tDash to refresh labels.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tDash])
 
   function handlePeriodChange(key: string) {
     const [kind, offStr] = key.split(':')
@@ -474,8 +521,12 @@ function DashboardInner() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 20 }}>🎉</span>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#15803d' }}>You're now on the {upgradePlan || 'new'} plan</div>
-                <div style={{ fontSize: 12, color: '#4b7c59' }}>All features are now unlocked.</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#15803d' }}>
+                  {upgradePlan
+                    ? tDash('upgrade.title', { plan: upgradePlan })
+                    : tDash('upgrade.titleNoPlan')}
+                </div>
+                <div style={{ fontSize: 12, color: '#4b7c59' }}>{tDash('upgrade.subtitle')}</div>
               </div>
             </div>
             <button onClick={() => setShowUpgrade(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#15803d', fontSize: 20 }}>×</button>
@@ -498,7 +549,7 @@ function DashboardInner() {
           return (
             <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ fontSize: 13, color: '#92400e' }}>
-                <strong>Data last updated {daysOld === 1 ? 'yesterday' : `${daysOld} days ago`}</strong> — syncing is in progress. Click the sync dot in the sidebar to refresh now.
+                <strong>{daysOld === 1 ? tDash('stale.yesterday') : tDash('stale.daysAgo', { days: daysOld })}</strong> — {tDash('stale.instruction')}
               </div>
             </div>
           )
@@ -516,7 +567,7 @@ function DashboardInner() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#c2410c' }}>⚠ {a.title}</span>
               <span style={{ fontSize: 12, color: '#9a3412', marginLeft: 8 }}>{a.description?.slice(0, 70)}{a.description?.length > 70 ? '…' : ''}</span>
             </div>
-            <span style={{ fontSize: 11, color: '#c2410c', fontWeight: 600, whiteSpace: 'nowrap' }}>View all alerts →</span>
+            <span style={{ fontSize: 11, color: '#c2410c', fontWeight: 600, whiteSpace: 'nowrap' }}>{tDash('alerts.viewAll')}</span>
           </a>
         ))}
 
@@ -529,7 +580,7 @@ function DashboardInner() {
         <OrgNumberBanner />
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{tCommon('state.loading')}</div>
         ) : (
           <>
             {/*
@@ -586,6 +637,8 @@ function DashboardInner() {
                     viewMode={viewMode}
                     curr={curr}
                     currM={currM}
+                    currLabel={formatMonthLabel(currM)}
+                    weekRangeLabel={formatWeekRange(curr)}
                     totalRev={totalRev}
                     totalLabour={totalLabour}
                     prevRev={prevRev}
@@ -607,7 +660,7 @@ function DashboardInner() {
                       onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
                     >
                       <div>
-                        <div style={schedCardEyebrow}>NEXT WEEK · LABOUR PROJECTION</div>
+                        <div style={schedCardEyebrow}>{tDash('labour.predictiveEyebrow')}</div>
                         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
                           <span style={{ fontSize: 26, fontWeight: 500, color: UX.ink2, letterSpacing: '-0.02em' }}>
                             {Math.round(curPct!)}%
@@ -616,23 +669,24 @@ function DashboardInner() {
                           <span style={{ fontSize: 26, fontWeight: 500, color: UX.greenInk, letterSpacing: '-0.02em' }}>
                             {Math.round(aiPct!)}%
                           </span>
-                          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>of revenue</span>
+                          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>{tDash('labour.ofRevenue')}</span>
                         </div>
                         <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
-                          Your current schedule projects to <span style={{ color: UX.ink2, fontWeight: 500 }}>{Math.round(curPct!)}%</span> labour.{' '}
-                          AI cuts bring it to <span style={{ color: UX.greenInk, fontWeight: 500 }}>{Math.round(aiPct!)}%</span>.
+                          {tDash('labour.currentLine', { curr: Math.round(curPct!), ai: Math.round(aiPct!) })}
                         </div>
                         <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
-                          Saves <span style={{ color: UX.greenInk, fontWeight: 500 }}>{fmtKr(aiSaving)}</span>
-                          {aiCutH > 0.5 && <span> · {Math.round(aiCutH * 10) / 10}h cut</span>}
+                          {tDash('labour.saves', { amount: fmtKr(aiSaving) })}
+                          {aiCutH > 0.5 && <span> · {tDash('labour.hoursCut', { hours: Math.round(aiCutH * 10) / 10 })}</span>}
                         </div>
                       </div>
-                      <div style={schedCardCta}>Open scheduling <span aria-hidden style={{ fontSize: 14 }}>→</span></div>
+                      <div style={schedCardCta}>{tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span></div>
                     </a>
                   )}
 
                   {hasRetrospective && (() => {
-                    const periodLabel = viewMode === 'week' ? `WEEK ${curr.weekNum}` : currM.label.toUpperCase()
+                    const periodLabel = viewMode === 'week'
+                      ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) }).split(' · ')[0].toUpperCase()
+                      : formatMonthLabel(currM).toUpperCase()
                     const onTarget    = labourPct <= targetPct
                     // Could-have-saved math: actual labour cost vs target labour cost.
                     // target_cost = revenue × target%
@@ -648,31 +702,28 @@ function DashboardInner() {
                         onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
                       >
                         <div>
-                          <div style={schedCardEyebrow}>{periodLabel} · LABOUR vs TARGET</div>
+                          <div style={schedCardEyebrow}>{tDash('labour.retroEyebrow', { period: periodLabel })}</div>
                           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
                             <span style={{ fontSize: 26, fontWeight: 500, color: accent, letterSpacing: '-0.02em' }}>
                               {Math.round(labourPct)}%
                             </span>
                             <span style={{ fontSize: 12, color: UX.ink3 }}>
-                              vs <span style={{ color: UX.ink2, fontWeight: 500 }}>{Math.round(targetPct)}%</span> target
+                              {tDash('labour.retroVsTarget', { target: Math.round(targetPct) })}
                             </span>
                           </div>
                           <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
-                            {onTarget ? (
-                              <>Labour was on target — well done.</>
-                            ) : (
-                              <>Labour ran <span style={{ color: accent, fontWeight: 500 }}>{Math.round(labourPct - targetPct)}pp over target</span>.</>
-                            )}
+                            {onTarget
+                              ? tDash('labour.retroOnTarget')
+                              : tDash('labour.retroOver', { pp: Math.round(labourPct - targetPct) })}
                           </div>
                           <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
                             {onTarget
-                              ? <>No saving missed for this period.</>
-                              : <>Could have saved <span style={{ color: accent, fontWeight: 500 }}>{fmtKr(couldSave)}</span> by hitting target.</>
-                            }
+                              ? tDash('labour.retroNoMissed')
+                              : tDash('labour.retroCouldSave', { amount: fmtKr(couldSave) })}
                           </div>
                         </div>
                         <div style={{ ...schedCardCta, color: accent }}>
-                          Open scheduling <span aria-hidden style={{ fontSize: 14 }}>→</span>
+                          {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
                         </div>
                       </a>
                     )
@@ -687,7 +738,9 @@ function DashboardInner() {
               days={viewMode === 'week' ? weekDays : monthDays}
               viewMode={viewMode}
               onViewModeChange={handleViewModeChange}
-              periodLabel={viewMode === 'week' ? `Week ${curr.weekNum} · ${curr.label}` : currM.label}
+              periodLabel={viewMode === 'week'
+                ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) })
+                : formatMonthLabel(currM)}
               businessName={selectedBiz?.name ?? ''}
               targetLabourPct={targetPct}
               availablePeriods={availablePeriods}
@@ -714,7 +767,9 @@ function DashboardInner() {
               <DepartmentsSummary
                 depts={(depts?.departments ?? [])}
                 targetPct={targetPct}
-                periodLabel={viewMode === 'week' ? `Week ${curr.weekNum}` : currM.label}
+                periodLabel={viewMode === 'week'
+                  ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) }).split(' · ')[0]
+                  : formatMonthLabel(currM)}
                 fmtKr={fmtKr}
                 fmtPct={fmtPct}
               />
@@ -725,6 +780,7 @@ function DashboardInner() {
                   targetPct,
                   labourPct,
                   totalRev,
+                  t: tDash,
                 })}
               />
             </div>
@@ -756,16 +812,18 @@ function DashboardInner() {
 // ─────────────────────────────────────────────────────────────────────────────
 function OverviewHero({
   viewMode, curr, currM,
+  currLabel, weekRangeLabel,
   totalRev, totalLabour, prevRev, prevLabour,
   totalHours, revPerHour,
   labourPct, targetPct,
   aiSaving,
   fmtKr, fmtPct,
 }: any) {
+  const tDash   = useTranslations('dashboard')
   const isWeek  = viewMode === 'week'
   const eyebrow = isWeek
-    ? `THIS WEEK · ${(curr.label ?? '').toUpperCase()}`
-    : `THIS MONTH · ${(currM.label ?? '').toUpperCase()}`
+    ? tDash('hero.eyebrowWeek',  { label: (weekRangeLabel ?? '').toUpperCase() })
+    : tDash('hero.eyebrowMonth', { label: (currLabel ?? '').toUpperCase() })
 
   const revDelta = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
   const margin   = Math.max(0, totalRev - totalLabour)
@@ -791,18 +849,21 @@ function OverviewHero({
 
   // Body sentence — single line, mirrors the labour/overhead card body.
   const body = (() => {
-    if (totalRev <= 0) return <>Waiting on today's sync — revenue hasn't landed yet.</>
+    if (totalRev <= 0) return <>{tDash('hero.waiting')}</>
     if (revDelta != null) {
-      const direction = revDelta >= 0 ? 'ahead of' : 'behind'
-      const ref       = isWeek ? 'last week' : 'last month'
+      const ref = isWeek ? tDash('hero.lastWeek') : tDash('hero.lastMonth')
+      const pct = revPct ?? 0
+      const head = revDelta >= 0
+        ? tDash('hero.upOn',   { pct, ref })
+        : tDash('hero.downOn', { pct, ref })
       return (
         <>
-          {direction === 'ahead of' ? 'Up' : 'Down'} {revPct}% on {ref}.
+          {head}
           {labourState !== 'unknown' && (
-            <> Labour <span style={{ color: labourColor, fontWeight: 500 }}>{fmtPct(labourPct)}</span>{' '}
-              {labourState === 'lean'  ? <>(target {targetPct}%)</> :
-               labourState === 'tight' ? <>vs {targetPct}% target</> :
-                                         <>vs {targetPct}% target</>}.
+            <>{' '}
+              {labourState === 'lean'
+                ? tDash('hero.labourLeanTarget', { pct: fmtPct(labourPct), target: targetPct })
+                : tDash('hero.labourVsTarget',   { pct: fmtPct(labourPct), target: targetPct })}
             </>
           )}
         </>
@@ -810,16 +871,18 @@ function OverviewHero({
     }
     return (
       <>
-        Margin <span style={{ fontWeight: 500 }}>{fmtKr(margin)}</span> this {isWeek ? 'week' : 'month'}.
+        {isWeek
+          ? tDash('hero.marginWeek',  { amount: fmtKr(margin) })
+          : tDash('hero.marginMonth', { amount: fmtKr(margin) })}
       </>
     )
   })()
 
   // Footer — compact stat strip, dashed top-border like the other cards.
   const footerParts: string[] = []
-  if (totalHours > 0) footerParts.push(`${Math.round(totalHours)}h worked`)
-  if (revPerHour > 0) footerParts.push(`${fmtKr(revPerHour)}/hr`)
-  if (totalRev > 0)   footerParts.push(`${fmtKr(margin)} margin`)
+  if (totalHours > 0) footerParts.push(tDash('hero.footerHours',  { hours: Math.round(totalHours) }))
+  if (revPerHour > 0) footerParts.push(tDash('hero.footerRate',   { amount: fmtKr(revPerHour) }))
+  if (totalRev > 0)   footerParts.push(tDash('hero.footerMargin', { amount: fmtKr(margin) }))
   const footer = footerParts.join(' · ')
 
   return (
@@ -847,7 +910,7 @@ function OverviewHero({
               {revArrow} {revPct}%
             </span>
           )}
-          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>revenue</span>
+          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>{tDash('hero.revenue')}</span>
         </div>
         <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
           {body}
@@ -855,7 +918,7 @@ function OverviewHero({
         {footer && (
           <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
             {footer}
-            {aiSaving > 0 && <span> · AI sees <span style={{ color: UX.greenInk, fontWeight: 500 }}>{fmtKr(aiSaving)}</span></span>}
+            {aiSaving > 0 && <span> · {tDash('hero.aiSees', { amount: fmtKr(aiSaving) })}</span>}
           </div>
         )}
       </div>
@@ -869,6 +932,7 @@ function OverviewHero({
 // · sparkline. `View all →` routes to /departments.
 // ─────────────────────────────────────────────────────────────────────────────
 function DepartmentsSummary({ depts, targetPct, periodLabel, fmtKr, fmtPct }: any) {
+  const tDash = useTranslations('dashboard')
   const rows = (depts ?? [])
     .filter((d: any) => Number(d.revenue ?? 0) > 0 || Number(d.staff_cost ?? 0) > 0)
     .sort((a: any, b: any) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))
@@ -889,16 +953,16 @@ function DepartmentsSummary({ depts, targetPct, periodLabel, fmtKr, fmtPct }: an
         alignItems:     'baseline',
       }}>
         <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-          Departments — {periodLabel}
+          {tDash('departments.header', { period: periodLabel })}
         </div>
         <a href="/departments" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
-          View all →
+          {tDash('departments.viewAll')}
         </a>
       </div>
 
       {rows.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center' as const, fontSize: UX.fsBody, color: UX.ink4 }}>
-          No department data for this period yet.
+          {tDash('departments.empty')}
         </div>
       ) : (
         <div>
@@ -967,7 +1031,7 @@ function DepartmentsSummary({ depts, targetPct, periodLabel, fmtKr, fmtPct }: an
 // dept + AI saving. We approximate "trending-down" with the 2nd-worst margin
 // when a clear worst exists, since per-dept deltas aren't fetched yet.
 // ─────────────────────────────────────────────────────────────────────────────
-function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev }: any): AttentionItem[] {
+function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev, t }: any): AttentionItem[] {
   const items: AttentionItem[] = []
 
   // 1. AI saving (if any) — most actionable first.
@@ -976,7 +1040,7 @@ function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev }
     items.push({
       tone:    'good',
       entity:  'AI',
-      message: `sees ${kr} kr to trim from next week's hours.`,
+      message: t('attention.aiSees', { amount: kr }),
     })
   }
 
@@ -994,7 +1058,7 @@ function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev }
       items.push({
         tone:    worst._marginPct < 30 ? 'bad' : 'warning',
         entity:  worst.name,
-        message: `margin ${(Math.round(worst._marginPct * 10) / 10).toFixed(1)}% — labour is the swing factor.`,
+        message: t('attention.deptWorst', { pct: (Math.round(worst._marginPct * 10) / 10).toFixed(1) }),
       })
     }
 
@@ -1004,7 +1068,7 @@ function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev }
       items.push({
         tone:    'warning',
         entity:  second.name,
-        message: `margin ${(Math.round(second._marginPct * 10) / 10).toFixed(1)}% — worth a look.`,
+        message: t('attention.deptSecondWorst', { pct: (Math.round(second._marginPct * 10) / 10).toFixed(1) }),
       })
     }
   }
@@ -1014,7 +1078,7 @@ function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev }
     items.push({
       tone:    'warning',
       entity:  'Labour',
-      message: `running ${(Math.round(labourPct * 10) / 10).toFixed(1)}% of revenue, ${targetPct}% target.`,
+      message: t('attention.labour', { pct: (Math.round(labourPct * 10) / 10).toFixed(1), target: targetPct }),
     })
   }
 

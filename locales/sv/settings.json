@@ -1,0 +1,145 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "page": {
+    "title":    "Inställningar",
+    "subtitle": "Hantera dina restauranger och leverantörsregler"
+  },
+  "restaurants": {
+    "card":         "Restauranger",
+    "subtitle":     "Hantera dina restaurangplatser",
+    "addLocation":  "+ Lägg till plats",
+    "empty":        "Inga restauranger än",
+    "active":       "Aktiv",
+    "inactive":     "Inaktiv",
+    "noCity":       "Ingen stad",
+    "defaultType":  "Restaurang",
+    "edit":         "Redigera detaljer",
+    "deactivate":   "Inaktivera",
+    "reactivate":   "Återaktivera",
+    "delete":       "Radera",
+    "modal": {
+      "title":         "Lägg till restaurang",
+      "name":          "Restaurangens namn",
+      "namePlaceholder":"t.ex. Vero Italiano",
+      "city":          "Stad",
+      "cityPlaceholder":"Stockholm",
+      "type":          "Typ",
+      "saving":        "Sparar…",
+      "submit":        "Lägg till restaurang"
+    },
+    "edit_form": {
+      "name":          "Namn",
+      "city":          "Stad",
+      "type":          "Typ",
+      "orgNumber":     "Organisationsnummer (valfritt)",
+      "orgNumberHint": "Behövs endast om denna restaurang är en egen juridisk person (separat AB). Lämna tomt för att ärva moderorganisationens nummer.",
+      "save":          "Spara ändringar"
+    },
+    "confirm": {
+      "deactivate":      "Inaktivera \"{name}\"?",
+      "reactivate":      "Återaktivera \"{name}\"?",
+      "deleteOrDeactivate":"Radera eller inaktivera \"{name}\"?\n\nKlicka OK för att PERMANENT RADERA (kan inte ångras)\nKlicka Avbryt för att gå tillbaka",
+      "deletePermanent": "Är du säker på att du vill permanent radera \"{name}\"?\nAll data för denna restaurang försvinner."
+    }
+  },
+  "supplier": {
+    "title":          "Leverantörsregler",
+    "subtitle":       "Regler för att automatiskt kategorisera leverantörsfakturor när Fortnox synkar.",
+    "testHeader":     "Testa en leverantör",
+    "testPlaceholder":"Ange leverantörsnamn…",
+    "test":           "Testa",
+    "match":          "Träff: ",
+    "noMatch":        "Ingen matchande regel hittades",
+    "addHeader":      "Lägg till regel",
+    "ifContains":     "Om leverantörsnamnet innehåller",
+    "vendorPlaceholder":"t.ex. Systembolaget",
+    "categoryLabel":  "Kategori",
+    "addEntry":       "+ Lägg till regel",
+    "activeRules":    "Aktiva regler ({count})",
+    "loading":        "Laddar…",
+    "emptyRules":     "Inga regler än. Lägg till din första regel ovan.",
+    "contains":       "Innehåller ",
+    "ruleArrow":      " → ",
+    "deleteRule":     "Radera denna regel?",
+    "footnote":       "Regler tillämpas i prioritetsordning. Högre prioritet = kontrolleras först."
+  },
+  "categories": {
+    "food_beverage": "Mat & dryck",
+    "alcohol":       "Alkohol",
+    "staff":         "Personal",
+    "rent":          "Hyra & lokal",
+    "cleaning":      "Städ",
+    "repairs":       "Reparationer & underhåll",
+    "marketing":     "Marknadsföring",
+    "utilities":     "Förbrukning",
+    "admin":         "Administration",
+    "other":         "Övrigt"
+  },
+  "digest": {
+    "title":    "Veckosammanfattning via e-post",
+    "subtitle": "Varje måndag kl. 07:00 får du en sammanfattning av förra veckan — intäkter, kostnader, gäster och utestående fakturor för alla dina restauranger.",
+    "send":     "Skicka testsammanfattning till min e-post"
+  },
+  "gdpr": {
+    "title":             "Data & integritet",
+    "subtitle":          "Hantera din data i enlighet med GDPR. Se vår",
+    "privacyPolicyLink": "Integritetspolicy",
+    "consentHeader":     "Samtyckesregister",
+    "consentLine":       "Integritetspolicy v{version} accepterad den {date}",
+    "noConsent":         "Inget samtycke registrerat",
+    "ai": {
+      "title":    "Spara AI-frågetext",
+      "subtitle": "När på sparar vi de första 100 tecknen i varje AI-fråga för kvalitetsfelsökning — sparas 365 dagar, syns endast för vårt supportteam. När av sparar vi modellen, tokenantal och kostnad (behövs för fakturering) men själva frågetexten lagras aldrig."
+    },
+    "export": {
+      "title":    "Exportera din data",
+      "subtitle": "Ladda ner en fullständig kopia av all data vi har om din organisation — restauranger, resultat, personalloggar, prognoser och fakturor — i JSON-format.",
+      "preparing":"Förbereder export…",
+      "button":   "Ladda ner dataexport"
+    },
+    "delete": {
+      "title":    "Radera ditt konto",
+      "subtitle": "Begär permanent radering av all din data. Detta kan inte ångras. Vi behandlar din begäran inom 30 dagar och skickar ett bekräftelsemejl. Obs: fakturaregister sparas i 7 år enligt svensk lag.",
+      "button":   "Begär kontoradering",
+      "confirmTitle":"Är du säker?",
+      "confirmBody": "Detta kommer permanent radera alla restauranger, finansiell data, personalloggar, prognoser och integrationsanslutningar. Detta kan inte ångras.",
+      "submit":   "Ja, radera all min data",
+      "submitting":"Skickar…",
+      "submitted":"Begäran skickad"
+    }
+  },
+  "orgNumberBanner": {
+    "expiredTitle":  "Åtgärd krävs: lägg till ditt organisationsnummer",
+    "softTitle":     "Lägg till ditt företags organisationsnummer",
+    "expiredBody":   "Krävs för momsregistrerad fakturering. Vissa funktioner blockeras tills detta läggs till.",
+    "softBody":      "Krävs för momsregistrerad fakturering. {days, plural, one {# dag} other {# dagar}} kvar innan funktioner blockeras.",
+    "later":         "Senare",
+    "addNow":        "Lägg till nu →"
+  },
+  "company": {
+    "eyebrow":  "INSTÄLLNINGAR · FÖRETAG",
+    "context":  "Krävs för momsregistrerade fakturor, underleverantörsavtal och Fortnox-verifiering.",
+    "headline": {
+      "set":         "Företagsinfo — sparat",
+      "expired":     "Åtgärd krävs: lägg till ditt organisationsnummer",
+      "grace":       "Lägg till ditt organisationsnummer ({days, plural, one {# dag} other {# dagar}} kvar)"
+    },
+    "expired":  "Tidsfristen har löpt ut.",
+    "expiredFollowup":"Vissa funktioner blockeras tills du lägger till ditt organisationsnummer nedan.",
+    "label":    "Organisationsnummer",
+    "hint":     "10 siffror — accepterar formaterad version (XXXXXX-XXXX) eller oformaterad.",
+    "setOn":    "Sparat den {date}",
+    "saved":    "Sparat",
+    "save":     "Spara",
+    "saving":   "Sparar…",
+    "update":   "Uppdatera",
+    "saveFailed":"Sparning misslyckades",
+    "whyTitle": "Varför vi behöver detta:",
+    "why1":     "Momsregistrerad fakturering kräver ditt org-nr på kvitton.",
+    "why2":     "Underleverantörsavtal (Supabase, Anthropic, Stripe, Resend) refererar till din juridiska person.",
+    "why3":     "Skiljer ditt företag från andra liknande namngivna företag i Sverige."
+  }
+}

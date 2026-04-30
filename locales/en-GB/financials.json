@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready",
+    "_note":   "Page-level headers + shared loading state. Inner page bodies still contain English literals; tracked for follow-up PR."
+  },
+  "tracker": {
+    "eyebrowYtd":     "YTD — {year}",
+    "eyebrowYtdMonths":"YTD — {year} · {count, plural, one {# MONTH LOGGED} other {# MONTHS LOGGED}}",
+    "ytdProfit":      "YTD profit",
+    "loading":        "Loading…",
+    "loadingDaily":   "Loading daily data…"
+  },
+  "budget": {
+    "eyebrowYearBudget":"{year} BUDGET",
+    "tally": {
+      "onTrack":       "On track",
+      "offTrack":      "Off track",
+      "noBudget":      "No budget",
+      "notStarted":    "Not started"
+    },
+    "loading":        "Loading…"
+  },
+  "forecast": {
+    "loading":        "Loading forecast…",
+    "loadingChart":   "Loading…"
+  },
+  "performance": {
+    "loading":        "Loading…"
+  },
+  "overheads": {
+    "loading":        "Loading overheads…",
+    "loadingPanel":   "Loading…"
+  }
+}

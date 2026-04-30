@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review",
+    "_note":   "Sidladdare + delade element. Sidors inre text är fortfarande engelska; spåras för uppföljnings-PR."
+  },
+  "revenue": {
+    "loading": "Laddar…"
+  },
+  "staff": {
+    "loading": "Laddar…"
+  },
+  "departments": {
+    "loading":     "Laddar avdelningar…",
+    "loadingPanel":"Laddar…"
+  }
+}

@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import AppShell from '@/components/AppShell'
 import React, { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 interface Mapping {
   id: string
@@ -21,22 +22,17 @@ interface Business { [key: string]: any;
   is_active: boolean
 }
 
-const CATEGORIES = [
-  { value: 'food_beverage', label: 'Food & Beverage' },
-  { value: 'alcohol',       label: 'Alcohol' },
-  { value: 'staff',         label: 'Staff' },
-  { value: 'rent',          label: 'Rent & Premises' },
-  { value: 'cleaning',      label: 'Cleaning' },
-  { value: 'repairs',       label: 'Repairs & Maintenance' },
-  { value: 'marketing',     label: 'Marketing' },
-  { value: 'utilities',     label: 'Utilities' },
-  { value: 'admin',         label: 'Administration' },
-  { value: 'other',         label: 'Other' },
-]
+const CATEGORY_VALUES = [
+  'food_beverage', 'alcohol', 'staff', 'rent', 'cleaning',
+  'repairs', 'marketing', 'utilities', 'admin', 'other',
+] as const
 
 const RESTAURANT_TYPES = ['restaurant', 'bar', 'cafe', 'bakery', 'catering']
 
 export default function SettingsPage() {
+  const t       = useTranslations('settings')
+  const tCommon = useTranslations('common')
+  const CATEGORIES = CATEGORY_VALUES.map(value => ({ value, label: t(`categories.${value}`) }))
   const [mappings,    setMappings]    = useState<Mapping[]>([])
   const [businesses,  setBusinesses]  = useState<Business[]>([])
   const [loading,     setLoading]     = useState(true)
@@ -82,7 +78,7 @@ export default function SettingsPage() {
   }
 
   async function deleteRule(id: string) {
-    if (!confirm('Delete this rule?')) return
+    if (!confirm(t('supplier.deleteRule'))) return
     await fetch(`/api/supplier-mappings?id=${id}`, { method: 'DELETE' })
     loadMappings()
   }
@@ -117,8 +113,7 @@ export default function SettingsPage() {
   }
 
   async function deactivateBusiness(id: string, name: string, isActive: boolean) {
-    const action = isActive ? 'deactivate' : 'reactivate'
-    if (!window.confirm(`${action === 'deactivate' ? 'Deactivate' : 'Reactivate'} "${name}"?`)) return
+    if (!window.confirm(isActive ? t('restaurants.confirm.deactivate', { name }) : t('restaurants.confirm.reactivate', { name }))) return
     try {
       await fetch('/api/businesses/update', {
         method: 'POST',
@@ -132,9 +127,9 @@ export default function SettingsPage() {
   }
 
   async function deleteBusiness(id: string, name: string) {
-    const action = window.confirm(`Delete or deactivate "${name}"?\n\nClick OK to PERMANENTLY DELETE (cannot be undone)\nClick Cancel to go back`)
+    const action = window.confirm(t('restaurants.confirm.deleteOrDeactivate', { name }))
     if (!action) return
-    const confirm2 = window.confirm(`Are you sure you want to permanently delete "${name}"?\nAll data for this restaurant will be lost.`)
+    const confirm2 = window.confirm(t('restaurants.confirm.deletePermanent', { name }))
     if (!confirm2) return
     try {
       const res = await fetch('/api/businesses/delete', {
@@ -197,22 +192,22 @@ export default function SettingsPage() {
     <AppShell>
       <div style={{ padding: '28px', maxWidth: 800 }}>
         <div style={{ marginBottom: 28 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Settings</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Manage your restaurants and supplier mapping rules</p>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>{t('page.title')}</h1>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
         </div>
 
         {/* Restaurants */}
         <div style={S.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
             <div>
-              <div style={S.title}>Restaurants</div>
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>Manage your restaurant locations</div>
+              <div style={S.title}>{t('restaurants.card')}</div>
+              <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('restaurants.subtitle')}</div>
             </div>
-            <button onClick={() => setShowAddBiz(true)} style={S.btn}>+ Add location</button>
+            <button onClick={() => setShowAddBiz(true)} style={S.btn}>{t('restaurants.addLocation')}</button>
           </div>
 
           {businesses.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#d1d5db', textAlign: 'center', padding: '20px 0' }}>No restaurants yet</div>
+            <div style={{ fontSize: 12, color: '#d1d5db', textAlign: 'center', padding: '20px 0' }}>{t('restaurants.empty')}</div>
           ) : businesses.map(biz => {
             const isOpen = expandedBiz === biz.id
             const isEditing = editingBiz?.id === biz.id
@@ -225,11 +220,11 @@ export default function SettingsPage() {
                     <span style={{ fontSize: 11, color: '#9ca3af' }}>{isOpen ? '▼' : '▶'}</span>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{biz.name}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{biz.city ?? 'No city'} · {biz.type ?? 'Restaurant'}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{biz.city ?? t('restaurants.noCity')} · {biz.type ?? t('restaurants.defaultType')}</div>
                     </div>
                   </div>
                   <span style={{ fontSize: 11, background: biz.is_active !== false ? '#dcfce7' : '#fee2e2', color: biz.is_active !== false ? '#15803d' : '#dc2626', padding: '2px 8px', borderRadius: 4 }}>
-                    {biz.is_active !== false ? 'Active' : 'Inactive'}
+                    {biz.is_active !== false ? t('restaurants.active') : t('restaurants.inactive')}
                   </span>
                 </div>
 
@@ -241,22 +236,22 @@ export default function SettingsPage() {
                       <div>
                         <div style={{ ...S.row, marginBottom: 10 }}>
                           <div>
-                            <label style={S.label}>Name</label>
+                            <label style={S.label}>{t('restaurants.edit_form.name')}</label>
                             <input value={editingBiz.name} onChange={e => setEditingBiz({...editingBiz, name: e.target.value})} style={S.input} />
                           </div>
                           <div>
-                            <label style={S.label}>City</label>
+                            <label style={S.label}>{t('restaurants.edit_form.city')}</label>
                             <input value={editingBiz.city ?? ''} onChange={e => setEditingBiz({...editingBiz, city: e.target.value})} style={S.input} />
                           </div>
                         </div>
                         <div style={{ marginBottom: 12 }}>
-                          <label style={S.label}>Type</label>
+                          <label style={S.label}>{t('restaurants.edit_form.type')}</label>
                           <select value={editingBiz.type ?? 'restaurant'} onChange={e => setEditingBiz({...editingBiz, type: e.target.value})} style={S.input}>
-                            {RESTAURANT_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
+                            {RESTAURANT_TYPES.map(rt => <option key={rt} value={rt}>{rt.charAt(0).toUpperCase()+rt.slice(1)}</option>)}
                           </select>
                         </div>
                         <div style={{ marginBottom: 12 }}>
-                          <label style={S.label}>Organisationsnummer (optional)</label>
+                          <label style={S.label}>{t('restaurants.edit_form.orgNumber')}</label>
                           <input
                             value={editingBiz.org_number ?? ''}
                             onChange={e => setEditingBiz({...editingBiz, org_number: e.target.value})}
@@ -265,26 +260,25 @@ export default function SettingsPage() {
                             style={{ ...S.input, fontFamily: 'ui-monospace, monospace' }}
                           />
                           <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-                            Only needed when this restaurant is its own legal entity (separate AB).
-                            Leave blank to inherit the parent organisation's number.
+                            {t('restaurants.edit_form.orgNumberHint')}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: 8 }}>
-                          <button onClick={() => saveBizEdit()} style={S.btn}>Save changes</button>
-                          <button onClick={() => setEditingBiz(null)} style={S.btnSm}>Cancel</button>
+                          <button onClick={() => saveBizEdit()} style={S.btn}>{t('restaurants.edit_form.save')}</button>
+                          <button onClick={() => setEditingBiz(null)} style={S.btnSm}>{tCommon('actions.cancel')}</button>
                         </div>
                       </div>
                     ) : (
                       /* Action buttons */
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button onClick={e => { e.stopPropagation(); setEditingBiz({...biz}) }} style={S.btnSm}>Edit details</button>
+                        <button onClick={e => { e.stopPropagation(); setEditingBiz({...biz}) }} style={S.btnSm}>{t('restaurants.edit')}</button>
                         <button onClick={e => { e.stopPropagation(); deactivateBusiness(biz.id, biz.name, biz.is_active) }}
                           style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', color: '#6b7280' }}>
-                          {biz.is_active !== false ? 'Deactivate' : 'Reactivate'}
+                          {biz.is_active !== false ? t('restaurants.deactivate') : t('restaurants.reactivate')}
                         </button>
                         <button onClick={e => { e.stopPropagation(); deleteBusiness(biz.id, biz.name) }}
                           style={{ ...S.btnSm, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
-                          Delete
+                          {t('restaurants.delete')}
                         </button>
                       </div>
                     )}
@@ -301,22 +295,22 @@ export default function SettingsPage() {
             onClick={() => setShowAddBiz(false)}>
             <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 420, maxWidth: '94vw', border: '1px solid #e5e7eb', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
               onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 20 }}>Add restaurant</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 20 }}>{t('restaurants.modal.title')}</div>
               <div style={{ marginBottom: 14 }}>
-                <label style={S.label}>Restaurant name</label>
+                <label style={S.label}>{t('restaurants.modal.name')}</label>
                 <input value={newBizName} onChange={e => setNewBizName(e.target.value)}
-                  placeholder="e.g. Vero Italiano" style={S.input} />
+                  placeholder={t('restaurants.modal.namePlaceholder')} style={S.input} />
               </div>
               <div style={{ ...S.row, marginBottom: 14 }}>
                 <div>
-                  <label style={S.label}>City</label>
+                  <label style={S.label}>{t('restaurants.modal.city')}</label>
                   <input value={newBizCity} onChange={e => setNewBizCity(e.target.value)}
-                    placeholder="Stockholm" style={S.input} />
+                    placeholder={t('restaurants.modal.cityPlaceholder')} style={S.input} />
                 </div>
                 <div>
-                  <label style={S.label}>Type</label>
+                  <label style={S.label}>{t('restaurants.modal.type')}</label>
                   <select value={newBizType} onChange={e => setNewBizType(e.target.value)} style={S.input}>
-                    {RESTAURANT_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                    {RESTAURANT_TYPES.map(rt => <option key={rt} value={rt}>{rt.charAt(0).toUpperCase() + rt.slice(1)}</option>)}
                   </select>
                 </div>
               </div>
@@ -324,9 +318,9 @@ export default function SettingsPage() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={saveNewBusiness} disabled={!newBizName.trim() || savingBiz}
                   style={{ ...S.btn, flex: 1, opacity: !newBizName.trim() ? 0.5 : 1 }}>
-                  {savingBiz ? 'Saving...' : 'Add restaurant'}
+                  {savingBiz ? t('restaurants.modal.saving') : t('restaurants.modal.submit')}
                 </button>
-                <button onClick={() => setShowAddBiz(false)} style={{ ...S.btnSm, padding: '9px 16px' }}>Cancel</button>
+                <button onClick={() => setShowAddBiz(false)} style={{ ...S.btnSm, padding: '9px 16px' }}>{tCommon('actions.cancel')}</button>
               </div>
             </div>
           </div>
@@ -334,77 +328,77 @@ export default function SettingsPage() {
 
         {/* Supplier mapping */}
         <div style={S.card}>
-          <div style={S.title}>Supplier Mapping</div>
-          <div style={{ ...S.sub }}>Rules to automatically categorise supplier invoices when Fortnox syncs.</div>
+          <div style={S.title}>{t('supplier.title')}</div>
+          <div style={{ ...S.sub }}>{t('supplier.subtitle')}</div>
 
           {/* Test a vendor */}
           <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Test a vendor</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{t('supplier.testHeader')}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={testVendor} onChange={e => setTestVendor(e.target.value)}
-                placeholder="Enter vendor name..." style={{ ...S.input, flex: 1 }} />
-              <button onClick={testMapping} style={S.btn}>Test</button>
+                placeholder={t('supplier.testPlaceholder')} style={{ ...S.input, flex: 1 }} />
+              <button onClick={testMapping} style={S.btn}>{t('supplier.test')}</button>
             </div>
             {testResult && testResult !== 'no_match' && (
               <div style={{ marginTop: 8, fontSize: 12, color: '#15803d' }}>
-                Match: <strong>{(testResult as Mapping).category_label ?? (testResult as Mapping).category}</strong>
+                {t('supplier.match')}<strong>{(testResult as Mapping).category_label ?? (testResult as Mapping).category}</strong>
               </div>
             )}
             {testResult === 'no_match' && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>No matching rule found</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{t('supplier.noMatch')}</div>
             )}
           </div>
 
           {/* Add rule */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Add entry rule</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>{t('supplier.addHeader')}</div>
           <form onSubmit={addRule}>
             <div style={{ ...S.row, marginBottom: 10 }}>
               <div>
-                <label style={S.label}>If vendor name contains</label>
+                <label style={S.label}>{t('supplier.ifContains')}</label>
                 <input value={newVendor} onChange={e => setNewVendor(e.target.value)}
-                  placeholder="e.g. Systembolaget" style={S.input} />
+                  placeholder={t('supplier.vendorPlaceholder')} style={S.input} />
               </div>
               <div>
-                <label style={S.label}>Category</label>
+                <label style={S.label}>{t('supplier.categoryLabel')}</label>
                 <select value={newCategory} onChange={e => setNewCategory(e.target.value)} style={S.input}>
                   {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </div>
             </div>
-            <button type="submit" style={S.btnSm}>+ Add entry</button>
+            <button type="submit" style={S.btnSm}>{t('supplier.addEntry')}</button>
           </form>
 
           {/* Active rules */}
           <div style={{ marginTop: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
-              Active rules ({mappings.length})
+              {t('supplier.activeRules', { count: mappings.length })}
             </div>
             {loading ? (
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>Loading...</div>
+              <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('supplier.loading')}</div>
             ) : mappings.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#d1d5db' }}>No rules yet. Add your first rule above.</div>
+              <div style={{ fontSize: 12, color: '#d1d5db' }}>{t('supplier.emptyRules')}</div>
             ) : mappings.map(m => (
               <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #f3f4f6' }}>
                 <div style={{ fontSize: 13, color: '#111' }}>
-                  <span style={{ color: '#9ca3af' }}>Contains </span>
+                  <span style={{ color: '#9ca3af' }}>{t('supplier.contains')}</span>
                   <strong>"{m.vendor_contains}"</strong>
-                  <span style={{ color: '#9ca3af' }}> → </span>
+                  <span style={{ color: '#9ca3af' }}>{t('supplier.ruleArrow')}</span>
                   <span style={{ color: '#6366f1' }}>{m.category_label ?? m.category}</span>
                 </div>
-                <button onClick={() => deleteRule(m.id)} style={S.btnRed}>Delete</button>
+                <button onClick={() => deleteRule(m.id)} style={S.btnRed}>{t('restaurants.delete')}</button>
               </div>
             ))}
             <div style={{ fontSize: 11, color: '#d1d5db', marginTop: 10 }}>
-              Rules are applied in priority order. Higher priority = checked first.
+              {t('supplier.footnote')}
             </div>
           </div>
         </div>
 
         {/* Weekly digest */}
         <div style={S.card}>
-          <div style={S.title}>Weekly Digest Email</div>
-          <div style={S.sub}>Every Monday at 07:00 you receive a summary of last week — revenue, costs, covers, and outstanding invoices for all your restaurants.</div>
-          <button style={S.btnSm}>Send test digest to my email</button>
+          <div style={S.title}>{t('digest.title')}</div>
+          <div style={S.sub}>{t('digest.subtitle')}</div>
+          <button style={S.btnSm}>{t('digest.send')}</button>
         </div>
 
       </div>
@@ -416,6 +410,8 @@ export default function SettingsPage() {
 }
 
 function GdprSection() {
+  const t       = useTranslations('settings.gdpr')
+  const tCancel = useTranslations('common')
   const [loading,    setLoading]    = React.useState(false)
   const [delLoading, setDelLoading] = React.useState(false)
   const [consents,   setConsents]   = React.useState<any[]>([])
@@ -464,7 +460,7 @@ function GdprSection() {
     setDelLoading(true)
     const res  = await fetch('/api/gdpr', { method: 'DELETE' })
     const data = await res.json()
-    setDelStatus(data.message ?? 'Request submitted')
+    setDelStatus(data.message ?? t('delete.submitted'))
     setShowConfirm(false)
     setDelLoading(false)
   }
@@ -473,22 +469,24 @@ function GdprSection() {
 
   return (
     <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '24px', marginBottom: 20 }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 4 }}>Data & Privacy</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('title')}</div>
       <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
-        Manage your data in accordance with GDPR. View our{' '}
-        <a href="/privacy" target="_blank" style={{ color: '#6366f1' }}>Privacy Policy</a>.
+        {t('subtitle')}{' '}
+        <a href="/privacy" target="_blank" style={{ color: '#6366f1' }}>{t('privacyPolicyLink')}</a>.
       </div>
 
       {/* Consent status */}
       <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>Consent records</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{t('consentHeader')}</div>
         {privacyConsent ? (
           <div style={{ fontSize: 12, color: '#6b7280' }}>
-            Privacy Policy v{privacyConsent.version} accepted on{' '}
-            {new Date(privacyConsent.consented_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+            {t('consentLine', {
+              version: privacyConsent.version,
+              date: new Date(privacyConsent.consented_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
+            })}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: '#9ca3af' }}>No consent recorded</div>
+          <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('noConsent')}</div>
         )}
       </div>
 
@@ -496,9 +494,9 @@ function GdprSection() {
       <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>Store AI question text</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('ai.title')}</div>
             <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.55 }}>
-              When on, we save the first 100 characters of each AI question for quality debugging — retained 365 days, visible only to our support team. When off, we keep the model, token counts and cost (needed for billing) but the question text itself is never stored.
+              {t('ai.subtitle')}
             </div>
           </div>
           <label style={{ position: 'relative' as const, display: 'inline-block', width: 44, height: 24, flexShrink: 0, marginTop: 3 }}>
@@ -525,22 +523,21 @@ function GdprSection() {
 
       {/* Export */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>Export your data</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('export.title')}</div>
         <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
-          Download a complete copy of all data we hold for your organisation — restaurants, P&L, staff logs, forecasts and invoices — in JSON format.
+          {t('export.subtitle')}
         </div>
         <button onClick={exportData} disabled={loading}
           style={{ padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          {loading ? 'Preparing export...' : 'Download data export'}
+          {loading ? t('export.preparing') : t('export.button')}
         </button>
       </div>
 
       {/* Deletion */}
       <div style={{ paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>Delete your account</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('delete.title')}</div>
         <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
-          Request permanent deletion of all your data. This cannot be undone. We will process your request within 30 days and send a confirmation email.
-          Note: billing records are retained for 7 years as required by Swedish law.
+          {t('delete.subtitle')}
         </div>
 
         {delStatus ? (
@@ -550,22 +547,22 @@ function GdprSection() {
         ) : !showConfirm ? (
           <button onClick={() => setShowConfirm(true)}
             style={{ padding: '9px 18px', background: 'white', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            Request account deletion
+            {t('delete.button')}
           </button>
         ) : (
           <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626', marginBottom: 8 }}>Are you sure?</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626', marginBottom: 8 }}>{t('delete.confirmTitle')}</div>
             <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
-              This will permanently delete all restaurants, financial data, staff logs, forecasts and integration connections. This cannot be undone.
+              {t('delete.confirmBody')}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={requestDeletion} disabled={delLoading}
                 style={{ padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                {delLoading ? 'Submitting...' : 'Yes, delete all my data'}
+                {delLoading ? t('delete.submitting') : t('delete.submit')}
               </button>
               <button onClick={() => setShowConfirm(false)}
                 style={{ padding: '8px 16px', background: '#f3f4f6', border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer', color: '#374151' }}>
-                Cancel
+                {tCancel('actions.cancel')}
               </button>
             </div>
           </div>

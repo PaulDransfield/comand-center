@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "crumb": {
+    "operations": "Drift",
+    "scheduling": "Schemaläggning"
+  },
+  "loading":   "Laddar schemadata…",
+  "noJoinedData": {
+    "title": "Ingen sammankopplad data än",
+    "body":  "Schemaläggningseffektivitet kräver både personaltimmar (Personalkollen) och intäktsdata (POS) för samma datum. Prova att utöka datumintervallet."
+  },
+  "ranges": {
+    "title":         "AI-utsikt",
+    "this_week":     "Denna vecka",
+    "next_week":     "Nästa vecka",
+    "2w":            "2 veckor",
+    "4w":            "4 veckor",
+    "next_month":    "Nästa månad",
+    "labelThisWeek": "Denna vecka",
+    "labelNextWeek": "Nästa vecka",
+    "label2w":       "Nästa 2 veckor",
+    "label4w":       "Nästa 4 veckor",
+    "labelNextMonth":"Nästa kalendermånad"
+  },
+  "status": {
+    "lean":         "Effektiv",
+    "leanHint":     "Hög intäkt per timme — du gör mycket med dina schemalagda timmar.",
+    "on_target":    "På mål",
+    "on_targetHint":"Intäkt per personaltimme inom ±20% av ditt veckosnitt.",
+    "overstaffed":  "Överbemannat",
+    "overstaffedHint":"Intäkt per timme är låg — fler timmar schemalagda än efterfrågan kräver. Överväg att skära ned.",
+    "no_data":      "Ingen data",
+    "no_dataHint":  "Färre än 2 dagar sammankopplad data för denna veckodag."
+  },
+  "drill": {
+    "headerEyebrow":  "{day} i {period}",
+    "loading":        "Laddar…",
+    "error":          "Fel",
+    "totalsRevLabour":"{rev} intäkt · {labour} personal · {ratePerHour}",
+    "ratePerHourMissing": "—/h",
+    "subEyebrow":     "{count, plural, one {# dag} other {# dagar}} · {staff} pers · {shifts} pass · {hours}",
+    "loadingDay":     "Laddar dagsdetaljer…",
+    "byDate":         "Per datum",
+    "th":  {
+      "date":        "Datum",
+      "revenue":     "Intäkt",
+      "labour":      "Personal",
+      "hours":       "Timmar",
+      "staff":       "Pers",
+      "revPerHr":    "Int/h",
+      "name":        "Namn",
+      "department":  "Avdelning",
+      "shifts":      "Pass",
+      "cost":        "Kostnad",
+      "costPerHr":   "Kostn/h"
+    },
+    "whoWorked":      "Vem jobbade ({count})",
+    "noStaffShifts":  "Inga personalpass registrerade för dessa datum.",
+    "noDataForDay":   "Ingen data för {day} under denna period."
+  }
+}

@@ -28,7 +28,17 @@ async function loadMessages(locale: Locale): Promise<Record<string, any>> {
   // Each namespace lives under locales/<locale>/<namespace>.json
   // Add namespaces here as they're created. Keep `common` first; it's
   // the catch-all + all-pages strings.
-  const namespaces = ['common']
+  const namespaces = [
+    'common',
+    'sidebar',
+    'dashboard',
+    'settings',
+    'scheduling',
+    'financials',
+    'operations',
+    'auth',
+    'alerts',
+  ]
   const merged: Record<string, any> = {}
   for (const ns of namespaces) {
     try {

@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready",
+    "_note":   "Page-level loaders + shared bits. Inner page bodies still contain English literals; tracked for follow-up PR."
+  },
+  "revenue": {
+    "loading": "Loading…"
+  },
+  "staff": {
+    "loading": "Loading…"
+  },
+  "departments": {
+    "loading":     "Loading departments…",
+    "loadingPanel":"Loading…"
+  }
+}

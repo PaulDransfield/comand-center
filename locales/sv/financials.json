@@ -1,0 +1,35 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review",
+    "_note":   "Sidhuvuden + delade laddningstillstånd. Sidors inre text är fortfarande engelska; spåras för uppföljnings-PR."
+  },
+  "tracker": {
+    "eyebrowYtd":     "YTD — {year}",
+    "eyebrowYtdMonths":"YTD — {year} · {count, plural, one {# MÅNAD LOGGAD} other {# MÅNADER LOGGADE}}",
+    "ytdProfit":      "YTD-resultat",
+    "loading":        "Laddar…",
+    "loadingDaily":   "Laddar dagsdata…"
+  },
+  "budget": {
+    "eyebrowYearBudget":"{year} BUDGET",
+    "tally": {
+      "onTrack":       "På rätt spår",
+      "offTrack":      "Avviker",
+      "noBudget":      "Ingen budget",
+      "notStarted":    "Inte påbörjat"
+    },
+    "loading":        "Laddar…"
+  },
+  "forecast": {
+    "loading":        "Laddar prognos…",
+    "loadingChart":   "Laddar…"
+  },
+  "performance": {
+    "loading":        "Laddar…"
+  },
+  "overheads": {
+    "loading":        "Laddar omkostnader…",
+    "loadingPanel":   "Laddar…"
+  }
+}

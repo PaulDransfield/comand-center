@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
@@ -48,6 +49,7 @@ function getMonthBounds(offset = 0) {
 
 export default function DepartmentsPage() {
   const router = useRouter()
+  const t      = useTranslations('operations.departments')
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -94,7 +96,7 @@ export default function DepartmentsPage() {
   //   - activity w/o margin → name the active dept(s), explain data gap
   //   - best/worst spread   → original contrast headline
   const headline = (() => {
-    if (loading) return <>Loading departments…</>
+    if (loading) return <>{t('loading')}</>
     if (!hasAnyActivity) {
       return <>No department data for <span style={{ fontWeight: UX.fwMedium }}>{periodLabel}</span> — departments sync nightly.</>
     }
@@ -228,7 +230,7 @@ export default function DepartmentsPage() {
         />
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loadingPanel')}</div>
         ) : !hasAnyActivity ? (
           // Explicit empty state per FIX-PROMPT § Phase 9 Q1 — hide the
           // table entirely rather than render a grid of em-dashes.

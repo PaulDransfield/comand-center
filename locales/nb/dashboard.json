@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "upgrade": {
+    "title":      "Du er nå på {plan}-abonnementet",
+    "titleNoPlan":"Du er nå på det nye abonnementet",
+    "subtitle":   "Alle funksjoner er nå låst opp."
+  },
+  "stale": {
+    "yesterday":   "Data sist oppdatert i går",
+    "daysAgo":     "Data sist oppdatert for {days} dager siden",
+    "instruction": "synkronisering pågår. Klikk på synkprikken i sidefeltet for å oppdatere nå."
+  },
+  "alerts": {
+    "viewAll": "Vis alle varsler →"
+  },
+  "labour": {
+    "predictiveEyebrow":  "NESTE UKE · BEMANNINGSPROGNOSE",
+    "ofRevenue":          "av inntekter",
+    "currentLine":        "Din nåværende vaktplan beregnes til {curr}% bemanningsandel. AI-justeringer tar den til {ai}%.",
+    "saves":              "Sparer {amount}",
+    "hoursCut":           "{hours}t kuttet",
+    "openScheduling":     "Åpne vaktplan",
+    "retroEyebrow":       "{period} · BEMANNING mot MÅL",
+    "retroVsTarget":      "mot {target}% mål",
+    "retroOnTarget":      "Bemanningen var på mål — bra jobbet.",
+    "retroOver":          "Bemanningen lå {pp}pp over mål.",
+    "retroNoMissed":      "Ingen tapt besparelse for denne perioden.",
+    "retroCouldSave":     "Kunne ha spart {amount} ved å nå målet."
+  },
+  "hero": {
+    "eyebrowWeek":   "DENNE UKEN · {label}",
+    "eyebrowMonth":  "DENNE MÅNEDEN · {label}",
+    "revenue":       "inntekter",
+    "waiting":       "Venter på dagens synk — inntektene har ikke kommet inn ennå.",
+    "upOn":          "Opp {pct}% mot {ref}.",
+    "downOn":        "Ned {pct}% mot {ref}.",
+    "lastWeek":      "forrige uke",
+    "lastMonth":     "forrige måned",
+    "labourLeanTarget": "Bemanning {pct} (mål {target}%).",
+    "labourVsTarget":   "Bemanning {pct} mot {target}% mål.",
+    "marginWeek":   "Margin {amount} denne uken.",
+    "marginMonth":  "Margin {amount} denne måneden.",
+    "footerHours":  "{hours}t arbeidet",
+    "footerRate":   "{amount}/t",
+    "footerMargin": "{amount} margin",
+    "aiSees":       "AI ser {amount}"
+  },
+  "departments": {
+    "header":  "Avdelinger — {period}",
+    "viewAll": "Vis alle →",
+    "empty":   "Ingen avdelingsdata for denne perioden ennå."
+  },
+  "attention": {
+    "aiSees":          "ser {amount} kr å kutte fra neste ukes timer.",
+    "deptWorst":       "margin {pct}% — bemanning er den største faktoren.",
+    "deptSecondWorst": "margin {pct}% — verdt å se nærmere på.",
+    "labour":          "ligger på {pct}% av inntekter, {target}% mål."
+  },
+  "period": {
+    "weekLabel":  "Uke {num} · {range}"
+  }
+}

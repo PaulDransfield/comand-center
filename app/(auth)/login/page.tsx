@@ -2,6 +2,7 @@
 
 import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
 
 // Next.js requires useSearchParams() to be inside a <Suspense> boundary during
@@ -15,6 +16,7 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
+  const t        = useTranslations('auth')
   const supabase = createClient()
   const searchParams = useSearchParams()
 
@@ -66,7 +68,7 @@ function LoginForm() {
     const data = await res.json()
 
     if (!res.ok) {
-      setError(data.error || 'Signup failed')
+      setError(data.error || t('signup.signupFailed'))
       setLoading(false)
       return
     }
@@ -74,7 +76,7 @@ function LoginForm() {
     // Auto sign in after signup
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
     if (signInError || !signInData.session) {
-      setMessage('Account created! Please sign in.')
+      setMessage(t('signup.createdSignIn'))
       setMode('login')
       setLoading(false)
       return
@@ -90,7 +92,7 @@ function LoginForm() {
       redirectTo: `${window.location.origin}/api/auth/callback?next=/reset-password`,
     })
     if (error) setError(error.message)
-    else setMessage('Reset link sent! Check your email.')
+    else setMessage(t('forgot.sent'))
     setLoading(false)
   }
 
@@ -104,10 +106,10 @@ function LoginForm() {
         </div>
 
         <h1 style={{ fontFamily:'var(--display)', fontSize:'24px', fontWeight:'300', fontStyle:'italic', color:'var(--navy)', marginBottom:'6px' }}>
-          {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset your password'}
+          {mode === 'login' ? t('login.title') : mode === 'signup' ? t('signup.title') : t('forgot.title')}
         </h1>
         <p style={{ fontSize:'13px', color:'var(--ink-3)', marginBottom:'24px' }}>
-          {mode === 'login' ? 'Sign in to your restaurant command center' : mode === 'signup' ? '30-day free trial · No credit card required' : "We'll send a reset link to your email"}
+          {mode === 'login' ? t('login.subtitle') : mode === 'signup' ? t('signup.subtitle') : t('forgot.subtitle')}
         </p>
 
         {message && <div style={{ background:'var(--green-lt)', border:'1px solid var(--green-mid)', borderRadius:'8px', padding:'10px 14px', fontSize:'13px', color:'var(--green)', marginBottom:'16px' }}>✓ {message}</div>}
@@ -116,19 +118,19 @@ function LoginForm() {
         <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot}>
           {mode === 'signup' && (
             <div style={{ marginBottom:'14px' }}>
-              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Your name</label>
-              <input className="input" type="text" placeholder="Paul Dransfield" value={fullName} onChange={e => setFullName(e.target.value)} required />
+              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('signup.name')}</label>
+              <input className="input" type="text" placeholder={t('signup.namePlaceholder')} value={fullName} onChange={e => setFullName(e.target.value)} required />
             </div>
           )}
           {mode === 'signup' && (
             <div style={{ marginBottom:'14px' }}>
-              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Restaurant / company name</label>
-              <input className="input" type="text" placeholder="Vero Italiano AB" value={orgName} onChange={e => setOrgName(e.target.value)} required />
+              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('signup.orgName')}</label>
+              <input className="input" type="text" placeholder={t('signup.orgPlaceholder')} value={orgName} onChange={e => setOrgName(e.target.value)} required />
             </div>
           )}
           {mode === 'signup' && (
             <div style={{ marginBottom:'14px' }}>
-              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Organisationsnummer</label>
+              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('signup.orgNumber')}</label>
               <input
                 className="input"
                 type="text"
@@ -138,38 +140,38 @@ function LoginForm() {
                 required
                 inputMode="numeric"
                 pattern="[0-9\\-]{10,11}"
-                title="10 digits, optionally formatted as XXXXXX-XXXX"
+                title={t('signup.orgNumberTitle')}
                 style={{ fontFamily: 'ui-monospace, monospace' }}
               />
               <div style={{ fontSize:'11px', color:'var(--ink-4)', marginTop:'4px' }}>
-                Required for VAT-compliant invoicing. 10 digits, e.g. 556677-8899.
+                {t('signup.orgNumberHint')}
               </div>
             </div>
           )}
           <div style={{ marginBottom:'14px' }}>
-            <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Email address</label>
-            <input className="input" type="email" placeholder="paul@veroitaliano.se" value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
+            <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('shared.email')}</label>
+            <input className="input" type="email" placeholder={t('shared.emailPlaceholder')} value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />
           </div>
           {mode !== 'forgot' && (
             <div style={{ marginBottom:'14px' }}>
-              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>Password</label>
-              <input className="input" type="password" placeholder={mode === 'signup' ? 'At least 8 characters' : 'Enter your password'} value={password} onChange={e => setPassword(e.target.value)} required minLength={mode === 'signup' ? 8 : 1} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
+              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('shared.password')}</label>
+              <input className="input" type="password" placeholder={mode === 'signup' ? t('signup.passwordPlaceholder') : t('login.passwordPlaceholder')} value={password} onChange={e => setPassword(e.target.value)} required minLength={mode === 'signup' ? 8 : 1} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
             </div>
           )}
           {mode === 'login' && (
             <div style={{ textAlign:'right', marginBottom:'16px' }}>
-              <button type="button" style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('forgot'); setError(''); setMessage('') }}>Forgot password?</button>
+              <button type="button" style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('forgot'); setError(''); setMessage('') }}>{t('login.forgot')}</button>
             </div>
           )}
           <button type="submit" className="btn btn-primary btn-full" disabled={loading} style={{ marginTop:'4px' }}>
-            {loading ? <><span className="spin">⟳</span> Please wait…</> : mode === 'login' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
+            {loading ? <><span className="spin">⟳</span> {t('login.submitWait')}</> : mode === 'login' ? t('login.submit') : mode === 'signup' ? t('signup.submit') : t('forgot.submit')}
           </button>
         </form>
 
         <div style={{ textAlign:'center', marginTop:'20px', fontSize:'13px', color:'var(--ink-3)' }}>
-          {mode === 'login' ? (<>Don't have an account? <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('signup'); setError(''); setMessage('') }}>Sign up free</button></>) 
-          : mode === 'signup' ? (<>Already have an account? <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('login'); setError(''); setMessage('') }}>Sign in</button></>) 
-          : (<button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('login'); setError(''); setMessage('') }}>← Back to login</button>)}
+          {mode === 'login' ? (<>{t('login.noAccount')} <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('signup'); setError(''); setMessage('') }}>{t('login.signUpFree')}</button></>)
+          : mode === 'signup' ? (<>{t('signup.haveAccount')} <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('login'); setError(''); setMessage('') }}>{t('signup.signIn')}</button></>)
+          : (<button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('login'); setError(''); setMessage('') }}>{t('forgot.back')}</button>)}
         </div>
 
       </div>

@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review",
+    "_note":   "Sidelastere + delte elementer. Sidenes indre tekst er fortsatt engelsk; spores for oppfølgings-PR."
+  },
+  "revenue": {
+    "loading": "Laster…"
+  },
+  "staff": {
+    "loading": "Laster…"
+  },
+  "departments": {
+    "loading":     "Laster avdelinger…",
+    "loadingPanel":"Laster…"
+  }
+}

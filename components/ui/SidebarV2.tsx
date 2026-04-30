@@ -20,6 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
 import { UX } from '@/lib/constants/tokens'
 import SyncIndicator from './SyncIndicator'
@@ -34,8 +35,8 @@ interface Business {
 }
 
 type NavItem =
-  | { kind: 'section', label: string }
-  | { kind: 'link',    key: string, label: string, href: string, icon: IconName, sub?: boolean, alertBadge?: boolean }
+  | { kind: 'section', tKey: string }
+  | { kind: 'link',    key: string, tKey: string, href: string, icon: IconName, sub?: boolean, alertBadge?: boolean }
 
 type IconName =
   | 'overview' | 'group' | 'financials' | 'operations'
@@ -44,22 +45,24 @@ type IconName =
   | 'invoices' | 'alerts' | 'settings' | 'plan'
 
 // Spec § Sidebar — 6 primary items + Invoices + Alerts + Settings.
+// `tKey` maps into locales/<locale>/sidebar.json — `nav.<tKey>` for links,
+// `section.<tKey>` for headers. Labels resolve at render time via t().
 const NAV: NavItem[] = [
-  { kind: 'link',    key: 'overview',                label: 'Overview',          href: '/dashboard',    icon: 'overview' },
-  { kind: 'link',    key: 'group',                   label: 'Group',             href: '/group',        icon: 'group' },
-  { kind: 'section', label: 'Financials' },
-  { kind: 'link',    key: 'financials/pnl',          label: 'P&L Tracker',       href: '/tracker',                icon: 'pnl',      sub: true },
-  { kind: 'link',    key: 'financials/budget',       label: 'Budget vs Actual',  href: '/budget',                 icon: 'budget',   sub: true },
-  { kind: 'link',    key: 'financials/performance',  label: 'Performance',       href: '/financials/performance', icon: 'forecast', sub: true },
-  { kind: 'link',    key: 'financials/forecast',     label: 'Forecast',          href: '/forecast',               icon: 'forecast', sub: true },
-  { kind: 'link',    key: 'financials/overheads',    label: 'Overheads',         href: '/overheads',              icon: 'budget',   sub: true },
-  { kind: 'section', label: 'Operations' },
-  { kind: 'link',    key: 'operations/revenue',      label: 'Revenue',           href: '/revenue',      icon: 'revenue',     sub: true },
-  { kind: 'link',    key: 'operations/staff',        label: 'Staff',             href: '/staff',        icon: 'staff',       sub: true },
-  { kind: 'link',    key: 'operations/scheduling',   label: 'Scheduling',        href: '/scheduling',   icon: 'scheduling',  sub: true },
-  { kind: 'link',    key: 'operations/departments',  label: 'Departments',       href: '/departments',  icon: 'departments', sub: true },
-  { kind: 'link',    key: 'invoices',                label: 'Invoices',          href: '/invoices',     icon: 'invoices' },
-  { kind: 'link',    key: 'alerts',                  label: 'Alerts',            href: '/alerts',       icon: 'alerts',  alertBadge: true },
+  { kind: 'link',    key: 'overview',                tKey: 'overview',     href: '/dashboard',              icon: 'overview' },
+  { kind: 'link',    key: 'group',                   tKey: 'group',        href: '/group',                  icon: 'group' },
+  { kind: 'section', tKey: 'financials' },
+  { kind: 'link',    key: 'financials/pnl',          tKey: 'pnl',          href: '/tracker',                icon: 'pnl',         sub: true },
+  { kind: 'link',    key: 'financials/budget',       tKey: 'budget',       href: '/budget',                 icon: 'budget',      sub: true },
+  { kind: 'link',    key: 'financials/performance',  tKey: 'performance',  href: '/financials/performance', icon: 'forecast',    sub: true },
+  { kind: 'link',    key: 'financials/forecast',     tKey: 'forecast',     href: '/forecast',               icon: 'forecast',    sub: true },
+  { kind: 'link',    key: 'financials/overheads',    tKey: 'overheads',    href: '/overheads',              icon: 'budget',      sub: true },
+  { kind: 'section', tKey: 'operations' },
+  { kind: 'link',    key: 'operations/revenue',      tKey: 'revenue',      href: '/revenue',                icon: 'revenue',     sub: true },
+  { kind: 'link',    key: 'operations/staff',        tKey: 'staff',        href: '/staff',                  icon: 'staff',       sub: true },
+  { kind: 'link',    key: 'operations/scheduling',   tKey: 'scheduling',   href: '/scheduling',             icon: 'scheduling',  sub: true },
+  { kind: 'link',    key: 'operations/departments',  tKey: 'departments',  href: '/departments',            icon: 'departments', sub: true },
+  { kind: 'link',    key: 'invoices',                tKey: 'invoices',     href: '/invoices',               icon: 'invoices' },
+  { kind: 'link',    key: 'alerts',                  tKey: 'alerts',       href: '/alerts',                 icon: 'alerts',      alertBadge: true },
 ]
 
 export interface SidebarV2Props {
@@ -69,6 +72,7 @@ export interface SidebarV2Props {
 export default function SidebarV2({ activeKey }: SidebarV2Props) {
   const pathname = usePathname()
   const router   = useRouter()
+  const t        = useTranslations('sidebar')
 
   const [collapsed,   setCollapsed]   = useState(false)
   const [businesses,  setBusinesses]  = useState<Business[]>([])
@@ -199,7 +203,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
 
   return (
     <aside
-      aria-label="Primary"
+      aria-label={t('a11y.primary')}
       style={{
         width:        W,
         flexShrink:   0,
@@ -225,7 +229,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
           </span>
         )}
         <button
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? t('a11y.expandSidebar') : t('a11y.collapseSidebar')}
           onClick={toggleCollapsed}
           style={{
             background: 'transparent', border: 'none', cursor: 'pointer',
@@ -259,7 +263,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
             }}
           >
             <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, fontWeight: UX.fwMedium }}>
-              {selected?.name ?? 'Pick a business'}
+              {selected?.name ?? t('businessPicker.placeholder')}
             </span>
             <span aria-hidden style={{ color: 'rgba(255,255,255,0.45)', fontSize: UX.fsMicro }}>▾</span>
           </button>
@@ -284,7 +288,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
                     setTimeout(() => setCopiedTick(false), 1500)
                   } catch {}
                 }}
-                title="Click to copy organisationsnummer"
+                title={t('businessPicker.copyTitle')}
                 style={{
                   marginTop:   4,
                   padding:     '3px 9px',
@@ -300,7 +304,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
                   transition:  'color 0.15s',
                 }}
               >
-                {copiedTick ? 'Copied ✓' : display}
+                {copiedTick ? t('businessPicker.copied') : display}
               </button>
             )
           })()}
@@ -387,18 +391,19 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
                 textTransform: 'uppercase' as const,
                 padding:       '12px 10px 4px',
               }}>
-                {item.label}
+                {t(`section.${item.tKey}`)}
               </div>
             )
           }
           const active   = currentKey === item.key || currentKey.startsWith(item.key + '/')
           const count    = item.alertBadge && alertCount > 0 ? alertCount : 0
           const padL     = !collapsed && item.sub ? 20 : 10
+          const navLabel = t(`nav.${item.tKey}`)
           return (
             <button
               key={item.key}
               onClick={() => router.push(item.href)}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? navLabel : undefined}
               aria-current={active ? 'page' : undefined}
               style={{
                 display:        'flex',
@@ -424,7 +429,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
                 size={14}
                 color={active ? UX.indigoLight : 'rgba(255,255,255,0.5)'}
               />
-              {!collapsed && <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>{item.label}</span>}
+              {!collapsed && <span style={{ overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>{navLabel}</span>}
               {count > 0 && (
                 collapsed
                   ? <span style={{ position: 'absolute' as const, top: 4, right: 8, width: 6, height: 6, borderRadius: '50%', background: UX.redInk }} />
@@ -453,7 +458,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
       <div style={{ borderTop: '0.5px solid rgba(255,255,255,0.06)', padding: '6px 6px' }}>
         <button
           onClick={() => router.push('/upgrade')}
-          title={collapsed ? 'Subscription' : undefined}
+          title={collapsed ? t('nav.subscription') : undefined}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start',
             gap: 9, width: '100%', padding: collapsed ? '7px 0' : '6px 10px',
@@ -465,11 +470,11 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
           }}
         >
           <SidebarIcon name="plan" size={14} color={currentKey === 'upgrade' ? UX.indigoLight : 'rgba(255,255,255,0.5)'} />
-          {!collapsed && <span>Subscription</span>}
+          {!collapsed && <span>{t('nav.subscription')}</span>}
         </button>
         <button
           onClick={() => router.push('/settings')}
-          title={collapsed ? 'Settings' : undefined}
+          title={collapsed ? t('nav.settings') : undefined}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start',
             gap: 9, width: '100%', padding: collapsed ? '7px 0' : '6px 10px',
@@ -480,7 +485,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
           }}
         >
           <SidebarIcon name="settings" size={14} color={currentKey === 'settings' ? UX.indigoLight : 'rgba(255,255,255,0.5)'} />
-          {!collapsed && <span>Settings</span>}
+          {!collapsed && <span>{t('nav.settings')}</span>}
         </button>
       </div>
 
@@ -505,7 +510,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
           fontSize: UX.fsMicro,
         }}>
           <span style={{ color: 'rgba(255,255,255,0.35)', overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-            {userName || 'Signed in'}
+            {userName || t('user.signedIn')}
           </span>
           <button
             onClick={signOut}
@@ -514,7 +519,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
               color: 'rgba(255,255,255,0.35)', fontSize: UX.fsMicro, padding: 0,
             }}
           >
-            Sign out
+            {t('user.signOut')}
           </button>
         </div>
       )}

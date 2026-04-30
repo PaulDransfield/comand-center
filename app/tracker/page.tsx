@@ -19,6 +19,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -56,6 +57,7 @@ const MONTHS       = ['January','February','March','April','May','June','July','
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function TrackerPage() {
+  const t = useTranslations('financials.tracker')
   const now = new Date()
   const currentMonth = now.getMonth() + 1
   const currentYear  = now.getFullYear()
@@ -325,13 +327,15 @@ export default function TrackerPage() {
 
         {/* ─── PageHero ──────────────────────────────────────────────────── */}
         <PageHero
-          eyebrow={`YTD — ${year}${withData.length ? ` · ${withData.length} MONTH${withData.length === 1 ? '' : 'S'} LOGGED` : ''}`}
+          eyebrow={withData.length
+            ? t('eyebrowYtdMonths', { year, count: withData.length })
+            : t('eyebrowYtd', { year })}
           headline={heroHeadline}
           context={heroContext}
           right={
             <div style={{ minWidth: 160, textAlign: 'right' as const }}>
               <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: '0.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>
-                YTD profit
+                {t('ytdProfit')}
               </div>
               <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: totProfit >= 0 ? UX.ink1 : UX.redInk, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' as const }}>
                 {fmtKr(totProfit)}
@@ -445,7 +449,7 @@ export default function TrackerPage() {
           </div>
 
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+            <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
           ) : (
             allMonths.map((row) => {
               // "Has data" now means real revenue logged — a row with all
@@ -640,7 +644,7 @@ export default function TrackerPage() {
                         Daily — {MONTHS[row.period_month - 1]} {year}
                       </div>
                       {loadingDaily === row.period_month ? (
-                        <div style={{ fontSize: UX.fsMicro, color: UX.ink4, padding: '6px 0' }}>Loading daily data…</div>
+                        <div style={{ fontSize: UX.fsMicro, color: UX.ink4, padding: '6px 0' }}>{t('loadingDaily')}</div>
                       ) : (dailyData[row.period_month] ?? []).length === 0 ? (
                         <div style={{ fontSize: UX.fsMicro, color: UX.ink5, padding: '6px 0' }}>
                           No daily data yet for this month.

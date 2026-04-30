@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "page": {
+    "title":      "Varsler",
+    "subtitle":   "Automatisk avviksdeteksjon · oppdateres daglig kl. 06:00",
+    "showAll":    "Vis alle",
+    "unreadOnly": "Kun uleste"
+  },
+  "kpi": {
+    "critical": "Kritisk",
+    "high":     "Høy",
+    "unread":   "Uleste",
+    "total":    "Totalt"
+  },
+  "list": {
+    "loading":     "Laster…",
+    "allClear":    "Alt klart",
+    "empty":       "Ingen aktive varsler. Klikk \"Kjør sjekk nå\" for å skanne etter avvik."
+  },
+  "card": {
+    "detected":    "Oppdaget {created} · Periode: {period} · AI-generert — vurder før handling",
+    "markRead":    "Merk som lest",
+    "dismiss":     "Avvis"
+  },
+  "type": {
+    "revenue_drop":     "Inntektsfall",
+    "food_cost_spike":  "Matkostnadstopp",
+    "staff_cost_spike": "Bemanningskostnadstopp",
+    "invoice_spike":    "Fakturaavvik",
+    "covers_drop":      "Gjestebortfall"
+  },
+  "invoices": {
+    "page": {
+      "title":     "Fakturaer",
+      "subtitle":  "AI-drevet utlesing — dra en PDF for å legge til",
+      "uploadPdf": "+ Last opp PDF"
+    },
+    "kpi": {
+      "totalThisMonth": "Totalt denne måneden",
+      "invoicesCount":  "{count, plural, one {# faktura} other {# fakturaer}}",
+      "overdue":        "Forfalt",
+      "overdueCount":   "{count, plural, one {# faktura} other {# fakturaer}}",
+      "outstanding":    "{amount} utestående",
+      "noneOverdue":    "Ingen forfalte",
+      "largestSupplier":"Største leverandør"
+    },
+    "drop": {
+      "extracting": "Henter ut data med AI…",
+      "drop":       "Slipp en PDF-faktura her eller klikk for å laste opp",
+      "hint":       "AI leser leverandør, beløp, dato, linjer og MVA — tar omtrent 10 sekunder"
+    },
+    "filter": {
+      "all":     "Alle",
+      "paid":    "Betalte",
+      "pending": "Venter",
+      "overdue": "Forfalte"
+    },
+    "table": {
+      "loading":   "Laster…",
+      "emptyAll":  "Ingen fakturaer ennå — last opp din første PDF over",
+      "emptyFilter":"Ingen fakturaer samsvarer med dette filteret",
+      "supplier":  "Leverandør",
+      "date":      "Dato",
+      "amount":    "Beløp",
+      "category":  "Kategori",
+      "status":    "Status",
+      "delete":    "Slett",
+      "deleteConfirm": "Slette denne fakturaen?"
+    },
+    "status": {
+      "pending": "Venter",
+      "paid":    "Betalt",
+      "overdue": "Forfalt"
+    }
+  }
+}

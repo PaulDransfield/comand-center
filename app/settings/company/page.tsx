@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import PageHero from '@/components/ui/PageHero'
 import { UX } from '@/lib/constants/tokens'
@@ -28,6 +29,7 @@ interface CompanyInfo {
 
 export default function CompanySettingsPage() {
   const router = useRouter()
+  const t      = useTranslations('settings.company')
   const [info,       setInfo]      = useState<CompanyInfo | null>(null)
   const [loading,    setLoading]   = useState<boolean>(true)
   const [draft,      setDraft]     = useState<string>('')
@@ -72,28 +74,28 @@ export default function CompanySettingsPage() {
         body:    JSON.stringify({ org_number: check.value }),
       })
       const j = await r.json()
-      if (!r.ok) throw new Error(j?.error ?? 'Save failed')
+      if (!r.ok) throw new Error(j?.error ?? t('saveFailed'))
       setSavedAt(Date.now())
       await load()
     } catch (e: any) {
-      setValidation(e?.message ?? 'Save failed')
+      setValidation(e?.message ?? t('saveFailed'))
     } finally {
       setSaving(false)
     }
   }
 
   const headline = info?.org_number
-    ? 'Company info — set'
+    ? t('headline.set')
     : info?.grace_expired
-      ? 'Action required: add your organisationsnummer'
-      : `Add your organisationsnummer (${info?.grace_days_remaining ?? 30} day${info?.grace_days_remaining === 1 ? '' : 's'} remaining)`
+      ? t('headline.expired')
+      : t('headline.grace', { days: info?.grace_days_remaining ?? 30 })
 
   return (
     <AppShell>
       <PageHero
-        eyebrow="SETTINGS · COMPANY"
+        eyebrow={t('eyebrow')}
         headline={headline}
-        context="Required for VAT-compliant invoicing, sub-processor contracts, and Fortnox cross-verification."
+        context={t('context')}
       />
 
       <div style={{ padding: '0 24px 40px', maxWidth: 720, margin: '0 auto' }}>
@@ -103,7 +105,7 @@ export default function CompanySettingsPage() {
             padding: '12px 16px', marginBottom: 14,
             color: '#991b1b', fontSize: 13,
           }}>
-            <strong>Grace period expired.</strong> Some features will be blocked until you add your organisationsnummer below.
+            <strong>{t('expired')}</strong> {t('expiredFollowup')}
           </div>
         )}
 
@@ -115,7 +117,7 @@ export default function CompanySettingsPage() {
             display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
             textTransform: 'uppercase' as const, color: UX.ink3, marginBottom: 6,
           }}>
-            Organisationsnummer
+            {t('label')}
           </label>
           <input
             type="text"
@@ -131,7 +133,7 @@ export default function CompanySettingsPage() {
             }}
           />
           <div style={{ fontSize: 11, color: UX.ink4, marginTop: 6 }}>
-            10 digits — accepts the formatted version (XXXXXX-XXXX) or unformatted.
+            {t('hint')}
           </div>
 
           {validation && (
@@ -146,10 +148,10 @@ export default function CompanySettingsPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
             <div style={{ fontSize: 11, color: UX.ink4 }}>
               {info?.org_number && info.org_number_set_at && (
-                <>Set on {new Date(info.org_number_set_at).toLocaleDateString('sv-SE')}</>
+                <>{t('setOn', { date: new Date(info.org_number_set_at).toLocaleDateString('sv-SE') })}</>
               )}
               {savedAt && Date.now() - savedAt < 5000 && (
-                <span style={{ color: UX.greenInk, marginLeft: 8 }}>· Saved</span>
+                <span style={{ color: UX.greenInk, marginLeft: 8 }}>· {t('saved')}</span>
               )}
             </div>
             <button
@@ -163,17 +165,17 @@ export default function CompanySettingsPage() {
                 cursor: saving || !draft.trim() ? 'not-allowed' : 'pointer',
               }}
             >
-              {saving ? 'Saving…' : info?.org_number ? 'Update' : 'Save'}
+              {saving ? t('saving') : info?.org_number ? t('update') : t('save')}
             </button>
           </div>
         </div>
 
         <div style={{ fontSize: 11, color: UX.ink4, lineHeight: 1.5, padding: '0 4px' }}>
-          Why we need this:
+          {t('whyTitle')}
           <ul style={{ paddingLeft: 18, marginTop: 4 }}>
-            <li>Swedish VAT-compliant invoicing requires your org-nr on receipts.</li>
-            <li>Sub-processor agreements (Supabase, Anthropic, Stripe, Resend) reference your legal entity.</li>
-            <li>Disambiguates your company from similarly-named businesses across Sweden.</li>
+            <li>{t('why1')}</li>
+            <li>{t('why2')}</li>
+            <li>{t('why3')}</li>
           </ul>
         </div>
       </div>

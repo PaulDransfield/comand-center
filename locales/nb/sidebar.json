@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "nav": {
+    "overview":     "Oversikt",
+    "group":        "Gruppe",
+    "pnl":          "Resultatregnskap",
+    "budget":       "Budsjett mot faktisk",
+    "performance":  "Resultat",
+    "forecast":     "Prognose",
+    "overheads":    "Faste kostnader",
+    "revenue":      "Inntekt",
+    "staff":        "Ansatte",
+    "scheduling":   "Vaktplan",
+    "departments":  "Avdelinger",
+    "invoices":     "Fakturaer",
+    "alerts":       "Varsler",
+    "settings":     "Innstillinger",
+    "subscription": "Abonnement"
+  },
+  "section": {
+    "financials":  "Økonomi",
+    "operations":  "Drift"
+  },
+  "businessPicker": {
+    "placeholder": "Velg virksomhet",
+    "copyTitle":   "Klikk for å kopiere organisasjonsnummer",
+    "copied":      "Kopiert ✓"
+  },
+  "user": {
+    "signedIn":  "Innlogget",
+    "signOut":   "Logg ut"
+  },
+  "a11y": {
+    "primary":          "Primær",
+    "expandSidebar":    "Utvid sidefelt",
+    "collapseSidebar":  "Fold sammen sidefelt"
+  }
+}

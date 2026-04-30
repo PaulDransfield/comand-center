@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "crumb": {
+    "operations": "Operations",
+    "scheduling": "Scheduling"
+  },
+  "loading":   "Loading scheduling data…",
+  "noJoinedData": {
+    "title": "No joined data yet",
+    "body":  "Scheduling efficiency requires both staff hours (Personalkollen) and revenue (POS) data for the same dates. Try expanding the date range."
+  },
+  "ranges": {
+    "title":         "AI outlook",
+    "this_week":     "This week",
+    "next_week":     "Next week",
+    "2w":            "2 weeks",
+    "4w":            "4 weeks",
+    "next_month":    "Next month",
+    "labelThisWeek": "This week",
+    "labelNextWeek": "Next week",
+    "label2w":       "Next 2 weeks",
+    "label4w":       "Next 4 weeks",
+    "labelNextMonth":"Next calendar month"
+  },
+  "status": {
+    "lean":         "Lean",
+    "leanHint":     "High revenue per hour — you're doing a lot with the hours scheduled.",
+    "on_target":    "On target",
+    "on_targetHint":"Revenue per labour hour within ±20% of your weekly average.",
+    "overstaffed":  "Overstaffed",
+    "overstaffedHint":"Revenue per hour is low — more hours scheduled than demand needs. Consider trimming.",
+    "no_data":      "No data",
+    "no_dataHint":  "Fewer than 2 days of joined data for this weekday."
+  },
+  "drill": {
+    "headerEyebrow":  "{day}s in {period}",
+    "loading":        "Loading…",
+    "error":          "Error",
+    "totalsRevLabour":"{rev} rev · {labour} labour · {ratePerHour}",
+    "ratePerHourMissing": "—/hr",
+    "subEyebrow":     "{count, plural, one {# day} other {# days}} · {staff} staff · {shifts} shifts · {hours}",
+    "loadingDay":     "Loading day details…",
+    "byDate":         "By date",
+    "th":  {
+      "date":        "Date",
+      "revenue":     "Revenue",
+      "labour":      "Labour",
+      "hours":       "Hours",
+      "staff":       "Staff",
+      "revPerHr":    "Rev/Hr",
+      "name":        "Name",
+      "department":  "Department",
+      "shifts":      "Shifts",
+      "cost":        "Cost",
+      "costPerHr":   "Cost/Hr"
+    },
+    "whoWorked":      "Who worked ({count})",
+    "noStaffShifts":  "No staff shifts recorded for these dates.",
+    "noDataForDay":   "No data for {day} in this period."
+  }
+}

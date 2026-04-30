@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "nav": {
+    "overview":     "Overview",
+    "group":        "Group",
+    "pnl":          "P&L Tracker",
+    "budget":       "Budget vs Actual",
+    "performance":  "Performance",
+    "forecast":     "Forecast",
+    "overheads":    "Overheads",
+    "revenue":      "Revenue",
+    "staff":        "Staff",
+    "scheduling":   "Scheduling",
+    "departments":  "Departments",
+    "invoices":     "Invoices",
+    "alerts":       "Alerts",
+    "settings":     "Settings",
+    "subscription": "Subscription"
+  },
+  "section": {
+    "financials":  "Financials",
+    "operations":  "Operations"
+  },
+  "businessPicker": {
+    "placeholder": "Pick a business",
+    "copyTitle":   "Click to copy organisationsnummer",
+    "copied":      "Copied ✓"
+  },
+  "user": {
+    "signedIn":  "Signed in",
+    "signOut":   "Sign out"
+  },
+  "a11y": {
+    "primary":          "Primary",
+    "expandSidebar":    "Expand sidebar",
+    "collapseSidebar":  "Collapse sidebar"
+  }
+}

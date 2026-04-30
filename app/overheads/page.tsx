@@ -15,6 +15,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -76,6 +77,7 @@ const SUB_TONE: Record<string, string> = {
 
 export default function OverheadsPage() {
   const router = useRouter()
+  const t      = useTranslations('financials.overheads')
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
   const [rows,       setRows]       = useState<LineItem[]>([])
@@ -184,7 +186,7 @@ export default function OverheadsPage() {
   const selectedBiz = businesses.find(b => b.id === bizId) ?? null
 
   const hero = (() => {
-    if (loading) return <>Loading overheads…</>
+    if (loading) return <>{t('loading')}</>
     if (!rows.length) {
       return <>
         No Fortnox overhead data for <span style={{ fontWeight: UX.fwMedium }}>{year}</span> yet.{' '}
@@ -343,7 +345,7 @@ export default function OverheadsPage() {
         )}
 
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+          <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loadingPanel')}</div>
         ) : rows.length === 0 ? (
           <AttentionPanel
             title="No overhead data yet"

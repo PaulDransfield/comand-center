@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { AiBadge } from '@/components/ui/AiBadge'
 
@@ -21,17 +22,10 @@ const SEV: Record<string, { bg: string; border: string; text: string; dot: strin
   low:      { bg: '#f0f9ff', border: '#bae6fd', text: '#075985', dot: '#0284c7' },
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  revenue_drop:    'Revenue drop',
-  food_cost_spike: 'Food cost spike',
-  staff_cost_spike:'Staff cost spike',
-  invoice_spike:   'Invoice anomaly',
-  covers_drop:     'Covers drop',
-}
-
 const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
 export default function AlertsPage() {
+  const t = useTranslations('alerts')
   const [alerts,   setAlerts]  = useState<Alert[]>([])
   const [loading,  setLoading] = useState(true)
   const [showAll,  setShowAll] = useState(false)
@@ -62,13 +56,13 @@ export default function AlertsPage() {
       <div style={{ padding: '28px', maxWidth: 800 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Alerts</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>Automatic anomaly detection · updated daily at 06:00</p>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>{t('page.title')}</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => setShowAll(s => !s)}
               style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, cursor: 'pointer', color: '#374151' }}>
-              {showAll ? 'Unread only' : 'Show all'}
+              {showAll ? t('page.unreadOnly') : t('page.showAll')}
             </button>
           </div>
         </div>
@@ -76,12 +70,12 @@ export default function AlertsPage() {
         {/* Summary KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 12, marginBottom: 20 }}>
           {[
-            { label: 'Critical', value: critical, color: critical > 0 ? '#dc2626' : '#111' },
-            { label: 'High',     value: high,     color: high     > 0 ? '#ea580c' : '#111' },
-            { label: 'Unread',   value: unread,   color: unread   > 0 ? '#1a1f2e' : '#111' },
-            { label: 'Total',    value: alerts.length, color: '#111' },
+            { key: 'critical', label: t('kpi.critical'), value: critical, color: critical > 0 ? '#dc2626' : '#111' },
+            { key: 'high',     label: t('kpi.high'),     value: high,     color: high     > 0 ? '#ea580c' : '#111' },
+            { key: 'unread',   label: t('kpi.unread'),   value: unread,   color: unread   > 0 ? '#1a1f2e' : '#111' },
+            { key: 'total',    label: t('kpi.total'),    value: alerts.length, color: '#111' },
           ].map(k => (
-            <div key={k.label} style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
+            <div key={k.key} style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{k.label}</div>
               <div style={{ fontSize: 28, fontWeight: 600, color: k.color }}>{k.value}</div>
             </div>
@@ -90,12 +84,12 @@ export default function AlertsPage() {
 
         {/* Alert list */}
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>Loading...</div>
+          <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>{t('list.loading')}</div>
         ) : alerts.length === 0 ? (
           <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: 48, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
-            <div style={{ fontWeight: 600, color: '#15803d', fontSize: 15, marginBottom: 6 }}>All clear</div>
-            <div style={{ fontSize: 13, color: '#9ca3af' }}>No active alerts. Click "Run check now" to scan for anomalies.</div>
+            <div style={{ fontWeight: 600, color: '#15803d', fontSize: 15, marginBottom: 6 }}>{t('list.allClear')}</div>
+            <div style={{ fontSize: 13, color: '#9ca3af' }}>{t('list.empty')}</div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -108,7 +102,10 @@ export default function AlertsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <div style={{ width: 8, height: 8, borderRadius: '50%', background: s.dot, flexShrink: 0 }} />
                         <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: s.text }}>
-                          {alert.severity} · {TYPE_LABEL[alert.alert_type] ?? alert.alert_type}
+                          {alert.severity} · {(() => {
+                            try { return t(`type.${alert.alert_type}`) }
+                            catch { return alert.alert_type }
+                          })()}
                         </span>
                         {alert.businesses && (
                           <span style={{ fontSize: 11, color: '#9ca3af' }}>
@@ -122,19 +119,19 @@ export default function AlertsPage() {
                       </div>
                       <div style={{ fontSize: 13, color: '#555', lineHeight: 1.5 }}>{alert.description}</div>
                       <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-                        Detected {fmtDate(alert.created_at)} · Period: {fmtDate(alert.period_date)} · AI-generated — review before acting
+                        {t('card.detected', { created: fmtDate(alert.created_at), period: fmtDate(alert.period_date) })}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, marginLeft: 16, flexShrink: 0 }}>
                       {!alert.is_read && (
                         <button onClick={() => action(alert.id, 'mark_read')}
                           style={{ padding: '5px 10px', background: 'white', border: `1px solid ${s.border}`, borderRadius: 6, fontSize: 11, cursor: 'pointer', color: s.text }}>
-                          Mark read
+                          {t('card.markRead')}
                         </button>
                       )}
                       <button onClick={() => action(alert.id, 'dismiss')}
                         style={{ padding: '5px 10px', background: 'white', border: `1px solid ${s.border}`, borderRadius: 6, fontSize: 11, cursor: 'pointer', color: '#9ca3af' }}>
-                        Dismiss
+                        {t('card.dismiss')}
                       </button>
                     </div>
                   </div>

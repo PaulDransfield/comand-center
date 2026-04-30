@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "upgrade": {
+    "title":      "Du är nu på {plan}-abonnemanget",
+    "titleNoPlan":"Du är nu på det nya abonnemanget",
+    "subtitle":   "Alla funktioner är nu upplåsta."
+  },
+  "stale": {
+    "yesterday":   "Datan uppdaterades senast igår",
+    "daysAgo":     "Datan uppdaterades senast för {days} dagar sedan",
+    "instruction": "synkning pågår. Klicka på synkprickel i sidofältet för att uppdatera nu."
+  },
+  "alerts": {
+    "viewAll": "Visa alla varningar →"
+  },
+  "labour": {
+    "predictiveEyebrow":  "NÄSTA VECKA · PERSONALPROGNOS",
+    "ofRevenue":          "av intäkter",
+    "currentLine":        "Ditt nuvarande schema beräknas till {curr}% personalandel. AI:s justeringar tar det till {ai}%.",
+    "saves":              "Sparar {amount}",
+    "hoursCut":           "{hours}h minskat",
+    "openScheduling":     "Öppna schema",
+    "retroEyebrow":       "{period} · PERSONAL mot MÅL",
+    "retroVsTarget":      "mot {target}% mål",
+    "retroOnTarget":      "Personalkostnaden låg på mål — bra jobbat.",
+    "retroOver":          "Personalkostnaden låg {pp}pp över mål.",
+    "retroNoMissed":      "Ingen missad besparing denna period.",
+    "retroCouldSave":     "Kunde ha sparat {amount} genom att nå målet."
+  },
+  "hero": {
+    "eyebrowWeek":   "DENNA VECKA · {label}",
+    "eyebrowMonth":  "DENNA MÅNAD · {label}",
+    "revenue":       "intäkter",
+    "waiting":       "Väntar på dagens synkning — intäkterna har inte kommit in än.",
+    "upOn":          "Upp {pct}% mot {ref}.",
+    "downOn":        "Ner {pct}% mot {ref}.",
+    "lastWeek":      "förra veckan",
+    "lastMonth":     "förra månaden",
+    "labourLeanTarget": "Personal {pct} (mål {target}%).",
+    "labourVsTarget":   "Personal {pct} mot {target}% mål.",
+    "marginWeek":   "Marginal {amount} denna vecka.",
+    "marginMonth":  "Marginal {amount} denna månad.",
+    "footerHours":  "{hours}h arbetade",
+    "footerRate":   "{amount}/h",
+    "footerMargin": "{amount} marginal",
+    "aiSees":       "AI ser {amount}"
+  },
+  "departments": {
+    "header":  "Avdelningar — {period}",
+    "viewAll": "Visa alla →",
+    "empty":   "Ingen avdelningsdata för denna period än."
+  },
+  "attention": {
+    "aiSees":          "ser {amount} kr att skära från nästa veckas timmar.",
+    "deptWorst":       "marginal {pct}% — personalkostnaden är den största hävstången.",
+    "deptSecondWorst": "marginal {pct}% — värd att titta närmare på.",
+    "labour":          "ligger på {pct}% av intäkter, {target}% mål."
+  },
+  "period": {
+    "weekLabel":  "Vecka {num} · {range}"
+  }
+}

@@ -6,6 +6,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -77,6 +78,7 @@ function KpiCard({ label, value, sub, deltaVal, ok }: any) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StaffPage() {
+  const t = useTranslations('operations.staff')
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -280,7 +282,7 @@ export default function StaffPage() {
         />
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading…</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
         ) : !connected ? (
           <div style={{ background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg, padding: 48, textAlign: 'center' as const }}>
             <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>Personalkollen not connected</div>

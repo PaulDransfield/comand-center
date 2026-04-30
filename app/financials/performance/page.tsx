@@ -23,6 +23,7 @@ import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+import { useTranslations } from 'next-intl'
 import TopBar from '@/components/ui/TopBar'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
@@ -412,6 +413,7 @@ interface Business { id: string; name: string; city?: string | null }
 type CompareMode = 'none' | 'prev' | 'yoy' | 'ytd_yoy' | { custom: PeriodKey }
 
 export default function PerformancePage() {
+  const t = useTranslations('financials.performance')
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
   const [granularity, setGranularity] = useState<Granularity>('month')
@@ -671,7 +673,7 @@ export default function PerformancePage() {
         />
 
         {loading && !currentData && (
-          <div style={{ padding: 20, fontSize: UX.fsBody, color: UX.ink3 }}>Loading…</div>
+          <div style={{ padding: 20, fontSize: UX.fsBody, color: UX.ink3 }}>{t('loading')}</div>
         )}
 
         {/* Primary: Profit waterfall */}

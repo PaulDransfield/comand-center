@@ -1,0 +1,79 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "page": {
+    "title":      "Varningar",
+    "subtitle":   "Automatisk avvikelsedetektering · uppdateras dagligen kl. 06:00",
+    "showAll":    "Visa alla",
+    "unreadOnly": "Endast olästa"
+  },
+  "kpi": {
+    "critical": "Kritisk",
+    "high":     "Hög",
+    "unread":   "Olästa",
+    "total":    "Totalt"
+  },
+  "list": {
+    "loading":     "Laddar…",
+    "allClear":    "Allt klart",
+    "empty":       "Inga aktiva varningar. Klicka \"Kör kontroll nu\" för att söka efter avvikelser."
+  },
+  "card": {
+    "detected":    "Upptäckt {created} · Period: {period} · AI-genererad — granska innan åtgärd",
+    "markRead":    "Markera som läst",
+    "dismiss":     "Avfärda"
+  },
+  "type": {
+    "revenue_drop":     "Intäktsfall",
+    "food_cost_spike":  "Matkostnadstopp",
+    "staff_cost_spike": "Personalkostnadstopp",
+    "invoice_spike":    "Fakturaavvikelse",
+    "covers_drop":      "Gästbortfall"
+  },
+  "invoices": {
+    "page": {
+      "title":     "Fakturor",
+      "subtitle":  "AI-driven extrahering — dra en PDF för att lägga till",
+      "uploadPdf": "+ Ladda upp PDF"
+    },
+    "kpi": {
+      "totalThisMonth": "Totalt denna månad",
+      "invoicesCount":  "{count, plural, one {# faktura} other {# fakturor}}",
+      "overdue":        "Förfallna",
+      "overdueCount":   "{count, plural, one {# faktura} other {# fakturor}}",
+      "outstanding":    "{amount} obetalt",
+      "noneOverdue":    "Inga förfallna",
+      "largestSupplier":"Största leverantör"
+    },
+    "drop": {
+      "extracting": "Extraherar data med AI…",
+      "drop":       "Släpp en PDF-faktura här eller klicka för att ladda upp",
+      "hint":       "AI läser leverantör, belopp, datum, rader och moms — tar cirka 10 sekunder"
+    },
+    "filter": {
+      "all":     "Alla",
+      "paid":    "Betalda",
+      "pending": "Väntar",
+      "overdue": "Förfallna"
+    },
+    "table": {
+      "loading":   "Laddar…",
+      "emptyAll":  "Inga fakturor än — ladda upp din första PDF ovan",
+      "emptyFilter":"Inga fakturor matchar detta filter",
+      "supplier":  "Leverantör",
+      "date":      "Datum",
+      "amount":    "Belopp",
+      "category":  "Kategori",
+      "status":    "Status",
+      "delete":    "Radera",
+      "deleteConfirm": "Radera denna faktura?"
+    },
+    "status": {
+      "pending": "Väntar",
+      "paid":    "Betald",
+      "overdue": "Förfallen"
+    }
+  }
+}

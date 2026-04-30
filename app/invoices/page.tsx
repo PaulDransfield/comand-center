@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 import { fmtKr } from '@/lib/format'
@@ -23,6 +24,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
 }
 
 export default function InvoicesPage() {
+  const t = useTranslations('alerts.invoices')
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [selected,   setSelected]   = useState('')
   const [invoices,   setInvoices]   = useState<Invoice[]>([])
@@ -70,7 +72,7 @@ export default function InvoicesPage() {
   }
 
   async function deleteInvoice(id: string) {
-    if (!confirm('Delete this invoice?')) return
+    if (!confirm(t('table.deleteConfirm'))) return
     await fetch(`/api/invoices?id=${id}`, { method: 'DELETE' })
     load()
   }
@@ -94,8 +96,8 @@ export default function InvoicesPage() {
       <div style={{ padding: '28px', maxWidth: 1000 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>Invoices</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>AI-powered extraction — drag a PDF to add</p>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>{t('page.title')}</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={selected} onChange={e => setSelected(e.target.value)}
@@ -106,7 +108,7 @@ export default function InvoicesPage() {
               onChange={e => { if (e.target.files?.[0]) uploadFile(e.target.files[0]) }} />
             <button onClick={() => fileRef.current?.click()}
               style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              + Upload PDF
+              {t('page.uploadPdf')}
             </button>
           </div>
         </div>
@@ -114,17 +116,17 @@ export default function InvoicesPage() {
         {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12, marginBottom: 16 }}>
           <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>Total this month</div>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{t('kpi.totalThisMonth')}</div>
             <div style={{ fontSize: 22, fontWeight: 600, color: '#111' }}>{fmtKr(total)}</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{invoices.length} invoices</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{t('kpi.invoicesCount', { count: invoices.length })}</div>
           </div>
           <div style={{ background: 'white', border: `0.5px solid ${overdue.length > 0 ? '#fecaca' : '#e5e7eb'}`, borderRadius: 12, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>Overdue</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: overdue.length > 0 ? '#dc2626' : '#111' }}>{overdue.length} invoice{overdue.length !== 1 ? 's' : ''}</div>
-            <div style={{ fontSize: 11, color: overdue.length > 0 ? '#dc2626' : '#9ca3af', marginTop: 3 }}>{overdueAmt > 0 ? fmtKr(overdueAmt) + ' outstanding' : 'None overdue'}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{t('kpi.overdue')}</div>
+            <div style={{ fontSize: 22, fontWeight: 600, color: overdue.length > 0 ? '#dc2626' : '#111' }}>{t('kpi.overdueCount', { count: overdue.length })}</div>
+            <div style={{ fontSize: 11, color: overdue.length > 0 ? '#dc2626' : '#9ca3af', marginTop: 3 }}>{overdueAmt > 0 ? t('kpi.outstanding', { amount: fmtKr(overdueAmt) }) : t('kpi.noneOverdue')}</div>
           </div>
           <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>Largest supplier</div>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{t('kpi.largestSupplier')}</div>
             <div style={{ fontSize: 16, fontWeight: 600, color: '#111' }}>
               {invoices.length > 0 ? (() => {
                 const byVendor: Record<string, number> = {}
@@ -143,20 +145,20 @@ export default function InvoicesPage() {
           onClick={() => fileRef.current?.click()}
           style={{ background: dragging ? '#ede9fe' : '#f0f9ff', border: `1.5px dashed ${dragging ? '#6366f1' : '#bae6fd'}`, borderRadius: 12, padding: '16px 20px', textAlign: 'center', cursor: 'pointer', marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#0369a1' }}>
-            {uploading ? 'Extracting data with AI...' : 'Drop a PDF invoice here or click to upload'}
+            {uploading ? t('drop.extracting') : t('drop.drop')}
           </div>
           <div style={{ fontSize: 11, color: '#0284c7', marginTop: 3 }}>
-            AI reads vendor, amount, date, line items and VAT — takes about 10 seconds
+            {t('drop.hint')}
           </div>
         </div>
 
         {/* Filter tabs */}
         <div style={{ display: 'flex', gap: 4, background: '#f3f4f6', borderRadius: 8, padding: 3, width: 'fit-content', marginBottom: 14 }}>
-          {['all','paid','pending','overdue'].map(f => (
+          {(['all','paid','pending','overdue'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: filter === f ? 600 : 400,
                 background: filter === f ? 'white' : 'transparent', color: filter === f ? '#111' : '#6b7280' }}>
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {t(`filter.${f}`)}
             </button>
           ))}
         </div>
@@ -164,17 +166,24 @@ export default function InvoicesPage() {
         {/* Invoice table */}
         <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>Loading...</div>
+            <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>{t('table.loading')}</div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
-              {invoices.length === 0 ? 'No invoices yet — upload your first PDF above' : 'No invoices match this filter'}
+              {invoices.length === 0 ? t('table.emptyAll') : t('table.emptyFilter')}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e7eb' }}>
-                  {['Supplier','Date','Amount','Category','Status',''].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h}</th>
+                  {[
+                    { key: 'supplier', label: t('table.supplier') },
+                    { key: 'date',     label: t('table.date') },
+                    { key: 'amount',   label: t('table.amount') },
+                    { key: 'category', label: t('table.category') },
+                    { key: 'status',   label: t('table.status') },
+                    { key: 'actions',  label: '' },
+                  ].map(h => (
+                    <th key={h.key} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -192,15 +201,15 @@ export default function InvoicesPage() {
                       <td style={{ padding: '11px 14px' }}>
                         <select value={inv.status} onChange={e => updateStatus(inv.id, e.target.value)}
                           style={{ padding: '3px 8px', background: ss.bg, color: ss.color, border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                          <option value="pending">Pending</option>
-                          <option value="paid">Paid</option>
-                          <option value="overdue">Overdue</option>
+                          <option value="pending">{t('status.pending')}</option>
+                          <option value="paid">{t('status.paid')}</option>
+                          <option value="overdue">{t('status.overdue')}</option>
                         </select>
                       </td>
                       <td style={{ padding: '11px 14px' }}>
                         <button onClick={() => deleteInvoice(inv.id)}
                           style={{ padding: '3px 10px', background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}>
-                          Delete
+                          {t('table.delete')}
                         </button>
                       </td>
                     </tr>

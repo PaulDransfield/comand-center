@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "upgrade": {
+    "title":      "You're now on the {plan} plan",
+    "titleNoPlan":"You're now on the new plan",
+    "subtitle":   "All features are now unlocked."
+  },
+  "stale": {
+    "yesterday":   "Data last updated yesterday",
+    "daysAgo":     "Data last updated {days} days ago",
+    "instruction": "syncing is in progress. Click the sync dot in the sidebar to refresh now."
+  },
+  "alerts": {
+    "viewAll": "View all alerts →"
+  },
+  "labour": {
+    "predictiveEyebrow":  "NEXT WEEK · LABOUR PROJECTION",
+    "ofRevenue":          "of revenue",
+    "currentLine":        "Your current schedule projects to {curr}% labour. AI cuts bring it to {ai}%.",
+    "saves":              "Saves {amount}",
+    "hoursCut":           "{hours}h cut",
+    "openScheduling":     "Open scheduling",
+    "retroEyebrow":       "{period} · LABOUR vs TARGET",
+    "retroVsTarget":      "vs {target}% target",
+    "retroOnTarget":      "Labour was on target — well done.",
+    "retroOver":          "Labour ran {pp}pp over target.",
+    "retroNoMissed":      "No saving missed for this period.",
+    "retroCouldSave":     "Could have saved {amount} by hitting target."
+  },
+  "hero": {
+    "eyebrowWeek":   "THIS WEEK · {label}",
+    "eyebrowMonth":  "THIS MONTH · {label}",
+    "revenue":       "revenue",
+    "waiting":       "Waiting on today's sync — revenue hasn't landed yet.",
+    "upOn":          "Up {pct}% on {ref}.",
+    "downOn":        "Down {pct}% on {ref}.",
+    "lastWeek":      "last week",
+    "lastMonth":     "last month",
+    "labourLeanTarget": "Labour {pct} (target {target}%).",
+    "labourVsTarget":   "Labour {pct} vs {target}% target.",
+    "marginWeek":   "Margin {amount} this week.",
+    "marginMonth":  "Margin {amount} this month.",
+    "footerHours":  "{hours}h worked",
+    "footerRate":   "{amount}/hr",
+    "footerMargin": "{amount} margin",
+    "aiSees":       "AI sees {amount}"
+  },
+  "departments": {
+    "header":  "Departments — {period}",
+    "viewAll": "View all →",
+    "empty":   "No department data for this period yet."
+  },
+  "attention": {
+    "aiSees":          "sees {amount} kr to trim from next week's hours.",
+    "deptWorst":       "margin {pct}% — labour is the swing factor.",
+    "deptSecondWorst": "margin {pct}% — worth a look.",
+    "labour":          "running {pct}% of revenue, {target}% target."
+  },
+  "period": {
+    "weekLabel":  "Week {num} · {range}"
+  }
+}

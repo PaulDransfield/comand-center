@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "nav": {
+    "overview":     "Översikt",
+    "group":        "Grupp",
+    "pnl":          "Resultatrapport",
+    "budget":       "Budget mot utfall",
+    "performance":  "Resultat",
+    "forecast":     "Prognos",
+    "overheads":    "Omkostnader",
+    "revenue":      "Intäkter",
+    "staff":        "Personal",
+    "scheduling":   "Schemaläggning",
+    "departments":  "Avdelningar",
+    "invoices":     "Fakturor",
+    "alerts":       "Varningar",
+    "settings":     "Inställningar",
+    "subscription": "Abonnemang"
+  },
+  "section": {
+    "financials":  "Ekonomi",
+    "operations":  "Drift"
+  },
+  "businessPicker": {
+    "placeholder": "Välj verksamhet",
+    "copyTitle":   "Klicka för att kopiera organisationsnummer",
+    "copied":      "Kopierat ✓"
+  },
+  "user": {
+    "signedIn":  "Inloggad",
+    "signOut":   "Logga ut"
+  },
+  "a11y": {
+    "primary":          "Primär",
+    "expandSidebar":    "Expandera sidofält",
+    "collapseSidebar":  "Fäll ihop sidofält"
+  }
+}

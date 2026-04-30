@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -45,11 +46,12 @@ function getMonthBounds(offset = 0) {
 // scheduled hour, i.e. lean efficient staffing. The old label/colour were misleading.)
 //
 // API → UI:  understaffed → lean (green)  ·  efficient → on_target (neutral)  ·  overstaffed → overstaffed (amber)
-const STATUS_META: Record<string, any> = {
-  lean:        { label: 'Lean',        bg: '#f0fdf4', border: '#bbf7d0', dot: '#15803d', text: '#15803d', hint: 'High revenue per hour — you\'re doing a lot with the hours scheduled.' },
-  on_target:   { label: 'On target',   bg: '#eff6ff', border: '#bfdbfe', dot: '#2563eb', text: '#2563eb', hint: 'Revenue per labour hour within ±20% of your weekly average.' },
-  overstaffed: { label: 'Overstaffed', bg: '#fffbeb', border: '#fde68a', dot: '#d97706', text: '#d97706', hint: 'Revenue per hour is low — more hours scheduled than demand needs. Consider trimming.' },
-  no_data:     { label: 'No data',     bg: '#f9fafb', border: '#e5e7eb', dot: '#9ca3af', text: '#9ca3af', hint: 'Fewer than 2 days of joined data for this weekday.' },
+// Labels/hints are read from translations at render time; this map keeps colours only.
+const STATUS_COLOURS: Record<string, any> = {
+  lean:        { bg: '#f0fdf4', border: '#bbf7d0', dot: '#15803d', text: '#15803d' },
+  on_target:   { bg: '#eff6ff', border: '#bfdbfe', dot: '#2563eb', text: '#2563eb' },
+  overstaffed: { bg: '#fffbeb', border: '#fde68a', dot: '#d97706', text: '#d97706' },
+  no_data:     { bg: '#f9fafb', border: '#e5e7eb', dot: '#9ca3af', text: '#9ca3af' },
 }
 
 // Map API status → UI status
@@ -60,6 +62,10 @@ const mapStatus = (s: string) =>
   : 'no_data'
 
 export default function SchedulingPage() {
+  const t        = useTranslations('scheduling')
+  const tCommon  = useTranslations('common')
+  const monthsLocal   = (tCommon.raw('time.monthsShort') as string[]) ?? MONTHS
+  const weekdaysLocal = (tCommon.raw('time.weekdays')    as string[]) ?? WEEKDAY_NAMES
   const [data,        setData]        = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
   const [error,       setError]       = useState('')
@@ -101,7 +107,16 @@ export default function SchedulingPage() {
   }, [])
 
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum} · ${curr.label}` : curr.label
+  // Re-format the bounds-helper label with localised month names so the
+  // drill-down modal shows e.g. "Måndagar i Maj 2026" in Swedish.
+  const localiseLabel = (raw: string) => {
+    let out = raw
+    MONTHS.forEach((m, i) => { out = out.replace(new RegExp(`\\b${m}\\b`, 'g'), monthsLocal[i]) })
+    return out
+  }
+  const periodLabel = viewMode === 'week'
+    ? `Week ${(curr as any).weekNum} · ${localiseLabel(curr.label)}`
+    : localiseLabel(curr.label)
   const fromDate = curr.from
   const toDate   = curr.to
 
@@ -137,16 +152,16 @@ export default function SchedulingPage() {
     let label: string
     switch (aiRange) {
       case 'this_week': {
-        return { from: localDate(thisMon), to: localDate(thisSun), label: 'This week' }
+        return { from: localDate(thisMon), to: localDate(thisSun), label: t('ranges.labelThisWeek') }
       }
       case '2w': {
         end = new Date(nextMon); end.setDate(nextMon.getDate() + 13)
-        label = 'Next 2 weeks'
+        label = t('ranges.label2w')
         break
       }
       case '4w': {
         end = new Date(nextMon); end.setDate(nextMon.getDate() + 27)
-        label = 'Next 4 weeks'
+        label = t('ranges.label4w')
         break
       }
       case 'next_month': {
@@ -154,13 +169,13 @@ export default function SchedulingPage() {
         const y = nextMon.getFullYear(), m = nextMon.getMonth() + 1
         const start = new Date(y, m, 1)
         end = new Date(y, m + 1, 0)
-        label = 'Next calendar month'
+        label = t('ranges.labelNextMonth')
         return { from: localDate(start), to: localDate(end), label }
       }
       case 'next_week':
       default: {
         end = new Date(nextMon); end.setDate(nextMon.getDate() + 6)
-        label = 'Next week'
+        label = t('ranges.labelNextWeek')
         break
       }
     }
@@ -331,8 +346,8 @@ export default function SchedulingPage() {
             AskAI context + "no joined data yet" guard. */}
         <TopBar
           crumbs={[
-            { label: 'Operations' },
-            { label: 'Scheduling', active: true },
+            { label: t('crumb.operations') },
+            { label: t('crumb.scheduling'), active: true },
           ]}
         />
 
@@ -347,12 +362,12 @@ export default function SchedulingPage() {
         )}
 
         {loading ? (
-          <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading scheduling data...</div>
+          <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>{t('loading')}</div>
         ) : !hasData ? (
           <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: 48, textAlign: 'center' as const }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 8 }}>No joined data yet</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 8 }}>{t('noJoinedData.title')}</div>
             <div style={{ fontSize: 13, color: '#9ca3af', maxWidth: 380, margin: '0 auto' }}>
-              Scheduling efficiency requires both staff hours (Personalkollen) and revenue (POS) data for the same dates. Try expanding the date range.
+              {t('noJoinedData.body')}
             </div>
           </div>
         ) : (
@@ -399,20 +414,28 @@ export default function SchedulingPage() {
             <div style={{ padding: '16px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#9ca3af', marginBottom: 2 }}>
-                  {WEEKDAY_NAMES[drillDay]}s in {periodLabel}
+                  {t('drill.headerEyebrow', { day: weekdaysLocal[drillDay], period: periodLabel })}
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>
-                  {drillLoading ? 'Loading…'
-                    : drillData?.error ? 'Error'
-                    : drillData ? (
-                      <>
-                        {fmtKr(drillData.totals.revenue)} rev · {fmtKr(drillData.totals.cost)} labour · {drillData.totals.rev_per_hour ? fmtKr(drillData.totals.rev_per_hour) + '/hr' : '—/hr'}
-                      </>
-                    ) : ''}
+                  {drillLoading ? t('drill.loading')
+                    : drillData?.error ? t('drill.error')
+                    : drillData ? t('drill.totalsRevLabour', {
+                        rev: fmtKr(drillData.totals.revenue),
+                        labour: fmtKr(drillData.totals.cost),
+                        ratePerHour: drillData.totals.rev_per_hour
+                          ? fmtKr(drillData.totals.rev_per_hour) + '/hr'
+                          : t('drill.ratePerHourMissing'),
+                      })
+                    : ''}
                 </div>
                 {!drillLoading && drillData && !drillData.error && (
                   <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>
-                    {drillData.dates.length} day{drillData.dates.length !== 1 ? 's' : ''} · {drillData.totals.staff_count} staff · {drillData.totals.shifts} shifts · {fmtH(drillData.totals.hours)}
+                    {t('drill.subEyebrow', {
+                      count: drillData.dates.length,
+                      staff: drillData.totals.staff_count,
+                      shifts: drillData.totals.shifts,
+                      hours: fmtH(drillData.totals.hours),
+                    })}
                   </div>
                 )}
               </div>
@@ -422,25 +445,32 @@ export default function SchedulingPage() {
             {/* Body */}
             <div style={{ overflowY: 'auto', flex: 1, padding: '14px 24px 18px' }}>
               {drillLoading ? (
-                <div style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>Loading day details…</div>
+                <div style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>{t('drill.loadingDay')}</div>
               ) : drillData?.error ? (
                 <div style={{ fontSize: 13, color: '#dc2626' }}>{drillData.error}</div>
               ) : drillData && drillData.dates.length > 0 ? (
                 <>
                   {/* Per-date rows */}
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 8 }}>By date</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 8 }}>{t('drill.byDate')}</div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 20 }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                        {['Date','Revenue','Labour','Hours','Staff','Rev/Hr'].map(h => (
-                          <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Date' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>{h}</th>
+                        {[
+                          { key: 'date',     label: t('drill.th.date') },
+                          { key: 'revenue',  label: t('drill.th.revenue') },
+                          { key: 'labour',   label: t('drill.th.labour') },
+                          { key: 'hours',    label: t('drill.th.hours') },
+                          { key: 'staff',    label: t('drill.th.staff') },
+                          { key: 'revPerHr', label: t('drill.th.revPerHr') },
+                        ].map(h => (
+                          <th key={h.key} style={{ padding: '6px 8px', textAlign: h.key === 'date' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>{h.label}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {drillData.dates.map((d: any) => {
                         const dt = new Date(d.date)
-                        const dateStr = `${dt.getDate()} ${MONTHS[dt.getMonth()]}`
+                        const dateStr = `${dt.getDate()} ${monthsLocal[dt.getMonth()]}`
                         return (
                           <tr key={d.date} style={{ borderBottom: '1px solid #f3f4f6' }}>
                             <td style={{ padding: '8px 8px', color: '#111', fontWeight: 500 }}>{dateStr}</td>
@@ -457,16 +487,23 @@ export default function SchedulingPage() {
 
                   {/* Staff roster */}
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 8 }}>
-                    Who worked ({drillData.staff.length})
+                    {t('drill.whoWorked', { count: drillData.staff.length })}
                   </div>
                   {drillData.staff.length === 0 ? (
-                    <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>No staff shifts recorded for these dates.</div>
+                    <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>{t('drill.noStaffShifts')}</div>
                   ) : (
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
                         <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
-                          {['Name','Department','Shifts','Hours','Cost','Cost/Hr'].map(h => (
-                            <th key={h} style={{ padding: '6px 8px', textAlign: h === 'Name' || h === 'Department' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>{h}</th>
+                          {[
+                            { key: 'name',       label: t('drill.th.name'),       align: 'left'  },
+                            { key: 'department', label: t('drill.th.department'), align: 'left'  },
+                            { key: 'shifts',     label: t('drill.th.shifts'),     align: 'right' },
+                            { key: 'hours',      label: t('drill.th.hours'),      align: 'right' },
+                            { key: 'cost',       label: t('drill.th.cost'),       align: 'right' },
+                            { key: 'costPerHr',  label: t('drill.th.costPerHr'),  align: 'right' },
+                          ].map(h => (
+                            <th key={h.key} style={{ padding: '6px 8px', textAlign: h.align as any, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>{h.label}</th>
                           ))}
                         </tr>
                       </thead>
@@ -486,7 +523,7 @@ export default function SchedulingPage() {
                   )}
                 </>
               ) : (
-                <div style={{ fontSize: 13, color: '#9ca3af', padding: '20px 0' }}>No data for {WEEKDAY_NAMES[drillDay]} in this period.</div>
+                <div style={{ fontSize: 13, color: '#9ca3af', padding: '20px 0' }}>{t('drill.noDataForDay', { day: weekdaysLocal[drillDay] })}</div>
               )}
             </div>
           </div>
@@ -549,17 +586,18 @@ export default function SchedulingPage() {
 // soft "note" row with no numeric recommendation.
 // ─────────────────────────────────────────────────────────────────────────────
 function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v: any) => void; label: string }) {
+  const t = useTranslations('scheduling.ranges')
   const opts: Array<{ value: 'this_week'|'next_week'|'2w'|'4w'|'next_month'; label: string }> = [
-    { value: 'this_week',  label: 'This week' },
-    { value: 'next_week',  label: 'Next week' },
-    { value: '2w',         label: '2 weeks' },
-    { value: '4w',         label: '4 weeks' },
-    { value: 'next_month', label: 'Next month' },
+    { value: 'this_week',  label: t('this_week') },
+    { value: 'next_week',  label: t('next_week') },
+    { value: '2w',         label: t('2w') },
+    { value: '4w',         label: t('4w') },
+    { value: 'next_month', label: t('next_month') },
   ]
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' as const, gap: 8 }}>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' as const, color: '#9ca3af' }}>
-        AI outlook · {label}
+        {t('title')} · {label}
       </div>
       <div style={{ display: 'inline-flex', gap: 4, padding: 3, background: '#f3f4f6', borderRadius: 8 }}>
         {opts.map(o => {
