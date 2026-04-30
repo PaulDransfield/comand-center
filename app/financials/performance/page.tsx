@@ -647,22 +647,24 @@ export default function PerformancePage() {
 
         {/* Hero */}
         <PageHero
-          eyebrow={`${periodLabelCaps(period)} · FULL PERFORMANCE${compareLabel ? ` · VS ${compareLabel.toUpperCase()}` : ''}`}
-          headline={<HeroHeadline period={period} data={currentData} compare={compareData} compareLabel={compareLabel} />}
-          context={heroContext(currentData, compareData, compareLabel)}
+          eyebrow={compareLabel
+            ? t('eyebrowVs', { period: periodLabelCaps(period), compare: compareLabel.toUpperCase() })
+            : t('eyebrow',   { period: periodLabelCaps(period) })}
+          headline={<HeroHeadline period={period} data={currentData} compare={compareData} compareLabel={compareLabel} t={t} />}
+          context={heroContext(currentData, compareData, compareLabel, t)}
           right={
             currentData && (
               <SupportingStats
                 items={[
                   {
-                    label: 'Revenue',
+                    label: t('stats.revenue'),
                     value: currentData.revenue > 0 ? fmtKr(currentData.revenue) : '—',
-                    sub:   compareData && compareLabel ? `vs ${fmtKr(compareData.revenue)}` : undefined,
+                    sub:   compareData && compareLabel ? t('stats.vs', { value: fmtKr(compareData.revenue) }) : undefined,
                   },
                   {
-                    label: 'Net margin',
+                    label: t('stats.netMargin'),
                     value: fmtPct(currentData.margin_pct),
-                    sub:   compareData && compareLabel ? `vs ${fmtPct(compareData.margin_pct)}` : undefined,
+                    sub:   compareData && compareLabel ? t('stats.vs', { value: fmtPct(compareData.margin_pct) }) : undefined,
                     deltaTone: currentData.margin_pct != null && currentData.margin_pct >= 10 ? 'good'
                              : currentData.margin_pct != null && currentData.margin_pct >=  5 ? 'neutral' : 'bad',
                   },
@@ -698,26 +700,26 @@ export default function PerformancePage() {
         {currentData && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
             <TrendCard
-              label={`NET MARGIN · 12 ${granLabel(granularity)}`}
+              label={t('trends.netMargin', { gran: t(`gran.${granularity}`) })}
               value={fmtPct(currentData.margin_pct)}
               points={sparks.margin}
               tone={currentData.margin_pct != null && currentData.margin_pct >= 10 ? 'good' : currentData.margin_pct != null && currentData.margin_pct >= 5 ? 'warning' : 'bad'}
-              target="Target 10%+"
+              target={t('trends.targetMargin')}
             />
             <TrendCard
-              label={`LABOUR % · 12 ${granLabel(granularity)}`}
+              label={t('trends.labour', { gran: t(`gran.${granularity}`) })}
               value={fmtPct(currentData.staff_pct)}
               points={sparks.labour}
               tone={currentData.staff_pct == null ? 'neutral' : currentData.staff_pct <= 42 ? 'good' : currentData.staff_pct <= 57 ? 'warning' : 'bad'}
-              target="Target ≤ 42%"
+              target={t('trends.targetLabour')}
               invert
             />
             <TrendCard
-              label={`FOOD COST % · 12 ${granLabel(granularity)}`}
+              label={t('trends.food', { gran: t(`gran.${granularity}`) })}
               value={fmtPct(currentData.food_pct)}
               points={sparks.food}
               tone={currentData.food_pct == null ? 'neutral' : currentData.food_pct <= 32 ? 'good' : currentData.food_pct <= 38 ? 'warning' : 'bad'}
-              target="Target 28–32%"
+              target={t('trends.targetFood')}
               invert
             />
           </div>
@@ -779,34 +781,49 @@ function buildAskContext(
 }
 
 // ─── Hero headline + context (template-driven) ────────────────────────────
-function HeroHeadline({ period, data, compare, compareLabel }: {
+function HeroHeadline({ period, data, compare, compareLabel, t }: {
   period: PeriodKey; data: PeriodData | null; compare: PeriodData | null; compareLabel: string | null
+  t: any
 }) {
-  if (!data) return <>No data for {periodLabel(period)} yet.</>
+  if (!data) return <>{t('noData', { period: periodLabel(period) })}</>
   const mp = data.margin_pct
   const marginWord = mp == null ? '—' : fmtPct(mp)
-  const marginSpan = <span style={{ color: mp == null ? UX.ink3 : mp >= 10 ? UX.greenInk : mp >= 5 ? UX.amberInk : UX.redInk }}>{marginWord}</span>
 
   if (!compare) {
-    const story = pickBiggestStory(data)
-    return <>Margin {marginSpan} — {story}.</>
+    // story is still English — pickBiggestStory's text isn't extracted.
+    // The surrounding sentence is translated; story slots in untouched.
+    return <>{t('marginStory', { margin: marginWord, story: pickBiggestStory(data) })}</>
   }
   const delta = (mp ?? 0) - (compare.margin_pct ?? 0)
-  const dirWord = delta >= 0 ? 'up' : 'down'
-  const dirSpan = <span style={{ color: delta >= 0 ? UX.greenInk : UX.redInk }}>{dirWord} {Math.abs(delta).toFixed(1)}pp</span>
-  return <>Margin {marginSpan} — {dirSpan} vs {compareLabel}, {pickChangeExplanation(data, compare)}.</>
+  const direction = delta >= 0
+    ? t('directionUp',   { pp: Math.abs(delta).toFixed(1) })
+    : t('directionDown', { pp: Math.abs(delta).toFixed(1) })
+  return <>{t('marginVs', {
+    margin:       marginWord,
+    direction,
+    compareLabel,
+    explanation:  pickChangeExplanation(data, compare),
+  })}</>
 }
 
-function heroContext(data: PeriodData | null, compare: PeriodData | null, compareLabel: string | null): string {
-  if (!data) return 'Data syncs nightly at 06:00. Try a previous period or wait for the next sync.'
+function heroContext(data: PeriodData | null, compare: PeriodData | null, compareLabel: string | null, t: any): string {
+  if (!data) return t('ctxNoData')
   const net = data.net_margin
   const lines: string[] = []
-  lines.push(`Revenue ${fmtKr(data.revenue)}, costs ${fmtKr(data.food_cost + data.staff_cost + data.overheads)}, net ${fmtKr(net)}.`)
+  lines.push(t('ctxRevenueLine', {
+    revenue: fmtKr(data.revenue),
+    costs:   fmtKr(data.food_cost + data.staff_cost + data.overheads),
+    net:     fmtKr(net),
+  }))
   if (compare && compareLabel) {
     const revDelta = data.revenue - compare.revenue
-    if (revDelta !== 0) lines.push(`Revenue ${revDelta >= 0 ? '+' : '−'}${fmtKr(Math.abs(revDelta))} vs ${compareLabel}.`)
+    if (revDelta !== 0) lines.push(t('ctxRevDelta', {
+      sign:   revDelta >= 0 ? '+' : '−',
+      amount: fmtKr(Math.abs(revDelta)),
+      compareLabel,
+    }))
   }
-  if (!data.has_overheads) lines.push('Overheads not yet loaded from Fortnox — waterfall shows `—`.')
+  if (!data.has_overheads) lines.push(t('ctxNoOverheads'))
   return lines.join(' ')
 }
 

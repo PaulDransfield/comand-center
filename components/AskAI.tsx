@@ -10,6 +10,7 @@
 //   <AskAI page="staff" context={`Total hours: 340h\nStaff cost: 45,000 kr\n...`} />
 
 import { useState, useRef, useEffect }  from 'react'
+import { useTranslations }              from 'next-intl'
 import { createClient }                from '@/lib/supabase/client'
 import AiLimitReached                  from '@/components/AiLimitReached'
 
@@ -18,44 +19,12 @@ interface Message {
   content: string
 }
 
-// Suggested starter questions per page — so users don't stare at a blank box
-const SUGGESTIONS: Record<string, string[]> = {
-  dashboard: [
-    'How is this month tracking vs last month?',
-    'Which area should I focus on to improve margin?',
-    'Is my staff cost percentage healthy?',
-  ],
-  staff: [
-    'Who are the most expensive staff members this period?',
-    'How does overtime compare to last month?',
-    'Which department has the highest cost overrun?',
-  ],
-  tracker: [
-    'Which month had the best margin this year?',
-    'Am I on track to hit my annual revenue target?',
-    'What is driving the difference between my best and worst months?',
-  ],
-  revenue: [
-    'What is my average revenue per cover?',
-    'Which day of the week has the highest covers?',
-    'How does dine-in compare to takeaway revenue?',
-  ],
-  forecast: [
-    'How accurate have my forecasts been?',
-    'What does next month look like?',
-    'Where am I most likely to miss my forecast?',
-  ],
-  departments: [
-    'Which department is most over budget?',
-    'How do my department splits compare to industry norms?',
-    'Where should I cut costs first?',
-  ],
-  default: [
-    'Summarise what you can see in this data.',
-    'What is the biggest issue here?',
-    'What should I do first based on this data?',
-  ],
-}
+// Suggestion KEYS — text resolved from askai.suggestions.<page>.{q1,q2,q3} at
+// render time so suggestions render in the user's language. Pages outside
+// this list fall through to `default`.
+const SUGGESTION_PAGES = new Set([
+  'dashboard', 'staff', 'tracker', 'revenue', 'forecast', 'departments',
+])
 
 interface Props {
   page:    string
@@ -73,6 +42,13 @@ interface Props {
 }
 
 export default function AskAI({ page, context, tier = 'full', orgScope = false }: Props) {
+  const t          = useTranslations('askai')
+  const suggKey    = SUGGESTION_PAGES.has(page) ? page : 'default'
+  const suggestions = [
+    t(`suggestions.${suggKey}.q1`),
+    t(`suggestions.${suggKey}.q2`),
+    t(`suggestions.${suggKey}.q3`),
+  ]
   const [open,     setOpen]     = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input,    setInput]    = useState('')
@@ -84,7 +60,8 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
 
-  const suggestions = SUGGESTIONS[page] ?? SUGGESTIONS.default
+  // (suggestions are now built from translations at the top of the
+  // component — see the t(`suggestions.${suggKey}.q1`) line above.)
 
   // Scroll to latest message
   useEffect(() => {
@@ -227,10 +204,10 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
         className="ai-fab"
         style={FAB}
         onClick={() => setOpen(o => !o)}
-        title="Ask AI about this data"
+        title={t('fabTitle')}
       >
         <span style={{ fontSize: 16 }}>✦</span>
-        Ask AI
+        {t('fab')}
       </button>
 
       {/* Backdrop */}
@@ -242,8 +219,8 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
         {/* Header */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>Ask AI</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>Powered by Claude · Sees this page only</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{t('header.title')}</div>
+            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{t('header.subtitle')}</div>
           </div>
           <button
             onClick={() => setOpen(false)}
@@ -260,7 +237,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
           {messages.length === 0 && (
             <div>
               <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                Suggested questions
+                {t('suggestionsHeader')}
               </div>
               {suggestions.map(s => (
                 <button
@@ -298,7 +275,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
             }}>
               {msg.role === 'assistant' && (
                 // EU AI Act Art. 52 — users must know they are looking at AI output.
-                <div title="Generated by AI — review before acting" style={{
+                <div title={t('aiBadgeTitle')} style={{
                   display: 'inline-flex', alignItems: 'center', gap: 3,
                   padding: '1px 6px', background: '#ede9fe', color: '#6d28d9',
                   borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: '.04em',
@@ -325,7 +302,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
           {/* Loading indicator */}
           {loading && (
             <div style={{ alignSelf: 'flex-start', padding: '10px 14px', background: '#f3f4f6', borderRadius: '14px 14px 14px 4px', fontSize: 13, color: '#9ca3af' }}>
-              Thinking...
+              {t('thinking')}
             </div>
           )}
 
@@ -340,13 +317,13 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
               color:      warning.severity === 'info' ? '#3730a3' : '#78350f',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
             }}>
-              <span>You've used {warning.percent}% of today's AI quota ({warning.used} of {warning.limit}).</span>
+              <span>{t('warning.body', { percent: warning.percent, used: warning.used, limit: warning.limit })}</span>
               <a href="/upgrade?focus=ai" style={{
                 fontSize: 11,
                 color: warning.severity === 'info' ? '#4338ca' : '#b45309',
                 fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap',
               }}>
-                Upgrade →
+                {t('warning.upgrade')}
               </a>
             </div>
           )}
@@ -374,7 +351,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKey}
-              placeholder="Ask anything about this data..."
+              placeholder={t('input.placeholder')}
               rows={2}
               style={{
                 flex:        1,
@@ -405,11 +382,11 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
                 alignSelf:    'flex-end',
               }}
             >
-              Send
+              {t('input.send')}
             </button>
           </div>
           <div style={{ fontSize: 10, color: '#d1d5db', marginTop: 6, textAlign: 'center' }}>
-            Enter to send · Shift+Enter for new line
+            {t('input.hint')}
           </div>
         </div>
 

@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "fab":           "Spør AI",
+  "fabTitle":      "Spør AI om disse dataene",
+  "header": {
+    "title":       "Spør AI",
+    "subtitle":    "Drevet av Claude · Ser kun denne siden"
+  },
+  "suggestionsHeader":"Foreslåtte spørsmål",
+  "thinking":      "Tenker…",
+  "aiBadgeTitle":  "Generert av AI — vurder før handling",
+  "warning": {
+    "body":        "Du har brukt {percent}% av dagens AI-kvote ({used} av {limit}).",
+    "upgrade":     "Oppgrader →"
+  },
+  "input": {
+    "placeholder": "Spør hva som helst om disse dataene…",
+    "send":        "Send",
+    "hint":        "Enter for å sende · Shift+Enter for ny linje"
+  },
+  "suggestions": {
+    "dashboard": {
+      "q1":        "Hvordan ligger denne måneden an mot forrige?",
+      "q2":        "Hvilket område bør jeg fokusere på for å forbedre marginen?",
+      "q3":        "Er bemanningskostnadsprosenten min sunn?"
+    },
+    "staff": {
+      "q1":        "Hvem er de dyreste ansatte denne perioden?",
+      "q2":        "Hvordan sammenligner overtid seg mot forrige måned?",
+      "q3":        "Hvilken avdeling har høyest kostnadsoverskridelse?"
+    },
+    "tracker": {
+      "q1":        "Hvilken måned hadde best margin i år?",
+      "q2":        "Er jeg på vei til å nå det årlige inntektsmålet?",
+      "q3":        "Hva driver forskjellen mellom de beste og dårligste månedene mine?"
+    },
+    "revenue": {
+      "q1":        "Hva er gjennomsnittlig inntekt per gjest?",
+      "q2":        "Hvilken ukedag har flest gjester?",
+      "q3":        "Hvordan sammenligner spise-inne med takeaway i inntekt?"
+    },
+    "forecast": {
+      "q1":        "Hvor nøyaktige har prognosene mine vært?",
+      "q2":        "Hvordan ser neste måned ut?",
+      "q3":        "Hvor er det mest sannsynlig at jeg bommer på prognosen?"
+    },
+    "departments": {
+      "q1":        "Hvilken avdeling er mest over budsjett?",
+      "q2":        "Hvordan sammenligner avdelingsfordelingene mine med bransjenormer?",
+      "q3":        "Hvor bør jeg kutte kostnader først?"
+    },
+    "default": {
+      "q1":        "Oppsummer hva du ser i disse dataene.",
+      "q2":        "Hva er det største problemet her?",
+      "q3":        "Hva bør jeg gjøre først basert på disse dataene?"
+    }
+  }
+}

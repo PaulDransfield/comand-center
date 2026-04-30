@@ -128,5 +128,19 @@
     "syncFailed":   "Sync failed",
     "networkError": "Network error",
     "tryAgain":     "Try again in a moment"
+  },
+  "sync": {
+    "syncing":       "Syncing…",
+    "neverSynced":   "Never synced",
+    "justNow":       "Synced just now",
+    "minAgo":        "Synced {n}m ago",
+    "hoursAgo":      "Synced {n}h ago",
+    "syncedOn":      "Synced {date}",
+    "clickToRefresh":" — click to refresh",
+    "noIntegrations":"No integrations connected — check Settings",
+    "syncFailed":    "Sync failed ({status})",
+    "syncFailedNetwork":"Sync failed — {message}",
+    "syncedWithErrors":"{count, plural, one {Synced with # error} other {Synced with # errors}}",
+    "reloading":     "Synced — reloading…"
   }
 }

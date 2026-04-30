@@ -116,6 +116,40 @@
     "crumb": {
       "financials":   "Ekonomi",
       "performance":  "Resultat"
+    },
+    "eyebrow":        "{period} · FULLT RESULTAT",
+    "eyebrowVs":      "{period} · FULLT RESULTAT · MOT {compare}",
+    "noData":         "Ingen data för {period} än.",
+    "marginStory":    "Marginal {margin} — {story}.",
+    "marginVs":       "Marginal {margin} — {direction} mot {compareLabel}, {explanation}.",
+    "directionUp":    "upp {pp}pp",
+    "directionDown":  "ned {pp}pp",
+    "ctxNoData":      "Data synkas nattligen kl. 06:00. Prova en tidigare period eller vänta på nästa synk.",
+    "ctxRevenueLine": "Intäkt {revenue}, kostnader {costs}, netto {net}.",
+    "ctxRevDelta":    "Intäkt {sign}{amount} mot {compareLabel}.",
+    "ctxNoOverheads": "Omkostnader ännu inte laddade från Fortnox — vattenfallet visar `—`.",
+    "stats": {
+      "revenue":   "Intäkter",
+      "netMargin": "Nettomarginal",
+      "vs":        "mot {value}"
+    },
+    "trends": {
+      "netMargin":    "NETTOMARGINAL · 12 {gran}",
+      "labour":       "PERSONAL % · 12 {gran}",
+      "food":         "MATKOSTNAD % · 12 {gran}",
+      "targetMargin": "Mål 10%+",
+      "targetLabour": "Mål ≤ 42%",
+      "targetFood":   "Mål 28–32%"
+    },
+    "gran": {
+      "week":     "VECKOR",
+      "month":    "MÅNADER",
+      "quarter":  "KVARTAL",
+      "year":     "ÅR"
+    },
+    "period": {
+      "ytd":      "YTD {year}",
+      "weekRange":"Vecka {week} · {range}"
     }
   },
   "overheads": {

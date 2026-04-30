@@ -1,0 +1,61 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "fab":           "Fråga AI",
+  "fabTitle":      "Fråga AI om denna data",
+  "header": {
+    "title":       "Fråga AI",
+    "subtitle":    "Drivs av Claude · Ser endast denna sida"
+  },
+  "suggestionsHeader":"Föreslagna frågor",
+  "thinking":      "Tänker…",
+  "aiBadgeTitle":  "Genererat av AI — granska innan åtgärd",
+  "warning": {
+    "body":        "Du har använt {percent}% av dagens AI-kvot ({used} av {limit}).",
+    "upgrade":     "Uppgradera →"
+  },
+  "input": {
+    "placeholder": "Fråga vad som helst om denna data…",
+    "send":        "Skicka",
+    "hint":        "Enter för att skicka · Shift+Enter för ny rad"
+  },
+  "suggestions": {
+    "dashboard": {
+      "q1":        "Hur går denna månad mot förra?",
+      "q2":        "Vilket område ska jag fokusera på för att förbättra marginalen?",
+      "q3":        "Är min personalkostnadsprocent sund?"
+    },
+    "staff": {
+      "q1":        "Vilka är de dyraste personalmedlemmarna denna period?",
+      "q2":        "Hur jämför sig övertid mot förra månaden?",
+      "q3":        "Vilken avdelning har den högsta kostnadsöverskridningen?"
+    },
+    "tracker": {
+      "q1":        "Vilken månad hade bäst marginal i år?",
+      "q2":        "Är jag på väg att nå mitt årliga intäktsmål?",
+      "q3":        "Vad driver skillnaden mellan mina bästa och sämsta månader?"
+    },
+    "revenue": {
+      "q1":        "Vad är min genomsnittliga intäkt per gäst?",
+      "q2":        "Vilken veckodag har flest gäster?",
+      "q3":        "Hur jämför sig restaurang mot avhämtning i intäkter?"
+    },
+    "forecast": {
+      "q1":        "Hur exakta har mina prognoser varit?",
+      "q2":        "Hur ser nästa månad ut?",
+      "q3":        "Var är jag mest sannolik att missa min prognos?"
+    },
+    "departments": {
+      "q1":        "Vilken avdelning är mest över budget?",
+      "q2":        "Hur jämför sig mina avdelningsfördelningar mot branschnormer?",
+      "q3":        "Var ska jag skära kostnader först?"
+    },
+    "default": {
+      "q1":        "Sammanfatta vad du ser i denna data.",
+      "q2":        "Vad är det största problemet här?",
+      "q3":        "Vad ska jag göra först baserat på denna data?"
+    }
+  }
+}

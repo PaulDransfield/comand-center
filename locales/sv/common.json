@@ -128,5 +128,19 @@
     "syncFailed":   "Synkning misslyckades",
     "networkError": "Nätverksfel",
     "tryAgain":     "Försök igen om en stund"
+  },
+  "sync": {
+    "syncing":       "Synkar…",
+    "neverSynced":   "Aldrig synkat",
+    "justNow":       "Synkat just nu",
+    "minAgo":        "Synkat för {n}m sedan",
+    "hoursAgo":      "Synkat för {n}h sedan",
+    "syncedOn":      "Synkat {date}",
+    "clickToRefresh":" — klicka för att uppdatera",
+    "noIntegrations":"Inga integrationer anslutna — kolla Inställningar",
+    "syncFailed":    "Synkning misslyckades ({status})",
+    "syncFailedNetwork":"Synkning misslyckades — {message}",
+    "syncedWithErrors":"{count, plural, one {Synkat med # fel} other {Synkat med # fel}}",
+    "reloading":     "Synkat — laddar om…"
   }
 }

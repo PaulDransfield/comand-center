@@ -116,6 +116,40 @@
     "crumb": {
       "financials":   "Financials",
       "performance":  "Performance"
+    },
+    "eyebrow":        "{period} · FULL PERFORMANCE",
+    "eyebrowVs":      "{period} · FULL PERFORMANCE · VS {compare}",
+    "noData":         "No data for {period} yet.",
+    "marginStory":    "Margin {margin} — {story}.",
+    "marginVs":       "Margin {margin} — {direction} vs {compareLabel}, {explanation}.",
+    "directionUp":    "up {pp}pp",
+    "directionDown":  "down {pp}pp",
+    "ctxNoData":      "Data syncs nightly at 06:00. Try a previous period or wait for the next sync.",
+    "ctxRevenueLine": "Revenue {revenue}, costs {costs}, net {net}.",
+    "ctxRevDelta":    "Revenue {sign}{amount} vs {compareLabel}.",
+    "ctxNoOverheads": "Overheads not yet loaded from Fortnox — waterfall shows `—`.",
+    "stats": {
+      "revenue":   "Revenue",
+      "netMargin": "Net margin",
+      "vs":        "vs {value}"
+    },
+    "trends": {
+      "netMargin":    "NET MARGIN · 12 {gran}",
+      "labour":       "LABOUR % · 12 {gran}",
+      "food":         "FOOD COST % · 12 {gran}",
+      "targetMargin": "Target 10%+",
+      "targetLabour": "Target ≤ 42%",
+      "targetFood":   "Target 28–32%"
+    },
+    "gran": {
+      "week":     "WEEKS",
+      "month":    "MONTHS",
+      "quarter":  "QUARTERS",
+      "year":     "YEARS"
+    },
+    "period": {
+      "ytd":      "YTD {year}",
+      "weekRange":"Week {week} · {range}"
     }
   },
   "overheads": {

@@ -19,6 +19,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useLocale, useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
 import { UX } from '@/lib/constants/tokens'
 
@@ -39,6 +40,9 @@ export default function SyncIndicator({
   collapsed = false,
   surface = 'dark',
 }: SyncIndicatorProps) {
+  const t      = useTranslations('common.sync')
+  const locale = useLocale()
+  const dateLocale = locale === 'sv' ? 'sv-SE' : locale === 'nb' ? 'nb-NO' : 'en-GB'
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const [busy,        setBusy]      = useState(false)
   const [toast,       setToast]     = useState('')
@@ -75,16 +79,16 @@ export default function SyncIndicator({
   }, [businessId])
 
   const label = useMemo(() => {
-    if (busy) return 'Syncing…'
-    if (!lastSyncAt) return 'Never synced'
+    if (busy) return t('syncing')
+    if (!lastSyncAt) return t('neverSynced')
     const d = new Date(lastSyncAt)
     const diffMin = Math.floor((now - d.getTime()) / 60_000)
-    if (diffMin < 1)  return 'Synced just now'
-    if (diffMin < 60) return `Synced ${diffMin}m ago`
+    if (diffMin < 1)  return t('justNow')
+    if (diffMin < 60) return t('minAgo', { n: diffMin })
     const diffH = Math.floor(diffMin / 60)
-    if (diffH < 24) return `Synced ${diffH}h ago`
-    return `Synced ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-  }, [lastSyncAt, now, busy])
+    if (diffH < 24)   return t('hoursAgo', { n: diffH })
+    return t('syncedOn', { date: d.toLocaleDateString(dateLocale, { day: 'numeric', month: 'short' }) })
+  }, [lastSyncAt, now, busy, t, dateLocale])
 
   const fresh = !!lastSyncAt && (now - new Date(lastSyncAt).getTime()) < 30 * 60_000
 
@@ -99,9 +103,9 @@ export default function SyncIndicator({
       })
       const j = await r.json()
       if (!r.ok) {
-        setToast(j.error ?? `Sync failed (${r.status})`)
+        setToast(j.error ?? t('syncFailed', { status: r.status }))
       } else if (j.synced === 0 && j.errors === 0) {
-        setToast(j.message ?? 'No integrations connected — check Settings')
+        setToast(j.message ?? t('noIntegrations'))
       } else if (j.errors > 0) {
         // Extract unique provider names from the failing integrations + show
         // the first error message inline so the user knows what's actually
@@ -111,14 +115,14 @@ export default function SyncIndicator({
         const firstMsg  = failed[0]?.error ?? ''
         const truncated = firstMsg.length > 100 ? firstMsg.slice(0, 100) + '…' : firstMsg
         setToast(
-          `Synced with ${j.errors} error${j.errors === 1 ? '' : 's'}` +
+          t('syncedWithErrors', { count: j.errors }) +
           (providers ? ` (${providers})` : '') +
           (truncated ? `: ${truncated}` : '')
         )
         // Full detail in the console for debugging.
         console.warn('[sync] errors:', failed)
       } else {
-        setToast('Synced — reloading…')
+        setToast(t('reloading'))
       }
       setNow(Date.now())
       // Reload after sync. Previously only reloaded on errors==0, but partial
@@ -131,7 +135,7 @@ export default function SyncIndicator({
         setTimeout(() => window.location.reload(), j.errors > 0 ? 4000 : 1200)
       }
     } catch (e: any) {
-      setToast('Sync failed — ' + (e?.message ?? 'network'))
+      setToast(t('syncFailedNetwork', { message: e?.message ?? 'network' }))
     }
     setBusy(false)
     setTimeout(() => setToast(''), 8000)   // longer so Paul has time to read
@@ -146,7 +150,7 @@ export default function SyncIndicator({
       <button
         onClick={run}
         disabled={busy || !businessId}
-        title={`${label}${busy || !businessId ? '' : ' — click to refresh'}`}
+        title={`${label}${busy || !businessId ? '' : t('clickToRefresh')}`}
         style={{
           width:          '100%',
           display:        'flex',
