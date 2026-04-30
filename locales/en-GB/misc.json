@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "cookieConsent": {
+    "ariaLabel":   "Cookie consent",
+    "lead":        "Cookies & analytics.",
+    "body":        "We use PostHog (EU-hosted) to understand how people use CommandCenter — page views, feature clicks, error rates. No personal data is collected. You can decline, and the app works the same. See",
+    "privacyLink": "our privacy policy",
+    "decline":     "Decline",
+    "accept":      "Accept"
+  },
+  "orgGate": {
+    "eyebrow":     "Action required",
+    "title":       "Add your organisationsnummer to continue",
+    "body":        "Your 30-day grace period has ended. To keep using CommandCenter we need your company's <b>10-digit Swedish organisationsnummer</b> on file. This is required for VAT-compliant invoicing and to confirm the legal entity behind your account.",
+    "subBody":     "It takes about ten seconds. Click below, paste your number, and you're back in.",
+    "needHelp":    "Need help? hello@comandcenter.se",
+    "cta":         "Add organisationsnummer →"
+  },
+  "roleGate": {
+    "eyebrow":     "Access restricted",
+    "title":       "You don't have access to this page",
+    "body":        "Your account role ({role}) doesn't include this section. If you need access, ask your account owner to contact CommandCenter and we'll update your permissions.",
+    "backToDash":  "Back to dashboard"
+  }
+}

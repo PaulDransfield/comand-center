@@ -14,6 +14,7 @@
 // params; uncontrolled fallback keeps the component usable on its own.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface DayRow {
@@ -194,6 +195,7 @@ export default function OverviewChart({
   compareMode: cmpProp, onCompareChange,
   fmtKr, fmtPct,
 }: OverviewChartProps) {
+  const t = useTranslations('dashboard.chart')
   const isWeek = viewMode === 'week'
 
   // ── Controlled / uncontrolled state ────────────────────────────────────────
@@ -345,13 +347,13 @@ export default function OverviewChart({
                   }}
                 >
                   <PeriodSection
-                    title="Weeks"
+                    title={t('weeks')}
                     items={availablePeriods.filter(p => p.view === 'week')}
                     onPick={k => { onPeriodChange?.(k); setPeriodOpen(false) }}
                     currentLabel={periodLabel}
                   />
                   <PeriodSection
-                    title="Months"
+                    title={t('months')}
                     items={availablePeriods.filter(p => p.view === 'month')}
                     onPick={k => { onPeriodChange?.(k); setPeriodOpen(false) }}
                     currentLabel={periodLabel}
@@ -364,8 +366,8 @@ export default function OverviewChart({
           {/* W / M toggle */}
           <SegmentedToggle
             options={[
-              { key: 'week',  label: 'Week'  },
-              { key: 'month', label: 'Month' },
+              { key: 'week',  label: t('viewWeek')  },
+              { key: 'month', label: t('viewMonth') },
             ]}
             value={viewMode}
             onChange={k => onViewModeChange?.(k as 'week' | 'month')}
@@ -391,7 +393,7 @@ export default function OverviewChart({
               {hasFilter && (
                 <span
                   role="button"
-                  aria-label="Clear filter"
+                  aria-label={t('clearFilter')}
                   onClick={e => { e.stopPropagation(); setSelected(new Set()) }}
                   style={{ marginLeft: 4, color: '#9ca3af', fontSize: 11 }}
                 >✕</span>
@@ -428,12 +430,12 @@ export default function OverviewChart({
 
         {/* Compare toggle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 11, color: '#9ca3af', letterSpacing: '.04em', textTransform: 'uppercase' as const, fontWeight: 600 }}>Compare</span>
+          <span style={{ fontSize: 11, color: '#9ca3af', letterSpacing: '.04em', textTransform: 'uppercase' as const, fontWeight: 600 }}>{t('compare')}</span>
           <SegmentedToggle
             options={[
-              { key: 'none', label: 'None' },
-              { key: 'prev', label: isWeek ? 'Prev week' : 'Prev month' },
-              { key: 'ai',   label: 'AI' },
+              { key: 'none', label: t('compareNone') },
+              { key: 'prev', label: isWeek ? t('comparePrevWeek') : t('comparePrevMonth') },
+              { key: 'ai',   label: t('compareAi') },
             ]}
             value={compareMode}
             onChange={k => setCompare(k as 'none' | 'prev' | 'ai')}
@@ -457,7 +459,7 @@ export default function OverviewChart({
           width="100%"
           height={320}
           role="img"
-          aria-label={`Daily revenue, labour cost and gross margin for ${periodLabel}`}
+          aria-label={t('ariaChart', { period: periodLabel })}
           style={{ display: 'block' as const }}
           onMouseLeave={() => setHoverDate(null)}
         >
@@ -519,7 +521,7 @@ export default function OverviewChart({
                 key={d.date}
                 role="button"
                 tabIndex={inFilter ? 0 : -1}
-                aria-label={`${d.dayName} ${d.date}: revenue ${fmtKr(rev)}, labour ${fmtKr(lab)}`}
+                aria-label={t('ariaBar', { day: d.dayName, date: d.date, revenue: fmtKr(rev), labour: fmtKr(lab) })}
                 onMouseEnter={() => setHoverDate(d.date)}
                 onFocus={() => setHoverDate(d.date)}
                 onClick={() => onDayClick?.(d)}
@@ -869,6 +871,7 @@ function LegendItem({ kind, color, label }: any) {
 }
 
 function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmtKr, fmtPct, anchorXPct }: any) {
+  const t = useTranslations('dashboard.chart')
   const hasActual = day.revenue > 0
   const hasPred   = !hasActual && day.pred?.est_revenue > 0
   const dateLabel = toDate(day.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })
@@ -909,10 +912,10 @@ function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmt
             past-real, just at zero — they should NOT show the predicted
             badge. */}
         {day.isClosed && (
-          <span style={{ fontSize: 9, background: '#6b7280', color: 'white', padding: '1px 6px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>CLOSED</span>
+          <span style={{ fontSize: 9, background: '#6b7280', color: 'white', padding: '1px 6px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>{t('badgeClosed')}</span>
         )}
         {!day.isClosed && hasPred && (
-          <span style={{ fontSize: 9, background: C.revAccent, color: 'white', padding: '1px 6px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>PREDICTED</span>
+          <span style={{ fontSize: 9, background: C.revAccent, color: 'white', padding: '1px 6px', borderRadius: 3, fontWeight: 700, letterSpacing: '.05em' }}>{t('badgePredicted')}</span>
         )}
       </div>
 

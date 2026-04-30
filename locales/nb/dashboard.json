@@ -61,5 +61,29 @@
   },
   "period": {
     "weekLabel":  "Uke {num} · {range}"
+  },
+  "chart": {
+    "viewWeek":     "Uke",
+    "viewMonth":    "Måned",
+    "weeks":        "Uker",
+    "months":       "Måneder",
+    "compare":      "Sammenlign",
+    "compareNone":  "Ingen",
+    "comparePrevWeek":  "Forrige uke",
+    "comparePrevMonth": "Forrige måned",
+    "compareAi":    "AI",
+    "clearFilter":  "Fjern filter",
+    "ariaChart":    "Daglig inntekt, bemanningskostnad og bruttomargin for {period}",
+    "ariaBar":      "{day} {date}: inntekt {revenue}, bemanning {labour}",
+    "badgeClosed":  "STENGT",
+    "badgePredicted":"PROGNOSE",
+    "badgeAi":      "AI",
+    "filter": {
+      "all":        "Alle dager",
+      "weekdays":   "Hverdager",
+      "weekends":   "Helger",
+      "selected":   "{count} dag valgt",
+      "selectedPlural":"{count} dager valgt"
+    }
   }
 }

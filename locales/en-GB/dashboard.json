@@ -61,5 +61,29 @@
   },
   "period": {
     "weekLabel":  "Week {num} · {range}"
+  },
+  "chart": {
+    "viewWeek":     "Week",
+    "viewMonth":    "Month",
+    "weeks":        "Weeks",
+    "months":       "Months",
+    "compare":      "Compare",
+    "compareNone":  "None",
+    "comparePrevWeek":  "Prev week",
+    "comparePrevMonth": "Prev month",
+    "compareAi":    "AI",
+    "clearFilter":  "Clear filter",
+    "ariaChart":    "Daily revenue, labour cost and gross margin for {period}",
+    "ariaBar":      "{day} {date}: revenue {revenue}, labour {labour}",
+    "badgeClosed":  "CLOSED",
+    "badgePredicted":"PREDICTED",
+    "badgeAi":      "AI",
+    "filter": {
+      "all":        "All days",
+      "weekdays":   "Weekdays",
+      "weekends":   "Weekends",
+      "selected":   "{count} day selected",
+      "selectedPlural":"{count} days selected"
+    }
   }
 }

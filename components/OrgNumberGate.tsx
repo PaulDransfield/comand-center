@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
 interface CompanyInfo {
   org_number:           string | null
@@ -27,6 +28,7 @@ interface CompanyInfo {
 
 export function OrgNumberGate({ children }: { children: React.ReactNode }) {
   const router = useRouter()
+  const t      = useTranslations('misc.orgGate')
   const [info,    setInfo]    = useState<CompanyInfo | null>(null)
   const [loaded,  setLoaded]  = useState<boolean>(false)
 
@@ -79,28 +81,26 @@ export function OrgNumberGate({ children }: { children: React.ReactNode }) {
           fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
           textTransform: 'uppercase' as const, color: '#92400e', marginBottom: 8,
         }}>
-          Action required
+          {t('eyebrow')}
         </div>
         <h1 style={{
           fontSize: 22, fontWeight: 600, color: '#111', margin: '0 0 12px 0',
           letterSpacing: '-0.02em',
         }}>
-          Add your organisationsnummer to continue
+          {t('title')}
         </h1>
         <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, margin: '0 0 20px 0' }}>
-          Your 30-day grace period has ended. To keep using CommandCenter we need your
-          company's <strong>10-digit Swedish organisationsnummer</strong> on file. This is required
-          for VAT-compliant invoicing and to confirm the legal entity behind your account.
+          {t.rich('body', { b: chunks => <strong>{chunks}</strong> })}
         </p>
         <p style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.6, margin: '0 0 24px 0' }}>
-          It takes about ten seconds. Click below, paste your number, and you're back in.
+          {t('subBody')}
         </p>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <a
             href="mailto:hello@comandcenter.se"
             style={{ fontSize: 12, color: '#6b7280', textDecoration: 'none' }}
           >
-            Need help? hello@comandcenter.se
+            {t('needHelp')}
           </a>
           <button
             onClick={() => router.push('/settings/company')}
@@ -112,7 +112,7 @@ export function OrgNumberGate({ children }: { children: React.ReactNode }) {
               cursor: 'pointer',
             }}
           >
-            Add organisationsnummer →
+            {t('cta')}
           </button>
         </div>
       </div>

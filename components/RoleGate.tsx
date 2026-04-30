@@ -17,6 +17,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { canAccessPath, type AuthSubject } from '@/lib/auth/permissions'
 
 interface MeResponse {
@@ -76,6 +77,7 @@ export function RoleGate({
 }
 
 function NoAccessFallback({ role }: { role: string }) {
+  const t = useTranslations('misc.roleGate')
   return (
     <div style={{
       minHeight: '60vh',
@@ -96,14 +98,13 @@ function NoAccessFallback({ role }: { role: string }) {
           fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
           textTransform: 'uppercase' as const, color: '#9ca3af', marginBottom: 8,
         }}>
-          Access restricted
+          {t('eyebrow')}
         </div>
         <h1 style={{ fontSize: 18, fontWeight: 600, color: '#111', margin: '0 0 10px 0' }}>
-          You don't have access to this page
+          {t('title')}
         </h1>
         <p style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.5, margin: '0 0 16px 0' }}>
-          Your account role ({role}) doesn't include this section. If you need access,
-          ask your account owner to contact CommandCenter and we'll update your permissions.
+          {t('body', { role })}
         </p>
         <a
           href="/dashboard"
@@ -117,7 +118,7 @@ function NoAccessFallback({ role }: { role: string }) {
             fontSize: 13, fontWeight: 500,
           }}
         >
-          Back to dashboard
+          {t('backToDash')}
         </a>
       </div>
     </div>
