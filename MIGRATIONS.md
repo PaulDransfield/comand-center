@@ -1,10 +1,17 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-30 | M022–M041 all applied · M042 pending · M043 pending · M044 pending
+> Last updated: 2026-04-30 | M022–M041 all applied · M042 pending · M043 pending · M044 pending · M045 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M045 — sync_log indexes (kill the 91% seq-scan rate)
+**File:** `M045-SYNC-LOG-INDEXES.sql` (repo root)
+**Purpose:** Supabase performance probe flagged `sync_log` doing 91% sequential scans (162 seq scans reading 60k tuples on a 1106-row table). Hot access patterns are `(org_id, created_at DESC)` (per-customer sync history) and `(status, created_at DESC) WHERE status != 'success'` (failure listings on the admin overview + agents tab). Two new indexes cover both. Partial index on the failure case keeps it small.
+**Backwards compat:** indexes are pure additions; no data change. `IF NOT EXISTS` makes re-runs safe.
+**Safety:** wrapped in `BEGIN; … COMMIT;`. Verify query at the bottom dumps the resulting index list.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M044 — Per-user locale preference (i18n PR 1)
 **File:** `M044-USER-LOCALE.sql` (repo root)
