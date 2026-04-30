@@ -21,6 +21,8 @@ import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { SCOPE_NOTE }            from '@/lib/ai/scope'
 import { INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY } from '@/lib/ai/rules'
 import { logAiRequest } from '@/lib/ai/usage'
+import { requireOwnerRole } from '@/lib/auth/require-role'
+import { filterAccessibleBusinesses } from '@/lib/auth/permissions'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -29,6 +31,8 @@ export async function GET(req: NextRequest) {
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  // M043: /group is owner-only at the page level. Mirror at the API.
+  const ownerForbidden = requireOwnerRole(auth); if (ownerForbidden) return ownerForbidden
 
   const u       = new URL(req.url)
   const now     = new Date()

@@ -3,6 +3,24 @@ Last updated: 2026-04-30
 
 ---
 
+## 0bd. /api/group owner-only gate + /overheads/review category filter (2026-04-30)
+
+**Two small wins shipped together — both autonomous, no migration, no schema:**
+
+### 1. /api/group/overview — owner-only gate
+Manager nav already hides `/group` (it's in `OWNER_ONLY_PATHS`). Server-side mirror via `requireOwnerRole(auth)` immediately after the auth check — defence in depth. A manager who somehow constructs the URL gets a 403 instead of group-wide financials.
+
+### 2. /overheads/review — Food / Overheads / All filter
+Three pill buttons above the flag list. Defaults to "All". Selection persists per session via `sessionStorage.cc_overheads_review_filter`. Category counts shown as small badges on each button (computed from raw flags so the active filter doesn't hide the unread count). Filter applied BEFORE supplier-grouping so a filtered-out flag doesn't pollute the latest-period selection for its group. Buttons only render when there's at least one flag in either category — single-category accounts don't see the noise.
+
+**Modified:**
+- `app/api/group/overview/route.ts` — `requireOwnerRole` check.
+- `app/overheads/review/page.tsx` — `categoryFilter` state, persistence, filter applied in `grouped` useMemo, button row + two new render helpers (`CategoryButton`, `Count`).
+
+**Verified:** `npx tsc --noEmit` clean, `npm run build` passes. No new files. No migration.
+
+---
+
 ## 0bc. Stripe `customer_tax_ids` real eu_vat (dormant until Stripe wired) (2026-04-30)
 
 **Scope:** upgrade the org-nr → Stripe sync from "metadata only" to a real `tax_id` resource on the customer. For Swedish VAT-registered companies, Stripe carries this on every invoice automatically — no display-rule juggling needed.

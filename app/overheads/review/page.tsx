@@ -66,6 +66,11 @@ export default function OverheadReviewPage() {
   const [tableMissing, setTableMissing] = useState<boolean>(false)
   const [error,      setError]      = useState<string | null>(null)
   const [deciding,   setDeciding]   = useState<string | null>(null)
+  // Category filter — Food / Overheads / All. Persists per session.
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'other_cost' | 'food_cost'>(() => {
+    if (typeof window === 'undefined') return 'all'
+    try { return (sessionStorage.getItem('cc_overheads_review_filter') as any) || 'all' } catch { return 'all' }
+  })
   // Backfill state — only show banner for businesses that have line items
   // but no classifications yet (the "first-time owner" case).
   const [showBackfillBanner, setShowBackfillBanner] = useState<boolean>(false)
@@ -217,10 +222,15 @@ export default function OverheadReviewPage() {
   const grouped = useMemo(() => {
     const map = new Map<string, { latest: Flag; others: Flag[]; latestKey: number }>()
     for (const f of flags) {
+      // Apply the category filter BEFORE grouping so a filtered-out flag
+      // doesn't pollute the latest-period selection for its supplier-group.
+      const cat = f.category ?? 'other_cost'
+      if (categoryFilter !== 'all' && cat !== categoryFilter) continue
+
       // Key by (supplier, category) — M041 made decisions category-scoped,
       // so a supplier appearing in both food_cost and other_cost should
       // surface as two separate cards.
-      const key = `${f.supplier_name_normalised}::${f.category ?? 'other_cost'}`
+      const key = `${f.supplier_name_normalised}::${cat}`
       const periodKey = f.period_year * 100 + f.period_month  // sortable
       const cur = map.get(key)
       if (!cur || periodKey > cur.latestKey) {
@@ -233,6 +243,29 @@ export default function OverheadReviewPage() {
     // Order by latest amount desc — biggest savings opportunities first.
     return Array.from(map.values())
       .sort((a, b) => Number(b.latest.amount_sek) - Number(a.latest.amount_sek))
+  }, [flags, categoryFilter])
+
+  // Persist the filter so it survives a refresh.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try { sessionStorage.setItem('cc_overheads_review_filter', categoryFilter) } catch {}
+  }, [categoryFilter])
+
+  // Per-category counts for the filter buttons (compute from raw flags so
+  // the active filter doesn't hide the unread counts).
+  const categoryCounts = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const f of flags) {
+      const cat = f.category ?? 'other_cost'
+      const key = `${f.supplier_name_normalised}::${cat}`
+      if (!map.has(cat)) map.set(cat, new Set())
+      map.get(cat)!.add(key)
+    }
+    return {
+      all:        Array.from(map.values()).reduce((s, set) => s + set.size, 0),
+      other_cost: map.get('other_cost')?.size ?? 0,
+      food_cost:  map.get('food_cost')?.size ?? 0,
+    }
   }, [flags])
 
   // "At stake" = sum of LATEST amount per unique supplier. Showing the raw
@@ -290,6 +323,26 @@ export default function OverheadReviewPage() {
             tone="ok"
             text={`Backfill complete — marked ${backfillResult.marked} supplier${backfillResult.marked === 1 ? '' : 's'} as essential, resolved ${backfillResult.resolved} pending flag${backfillResult.resolved === 1 ? '' : 's'}.`}
           />
+        )}
+
+        {/* Category filter — only render once we know there are categorised
+            flags (avoids confusing a fresh-empty user with three buttons). */}
+        {(categoryCounts.other_cost > 0 || categoryCounts.food_cost > 0) && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' as const }}>
+            <CategoryButton active={categoryFilter === 'all'}        onClick={() => setCategoryFilter('all')}>
+              All <Count>{categoryCounts.all}</Count>
+            </CategoryButton>
+            {categoryCounts.other_cost > 0 && (
+              <CategoryButton active={categoryFilter === 'other_cost'} onClick={() => setCategoryFilter('other_cost')}>
+                Overheads <Count>{categoryCounts.other_cost}</Count>
+              </CategoryButton>
+            )}
+            {categoryCounts.food_cost > 0 && (
+              <CategoryButton active={categoryFilter === 'food_cost'}  onClick={() => setCategoryFilter('food_cost')}>
+                Food <Count>{categoryCounts.food_cost}</Count>
+              </CategoryButton>
+            )}
+          </div>
         )}
 
         {loading && grouped.length === 0 && (
@@ -577,6 +630,42 @@ function Empty({ text }: { text: string }) {
     }}>
       {text}
     </div>
+  )
+}
+
+function CategoryButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '6px 12px',
+        background: active ? UX.ink1 : 'white',
+        color:      active ? 'white' : UX.ink2,
+        border:     `1px solid ${active ? UX.ink1 : UX.borderSoft}`,
+        borderRadius: 999,
+        fontSize:    12,
+        fontWeight:  active ? 600 : 500,
+        cursor:      'pointer',
+        display:     'inline-flex',
+        alignItems:  'center',
+        gap:         6,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Count({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700,
+      padding: '1px 6px', borderRadius: 999,
+      background: 'rgba(255,255,255,0.18)',
+      color: 'inherit',
+    }}>
+      {children}
+    </span>
   )
 }
 
