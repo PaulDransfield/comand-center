@@ -130,10 +130,15 @@ Confidence: 0.0-1.0. High (>0.8) when the explanation is concrete and supported 
       },
     }
 
+    // Anthropic API constraint: extended thinking and forced tool_choice
+    // are mutually exclusive ("Thinking may not be enabled when tool_choice
+    // forces tool use"). Dropping `thinking` — a one-sentence-per-flag
+    // explanation doesn't benefit from 2000 thinking tokens anyway, and
+    // forced tool_choice is the higher-value lever (guarantees structured
+    // output rather than free-form text we'd have to regex-parse).
     const response: any = await (client as any).messages.create({
       model:      AI_MODELS.ANALYSIS,   // Sonnet 4.6 — same model as cost-intel and budget AI
       max_tokens: 1500,
-      thinking:   { type: 'enabled', budget_tokens: 2000 },
       tools:      [submitTool],
       tool_choice:{ type: 'tool', name: 'submit_flag_explanations' },
       messages:   [{ role: 'user', content: prompt }],
