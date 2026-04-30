@@ -30,6 +30,16 @@
     "narrative": {
       "title":        "AI-resultat — {month} {year}"
     },
+    "hero": {
+      "empty":        "Inget loggat för {year} än.",
+      "singleFoodGap":"{month}s marginal {pct} — men matkostnaden saknas, så detta är inte den verkliga siffran.",
+      "spread":       "YTD-marginal {avg}, men {worstMonth} föll till {worstPct} mot {bestMonth} på {bestPct}.",
+      "ytdSimple":    "YTD-marginal {avg} över {count, plural, one {# månad} other {# månader}}.",
+      "ctxMonths":    "{count, plural, one {# månad data av 12} other {# månader data av 12}}",
+      "ctxLabour":    "Personal tog {pct} av intäkterna (mål 35%)",
+      "ctxFoodGap":   "Matkostnad visar 0 kr — sannolikt en synk-lucka, inte en vinst",
+      "ctxSwing":     "{pp}pp svängning mellan bästa och sämsta månad"
+    },
     "table": {
       "month":        "Månad",
       "revenueVsCost":"Intäkt mot kostnad",
@@ -55,6 +65,23 @@
       "generate":     "Generera med AI",
       "generating":   "Genererar…",
       "title":        "Låt AI föreslå budgetar baserat på förra året + prognoser"
+    },
+    "hero": {
+      "noActuals":     "Inga utfall loggade än för {year}.",
+      "singleNoBudget":"{month} loggad ({revenue}) — ingen budget satt än.",
+      "missMonths":    "{onTrack} av {total} månader på spår — {month} missade med {amount}.",
+      "monthOnBudget": "{month} på budget.",
+      "allOnTrack":    "Alla {count} loggade månader på spår.",
+      "ctxYtd":        "{pct}% av YTD-intäktsmålet levererat · {count} av {total} månader loggade",
+      "ctxNoBudget":   "{count} av {total} månader loggade — budgetar inte satta än"
+    },
+    "coach": {
+      "pacing":   "Takt",
+      "pacingMsg":"MTD {mtd} → prognos {projected}",
+      "pacingMsgWithTarget":"MTD {mtd} → prognos {projected} mot {target} mål.",
+      "labour":   "Personal",
+      "labourMsg":"prognos {pct} — öppna Schemaläggning och skär nästa veckas timmar.",
+      "coach":    "Coach"
     }
   },
   "forecast": {
@@ -65,7 +92,24 @@
       "forecast":     "Prognos"
     },
     "refresh":        "Uppdatera prognos",
-    "syncing":        "Synkar…"
+    "syncing":        "Synkar…",
+    "hero": {
+      "notAvailable":   "Prognos inte tillgänglig än.",
+      "noActualsYet":   "Inga utfall eller prognos än för {year}.",
+      "loggedNoFc":     "{months} loggade — ingen prognos genererad än för resten av året.",
+      "weakMargin":     "På väg mot {revenue} i intäkt — {month} svag på {pct} marginal.",
+      "missedForecast": "På väg mot {revenue} — {month} missade med {pct}.",
+      "tracking":       "På väg mot {revenue} i intäkt i år.",
+      "ctxNoFc":        "{count, plural, one {# månad utfall} other {# månader utfall}} · prognoser regenereras den 1:a varje månad",
+      "ctxMargin":      "prognostiserad marginal {pct}",
+      "ctxActuals":     "{count, plural, one {# månad faktiskt ({profit} vinst)} other {# månader faktiskt ({profit} vinst)}}"
+    },
+    "flags": {
+      "missed":   "missade prognosen med {pct} — {actual} mot {forecast}.",
+      "atRisk":   "prognostiserad marginal {pct} — {rel} på {revenue} intäkt.",
+      "belowAvg": "{pp}pp under årsmedel",
+      "belowFloor":"under 12%-golvet"
+    }
   },
   "performance": {
     "loading":        "Laddar…",

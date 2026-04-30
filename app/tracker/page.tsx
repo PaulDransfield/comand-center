@@ -221,47 +221,42 @@ export default function TrackerPage() {
   const labourPctYtd = totRev > 0 ? (totLabour / totRev) * 100 : null
 
   // ── Hero headline ─────────────────────────────────────────────────────────
+  // Translation strings render plain text — we wrap the formatted percentages
+  // in styled <span>s by composing the JSX around the translated sentence.
+  // The translation owns word order; we own the colours.
   const heroHeadline = (() => {
     if (withData.length === 0) {
-      return <>Nothing logged for <span style={{ fontWeight: UX.fwMedium }}>{year}</span> yet.</>
+      return <>{t('hero.empty', { year })}</>
     }
     // Single month + food gap → the 50.3% margin is synthetic, say so.
     if (withData.length === 1 && hasFoodGap) {
       const m = withData[0]
-      return (
-        <>
-          {MONTHS_SHORT[m.period_month - 1]} margin <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{fmtPct(Number(m.margin_pct))}</span>
-          {' '}— but food cost is missing, so this isn't the real number.
-        </>
-      )
+      return <span>{t('hero.singleFoodGap', {
+        month: MONTHS_SHORT[m.period_month - 1],
+        pct:   fmtPct(Number(m.margin_pct)),
+      })}</span>
     }
     if (bestMargin && worstMargin && bestMargin !== worstMargin && Math.abs(Number(bestMargin.margin_pct) - Number(worstMargin.margin_pct)) > 5) {
-      const bestPct  = fmtPct(Number(bestMargin.margin_pct))
-      const worstPct = fmtPct(Number(worstMargin.margin_pct))
-      return (
-        <>
-          YTD margin <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtPct(avgMargin)}</span>
-          , but <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[worstMargin.period_month - 1]} crashed to {worstPct}</span>
-          {' '}vs {MONTHS_SHORT[bestMargin.period_month - 1]} at {bestPct}.
-        </>
-      )
+      return <span>{t('hero.spread', {
+        avg:        fmtPct(avgMargin),
+        worstMonth: MONTHS_SHORT[worstMargin.period_month - 1],
+        worstPct:   fmtPct(Number(worstMargin.margin_pct)),
+        bestMonth:  MONTHS_SHORT[bestMargin.period_month - 1],
+        bestPct:    fmtPct(Number(bestMargin.margin_pct)),
+      })}</span>
     }
-    return (
-      <>
-        YTD margin <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtPct(avgMargin)}</span> across {withData.length} month{withData.length === 1 ? '' : 's'}.
-      </>
-    )
+    return <span>{t('hero.ytdSimple', { avg: fmtPct(avgMargin), count: withData.length })}</span>
   })()
 
   const heroContext = (() => {
     if (withData.length === 0) return undefined
     const parts: string[] = []
-    parts.push(`${withData.length} month${withData.length === 1 ? '' : 's'} of data out of 12`)
-    if (labourPctYtd != null) parts.push(`Labour ate ${fmtPct(labourPctYtd)} of revenue (target 35%)`)
-    if (hasFoodGap)           parts.push(`Food cost shows 0 kr — likely a sync gap, not a win`)
+    parts.push(t('hero.ctxMonths', { count: withData.length }))
+    if (labourPctYtd != null) parts.push(t('hero.ctxLabour', { pct: fmtPct(labourPctYtd) }))
+    if (hasFoodGap)           parts.push(t('hero.ctxFoodGap'))
     if (!hasFoodGap && worstMargin && bestMargin && worstMargin !== bestMargin) {
       const diff = Math.round(Math.abs(Number(bestMargin.margin_pct) - Number(worstMargin.margin_pct)) * 10) / 10
-      parts.push(`${diff}pp swing between best and worst month`)
+      parts.push(t('hero.ctxSwing', { pp: diff }))
     }
     return parts.join(' · ')
   })()

@@ -182,60 +182,49 @@ export default function ForecastPage() {
     .sort((a, b) => ((a.actualRev - a.forecastRev) - (b.actualRev - b.forecastRev)))[0] ?? null
 
   // ── Hero headline ─────────────────────────────────────────────────────────
+  // Translations own word order; we render the result in a span so the
+  // PageHero can inherit colour. (Inline-coloured fragments were dropped to
+  // simplify localisation — colour now comes from the eyebrow/context tone.)
   const headline = (() => {
     if (loading) return <>{t('loading')}</>
-    if (!data) return <>Forecast not available yet.</>
-
-    // No forecast yet. Don't invent a projection — surface the real state.
+    if (!data) return <>{t('hero.notAvailable')}</>
     if (!hasProjection) {
       if (actualMonths === 0) {
-        return <>No actuals or forecast yet for <span style={{ fontWeight: UX.fwMedium }}>{currentYear}</span>.</>
+        return <>{t('hero.noActualsYet', { year: currentYear })}</>
       }
       const monthNames = monthly
         .filter(r => r.actualRev > 0)
         .map(r => MONTHS_SHORT[r.m - 1]).join(', ')
-      return (
-        <>
-          {monthNames} logged — <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>no forecast generated yet</span> for the rest of the year.
-        </>
-      )
+      return <span>{t('hero.loggedNoFc', { months: monthNames })}</span>
     }
-
     if (weakFuture && weakFuture.marginForecast != null && weakFuture.marginForecast < 12) {
-      return (
-        <>
-          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear!)}</span> revenue
-          {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[weakFuture.m - 1]} weak at {fmtPct(weakFuture.marginForecast)} margin</span>.
-        </>
-      )
+      return <span>{t('hero.weakMargin', {
+        revenue: fmtKr(projectedFullYear!),
+        month:   MONTHS_SHORT[weakFuture.m - 1],
+        pct:     fmtPct(weakFuture.marginForecast),
+      })}</span>
     }
     if (biggestMiss) {
       const pct = ((biggestMiss.actualRev - biggestMiss.forecastRev) / biggestMiss.forecastRev) * 100
-      return (
-        <>
-          Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear!)}</span>
-          {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS_SHORT[biggestMiss.m - 1]} missed by {fmtPct(Math.abs(pct))}</span>.
-        </>
-      )
+      return <span>{t('hero.missedForecast', {
+        revenue: fmtKr(projectedFullYear!),
+        month:   MONTHS_SHORT[biggestMiss.m - 1],
+        pct:     fmtPct(Math.abs(pct)),
+      })}</span>
     }
-    return (
-      <>
-        Tracking to <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{fmtKr(projectedFullYear!)}</span> revenue this year.
-      </>
-    )
+    return <span>{t('hero.tracking', { revenue: fmtKr(projectedFullYear!) })}</span>
   })()
 
   const heroContextText = (() => {
     if (!data) return undefined
     if (!hasProjection) {
-      return `${actualMonths} month${actualMonths === 1 ? '' : 's'} of actuals · forecasts regenerate on the 1st of each month`
+      return t('hero.ctxNoFc', { count: actualMonths })
     }
-    // Full sentence with margin and YTD profit context (FORECAST-FIX § 5).
     const parts: string[] = []
     if (projectedMarginPct != null) {
-      parts.push(`forecast margin ${fmtPct(projectedMarginPct)}`)
+      parts.push(t('hero.ctxMargin', { pct: fmtPct(projectedMarginPct) }))
     }
-    parts.push(`${actualMonths} month${actualMonths === 1 ? '' : 's'} actual (${fmtKr(ytdActualProfit)} profit)`)
+    parts.push(t('hero.ctxActuals', { count: actualMonths, profit: fmtKr(ytdActualProfit) }))
     return parts.join(' · ')
   })()
 
@@ -251,7 +240,11 @@ export default function ForecastPage() {
         return [{
           tone: 'bad',
           entity: MONTHS_SHORT[r.m - 1],
-          message: `missed forecast by ${fmtPct(Math.abs(pct))} — ${fmtKr(r.actualRev)} vs ${fmtKr(r.forecastRev)}.`,
+          message: t('flags.missed', {
+            pct:      fmtPct(Math.abs(pct)),
+            actual:   fmtKr(r.actualRev),
+            forecast: fmtKr(r.forecastRev),
+          }),
         } as AttentionItem]
       }
     }
@@ -259,12 +252,16 @@ export default function ForecastPage() {
       const threshold = avgForecastMargin != null ? avgForecastMargin - 10 : 12
       if (r.marginForecast < threshold) {
         const rel = avgForecastMargin != null
-          ? `${(Math.round((avgForecastMargin - r.marginForecast) * 10) / 10).toFixed(1)}pp below year avg`
-          : `below 12% floor`
+          ? t('flags.belowAvg', { pp: (Math.round((avgForecastMargin - r.marginForecast) * 10) / 10).toFixed(1) })
+          : t('flags.belowFloor')
         return [{
           tone: 'warning',
           entity: MONTHS_SHORT[r.m - 1],
-          message: `margin forecast ${fmtPct(r.marginForecast)} — ${rel} on ${fmtKr(r.forecastRev)} revenue.`,
+          message: t('flags.atRisk', {
+            pct:     fmtPct(r.marginForecast),
+            rel,
+            revenue: fmtKr(r.forecastRev),
+          }),
         } as AttentionItem]
       }
     }

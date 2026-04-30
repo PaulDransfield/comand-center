@@ -210,44 +210,40 @@ export default function BudgetPage() {
 
   const headline = (() => {
     if (withActual.length === 0) {
-      return <>No actuals logged yet for <span style={{ fontWeight: UX.fwMedium }}>{year}</span>.</>
+      return <>{t('hero.noActuals', { year })}</>
     }
-    // Single logged month, no budget to compare against — awkward to
-    // say "1 month on track", per BUDGET-FIX "One more thing". Natural
-    // English: name the month and acknowledge no budget.
     if (withActual.length === 1 && loggedNoBudget === 1) {
       const m = withActual[0]
-      return (
-        <>
-          {MONTHS[m.month - 1]} logged ({fmtKr(Number(m.actual?.revenue ?? 0))}) — <span style={{ color: UX.ink3 }}>no budget set yet</span>.
-        </>
-      )
+      return <span>{t('hero.singleNoBudget', {
+        month:   MONTHS[m.month - 1],
+        revenue: fmtKr(Number(m.actual?.revenue ?? 0)),
+      })}</span>
     }
     if (biggestMiss) {
-      return (
-        <>
-          <span style={{ color: onTrack > offTrack ? UX.greenInk : UX.redInk, fontWeight: UX.fwMedium }}>
-            {onTrack} of {withActual.length} months on track
-          </span>
-          {' '}— <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{MONTHS[biggestMiss.month - 1]} missed by {fmtKr(Math.abs(biggestMiss.kr))}</span>.
-        </>
-      )
+      return <span style={{ color: onTrack > offTrack ? UX.greenInk : UX.redInk, fontWeight: UX.fwMedium }}>
+        {t('hero.missMonths', {
+          onTrack,
+          total:  withActual.length,
+          month:  MONTHS[biggestMiss.month - 1],
+          amount: fmtKr(Math.abs(biggestMiss.kr)),
+        })}
+      </span>
     }
-    return (
-      <>
-        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>
-          {withActual.length === 1
-            ? `${MONTHS[withActual[0].month - 1]} on budget.`
-            : `All ${withActual.length} logged months on track.`}
-        </span>
-      </>
-    )
+    return <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>
+      {withActual.length === 1
+        ? t('hero.monthOnBudget', { month: MONTHS[withActual[0].month - 1] })
+        : t('hero.allOnTrack',    { count: withActual.length })}
+    </span>
   })()
 
   const heroContext = totalBudg > 0
-    ? `${Math.round((totalRev / totalBudg) * 100)}% of YTD revenue target delivered · ${withActual.length} of ${monthsInYearSoFar} months logged`
+    ? t('hero.ctxYtd', {
+        pct:   Math.round((totalRev / totalBudg) * 100),
+        count: withActual.length,
+        total: monthsInYearSoFar,
+      })
     : withActual.length
-      ? `${withActual.length} of ${monthsInYearSoFar} months logged — budgets not set yet`
+      ? t('hero.ctxNoBudget', { count: withActual.length, total: monthsInYearSoFar })
       : undefined
 
   // ── AI Budget Coach → AttentionPanel items  (no more purple gradient).
@@ -264,23 +260,33 @@ export default function BudgetPage() {
       : null
     out.push({
       tone:    onPace == null ? 'warning' : onPace ? 'good' : 'bad',
-      entity:  'Pacing',
-      message: `MTD ${fmtKr(Number(coach.mtd?.revenue ?? 0))} → projected ${fmtKr(Number(coach.projected?.revenue ?? 0))}${coach.budget?.revenue_target ? ` vs ${fmtKr(Number(coach.budget.revenue_target))} target` : ''}.`,
+      entity:  t('coach.pacing'),
+      message: coach.budget?.revenue_target
+        ? t('coach.pacingMsgWithTarget', {
+            mtd:       fmtKr(Number(coach.mtd?.revenue ?? 0)),
+            projected: fmtKr(Number(coach.projected?.revenue ?? 0)),
+            target:    fmtKr(Number(coach.budget.revenue_target)),
+          })
+        : t('coach.pacingMsg', {
+            mtd:       fmtKr(Number(coach.mtd?.revenue ?? 0)),
+            projected: fmtKr(Number(coach.projected?.revenue ?? 0)),
+          }),
     })
     // Labour lever, if flagged by the server.
     if (coach.labour_is_the_lever && coach.projected?.labour_pct != null) {
       out.push({
         tone:    'bad',
-        entity:  'Labour',
-        message: `projected at ${fmtPct(Number(coach.projected.labour_pct))} — open Scheduling and trim next week's hours.`,
+        entity:  t('coach.labour'),
+        message: t('coach.labourMsg', { pct: fmtPct(Number(coach.projected.labour_pct)) }),
       })
     }
-    // Narrative first-sentence as the "do this next" bullet.
+    // Narrative first-sentence — Claude already responded in the user's
+    // locale via PR3, so we keep the verbatim text.
     const firstSentence = String(coach.narrative).split(/(?<=[.!?])\s+/).filter(Boolean)[0]
     if (firstSentence) {
       out.push({
         tone:    'warning',
-        entity:  'Coach',
+        entity:  t('coach.coach'),
         message: firstSentence.slice(0, 180),
       })
     }

@@ -30,6 +30,16 @@
     "narrative": {
       "title":        "AI P&L — {month} {year}"
     },
+    "hero": {
+      "empty":        "Nothing logged for {year} yet.",
+      "singleFoodGap":"{month} margin {pct} — but food cost is missing, so this isn't the real number.",
+      "spread":       "YTD margin {avg}, but {worstMonth} crashed to {worstPct} vs {bestMonth} at {bestPct}.",
+      "ytdSimple":    "YTD margin {avg} across {count, plural, one {# month} other {# months}}.",
+      "ctxMonths":    "{count, plural, one {# month of data out of 12} other {# months of data out of 12}}",
+      "ctxLabour":    "Labour ate {pct} of revenue (target 35%)",
+      "ctxFoodGap":   "Food cost shows 0 kr — likely a sync gap, not a win",
+      "ctxSwing":     "{pp}pp swing between best and worst month"
+    },
     "table": {
       "month":        "Month",
       "revenueVsCost":"Revenue vs cost",
@@ -55,6 +65,23 @@
       "generate":     "Generate with AI",
       "generating":   "Generating…",
       "title":        "Let AI suggest budgets from your last year + forecasts"
+    },
+    "hero": {
+      "noActuals":     "No actuals logged yet for {year}.",
+      "singleNoBudget":"{month} logged ({revenue}) — no budget set yet.",
+      "missMonths":    "{onTrack} of {total} months on track — {month} missed by {amount}.",
+      "monthOnBudget": "{month} on budget.",
+      "allOnTrack":    "All {count} logged months on track.",
+      "ctxYtd":        "{pct}% of YTD revenue target delivered · {count} of {total} months logged",
+      "ctxNoBudget":   "{count} of {total} months logged — budgets not set yet"
+    },
+    "coach": {
+      "pacing":   "Pacing",
+      "pacingMsg":"MTD {mtd} → projected {projected}",
+      "pacingMsgWithTarget":"MTD {mtd} → projected {projected} vs {target} target.",
+      "labour":   "Labour",
+      "labourMsg":"projected at {pct} — open Scheduling and trim next week's hours.",
+      "coach":    "Coach"
     }
   },
   "forecast": {
@@ -65,7 +92,24 @@
       "forecast":     "Forecast"
     },
     "refresh":        "Refresh forecast",
-    "syncing":        "Syncing…"
+    "syncing":        "Syncing…",
+    "hero": {
+      "notAvailable":   "Forecast not available yet.",
+      "noActualsYet":   "No actuals or forecast yet for {year}.",
+      "loggedNoFc":     "{months} logged — no forecast generated yet for the rest of the year.",
+      "weakMargin":     "Tracking to {revenue} revenue — {month} weak at {pct} margin.",
+      "missedForecast": "Tracking to {revenue} — {month} missed by {pct}.",
+      "tracking":       "Tracking to {revenue} revenue this year.",
+      "ctxNoFc":        "{count, plural, one {# month of actuals} other {# months of actuals}} · forecasts regenerate on the 1st of each month",
+      "ctxMargin":      "forecast margin {pct}",
+      "ctxActuals":     "{count, plural, one {# month actual ({profit} profit)} other {# months actual ({profit} profit)}}"
+    },
+    "flags": {
+      "missed":   "missed forecast by {pct} — {actual} vs {forecast}.",
+      "atRisk":   "margin forecast {pct} — {rel} on {revenue} revenue.",
+      "belowAvg": "{pp}pp below year avg",
+      "belowFloor":"below 12% floor"
+    }
   },
   "performance": {
     "loading":        "Loading…",
