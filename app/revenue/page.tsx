@@ -67,7 +67,8 @@ function KpiCard({ label, value, sub, deltaVal }: any) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function RevenuePage() {
-  const t = useTranslations('operations.revenue')
+  const t       = useTranslations('operations.revenue')
+  const tCrumbs = useTranslations('operations.crumbs')
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -178,8 +179,8 @@ export default function RevenuePage() {
             hero's SupportingStats for visual weight. */}
         <TopBar
           crumbs={[
-            { label: 'Operations' },
-            { label: 'Revenue', active: true },
+            { label: tCrumbs('operations') },
+            { label: tCrumbs('revenue'), active: true },
           ]}
           rightSlot={
             <>

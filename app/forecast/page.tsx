@@ -279,8 +279,8 @@ export default function ForecastPage() {
             floating right-aligned selectors. */}
         <TopBar
           crumbs={[
-            { label: 'Financials' },
-            { label: 'Forecast', active: true },
+            { label: t('crumb.financials') },
+            { label: t('crumb.forecast'), active: true },
           ]}
           rightSlot={
             <>
@@ -294,8 +294,8 @@ export default function ForecastPage() {
               <button
                 onClick={triggerSync}
                 disabled={syncing || !selected}
-                title={syncing ? 'Syncing…' : 'Refresh forecast'}
-                aria-label="Refresh forecast"
+                title={syncing ? t('syncing') : t('refresh')}
+                aria-label={t('refresh')}
                 style={{
                   width:        28,
                   height:       28,

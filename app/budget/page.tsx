@@ -304,15 +304,15 @@ export default function BudgetPage() {
             action. Replaces the floating "Generate with AI" row. */}
         <TopBar
           crumbs={[
-            { label: 'Financials' },
-            { label: 'Budget vs Actual', active: true },
+            { label: t('crumb.financials') },
+            { label: t('crumb.budget'), active: true },
           ]}
           rightSlot={
             <>
               <button
                 onClick={generateWithAI}
                 disabled={generating || !selected}
-                title="Let AI suggest budgets from your last year + forecasts"
+                title={t('ai.title')}
                 style={{
                   padding: '5px 11px', background: UX.indigo, color: 'white',
                   border: 'none', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium,
@@ -322,7 +322,7 @@ export default function BudgetPage() {
                 }}
               >
                 <span>✦</span>
-                {generating ? 'Generating…' : 'Generate with AI'}
+                {generating ? t('ai.generating') : t('ai.generate')}
               </button>
               <select value={selected} onChange={e => setSelected(e.target.value)}
                 style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>

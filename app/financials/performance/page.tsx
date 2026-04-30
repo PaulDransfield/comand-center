@@ -629,7 +629,7 @@ export default function PerformancePage() {
     <AppShell>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '12px 16px 40px' }}>
         <TopBar
-          crumbs={[{ label: 'Financials' }, { label: 'Performance', active: true }]}
+          crumbs={[{ label: t('crumb.financials') }, { label: t('crumb.performance'), active: true }]}
           rightSlot={
             <ControlCluster
               granularity={granularity}

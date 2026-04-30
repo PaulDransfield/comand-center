@@ -283,8 +283,8 @@ export default function TrackerPage() {
             PNL-FIX § 7. */}
         <TopBar
           crumbs={[
-            { label: 'Financials' },
-            { label: 'P&L Tracker', active: true },
+            { label: t('crumb.financials') },
+            { label: t('crumb.pnl'), active: true },
           ]}
           rightSlot={
             <>
@@ -298,7 +298,7 @@ export default function TrackerPage() {
                     href={`/api/tracker/accountant-summary?business_id=${selected}&year=${year}&month=${latest.period_month}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    title={`Export ${MONTHS_SHORT[latest.period_month - 1]} ${year} to accountant`}
+                    title={t('accountant.exportTitle', { month: MONTHS_SHORT[latest.period_month - 1], year })}
                     style={{
                       padding:      '5px 11px',
                       background:   'transparent',
@@ -311,7 +311,7 @@ export default function TrackerPage() {
                       whiteSpace:   'nowrap' as const,
                     }}
                   >
-                    📧 Accountant
+                    {t('accountant.button')}
                   </a>
                 )
               })()}
@@ -369,34 +369,34 @@ export default function TrackerPage() {
             marginBottom: 12,
           }}>
             <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.indigo, letterSpacing: '.05em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
-              Annual Fortnox report · {year}
+              {t('annual.header', { year })}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, fontSize: UX.fsBody }}>
               <div>
-                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Revenue</div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('annual.revenue')}</div>
                 <div style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.revenue)}</div>
               </div>
               <div>
-                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Food cost</div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('annual.foodCost')}</div>
                 <div style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.food_cost)}</div>
               </div>
               <div>
-                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Staff cost</div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('annual.staffCost')}</div>
                 <div style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.staff_cost)}</div>
               </div>
               <div>
-                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Other costs</div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('annual.otherCosts')}</div>
                 <div style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(annualRollup.other_cost)}</div>
               </div>
               <div>
-                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>Net profit</div>
+                <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('annual.netProfit')}</div>
                 <div style={{ fontWeight: UX.fwMedium, color: annualRollup.net_profit >= 0 ? UX.greenInk : UX.redInk, fontVariantNumeric: 'tabular-nums' as const }}>
                   {fmtKr(annualRollup.net_profit)} <span style={{ color: UX.ink4, fontWeight: UX.fwRegular, fontSize: UX.fsMicro }}>({fmtPct(annualRollup.margin_pct)})</span>
                 </div>
               </div>
             </div>
             <div style={{ fontSize: UX.fsNano, color: UX.ink4, marginTop: 6 }}>
-              {annualRollup.line_count} line items from the Fortnox annual report. No monthly breakdown available — upload the monthly PDFs to see each month individually.
+              {t('annual.footnote', { count: annualRollup.line_count })}
             </div>
           </div>
         )}
@@ -408,7 +408,10 @@ export default function TrackerPage() {
         {narrative?.narrative && (
           <div style={{ marginBottom: 12 }}>
             <AttentionPanel
-              title={`AI P&L — ${narrative.month ? MONTHS_SHORT[(narrative.month ?? 1) - 1] : ''} ${narrative.year ?? ''}`.trim()}
+              title={t('narrative.title', {
+                month: narrative.month ? MONTHS_SHORT[(narrative.month ?? 1) - 1] : '',
+                year:  narrative.year ?? '',
+              }).trim()}
               items={[{
                 tone:    'warning',
                 entity:  'Claude',
@@ -440,11 +443,11 @@ export default function TrackerPage() {
             textTransform: 'uppercase' as const,
           }}>
             <span />
-            <span>Month</span>
-            <span>Revenue vs cost</span>
-            <span style={{ textAlign: 'right' as const }}>Revenue</span>
-            <span style={{ textAlign: 'right' as const }}>Margin</span>
-            <span style={{ textAlign: 'right' as const }}>Profit</span>
+            <span>{t('table.month')}</span>
+            <span>{t('table.revenueVsCost')}</span>
+            <span style={{ textAlign: 'right' as const }}>{t('table.revenue')}</span>
+            <span style={{ textAlign: 'right' as const }}>{t('table.margin')}</span>
+            <span style={{ textAlign: 'right' as const }}>{t('table.profit')}</span>
             <span />
           </div>
 

@@ -211,7 +211,7 @@ export default function OverheadsPage() {
       <div style={{ maxWidth: 1100 }}>
 
         <TopBar
-          crumbs={[{ label: 'Financials' }, { label: 'Overheads', active: true }]}
+          crumbs={[{ label: t('crumb.financials') }, { label: t('crumb.overheads'), active: true }]}
           rightSlot={
             <>
               <select value={year} onChange={e => setYear(Number(e.target.value))}

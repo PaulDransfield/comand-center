@@ -9,7 +9,34 @@
     "eyebrowYtdMonths":"YTD — {year} · {count, plural, one {# MONTH LOGGED} other {# MONTHS LOGGED}}",
     "ytdProfit":      "YTD profit",
     "loading":        "Loading…",
-    "loadingDaily":   "Loading daily data…"
+    "loadingDaily":   "Loading daily data…",
+    "crumb": {
+      "financials":   "Financials",
+      "pnl":          "P&L Tracker"
+    },
+    "accountant": {
+      "button":       "📧 Accountant",
+      "exportTitle":  "Export {month} {year} to accountant"
+    },
+    "annual": {
+      "header":       "Annual Fortnox report · {year}",
+      "revenue":      "Revenue",
+      "foodCost":     "Food cost",
+      "staffCost":    "Staff cost",
+      "otherCosts":   "Other costs",
+      "netProfit":    "Net profit",
+      "footnote":     "{count} line items from the Fortnox annual report. No monthly breakdown available — upload the monthly PDFs to see each month individually."
+    },
+    "narrative": {
+      "title":        "AI P&L — {month} {year}"
+    },
+    "table": {
+      "month":        "Month",
+      "revenueVsCost":"Revenue vs cost",
+      "revenue":      "Revenue",
+      "margin":       "Margin",
+      "profit":       "Profit"
+    }
   },
   "budget": {
     "eyebrowYearBudget":"{year} BUDGET",
@@ -19,17 +46,40 @@
       "noBudget":      "No budget",
       "notStarted":    "Not started"
     },
-    "loading":        "Loading…"
+    "loading":        "Loading…",
+    "crumb": {
+      "financials":   "Financials",
+      "budget":       "Budget vs Actual"
+    },
+    "ai": {
+      "generate":     "Generate with AI",
+      "generating":   "Generating…",
+      "title":        "Let AI suggest budgets from your last year + forecasts"
+    }
   },
   "forecast": {
     "loading":        "Loading forecast…",
-    "loadingChart":   "Loading…"
+    "loadingChart":   "Loading…",
+    "crumb": {
+      "financials":   "Financials",
+      "forecast":     "Forecast"
+    },
+    "refresh":        "Refresh forecast",
+    "syncing":        "Syncing…"
   },
   "performance": {
-    "loading":        "Loading…"
+    "loading":        "Loading…",
+    "crumb": {
+      "financials":   "Financials",
+      "performance":  "Performance"
+    }
   },
   "overheads": {
     "loading":        "Loading overheads…",
-    "loadingPanel":   "Loading…"
+    "loadingPanel":   "Loading…",
+    "crumb": {
+      "financials":   "Financials",
+      "overheads":    "Overheads"
+    }
   }
 }

@@ -4,6 +4,12 @@
     "_status": "awaiting_review",
     "_note":   "Sidladdare + delade element. Sidors inre text är fortfarande engelska; spåras för uppföljnings-PR."
   },
+  "crumbs": {
+    "operations":  "Drift",
+    "revenue":     "Intäkter",
+    "staff":       "Personal",
+    "departments": "Avdelningar"
+  },
   "revenue": {
     "loading": "Laddar…"
   },

@@ -4,6 +4,12 @@
     "_status": "ready",
     "_note":   "Page-level loaders + shared bits. Inner page bodies still contain English literals; tracked for follow-up PR."
   },
+  "crumbs": {
+    "operations":  "Operations",
+    "revenue":     "Revenue",
+    "staff":       "Staff",
+    "departments": "Departments"
+  },
   "revenue": {
     "loading": "Loading…"
   },

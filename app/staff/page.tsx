@@ -78,7 +78,8 @@ function KpiCard({ label, value, sub, deltaVal, ok }: any) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function StaffPage() {
-  const t = useTranslations('operations.staff')
+  const t       = useTranslations('operations.staff')
+  const tCrumbs = useTranslations('operations.crumbs')
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -214,8 +215,8 @@ export default function StaffPage() {
         {/* TopBar — breadcrumb + period nav + W/M toggle in the right slot. */}
         <TopBar
           crumbs={[
-            { label: 'Operations' },
-            { label: 'Staff', active: true },
+            { label: tCrumbs('operations') },
+            { label: tCrumbs('staff'), active: true },
           ]}
           rightSlot={
             <>

@@ -9,7 +9,34 @@
     "eyebrowYtdMonths":"YTD — {year} · {count, plural, one {# MÅNAD LOGGAD} other {# MÅNADER LOGGADE}}",
     "ytdProfit":      "YTD-resultat",
     "loading":        "Laddar…",
-    "loadingDaily":   "Laddar dagsdata…"
+    "loadingDaily":   "Laddar dagsdata…",
+    "crumb": {
+      "financials":   "Ekonomi",
+      "pnl":          "Resultatrapport"
+    },
+    "accountant": {
+      "button":       "📧 Revisor",
+      "exportTitle":  "Exportera {month} {year} till revisor"
+    },
+    "annual": {
+      "header":       "Årlig Fortnox-rapport · {year}",
+      "revenue":      "Intäkter",
+      "foodCost":     "Matkostnad",
+      "staffCost":    "Personalkostnad",
+      "otherCosts":   "Övriga kostnader",
+      "netProfit":    "Nettoresultat",
+      "footnote":     "{count} rader från Fortnox årsrapport. Ingen månadsuppdelning tillgänglig — ladda upp månads-PDF:erna för att se varje månad separat."
+    },
+    "narrative": {
+      "title":        "AI-resultat — {month} {year}"
+    },
+    "table": {
+      "month":        "Månad",
+      "revenueVsCost":"Intäkt mot kostnad",
+      "revenue":      "Intäkter",
+      "margin":       "Marginal",
+      "profit":       "Vinst"
+    }
   },
   "budget": {
     "eyebrowYearBudget":"{year} BUDGET",
@@ -19,17 +46,40 @@
       "noBudget":      "Ingen budget",
       "notStarted":    "Inte påbörjat"
     },
-    "loading":        "Laddar…"
+    "loading":        "Laddar…",
+    "crumb": {
+      "financials":   "Ekonomi",
+      "budget":       "Budget mot utfall"
+    },
+    "ai": {
+      "generate":     "Generera med AI",
+      "generating":   "Genererar…",
+      "title":        "Låt AI föreslå budgetar baserat på förra året + prognoser"
+    }
   },
   "forecast": {
     "loading":        "Laddar prognos…",
-    "loadingChart":   "Laddar…"
+    "loadingChart":   "Laddar…",
+    "crumb": {
+      "financials":   "Ekonomi",
+      "forecast":     "Prognos"
+    },
+    "refresh":        "Uppdatera prognos",
+    "syncing":        "Synkar…"
   },
   "performance": {
-    "loading":        "Laddar…"
+    "loading":        "Laddar…",
+    "crumb": {
+      "financials":   "Ekonomi",
+      "performance":  "Resultat"
+    }
   },
   "overheads": {
     "loading":        "Laddar omkostnader…",
-    "loadingPanel":   "Laddar…"
+    "loadingPanel":   "Laddar…",
+    "crumb": {
+      "financials":   "Ekonomi",
+      "overheads":    "Omkostnader"
+    }
   }
 }

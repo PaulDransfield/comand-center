@@ -48,8 +48,9 @@ function getMonthBounds(offset = 0) {
 }
 
 export default function DepartmentsPage() {
-  const router = useRouter()
-  const t      = useTranslations('operations.departments')
+  const router  = useRouter()
+  const t       = useTranslations('operations.departments')
+  const tCrumbs = useTranslations('operations.crumbs')
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
@@ -169,8 +170,8 @@ export default function DepartmentsPage() {
         {/* TopBar — breadcrumb + period nav + W/M toggle in the right slot */}
         <TopBar
           crumbs={[
-            { label: 'Operations' },
-            { label: 'Departments', active: true },
+            { label: tCrumbs('operations') },
+            { label: tCrumbs('departments'), active: true },
           ]}
           rightSlot={
             <>

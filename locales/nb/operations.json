@@ -4,6 +4,12 @@
     "_status": "awaiting_review",
     "_note":   "Sidelastere + delte elementer. Sidenes indre tekst er fortsatt engelsk; spores for oppfølgings-PR."
   },
+  "crumbs": {
+    "operations":  "Drift",
+    "revenue":     "Inntekt",
+    "staff":       "Ansatte",
+    "departments": "Avdelinger"
+  },
   "revenue": {
     "loading": "Laster…"
   },
