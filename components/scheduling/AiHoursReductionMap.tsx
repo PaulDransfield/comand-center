@@ -24,6 +24,7 @@
 // AiSchedulePanel on /scheduling stays live until Paul decides to swap.
 
 import { useMemo, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { UX } from '@/lib/constants/tokens'
 
 interface AcceptRow {
@@ -68,19 +69,28 @@ const C = {
   border:  UX.border,
 }
 
-const WEEKDAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS_SHORT_FALLBACK = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const WEEKDAYS_FALLBACK     = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 
-function dayLabel(iso: string): string {
-  const d = new Date(iso + 'T00:00:00Z')
-  const wd = (d.getUTCDay() + 6) % 7
-  return `${WEEKDAYS[wd]} ${d.getUTCDate()} ${MONTHS_SHORT[d.getUTCMonth()]}`
+// dayLabel is now built per-render with the locale's weekday + month arrays
+// (passed in by the caller) so e.g. Swedish renders "Mån 4 Maj".
+function makeDayLabel(weekdays: string[], monthsShort: string[]) {
+  return (iso: string): string => {
+    const d = new Date(iso + 'T00:00:00Z')
+    const wd = (d.getUTCDay() + 6) % 7
+    return `${weekdays[wd]} ${d.getUTCDate()} ${monthsShort[d.getUTCMonth()]}`
+  }
 }
 
 type Status = 'green' | 'amber' | 'gray-closed' | 'gray-nochange'
 
 export default function AiHoursReductionMap(props: Props) {
   const { loading, error, data, rangeLabel, acceptances, onAcceptAll, fmt, fmtHrs } = props
+  const t        = useTranslations('scheduling.aiMap')
+  const tCommon  = useTranslations('common')
+  const weekdays = (t.raw('weekDays') as string[]) ?? WEEKDAYS_FALLBACK
+  const months   = (tCommon.raw('time.monthsShort') as string[]) ?? MONTHS_SHORT_FALLBACK
+  const dayLabel = makeDayLabel(weekdays, months)
 
   const current   = (data?.current   as any[] | undefined) ?? []
   const suggested = (data?.suggested as any[] | undefined) ?? []
@@ -171,13 +181,13 @@ export default function AiHoursReductionMap(props: Props) {
   function handleDecide(date: string) {
     // Stub per design prompt — opens a placeholder for the booking-vs-pattern
     // drilldown modal. Real modal is out of scope for this build.
-    alert(`Decision drilldown for ${date} — booking-vs-pattern view coming next.`)
+    alert(t('drillStub', { date }))
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
-  if (loading) return <Loading />
-  if (error)   return <ErrorBox text={error} />
-  if (!data || pkShifts === 0) return <EmptyBox />
+  if (loading) return <Loading text={t('loading')} />
+  if (error)   return <ErrorBox text={t('errorPrefix', { message: error })} />
+  if (!data || pkShifts === 0) return <EmptyBox title={t('emptyTitle')} body={t('emptyBody')} />
 
   return (
     <div style={{ background: C.bgPage, padding: 24, borderRadius: UX.r_lg, maxWidth: 960 }}>
@@ -198,7 +208,7 @@ export default function AiHoursReductionMap(props: Props) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' as const }}>
           {/* Left: the headline labour-shift */}
           <div style={{ flex: '1 1 360px', minWidth: 0 }}>
-            <div style={eyebrow}>{rangeLabel.toUpperCase()} · LABOUR RATIO IMPACT</div>
+            <div style={eyebrow}>{t('hero.eyebrow', { range: rangeLabel.toUpperCase() })}</div>
             {weekCurPct != null && weekAiPct != null ? (
               <>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 8, flexWrap: 'wrap' as const }}>
@@ -210,16 +220,16 @@ export default function AiHoursReductionMap(props: Props) {
                     {Math.round(weekAiPct)}%
                   </span>
                   <span style={{ fontSize: 13, color: C.ink3, marginLeft: 4 }}>
-                    of revenue
+                    {t('hero.ofRevenue')}
                   </span>
                 </div>
                 <div style={{ fontSize: 12, color: C.ink3, marginTop: 6 }}>
-                  Current schedule · After applying {greenRows.length} ready day{greenRows.length === 1 ? '' : 's'}
+                  {t('hero.currentAfter', { count: greenRows.length })}
                 </div>
               </>
             ) : (
               <div style={{ fontSize: 14, color: C.ink3, marginTop: 8 }}>
-                No revenue forecast available — labour ratio can't be computed yet.
+                {t('hero.noForecast')}
               </div>
             )}
           </div>
@@ -227,18 +237,20 @@ export default function AiHoursReductionMap(props: Props) {
           {/* Right: the supporting stats */}
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' as const, alignItems: 'flex-start' }}>
             <HeroStat
-              label="SAVES"
+              label={t('hero.saves')}
               value={weekSavingsKr > 0 ? fmt(weekSavingsKr) : '—'}
               accent={weekSavingsKr > 0 ? C.green : C.ink3}
             />
             <HeroStat
-              label="HOURS CUT"
+              label={t('hero.hoursCut')}
               value={totalSavedH > 0.5 ? `−${fmtHrs(totalSavedH)}` : '—'}
               accent={totalSavedH > 0.5 ? C.green : C.ink3}
             />
             <HeroStat
-              label="DAYS"
-              value={`${greenRows.length} ready${amberRows.length ? ` · ${amberRows.length} amber` : ''}`}
+              label={t('hero.days')}
+              value={amberRows.length
+                ? t('hero.daysReadyAmber', { ready: greenRows.length, amber: amberRows.length })
+                : t('hero.daysReady',      { count: greenRows.length })}
               accent={C.ink2}
               small
             />
@@ -267,10 +279,10 @@ export default function AiHoursReductionMap(props: Props) {
           flexWrap:      'wrap' as const,
         }}>
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-            <div style={eyebrow}>READY TO IMPLEMENT</div>
+            <div style={eyebrow}>{t('ready.eyebrow')}</div>
             <div style={{ fontSize: 16, fontWeight: 500, color: C.ink, marginTop: 6, letterSpacing: '-0.01em' }}>
-              Open Personalkollen and trim {greenRows.length} day{greenRows.length === 1 ? '' : 's'} ·{' '}
-              <span style={{ color: C.green }}>save {fmt(weekSavingsKr)}</span>
+              {t('ready.title', { count: greenRows.length })} ·{' '}
+              <span style={{ color: C.green }}>{t('ready.savePrefix', { amount: fmt(weekSavingsKr) })}</span>
             </div>
             <div style={{ fontSize: 12, color: C.ink3, marginTop: 4 }}>
               {greenRows.map(r => `${dayLabel(r.date).split(' ')[0]} −${fmtHrs(r.deltaH)}`).join(' · ')}
@@ -296,9 +308,9 @@ export default function AiHoursReductionMap(props: Props) {
                 gap:            8,
                 whiteSpace:     'nowrap' as const,
               }}
-              title="Opens Personalkollen in a new tab — make the cuts there, then come back and click Apply to record them"
+              title={t('ready.openBtnTitle')}
             >
-              Open Personalkollen
+              {t('ready.openBtn')}
               <span aria-hidden style={{ fontSize: 16, marginTop: -2 }}>↗</span>
             </a>
           </div>
@@ -307,20 +319,20 @@ export default function AiHoursReductionMap(props: Props) {
 
       {/* ─── Section eyebrow above the day list ────────────────────────── */}
       <div style={{ ...eyebrow, marginBottom: 8 }}>
-        DAY-BY-DAY · {rangeLabel.toUpperCase()}
+        {t('section.eyebrow', { range: rangeLabel.toUpperCase() })}
       </div>
 
       {/* ─── Legend ────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' as const, marginBottom: 16, fontSize: 12, color: C.ink3 }}>
-        <LegendItem dot={C.green} text={`${greenRows.length} day${greenRows.length === 1 ? '' : 's'} · ready to apply`} />
-        <LegendItem dot={C.amber} text={`${amberRows.length} day${amberRows.length === 1 ? '' : 's'} · needs your call`} />
-        <LegendItem dot={C.gray}  text={`${nochange.length} unchanged · ${closedRows.length} closed`} />
+        <LegendItem dot={C.green} text={t('legend.ready',     { count: greenRows.length })} />
+        <LegendItem dot={C.amber} text={t('legend.needsCall', { count: amberRows.length })} />
+        <LegendItem dot={C.gray}  text={t('legend.unchanged', { unchanged: nochange.length, closed: closedRows.length })} />
       </div>
 
       {/* ─── Day rows ──────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6, marginBottom: 18 }}>
         {rows.map(r => (
-          <DayRow key={r.date} row={r} fmt={fmt} fmtHrs={fmtHrs} onDecide={handleDecide} />
+          <DayRow key={r.date} row={r} fmt={fmt} fmtHrs={fmtHrs} onDecide={handleDecide} t={t} dayLabel={dayLabel} />
         ))}
       </div>
 
@@ -341,7 +353,11 @@ export default function AiHoursReductionMap(props: Props) {
             opacity:      applying ? 0.65 : 1,
           }}
         >
-          {applying ? 'Applying…' : greenRows.length > 0 ? `Apply ${greenRows.length} ready day${greenRows.length === 1 ? '' : 's'}` : 'Nothing ready to apply'}
+          {applying
+            ? t('actions.applying')
+            : greenRows.length > 0
+              ? t('actions.apply', { count: greenRows.length })
+              : t('actions.nothingReady')}
         </button>
         {amberRows.length > 0 && (
           <button
@@ -357,15 +373,18 @@ export default function AiHoursReductionMap(props: Props) {
               cursor:       'pointer',
             }}
           >
-            Decide on {dayLabel(amberRows[0].date).split(' ')[0]}
+            {t('actions.decideOn', { day: dayLabel(amberRows[0].date).split(' ')[0] })}
           </button>
         )}
         <div style={{ marginLeft: 'auto', fontSize: 12, color: C.ink4 }}>
           {totalSavedH > 0.5 && (
             <>
-              −{fmtHrs(totalSavedH + amberPotentialH)} · {fmt(totalSavedKr + amberPotentialKr)} if all amber accepted
+              {t('actions.totalSummary', {
+                hours:  fmtHrs(totalSavedH + amberPotentialH),
+                amount: fmt(totalSavedKr + amberPotentialKr),
+              })}
               <span style={{ marginLeft: 8 }}>·</span>
-              <span style={{ marginLeft: 8 }}>{fmt(totalSavedKr)} green only</span>
+              <span style={{ marginLeft: 8 }}>{t('actions.greenOnly', { amount: fmt(totalSavedKr) })}</span>
             </>
           )}
         </div>
@@ -376,20 +395,22 @@ export default function AiHoursReductionMap(props: Props) {
 
 // ─── Day row ────────────────────────────────────────────────────────────────
 
-function DayRow({ row, fmt, fmtHrs, onDecide }: {
+function DayRow({ row, fmt, fmtHrs, onDecide, t, dayLabel }: {
   row: any
   fmt: (n: number) => string
   fmtHrs: (h: number) => string
   onDecide: (date: string) => void
+  t: any
+  dayLabel: (iso: string) => string
 }) {
   const borderColor = row.status === 'green' ? C.green : row.status === 'amber' ? C.amber : C.gray
   const opacity = row.status === 'gray-closed' ? 0.5 : row.isAccepted ? 0.7 : (row.status === 'gray-nochange' ? 0.65 : 1)
 
   // Sub-label
   let subLabel = ''
-  if (row.status === 'gray-closed')        subLabel = 'CLOSED'
-  else if (row.status === 'gray-nochange') subLabel = `${fmtHrs(row.curH)} · NO CHANGE`
-  else                                     subLabel = `CURRENTLY ${fmtHrs(row.curH)}`
+  if (row.status === 'gray-closed')        subLabel = t('row.subClosed')
+  else if (row.status === 'gray-nochange') subLabel = t('row.subNoChange',  { hours: fmtHrs(row.curH) })
+  else                                     subLabel = t('row.subCurrently', { hours: fmtHrs(row.curH) })
 
   return (
     <div style={{
@@ -417,27 +438,27 @@ function DayRow({ row, fmt, fmtHrs, onDecide }: {
       <div>
         {row.status === 'green' && (
           <>
-            <BarPair labelTop="NOW" labelBot="AI" topVal={row.curH} botVal={row.aiH} fmtHrs={fmtHrs} botColor={C.green}
-              note={row.reasoning || `Trim ${fmtHrs(row.deltaH)} from the day`} noteColor={C.ink3} accepted={row.isAccepted} />
-            <LabourLine curPct={row.curPct} aiPct={row.aiPct} curCost={row.curCost} aiCost={row.aiCost} fmt={fmt} accepted={row.isAccepted} tone="green" />
+            <BarPair labelTop={t('labels.now')} labelBot={t('labels.ai')} topVal={row.curH} botVal={row.aiH} fmtHrs={fmtHrs} botColor={C.green}
+              note={row.reasoning || t('row.noteTrim', { hours: fmtHrs(row.deltaH) })} noteColor={C.ink3} accepted={row.isAccepted} />
+            <LabourLine curPct={row.curPct} aiPct={row.aiPct} curCost={row.curCost} aiCost={row.aiCost} fmt={fmt} accepted={row.isAccepted} tone="green" t={t} />
           </>
         )}
         {row.status === 'amber' && (
           <>
-            <BarPair labelTop="IF PATTERN" labelBot="IF BOOKINGS" topVal={row.aiH} botVal={row.curH} fmtHrs={fmtHrs} botColor={C.amber} topColor={C.amber}
-              note={row.reasoning || 'Pattern says lighter, but you may know more — your call.'} noteColor={C.amber} labelWidth={70} />
-            <LabourLine curPct={row.curPct} aiPct={row.aiPct} curCost={row.curCost} aiCost={row.aiCost} fmt={fmt} tone="amber" />
+            <BarPair labelTop={t('labels.ifPattern')} labelBot={t('labels.ifBookings')} topVal={row.aiH} botVal={row.curH} fmtHrs={fmtHrs} botColor={C.amber} topColor={C.amber}
+              note={row.reasoning || t('row.amberDefault')} noteColor={C.amber} labelWidth={70} />
+            <LabourLine curPct={row.curPct} aiPct={row.aiPct} curCost={row.curCost} aiCost={row.aiCost} fmt={fmt} tone="amber" t={t} />
           </>
         )}
         {row.status === 'gray-closed' && (
-          <div style={{ fontSize: 12, color: C.ink4, fontStyle: 'italic' as const }}>No shifts posted — restaurant closed.</div>
+          <div style={{ fontSize: 12, color: C.ink4, fontStyle: 'italic' as const }}>{t('row.closedBody')}</div>
         )}
         {row.status === 'gray-nochange' && (
           <>
-            <div style={{ fontSize: 12, color: C.ink3 }}>{row.reasoning || 'Schedule already aligned with the pattern.'}</div>
+            <div style={{ fontSize: 12, color: C.ink3 }}>{row.reasoning || t('row.alignedBody')}</div>
             {row.curPct != null && (
               <div style={{ fontSize: 11, color: C.ink4, marginTop: 4 }}>
-                Labour {Math.round(row.curPct)}% of revenue — on target.
+                {t('row.labourOnTarget', { pct: Math.round(row.curPct) })}
               </div>
             )}
           </>
@@ -462,7 +483,7 @@ function DayRow({ row, fmt, fmtHrs, onDecide }: {
               ±{fmt(Math.abs(row.savingKr))}
             </div>
             <div style={{ fontSize: 11, color: C.ink4, marginTop: 2 }}>
-              −{fmtHrs(Math.max(0, row.deltaH))} or 0 h
+              {t('row.altText', { cut: `−${fmtHrs(Math.max(0, row.deltaH))}` })}
             </div>
           </>
         )}
@@ -475,8 +496,8 @@ function DayRow({ row, fmt, fmtHrs, onDecide }: {
       <div style={{ textAlign: 'right' as const }}>
         {row.status === 'green' && (
           row.isAccepted
-            ? <span style={{ fontSize: 11, color: C.green, fontWeight: 500 }}>✓ Applied</span>
-            : <span style={{ fontSize: 11, color: C.ink3 }}>Auto-apply</span>
+            ? <span style={{ fontSize: 11, color: C.green, fontWeight: 500 }}>{t('row.applied')}</span>
+            : <span style={{ fontSize: 11, color: C.ink3 }}>{t('row.autoApply')}</span>
         )}
         {row.status === 'amber' && (
           <button
@@ -492,7 +513,7 @@ function DayRow({ row, fmt, fmtHrs, onDecide }: {
               cursor:       'pointer',
             }}
           >
-            Decide
+            {t('row.decide')}
           </button>
         )}
         {(row.status === 'gray-closed' || row.status === 'gray-nochange') && (
@@ -557,7 +578,7 @@ function BarRow({ label, value, pct, color, fmtHrs, labelWidth, trackWidth }: {
 // Shows the actual decision metric — labour cost as a percent of revenue
 // (operators read 30–35 % as on-target). Renders kr in muted grey beside
 // the percent so the cost picture is also visible without dominating.
-function LabourLine({ curPct, aiPct, curCost, aiCost, fmt, accepted, tone }: {
+function LabourLine({ curPct, aiPct, curCost, aiCost, fmt, accepted, tone, t }: {
   curPct: number | null
   aiPct:  number | null
   curCost: number
@@ -565,11 +586,12 @@ function LabourLine({ curPct, aiPct, curCost, aiCost, fmt, accepted, tone }: {
   fmt: (n: number) => string
   accepted?: boolean
   tone: 'green' | 'amber'
+  t: any
 }) {
   if (curPct == null || aiPct == null) return null
   const arrow = '→'
   const accent = tone === 'green' ? C.green : C.amber
-  const verb   = tone === 'green' ? 'saves' : 'shift'
+  const verb   = tone === 'green' ? t('labour.saves') : t('labour.shift')
   const delta  = curCost - aiCost
   const sign   = delta > 0 ? '−' : delta < 0 ? '+' : ''
   return (
@@ -586,7 +608,7 @@ function LabourLine({ curPct, aiPct, curCost, aiCost, fmt, accepted, tone }: {
       textDecoration: accented(accepted),
     }}>
       <span style={{ color: C.ink4, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontSize: 10 }}>
-        Labour
+        {t('labour.labour')}
       </span>
       <span style={{ color: C.ink2, fontWeight: 500 }}>
         {Math.round(curPct)}%
@@ -595,7 +617,7 @@ function LabourLine({ curPct, aiPct, curCost, aiCost, fmt, accepted, tone }: {
       <span style={{ color: accent, fontWeight: 500 }}>
         {Math.round(aiPct)}%
       </span>
-      <span style={{ color: C.ink4 }}>· of revenue</span>
+      <span style={{ color: C.ink4 }}>{t('labour.ofRevenue')}</span>
       <span style={{ color: C.ink4 }}>·</span>
       <span style={{ color: C.ink3 }}>
         {verb} <span style={{ color: accent, fontWeight: 500 }}>{sign}{fmt(Math.abs(delta))}</span>
@@ -640,23 +662,23 @@ function LegendItem({ dot, text }: { dot: string; text: string }) {
   )
 }
 
-function Loading() {
-  return <div style={{ padding: 60, textAlign: 'center' as const, color: C.ink4, fontSize: 13 }}>Loading the AI hours map…</div>
+function Loading({ text }: { text: string }) {
+  return <div style={{ padding: 60, textAlign: 'center' as const, color: C.ink4, fontSize: 13 }}>{text}</div>
 }
 
 function ErrorBox({ text }: { text: string }) {
   return (
     <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: UX.r_lg, color: '#b91c1c', fontSize: 13 }}>
-      Couldn't load the AI suggestion: {text}
+      {text}
     </div>
   )
 }
 
-function EmptyBox() {
+function EmptyBox({ title, body }: { title: string; body: string }) {
   return (
     <div style={{ padding: 40, textAlign: 'center' as const, color: C.ink3, fontSize: 13, background: C.bgCard, borderRadius: UX.r_lg, border: `1px solid ${C.border}` }}>
-      <div style={{ fontWeight: 500, marginBottom: 6, color: C.ink }}>No PK shifts found for this window</div>
-      <div>Either the schedule isn't published yet in Personalkollen, or the integration needs reconnecting.</div>
+      <div style={{ fontWeight: 500, marginBottom: 6, color: C.ink }}>{title}</div>
+      <div>{body}</div>
     </div>
   )
 }

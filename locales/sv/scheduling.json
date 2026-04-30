@@ -35,6 +35,74 @@
     "no_data":      "Ingen data",
     "no_dataHint":  "Färre än 2 dagar sammankopplad data för denna veckodag."
   },
+  "aiMap": {
+    "loading":         "Laddar AI-timkartan…",
+    "errorPrefix":     "Kunde inte ladda AI-förslaget: {message}",
+    "emptyTitle":      "Inga PK-pass hittades för detta fönster",
+    "emptyBody":       "Antingen är schemat inte publicerat än i Personalkollen, eller så behöver integrationen återanslutas.",
+    "weekDays":        ["Mån","Tis","Ons","Tor","Fre","Lör","Sön"],
+    "hero": {
+      "eyebrow":       "{range} · PERSONAL-KVOT-EFFEKT",
+      "ofRevenue":     "av intäkter",
+      "currentAfter":  "Nuvarande schema · Efter att ha tillämpat {count, plural, one {# klar dag} other {# klara dagar}}",
+      "noForecast":    "Ingen intäktsprognos tillgänglig — personalkvot kan inte beräknas än.",
+      "saves":         "SPARAR",
+      "hoursCut":      "TIMMAR KAPADE",
+      "days":          "DAGAR",
+      "daysReady":     "{count, plural, one {# klar} other {# klara}}",
+      "daysReadyAmber":"{ready, plural, one {# klar} other {# klara}} · {amber, plural, one {# bärnsten} other {# bärnsten}}"
+    },
+    "ready": {
+      "eyebrow":       "REDO ATT IMPLEMENTERA",
+      "title":         "Öppna Personalkollen och kapa {count, plural, one {# dag} other {# dagar}}",
+      "savePrefix":    "spara {amount}",
+      "openBtn":       "Öppna Personalkollen",
+      "openBtnTitle":  "Öppnar Personalkollen i ny flik — gör kapningen där, kom tillbaka och klicka Tillämpa för att registrera"
+    },
+    "section": {
+      "eyebrow":       "DAG-FÖR-DAG · {range}"
+    },
+    "legend": {
+      "ready":         "{count, plural, one {# dag · redo att tillämpa} other {# dagar · redo att tillämpa}}",
+      "needsCall":     "{count, plural, one {# dag · kräver din bedömning} other {# dagar · kräver din bedömning}}",
+      "unchanged":     "{unchanged} oförändrade · {closed} stängda"
+    },
+    "row": {
+      "subClosed":     "STÄNGT",
+      "subNoChange":   "{hours} · INGEN ÄNDRING",
+      "subCurrently":  "FÖR NÄRVARANDE {hours}",
+      "noteTrim":      "Kapa {hours} från dagen",
+      "amberDefault":  "Mönstret säger lättare, men du kan veta mer — din bedömning.",
+      "closedBody":    "Inga pass publicerade — restaurangen stängd.",
+      "alignedBody":   "Schemat redan i linje med mönstret.",
+      "labourOnTarget":"Personal {pct}% av intäkter — på mål.",
+      "applied":       "✓ Tillämpat",
+      "autoApply":     "Auto-tillämpa",
+      "decide":        "Bedöm",
+      "altText":       "{cut} eller 0 h"
+    },
+    "labels": {
+      "now":           "NU",
+      "ai":            "AI",
+      "ifPattern":     "VID MÖNSTER",
+      "ifBookings":    "VID BOKNINGAR"
+    },
+    "labour": {
+      "labour":        "Personal",
+      "ofRevenue":     "· av intäkter",
+      "saves":         "sparar",
+      "shift":         "skifte"
+    },
+    "actions": {
+      "applying":      "Tillämpar…",
+      "apply":         "Tillämpa {count, plural, one {# klar dag} other {# klara dagar}}",
+      "nothingReady":  "Inget klart att tillämpa",
+      "decideOn":      "Bedöm {day}",
+      "totalSummary":  "−{hours} · {amount} om alla bärnsten godkänns",
+      "greenOnly":     "{amount} endast gröna"
+    },
+    "drillStub":       "Beslutsdetaljer för {date} — boknings-mot-mönster-vy kommer härnäst."
+  },
   "drill": {
     "headerEyebrow":  "{day} i {period}",
     "loading":        "Laddar…",

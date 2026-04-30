@@ -35,6 +35,74 @@
     "no_data":      "Ingen data",
     "no_dataHint":  "Færre enn 2 dager med sammenkoblet data for denne ukedagen."
   },
+  "aiMap": {
+    "loading":         "Laster AI-timekartet…",
+    "errorPrefix":     "Kunne ikke laste AI-forslaget: {message}",
+    "emptyTitle":      "Ingen PK-skift funnet for dette vinduet",
+    "emptyBody":       "Enten er vaktplanen ikke publisert ennå i Personalkollen, eller så må integrasjonen kobles til på nytt.",
+    "weekDays":        ["Man","Tir","Ons","Tor","Fre","Lør","Søn"],
+    "hero": {
+      "eyebrow":       "{range} · BEMANNINGSANDEL-EFFEKT",
+      "ofRevenue":     "av inntekter",
+      "currentAfter":  "Nåværende vaktplan · Etter å ha brukt {count, plural, one {# klar dag} other {# klare dager}}",
+      "noForecast":    "Ingen inntektsprognose tilgjengelig — bemanningsandel kan ikke beregnes ennå.",
+      "saves":         "SPARER",
+      "hoursCut":      "TIMER KUTTET",
+      "days":          "DAGER",
+      "daysReady":     "{count, plural, one {# klar} other {# klare}}",
+      "daysReadyAmber":"{ready, plural, one {# klar} other {# klare}} · {amber, plural, one {# rav} other {# rav}}"
+    },
+    "ready": {
+      "eyebrow":       "KLAR TIL Å IMPLEMENTERE",
+      "title":         "Åpne Personalkollen og kutt {count, plural, one {# dag} other {# dager}}",
+      "savePrefix":    "spar {amount}",
+      "openBtn":       "Åpne Personalkollen",
+      "openBtnTitle":  "Åpner Personalkollen i ny fane — gjør kuttene der, kom tilbake og klikk Bruk for å registrere"
+    },
+    "section": {
+      "eyebrow":       "DAG-FOR-DAG · {range}"
+    },
+    "legend": {
+      "ready":         "{count, plural, one {# dag · klar til å brukes} other {# dager · klare til å brukes}}",
+      "needsCall":     "{count, plural, one {# dag · krever din avgjørelse} other {# dager · krever din avgjørelse}}",
+      "unchanged":     "{unchanged} uendret · {closed} stengt"
+    },
+    "row": {
+      "subClosed":     "STENGT",
+      "subNoChange":   "{hours} · INGEN ENDRING",
+      "subCurrently":  "FOR ØYEBLIKKET {hours}",
+      "noteTrim":      "Kutt {hours} fra dagen",
+      "amberDefault":  "Mønsteret sier lettere, men du kan vite mer — din avgjørelse.",
+      "closedBody":    "Ingen skift lagt opp — restaurant stengt.",
+      "alignedBody":   "Vaktplan allerede i tråd med mønsteret.",
+      "labourOnTarget":"Bemanning {pct}% av inntekter — på mål.",
+      "applied":       "✓ Brukt",
+      "autoApply":     "Auto-bruk",
+      "decide":        "Avgjør",
+      "altText":       "{cut} eller 0 t"
+    },
+    "labels": {
+      "now":           "NÅ",
+      "ai":            "AI",
+      "ifPattern":     "VED MØNSTER",
+      "ifBookings":    "VED BOOKINGER"
+    },
+    "labour": {
+      "labour":        "Bemanning",
+      "ofRevenue":     "· av inntekter",
+      "saves":         "sparer",
+      "shift":         "skift"
+    },
+    "actions": {
+      "applying":      "Bruker…",
+      "apply":         "Bruk {count, plural, one {# klar dag} other {# klare dager}}",
+      "nothingReady":  "Ingenting klart å bruke",
+      "decideOn":      "Avgjør {day}",
+      "totalSummary":  "−{hours} · {amount} hvis alle rav godkjennes",
+      "greenOnly":     "{amount} kun grønne"
+    },
+    "drillStub":       "Beslutningsdetaljer for {date} — booking-mot-mønster-visning kommer snart."
+  },
   "drill": {
     "headerEyebrow":  "{day} i {period}",
     "loading":        "Laster…",

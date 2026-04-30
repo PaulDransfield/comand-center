@@ -9,6 +9,7 @@
 // group / enterprise have unlimited queries, so they shouldn't see this component at all.
 
 import { useState }      from 'react'
+import { useTranslations } from 'next-intl'
 import { createClient }  from '@/lib/supabase/client'
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function AiLimitReached({ used, limit, plan }: Props) {
+  const t = useTranslations('askai.limitReached')
   const [checkingOut, setCheckingOut] = useState(false)
   const [error,       setError]       = useState('')
 
@@ -39,10 +41,10 @@ export default function AiLimitReached({ used, limit, plan }: Props) {
         body: JSON.stringify({ plan: 'ai_addon' }),
       })
       const data = await res.json()
-      if (!res.ok || !data.url) throw new Error(data.error ?? 'Checkout failed')
+      if (!res.ok || !data.url) throw new Error(data.error ?? t('checkoutFailed'))
       window.location.href = data.url
     } catch (e: any) {
-      setError(e.message ?? 'Something went wrong')
+      setError(e.message ?? t('somethingWrong'))
       setCheckingOut(false)
     }
   }
@@ -54,28 +56,28 @@ export default function AiLimitReached({ used, limit, plan }: Props) {
           <span style={{ fontSize: 18 }}>✦</span>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={S.title}>You've hit today's AI limit</div>
-          <div style={S.meta}>{used} of {limit} queries used · resets tomorrow</div>
+          <div style={S.title}>{t('title')}</div>
+          <div style={S.meta}>{t('meta', { used, limit })}</div>
         </div>
       </div>
 
       {isTrial ? (
         <>
           <div style={S.pitch}>
-            The AI Booster is available on any paid plan — giving you +100 queries per day.
+            {t('trialPitch')}
           </div>
           <a href="/upgrade?focus=ai" style={S.primaryBtn}>
-            See upgrade options →
+            {t('trialCta')}
           </a>
         </>
       ) : (
         <>
           <div style={S.boosterBox}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span style={S.boosterTag}>AI BOOSTER</span>
-              <span style={S.price}>+299 kr / mo</span>
+              <span style={S.boosterTag}>{t('boosterTag')}</span>
+              <span style={S.price}>{t('boosterPrice')}</span>
             </div>
-            <div style={S.boosterDesc}>+100 AI queries per day, on top of your plan limit. Cancel anytime.</div>
+            <div style={S.boosterDesc}>{t('boosterDesc')}</div>
           </div>
 
           <button
@@ -83,11 +85,11 @@ export default function AiLimitReached({ used, limit, plan }: Props) {
             disabled={checkingOut}
             style={{ ...S.primaryBtn, border: 'none', cursor: checkingOut ? 'not-allowed' : 'pointer', opacity: checkingOut ? 0.6 : 1 }}
           >
-            {checkingOut ? 'Redirecting to checkout…' : 'Add AI Booster →'}
+            {checkingOut ? t('redirecting') : t('addBooster')}
           </button>
 
           <a href="/upgrade?focus=ai" style={S.secondary}>
-            Compare plans
+            {t('comparePlans')}
           </a>
         </>
       )}

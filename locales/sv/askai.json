@@ -21,6 +21,20 @@
     "send":        "Skicka",
     "hint":        "Enter för att skicka · Shift+Enter för ny rad"
   },
+  "limitReached": {
+    "title":         "Du har nått dagens AI-gräns",
+    "meta":          "{used} av {limit} frågor använda · återställs imorgon",
+    "trialPitch":    "AI-tillägget är tillgängligt på alla betalda abonnemang — ger dig +100 frågor per dag.",
+    "trialCta":      "Se uppgraderingsalternativ →",
+    "boosterTag":    "AI-TILLÄGG",
+    "boosterPrice":  "+299 kr / mån",
+    "boosterDesc":   "+100 AI-frågor per dag, ovanpå din abonnemangsgräns. Avsluta när som helst.",
+    "redirecting":   "Omdirigerar till kassan…",
+    "addBooster":    "Lägg till AI-tillägg →",
+    "comparePlans":  "Jämför abonnemang",
+    "checkoutFailed":"Kassan misslyckades",
+    "somethingWrong":"Något gick fel"
+  },
   "suggestions": {
     "dashboard": {
       "q1":        "Hur går denna månad mot förra?",

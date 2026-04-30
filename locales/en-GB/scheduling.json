@@ -35,6 +35,74 @@
     "no_data":      "No data",
     "no_dataHint":  "Fewer than 2 days of joined data for this weekday."
   },
+  "aiMap": {
+    "loading":         "Loading the AI hours map…",
+    "errorPrefix":     "Couldn't load the AI suggestion: {message}",
+    "emptyTitle":      "No PK shifts found for this window",
+    "emptyBody":       "Either the schedule isn't published yet in Personalkollen, or the integration needs reconnecting.",
+    "weekDays":        ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+    "hero": {
+      "eyebrow":       "{range} · LABOUR RATIO IMPACT",
+      "ofRevenue":     "of revenue",
+      "currentAfter":  "Current schedule · After applying {count, plural, one {# ready day} other {# ready days}}",
+      "noForecast":    "No revenue forecast available — labour ratio can't be computed yet.",
+      "saves":         "SAVES",
+      "hoursCut":      "HOURS CUT",
+      "days":          "DAYS",
+      "daysReady":     "{count, plural, one {# ready} other {# ready}}",
+      "daysReadyAmber":"{ready, plural, one {# ready} other {# ready}} · {amber, plural, one {# amber} other {# amber}}"
+    },
+    "ready": {
+      "eyebrow":       "READY TO IMPLEMENT",
+      "title":         "Open Personalkollen and trim {count, plural, one {# day} other {# days}}",
+      "savePrefix":    "save {amount}",
+      "openBtn":       "Open Personalkollen",
+      "openBtnTitle":  "Opens Personalkollen in a new tab — make the cuts there, then come back and click Apply to record them"
+    },
+    "section": {
+      "eyebrow":       "DAY-BY-DAY · {range}"
+    },
+    "legend": {
+      "ready":         "{count, plural, one {# day · ready to apply} other {# days · ready to apply}}",
+      "needsCall":     "{count, plural, one {# day · needs your call} other {# days · needs your call}}",
+      "unchanged":     "{unchanged} unchanged · {closed} closed"
+    },
+    "row": {
+      "subClosed":     "CLOSED",
+      "subNoChange":   "{hours} · NO CHANGE",
+      "subCurrently":  "CURRENTLY {hours}",
+      "noteTrim":      "Trim {hours} from the day",
+      "amberDefault":  "Pattern says lighter, but you may know more — your call.",
+      "closedBody":    "No shifts posted — restaurant closed.",
+      "alignedBody":   "Schedule already aligned with the pattern.",
+      "labourOnTarget":"Labour {pct}% of revenue — on target.",
+      "applied":       "✓ Applied",
+      "autoApply":     "Auto-apply",
+      "decide":        "Decide",
+      "altText":       "{cut} or 0 h"
+    },
+    "labels": {
+      "now":           "NOW",
+      "ai":            "AI",
+      "ifPattern":     "IF PATTERN",
+      "ifBookings":    "IF BOOKINGS"
+    },
+    "labour": {
+      "labour":        "Labour",
+      "ofRevenue":     "· of revenue",
+      "saves":         "saves",
+      "shift":         "shift"
+    },
+    "actions": {
+      "applying":      "Applying…",
+      "apply":         "Apply {count, plural, one {# ready day} other {# ready days}}",
+      "nothingReady":  "Nothing ready to apply",
+      "decideOn":      "Decide on {day}",
+      "totalSummary":  "−{hours} · {amount} if all amber accepted",
+      "greenOnly":     "{amount} green only"
+    },
+    "drillStub":       "Decision drilldown for {date} — booking-vs-pattern view coming next."
+  },
   "drill": {
     "headerEyebrow":  "{day}s in {period}",
     "loading":        "Loading…",

@@ -21,6 +21,20 @@
     "send":        "Send",
     "hint":        "Enter to send · Shift+Enter for new line"
   },
+  "limitReached": {
+    "title":         "You've hit today's AI limit",
+    "meta":          "{used} of {limit} queries used · resets tomorrow",
+    "trialPitch":    "The AI Booster is available on any paid plan — giving you +100 queries per day.",
+    "trialCta":      "See upgrade options →",
+    "boosterTag":    "AI BOOSTER",
+    "boosterPrice":  "+299 kr / mo",
+    "boosterDesc":   "+100 AI queries per day, on top of your plan limit. Cancel anytime.",
+    "redirecting":   "Redirecting to checkout…",
+    "addBooster":    "Add AI Booster →",
+    "comparePlans":  "Compare plans",
+    "checkoutFailed":"Checkout failed",
+    "somethingWrong":"Something went wrong"
+  },
   "suggestions": {
     "dashboard": {
       "q1":        "How is this month tracking vs last month?",

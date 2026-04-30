@@ -21,6 +21,20 @@
     "send":        "Send",
     "hint":        "Enter for å sende · Shift+Enter for ny linje"
   },
+  "limitReached": {
+    "title":         "Du har nådd dagens AI-grense",
+    "meta":          "{used} av {limit} spørringer brukt · nullstilles i morgen",
+    "trialPitch":    "AI-tillegget er tilgjengelig på alle betalte abonnementer — gir deg +100 spørringer per dag.",
+    "trialCta":      "Se oppgraderingsalternativer →",
+    "boosterTag":    "AI-TILLEGG",
+    "boosterPrice":  "+299 kr / mnd",
+    "boosterDesc":   "+100 AI-spørringer per dag, på toppen av abonnementsgrensen. Avbryt når som helst.",
+    "redirecting":   "Omdirigerer til kassen…",
+    "addBooster":    "Legg til AI-tillegg →",
+    "comparePlans":  "Sammenlign abonnementer",
+    "checkoutFailed":"Kassen mislyktes",
+    "somethingWrong":"Noe gikk galt"
+  },
   "suggestions": {
     "dashboard": {
       "q1":        "Hvordan ligger denne måneden an mot forrige?",
