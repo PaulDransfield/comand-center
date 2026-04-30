@@ -74,7 +74,14 @@ Data imported:
 
 Tone: warm, brief, tell them what they can now explore. End with one suggested first action.`
 
-  let bodyText = `Your data is live in CommandCenter! ${shifts} shifts have been imported` 
+  // Resolve owner locale once: drives both AI prompt language and the
+  // localised email subject + UI labels below.
+  const { resolveLocaleForOrg, localePromptFragment } = await import('@/lib/ai/locale')
+  const { getEmailMessages } = await import('@/lib/email/i18n')
+  const ownerLocale = await resolveLocaleForOrg(db, org_id)
+  const tEmail      = await getEmailMessages(ownerLocale)
+
+  let bodyText = `Your data is live in CommandCenter! ${shifts} shifts have been imported`
   if (business_name) bodyText += ` for ${business_name}`
   bodyText += '.'
 
@@ -84,6 +91,7 @@ Tone: warm, brief, tell them what they can now explore. End with one suggested f
     const response = await claude.messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: MAX_TOKENS.AGENT_SUMMARY,
+      system:     localePromptFragment(ownerLocale),
       messages:   [{ role: 'user', content: prompt }],
     })
     const text = (response.content?.[0] as any)?.text?.trim()
@@ -125,9 +133,9 @@ Tone: warm, brief, tell them what they can now explore. End with one suggested f
   await sendEmail({
     from:    'CommandCenter <hello@comandcenter.se>',
     to:      user.email,
-    subject: 'Your CommandCenter data is live',
+    subject: tEmail('onboarding.subjectWelcome'),
     html:    emailHtml,
-    context: { kind: 'onboarding_data_live', user_id: user.id, integration_id },
+    context: { kind: 'onboarding_data_live', user_id: user.id, integration_id, locale: ownerLocale },
   })
 
   if (integration_id) {

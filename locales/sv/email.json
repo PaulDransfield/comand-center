@@ -1,0 +1,78 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "common": {
+    "from":         "CommandCenter",
+    "footerLine":   "CommandCenter — Restaurang-intelligensplattform",
+    "weekLabel":    "Vecka {weekNum} — {from} till {to}"
+  },
+  "weeklyDigest": {
+    "subject":      "Måndags-memo — {weekLabel}",
+    "greeting":     "God morgon ☕",
+    "subhead":      "{weekLabel} · {orgName}",
+    "unsubscribe":  "Avregistrera från veckosammanfattning",
+    "memo": {
+      "weekOf":         "Vecka",
+      "h1":             "Måndags-memo från din AI-chef",
+      "actionsHeader":  "Rekommenderade åtgärder",
+      "feedbackAsk":    "Var detta memo användbart?",
+      "useful":         "👍 Användbart",
+      "notUseful":      "👎 Inte användbart",
+      "schedLink":      "Visa schemajämförelse →",
+      "pnlLink":        "Resultatdetaljer →",
+      "generatedBy":    "Genererat av CommandCenter AI",
+      "unsubscribeShort":"Avregistrera"
+    },
+    "kpi": {
+      "revenue":      "Intäkter",
+      "vsBudget":     "mot budget",
+      "foodCost":     "Matkostnad",
+      "staffCost":    "Personalkostnad",
+      "covers":       "Gäster",
+      "vsLastWeek":   "mot förra veckan",
+      "revPerCover":  "Intäkt / gäst",
+      "previousWeek": "förra veckan",
+      "revenuePerCover": "Intäkt per gäst",
+      "noBudget":     "Ingen budget",
+      "noBudgetSet":  "Ingen budget satt",
+      "ofBudget":     "{pct}% av budget",
+      "budgetLabel":  "Budget: {value}",
+      "trendFlat":    "→ oförändrat"
+    },
+    "outstanding": {
+      "header":  "⚠ Förfallna fakturor ({count})",
+      "vendor":  "Leverantör",
+      "amount":  "Belopp",
+      "dueDate": "Förfallodatum"
+    },
+    "topSuppliers": {
+      "header":   "Största leverantörsfakturor denna vecka",
+      "vendor":   "Leverantör",
+      "amount":   "Belopp",
+      "category": "Kategori"
+    }
+  },
+  "anomaly": {
+    "subjectCritical": "⚠ Kritiskt: {title}",
+    "subjectHigh":     "⚠ Hög varning: {title}",
+    "subject":         "Avvikelse upptäckt: {title}",
+    "greeting":        "Vi upptäckte något värt att kolla på",
+    "viewInApp":       "Visa i CommandCenter →",
+    "footerLine":      "Avvikelsedetektering · CommandCenter"
+  },
+  "onboarding": {
+    "subjectWelcome":  "Välkommen till CommandCenter — din data är redo",
+    "subjectSetup":    "Ditt CommandCenter-konto sätts upp",
+    "greetingNamed":   "Hej {name},",
+    "greetingPlain":   "Hej,",
+    "openDashboard":   "Öppna dashboard →",
+    "supportLine":     "Frågor? Svara på detta mejl eller skriv till hello@comandcenter.se."
+  },
+  "aiDaily": {
+    "subject":     "Din dagliga AI-sammanfattning — {date}",
+    "greeting":    "God morgon",
+    "footerLine":  "Daglig AI-sammanfattning · CommandCenter"
+  }
+}

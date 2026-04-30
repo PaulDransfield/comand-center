@@ -42,7 +42,13 @@ export async function POST(req: NextRequest) {
   const fromDate   = lastMonday.toISOString().slice(0, 10)
 
   const weekNum  = Math.ceil((lastMonday.getTime() - new Date(lastMonday.getFullYear(), 0, 1).getTime()) / 604800000)
+  // Default-locale week label, used for DB persistence (key_metrics.week)
+  // and the cron-summary log line. The user-facing email subject is
+  // re-built per-org below using the owner's locale.
   const weekLabel = `Week ${weekNum} — ${lastMonday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} to ${lastSunday.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`
+
+  const { resolveLocaleForOrg } = await import('@/lib/ai/locale')
+  const { getEmailMessages }    = await import('@/lib/email/i18n')
 
   // All active orgs
   const { data: orgs } = await db
@@ -150,14 +156,45 @@ export async function POST(req: NextRequest) {
         console.warn(`[digest] briefings persist failed for ${org.name}:`, bErr.message)
       }
 
+      // Per-org locale lookup happens once below; localised labels are
+      // shared across every section in this org's email.
+      const ownerLocaleEarly = await resolveLocaleForOrg(db, org.id)
+      const tEarly           = await getEmailMessages(ownerLocaleEarly)
+      const memoLabels = {
+        weekOf:        tEarly('weeklyDigest.memo.weekOf'),
+        h1:            tEarly('weeklyDigest.memo.h1'),
+        actionsHeader: tEarly('weeklyDigest.memo.actionsHeader'),
+        feedbackAsk:   tEarly('weeklyDigest.memo.feedbackAsk'),
+        useful:        tEarly('weeklyDigest.memo.useful'),
+        notUseful:     tEarly('weeklyDigest.memo.notUseful'),
+        schedLink:     tEarly('weeklyDigest.memo.schedLink'),
+        pnlLink:       tEarly('weeklyDigest.memo.pnlLink'),
+        generatedBy:   tEarly('weeklyDigest.memo.generatedBy'),
+        unsubscribe:   tEarly('weeklyDigest.memo.unsubscribeShort'),
+      }
+
       // Build the email — one memo per business, stacked. Each section's
       // feedback links are signed against that business's briefing id.
       const htmlSections = bizMemos.map(b =>
-        memoEmailHtml(b.ctx, b.memo, appUrl, org.id, briefingIdByBusiness[b.biz.id] ?? null),
+        memoEmailHtml(b.ctx, b.memo, appUrl, org.id, briefingIdByBusiness[b.biz.id] ?? null, memoLabels),
       )
       const combinedHtml = bizMemos.length === 1
         ? htmlSections[0]
         : `<!doctype html><html><body style="margin:0;padding:0;background:#f5f5f0;">${htmlSections.join('<div style="height:12px;background:#f5f5f0;"></div>')}</body></html>`
+
+      // Per-org locale: subject + intra-email labels render in the owner's
+      // chosen language. Memo body content (AI narrative + actions) is
+      // already locale-aware via PR3's locale prompt fragment in
+      // generateWeeklyMemo. We re-use ownerLocaleEarly + tEarly resolved
+      // above so we hit DB / disk only once per org.
+      const ownerLocale = ownerLocaleEarly
+      const tEmail      = tEarly
+      const localisedWeekLabel = tEmail('common.weekLabel', {
+        weekNum,
+        from: lastMonday.toLocaleDateString(ownerLocale === 'sv' ? 'sv-SE' : ownerLocale === 'nb' ? 'nb-NO' : 'en-GB', { day: 'numeric', month: 'short' }),
+        to:   lastSunday.toLocaleDateString(ownerLocale === 'sv' ? 'sv-SE' : ownerLocale === 'nb' ? 'nb-NO' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      })
+      const localisedSubject = tEmail('weeklyDigest.subject', { weekLabel: localisedWeekLabel })
 
       if (!resendKey) {
         console.log(`[digest] dry-run (no RESEND_API_KEY) would send ${bizMemos.length} memo(s) to ${ownerEmail}`)
@@ -167,9 +204,9 @@ export async function POST(req: NextRequest) {
         const emailRes = await sendEmail({
           from:    'CommandCenter <digest@comandcenter.se>',
           to:      ownerEmail,
-          subject: `Monday memo — ${weekLabel}`,
+          subject: localisedSubject,
           html:    combinedHtml,
-          context: { kind: 'weekly_digest', org_id: org.id, org_name: org.name, week_label: weekLabel },
+          context: { kind: 'weekly_digest', org_id: org.id, org_name: org.name, week_label: weekLabel, locale: ownerLocale },
         })
         if (emailRes.ok) {
           sent++

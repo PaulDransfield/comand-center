@@ -155,6 +155,13 @@ export async function POST(req: NextRequest) {
           const Anthropic = (await import('@anthropic-ai/sdk')).default
           const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
+          // Resolve owner locale once for both the AI body (system prompt
+          // language steering) and the email subject + greeting.
+          const { resolveLocaleForOrg, localePromptFragment } = await import('@/lib/ai/locale')
+          const { getEmailMessages } = await import('@/lib/email/i18n')
+          const ownerLocale = await resolveLocaleForOrg(db, integration.org_id)
+          const tEmail      = await getEmailMessages(ownerLocale)
+
           const prompt = `You are writing a welcome email for a restaurant owner who just connected their ${businessInfo.integration_type} integration to CommandCenter.
 
 BUSINESS: ${businessInfo.name} in ${businessInfo.city}
@@ -181,6 +188,7 @@ Format as plain text email body (no HTML).`
           const response = await claude.messages.create({
             model: AI_MODELS.AGENT, // Uses Haiku 4.5
             max_tokens: MAX_TOKENS.AGENT_SUMMARY,
+            system: localePromptFragment(ownerLocale),
             messages: [{ role: 'user', content: prompt }],
           })
 
@@ -208,10 +216,10 @@ Format as plain text email body (no HTML).`
               const emailResult = await sendEmail({
                 from:    'CommandCenter <welcome@comandcenter.se>',
                 to:      userEmail,
-                subject: `Welcome to CommandCenter, ${businessData.name}!`,
+                subject: tEmail('onboarding.subjectWelcome'),
                 html:    emailBody.replace(/\n/g, '<br/>'),
                 text:    emailBody,
-                context: { kind: 'onboarding_welcome', business_id: businessData.id, business: businessData.name },
+                context: { kind: 'onboarding_welcome', business_id: businessData.id, business: businessData.name, locale: ownerLocale },
               })
               if (emailResult.ok) {
                 emailsSent.push({ business: businessData.name, email: userEmail, message_id: emailResult.messageId })
