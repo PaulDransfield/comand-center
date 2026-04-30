@@ -497,7 +497,7 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
           borderTop: '0.5px solid rgba(255,255,255,0.06)',
           padding: '8px 12px',
         }}>
-          <LanguageSelector variant="compact" onTone="dark" />
+          <LanguageSelector variant="compact" onTone="dark" placement="top" />
         </div>
       )}
 

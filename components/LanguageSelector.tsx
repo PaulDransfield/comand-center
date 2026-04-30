@@ -18,12 +18,17 @@ import { useLocale } from 'next-intl'
 import { LOCALES, LOCALE_LABELS, LOCALE_FLAGS, type Locale } from '@/lib/i18n/config'
 
 export function LanguageSelector({
-  variant = 'compact',
-  onTone  = 'light',
+  variant   = 'compact',
+  onTone    = 'light',
+  placement = 'bottom',
 }: {
   variant?: 'compact' | 'inline'
   /** 'light' = white surfaces (e.g. landing). 'dark' = navy sidebar. */
   onTone?:  'light' | 'dark'
+  /** Compact-variant menu position. 'top' = open upward (use when the
+   *  trigger sits near the viewport bottom, like the sidebar footer).
+   *  'bottom' (default) opens downward. */
+  placement?: 'top' | 'bottom'
 }) {
   const current = useLocale() as Locale
   const [open,    setOpen]    = useState<boolean>(false)
@@ -105,7 +110,9 @@ export function LanguageSelector({
           onMouseLeave={() => setOpen(false)}
           style={{
             position: 'absolute' as const,
-            top:      'calc(100% + 4px)',
+            ...(placement === 'top'
+              ? { bottom: 'calc(100% + 4px)' }
+              : { top:    'calc(100% + 4px)' }),
             right:    0,
             background: onTone === 'dark' ? '#0f1421' : 'white',
             border:     `1px solid ${onTone === 'dark' ? 'rgba(255,255,255,0.12)' : '#e5e7eb'}`,
