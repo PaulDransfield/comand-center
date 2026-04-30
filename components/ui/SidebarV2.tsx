@@ -24,6 +24,7 @@ import { createClient } from '@/lib/supabase/client'
 import { UX } from '@/lib/constants/tokens'
 import SyncIndicator from './SyncIndicator'
 import { canAccessPath, type AuthSubject } from '@/lib/auth/permissions'
+import { LanguageSelector } from '@/components/LanguageSelector'
 
 interface Business {
   id:         string
@@ -482,6 +483,18 @@ export default function SidebarV2({ activeKey }: SidebarV2Props) {
           {!collapsed && <span>Settings</span>}
         </button>
       </div>
+
+      {/* Language selector — M044 / i18n PR 1. Sits above the user-row
+          so the user can flip languages even when the picker dropdown
+          would overflow. dark tone matches sidebar surface. */}
+      {!collapsed && (
+        <div style={{
+          borderTop: '0.5px solid rgba(255,255,255,0.06)',
+          padding: '8px 12px',
+        }}>
+          <LanguageSelector variant="compact" onTone="dark" />
+        </div>
+      )}
 
       {/* User + sign out */}
       {!collapsed && (

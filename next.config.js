@@ -1,6 +1,12 @@
 // next.config.js
 const { withSentryConfig } = require('@sentry/nextjs')
 
+// next-intl plugin — points at the request-config file that resolves
+// locale + loads message JSON per request. Wraps the final config below
+// alongside Sentry + the bundle analyzer.
+const createNextIntlPlugin = require('next-intl/plugin')
+const withNextIntl = createNextIntlPlugin('./i18n/request.ts')
+
 // Bundle analyzer — runs only when ANALYZE=true is set on the build. Zero
 // runtime impact, dev-only inspection. Usage:
 //   ANALYZE=true npm run build
@@ -100,7 +106,7 @@ const nextConfig = {
 // don't block error reports.
 // withBundleAnalyzer is the outer wrapper — it inspects the final config
 // (post-Sentry) and emits the visualisation reports when ANALYZE=true.
-module.exports = withBundleAnalyzer(withSentryConfig(nextConfig, {
+module.exports = withBundleAnalyzer(withNextIntl(withSentryConfig(nextConfig, {
   // NOTE: this is the SENTRY org slug (from sentry.io/settings/). It is
   // intentionally different from our Vercel org slug (`paul-7076s-projects`).
   // Getting this wrong makes the release-upload step 404 silently — symptom
@@ -124,4 +130,4 @@ module.exports = withBundleAnalyzer(withSentryConfig(nextConfig, {
   // Proxy Sentry calls through /monitoring so adblockers don't block them
   tunnelRoute: '/monitoring',
 
-}))
+})))

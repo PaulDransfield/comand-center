@@ -20,6 +20,7 @@
     "gpt-tokenizer": "^2.1.2",
     "micro": "^10.0.1",
     "next": "14.2.0",
+    "next-intl": "^4.11.0",
     "pdf-parse": "^2.4.5",
     "posthog-js": "^1.364.7",
     "react": "^18.3.0",

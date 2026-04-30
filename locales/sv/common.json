@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "label":   "Svenska",
+    "_status": "stub — PR 2 will populate every UI string"
+  },
+  "lang": {
+    "en-GB":  "English",
+    "sv":     "Svenska",
+    "nb":     "Norsk"
+  },
+  "common": {
+    "save":   "Spara",
+    "cancel": "Avbryt",
+    "loading": "Laddar…",
+    "error":   "Något gick fel"
+  }
+}

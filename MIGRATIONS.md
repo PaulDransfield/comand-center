@@ -1,10 +1,17 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-29 | M022–M041 all applied · M042 pending · M043 pending
+> Last updated: 2026-04-30 | M022–M041 all applied · M042 pending · M043 pending · M044 pending
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M044 — Per-user locale preference (i18n PR 1)
+**File:** `M044-USER-LOCALE.sql` (repo root)
+**Purpose:** part of FIXES.md §0be. Adds `organisation_members.locale` (TEXT, default 'en-GB', CHECK in {`en-GB`, `sv`, `nb`}). Authenticated users persist their language pick on the membership row so it survives across devices and sessions. Anonymous visitors are cookie-only until they sign up — at which point the cookie value migrates into this column.
+**Backwards compat:** every existing member gets `locale='en-GB'` (the current default behaviour). The selector lets them flip; pre-i18n-rollout the value was unused so no semantic change.
+**Safety:** `ADD COLUMN IF NOT EXISTS`, idempotent CHECK. Wrapped in `BEGIN; … COMMIT;`.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M043 — Member roles + scoping (manager access)
 **File:** `M043-MEMBER-ROLES-AND-SCOPING.sql` (repo root)

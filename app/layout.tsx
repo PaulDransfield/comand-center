@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import CookieConsent from '@/components/CookieConsent'
+import { NextIntlClientProvider } from 'next-intl'
+import { getLocale, getMessages } from 'next-intl/server'
 
 export const metadata: Metadata = {
   title: {
@@ -15,9 +17,16 @@ export const metadata: Metadata = {
   },
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // M044: read locale + messages on the server so the first paint is in
+  // the user's chosen language. next-intl's request config (i18n/request.ts)
+  // resolves locale from cookie / Accept-Language; the cookie is the
+  // source of truth post-first-visit.
+  const locale   = await getLocale()
+  const messages = await getMessages()
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -35,7 +44,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="dns-prefetch" href="https://llzmixkrysduztsvmfzi.supabase.co" />
       </head>
       <body style={{ margin: 0, padding: 0, background: '#f8f9fa', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-        {children}
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          {children}
+        </NextIntlClientProvider>
         <CookieConsent />
       </body>
     </html>

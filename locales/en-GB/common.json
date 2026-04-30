@@ -1,0 +1,18 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "label":   "English",
+    "_status": "stub — PR 2 will populate every UI string. Currently the i18n scaffolding loads this file but no component reads from it yet."
+  },
+  "lang": {
+    "en-GB":  "English",
+    "sv":     "Svenska",
+    "nb":     "Norsk"
+  },
+  "common": {
+    "save":   "Save",
+    "cancel": "Cancel",
+    "loading": "Loading…",
+    "error":   "Something went wrong"
+  }
+}

@@ -3,6 +3,55 @@ Last updated: 2026-04-30
 
 ---
 
+## 0be. i18n — PR 1: infrastructure + selector (en-GB / sv / nb) (2026-04-30)
+
+**Scope:** the scaffolding for full i18n. Library installed, request-config wired, selector component shipped (compact dropdown for sidebar + inline pills for landing), schema column for per-user locale, locale-switch endpoint. **No UI strings translated yet** — that's PR 2's full sweep. Today: clicking the selector flips the cookie + DB and reloads the page; once strings are extracted in PR 2, this same selector becomes the way users actually change language.
+
+**Created:**
+- `M044-USER-LOCALE.sql` — pending. `organisation_members.locale TEXT DEFAULT 'en-GB' CHECK (en-GB|sv|nb)`.
+- `lib/i18n/config.ts` — single source of truth for the locale list, defaults, labels, flags, and helpers (`asLocale`, `detectLocaleFromAcceptLanguage`). Adding a fourth locale = one entry here + new files under `locales/<code>/`.
+- `i18n/request.ts` — next-intl entry. Resolves locale from cookie or Accept-Language; loads message JSON for the resolved locale across all namespaces.
+- `locales/en-GB/common.json`, `locales/sv/common.json`, `locales/nb/common.json` — seed files with a few starter keys so PR 2's sweep has somewhere to land. Each has a `_status: 'stub'` note.
+- `app/api/auth/locale/route.ts` — POST `{ locale }`. Sets the cookie + persists to `organisation_members.locale` when authed. Returns 400 on invalid input. Auth-optional so anonymous landing-page visitors can flip too.
+- `components/LanguageSelector.tsx` — two visual modes:
+  - `compact` — flag pill that pops a dropdown (sidebar context, dark surface)
+  - `inline` — row of flag pills (landing-page context, light surface)
+  Switch flow: POST → cookie + DB write → `window.location.reload()`. Hard reload because next-intl needs a fresh request to re-evaluate the cookie and load the new language pack server-side.
+
+**Modified:**
+- `package.json` — added `next-intl@^4.11.0`.
+- `next.config.js` — wraps the existing Sentry + bundle-analyzer chain with `withNextIntl(...)` pointing at `./i18n/request.ts`.
+- `app/layout.tsx` — async server component now. Reads `getLocale()` + `getMessages()` and wraps children in `<NextIntlClientProvider>`. `<html lang>` reflects the resolved locale so screen readers get it right.
+- `components/ui/SidebarV2.tsx` — `<LanguageSelector variant="compact" onTone="dark" />` rendered above the user/sign-out row.
+
+**Reused:**
+- The PR 5 admin v2 sub-tab pattern + standard auth flow.
+- `getRequestAuth` (no changes needed — locale is read directly from `organisation_members` in the locale-switch endpoint, not via auth).
+- Cookie + DB dual-write pattern from the earlier auth work.
+
+**Honest gaps surfaced:**
+- **No strings actually translated yet.** Clicking "Svenska" today flips the cookie + reloads, but every UI string still renders in English because none of the components have been ported to `useTranslations()`. PR 2 does that sweep — extract every literal string into translation keys, populate Swedish + Norwegian. ~few-hundred strings across the app.
+- **AI surfaces still English-only.** `/api/ask`, narrative endpoints, budget AI all use English-only system prompts. PR 3 plumbs the user's locale through the prompt: `Respond in ${locale}`.
+- **Email templates not yet localised.** PR 4. ~10 transactional templates.
+- **Landing page selector not wired yet.** Component supports the `inline` variant; PR 5 wires it into the marketing site header.
+- **Translator quality** — for PR 2 I'll do the Swedish + Norwegian myself. Strongly recommend a fluent native speaker review before launch — idioms and tone are where machine translation falls down. We can ship marked `_status: 'awaiting_review'` and iterate.
+- **Norwegian = Bokmål only.** Nynorsk skipped (10% of population, low priority for v1, polite-to-support later).
+- **Hard reload on locale switch** is the simplest correct path. `router.refresh()` doesn't reliably clear next-intl's cached messages. ~200 ms reload is acceptable; users only flip language once.
+
+**Verified:**
+- `git status` shows: 1 new SQL file, 6 new source files, 4 modified files, package.json + lock, FIXES + MIGRATIONS + tsbuild cache.
+- `npx tsc --noEmit` clean.
+- `npm run build` passes — every page rendered, layout now async, NextIntlClientProvider in place, no 500s.
+
+**Action required from Paul:**
+1. Apply `M044-USER-LOCALE.sql` in Supabase SQL Editor.
+2. Refresh the dashboard → sidebar bottom now has a flag-pill language picker. Click → dropdown shows English / Svenska / Norsk. Pick one → page reloads, cookie + DB row updated. (UI still in English until PR 2.)
+3. Verify `SELECT locale, COUNT(*) FROM organisation_members GROUP BY locale;` reflects the click.
+
+**Next: PR 2 — string extraction sweep.** I'll walk every page, extract literals into translation keys, populate Swedish + Norwegian. This is the bulk of the i18n work — probably 4-6 hours of focused mechanical edits across ~30 component files.
+
+---
+
 ## 0bd. /api/group owner-only gate + /overheads/review category filter (2026-04-30)
 
 **Two small wins shipped together — both autonomous, no migration, no schema:**
