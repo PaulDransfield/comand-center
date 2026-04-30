@@ -21,6 +21,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { explainOverheadFlags, EXPLAIN_ERROR } from '@/lib/overheads/ai-explanation'
 import { normaliseSupplier, pickDisplayLabel } from '@/lib/overheads/normalise'
+import { getLocaleFromRequest } from '@/lib/ai/locale'
 import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic     = 'force-dynamic'
@@ -132,6 +133,7 @@ export async function POST(req: NextRequest, { params }: { params: { flagId: str
       total_overheads_sek: rollup?.other_cost ? Number(rollup.other_cost) : undefined,
       benchmarks:          Object.keys(benchmarks).length > 0 ? benchmarks : undefined,
     },
+    locale: getLocaleFromRequest(req),
   })
 
   if (explanations.length === 0) {

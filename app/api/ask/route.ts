@@ -20,6 +20,7 @@ import { checkAndIncrementAiLimit, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE }                from '@/lib/ai/scope'
 import { INDUSTRY_BENCHMARKS, VOICE, DATA_GAPS } from '@/lib/ai/rules'
 import { buildAskContext }           from '@/lib/ai/contextBuilder'
+import { aiLocaleFromRequest }       from '@/lib/ai/locale'
 import { log }                       from '@/lib/log/structured'
 
 export const runtime     = 'nodejs'
@@ -33,11 +34,16 @@ export const maxDuration = 60
 // call, so we send it as a cache_control ephemeral system block — cuts input
 // token cost by ~80% on this endpoint, which is the hottest Claude surface
 // in the app.
+// Static block — identical across every call regardless of locale, so it
+// stays in the prompt cache. The "respond in language X" instruction is
+// appended as a second tiny block at request time (see localeFragment
+// usage below) so we can support en-GB / sv / nb without busting the
+// cache for the static rules.
 const SYSTEM_PROMPT = `You are an AI assistant built into CommandCenter, a business intelligence platform for restaurant groups in Sweden.
 
 You help restaurant operators understand their data — staff costs, revenue, margins, department performance, and forecasts.
 
-Answer in the same language as the question (Swedish or English). Never invent numbers that aren't in the context provided. If you cannot answer from the context, say so clearly and explain what data would be needed.
+Never invent numbers that aren't in the context provided. If you cannot answer from the context, say so clearly and explain what data would be needed.
 
 ${INDUSTRY_BENCHMARKS}
 
@@ -133,10 +139,19 @@ export async function POST(req: NextRequest) {
     // marking it as cache_control ephemeral lets Anthropic reuse the KV
     // cache for 5 minutes and bill the cached tokens at ~10% of normal.
     // Typical hot-path saving: ~80% of input token cost.
+    //
+    // Locale fragment is a second, uncached block (~80 tokens, 3 distinct
+    // values across all users). Splitting it lets the static rules cache
+    // hit even when users query in different languages — without this
+    // the cache would bust on every locale switch.
+    const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
     const response = await (claude as any).messages.create({
       model,
       max_tokens: maxTokens,
-      system:     [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+      system: [
+        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: localeFragment },
+      ],
       messages:   [{ role: 'user', content: userMessage }],
     })
     answer = (response.content[0] as any).text ?? 'No response'

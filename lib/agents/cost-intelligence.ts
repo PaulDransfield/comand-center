@@ -14,6 +14,7 @@
 import { AI_MODELS, MAX_TOKENS }           from '@/lib/ai/models'
 import { logAiRequest, checkAiLimit }      from '@/lib/ai/usage'
 import { SCOPE_NOTE }                      from '@/lib/ai/scope'
+import { localePromptFragment, resolveLocaleForOrg } from '@/lib/ai/locale'
 
 export interface CostIntelInput {
   orgId:      string
@@ -170,11 +171,16 @@ Output ONLY the JSON object.`
         required: ['insights'],
       },
     }
+    // Background-worker context: no request cookie. Look up the org
+    // owner's saved locale so insight `title` + `description` strings
+    // appear in the right language when surfaced.
+    const ownerLocale = await resolveLocaleForOrg(db, orgId)
     const response  = await (client as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
       tools:      [submitInsightsTool],
       tool_choice: { type: 'tool', name: 'submit_cost_insights' },
+      system:     localePromptFragment(ownerLocale),
       messages:   [{ role: 'user', content: prompt }],
     }, { signal: abort.signal as any })
     const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')

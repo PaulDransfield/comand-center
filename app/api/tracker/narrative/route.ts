@@ -20,6 +20,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { logAiRequest } from '@/lib/ai/usage'
+import { aiLocaleFromRequest } from '@/lib/ai/locale'
 import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic    = 'force-dynamic'
@@ -212,9 +213,11 @@ Write the paragraph now.`
   try {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
     const response  = await claude.messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: MAX_TOKENS.AGENT_SUMMARY,
+      system:     localeFragment,
       messages:   [{ role: 'user', content: prompt }],
     })
     const text = (response.content?.[0] as any)?.text?.trim() ?? ''

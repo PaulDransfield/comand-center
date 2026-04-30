@@ -10,6 +10,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
+import { aiLocaleFromRequest } from '@/lib/ai/locale'
 import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic    = 'force-dynamic'
@@ -405,11 +406,17 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     }
 
     const startedAt = Date.now()
+    // Locale fragment goes in the system prompt so Claude renders the
+    // free-text fields (`strategy` paragraph + per-month `reasoning`) in
+    // the user's language. Forced tool_use means we cannot use
+    // extended thinking, but a system prompt is allowed.
+    const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
     const response = await (claude as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: 2500,
       tools:      [submitBudgetTool],
       tool_choice: { type: 'tool', name: 'submit_budget' },
+      system:     localeFragment,
       messages:   [{ role: 'user', content: prompt }],
     })
 

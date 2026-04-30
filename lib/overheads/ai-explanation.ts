@@ -23,6 +23,8 @@
 
 import { AI_MODELS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
+import { localePromptFragment } from '@/lib/ai/locale'
+import type { Locale } from '@/lib/i18n/config'
 
 interface FlagInput {
   id:                       string
@@ -62,8 +64,13 @@ export async function explainOverheadFlags(args: {
   orgId:    string
   flags:    FlagInput[]
   business: BusinessContext
+  /** Owner's UI locale — Claude's free-text `explanation` field renders
+   *  in this language. Default 'en-GB' (background-worker callers without
+   *  a request context). The user-clicked /api/overheads/explain route
+   *  threads the cookie locale in. */
+  locale?:  Locale
 }): Promise<ExplainResult[]> {
-  const { db, orgId, flags, business } = args
+  const { db, orgId, flags, business, locale = 'en-GB' } = args
   if (flags.length === 0) return []
 
   // Build the prompt. Compact, business-context-tagged, bullet list of flags.
@@ -141,6 +148,10 @@ Confidence: 0.0-1.0. High (>0.8) when the explanation is concrete and supported 
       max_tokens: 1500,
       tools:      [submitTool],
       tool_choice:{ type: 'tool', name: 'submit_flag_explanations' },
+      // Locale fragment ensures the per-flag `explanation` strings are
+      // rendered in the owner's language. Other tool fields (flag_id,
+      // confidence) are locale-neutral.
+      system:     localePromptFragment(locale),
       messages:   [{ role: 'user', content: prompt }],
     }, { signal: abort.signal as any })
 

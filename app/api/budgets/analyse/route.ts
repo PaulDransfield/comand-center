@@ -19,6 +19,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
+import { aiLocaleFromRequest } from '@/lib/ai/locale'
 import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic     = 'force-dynamic'
@@ -218,11 +219,13 @@ Return JSON only, no markdown fence, no prose outside JSON:
     }
 
     const startedAt = Date.now()
+    const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
     const response = await (claude as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: 800,
       tools:      [submitAnalysisTool],
       tool_choice: { type: 'tool', name: 'submit_analysis' },
+      system:     localeFragment,
       messages:   [{ role: 'user', content: prompt }],
     })
 

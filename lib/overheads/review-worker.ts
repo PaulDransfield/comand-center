@@ -321,6 +321,10 @@ async function runExplanationPass(
   } catch { /* table missing — fine */ }
 
   const { explainOverheadFlags } = await import('./ai-explanation')
+  const { resolveLocaleForOrg }  = await import('@/lib/ai/locale')
+  // Worker context — no request cookie, so look up the owner's saved
+  // locale from organisation_members. Falls through to en-GB if absent.
+  const ownerLocale = await resolveLocaleForOrg(db, orgId)
   const explanations = await explainOverheadFlags({
     db,
     orgId,
@@ -330,6 +334,7 @@ async function runExplanationPass(
       total_overheads_sek:  rollup?.other_cost ? Number(rollup.other_cost) : undefined,
       benchmarks:           Object.keys(benchmarks).length > 0 ? benchmarks : undefined,
     },
+    locale:   ownerLocale,
   })
   if (explanations.length === 0) return
 
