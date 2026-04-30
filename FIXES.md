@@ -3,6 +3,35 @@ Last updated: 2026-04-30
 
 ---
 
+## 0bc. Stripe `customer_tax_ids` real eu_vat (dormant until Stripe wired) (2026-04-30)
+
+**Scope:** upgrade the org-nr → Stripe sync from "metadata only" to a real `tax_id` resource on the customer. For Swedish VAT-registered companies, Stripe carries this on every invoice automatically — no display-rule juggling needed.
+
+**Modified:**
+- `app/api/settings/company-info/route.ts` — after the existing `customer.metadata` sync, attempt to create a Stripe tax_id of type `eu_vat` with value `SE${orgNr}01` (Skatteverket's canonical VAT-number format: SE prefix + 10-digit org-nr + "01" sub-account suffix). Replaces any existing SE eu_vat first to keep the customer record clean. Skipped + logged when Stripe rejects (customer not VAT-registered) — metadata sync still wins, so non-registered customers fall back to display-via-metadata.
+
+**Response now includes:**
+- `stripe_synced` — metadata write succeeded (existing field)
+- `tax_id_synced` — eu_vat tax_id created/updated successfully
+- `tax_id_rejected` — Stripe rejected the value (most likely: customer not VAT-registered)
+
+**Why dormant works:** the entire Stripe block is gated on `stripe_customer_id && STRIPE_SECRET_KEY`. Until you wire Stripe up (env var set, customers being created in Stripe via checkout), the code is a pure no-op — every save returns `stripe_synced: false, tax_id_synced: false`. The moment Stripe goes live, every existing org-nr re-saves on demand and the tax_ids land. Owner clicks "Save" again on `/settings/company` to trigger.
+
+**Honest gaps:**
+- **No automatic backfill for existing orgs.** Once Stripe is wired, owners with an org-nr already set need to re-save the field to push it to Stripe. Could add a one-shot script later if it matters (`for each org with org_number set: hit the endpoint`).
+- **Format check delegated to Stripe.** We don't pre-validate that the org-nr is VAT-registered (it's not free to check Skatteverket's API). Stripe rejects invalid ones; the rejection is logged and the metadata fallback still applies.
+- **`SE${orgNr}01` assumes the standard sub-account.** A small minority of multi-entity Swedish companies use `02`/`03` for sub-divisions. We don't expose that yet — would need a per-org override. Defer until a customer hits it.
+
+**Verified:** TypeScript clean, build passes. No new files, no migration. Code is dormant until Stripe is connected; activates automatically.
+
+**Action required from Paul:** none for now (Stripe not connected). Once you wire Stripe:
+1. Set `STRIPE_SECRET_KEY` in production env.
+2. Ensure customers have `stripe_customer_id` set (happens via checkout flow).
+3. Re-save your org-nr on `/settings/company` → response shows `tax_id_synced: true`.
+4. Verify in Stripe dashboard → customer → "Tax IDs" tab → SE eu_vat row visible.
+
+---
+
 ## 0bb. Manager role — slice 3a (route guard sweep + scope filter) (2026-04-30)
 
 **Scope:** finishing the API-side defence-in-depth on the manager role. Slice 2 guarded the high-value finance routes; this slice guards the remaining ones (narrative, accountant-summary, budget AI, overheads peripherals) so a manager can't fetch finance data via curl regardless of which endpoint they target. Plus `/api/businesses` now respects `business_ids` so a scoped manager only sees their assigned restaurants in the sidebar picker, dashboard switcher, and every other surface that consumes the businesses list.

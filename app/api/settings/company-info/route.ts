@@ -85,15 +85,31 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Push the org-nr to Stripe so future invoices carry it as metadata.
-  // Best-effort: a Stripe outage shouldn't block the owner from setting
-  // the field locally. Failure logs to console + Sentry but the response
-  // still reports success on our side.
-  let stripeSynced = false
+  // Push the org-nr to Stripe.
+  //
+  // Two pieces:
+  //   1. customer.metadata — universal, always succeeds. Future invoices
+  //      can include the org-nr via Stripe's display rules.
+  //   2. customer.taxIds — structured tax_id resource. For Swedish
+  //      VAT-registered companies this should be eu_vat type with value
+  //      `SE${orgNr}01` (the trailing "01" is the legal-entity sub-account
+  //      identifier used by Skatteverket). Stripe validates the format
+  //      server-side; non-VAT-registered companies (e.g. sole proprietors
+  //      below the registration threshold) get rejected, in which case
+  //      we keep the metadata-only state.
+  //
+  // Both are best-effort. The whole block is skipped when STRIPE_SECRET_KEY
+  // isn't set (Stripe not yet wired) — code is dormant until that happens,
+  // then activates automatically.
+  let stripeSynced  = false
+  let taxIdSynced   = false
+  let taxIdRejected = false
   if (orgRow?.stripe_customer_id && process.env.STRIPE_SECRET_KEY) {
     try {
       const Stripe = (await import('stripe')).default
       const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' as any })
+
+      // Metadata sync — always attempt.
       await stripe.customers.update(orgRow.stripe_customer_id, {
         metadata: {
           org_number:         check.value,
@@ -102,11 +118,43 @@ export async function POST(req: NextRequest) {
         },
       })
       stripeSynced = true
+
+      // Tax-ID sync — replace any existing SE eu_vat with the current
+      // org-nr. Delete-then-create keeps the resource clean (Stripe doesn't
+      // expose an update-in-place for tax_ids). Skipped if the create
+      // throws: that signals the customer isn't VAT-registered, which is
+      // fine — metadata is still in place for invoice display.
+      const targetVatValue = `SE${check.value}01`
+      try {
+        // The Stripe Node SDK exposes tax-id methods directly on the
+        // customers resource: listTaxIds / createTaxId / deleteTaxId.
+        const customers: any = stripe.customers
+        const existing = await customers.listTaxIds(orgRow.stripe_customer_id, { limit: 100 })
+        const stale = (existing.data ?? []).filter((t: any) =>
+          t?.type === 'eu_vat' && typeof t?.value === 'string' && t.value.startsWith('SE')
+        )
+        const alreadyMatches = stale.length === 1 && stale[0].value === targetVatValue
+        if (!alreadyMatches) {
+          for (const t of stale) {
+            try { await customers.deleteTaxId(orgRow.stripe_customer_id, t.id) } catch { /* skip */ }
+          }
+          await customers.createTaxId(orgRow.stripe_customer_id, {
+            type:  'eu_vat',
+            value: targetVatValue,
+          })
+        }
+        taxIdSynced = true
+      } catch (taxErr: any) {
+        // Stripe rejects when the value isn't a VAT-registered SE org-nr.
+        // The metadata sync already succeeded; that's the universal fallback.
+        taxIdRejected = true
+        console.warn('[company-info] Stripe tax_id sync rejected:', taxErr?.message)
+      }
     } catch (e: any) {
-      // Common reasons: Stripe customer was deleted, key rotated, network blip.
-      // None of these should block the owner — we record the field locally
-      // and Stripe sync can be retried via "save again" later.
-      console.warn('[company-info] Stripe metadata sync failed:', e?.message)
+      // Outer failure — Stripe outage, deleted customer, key rotated.
+      // Local save already happened above; surfaces as stripe_synced=false
+      // so the UI can show a non-blocking warning.
+      console.warn('[company-info] Stripe sync failed:', e?.message)
     }
   }
 
@@ -115,5 +163,7 @@ export async function POST(req: NextRequest) {
     org_number:         check.value,
     org_number_display: formatOrgNr(check.value),
     stripe_synced:      stripeSynced,
+    tax_id_synced:      taxIdSynced,
+    tax_id_rejected:    taxIdRejected,
   })
 }
