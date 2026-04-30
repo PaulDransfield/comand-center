@@ -20,6 +20,7 @@ import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { VOICE, INDUSTRY_BENCHMARKS } from '@/lib/ai/rules'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -28,9 +29,11 @@ export async function GET(req: NextRequest) {
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const bizId = req.nextUrl.searchParams.get('business_id')
   if (!bizId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const bizForbidden = requireBusinessAccess(auth, bizId); if (bizForbidden) return bizForbidden
 
   const db  = createAdminClient()
   const now = new Date()

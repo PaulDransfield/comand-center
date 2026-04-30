@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireFinanceAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,7 @@ export async function GET(req: NextRequest) {
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const db = createAdminClient()
   const { data, error } = await db

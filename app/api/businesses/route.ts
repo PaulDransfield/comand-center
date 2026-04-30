@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse }          from 'next/server'
 import { createAdminClient, getRequestAuth }  from '@/lib/supabase/server'
 import { colourForIndex }                     from '@/context/BizContext'
+import { filterAccessibleBusinesses }         from '@/lib/auth/permissions'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -29,8 +30,21 @@ export async function GET(req: NextRequest) {
 
   if (!businesses?.length) return NextResponse.json([])
 
+  // M043: scope filter — managers with business_ids set only see their
+  // assigned subset. Owners and unscoped managers (business_ids=null) get
+  // the full list. Sidebar business-picker, dashboard switcher, and every
+  // other surface that lists businesses inherits this filter.
+  const allowedIds = new Set(
+    filterAccessibleBusinesses(
+      { role: auth.role as any, business_ids: auth.businessIds, can_view_finances: auth.canViewFinances },
+      businesses.map(b => b.id),
+    )
+  )
+  const scoped = businesses.filter(b => allowedIds.has(b.id))
+  if (!scoped.length) return NextResponse.json([])
+
   // Filter inactive unless ?all=true (settings page uses ?all=true)
-  const filtered = showAll ? businesses : businesses.filter(b => b.is_active !== false)
+  const filtered = showAll ? scoped : scoped.filter(b => b.is_active !== false)
 
   const { data: trackerRows } = await adminDb
     .from('tracker_data')

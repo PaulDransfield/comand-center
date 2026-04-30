@@ -21,6 +21,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { explainOverheadFlags } from '@/lib/overheads/ai-explanation'
 import { normaliseSupplier, pickDisplayLabel } from '@/lib/overheads/normalise'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest, { params }: { params: { flagId: str
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const { flagId } = params
   if (!flagId) return NextResponse.json({ error: 'flagId required' }, { status: 400 })
@@ -44,6 +46,9 @@ export async function POST(req: NextRequest, { params }: { params: { flagId: str
     .maybeSingle()
   if (fErr)  return NextResponse.json({ error: fErr.message }, { status: 500 })
   if (!flag) return NextResponse.json({ error: 'flag not found in your org' }, { status: 404 })
+  // M043: scope-check after load — manager assigned to specific businesses
+  // can only re-explain flags for those.
+  const bizForbidden = requireBusinessAccess(auth, flag.business_id); if (bizForbidden) return bizForbidden
 
   // Business profile for context.
   const { data: biz } = await db

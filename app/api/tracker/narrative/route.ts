@@ -20,6 +20,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
 import { logAiRequest } from '@/lib/ai/usage'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
   noStore()
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const u      = new URL(req.url)
   const bizId  = u.searchParams.get('business_id')
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest) {
   let   month  = Number(u.searchParams.get('month') ?? 0)
 
   if (!bizId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const bizForbidden = requireBusinessAccess(auth, bizId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
 

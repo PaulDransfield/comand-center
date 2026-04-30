@@ -19,6 +19,7 @@ import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
 import { checkAiLimit, incrementAiUsage, logAiRequest } from '@/lib/ai/usage'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
@@ -29,6 +30,7 @@ const fmt = (n: any) => (n === null || n === undefined) ? null : Math.round(Numb
 export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const body = await req.json().catch(() => ({}))
   const businessId = body.business_id
@@ -37,6 +39,7 @@ export async function POST(req: NextRequest) {
   if (!businessId || !year || !month) {
     return NextResponse.json({ error: 'business_id, year, month required' }, { status: 400 })
   }
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
 

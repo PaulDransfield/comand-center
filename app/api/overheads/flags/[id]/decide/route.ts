@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,7 @@ const DECISION_TO_RESOLUTION: Record<string, string> = {
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const { id: flagId } = params
   if (!flagId) return NextResponse.json({ error: 'flag id required' }, { status: 400 })
@@ -55,6 +57,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .maybeSingle()
   if (lErr)  return NextResponse.json({ error: lErr.message }, { status: 500 })
   if (!flag) return NextResponse.json({ error: 'flag not found in your org' }, { status: 404 })
+  // M043: scope-check after the flag's business is known.
+  const bizForbidden = requireBusinessAccess(auth, flag.business_id); if (bizForbidden) return bizForbidden
 
   // ── Classification side ─────────────────────────────────────────────────
   // 'deferred' doesn't write a classification — we want the next period to

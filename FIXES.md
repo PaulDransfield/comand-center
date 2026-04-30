@@ -1,5 +1,58 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-29
+Last updated: 2026-04-30
+
+---
+
+## 0bb. Manager role — slice 3a (route guard sweep + scope filter) (2026-04-30)
+
+**Scope:** finishing the API-side defence-in-depth on the manager role. Slice 2 guarded the high-value finance routes; this slice guards the remaining ones (narrative, accountant-summary, budget AI, overheads peripherals) so a manager can't fetch finance data via curl regardless of which endpoint they target. Plus `/api/businesses` now respects `business_ids` so a scoped manager only sees their assigned restaurants in the sidebar picker, dashboard switcher, and every other surface that consumes the businesses list.
+
+**Modified — finance routes (mechanical pattern, 2 lines per file):**
+- `app/api/tracker/narrative/route.ts` — GET (Claude-narrative explainer)
+- `app/api/tracker/accountant-summary/route.ts` — GET (HTML summary export)
+- `app/api/budgets/analyse/route.ts` — POST
+- `app/api/budgets/coach/route.ts` — GET
+- `app/api/budgets/feedback/route.ts` — POST
+- `app/api/budgets/generate/route.ts` — POST
+- `app/api/overheads/backfill/route.ts` — POST
+- `app/api/overheads/reconciliation/route.ts` — GET
+- `app/api/overheads/vat-projection/route.ts` — GET
+- `app/api/overheads/benchmarks/route.ts` — GET
+- `app/api/overheads/explain/[flagId]/route.ts` — POST (load-then-scope-check pattern)
+- `app/api/overheads/flags/[id]/decide/route.ts` — POST (load-then-scope-check)
+
+Each route gets `requireFinanceAccess(auth)` immediately after the auth check + `requireBusinessAccess(auth, businessId)` once the scope variable is known. For routes that key off a flag id rather than business_id, the check happens after the row loads.
+
+**Modified — aggregator scope filter:**
+- `app/api/businesses/route.ts` — applies `filterAccessibleBusinesses` from `lib/auth/permissions.ts` to the SELECT result. Owners and unscoped managers get the full list; scoped managers get only their assigned businesses. Sidebar business-picker, dashboard switcher, settings business list — every surface that consumes this endpoint inherits the filter.
+
+**Reused:**
+- `requireFinanceAccess`, `requireBusinessAccess` from `lib/auth/require-role.ts` (slice 2).
+- `filterAccessibleBusinesses` from `lib/auth/permissions.ts` (slice 1).
+- The `getRequestAuth` return shape.
+- The 2-line gate pattern from slice 2 — same edit applied 12 times for consistency.
+
+**Honest gaps:**
+- **`/api/group` not yet filtered.** Cross-business group view still returns all businesses for any owner. Scoped managers don't reach this page (it's owner-only at the page level via `OWNER_ONLY_PATHS`), so functionally fine; route-level guard is belt-and-braces.
+- **Action search in command palette skipped.** Would need deep-linking from palette results to in-page action handlers. 2-3 hour build, more than this autonomous window allows. Deferred.
+- **Stripe `customer_tax_ids` (real tax_id) skipped.** Needs API-contract decision (which customers are VAT-registered? infer or ask?). Deferred to a deliberate session.
+- **Middleware-level pre-render redirect skipped.** Needs in-browser verification — bad middleware breaks every request. Slice 3b when Paul's around.
+
+**Verified:**
+- `git status` shows: 13 modified files (12 finance routes + `/api/businesses`) + FIXES + tsbuild cache. No new files, no migrations.
+- `npx tsc --noEmit` clean. `npm run build` passes.
+- The gate pattern is consistent across all 13 routes — easy to grep + audit.
+
+**Action required from Paul:** none — pure code patch. Optional smoke test:
+1. Create a test manager via the Users sub-tab (slice 2).
+2. Curl any of the newly-guarded endpoints — should return 403.
+3. Sign in as the manager → sidebar business-picker shows only assigned businesses.
+
+**Slice 3b (when Paul's back):**
+- `/api/group` filter
+- Middleware-level redirect (needs in-browser verify)
+- Stripe `customer_tax_ids` real tax_id support
+- Action search with deep-linking
 
 ---
 

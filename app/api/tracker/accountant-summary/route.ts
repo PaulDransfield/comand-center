@@ -13,6 +13,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,12 +34,14 @@ function esc(s: any): string {
 export async function GET(req: NextRequest) {
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const u          = new URL(req.url)
   const businessId = u.searchParams.get('business_id')
   const year       = Number(u.searchParams.get('year')  ?? new Date().getFullYear())
   const month      = Number(u.searchParams.get('month') ?? (new Date().getMonth() + 1))
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
 

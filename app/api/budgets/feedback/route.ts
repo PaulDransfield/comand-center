@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { log } from '@/lib/log/structured'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -28,6 +29,7 @@ const VALID_REACTIONS = ['too_high', 'too_low', 'just_right', 'wrong_shape']
 export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   const body = await req.json().catch(() => ({} as any))
   const businessId = body.business_id as string | undefined
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest) {
   const surface    = body.surface ? String(body.surface) : 'budget_generate'
 
   if (!businessId)                         return NextResponse.json({ error: 'business_id required' },      { status: 400 })
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
   if (!year || !month || month < 1 || month > 12)
                                           return NextResponse.json({ error: 'year + month (1-12) required' }, { status: 400 })
   if (!reaction || !VALID_REACTIONS.includes(reaction))

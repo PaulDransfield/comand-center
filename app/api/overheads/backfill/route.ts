@@ -19,12 +19,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { normaliseSupplier, pickDisplayLabel } from '@/lib/overheads/normalise'
+import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  const finForbidden = requireFinanceAccess(auth); if (finForbidden) return finForbidden
 
   let body: any = {}
   try { body = await req.json() } catch {}
@@ -32,6 +34,7 @@ export async function POST(req: NextRequest) {
   const businessId = typeof body?.business_id === 'string' ? body.business_id : null
   const months     = Math.max(1, Math.min(parseInt(String(body?.months ?? 12), 10) || 12, 36))
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  const bizForbidden = requireBusinessAccess(auth, businessId); if (bizForbidden) return bizForbidden
 
   const db = createAdminClient()
 
