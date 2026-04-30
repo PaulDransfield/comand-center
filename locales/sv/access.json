@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "noAccess": {
+    "eyebrow":     "Åtkomst begränsad",
+    "title":       "Du har inte åtkomst till denna sektion",
+    "body":        "Din kontoroll inkluderar inte denna del av appen. Om du behöver åtkomst, be kontoägaren att kontakta CommandCenter så uppdaterar vi dina behörigheter.",
+    "backToDash":  "Tillbaka till dashboard",
+    "emailSupport":"Mejla support"
+  }
+}

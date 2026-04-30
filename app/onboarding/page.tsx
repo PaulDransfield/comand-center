@@ -4,17 +4,9 @@ export const dynamic = 'force-dynamic'
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 
-const STEPS = ['Welcome', 'Your restaurant', 'Your systems', 'All done']
-
-const RESTAURANT_TYPES = [
-  { value: 'restaurant', label: 'Restaurant' },
-  { value: 'bar',        label: 'Bar & Nightclub' },
-  { value: 'cafe',       label: 'Cafe' },
-  { value: 'bakery',     label: 'Bakery' },
-  { value: 'catering',   label: 'Catering' },
-  { value: 'group',      label: 'Restaurant Group' },
-]
+const RESTAURANT_TYPE_KEYS = ['restaurant', 'bar', 'cafe', 'bakery', 'catering', 'group'] as const
 
 const STAFF_SYSTEMS = ['Personalkollen', 'Caspeco', 'Quinyx', 'Planday', 'Other', 'None']
 const ACCOUNTING    = ['Fortnox', 'Visma', 'Bokio', 'Other', 'None']
@@ -22,6 +14,8 @@ const POS_SYSTEMS   = ['Ancon', 'Swess', 'Trivec', 'Zettle', 'Other', 'None']
 
 export default function OnboardingPage() {
   const router = useRouter()
+  const t      = useTranslations('onboarding')
+  const STEPS  = [t('steps.welcome'), t('steps.restaurant'), t('steps.systems'), t('steps.done')]
 
   const [step,    setStep]    = useState(0)
   const [loading, setLoading] = useState(false)
@@ -53,7 +47,7 @@ export default function OnboardingPage() {
 
   function saveAndContinue() {
     if (!form.restaurantName.trim()) {
-      setError('Please enter your restaurant name')
+      setError(t('restaurant.errors.missingName'))
       return
     }
     setError('')
@@ -132,25 +126,25 @@ export default function OnboardingPage() {
 
         {/* Step label */}
         <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.08em', color: '#9ca3af', marginBottom: 16 }}>
-          Step {step + 1} of {STEPS.length}
+          {t('stepLabel', { n: step + 1, total: STEPS.length })}
         </div>
 
         {/* ── Step 0: Welcome ─────────────────────────────────── */}
         {step === 0 && (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 26, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>
-              Welcome to CommandCenter
+              {t('welcome.title')}
             </h1>
             <p style={{ margin: '0 0 28px', fontSize: 14, color: '#6b7280', lineHeight: 1.7 }}>
-              Your all-in-one platform for managing restaurant finances, staff costs and performance. We will get you set up in about 2 minutes.
+              {t('welcome.subtitle')}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, marginBottom: 28 }}>
               {[
-                { title: 'P&L Tracker',        desc: 'Track revenue, costs and profit every month' },
-                { title: 'Staff management',    desc: 'Hours, costs and department breakdowns' },
-                { title: 'Smart forecasting',   desc: 'AI predictions based on your history' },
-                { title: 'AI assistant',        desc: 'Ask questions about your business in plain language' },
+                { title: t('welcome.features.pnl_t'),    desc: t('welcome.features.pnl_d') },
+                { title: t('welcome.features.staff_t'),  desc: t('welcome.features.staff_d') },
+                { title: t('welcome.features.fc_t'),     desc: t('welcome.features.fc_d') },
+                { title: t('welcome.features.ai_t'),     desc: t('welcome.features.ai_d') },
               ].map(f => (
                 <div key={f.title} style={{ display: 'flex', gap: 12, padding: '11px 14px', background: '#f9fafb', borderRadius: 10, alignItems: 'center' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#1a1f2e', flexShrink: 0 }} />
@@ -162,42 +156,42 @@ export default function OnboardingPage() {
               ))}
             </div>
 
-            <button onClick={() => setStep(1)} style={btnP}>Get started</button>
+            <button onClick={() => setStep(1)} style={btnP}>{t('welcome.cta')}</button>
           </div>
         )}
 
         {/* ── Step 1: Restaurant details ───────────────────────── */}
         {step === 1 && (
           <div>
-            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>Your restaurant</h1>
-            <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>Tell us the basics so we can set up your account.</p>
+            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>{t('restaurant.title')}</h1>
+            <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>{t('restaurant.subtitle')}</p>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 14, marginBottom: 20 }}>
               <div>
-                <label style={label}>Restaurant name</label>
-                <input style={input} value={form.restaurantName} onChange={e => updateForm('restaurantName', e.target.value)} placeholder="e.g. Vero Italiano" />
+                <label style={label}>{t('restaurant.name')}</label>
+                <input style={input} value={form.restaurantName} onChange={e => updateForm('restaurantName', e.target.value)} placeholder={t('restaurant.namePlaceholder')} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={label}>City</label>
-                  <input style={input} value={form.city} onChange={e => updateForm('city', e.target.value)} placeholder="e.g. Stockholm" />
+                  <label style={label}>{t('restaurant.city')}</label>
+                  <input style={input} value={form.city} onChange={e => updateForm('city', e.target.value)} placeholder={t('restaurant.cityPlaceholder')} />
                 </div>
                 <div>
-                  <label style={label}>Type</label>
+                  <label style={label}>{t('restaurant.type')}</label>
                   <select style={input} value={form.type} onChange={e => updateForm('type', e.target.value)}>
-                    {RESTAURANT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    {RESTAURANT_TYPE_KEYS.map(k => <option key={k} value={k}>{t(`restaurant.typeOptions.${k}`)}</option>)}
                   </select>
                 </div>
               </div>
 
               <div style={{ background: '#f9fafb', borderRadius: 10, padding: '14px 16px' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 12 }}>Cost targets</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 12 }}>{t('restaurant.targetsHeader')}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                   {[
-                    { key: 'targetFoodCost',  label: 'Food cost %',  hint: '28-35%' },
-                    { key: 'targetStaffCost', label: 'Staff cost %', hint: '30-40%' },
-                    { key: 'targetMargin',    label: 'Net margin %', hint: '10-20%' },
+                    { key: 'targetFoodCost',  label: t('restaurant.foodCost'),  hint: t('restaurant.foodHint') },
+                    { key: 'targetStaffCost', label: t('restaurant.staffCost'), hint: t('restaurant.staffHint') },
+                    { key: 'targetMargin',    label: t('restaurant.margin'),    hint: t('restaurant.marginHint') },
                   ].map(f => (
                     <div key={f.key}>
                       <label style={{ ...label, fontSize: 10, marginBottom: 4 }}>{f.label}</label>
@@ -220,40 +214,40 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            <button onClick={saveAndContinue} style={btnP}>Continue</button>
-            <button onClick={() => setStep(0)} style={btnS}>Back</button>
+            <button onClick={saveAndContinue} style={btnP}>{t('restaurant.continue')}</button>
+            <button onClick={() => setStep(0)} style={btnS}>{t('restaurant.back')}</button>
           </div>
         )}
 
         {/* ── Step 2: Systems selection ────────────────────────── */}
         {step === 2 && (
           <div>
-            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>Your systems</h1>
+            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>{t('systems.title')}</h1>
             <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>
-              Tell us which systems you use. Our team will connect everything for you — no technical work needed on your end.
+              {t('systems.subtitle')}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 20, marginBottom: 24 }}>
               <div>
-                <label style={label}>Staff scheduling</label>
+                <label style={label}>{t('systems.staff')}</label>
                 <RadioGroup field="staff" options={STAFF_SYSTEMS} />
               </div>
               <div>
-                <label style={label}>Accounting</label>
+                <label style={label}>{t('systems.accounting')}</label>
                 <RadioGroup field="accounting" options={ACCOUNTING} />
               </div>
               <div>
-                <label style={label}>POS system</label>
+                <label style={label}>{t('systems.pos')}</label>
                 <RadioGroup field="pos" options={POS_SYSTEMS} />
               </div>
             </div>
 
             <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#92400e', lineHeight: 1.6 }}>
-              Our team will set up your connections within 1 business day and email you when everything is ready.
+              {t('systems.promise')}
             </div>
 
-            <button onClick={() => setStep(3)} style={btnP}>Continue</button>
-            <button onClick={() => setStep(1)} style={btnS}>Back</button>
+            <button onClick={() => setStep(3)} style={btnP}>{t('systems.continue')}</button>
+            <button onClick={() => setStep(1)} style={btnS}>{t('systems.back')}</button>
           </div>
         )}
 
@@ -264,17 +258,19 @@ export default function OnboardingPage() {
               +
             </div>
 
-            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>You are all set!</h1>
+            <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>{t('done.title')}</h1>
             <p style={{ margin: '0 0 28px', fontSize: 14, color: '#6b7280', lineHeight: 1.7 }}>
-              {form.restaurantName || 'Your restaurant'} is ready. Our team will be in touch within 1 business day to connect your systems. In the meantime, explore the platform.
+              {form.restaurantName
+                ? t('done.subtitleNamed', { name: form.restaurantName })
+                : t('done.subtitlePlain')}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, marginBottom: 28, textAlign: 'left' as const }}>
               {[
-                { num: '1', title: 'View your dashboard',     desc: 'See your KPIs and performance overview'   },
-                { num: '2', title: 'Check the forecast page', desc: 'AI predictions for upcoming months'       },
-                { num: '3', title: 'Try the AI assistant',    desc: 'Ask questions about your business'        },
-                { num: '4', title: 'Upload an invoice',       desc: 'AI reads and categorises it automatically' },
+                { num: '1', title: t('done.next1_t'), desc: t('done.next1_d') },
+                { num: '2', title: t('done.next2_t'), desc: t('done.next2_d') },
+                { num: '3', title: t('done.next3_t'), desc: t('done.next3_d') },
+                { num: '4', title: t('done.next4_t'), desc: t('done.next4_d') },
               ].map(a => (
                 <div key={a.num} style={{ display: 'flex', gap: 12, padding: '11px 14px', background: '#f9fafb', borderRadius: 10, alignItems: 'center' }}>
                   <div style={{ width: 26, height: 26, borderRadius: '50%', background: '#1a1f2e', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{a.num}</div>
@@ -287,16 +283,16 @@ export default function OnboardingPage() {
             </div>
 
             <button onClick={finish} disabled={loading} style={btnP}>
-              {loading ? 'Loading...' : 'Go to dashboard'}
+              {loading ? t('done.loading') : t('done.cta')}
             </button>
           </div>
         )}
 
         {/* Footer */}
         <div style={{ marginTop: 24, fontSize: 12, color: '#d1d5db', textAlign: 'center' as const }}>
-          Need help? <a href="mailto:support@comandcenter.se" style={{ color: '#6366f1', textDecoration: 'none' }}>Contact support</a>
+          {t('footer.needHelp')} <a href="mailto:support@comandcenter.se" style={{ color: '#6366f1', textDecoration: 'none' }}>{t('footer.contactSupport')}</a>
           {' · '}
-          <a href="/privacy" style={{ color: '#6366f1', textDecoration: 'none' }}>Privacy Policy</a>
+          <a href="/privacy" style={{ color: '#6366f1', textDecoration: 'none' }}>{t('footer.privacyPolicy')}</a>
         </div>
       </div>
     </div>

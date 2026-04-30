@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import AppShell from '@/components/AppShell'
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams }     from 'next/navigation'
+import { useTranslations }     from 'next-intl'
 import { createClient }        from '@/lib/supabase/client'
 import { track }               from '@/lib/analytics/posthog'
 import { PLANS }               from '@/lib/stripe/config'
@@ -25,25 +26,9 @@ interface UsageData {
 }
 
 const PLAN_ORDER = ['founding', 'solo', 'group', 'chain', 'enterprise'] as const
-const PLAN_DESCS: Record<string, string> = {
-  founding:   '10 spots — 995 kr/mo locked for 24 months',
-  solo:       'Single restaurant',
-  group:      '2–5 restaurants — best value',
-  chain:      '6+ restaurants',
-  enterprise: 'Custom pricing for large chains',
-}
-
-const METER_LABELS: Record<string, string> = {
-  businesses:       'Businesses',
-  documents:        'Documents',
-  monthly_tokens:   'AI Tokens',
-  monthly_requests: 'AI Requests',
-  team_members:     'Team Members',
-  audio_overviews:  'Audio Overviews',
-  export_schedules: 'Schedules',
-}
 
 export default function UpgradePage() {
+  const t            = useTranslations('upgrade')
   const searchParams = useSearchParams()
   const [usage,   setUsage]   = useState<UsageData | null>(null)
   const [billing, setBilling] = useState<'monthly' | 'annual'>('monthly')
@@ -112,7 +97,7 @@ export default function UpgradePage() {
       if (data.url) window.location.href = data.url
 
     } catch (err: any) {
-      alert(`Upgrade failed: ${err.message}`)
+      alert(t('errors.upgradeFailed', { message: err.message }))
       track('upgrade_cancelled', { plan_target: plan, reason: 'error' })
     } finally {
       setLoading(null)
@@ -139,7 +124,7 @@ export default function UpgradePage() {
 
   if (!usage) return (
     <AppShell>
-      <div style={{ padding: 60, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>Loading...</div>
+      <div style={{ padding: 60, textAlign: 'center', color: '#9ca3af', fontSize: 14 }}>{t('page.loading')}</div>
     </AppShell>
   )
 
@@ -150,20 +135,22 @@ export default function UpgradePage() {
       {/* Success / cancelled banners */}
       {upgradeSuccess && (
         <div style={S.bannerSuccess}>
-          🎉 You're now on the {PLANS[new URLSearchParams(window.location.search).get('plan') ?? '']?.name ?? 'new'} plan. All features are unlocked.
+          {t('banner.success', {
+            plan: PLANS[new URLSearchParams(window.location.search).get('plan') ?? '']?.name ?? t('banner.successPlanFallback'),
+          })}
         </div>
       )}
       {cancelled && (
-        <div style={S.bannerInfo}>No changes were made. You can upgrade any time.</div>
+        <div style={S.bannerInfo}>{t('banner.cancelled')}</div>
       )}
       {required && !upgradeSuccess && (
         <div style={{ ...S.bannerInfo, background: '#eef2ff', borderColor: '#c7d2fe', color: '#3730a3' }}>
-          Welcome to CommandCenter — choose a plan below to unlock the dashboard, integrations and AI. We recommend the founding tier (10 spots · 995 kr/mo locked for 24 months).
+          {t('banner.required')}
         </div>
       )}
       {pastDue && (
         <div style={{ ...S.bannerInfo, background: '#fef2f2', borderColor: '#fecaca', color: '#991b1b' }}>
-          Your last payment didn't go through. Update billing below to restore access.
+          {t('banner.pastDue')}
         </div>
       )}
 
@@ -181,8 +168,8 @@ export default function UpgradePage() {
           </span>
           <span>
             {usage.trialDaysLeft! <= 0
-              ? 'Your legacy trial has ended. Choose a plan to restore access.'
-              : `${usage.trialDaysLeft} days left on your legacy trial. Pick a plan to keep your data and integrations.`}
+              ? t('banner.trialEnded')
+              : t('banner.trialDays', { days: usage.trialDaysLeft! })}
           </span>
         </div>
       )}
@@ -190,27 +177,27 @@ export default function UpgradePage() {
       {/* Payment failed banner */}
       {currentPlan === 'past_due' && (
         <div style={S.bannerError}>
-          ⚠️ Your last payment failed. Please update your payment method to restore full access.
-          <button style={S.bannerBtn} onClick={openPortal}>Update payment method →</button>
+          {t('banner.paymentFailed')}
+          <button style={S.bannerBtn} onClick={openPortal}>{t('banner.updatePayment')}</button>
         </div>
       )}
 
       {/* Page header */}
       <div style={S.header}>
-        <h1 style={S.title}>Choose your plan</h1>
-        <p style={S.subtitle}>Paid from day one — no free trial. Founding tier locks 995 kr/mo for 24 months (10 spots only).</p>
+        <h1 style={S.title}>{t('page.title')}</h1>
+        <p style={S.subtitle}>{t('page.subtitle')}</p>
       </div>
 
       {/* Billing toggle */}
       <div style={S.toggleRow}>
         <span style={{ ...S.toggleLabel, ...(billing==='monthly'?S.toggleLabelActive:{}) }}
-              onClick={() => setBilling('monthly')}>Monthly</span>
+              onClick={() => setBilling('monthly')}>{t('billing.monthly')}</span>
         <div style={S.toggleSwitch} onClick={() => setBilling(b => b === 'monthly' ? 'annual' : 'monthly')}>
           <div style={{ ...S.toggleDot, transform: billing === 'annual' ? 'translateX(20px)' : 'none' }} />
         </div>
         <span style={{ ...S.toggleLabel, ...(billing==='annual'?S.toggleLabelActive:{}) }}
               onClick={() => setBilling('annual')}>
-          Annual <span style={S.saveBadge}>2 months free</span>
+          {t('billing.annual')} <span style={S.saveBadge}>{t('billing.saveBadge')}</span>
         </span>
       </div>
 
@@ -238,21 +225,21 @@ export default function UpgradePage() {
               ...(isPopular  && !isCurrent ? S.planCardPopular  : {}),
               ...(isBestVal  && !isCurrent ? S.planCardBestVal  : {}),
             }}>
-              {isPopular && !isCurrent && <div style={S.popularBadge}>Most Popular</div>}
-              {isBestVal && !isCurrent && <div style={{ ...S.popularBadge, background: '#15803d' }}>Founding · 10 spots</div>}
-              {isCurrent && <div style={S.currentBadge}>Current Plan</div>}
+              {isPopular && !isCurrent && <div style={S.popularBadge}>{t('plans.popular')}</div>}
+              {isBestVal && !isCurrent && <div style={{ ...S.popularBadge, background: '#15803d' }}>{t('plans.founding')}</div>}
+              {isCurrent && <div style={S.currentBadge}>{t('plans.current')}</div>}
 
               <div style={S.planName}>{plan.name}</div>
 
               <div style={S.planPrice}>
                 {displayPrice === null ? (
-                  <span style={S.planAmount}>Custom</span>
+                  <span style={S.planAmount}>{t('plans.custom')}</span>
                 ) : displayPrice === 0 ? (
-                  <span style={S.planAmount}>Free</span>
+                  <span style={S.planAmount}>{t('plans.free')}</span>
                 ) : (
                   <>
                     <span style={S.planAmount}>{fmtSek(displayPrice)}</span>
-                    <span style={{ fontSize: 13, color: '#6b7280', alignSelf: 'flex-end', marginBottom: 6, marginLeft: 4 }}>kr / mo</span>
+                    <span style={{ fontSize: 13, color: '#6b7280', alignSelf: 'flex-end', marginBottom: 6, marginLeft: 4 }}>{t('plans.currency')}</span>
                     {billing === 'annual' && annualMonthly && monthlyPrice && (
                       <span style={{ fontSize: 11, color: '#9ca3af', textDecoration: 'line-through', alignSelf: 'flex-end', marginBottom: 6, marginLeft: 6 }}>
                         {fmtSek(monthlyPrice)}
@@ -262,7 +249,7 @@ export default function UpgradePage() {
                 )}
               </div>
 
-              <div style={S.planDesc}>{PLAN_DESCS[planKey]}</div>
+              <div style={S.planDesc}>{t(`plans.desc.${planKey}`)}</div>
 
               <ul style={S.featureList}>
                 {plan.features.map(f => (
@@ -276,13 +263,13 @@ export default function UpgradePage() {
               {/* CTA button */}
               {isCurrent ? (
                 usage?.hasSubscription ? (
-                  <button style={S.btnCurrent} onClick={openPortal}>Manage billing →</button>
+                  <button style={S.btnCurrent} onClick={openPortal}>{t('plans.manage')}</button>
                 ) : (
-                  <button style={S.btnCurrent} disabled>Current plan</button>
+                  <button style={S.btnCurrent} disabled>{t('plans.currentBtn')}</button>
                 )
               ) : planKey === 'enterprise' ? (
                 <button style={S.btnUpgrade} onClick={() => handleUpgrade('enterprise')}>
-                  Contact sales →
+                  {t('plans.contactSales')}
                 </button>
               ) : planKey === 'group' ? (
                 <button
@@ -290,7 +277,9 @@ export default function UpgradePage() {
                   disabled={loading === planKey}
                   onClick={() => handleUpgrade(planKey)}
                 >
-                  {loading === planKey ? 'Loading…' : currentPlan === 'trial' ? 'Start with Group' : 'Upgrade to Group'}
+                  {loading === planKey ? t('plans.loading')
+                    : currentPlan === 'trial' ? t('plans.startWith', { plan: plan.name })
+                    : t('plans.upgradeTo', { plan: plan.name })}
                 </button>
               ) : (
                 <button
@@ -299,11 +288,11 @@ export default function UpgradePage() {
                   onClick={() => handleUpgrade(planKey)}
                 >
                   {loading === planKey
-                    ? <><span className="spin">⟳</span> Loading…</>
-                    : currentPlan === 'trial' ? 'Start with ' + plan.name
+                    ? <><span className="spin">⟳</span> {t('plans.loading')}</>
+                    : currentPlan === 'trial' ? t('plans.startWith', { plan: plan.name })
                     : PLAN_ORDER.indexOf(planKey) > PLAN_ORDER.indexOf(currentPlan as any)
-                    ? 'Upgrade to ' + plan.name
-                    : 'Switch to '  + plan.name}
+                    ? t('plans.upgradeTo', { plan: plan.name })
+                    : t('plans.switchTo',  { plan: plan.name })}
                 </button>
               )}
             </div>
@@ -333,13 +322,11 @@ export default function UpgradePage() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <span style={{ fontSize: 18 }}>⚡</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>AI Booster</span>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: '#fce7f3', color: '#9d174d' }}>+299 kr/mo</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#111827' }}>{t('booster.title')}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: '#fce7f3', color: '#9d174d' }}>{t('booster.priceBadge')}</span>
             </div>
             <div style={{ fontSize: 12, color: '#6b7280' }}>
-              {currentPlan === 'trial'
-                ? 'Add 100 extra AI queries per day on top of any paid plan. Pick a plan above first.'
-                : 'Add 100 extra AI queries per day on top of your plan. Cancel anytime.'}
+              {currentPlan === 'trial' ? t('booster.trialBody') : t('booster.paidBody')}
             </div>
           </div>
           {currentPlan === 'trial' ? (
@@ -347,7 +334,7 @@ export default function UpgradePage() {
               disabled
               style={{ padding: '9px 18px', background: '#e5e7eb', color: '#9ca3af', border: 'none', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'not-allowed', whiteSpace: 'nowrap' as const }}
             >
-              Upgrade a plan first
+              {t('booster.needPlan')}
             </button>
           ) : (
             <button
@@ -355,7 +342,7 @@ export default function UpgradePage() {
               disabled={loading === 'ai_addon'}
               onClick={() => handleUpgrade('ai_addon')}
             >
-              {loading === 'ai_addon' ? 'Loading…' : 'Add AI Booster →'}
+              {loading === 'ai_addon' ? t('booster.loading') : t('booster.addBtn')}
             </button>
           )}
         </div>
@@ -365,16 +352,16 @@ export default function UpgradePage() {
       {usage && (
         <div style={S.usageSection}>
           <div style={S.usageHeader}>
-            <h2 style={S.usageTitle}>Current usage</h2>
+            <h2 style={S.usageTitle}>{t('usage.title')}</h2>
             {usage.costUsdThisMonth > 0 && (
               <span style={{ fontSize: 12, color: '#9ca3af', fontFamily: 'monospace' }}>
-                AI cost this month: ${usage.costUsdThisMonth.toFixed(4)}
+                {t('usage.aiCost', { value: usage.costUsdThisMonth.toFixed(4) })}
               </span>
             )}
           </div>
           <div style={S.metersGrid}>
             {Object.entries(usage.meters).map(([key, meter]) => {
-              const label   = METER_LABELS[key] ?? key
+              const label   = (() => { try { return t(`meters.${key}`) } catch { return key } })()
               const pct     = meter.limit === Infinity ? 0 : Math.min(100, meter.pct)
               const colour  = meter.atLimit ? '#dc2626' : meter.nearLimit ? '#d97706' : '#15803d'
               const usedFmt = formatMetric(key, meter.used)
@@ -394,10 +381,10 @@ export default function UpgradePage() {
                     <div style={{ ...S.meterFill, width: `${pct}%`, background: colour }} />
                   </div>
                   {meter.atLimit && (
-                    <div style={{ fontSize: 10, color: '#dc2626', marginTop: 3 }}>Limit reached — upgrade to continue</div>
+                    <div style={{ fontSize: 10, color: '#dc2626', marginTop: 3 }}>{t('usage.limitHit')}</div>
                   )}
                   {meter.nearLimit && !meter.atLimit && (
-                    <div style={{ fontSize: 10, color: '#d97706', marginTop: 3 }}>Approaching limit</div>
+                    <div style={{ fontSize: 10, color: '#d97706', marginTop: 3 }}>{t('usage.approaching')}</div>
                   )}
                 </div>
               )

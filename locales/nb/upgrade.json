@@ -1,0 +1,76 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "page": {
+    "title":    "Velg abonnement",
+    "subtitle": "Betalt fra dag én — ingen gratis prøveperiode. Grunnleggernivået låser 995 kr/mnd i 24 måneder (kun 10 plasser).",
+    "loading":  "Laster…"
+  },
+  "banner": {
+    "success":      "🎉 Du er nå på {plan}-abonnementet. Alle funksjoner er låst opp.",
+    "successPlanFallback": "nye",
+    "cancelled":    "Ingen endringer gjort. Du kan oppgradere når som helst.",
+    "required":     "Velkommen til CommandCenter — velg et abonnement nedenfor for å låse opp dashbord, integrasjoner og AI. Vi anbefaler grunnleggernivået (10 plasser · 995 kr/mnd låst i 24 måneder).",
+    "pastDue":      "Den siste betalingen din gikk ikke gjennom. Oppdater fakturering nedenfor for å gjenopprette tilgang.",
+    "trialEnded":   "Din eldre prøveperiode har utløpt. Velg et abonnement for å gjenopprette tilgang.",
+    "trialDays":    "{days} dager igjen av din eldre prøveperiode. Velg et abonnement for å beholde dataene og integrasjonene dine.",
+    "paymentFailed":"⚠️ Din siste betaling mislyktes. Oppdater betalingsmetoden for å gjenopprette full tilgang.",
+    "updatePayment":"Oppdater betalingsmetode →"
+  },
+  "billing": {
+    "monthly": "Månedlig",
+    "annual":  "Årlig",
+    "saveBadge":"2 måneder gratis"
+  },
+  "plans": {
+    "popular":     "Mest populær",
+    "founding":    "Grunnlegger · 10 plasser",
+    "current":     "Nåværende abonnement",
+    "currentBtn":  "Nåværende abonnement",
+    "manage":      "Administrer fakturering →",
+    "contactSales":"Kontakt salg →",
+    "loading":     "Laster…",
+    "startWith":   "Start med {plan}",
+    "upgradeTo":   "Oppgrader til {plan}",
+    "switchTo":    "Bytt til {plan}",
+    "currency":    "kr / mnd",
+    "custom":      "Tilpasset",
+    "free":        "Gratis",
+    "desc": {
+      "founding":   "10 plasser — 995 kr/mnd låst i 24 måneder",
+      "solo":       "Én restaurant",
+      "group":      "2–5 restauranter — beste verdi",
+      "chain":      "6+ restauranter",
+      "enterprise": "Tilpasset prising for store kjeder"
+    }
+  },
+  "booster": {
+    "title":      "AI-tillegg",
+    "priceBadge": "+299 kr/mnd",
+    "trialBody":  "Legg til 100 ekstra AI-spørringer per dag på ethvert betalt abonnement. Velg et abonnement ovenfor først.",
+    "paidBody":   "Legg til 100 ekstra AI-spørringer per dag på toppen av abonnementet. Avbryt når som helst.",
+    "needPlan":   "Oppgrader et abonnement først",
+    "addBtn":     "Legg til AI-tillegg →",
+    "loading":    "Laster…"
+  },
+  "usage": {
+    "title":      "Nåværende bruk",
+    "aiCost":     "AI-kostnad denne måneden: ${value}",
+    "limitHit":   "Grense nådd — oppgrader for å fortsette",
+    "approaching":"Nærmer seg grensen"
+  },
+  "meters": {
+    "businesses":       "Virksomheter",
+    "documents":        "Dokumenter",
+    "monthly_tokens":   "AI-tokens",
+    "monthly_requests": "AI-forespørsler",
+    "team_members":     "Teammedlemmer",
+    "audio_overviews":  "Lydsammendrag",
+    "export_schedules": "Tidsplaner"
+  },
+  "errors": {
+    "upgradeFailed": "Oppgradering mislyktes: {message}"
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "steps": {
+    "welcome":     "Welcome",
+    "restaurant":  "Your restaurant",
+    "systems":     "Your systems",
+    "done":        "All done"
+  },
+  "stepLabel":     "Step {n} of {total}",
+  "welcome": {
+    "title":       "Welcome to CommandCenter",
+    "subtitle":    "Your all-in-one platform for managing restaurant finances, staff costs and performance. We will get you set up in about 2 minutes.",
+    "features": {
+      "pnl_t":     "P&L Tracker",
+      "pnl_d":     "Track revenue, costs and profit every month",
+      "staff_t":   "Staff management",
+      "staff_d":   "Hours, costs and department breakdowns",
+      "fc_t":      "Smart forecasting",
+      "fc_d":      "AI predictions based on your history",
+      "ai_t":      "AI assistant",
+      "ai_d":      "Ask questions about your business in plain language"
+    },
+    "cta":         "Get started"
+  },
+  "restaurant": {
+    "title":       "Your restaurant",
+    "subtitle":    "Tell us the basics so we can set up your account.",
+    "name":        "Restaurant name",
+    "namePlaceholder":"e.g. Vero Italiano",
+    "city":        "City",
+    "cityPlaceholder":"e.g. Stockholm",
+    "type":        "Type",
+    "typeOptions": {
+      "restaurant":"Restaurant",
+      "bar":       "Bar & Nightclub",
+      "cafe":      "Cafe",
+      "bakery":    "Bakery",
+      "catering":  "Catering",
+      "group":     "Restaurant Group"
+    },
+    "targetsHeader":"Cost targets",
+    "foodCost":    "Food cost %",
+    "foodHint":    "28-35%",
+    "staffCost":   "Staff cost %",
+    "staffHint":   "30-40%",
+    "margin":      "Net margin %",
+    "marginHint":  "10-20%",
+    "errors": {
+      "missingName": "Please enter your restaurant name"
+    },
+    "continue":    "Continue",
+    "back":        "Back"
+  },
+  "systems": {
+    "title":       "Your systems",
+    "subtitle":    "Tell us which systems you use. Our team will connect everything for you — no technical work needed on your end.",
+    "staff":       "Staff scheduling",
+    "accounting":  "Accounting",
+    "pos":         "POS system",
+    "promise":     "Our team will set up your connections within 1 business day and email you when everything is ready.",
+    "continue":    "Continue",
+    "back":        "Back"
+  },
+  "done": {
+    "title":       "You are all set!",
+    "subtitleNamed":"{name} is ready. Our team will be in touch within 1 business day to connect your systems. In the meantime, explore the platform.",
+    "subtitlePlain":"Your restaurant is ready. Our team will be in touch within 1 business day to connect your systems. In the meantime, explore the platform.",
+    "next1_t":     "View your dashboard",
+    "next1_d":     "See your KPIs and performance overview",
+    "next2_t":     "Check the forecast page",
+    "next2_d":     "AI predictions for upcoming months",
+    "next3_t":     "Try the AI assistant",
+    "next3_d":     "Ask questions about your business",
+    "next4_t":     "Upload an invoice",
+    "next4_d":     "AI reads and categorises it automatically",
+    "loading":     "Loading…",
+    "cta":         "Go to dashboard"
+  },
+  "footer": {
+    "needHelp":     "Need help?",
+    "contactSupport":"Contact support",
+    "privacyPolicy":"Privacy Policy"
+  }
+}

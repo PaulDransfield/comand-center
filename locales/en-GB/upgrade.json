@@ -1,0 +1,76 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "page": {
+    "title":    "Choose your plan",
+    "subtitle": "Paid from day one — no free trial. Founding tier locks 995 kr/mo for 24 months (10 spots only).",
+    "loading":  "Loading…"
+  },
+  "banner": {
+    "success":      "🎉 You're now on the {plan} plan. All features are unlocked.",
+    "successPlanFallback": "new",
+    "cancelled":    "No changes were made. You can upgrade any time.",
+    "required":     "Welcome to CommandCenter — choose a plan below to unlock the dashboard, integrations and AI. We recommend the founding tier (10 spots · 995 kr/mo locked for 24 months).",
+    "pastDue":      "Your last payment didn't go through. Update billing below to restore access.",
+    "trialEnded":   "Your legacy trial has ended. Choose a plan to restore access.",
+    "trialDays":    "{days} days left on your legacy trial. Pick a plan to keep your data and integrations.",
+    "paymentFailed":"⚠️ Your last payment failed. Please update your payment method to restore full access.",
+    "updatePayment":"Update payment method →"
+  },
+  "billing": {
+    "monthly": "Monthly",
+    "annual":  "Annual",
+    "saveBadge":"2 months free"
+  },
+  "plans": {
+    "popular":     "Most Popular",
+    "founding":    "Founding · 10 spots",
+    "current":     "Current Plan",
+    "currentBtn":  "Current plan",
+    "manage":      "Manage billing →",
+    "contactSales":"Contact sales →",
+    "loading":     "Loading…",
+    "startWith":   "Start with {plan}",
+    "upgradeTo":   "Upgrade to {plan}",
+    "switchTo":    "Switch to {plan}",
+    "currency":    "kr / mo",
+    "custom":      "Custom",
+    "free":        "Free",
+    "desc": {
+      "founding":   "10 spots — 995 kr/mo locked for 24 months",
+      "solo":       "Single restaurant",
+      "group":      "2–5 restaurants — best value",
+      "chain":      "6+ restaurants",
+      "enterprise": "Custom pricing for large chains"
+    }
+  },
+  "booster": {
+    "title":      "AI Booster",
+    "priceBadge": "+299 kr/mo",
+    "trialBody":  "Add 100 extra AI queries per day on top of any paid plan. Pick a plan above first.",
+    "paidBody":   "Add 100 extra AI queries per day on top of your plan. Cancel anytime.",
+    "needPlan":   "Upgrade a plan first",
+    "addBtn":     "Add AI Booster →",
+    "loading":    "Loading…"
+  },
+  "usage": {
+    "title":      "Current usage",
+    "aiCost":     "AI cost this month: ${value}",
+    "limitHit":   "Limit reached — upgrade to continue",
+    "approaching":"Approaching limit"
+  },
+  "meters": {
+    "businesses":       "Businesses",
+    "documents":        "Documents",
+    "monthly_tokens":   "AI Tokens",
+    "monthly_requests": "AI Requests",
+    "team_members":     "Team Members",
+    "audio_overviews":  "Audio Overviews",
+    "export_schedules": "Schedules"
+  },
+  "errors": {
+    "upgradeFailed": "Upgrade failed: {message}"
+  }
+}

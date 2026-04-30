@@ -13,5 +13,11 @@
   "departments": {
     "loading":     "Laster avdelinger…",
     "loadingPanel":"Laster…"
+  },
+  "group": {
+    "crumb":       "Gruppe",
+    "loading":     "Laster gruppedata…",
+    "prevMonth":   "Forrige måned",
+    "nextMonth":   "Neste måned"
   }
 }

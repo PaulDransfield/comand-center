@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
@@ -44,6 +45,7 @@ function getMonthBounds(offset = 0) {
 
 export default function GroupPage() {
   const router = useRouter()
+  const t      = useTranslations('operations.group')
   const [monthOffset, setMonthOffset] = useState(0)
   const [data,    setData]    = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -87,17 +89,17 @@ export default function GroupPage() {
             page crumb, so it stops colliding with the hero's SupportingStats
             below (GROUP-FIX § 5).  */}
         <TopBar
-          crumbs={[{ label: 'Group', active: true }]}
+          crumbs={[{ label: t('crumb'), active: true }]}
           rightSlot={
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn} aria-label="Previous month">‹</button>
+              <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn} aria-label={t('prevMonth')}>‹</button>
               <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
                 {period.label}
               </div>
               <button
                 onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
                 disabled={monthOffset === 0}
-                aria-label="Next month"
+                aria-label={t('nextMonth')}
                 style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}
               >›</button>
             </div>
@@ -105,7 +107,7 @@ export default function GroupPage() {
         />
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading group data…</div>
+          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
         ) : error ? (
           <div style={{ background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: UX.r_lg, padding: '12px 16px', fontSize: UX.fsBody, color: UX.redInk }}>{error}</div>
         ) : businesses.length === 0 ? (

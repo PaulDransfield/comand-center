@@ -1,0 +1,87 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "steps": {
+    "welcome":     "Velkommen",
+    "restaurant":  "Restauranten din",
+    "systems":     "Systemene dine",
+    "done":        "Ferdig"
+  },
+  "stepLabel":     "Steg {n} av {total}",
+  "welcome": {
+    "title":       "Velkommen til CommandCenter",
+    "subtitle":    "Din samlede plattform for å håndtere restaurantens økonomi, bemanningskostnader og prestasjon. Vi har deg i gang på cirka 2 minutter.",
+    "features": {
+      "pnl_t":     "Resultatregnskap",
+      "pnl_d":     "Følg inntekter, kostnader og overskudd hver måned",
+      "staff_t":   "Bemanningshåndtering",
+      "staff_d":   "Timer, kostnader og avdelingsfordeling",
+      "fc_t":      "Smart prognose",
+      "fc_d":      "AI-prediksjoner basert på historikken din",
+      "ai_t":      "AI-assistent",
+      "ai_d":      "Still spørsmål om virksomheten på vanlig norsk"
+    },
+    "cta":         "Kom i gang"
+  },
+  "restaurant": {
+    "title":       "Restauranten din",
+    "subtitle":    "Fortell oss det grunnleggende så setter vi opp kontoen din.",
+    "name":        "Restaurantens navn",
+    "namePlaceholder":"f.eks. Vero Italiano",
+    "city":        "By",
+    "cityPlaceholder":"f.eks. Oslo",
+    "type":        "Type",
+    "typeOptions": {
+      "restaurant":"Restaurant",
+      "bar":       "Bar & nattklubb",
+      "cafe":      "Kafé",
+      "bakery":    "Bakeri",
+      "catering":  "Catering",
+      "group":     "Restaurantgruppe"
+    },
+    "targetsHeader":"Kostnadsmål",
+    "foodCost":    "Matkostnad %",
+    "foodHint":    "28-35%",
+    "staffCost":   "Bemanningskostnad %",
+    "staffHint":   "30-40%",
+    "margin":      "Nettomargin %",
+    "marginHint":  "10-20%",
+    "errors": {
+      "missingName": "Vennligst oppgi restaurantens navn"
+    },
+    "continue":    "Fortsett",
+    "back":        "Tilbake"
+  },
+  "systems": {
+    "title":       "Systemene dine",
+    "subtitle":    "Fortell oss hvilke systemer du bruker. Teamet vårt kobler alt opp for deg — ingen teknisk jobb fra din side.",
+    "staff":       "Vaktplanlegging",
+    "accounting":  "Regnskap",
+    "pos":         "Kassesystem",
+    "promise":     "Teamet vårt setter opp tilkoblingene innen 1 virkedag og sender e-post når alt er klart.",
+    "continue":    "Fortsett",
+    "back":        "Tilbake"
+  },
+  "done": {
+    "title":       "Alt er klart!",
+    "subtitleNamed":"{name} er klar. Teamet vårt tar kontakt innen 1 virkedag for å koble til systemene dine. I mellomtiden kan du utforske plattformen.",
+    "subtitlePlain":"Restauranten din er klar. Teamet vårt tar kontakt innen 1 virkedag for å koble til systemene dine. I mellomtiden kan du utforske plattformen.",
+    "next1_t":     "Se dashbordet ditt",
+    "next1_d":     "Se KPI-er og ytelsesoversikt",
+    "next2_t":     "Sjekk prognosesiden",
+    "next2_d":     "AI-prediksjoner for kommende måneder",
+    "next3_t":     "Prøv AI-assistenten",
+    "next3_d":     "Still spørsmål om virksomheten din",
+    "next4_t":     "Last opp en faktura",
+    "next4_d":     "AI leser og kategoriserer den automatisk",
+    "loading":     "Laster…",
+    "cta":         "Gå til dashbord"
+  },
+  "footer": {
+    "needHelp":     "Trenger du hjelp?",
+    "contactSupport":"Kontakt support",
+    "privacyPolicy":"Personvernerklæring"
+  }
+}

@@ -13,5 +13,11 @@
   "departments": {
     "loading":     "Laddar avdelningar…",
     "loadingPanel":"Laddar…"
+  },
+  "group": {
+    "crumb":       "Grupp",
+    "loading":     "Laddar gruppdata…",
+    "prevMonth":   "Föregående månad",
+    "nextMonth":   "Nästa månad"
   }
 }

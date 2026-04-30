@@ -1,0 +1,13 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "noAccess": {
+    "eyebrow":     "Tilgang begrenset",
+    "title":       "Du har ikke tilgang til denne delen",
+    "body":        "Kontorollen din inkluderer ikke denne delen av appen. Hvis du trenger tilgang, be kontoeieren ta kontakt med CommandCenter så oppdaterer vi tillatelsene dine.",
+    "backToDash":  "Tilbake til dashbord",
+    "emailSupport":"Send e-post til support"
+  }
+}

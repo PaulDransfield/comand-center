@@ -1,0 +1,76 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "page": {
+    "title":    "Välj ditt abonnemang",
+    "subtitle": "Betalt från dag ett — ingen gratis testperiod. Grundarnivån låser 995 kr/mån i 24 månader (endast 10 platser).",
+    "loading":  "Laddar…"
+  },
+  "banner": {
+    "success":      "🎉 Du är nu på {plan}-abonnemanget. Alla funktioner är upplåsta.",
+    "successPlanFallback": "nya",
+    "cancelled":    "Inga ändringar gjordes. Du kan uppgradera när som helst.",
+    "required":     "Välkommen till CommandCenter — välj ett abonnemang nedan för att låsa upp dashboard, integrationer och AI. Vi rekommenderar grundarnivån (10 platser · 995 kr/mån låst i 24 månader).",
+    "pastDue":      "Din senaste betalning gick inte igenom. Uppdatera fakturering nedan för att återställa åtkomst.",
+    "trialEnded":   "Din äldre testperiod har upphört. Välj ett abonnemang för att återställa åtkomst.",
+    "trialDays":    "{days} dagar kvar på din äldre testperiod. Välj ett abonnemang för att behålla din data och integrationer.",
+    "paymentFailed":"⚠️ Din senaste betalning misslyckades. Uppdatera betalmetod för att återställa full åtkomst.",
+    "updatePayment":"Uppdatera betalmetod →"
+  },
+  "billing": {
+    "monthly": "Månatligt",
+    "annual":  "Årligt",
+    "saveBadge":"2 månader gratis"
+  },
+  "plans": {
+    "popular":     "Mest populär",
+    "founding":    "Grundare · 10 platser",
+    "current":     "Nuvarande abonnemang",
+    "currentBtn":  "Nuvarande abonnemang",
+    "manage":      "Hantera fakturering →",
+    "contactSales":"Kontakta försäljning →",
+    "loading":     "Laddar…",
+    "startWith":   "Starta med {plan}",
+    "upgradeTo":   "Uppgradera till {plan}",
+    "switchTo":    "Byt till {plan}",
+    "currency":    "kr / mån",
+    "custom":      "Anpassad",
+    "free":        "Gratis",
+    "desc": {
+      "founding":   "10 platser — 995 kr/mån låst i 24 månader",
+      "solo":       "En restaurang",
+      "group":      "2–5 restauranger — bäst värde",
+      "chain":      "6+ restauranger",
+      "enterprise": "Anpassad prissättning för stora kedjor"
+    }
+  },
+  "booster": {
+    "title":      "AI-tillägg",
+    "priceBadge": "+299 kr/mån",
+    "trialBody":  "Lägg till 100 extra AI-frågor per dag ovanpå vilket betalt abonnemang som helst. Välj ett abonnemang ovan först.",
+    "paidBody":   "Lägg till 100 extra AI-frågor per dag ovanpå ditt abonnemang. Avsluta när som helst.",
+    "needPlan":   "Uppgradera ett abonnemang först",
+    "addBtn":     "Lägg till AI-tillägg →",
+    "loading":    "Laddar…"
+  },
+  "usage": {
+    "title":      "Nuvarande användning",
+    "aiCost":     "AI-kostnad denna månad: ${value}",
+    "limitHit":   "Gräns nådd — uppgradera för att fortsätta",
+    "approaching":"Närmar sig gräns"
+  },
+  "meters": {
+    "businesses":       "Verksamheter",
+    "documents":        "Dokument",
+    "monthly_tokens":   "AI-tokens",
+    "monthly_requests": "AI-förfrågningar",
+    "team_members":     "Teammedlemmar",
+    "audio_overviews":  "Ljudsammanfattningar",
+    "export_schedules": "Scheman"
+  },
+  "errors": {
+    "upgradeFailed": "Uppgradering misslyckades: {message}"
+  }
+}

@@ -13,5 +13,11 @@
   "departments": {
     "loading":     "Loading departments…",
     "loadingPanel":"Loading…"
+  },
+  "group": {
+    "crumb":       "Group",
+    "loading":     "Loading group data…",
+    "prevMonth":   "Previous month",
+    "nextMonth":   "Next month"
   }
 }

@@ -1,0 +1,87 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "steps": {
+    "welcome":     "Välkommen",
+    "restaurant":  "Din restaurang",
+    "systems":     "Dina system",
+    "done":        "Klart"
+  },
+  "stepLabel":     "Steg {n} av {total}",
+  "welcome": {
+    "title":       "Välkommen till CommandCenter",
+    "subtitle":    "Din samlade plattform för att hantera restaurangens ekonomi, personalkostnader och prestation. Vi har dig igång på cirka 2 minuter.",
+    "features": {
+      "pnl_t":     "Resultatrapport",
+      "pnl_d":     "Följ intäkter, kostnader och vinst varje månad",
+      "staff_t":   "Personalhantering",
+      "staff_d":   "Timmar, kostnader och avdelningsfördelning",
+      "fc_t":      "Smart prognos",
+      "fc_d":      "AI-prediktioner baserat på din historik",
+      "ai_t":      "AI-assistent",
+      "ai_d":      "Ställ frågor om din verksamhet på vanlig svenska"
+    },
+    "cta":         "Kom igång"
+  },
+  "restaurant": {
+    "title":       "Din restaurang",
+    "subtitle":    "Berätta grunderna så sätter vi upp ditt konto.",
+    "name":        "Restaurangens namn",
+    "namePlaceholder":"t.ex. Vero Italiano",
+    "city":        "Stad",
+    "cityPlaceholder":"t.ex. Stockholm",
+    "type":        "Typ",
+    "typeOptions": {
+      "restaurant":"Restaurang",
+      "bar":       "Bar & nattklubb",
+      "cafe":      "Café",
+      "bakery":    "Bageri",
+      "catering":  "Catering",
+      "group":     "Restauranggrupp"
+    },
+    "targetsHeader":"Kostnadsmål",
+    "foodCost":    "Matkostnad %",
+    "foodHint":    "28-35%",
+    "staffCost":   "Personalkostnad %",
+    "staffHint":   "30-40%",
+    "margin":      "Nettomarginal %",
+    "marginHint":  "10-20%",
+    "errors": {
+      "missingName": "Vänligen ange restaurangens namn"
+    },
+    "continue":    "Fortsätt",
+    "back":        "Tillbaka"
+  },
+  "systems": {
+    "title":       "Dina system",
+    "subtitle":    "Berätta vilka system du använder. Vårt team kopplar in allt åt dig — inget tekniskt arbete krävs från din sida.",
+    "staff":       "Personal-schemaläggning",
+    "accounting":  "Bokföring",
+    "pos":         "Kassasystem",
+    "promise":     "Vårt team kopplar in dina anslutningar inom 1 arbetsdag och mejlar dig när allt är klart.",
+    "continue":    "Fortsätt",
+    "back":        "Tillbaka"
+  },
+  "done": {
+    "title":       "Allt klart!",
+    "subtitleNamed":"{name} är redo. Vårt team hör av sig inom 1 arbetsdag för att koppla in dina system. Under tiden — utforska plattformen.",
+    "subtitlePlain":"Din restaurang är redo. Vårt team hör av sig inom 1 arbetsdag för att koppla in dina system. Under tiden — utforska plattformen.",
+    "next1_t":     "Se din dashboard",
+    "next1_d":     "Se dina KPI:er och prestandaöversikt",
+    "next2_t":     "Kolla prognossidan",
+    "next2_d":     "AI-prediktioner för kommande månader",
+    "next3_t":     "Prova AI-assistenten",
+    "next3_d":     "Ställ frågor om din verksamhet",
+    "next4_t":     "Ladda upp en faktura",
+    "next4_d":     "AI läser och kategoriserar den automatiskt",
+    "loading":     "Laddar…",
+    "cta":         "Gå till dashboard"
+  },
+  "footer": {
+    "needHelp":     "Behöver du hjälp?",
+    "contactSupport":"Kontakta support",
+    "privacyPolicy":"Integritetspolicy"
+  }
+}

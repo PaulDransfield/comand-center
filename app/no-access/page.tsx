@@ -9,8 +9,10 @@
 export const dynamic = 'force-dynamic'
 
 import AppShell from '@/components/AppShell'
+import { useTranslations } from 'next-intl'
 
 export default function NoAccessPage() {
+  const t = useTranslations('access.noAccess')
   return (
     <AppShell>
       <div style={{
@@ -32,14 +34,13 @@ export default function NoAccessPage() {
             fontSize: 11, fontWeight: 700, letterSpacing: '0.08em',
             textTransform: 'uppercase' as const, color: '#9ca3af', marginBottom: 8,
           }}>
-            Access restricted
+            {t('eyebrow')}
           </div>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: '#111', margin: '0 0 12px 0', letterSpacing: '-0.02em' }}>
-            You don't have access to this section
+            {t('title')}
           </h1>
           <p style={{ fontSize: 14, color: '#374151', lineHeight: 1.6, margin: '0 0 20px 0' }}>
-            Your account role doesn't include this part of the app. If you need access, ask your
-            account owner to email CommandCenter and we'll update your permissions.
+            {t('body')}
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
             <a
@@ -54,7 +55,7 @@ export default function NoAccessPage() {
                 fontSize: 14, fontWeight: 500,
               }}
             >
-              Back to dashboard
+              {t('backToDash')}
             </a>
             <a
               href="mailto:hello@comandcenter.se"
@@ -69,7 +70,7 @@ export default function NoAccessPage() {
                 border: '1px solid #e5e7eb',
               }}
             >
-              Email support
+              {t('emailSupport')}
             </a>
           </div>
         </div>
