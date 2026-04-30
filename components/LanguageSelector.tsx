@@ -82,8 +82,16 @@ export function LanguageSelector({
   }
 
   // compact (default) — flag button with dropdown.
+  // When used in a narrow container like the sidebar, set placement="top"
+  // → the wrapper goes full-width and the menu spans the trigger so neither
+  // overflows the parent column.
+  const isNarrowHost = placement === 'top'
   return (
-    <div style={{ position: 'relative' as const, display: 'inline-block' }}>
+    <div style={{
+      position: 'relative' as const,
+      display:  isNarrowHost ? 'block' : 'inline-block',
+      width:    isNarrowHost ? '100%'  : 'auto',
+    }}>
       <button
         onClick={() => setOpen(o => !o)}
         disabled={pending}
@@ -96,8 +104,10 @@ export function LanguageSelector({
           borderRadius: 7,
           fontSize:     12, fontWeight: 500,
           cursor:       pending ? 'wait' : 'pointer',
-          display:      'inline-flex',
+          display:      isNarrowHost ? 'flex' : 'inline-flex',
+          width:        isNarrowHost ? '100%' : 'auto',
           alignItems:   'center',
+          justifyContent: 'space-between',
           gap:          6,
         }}
       >
@@ -113,13 +123,15 @@ export function LanguageSelector({
             ...(placement === 'top'
               ? { bottom: 'calc(100% + 4px)' }
               : { top:    'calc(100% + 4px)' }),
-            right:    0,
+            // In narrow-host mode (sidebar), span the trigger's full width
+            // so nothing overflows the column. Otherwise right-align.
+            ...(isNarrowHost ? { left: 0, right: 0 } : { right: 0 }),
             background: onTone === 'dark' ? '#0f1421' : 'white',
             border:     `1px solid ${onTone === 'dark' ? 'rgba(255,255,255,0.12)' : '#e5e7eb'}`,
             borderRadius: 7,
             padding:    4,
             boxShadow:  '0 8px 24px rgba(0,0,0,0.18)',
-            minWidth:   140,
+            minWidth:   isNarrowHost ? 0 : 140,
             zIndex:     50,
           }}
         >
