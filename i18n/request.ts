@@ -87,5 +87,26 @@ export default getRequestConfig(async () => {
   return {
     locale,
     messages: await loadMessages(locale),
+    // Surface the real cause of next-intl errors before the runtime
+    // wrapper masks them as anonymous Error(void 0). Without this hook
+    // a missing-message / missing-context bug shows up as the same
+    // opaque digest on every page in both build prerender and runtime
+    // logs, which is what cost an hour debugging the 2026-05-01 layout
+    // regression. Logging here at least gets a useful console.error
+    // line into Vercel's runtime log stream and Sentry's breadcrumbs.
+    onError(error) {
+      const code  = (error as any)?.code ?? 'UNKNOWN'
+      const msg   = (error as any)?.originalMessage ?? error?.message ?? String(error)
+      console.error(`[next-intl] ${code}: ${msg}`)
+    },
+    getMessageFallback({ namespace, key, error }) {
+      // Default behaviour returns the key path as plain text. We add the
+      // error code so a missing translation is visually distinct in the
+      // UI (`{access.foo[MISSING_MESSAGE]}`) and easier to spot during
+      // QA — without throwing, which would crash the page.
+      const path = [namespace, key].filter(Boolean).join('.')
+      const code = (error as any)?.code
+      return code ? `{${path}[${code}]}` : `{${path}}`
+    },
   }
 })
