@@ -18,44 +18,7 @@
   },
   "departments": {
     "loading":     "Loading departments…",
-    "loadingPanel":"Loading…",
-    "weekLabel":   "Week {num} · {range}",
-    "eyebrow":     "DEPARTMENTS — {period}",
-    "hero": {
-      "noActivity":   "No department data for {period} — departments sync nightly.",
-      "noSplit":      "{names} active — revenue split not yet allocated, GP% unavailable.",
-      "spread":       "{bestName} {bestPct} margin, {worstName} at {worstPct} — labour is the swing factor.",
-      "soloActive":   "{name} {pct} margin — only active dept this period.",
-      "noMargin":     "No margin data yet.",
-      "ctxTotal":     "{amount} total",
-      "ctxAvgLabour": "avg labour {pct}",
-      "ctxAtLoss":    "{name} running at loss"
-    },
-    "stats": {
-      "revenue":      "Revenue",
-      "departments":  "{count, plural, one {# dept} other {# depts}}",
-      "profit":       "Profit",
-      "groupGP":      "{pct} group GP",
-      "revPerHour":   "Rev/hour",
-      "hoursWorked":  "{hours}h worked"
-    },
-    "empty": {
-      "title": "No department data for {period}",
-      "body":  "Departments sync nightly from Personalkollen. Check back after the next sync, or open a different period."
-    },
-    "table": {
-      "department":   "Department",
-      "revenue":      "Revenue",
-      "profit":       "Profit",
-      "gpPct":        "GP%",
-      "labourPct":    "Labour %",
-      "trend":        "30d trend"
-    },
-    "attention": {
-      "atLoss":      "running at a loss — {amount} deficit this period.",
-      "lowMargin":   "margin {pct} — below 30% threshold.",
-      "noLabour":    "100% margin flagged — labour not allocated, check sync."
-    }
+    "loadingPanel":"Loading…"
   },
   "group": {
     "crumb":       "Group",

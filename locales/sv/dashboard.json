@@ -61,29 +61,5 @@
   },
   "period": {
     "weekLabel":  "Vecka {num} · {range}"
-  },
-  "chart": {
-    "viewWeek":     "Vecka",
-    "viewMonth":    "Månad",
-    "weeks":        "Veckor",
-    "months":       "Månader",
-    "compare":      "Jämför",
-    "compareNone":  "Ingen",
-    "comparePrevWeek":  "Förra veckan",
-    "comparePrevMonth": "Förra månaden",
-    "compareAi":    "AI",
-    "clearFilter":  "Rensa filter",
-    "ariaChart":    "Daglig intäkt, personalkostnad och bruttomarginal för {period}",
-    "ariaBar":      "{day} {date}: intäkt {revenue}, personal {labour}",
-    "badgeClosed":  "STÄNGT",
-    "badgePredicted":"PROGNOS",
-    "badgeAi":      "AI",
-    "filter": {
-      "all":        "Alla dagar",
-      "weekdays":   "Vardagar",
-      "weekends":   "Helger",
-      "selected":   "{count} dag vald",
-      "selectedPlural":"{count} dagar valda"
-    }
   }
 }

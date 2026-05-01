@@ -43,7 +43,6 @@ async function loadMessages(locale: Locale): Promise<Record<string, any>> {
     'onboarding',
     'access',
     'askai',
-    'misc',
   ]
   const merged: Record<string, any> = {}
   for (const ns of namespaces) {

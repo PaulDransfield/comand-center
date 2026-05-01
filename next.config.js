@@ -53,16 +53,6 @@ const nextConfig = {
   webpack(config) {
     config.resolve = config.resolve ?? {}
     config.resolve.alias = { ...(config.resolve.alias ?? {}), canvas: false, '@napi-rs/canvas': false }
-    // Suppress the "ESM packages need to be imported" warning for
-    // pdfjs-dist's worker .mjs. We resolve it via require.resolve at
-    // runtime (intentionally, to get the absolute filesystem path for
-    // pdfjs's GlobalWorkerOptions.workerSrc) and force-include it via
-    // outputFileTracingIncludes — bundling it isn't desired.
-    config.ignoreWarnings = [
-      ...(config.ignoreWarnings ?? []),
-      { module: /pdfjs-dist[\\/]legacy[\\/]build[\\/]pdf\.worker\.mjs/ },
-      { message: /pdfjs-dist[\\/]legacy[\\/]build[\\/]pdf\.worker\.mjs/ },
-    ]
     return config
   },
 

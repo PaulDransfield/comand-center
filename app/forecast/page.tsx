@@ -359,13 +359,13 @@ export default function ForecastPage() {
           marginBottom: 14,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>{t('chart.header')}</div>
+            <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>Full-year revenue</div>
             <div style={{ display: 'flex', gap: 14, fontSize: UX.fsMicro, color: UX.ink3 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 14, height: 2, background: UX.navy, borderRadius: 1 }} /> {t('chart.actual')}
+                <span style={{ width: 14, height: 2, background: UX.navy, borderRadius: 1 }} /> Actual
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 14, height: 0, borderTop: `2px dashed ${UX.indigo}` }} /> {t('chart.forecast')}
+                <span style={{ width: 14, height: 0, borderTop: `2px dashed ${UX.indigo}` }} /> Forecast
               </span>
             </div>
           </div>
@@ -378,8 +378,8 @@ export default function ForecastPage() {
               lineHeight:  1.55,
             }}>
               {actualMonths === 0
-                ? t.rich('chart.emptyNoData', { b: chunks => <b>{chunks}</b> })
-                : t('chart.emptyOneMonth')}
+                ? <>No forecast or actuals to plot yet.  The monthly calibration cron generates forecasts from last year's trading data — it runs on the 1st of each month, or click <b>Refresh forecast</b> above.</>
+                : <>Only 1 month of actuals and no forecast generated yet. Check back after the 1st of next month, or run the calibration manually.</>}
             </div>
           ) : (
             <ForecastChart
@@ -394,7 +394,7 @@ export default function ForecastPage() {
         {/* ─── Supporting: forecast flags ─────────────────────────────── */}
         {flags.length > 0 && (
           <AttentionPanel
-            title={t('flags.panelTitle')}
+            title="Forecast flags"
             items={flags}
             maxItems={6}
           />

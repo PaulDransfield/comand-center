@@ -4,13 +4,6 @@ import CookieConsent from '@/components/CookieConsent'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 
-// next-intl resolves the locale from cookies/headers in i18n/request.ts,
-// which makes the root layout inherently request-scoped. Static prerender
-// has no request context, so the resolution throws — forcing dynamic
-// rendering at the root makes every route opt out of prerender. Required
-// pattern for cookie-based i18n without locale-prefixed routes.
-export const dynamic = 'force-dynamic'
-
 export const metadata: Metadata = {
   title: {
     default:  'CommandCenter',
@@ -29,20 +22,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // the user's chosen language. next-intl's request config (i18n/request.ts)
   // resolves locale from cookie / Accept-Language; the cookie is the
   // source of truth post-first-visit.
-  //
-  // Defensive fallback — getLocale()/getMessages() throw if the request
-  // context isn't available (e.g. during ISR revalidation, or if the
-  // next-intl plugin chain breaks for any reason). Falling back to en-GB
-  // with empty messages keeps the page rendering instead of crashing into
-  // global-error.tsx.
-  let locale = 'en-GB'
-  let messages: any = {}
-  try {
-    locale   = await getLocale()
-    messages = await getMessages()
-  } catch (err: any) {
-    console.error('[layout] next-intl resolution failed:', err?.message ?? err, err?.stack)
-  }
+  const locale   = await getLocale()
+  const messages = await getMessages()
 
   return (
     <html lang={locale}>

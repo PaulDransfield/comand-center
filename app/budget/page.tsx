@@ -400,8 +400,8 @@ export default function BudgetPage() {
               {/* Modal header */}
               <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>{t('modal.title', { year })}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{t('modal.subtitle')}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>AI-generated budgets for {year}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>Review, then apply all — or close to discard</div>
                 </div>
                 <button onClick={() => setSuggestions(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
               </div>
@@ -409,7 +409,7 @@ export default function BudgetPage() {
               {/* Strategy */}
               {suggestions.overall_strategy && (
                 <div style={{ padding: '14px 24px', background: '#fafbff', borderBottom: '1px solid #f3f4f6', fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-                  <span style={{ fontWeight: 700, color: '#6366f1' }}>{t('modal.strategy')} </span>
+                  <span style={{ fontWeight: 700, color: '#6366f1' }}>Strategy: </span>
                   {suggestions.overall_strategy}
                 </div>
               )}
@@ -432,7 +432,7 @@ export default function BudgetPage() {
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
-                      {t('modal.monthLine', { food: s.food_cost_pct_target, staff: s.staff_cost_pct_target, profit: fmtKr(s.net_profit_target) })}
+                      Food {s.food_cost_pct_target}% · Staff {s.staff_cost_pct_target}% · Profit target {fmtKr(s.net_profit_target)}
                     </div>
                     {s.reasoning && (
                       <div style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>{s.reasoning}</div>
@@ -448,14 +448,14 @@ export default function BudgetPage() {
                   disabled={applying}
                   style={{ padding: '9px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                 >
-                  {t('modal.discard')}
+                  Discard
                 </button>
                 <button
                   onClick={applyAllSuggestions}
                   disabled={applying}
                   style={{ padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: applying ? 'not-allowed' : 'pointer', opacity: applying ? 0.6 : 1 }}
                 >
-                  {applying ? t('modal.applying') : t('modal.applyAll')}
+                  {applying ? 'Applying…' : 'Apply all 12 months →'}
                 </button>
               </div>
             </div>
@@ -482,10 +482,10 @@ export default function BudgetPage() {
             letterSpacing: '0.06em',
             textTransform: 'uppercase' as const,
           }}>
-            <span>{t('table.month')}</span>
-            <span>{t('table.progress')}</span>
-            <span style={{ textAlign: 'right' as const }}>{t('table.variance')}</span>
-            <span style={{ textAlign: 'right' as const }}>{t('table.status')}</span>
+            <span>Month</span>
+            <span>Progress vs budget</span>
+            <span style={{ textAlign: 'right' as const }}>Variance</span>
+            <span style={{ textAlign: 'right' as const }}>Status</span>
             <span style={{ textAlign: 'right' as const }}></span>
           </div>
 
@@ -524,20 +524,17 @@ export default function BudgetPage() {
                                : onTrackFlag === true    ? UX.greenInk
                                : onTrackFlag === false   ? UX.redInk
                                :                           UX.ink5
-              // Status key drives both the i18n label and the tone — keep
-              // the key locale-neutral so the colour mapping is stable.
-              const statusKey: 'notSet' | 'noBudget' | 'noActuals' | 'onTrack' | 'offTrack' =
-                !b && !hasActual             ? 'notSet'
-                : !b && hasActual            ? 'noBudget'
-                : !hasActual                 ? 'noActuals'
-                : onTrackFlag                ? 'onTrack'
-                :                              'offTrack'
-              const statusLabel = t(`table.status_${statusKey}`)
+              const statusLabel: string =
+                !b && !hasActual             ? 'NOT SET'
+                : !b && hasActual            ? 'NO BUDGET'
+                : !hasActual                 ? 'NO ACTUALS'
+                : onTrackFlag                ? 'ON TRACK'
+                :                              'OFF TRACK'
               const statusTone: 'good' | 'warning' | 'bad' | 'neutral' | 'info' =
-                statusKey === 'onTrack'   ? 'good'
-                : statusKey === 'offTrack' ? 'bad'
-                : statusKey === 'noBudget' ? 'info'
-                :                            'neutral'
+                statusLabel === 'ON TRACK'   ? 'good'
+                : statusLabel === 'OFF TRACK' ? 'bad'
+                : statusLabel === 'NO BUDGET' ? 'info'
+                :                               'neutral'
 
               return (
                 <div key={row.month}>
@@ -554,10 +551,10 @@ export default function BudgetPage() {
                       <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
                         {[
-                          { key: 'revenue_target',        placeholder: t('table.phRevenue') },
-                          { key: 'food_cost_pct_target',  placeholder: t('table.phFood') },
-                          { key: 'staff_cost_pct_target', placeholder: t('table.phStaff') },
-                          { key: 'net_profit_target',     placeholder: t('table.phProfit') },
+                          { key: 'revenue_target',        placeholder: 'rev' },
+                          { key: 'food_cost_pct_target',  placeholder: 'food %' },
+                          { key: 'staff_cost_pct_target', placeholder: 'staff %' },
+                          { key: 'net_profit_target',     placeholder: 'profit' },
                         ].map(f => (
                           <input
                             key={f.key}
@@ -573,11 +570,11 @@ export default function BudgetPage() {
                       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                         <button onClick={() => save(row.month)} disabled={saving}
                           style={{ padding: '4px 10px', background: UX.navy, color: 'white', border: 'none', borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', fontWeight: UX.fwMedium }}>
-                          {saving ? '…' : t('table.save')}
+                          {saving ? '…' : 'Save'}
                         </button>
                         <button onClick={() => setEditing(null)}
                           style={{ padding: '4px 8px', background: UX.borderSoft, border: 'none', borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', color: UX.ink2 }}>
-                          {t('table.cancel')}
+                          Cancel
                         </button>
                       </div>
                     </div>
@@ -625,7 +622,7 @@ export default function BudgetPage() {
                             )}
                             {tickPct != null && (
                               <div
-                                title={t('table.targetTip', { amount: fmtKr(b!.revenue_target) })}
+                                title={`Target: ${fmtKr(b!.revenue_target)}`}
                                 style={{
                                   position:     'absolute' as const,
                                   left:         `calc(${tickPct}% - 1px)`,
@@ -662,7 +659,7 @@ export default function BudgetPage() {
                                     fontVariantNumeric: 'tabular-nums' as const,
                                     whiteSpace:   'nowrap' as const,
                                   }}>
-                                    {t('table.labelAct', { amount: fmtKr(a!.revenue) })}
+                                    act {fmtKr(a!.revenue)}
                                   </span>
                                 )}
                                 {showBud && !hideBud && (
@@ -675,7 +672,7 @@ export default function BudgetPage() {
                                     fontVariantNumeric: 'tabular-nums' as const,
                                     whiteSpace:   'nowrap' as const,
                                   }}>
-                                    {t('table.labelBud', { amount: fmtKr(b!.revenue_target) })}
+                                    bud {fmtKr(b!.revenue_target)}
                                   </span>
                                 )}
                               </>
@@ -684,7 +681,7 @@ export default function BudgetPage() {
                         </div>
                       ) : (
                         <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontStyle: 'italic' as const }}>
-                          {t('table.noBudget')}
+                          budget not set
                         </span>
                       )}
 
@@ -709,9 +706,7 @@ export default function BudgetPage() {
                         onClick={e => e.stopPropagation()}
                       >
                         <button
-                          aria-label={b
-                            ? t('table.editAria', { month: MONTHS[row.month - 1] })
-                            : t('table.setAria',  { month: MONTHS[row.month - 1] })}
+                          aria-label={b ? `Edit ${MONTHS[row.month - 1]} budget` : `Set ${MONTHS[row.month - 1]} budget`}
                           onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
                           style={{
                             padding:      '3px 8px',
