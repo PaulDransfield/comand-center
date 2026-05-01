@@ -18,7 +18,44 @@
   },
   "departments": {
     "loading":     "Laddar avdelningar…",
-    "loadingPanel":"Laddar…"
+    "loadingPanel":"Laddar…",
+    "weekLabel":   "Vecka {num} · {range}",
+    "eyebrow":     "AVDELNINGAR — {period}",
+    "hero": {
+      "noActivity":   "Ingen avdelningsdata för {period} — avdelningar synkas nattligen.",
+      "noSplit":      "{names} aktiva — intäktsfördelning ännu inte allokerad, GP% otillgänglig.",
+      "spread":       "{bestName} {bestPct} marginal, {worstName} på {worstPct} — personal är hävstången.",
+      "soloActive":   "{name} {pct} marginal — enda aktiva avdelningen denna period.",
+      "noMargin":     "Ingen marginaldata än.",
+      "ctxTotal":     "{amount} totalt",
+      "ctxAvgLabour": "snitt personal {pct}",
+      "ctxAtLoss":    "{name} går med förlust"
+    },
+    "stats": {
+      "revenue":      "Intäkter",
+      "departments":  "{count, plural, one {# avd} other {# avd}}",
+      "profit":       "Vinst",
+      "groupGP":      "{pct} grupp-GP",
+      "revPerHour":   "Int/timme",
+      "hoursWorked":  "{hours}h arbetade"
+    },
+    "empty": {
+      "title": "Ingen avdelningsdata för {period}",
+      "body":  "Avdelningar synkas nattligen från Personalkollen. Kom tillbaka efter nästa synk, eller öppna en annan period."
+    },
+    "table": {
+      "department":   "Avdelning",
+      "revenue":      "Intäkt",
+      "profit":       "Vinst",
+      "gpPct":        "GP%",
+      "labourPct":    "Personal %",
+      "trend":        "30d trend"
+    },
+    "attention": {
+      "atLoss":      "går med förlust — {amount} underskott denna period.",
+      "lowMargin":   "marginal {pct} — under 30%-tröskeln.",
+      "noLabour":    "100% marginal flaggad — personal inte allokerad, kontrollera synk."
+    }
   },
   "group": {
     "crumb":       "Grupp",

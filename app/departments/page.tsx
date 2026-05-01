@@ -99,35 +99,33 @@ export default function DepartmentsPage() {
   const headline = (() => {
     if (loading) return <>{t('loading')}</>
     if (!hasAnyActivity) {
-      return <>No department data for <span style={{ fontWeight: UX.fwMedium }}>{periodLabel}</span> — departments sync nightly.</>
+      return <>{t('hero.noActivity', { period: periodLabel })}</>
     }
     if (withGP.length === 0) {
-      // Activity exists but we can't compute GP (probably no revenue split yet)
       const names = activeDepts.slice(0, 3).map(d => d.name).filter(Boolean).join(', ')
-      return <>{names} active — <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>revenue split not yet allocated</span>, GP% unavailable.</>
+      return <>{t('hero.noSplit', { names })}</>
     }
     if (best && worst && best !== worst) {
-      return (
-        <>
-          <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{best.name} {fmtPct(best.gp_pct)} margin</span>
-          , <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{worst.name} at {fmtPct(worst.gp_pct)}</span>
-          {' '}— labour is the swing factor.
-        </>
-      )
+      return <span>{t('hero.spread', {
+        bestName:  best.name,
+        bestPct:   fmtPct(best.gp_pct),
+        worstName: worst.name,
+        worstPct:  fmtPct(worst.gp_pct),
+      })}</span>
     }
     if (best) {
-      return <><span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{best.name} {fmtPct(best.gp_pct)} margin</span> — only active dept this period.</>
+      return <span>{t('hero.soloActive', { name: best.name, pct: fmtPct(best.gp_pct) })}</span>
     }
-    return <>No margin data yet.</>
+    return <>{t('hero.noMargin')}</>
   })()
 
   const heroContext = (() => {
     if (!hasAnyActivity) return undefined
     const parts: string[] = []
-    if (summary.total_revenue > 0) parts.push(`${fmtKr(summary.total_revenue)} total`)
-    if (summary.labour_pct != null) parts.push(`avg labour ${fmtPct(summary.labour_pct)}`)
+    if (summary.total_revenue > 0) parts.push(t('hero.ctxTotal',     { amount: fmtKr(summary.total_revenue) }))
+    if (summary.labour_pct != null) parts.push(t('hero.ctxAvgLabour', { pct: fmtPct(summary.labour_pct) }))
     if (worst && Number(worst.revenue ?? 0) - Number(worst.staff_cost ?? 0) < 0) {
-      parts.push(`${worst.name} running at loss`)
+      parts.push(t('hero.ctxAtLoss', { name: worst.name }))
     }
     return parts.length ? parts.join(' · ') : undefined
   })()
@@ -140,13 +138,13 @@ export default function DepartmentsPage() {
       attention.push({
         tone:    'bad',
         entity:  d.name,
-        message: `running at a loss — ${fmtKr(Math.abs(profit))} deficit this period.`,
+        message: t('attention.atLoss', { amount: fmtKr(Math.abs(profit)) }),
       })
     } else if (d.gp_pct != null && d.gp_pct < 30) {
       attention.push({
         tone:    'warning',
         entity:  d.name,
-        message: `margin ${fmtPct(d.gp_pct)} — below 30% threshold.`,
+        message: t('attention.lowMargin', { pct: fmtPct(d.gp_pct) }),
       })
     }
   }
@@ -157,7 +155,7 @@ export default function DepartmentsPage() {
         attention.push({
           tone:    'warning',
           entity:  d.name,
-          message: `100% margin flagged — labour not allocated, check sync.`,
+          message: t('attention.noLabour'),
         })
       }
     }
@@ -179,7 +177,7 @@ export default function DepartmentsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <button onClick={() => setWeekOffset(o => o - 1)} style={deptNavBtn}>‹</button>
                   <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                    Week {(curr as any).weekNum} · {curr.label}
+                    {t('weekLabel', { num: (curr as any).weekNum, range: curr.label })}
                   </div>
                   <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...deptNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
                 </div>
@@ -203,27 +201,27 @@ export default function DepartmentsPage() {
             activity, so we don't prominently display "0 kr · 0 dept"
             next to an empty-state headline. */}
         <PageHero
-          eyebrow={`DEPARTMENTS — ${periodLabel.toUpperCase()}`}
+          eyebrow={t('eyebrow', { period: periodLabel.toUpperCase() })}
           headline={headline}
           context={heroContext}
           right={hasAnyActivity ? (
             <SupportingStats
               items={[
                 {
-                  label: 'Revenue',
+                  label: t('stats.revenue'),
                   value: fmtKr(summary.total_revenue ?? 0),
-                  sub:   `${activeDepts.length} dept${activeDepts.length === 1 ? '' : 's'}`,
+                  sub:   t('stats.departments', { count: activeDepts.length }),
                 },
                 {
-                  label: 'Profit',
+                  label: t('stats.profit'),
                   value: fmtKr(Math.max(0, (summary.total_revenue ?? 0) - (summary.total_staff_cost ?? 0))),
-                  sub:   summary.gp_pct != null ? `${fmtPct(summary.gp_pct)} group GP` : undefined,
+                  sub:   summary.gp_pct != null ? t('stats.groupGP', { pct: fmtPct(summary.gp_pct) }) : undefined,
                   deltaTone: summary.gp_pct != null && summary.gp_pct >= 45 ? 'good' : 'bad' as const,
                 },
                 {
-                  label: 'Rev/hour',
+                  label: t('stats.revPerHour'),
                   value: summary.rev_per_hour ? fmtKr(summary.rev_per_hour) : '—',
-                  sub:   summary.total_hours ? `${Math.round(summary.total_hours)}h worked` : undefined,
+                  sub:   summary.total_hours ? t('stats.hoursWorked', { hours: Math.round(summary.total_hours) }) : undefined,
                 },
               ]}
             />
@@ -243,10 +241,10 @@ export default function DepartmentsPage() {
             textAlign:    'center' as const,
           }}>
             <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>
-              No department data for {periodLabel}
+              {t('empty.title', { period: periodLabel })}
             </div>
             <div style={{ fontSize: UX.fsBody, color: UX.ink3, maxWidth: 440, margin: '0 auto' }}>
-              Departments sync nightly from Personalkollen. Check back after the next sync, or open a different period.
+              {t('empty.body')}
             </div>
           </div>
         ) : (
@@ -263,9 +261,17 @@ export default function DepartmentsPage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsBody }}>
                   <thead>
                     <tr style={{ background: UX.subtleBg }}>
-                      {['', 'Department', 'Revenue', 'Profit', 'GP%', 'Labour %', '30d trend'].map((h, i) => (
+                      {[
+                        { key: 'spacer',     label: '' },
+                        { key: 'department', label: t('table.department') },
+                        { key: 'revenue',    label: t('table.revenue') },
+                        { key: 'profit',     label: t('table.profit') },
+                        { key: 'gpPct',      label: t('table.gpPct') },
+                        { key: 'labourPct',  label: t('table.labourPct') },
+                        { key: 'trend',      label: t('table.trend') },
+                      ].map((h, i) => (
                         <th
-                          key={h || `col-${i}`}
+                          key={h.key}
                           style={{
                             padding:       '10px 14px',
                             textAlign:     i <= 1 ? 'left' as const : 'right' as const,
@@ -277,7 +283,7 @@ export default function DepartmentsPage() {
                             width:         i === 0 ? 24 : undefined,
                           }}
                         >
-                          {h}
+                          {h.label}
                         </th>
                       ))}
                     </tr>

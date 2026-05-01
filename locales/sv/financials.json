@@ -211,6 +211,22 @@
       "totalCost":     "total kostnad",
       "empty":         "Ingen kostnadsdata för denna period"
     },
+    "tunable": {
+      "title":         "Vad som kan justeras",
+      "labour":        "Personal",
+      "food":          "Matkostnad",
+      "overheads":     "Omkostnader",
+      "weekView":      "Veckovy",
+      "labourOver":    "Ligger {pp}pp över mål. Varje 1pp på personalen är värd {amount} kr för denna period.",
+      "labourOnTarget":"Håller {pct} — inom 42%-målbandet. Ingen åtgärd behövs.",
+      "foodOver":      "På {pct}, {pp}pp över 32%-målet — värt att granska leverantörspriser eller portionsstorlekar.",
+      "foodImproved":  "Förbättrats från {prev} till {cur} — behåll vad som ändrades.",
+      "foodOnTarget":  "På {pct} — inom 28–32%-bandet.",
+      "foodNoData":    "Ingen Fortnox-data för denna period — ladda upp Resultatrapporten för att komplettera bilden.",
+      "ohHigh":        "På {pct} av intäkter — över det typiska 15–25%-intervallet. Se /overheads för kategoriuppdelning.",
+      "ohOnTarget":    "På {pct} — inom det typiska 15–25%-intervallet.",
+      "weekViewMsg":   "Matkostnad och omkostnader spåras månadsvis i Fortnox — byt till Månad för full uppdelning."
+    },
     "breakdown": {
       "title":         "Full uppdelning",
       "vsLabel":       "◂ mot {label}",

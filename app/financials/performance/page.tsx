@@ -729,8 +729,8 @@ export default function PerformancePage() {
         {currentData && (
           <div style={{ marginTop: 12 }}>
             <AttentionPanel
-              title="What's tunable"
-              items={buildTunableItems(period, currentData, compareData)}
+              title={t('tunable.title')}
+              items={buildTunableItems(period, currentData, compareData, t)}
               maxItems={4}
             />
           </div>
@@ -1415,7 +1415,7 @@ function granLabel(g: Granularity): string {
 }
 
 // ─── Template "What's tunable" items ──────────────────────────────────────
-function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData | null): AttentionItem[] {
+function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData | null, t: any): AttentionItem[] {
   const items: AttentionItem[] = []
   // Labour lever
   if (cur.revenue > 0 && cur.staff_pct != null) {
@@ -1424,35 +1424,35 @@ function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData 
     if (over > 2) {
       items.push({
         tone: over > 10 ? 'bad' : 'warning',
-        entity: 'Labour',
-        message: `Running ${over.toFixed(1)}pp over target. Each 1pp move on labour is worth ${fmtShortKr(onePpKr)} kr for this period.`,
+        entity: t('tunable.labour'),
+        message: t('tunable.labourOver', { pp: over.toFixed(1), amount: fmtShortKr(onePpKr) }),
       })
     } else {
-      items.push({ tone: 'good', entity: 'Labour', message: `Holding at ${fmtPct(cur.staff_pct)} — inside the 42% target band. No action needed.` })
+      items.push({ tone: 'good', entity: t('tunable.labour'), message: t('tunable.labourOnTarget', { pct: fmtPct(cur.staff_pct) }) })
     }
   }
   // Food
   if (cur.has_food && cur.food_pct != null) {
     const over = cur.food_pct - 32
     if (over > 2) {
-      items.push({ tone: over > 6 ? 'bad' : 'warning', entity: 'Food cost', message: `At ${fmtPct(cur.food_pct)}, ${over.toFixed(1)}pp over the 32% target — worth auditing supplier prices or portion sizes.` })
+      items.push({ tone: over > 6 ? 'bad' : 'warning', entity: t('tunable.food'), message: t('tunable.foodOver', { pct: fmtPct(cur.food_pct), pp: over.toFixed(1) }) })
     } else if (prev && prev.food_pct != null && cur.food_pct < prev.food_pct - 1) {
-      items.push({ tone: 'good', entity: 'Food cost', message: `Improved from ${fmtPct(prev.food_pct)} to ${fmtPct(cur.food_pct)} — keep whatever changed.` })
+      items.push({ tone: 'good', entity: t('tunable.food'), message: t('tunable.foodImproved', { prev: fmtPct(prev.food_pct), cur: fmtPct(cur.food_pct) }) })
     } else {
-      items.push({ tone: 'good', entity: 'Food cost', message: `At ${fmtPct(cur.food_pct)} — inside the 28–32% band.` })
+      items.push({ tone: 'good', entity: t('tunable.food'), message: t('tunable.foodOnTarget', { pct: fmtPct(cur.food_pct) }) })
     }
   } else if (!cur.has_food) {
-    items.push({ tone: 'warning', entity: 'Food cost', message: 'No Fortnox data for this period — upload the Resultatrapport to complete the picture.' })
+    items.push({ tone: 'warning', entity: t('tunable.food'), message: t('tunable.foodNoData') })
   }
   // Overheads
   if (cur.has_overheads && cur.overheads_pct != null) {
     if (cur.overheads_pct > 25) {
-      items.push({ tone: 'warning', entity: 'Overheads', message: `At ${fmtPct(cur.overheads_pct)} of revenue — above the 15–25% typical range. See /overheads for category split.` })
+      items.push({ tone: 'warning', entity: t('tunable.overheads'), message: t('tunable.ohHigh', { pct: fmtPct(cur.overheads_pct) }) })
     } else {
-      items.push({ tone: 'good', entity: 'Overheads', message: `At ${fmtPct(cur.overheads_pct)} — inside the typical 15–25% range.` })
+      items.push({ tone: 'good', entity: t('tunable.overheads'), message: t('tunable.ohOnTarget', { pct: fmtPct(cur.overheads_pct) }) })
     }
   } else if (period.granularity === 'week') {
-    items.push({ tone: 'warning', entity: 'Week view', message: 'Food and overheads are tracked monthly in Fortnox — switch to Month for the full breakdown.' })
+    items.push({ tone: 'warning', entity: t('tunable.weekView'), message: t('tunable.weekViewMsg') })
   }
   return items.slice(0, 4)
 }

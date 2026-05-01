@@ -211,6 +211,22 @@
       "totalCost":     "total cost",
       "empty":         "No cost data for this period"
     },
+    "tunable": {
+      "title":         "What's tunable",
+      "labour":        "Labour",
+      "food":          "Food cost",
+      "overheads":     "Overheads",
+      "weekView":      "Week view",
+      "labourOver":    "Running {pp}pp over target. Each 1pp move on labour is worth {amount} kr for this period.",
+      "labourOnTarget":"Holding at {pct} — inside the 42% target band. No action needed.",
+      "foodOver":      "At {pct}, {pp}pp over the 32% target — worth auditing supplier prices or portion sizes.",
+      "foodImproved":  "Improved from {prev} to {cur} — keep whatever changed.",
+      "foodOnTarget":  "At {pct} — inside the 28–32% band.",
+      "foodNoData":    "No Fortnox data for this period — upload the Resultatrapport to complete the picture.",
+      "ohHigh":        "At {pct} of revenue — above the 15–25% typical range. See /overheads for category split.",
+      "ohOnTarget":    "At {pct} — inside the typical 15–25% range.",
+      "weekViewMsg":   "Food and overheads are tracked monthly in Fortnox — switch to Month for the full breakdown."
+    },
     "breakdown": {
       "title":         "Full breakdown",
       "vsLabel":       "◂ vs {label}",
