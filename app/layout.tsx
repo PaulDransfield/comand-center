@@ -4,6 +4,13 @@ import CookieConsent from '@/components/CookieConsent'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 
+// next-intl resolves the locale from cookies/headers in i18n/request.ts,
+// which makes the root layout inherently request-scoped. Static prerender
+// has no request context, so the resolution throws — forcing dynamic
+// rendering at the root makes every route opt out of prerender. Required
+// pattern for cookie-based i18n without locale-prefixed routes.
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: {
     default:  'CommandCenter',
