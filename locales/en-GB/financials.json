@@ -190,6 +190,52 @@
     "period": {
       "ytd":      "YTD {year}",
       "weekRange":"Week {week} · {range}"
+    },
+    "waterfall": {
+      "title":         "Profit waterfall — {period}",
+      "compareTag":    "◂ overlay: {label}",
+      "ariaLabel":     "Profit waterfall for {period}",
+      "barRevenue":    "Revenue",
+      "barFood":       "Food cost",
+      "barLabour":     "Labour",
+      "barOverheads":  "Overheads",
+      "barNet":        "Net",
+      "legendRevenue": "Revenue",
+      "legendCosts":   "Costs",
+      "legendNet":     "Net margin",
+      "legendCompare": "Compare overlay"
+    },
+    "donut": {
+      "title":         "Cost breakdown",
+      "ariaLabel":     "Cost breakdown donut",
+      "totalCost":     "total cost",
+      "empty":         "No cost data for this period"
+    },
+    "breakdown": {
+      "title":         "Full breakdown",
+      "vsLabel":       "◂ vs {label}",
+      "ofRevenue":     "% of revenue",
+      "th": {
+        "category":    "Category",
+        "current":     "Current",
+        "compare":     "Compare",
+        "delta":       "Δ",
+        "amount":      "Amount",
+        "pctRev":      "% rev"
+      },
+      "row": {
+        "revenue":     "Revenue",
+        "dineIn":      "  · Dine-in (12% moms)",
+        "takeaway":    "  · Takeaway (6% moms / Wolt-Foodora)",
+        "alcoholRev":  "  · Alcohol (25% moms)",
+        "foodCost":    "Food cost",
+        "foodOnly":    "  · Food only",
+        "alcoholCost": "  · Alcohol (25% moms)",
+        "labour":      "Labour",
+        "rentUtil":    "Rent & utilities",
+        "otherOh":     "Other overheads",
+        "netMargin":   "Net margin"
+      }
     }
   },
   "overheads": {

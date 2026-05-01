@@ -190,6 +190,52 @@
     "period": {
       "ytd":      "YTD {year}",
       "weekRange":"Vecka {week} · {range}"
+    },
+    "waterfall": {
+      "title":         "Vinst-vattenfall — {period}",
+      "compareTag":    "◂ överlägg: {label}",
+      "ariaLabel":     "Vinst-vattenfall för {period}",
+      "barRevenue":    "Intäkt",
+      "barFood":       "Matkostnad",
+      "barLabour":     "Personal",
+      "barOverheads":  "Omkostnader",
+      "barNet":        "Netto",
+      "legendRevenue": "Intäkt",
+      "legendCosts":   "Kostnader",
+      "legendNet":     "Nettomarginal",
+      "legendCompare": "Jämförelse-överlägg"
+    },
+    "donut": {
+      "title":         "Kostnadsfördelning",
+      "ariaLabel":     "Kostnadsfördelnings-donut",
+      "totalCost":     "total kostnad",
+      "empty":         "Ingen kostnadsdata för denna period"
+    },
+    "breakdown": {
+      "title":         "Full uppdelning",
+      "vsLabel":       "◂ mot {label}",
+      "ofRevenue":     "% av intäkt",
+      "th": {
+        "category":    "Kategori",
+        "current":     "Nuvarande",
+        "compare":     "Jämför",
+        "delta":       "Δ",
+        "amount":      "Belopp",
+        "pctRev":      "% int"
+      },
+      "row": {
+        "revenue":     "Intäkt",
+        "dineIn":      "  · Dine-in (12% moms)",
+        "takeaway":    "  · Avhämtning (6% moms / Wolt-Foodora)",
+        "alcoholRev":  "  · Alkohol (25% moms)",
+        "foodCost":    "Matkostnad",
+        "foodOnly":    "  · Endast mat",
+        "alcoholCost": "  · Alkohol (25% moms)",
+        "labour":      "Personal",
+        "rentUtil":    "Hyra & förbrukning",
+        "otherOh":     "Övriga omkostnader",
+        "netMargin":   "Nettomarginal"
+      }
     }
   },
   "overheads": {

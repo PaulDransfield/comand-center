@@ -190,6 +190,52 @@
     "period": {
       "ytd":      "YTD {year}",
       "weekRange":"Uke {week} · {range}"
+    },
+    "waterfall": {
+      "title":         "Overskudds-fossefall — {period}",
+      "compareTag":    "◂ overlegg: {label}",
+      "ariaLabel":     "Overskudds-fossefall for {period}",
+      "barRevenue":    "Inntekt",
+      "barFood":       "Matkostnad",
+      "barLabour":     "Bemanning",
+      "barOverheads":  "Faste kostnader",
+      "barNet":        "Netto",
+      "legendRevenue": "Inntekt",
+      "legendCosts":   "Kostnader",
+      "legendNet":     "Nettomargin",
+      "legendCompare": "Sammenligning-overlegg"
+    },
+    "donut": {
+      "title":         "Kostnadsfordeling",
+      "ariaLabel":     "Kostnadsfordelings-donut",
+      "totalCost":     "total kostnad",
+      "empty":         "Ingen kostnadsdata for denne perioden"
+    },
+    "breakdown": {
+      "title":         "Full oppdeling",
+      "vsLabel":       "◂ mot {label}",
+      "ofRevenue":     "% av inntekt",
+      "th": {
+        "category":    "Kategori",
+        "current":     "Nåværende",
+        "compare":     "Sammenlign",
+        "delta":       "Δ",
+        "amount":      "Beløp",
+        "pctRev":      "% innt"
+      },
+      "row": {
+        "revenue":     "Inntekt",
+        "dineIn":      "  · Spise inne (12% mva)",
+        "takeaway":    "  · Take-away (6% mva / Wolt-Foodora)",
+        "alcoholRev":  "  · Alkohol (25% mva)",
+        "foodCost":    "Matkostnad",
+        "foodOnly":    "  · Kun mat",
+        "alcoholCost": "  · Alkohol (25% mva)",
+        "labour":      "Bemanning",
+        "rentUtil":    "Husleie & strøm",
+        "otherOh":     "Andre faste kostnader",
+        "netMargin":   "Nettomargin"
+      }
     }
   },
   "overheads": {
