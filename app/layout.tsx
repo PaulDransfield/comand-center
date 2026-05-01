@@ -29,8 +29,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // the user's chosen language. next-intl's request config (i18n/request.ts)
   // resolves locale from cookie / Accept-Language; the cookie is the
   // source of truth post-first-visit.
-  const locale   = await getLocale()
-  const messages = await getMessages()
+  //
+  // Defensive fallback — getLocale()/getMessages() throw if the request
+  // context isn't available (e.g. during ISR revalidation, or if the
+  // next-intl plugin chain breaks for any reason). Falling back to en-GB
+  // with empty messages keeps the page rendering instead of crashing into
+  // global-error.tsx.
+  let locale = 'en-GB'
+  let messages: any = {}
+  try {
+    locale   = await getLocale()
+    messages = await getMessages()
+  } catch (err: any) {
+    console.error('[layout] next-intl resolution failed:', err?.message ?? err, err?.stack)
+  }
 
   return (
     <html lang={locale}>
