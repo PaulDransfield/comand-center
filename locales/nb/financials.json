@@ -82,6 +82,38 @@
       "labour":   "Bemanning",
       "labourMsg":"prognose {pct} — åpne Vaktplan og kutt neste ukes timer.",
       "coach":    "Coach"
+    },
+    "modal": {
+      "title":      "AI-genererte budsjetter for {year}",
+      "subtitle":   "Gjennomgå, bruk så alle — eller lukk for å forkaste",
+      "strategy":   "Strategi:",
+      "monthLine":  "Mat {food}% · Bemanning {staff}% · Overskuddsmål {profit}",
+      "discard":    "Forkast",
+      "applying":   "Bruker…",
+      "applyAll":   "Bruk alle 12 måneder →"
+    },
+    "table": {
+      "month":         "Måned",
+      "progress":      "Fremgang mot budsjett",
+      "variance":      "Avvik",
+      "status":        "Status",
+      "save":          "Lagre",
+      "cancel":        "Avbryt",
+      "phRevenue":     "inntekt",
+      "phFood":        "mat %",
+      "phStaff":       "bemanning %",
+      "phProfit":      "overskudd",
+      "labelAct":      "fakt {amount}",
+      "labelBud":      "bud {amount}",
+      "noBudget":      "budsjett ikke satt",
+      "targetTip":     "Mål: {amount}",
+      "editAria":      "Rediger {month}-budsjett",
+      "setAria":       "Sett {month}-budsjett",
+      "status_notSet":   "IKKE SATT",
+      "status_noBudget": "INGEN BUDSJETT",
+      "status_noActuals":"INGEN FAKTISKE",
+      "status_onTrack":  "PÅ SPORET",
+      "status_offTrack": "AVVIKER"
     }
   },
   "forecast": {
@@ -108,7 +140,15 @@
       "missed":   "bommet på prognosen med {pct} — {actual} mot {forecast}.",
       "atRisk":   "prognosemargin {pct} — {rel} på {revenue} inntekt.",
       "belowAvg": "{pp}pp under årssnitt",
-      "belowFloor":"under 12%-gulvet"
+      "belowFloor":"under 12%-gulvet",
+      "panelTitle":"Prognosevarsler"
+    },
+    "chart": {
+      "header":   "Helårsinntekt",
+      "actual":   "Faktisk",
+      "forecast": "Prognose",
+      "emptyNoData":"Ingen prognose eller faktiske tall å plotte ennå. Den månedlige kalibreringen genererer prognoser fra fjorårets handelsdata — den kjører 1. hver måned, eller klikk <b>Oppdater prognose</b> over.",
+      "emptyOneMonth":"Kun 1 måned med faktiske tall og ingen prognose generert ennå. Kom tilbake etter 1. neste måned, eller kjør kalibreringen manuelt."
     }
   },
   "performance": {
@@ -150,6 +190,68 @@
     "period": {
       "ytd":      "YTD {year}",
       "weekRange":"Uke {week} · {range}"
+    },
+    "waterfall": {
+      "title":         "Overskudds-fossefall — {period}",
+      "compareTag":    "◂ overlegg: {label}",
+      "ariaLabel":     "Overskudds-fossefall for {period}",
+      "barRevenue":    "Inntekt",
+      "barFood":       "Matkostnad",
+      "barLabour":     "Bemanning",
+      "barOverheads":  "Faste kostnader",
+      "barNet":        "Netto",
+      "legendRevenue": "Inntekt",
+      "legendCosts":   "Kostnader",
+      "legendNet":     "Nettomargin",
+      "legendCompare": "Sammenligning-overlegg"
+    },
+    "donut": {
+      "title":         "Kostnadsfordeling",
+      "ariaLabel":     "Kostnadsfordelings-donut",
+      "totalCost":     "total kostnad",
+      "empty":         "Ingen kostnadsdata for denne perioden"
+    },
+    "tunable": {
+      "title":         "Hva som kan justeres",
+      "labour":        "Bemanning",
+      "food":          "Matkostnad",
+      "overheads":     "Faste kostnader",
+      "weekView":      "Ukesvisning",
+      "labourOver":    "Ligger {pp}pp over mål. Hvert 1pp på bemanning er verdt {amount} kr for denne perioden.",
+      "labourOnTarget":"Holder {pct} — innenfor 42%-målbåndet. Ingen handling nødvendig.",
+      "foodOver":      "På {pct}, {pp}pp over 32%-målet — verdt å gå gjennom leverandørpriser eller porsjonsstørrelser.",
+      "foodImproved":  "Forbedret fra {prev} til {cur} — behold det som endret seg.",
+      "foodOnTarget":  "På {pct} — innenfor 28–32%-båndet.",
+      "foodNoData":    "Ingen Fortnox-data for denne perioden — last opp Resultatrapporten for å fullføre bildet.",
+      "ohHigh":        "På {pct} av inntekt — over det typiske 15–25%-intervallet. Se /overheads for kategorioppdeling.",
+      "ohOnTarget":    "På {pct} — innenfor det typiske 15–25%-intervallet.",
+      "weekViewMsg":   "Matkostnad og faste kostnader spores månedlig i Fortnox — bytt til Måned for full oppdeling."
+    },
+    "breakdown": {
+      "title":         "Full oppdeling",
+      "vsLabel":       "◂ mot {label}",
+      "ofRevenue":     "% av inntekt",
+      "th": {
+        "category":    "Kategori",
+        "current":     "Nåværende",
+        "compare":     "Sammenlign",
+        "delta":       "Δ",
+        "amount":      "Beløp",
+        "pctRev":      "% innt"
+      },
+      "row": {
+        "revenue":     "Inntekt",
+        "dineIn":      "  · Spise inne (12% mva)",
+        "takeaway":    "  · Take-away (6% mva / Wolt-Foodora)",
+        "alcoholRev":  "  · Alkohol (25% mva)",
+        "foodCost":    "Matkostnad",
+        "foodOnly":    "  · Kun mat",
+        "alcoholCost": "  · Alkohol (25% mva)",
+        "labour":      "Bemanning",
+        "rentUtil":    "Husleie & strøm",
+        "otherOh":     "Andre faste kostnader",
+        "netMargin":   "Nettomargin"
+      }
     }
   },
   "overheads": {

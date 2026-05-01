@@ -17,11 +17,13 @@
 // stage.
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { setAnalyticsConsent, hasAnalyticsConsent } from '@/lib/analytics/posthog'
 
 const CONSENT_KEY = 'cc_analytics_consent'
 
 export default function CookieConsent() {
+  const t = useTranslations('misc.cookieConsent')
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export default function CookieConsent() {
   return (
     <div
       role="dialog"
-      aria-label="Cookie consent"
+      aria-label={t('ariaLabel')}
       style={{
         position:   'fixed',
         bottom:     0,
@@ -70,8 +72,8 @@ export default function CookieConsent() {
         }}
       >
         <div style={{ flex: 1, minWidth: 260, fontSize: 13, color: '#374151', lineHeight: 1.55 }}>
-          <strong style={{ color: '#111' }}>Cookies & analytics.</strong> We use PostHog (EU-hosted) to understand how people use CommandCenter — page views, feature clicks, error rates. No personal data is collected. You can decline, and the app works the same. See{' '}
-          <a href="/privacy" style={{ color: '#6366f1', textDecoration: 'underline' }}>our privacy policy</a>.
+          <strong style={{ color: '#111' }}>{t('lead')}</strong> {t('body')}{' '}
+          <a href="/privacy" style={{ color: '#6366f1', textDecoration: 'underline' }}>{t('privacyLink')}</a>.
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
           <button
@@ -87,7 +89,7 @@ export default function CookieConsent() {
               cursor:       'pointer',
             }}
           >
-            Decline
+            {t('decline')}
           </button>
           <button
             onClick={accept}
@@ -102,7 +104,7 @@ export default function CookieConsent() {
               cursor:       'pointer',
             }}
           >
-            Accept
+            {t('accept')}
           </button>
         </div>
       </div>

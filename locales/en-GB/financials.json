@@ -82,6 +82,38 @@
       "labour":   "Labour",
       "labourMsg":"projected at {pct} — open Scheduling and trim next week's hours.",
       "coach":    "Coach"
+    },
+    "modal": {
+      "title":      "AI-generated budgets for {year}",
+      "subtitle":   "Review, then apply all — or close to discard",
+      "strategy":   "Strategy:",
+      "monthLine":  "Food {food}% · Staff {staff}% · Profit target {profit}",
+      "discard":    "Discard",
+      "applying":   "Applying…",
+      "applyAll":   "Apply all 12 months →"
+    },
+    "table": {
+      "month":         "Month",
+      "progress":      "Progress vs budget",
+      "variance":      "Variance",
+      "status":        "Status",
+      "save":          "Save",
+      "cancel":        "Cancel",
+      "phRevenue":     "rev",
+      "phFood":        "food %",
+      "phStaff":       "staff %",
+      "phProfit":      "profit",
+      "labelAct":      "act {amount}",
+      "labelBud":      "bud {amount}",
+      "noBudget":      "budget not set",
+      "targetTip":     "Target: {amount}",
+      "editAria":      "Edit {month} budget",
+      "setAria":       "Set {month} budget",
+      "status_notSet":   "NOT SET",
+      "status_noBudget": "NO BUDGET",
+      "status_noActuals":"NO ACTUALS",
+      "status_onTrack":  "ON TRACK",
+      "status_offTrack": "OFF TRACK"
     }
   },
   "forecast": {
@@ -108,7 +140,15 @@
       "missed":   "missed forecast by {pct} — {actual} vs {forecast}.",
       "atRisk":   "margin forecast {pct} — {rel} on {revenue} revenue.",
       "belowAvg": "{pp}pp below year avg",
-      "belowFloor":"below 12% floor"
+      "belowFloor":"below 12% floor",
+      "panelTitle":"Forecast flags"
+    },
+    "chart": {
+      "header":   "Full-year revenue",
+      "actual":   "Actual",
+      "forecast": "Forecast",
+      "emptyNoData":"No forecast or actuals to plot yet. The monthly calibration cron generates forecasts from last year's trading data — it runs on the 1st of each month, or click <b>Refresh forecast</b> above.",
+      "emptyOneMonth":"Only 1 month of actuals and no forecast generated yet. Check back after the 1st of next month, or run the calibration manually."
     }
   },
   "performance": {
@@ -150,6 +190,68 @@
     "period": {
       "ytd":      "YTD {year}",
       "weekRange":"Week {week} · {range}"
+    },
+    "waterfall": {
+      "title":         "Profit waterfall — {period}",
+      "compareTag":    "◂ overlay: {label}",
+      "ariaLabel":     "Profit waterfall for {period}",
+      "barRevenue":    "Revenue",
+      "barFood":       "Food cost",
+      "barLabour":     "Labour",
+      "barOverheads":  "Overheads",
+      "barNet":        "Net",
+      "legendRevenue": "Revenue",
+      "legendCosts":   "Costs",
+      "legendNet":     "Net margin",
+      "legendCompare": "Compare overlay"
+    },
+    "donut": {
+      "title":         "Cost breakdown",
+      "ariaLabel":     "Cost breakdown donut",
+      "totalCost":     "total cost",
+      "empty":         "No cost data for this period"
+    },
+    "tunable": {
+      "title":         "What's tunable",
+      "labour":        "Labour",
+      "food":          "Food cost",
+      "overheads":     "Overheads",
+      "weekView":      "Week view",
+      "labourOver":    "Running {pp}pp over target. Each 1pp move on labour is worth {amount} kr for this period.",
+      "labourOnTarget":"Holding at {pct} — inside the 42% target band. No action needed.",
+      "foodOver":      "At {pct}, {pp}pp over the 32% target — worth auditing supplier prices or portion sizes.",
+      "foodImproved":  "Improved from {prev} to {cur} — keep whatever changed.",
+      "foodOnTarget":  "At {pct} — inside the 28–32% band.",
+      "foodNoData":    "No Fortnox data for this period — upload the Resultatrapport to complete the picture.",
+      "ohHigh":        "At {pct} of revenue — above the 15–25% typical range. See /overheads for category split.",
+      "ohOnTarget":    "At {pct} — inside the typical 15–25% range.",
+      "weekViewMsg":   "Food and overheads are tracked monthly in Fortnox — switch to Month for the full breakdown."
+    },
+    "breakdown": {
+      "title":         "Full breakdown",
+      "vsLabel":       "◂ vs {label}",
+      "ofRevenue":     "% of revenue",
+      "th": {
+        "category":    "Category",
+        "current":     "Current",
+        "compare":     "Compare",
+        "delta":       "Δ",
+        "amount":      "Amount",
+        "pctRev":      "% rev"
+      },
+      "row": {
+        "revenue":     "Revenue",
+        "dineIn":      "  · Dine-in (12% moms)",
+        "takeaway":    "  · Takeaway (6% moms / Wolt-Foodora)",
+        "alcoholRev":  "  · Alcohol (25% moms)",
+        "foodCost":    "Food cost",
+        "foodOnly":    "  · Food only",
+        "alcoholCost": "  · Alcohol (25% moms)",
+        "labour":      "Labour",
+        "rentUtil":    "Rent & utilities",
+        "otherOh":     "Other overheads",
+        "netMargin":   "Net margin"
+      }
     }
   },
   "overheads": {

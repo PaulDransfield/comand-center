@@ -729,8 +729,8 @@ export default function PerformancePage() {
         {currentData && (
           <div style={{ marginTop: 12 }}>
             <AttentionPanel
-              title="What's tunable"
-              items={buildTunableItems(period, currentData, compareData)}
+              title={t('tunable.title')}
+              items={buildTunableItems(period, currentData, compareData, t)}
               maxItems={4}
             />
           </div>
@@ -1091,6 +1091,7 @@ function MenuRow({ onClick, children }: any) {
 function WaterfallCard({ period, data, compare, compareLabel }: {
   period: PeriodKey; data: PeriodData; compare: PeriodData | null; compareLabel: string | null
 }) {
+  const t = useTranslations('financials.performance')
   const { revenue, food_cost, staff_cost, overheads, net_margin } = data
   const maxVal = Math.max(revenue, 1)
   const W = 700, H = 240
@@ -1117,26 +1118,26 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
   const afterOh    = afterStaff - overheads
 
   const grid = [0, maxVal * 0.33, maxVal * 0.66, maxVal]
+  // `key` is a stable identifier (used by branching logic — terminal vs non-
+  // terminal, compare overlay step heights). `label` is the i18n display
+  // string. Decoupling the two keeps the maths locale-neutral.
   const bars: any[] = [
-    { label: 'Revenue',   value: revenue,    top: yFor(revenue),   bot: yFor(0),         fill: UX.navy,                            x: xFor(0) },
-    { label: 'Food cost', value: food_cost,  top: yFor(afterRev),  bot: yFor(afterFood), fill: UX.burnt,                           x: xFor(1), show: data.has_food },
-    { label: 'Labour',    value: staff_cost, top: yFor(afterFood), bot: yFor(afterStaff),fill: UX.burnt, opacity: 0.75, x: xFor(2) },
-    { label: 'Overheads', value: overheads,  top: yFor(afterStaff),bot: yFor(afterOh),   fill: UX.burnt, opacity: 0.45, x: xFor(3), show: data.has_overheads },
-    // Height mirrors the displayed value, not the running total after
-    // overheads — otherwise a business with depreciation/financial costs
-    // would see a Net bar taller than the net_margin text on it.
-    { label: 'Net',       value: net_margin, top: yFor(Math.max(net_margin, 0)), bot: yFor(0), fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(4) },
+    { key: 'Revenue',   label: t('waterfall.barRevenue'),   value: revenue,    top: yFor(revenue),   bot: yFor(0),         fill: UX.navy,                            x: xFor(0) },
+    { key: 'Food cost', label: t('waterfall.barFood'),      value: food_cost,  top: yFor(afterRev),  bot: yFor(afterFood), fill: UX.burnt,                           x: xFor(1), show: data.has_food },
+    { key: 'Labour',    label: t('waterfall.barLabour'),    value: staff_cost, top: yFor(afterFood), bot: yFor(afterStaff),fill: UX.burnt, opacity: 0.75, x: xFor(2) },
+    { key: 'Overheads', label: t('waterfall.barOverheads'), value: overheads,  top: yFor(afterStaff),bot: yFor(afterOh),   fill: UX.burnt, opacity: 0.45, x: xFor(3), show: data.has_overheads },
+    { key: 'Net',       label: t('waterfall.barNet'),       value: net_margin, top: yFor(Math.max(net_margin, 0)), bot: yFor(0), fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(4) },
   ]
 
   return (
     <div style={cardStyle()}>
       <div style={titleRowStyle()}>
-        <span>Profit waterfall — {periodLabel(period)}</span>
+        <span>{t('waterfall.title', { period: periodLabel(period) })}</span>
         {compareLabel && (
-          <span style={{ fontSize: UX.fsLabel, color: '#4338ca', background: UX.indigoBg, padding: '2px 7px', borderRadius: UX.r_sm, border: `0.5px solid ${UX.indigo}` }}>◂ overlay: {compareLabel}</span>
+          <span style={{ fontSize: UX.fsLabel, color: '#4338ca', background: UX.indigoBg, padding: '2px 7px', borderRadius: UX.r_sm, border: `0.5px solid ${UX.indigo}` }}>{t('waterfall.compareTag', { label: compareLabel })}</span>
         )}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Profit waterfall for ${periodLabel(period)}`} style={{ width: '100%', height: 260 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('waterfall.ariaLabel', { period: periodLabel(period) })} style={{ width: '100%', height: 260 }}>
         {grid.map((g, i) => (
           <g key={i}>
             <line x1={padX} x2={W - 20} y1={yFor(g)} y2={yFor(g)} stroke={UX.borderSoft} strokeDasharray="3 3" strokeWidth="0.5" />
@@ -1148,10 +1149,10 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
           <line key={`c${i}`} x1={b.x + barW / 2} x2={bars[i + 1].x - barW / 2} y1={b.top} y2={b.top} stroke={UX.ink5} strokeDasharray="3 2" strokeWidth="0.5" />
         ))}
         {bars.map((b) => {
-          const isTerminal = b.label === 'Revenue' || b.label === 'Net'
+          const isTerminal = b.key === 'Revenue' || b.key === 'Net'
           const show = (b.show ?? true) && (b.value !== 0 || isTerminal)
           return (
-            <g key={b.label}>
+            <g key={b.key}>
               {show ? (
                 <rect x={b.x - barW / 2} y={Math.min(b.top, b.bot)} width={barW} height={Math.abs(b.bot - b.top) || 1} fill={b.fill} opacity={(b as any).opacity ?? 1} rx={2} />
               ) : (
@@ -1162,8 +1163,8 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
               </text>
               <text x={b.x} y={H - 12} textAnchor="middle" fontSize="11" fill={UX.ink2}>{b.label}</text>
               <text x={b.x} y={H - 1}  textAnchor="middle" fontSize="9"  fill={UX.ink4}>
-                {b.label === 'Revenue' ? '100%' :
-                  b.label === 'Net'    ? fmtPct(data.margin_pct) :
+                {b.key === 'Revenue' ? '100%' :
+                  b.key === 'Net'    ? fmtPct(data.margin_pct) :
                   show && revenue > 0  ? fmtPct((b.value / revenue) * 100) : '—'}
               </text>
               {/* Compare overlay — compute running total at this bar's
@@ -1174,7 +1175,7 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
                 const cRev = compare.revenue, cFood = compare.food_cost,
                       cStaff = compare.staff_cost, cOh = compare.overheads, cNet = compare.net_margin
                 let yTopCompare: number
-                switch (b.label) {
+                switch (b.key) {
                   case 'Revenue':   yTopCompare = yFor(cRev); break
                   case 'Food cost': yTopCompare = yFor(cRev); break
                   case 'Labour':    yTopCompare = yFor(cRev - cFood); break
@@ -1193,12 +1194,13 @@ function WaterfallCard({ period, data, compare, compareLabel }: {
   )
 }
 function Legend({ compare }: { compare: boolean }) {
+  const t = useTranslations('financials.performance.waterfall')
   return (
     <div style={{ display: 'flex', gap: 14, paddingTop: 8, fontSize: UX.fsLabel, color: UX.ink3 }}>
-      <LegendSwatch colour={UX.navy}   label="Revenue" />
-      <LegendSwatch colour={UX.burnt}  label="Costs" />
-      <LegendSwatch colour={UX.marginLine} label="Net margin" />
-      {compare && <LegendSwatch colour={UX.indigo} label="Compare overlay" dashed />}
+      <LegendSwatch colour={UX.navy}   label={t('legendRevenue')} />
+      <LegendSwatch colour={UX.burnt}  label={t('legendCosts')} />
+      <LegendSwatch colour={UX.marginLine} label={t('legendNet')} />
+      {compare && <LegendSwatch colour={UX.indigo} label={t('legendCompare')} dashed />}
     </div>
   )
 }
@@ -1213,6 +1215,8 @@ function LegendSwatch({ colour, label, dashed }: { colour: string; label: string
 
 // ─── Donut ─────────────────────────────────────────────────────────────────
 function DonutCard({ data }: { data: PeriodData }) {
+  const t      = useTranslations('financials.performance.donut')
+  const tWater = useTranslations('financials.performance.waterfall')
   const total = data.food_cost + data.staff_cost + data.overheads
   // Three top-level cost categories. Food cost is the FULL cost-of-goods
   // (food + alcohol). The food/alcohol split lives in the breakdown table
@@ -1221,9 +1225,10 @@ function DonutCard({ data }: { data: PeriodData }) {
   // "Food cost" label next to a 5 % slice contradicted owner expectation
   // when COGS is actually 32 % (FIXES.md §0p).
   const slices = [
-    { label: 'Labour',    value: data.staff_cost, opacity: 0.75 },
-    { label: 'Food cost', value: data.food_cost,  opacity: 1    },
-    { label: 'Overheads', value: data.overheads,  opacity: 0.45 },
+    // Reuse the Waterfall bar labels for consistency — same three categories.
+    { label: tWater('barLabour'),    value: data.staff_cost, opacity: 0.75 },
+    { label: tWater('barFood'),      value: data.food_cost,  opacity: 1    },
+    { label: tWater('barOverheads'), value: data.overheads,  opacity: 0.45 },
   ].filter(s => s.value > 0)
   // SVG stroke straddles the path radius, so the donut actually extends
   // from (R - strokeWidth/2) to (R + strokeWidth/2). With R=55 and
@@ -1245,13 +1250,13 @@ function DonutCard({ data }: { data: PeriodData }) {
   return (
     <div style={cardStyle()}>
       <div style={titleRowStyle()}>
-        <span>Cost breakdown</span>
+        <span>{t('title')}</span>
         <span style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>
           {total > 0 ? `${fmtKr(total)} · ${data.revenue > 0 ? fmtPct((total / data.revenue) * 100) : '—'}` : '—'}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '6px 0' }}>
-        <svg viewBox="0 0 150 150" width="150" height="150" role="img" aria-label="Cost breakdown donut" style={{ flexShrink: 0 }}>
+        <svg viewBox="0 0 150 150" width="150" height="150" role="img" aria-label={t('ariaLabel')} style={{ flexShrink: 0 }}>
           <circle cx="75" cy="75" r={R} fill="none" stroke={UX.borderSoft} strokeWidth={strokeW} />
           {arcs.map((a, i) => (
             <circle key={i} cx="75" cy="75" r={R} fill="none"
@@ -1262,7 +1267,7 @@ function DonutCard({ data }: { data: PeriodData }) {
               transform="rotate(-90 75 75)" />
           ))}
           <text x="75" y="71" textAnchor="middle" fontSize="16" fontWeight="500" fill={UX.ink1}>{fmtShortKr(total)}</text>
-          <text x="75" y="86" textAnchor="middle" fontSize="10" fill={UX.ink4}>total cost</text>
+          <text x="75" y="86" textAnchor="middle" fontSize="10" fill={UX.ink4}>{t('totalCost')}</text>
         </svg>
         <div style={{ flex: 1, minWidth: 0 }}>
           {slices.map(s => (
@@ -1275,7 +1280,7 @@ function DonutCard({ data }: { data: PeriodData }) {
               </span>
             </div>
           ))}
-          {slices.length === 0 && <div style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>No cost data for this period</div>}
+          {slices.length === 0 && <div style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>{t('empty')}</div>}
         </div>
       </div>
     </div>
@@ -1286,74 +1291,73 @@ function DonutCard({ data }: { data: PeriodData }) {
 function BreakdownTable({ data, compare, compareLabel }: {
   data: PeriodData; compare: PeriodData | null; compareLabel: string | null
 }) {
+  const t = useTranslations('financials.performance.breakdown')
   // Food cost = TOTAL cost-of-goods (food_cost rollup, includes alcohol).
   // Alcohol is shown as an indented sub-row underneath — same pattern as
   // the Revenue VAT split. Pre-fix the row labelled "Food cost" carried
   // food_only_cost (food − alcohol), so for an alcohol-heavy business
   // "Food cost" read as 4 % when COGS was actually 32 % (FIXES.md §0p).
+  // Same key/label split as the Waterfall: `key` is the locale-neutral row
+  // identifier used by branching logic ("Revenue" / "Labour" rows are
+  // always rendered with kr regardless of `compareable`); `label` is the
+  // i18n display string.
   const rows: any[] = [
-    { label: 'Revenue',    kr: data.revenue,    swatch: UX.navy, ccKr: compare?.revenue, compareable: true },
+    { key: 'Revenue',    label: t('row.revenue'),    kr: data.revenue,    swatch: UX.navy, ccKr: compare?.revenue, compareable: true },
   ]
-  // Revenue split by Swedish VAT rate (M029) — three buckets: dine-in food
-  // (12%), takeaway / Wolt / Foodora (6%), alcohol (25%). Each is a SUBSET
-  // of total revenue, indented under the Revenue row so it's clearly a
-  // sub-breakdown not a double-counted total. Only shown when the rollup
-  // actually has the split — for older PDFs that didn't have all three VAT
-  // buckets the row is omitted.
   if (data.has_revenue_split) {
     rows.push(
-      { label: '  · Dine-in (12% moms)',     kr: data.revenue_dine_in,  swatch: 'transparent', ccKr: compare?.revenue_dine_in,  compareable: true, indented: true },
+      { key: 'DineIn',     label: t('row.dineIn'),     kr: data.revenue_dine_in,  swatch: 'transparent', ccKr: compare?.revenue_dine_in,  compareable: true, indented: true },
     )
     if (data.has_takeaway || (compare?.revenue_takeaway ?? 0) > 0) {
       rows.push(
-        { label: '  · Takeaway (6% moms / Wolt-Foodora)', kr: data.revenue_takeaway, swatch: 'transparent', ccKr: compare?.revenue_takeaway, compareable: true, indented: true },
+        { key: 'Takeaway', label: t('row.takeaway'),    kr: data.revenue_takeaway, swatch: 'transparent', ccKr: compare?.revenue_takeaway, compareable: true, indented: true },
       )
     }
     rows.push(
-      { label: '  · Alcohol (25% moms)',     kr: data.revenue_alcohol,  swatch: 'transparent', ccKr: compare?.revenue_alcohol,  compareable: true, indented: true },
+      { key: 'AlcoholRev', label: t('row.alcoholRev'),  kr: data.revenue_alcohol,  swatch: 'transparent', ccKr: compare?.revenue_alcohol,  compareable: true, indented: true },
     )
   }
   rows.push(
-    { label: 'Food cost', kr: data.food_cost, swatch: UX.burnt, ccKr: compare?.food_cost, compareable: data.has_food },
+    { key: 'FoodCost', label: t('row.foodCost'), kr: data.food_cost, swatch: UX.burnt, ccKr: compare?.food_cost, compareable: data.has_food },
   )
   if (data.has_alcohol) {
     rows.push(
-      { label: '  · Food only',           kr: data.food_only_cost, swatch: 'transparent', ccKr: compare?.food_only_cost, compareable: true, indented: true },
-      { label: '  · Alcohol (25% moms)',  kr: data.alcohol_cost,   swatch: 'transparent', ccKr: compare?.alcohol_cost,   compareable: true, indented: true },
+      { key: 'FoodOnly',    label: t('row.foodOnly'),    kr: data.food_only_cost, swatch: 'transparent', ccKr: compare?.food_only_cost, compareable: true, indented: true },
+      { key: 'AlcoholCost', label: t('row.alcoholCost'), kr: data.alcohol_cost,   swatch: 'transparent', ccKr: compare?.alcohol_cost,   compareable: true, indented: true },
     )
   }
   rows.push(
-    { label: 'Labour',           kr: data.staff_cost, swatch: UX.burnt, opacity: 0.75, ccKr: compare?.staff_cost, compareable: true },
-    { label: 'Rent & utilities', kr: data.overhead_split.rent + data.overhead_split.utilities, swatch: UX.burnt, opacity: 0.45, ccKr: (compare?.overhead_split.rent ?? 0) + (compare?.overhead_split.utilities ?? 0), compareable: data.has_overheads },
-    { label: 'Other overheads',  kr: data.overhead_split.other, swatch: UX.burnt, opacity: 0.45, ccKr: compare?.overhead_split.other, compareable: data.has_overheads },
+    { key: 'Labour',  label: t('row.labour'),   kr: data.staff_cost, swatch: UX.burnt, opacity: 0.75, ccKr: compare?.staff_cost, compareable: true },
+    { key: 'RentUtil',label: t('row.rentUtil'), kr: data.overhead_split.rent + data.overhead_split.utilities, swatch: UX.burnt, opacity: 0.45, ccKr: (compare?.overhead_split.rent ?? 0) + (compare?.overhead_split.utilities ?? 0), compareable: data.has_overheads },
+    { key: 'OtherOh', label: t('row.otherOh'),  kr: data.overhead_split.other, swatch: UX.burnt, opacity: 0.45, ccKr: compare?.overhead_split.other, compareable: data.has_overheads },
   )
   return (
     <div style={cardStyle()}>
       <div style={titleRowStyle()}>
-        <span>Full breakdown</span>
-        <span style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>{compareLabel ? `◂ vs ${compareLabel}` : '% of revenue'}</span>
+        <span>{t('title')}</span>
+        <span style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>{compareLabel ? t('vsLabel', { label: compareLabel }) : t('ofRevenue')}</span>
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsBody }}>
         <thead>
           <tr style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
             <th style={thStyle()}></th>
-            <th style={thStyle()}>Category</th>
-            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? 'Current' : 'Amount'}</th>
-            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? 'Compare' : '% rev'}</th>
-            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? 'Δ' : ''}</th>
+            <th style={thStyle()}>{t('th.category')}</th>
+            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? t('th.current') : t('th.amount')}</th>
+            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? t('th.compare') : t('th.pctRev')}</th>
+            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? t('th.delta') : ''}</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(r => {
             const pct = data.revenue > 0 ? (r.kr / data.revenue) * 100 : null
             const delta = r.ccKr != null ? r.kr - (r.ccKr ?? 0) : null
-            const deltaGood = r.label === 'Revenue' ? (delta ?? 0) >= 0 : (delta ?? 0) <= 0
+            const deltaGood = r.key === 'Revenue' ? (delta ?? 0) >= 0 : (delta ?? 0) <= 0
             const compareShow = r.compareable
             return (
-              <tr key={r.label} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
+              <tr key={r.key} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
                 <td style={tdStyle({ width: 14 })}><span style={{ display: 'inline-block', width: 10, height: 10, background: r.swatch, opacity: (r as any).opacity ?? 1, borderRadius: 2 }} /></td>
                 <td style={tdStyle()}>{r.label}</td>
-                <td style={{ ...tdStyle(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' }}>{r.compareable || r.label === 'Revenue' || r.label === 'Labour' ? fmtKr(r.kr) : '—'}</td>
+                <td style={{ ...tdStyle(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' }}>{r.compareable || r.key === 'Revenue' || r.key === 'Labour' ? fmtKr(r.kr) : '—'}</td>
                 <td style={{ ...tdStyle(), textAlign: 'right' as const, color: UX.ink3, fontVariantNumeric: 'tabular-nums' }}>
                   {compareLabel
                     ? (compareShow ? (r.ccKr != null ? fmtKr(r.ccKr) : '—') : '—')
@@ -1368,7 +1372,7 @@ function BreakdownTable({ data, compare, compareLabel }: {
           })}
           <tr>
             <td style={tdStyle()}></td>
-            <td style={{ ...tdStyle(), color: UX.greenInk, fontWeight: UX.fwMedium }}>Net margin</td>
+            <td style={{ ...tdStyle(), color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('row.netMargin')}</td>
             <td style={{ ...tdStyle(), textAlign: 'right' as const, color: UX.greenInk, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' }}>{fmtKr(data.net_margin)}</td>
             <td style={{ ...tdStyle(), textAlign: 'right' as const, color: UX.ink3, fontVariantNumeric: 'tabular-nums' }}>{fmtPct(data.margin_pct)}</td>
             <td style={tdStyle()}></td>
@@ -1411,7 +1415,7 @@ function granLabel(g: Granularity): string {
 }
 
 // ─── Template "What's tunable" items ──────────────────────────────────────
-function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData | null): AttentionItem[] {
+function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData | null, t: any): AttentionItem[] {
   const items: AttentionItem[] = []
   // Labour lever
   if (cur.revenue > 0 && cur.staff_pct != null) {
@@ -1420,35 +1424,35 @@ function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData 
     if (over > 2) {
       items.push({
         tone: over > 10 ? 'bad' : 'warning',
-        entity: 'Labour',
-        message: `Running ${over.toFixed(1)}pp over target. Each 1pp move on labour is worth ${fmtShortKr(onePpKr)} kr for this period.`,
+        entity: t('tunable.labour'),
+        message: t('tunable.labourOver', { pp: over.toFixed(1), amount: fmtShortKr(onePpKr) }),
       })
     } else {
-      items.push({ tone: 'good', entity: 'Labour', message: `Holding at ${fmtPct(cur.staff_pct)} — inside the 42% target band. No action needed.` })
+      items.push({ tone: 'good', entity: t('tunable.labour'), message: t('tunable.labourOnTarget', { pct: fmtPct(cur.staff_pct) }) })
     }
   }
   // Food
   if (cur.has_food && cur.food_pct != null) {
     const over = cur.food_pct - 32
     if (over > 2) {
-      items.push({ tone: over > 6 ? 'bad' : 'warning', entity: 'Food cost', message: `At ${fmtPct(cur.food_pct)}, ${over.toFixed(1)}pp over the 32% target — worth auditing supplier prices or portion sizes.` })
+      items.push({ tone: over > 6 ? 'bad' : 'warning', entity: t('tunable.food'), message: t('tunable.foodOver', { pct: fmtPct(cur.food_pct), pp: over.toFixed(1) }) })
     } else if (prev && prev.food_pct != null && cur.food_pct < prev.food_pct - 1) {
-      items.push({ tone: 'good', entity: 'Food cost', message: `Improved from ${fmtPct(prev.food_pct)} to ${fmtPct(cur.food_pct)} — keep whatever changed.` })
+      items.push({ tone: 'good', entity: t('tunable.food'), message: t('tunable.foodImproved', { prev: fmtPct(prev.food_pct), cur: fmtPct(cur.food_pct) }) })
     } else {
-      items.push({ tone: 'good', entity: 'Food cost', message: `At ${fmtPct(cur.food_pct)} — inside the 28–32% band.` })
+      items.push({ tone: 'good', entity: t('tunable.food'), message: t('tunable.foodOnTarget', { pct: fmtPct(cur.food_pct) }) })
     }
   } else if (!cur.has_food) {
-    items.push({ tone: 'warning', entity: 'Food cost', message: 'No Fortnox data for this period — upload the Resultatrapport to complete the picture.' })
+    items.push({ tone: 'warning', entity: t('tunable.food'), message: t('tunable.foodNoData') })
   }
   // Overheads
   if (cur.has_overheads && cur.overheads_pct != null) {
     if (cur.overheads_pct > 25) {
-      items.push({ tone: 'warning', entity: 'Overheads', message: `At ${fmtPct(cur.overheads_pct)} of revenue — above the 15–25% typical range. See /overheads for category split.` })
+      items.push({ tone: 'warning', entity: t('tunable.overheads'), message: t('tunable.ohHigh', { pct: fmtPct(cur.overheads_pct) }) })
     } else {
-      items.push({ tone: 'good', entity: 'Overheads', message: `At ${fmtPct(cur.overheads_pct)} — inside the typical 15–25% range.` })
+      items.push({ tone: 'good', entity: t('tunable.overheads'), message: t('tunable.ohOnTarget', { pct: fmtPct(cur.overheads_pct) }) })
     }
   } else if (period.granularity === 'week') {
-    items.push({ tone: 'warning', entity: 'Week view', message: 'Food and overheads are tracked monthly in Fortnox — switch to Month for the full breakdown.' })
+    items.push({ tone: 'warning', entity: t('tunable.weekView'), message: t('tunable.weekViewMsg') })
   }
   return items.slice(0, 4)
 }

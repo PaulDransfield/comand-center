@@ -177,7 +177,11 @@ async function extractTextItems(pdfBuffer: Uint8Array): Promise<TextItem[]> {
       const { createRequire } = await import('node:module')
       // createRequire from import.meta.url so this works in ESM context too.
       const req = typeof require !== 'undefined' ? require : createRequire(import.meta.url)
-      const workerPath = req.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+      // webpackIgnore: keep webpack from trying to bundle the .mjs worker —
+      // it's force-included via outputFileTracingIncludes in next.config.js
+      // and resolved at runtime. Without this, webpack emits "ESM packages
+      // need to be imported" warnings against an .mjs file we can't import().
+      const workerPath = req.resolve(/* webpackIgnore: true */ 'pdfjs-dist/legacy/build/pdf.worker.mjs')
       pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(workerPath).href
     } catch {
       // Last-ditch fallback: leave empty and hope pdfjs's inline worker works.

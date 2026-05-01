@@ -4,6 +4,13 @@ import CookieConsent from '@/components/CookieConsent'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 
+// next-intl resolves the locale from cookies/headers in i18n/request.ts,
+// which makes the root layout inherently request-scoped. Static prerender
+// has no request context, so the resolution throws — forcing dynamic
+// rendering at the root makes every route opt out of prerender. Required
+// pattern for cookie-based i18n without locale-prefixed routes.
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: {
     default:  'CommandCenter',
@@ -22,8 +29,20 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // the user's chosen language. next-intl's request config (i18n/request.ts)
   // resolves locale from cookie / Accept-Language; the cookie is the
   // source of truth post-first-visit.
-  const locale   = await getLocale()
-  const messages = await getMessages()
+  //
+  // Defensive fallback — getLocale()/getMessages() throw if the request
+  // context isn't available (e.g. during ISR revalidation, or if the
+  // next-intl plugin chain breaks for any reason). Falling back to en-GB
+  // with empty messages keeps the page rendering instead of crashing into
+  // global-error.tsx.
+  let locale = 'en-GB'
+  let messages: any = {}
+  try {
+    locale   = await getLocale()
+    messages = await getMessages()
+  } catch (err: any) {
+    console.error('[layout] next-intl resolution failed:', err?.message ?? err, err?.stack)
+  }
 
   return (
     <html lang={locale}>
@@ -44,10 +63,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="dns-prefetch" href="https://llzmixkrysduztsvmfzi.supabase.co" />
       </head>
       <body style={{ margin: 0, padding: 0, background: '#f8f9fa', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+        {/*
+          CookieConsent uses useTranslations() and MUST live inside the
+          provider — when it was a sibling, the SSR render had no next-intl
+          context and threw on every page (including /, /login, /privacy).
+          The wrapper masked the error as `Error(void 0)` so the build's
+          prerender pass died silently with "Error occurred prerendering"
+          on every route. See the 2026-05-01 incident.
+        */}
         <NextIntlClientProvider locale={locale} messages={messages}>
           {children}
+          <CookieConsent />
         </NextIntlClientProvider>
-        <CookieConsent />
       </body>
     </html>
   )

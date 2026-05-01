@@ -18,7 +18,44 @@
   },
   "departments": {
     "loading":     "Laster avdelinger…",
-    "loadingPanel":"Laster…"
+    "loadingPanel":"Laster…",
+    "weekLabel":   "Uke {num} · {range}",
+    "eyebrow":     "AVDELINGER — {period}",
+    "hero": {
+      "noActivity":   "Ingen avdelingsdata for {period} — avdelinger synkroniseres nattlig.",
+      "noSplit":      "{names} aktive — inntektsfordeling ennå ikke allokert, GP% utilgjengelig.",
+      "spread":       "{bestName} {bestPct} margin, {worstName} på {worstPct} — bemanning er hevstangen.",
+      "soloActive":   "{name} {pct} margin — eneste aktive avdeling denne perioden.",
+      "noMargin":     "Ingen margindata ennå.",
+      "ctxTotal":     "{amount} totalt",
+      "ctxAvgLabour": "snitt bemanning {pct}",
+      "ctxAtLoss":    "{name} går med tap"
+    },
+    "stats": {
+      "revenue":      "Inntekt",
+      "departments":  "{count, plural, one {# avd} other {# avd}}",
+      "profit":       "Overskudd",
+      "groupGP":      "{pct} gruppe-GP",
+      "revPerHour":   "Innt/time",
+      "hoursWorked":  "{hours}t arbeidet"
+    },
+    "empty": {
+      "title": "Ingen avdelingsdata for {period}",
+      "body":  "Avdelinger synkroniseres nattlig fra Personalkollen. Kom tilbake etter neste synk, eller åpne en annen periode."
+    },
+    "table": {
+      "department":   "Avdeling",
+      "revenue":      "Inntekt",
+      "profit":       "Overskudd",
+      "gpPct":        "GP%",
+      "labourPct":    "Bemanning %",
+      "trend":        "30d trend"
+    },
+    "attention": {
+      "atLoss":      "går med tap — {amount} underskudd denne perioden.",
+      "lowMargin":   "margin {pct} — under 30%-terskelen.",
+      "noLabour":    "100% margin flagget — bemanning ikke allokert, sjekk synk."
+    }
   },
   "group": {
     "crumb":       "Gruppe",
