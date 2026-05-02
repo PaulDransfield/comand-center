@@ -33,6 +33,10 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [orgName,  setOrgName]  = useState('')
+  // Set after a successful signup so we can render the "check your inbox"
+  // success screen instead of the form. Cleared when user navigates back
+  // to the form.
+  const [verifySent, setVerifySent] = useState<{ email: string; deliverable: boolean } | null>(null)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -72,16 +76,15 @@ function LoginForm() {
       return
     }
 
-    // Auto sign in after signup
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-    if (signInError || !signInData.session) {
-      setMessage(t('signup.createdSignIn'))
-      setMode('login')
-      setLoading(false)
-      return
-    }
-
-    window.location.replace('/onboarding')
+    // M046 follow-up: signup no longer auto-confirms. The endpoint
+    // emails a verification link; the user clicks it to activate +
+    // log in. Show the "check your inbox" screen instead of trying
+    // to sign in (which would 400 with email_not_confirmed).
+    setVerifySent({
+      email,
+      deliverable: !!data?.verificationSent,
+    })
+    setLoading(false)
   }
 
   async function handleForgot(e: React.FormEvent) {
@@ -104,6 +107,36 @@ function LoginForm() {
           <span style={{ fontFamily:'var(--display)', fontSize:'16px', fontWeight:'600', color:'var(--navy)' }}>CommandCenter</span>
         </div>
 
+        {/* Post-signup confirmation screen — replaces the form entirely.
+            User just submitted signup; we're waiting for them to click
+            the verification link in their inbox. Reset arrow returns
+            them to the form (e.g. wrong email, want to try again). */}
+        {verifySent ? (
+          <div>
+            <h1 style={{ fontFamily:'var(--display)', fontSize:'24px', fontWeight:'300', fontStyle:'italic', color:'var(--navy)', marginBottom:'10px' }}>
+              {t('verifySent.title')}
+            </h1>
+            <p style={{ fontSize:'14px', color:'var(--ink-2)', lineHeight:1.6, marginBottom:'18px' }}>
+              {t('verifySent.body', { email: verifySent.email })}
+            </p>
+            {!verifySent.deliverable && (
+              <div style={{ background:'var(--amber-lt)', border:'1px solid #fde68a', borderRadius:'8px', padding:'10px 14px', fontSize:'12px', color:'var(--amber)', marginBottom:'14px', lineHeight:1.5 }}>
+                {t('verifySent.deliveryWarn')}
+              </div>
+            )}
+            <p style={{ fontSize:'12px', color:'var(--ink-3)', lineHeight:1.5, marginBottom:'24px' }}>
+              {t('verifySent.checkSpam')}
+            </p>
+            <button
+              type="button"
+              onClick={() => { setVerifySent(null); setMode('login'); setMessage(''); setError('') }}
+              style={{ background:'transparent', border:'none', color:'var(--blue)', fontSize:'12px', cursor:'pointer', padding:0 }}
+            >
+              {t('verifySent.backToLogin')}
+            </button>
+          </div>
+        ) : (
+        <>
         <h1 style={{ fontFamily:'var(--display)', fontSize:'24px', fontWeight:'300', fontStyle:'italic', color:'var(--navy)', marginBottom:'6px' }}>
           {mode === 'login' ? t('login.title') : mode === 'signup' ? t('signup.title') : t('forgot.title')}
         </h1>
@@ -154,6 +187,8 @@ function LoginForm() {
           : mode === 'signup' ? (<>{t('signup.haveAccount')} <button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('login'); setError(''); setMessage('') }}>{t('signup.signIn')}</button></>)
           : (<button style={{ background:'none', border:'none', cursor:'pointer', color:'var(--blue)', fontSize:'13px', fontFamily:'var(--font)', padding:'0', textDecoration:'underline' }} onClick={() => { setMode('login'); setError(''); setMessage('') }}>{t('forgot.back')}</button>)}
         </div>
+        </>
+        )}
 
       </div>
     </div>

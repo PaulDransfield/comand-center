@@ -12,6 +12,7 @@ import ConsentBanner from './ConsentBanner'
 import MobileNav from './MobileNav'
 import BackgroundSync from './BackgroundSync'
 import PlanGate from './PlanGate'
+import OnboardingGate from './OnboardingGate'
 import AiUsageBanner from './AiUsageBanner'
 import { RoleGate } from './RoleGate'
 
@@ -65,6 +66,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Fires /api/sync/today on mount (throttled server-side to 10 min/integration) */}
       <BackgroundSync />
+
+      {/* Onboarding gate — redirects to /onboarding when the wizard
+          isn't finished. MUST render before PlanGate so an unfinished
+          owner gets sent to /onboarding rather than /upgrade. Once
+          onboarding completes, the next page load lets PlanGate take
+          over (which is fine because /upgrade is in OnboardingGate's
+          open-paths list, so the chain doesn't fight itself). */}
+      <OnboardingGate />
 
       {/* Subscription gate — redirects trial/past_due orgs to /upgrade */}
       <PlanGate />

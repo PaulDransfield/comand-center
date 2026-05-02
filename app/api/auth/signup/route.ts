@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
 import { validateOrgNr }             from '@/lib/sweden/orgnr'
+import { sendVerifyEmail }           from '@/lib/email/sendVerifyEmail'
 
 export async function POST(req: NextRequest) {
   // Rate-limit by IP — prevents signup flooding / org spam.
@@ -69,11 +70,15 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
 
   // ── STEP 1: Create the Supabase auth user ─────────────────────
-  // This handles password hashing, email verification, etc.
+  // M046 follow-up: email_confirm=false. We send a confirmation email
+  // ourselves below (Resend, branded, locale-aware) and the user can't
+  // sign in until they click the link. The link routes through
+  // /api/auth/callback?next=/onboarding so they land on the wizard with
+  // a session ready.
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email,
     password,
-    email_confirm: true,   // auto-confirm — user can log in immediately after signup
+    email_confirm: false,
     user_metadata: { full_name: fullName },
   })
 
@@ -154,11 +159,37 @@ export async function POST(req: NextRequest) {
     steps_completed: [],
   })
 
+  // ── STEP 6: Send the email-verification message ────────────────
+  // Caller's preferred locale comes from the Accept-Language header
+  // (the cc_locale cookie isn't set yet — first request, no session).
+  // Best-effort: if Resend isn't configured we still complete the
+  // signup, but flag verificationSent=false so the UI can warn the
+  // user to contact support if they don't receive the email.
+  const acceptLang = req.headers.get('accept-language')?.split(',')[0]?.split(';')[0]?.trim() ?? null
+  const proto      = (req.headers.get('x-forwarded-proto') ?? 'https')
+  const host       = req.headers.get('host') ?? 'comandcenter.se'
+  const appOrigin  = `${proto}://${host}`
+
+  const verifyResult = await sendVerifyEmail({
+    supabaseAdmin: supabase,
+    email,
+    fullName:      fullName ?? null,
+    locale:        acceptLang,
+    appOrigin,
+  })
+  if (!verifyResult.ok) {
+    console.warn('[signup] verify email send failed:', verifyResult.error)
+  }
+
   // ── DONE ───────────────────────────────────────────────────────
+  // We deliberately do NOT return a session — the user must click the
+  // confirmation link before they can sign in. The frontend interprets
+  // requiresEmailVerification:true and shows a "check your inbox" screen
+  // instead of redirecting to /onboarding.
   return NextResponse.json({
-    message:    'Account created successfully.',
-    orgId:      org.id,
-    trialDays:  30,
-    trialEnd:   trialEnd.toISOString(),
+    message:                    'Account created. Please check your email to confirm.',
+    orgId:                      org.id,
+    requiresEmailVerification:  true,
+    verificationSent:           verifyResult.ok,
   })
 }

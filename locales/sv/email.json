@@ -70,6 +70,16 @@
     "openDashboard":   "Öppna dashboard →",
     "supportLine":     "Frågor? Svara på detta mejl eller skriv till hello@comandcenter.se."
   },
+  "verifyEmail": {
+    "subject":         "Bekräfta din e-post — CommandCenter",
+    "greetingNamed":   "Hej {name},",
+    "greetingPlain":   "Hej,",
+    "intro":           "Tack för att du registrerade dig för CommandCenter. Bekräfta din e-postadress för att aktivera ditt konto och börja sätta upp din restaurang.",
+    "cta":             "Bekräfta e-post →",
+    "fallback":        "Om knappen inte fungerar, klistra in denna URL i din webbläsare:",
+    "ignoreLine":      "Om du inte skapade ett konto kan du tryggt ignorera detta mejl.",
+    "supportLine":     "Frågor? Svara på detta mejl eller skriv till hello@comandcenter.se."
+  },
   "aiDaily": {
     "subject":     "Din dagliga AI-sammanfattning — {date}",
     "greeting":    "God morgon",
