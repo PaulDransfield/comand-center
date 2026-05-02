@@ -1,28 +1,20 @@
 {
   "_meta": {
-    "locale":  "sv",
+    "locale": "sv",
     "_status": "awaiting_review"
   },
   "cookieConsent": {
-    "ariaLabel":   "Cookie-samtycke",
-    "lead":        "Cookies & analys.",
-    "body":        "Vi använder PostHog (EU-hostad) för att förstå hur folk använder CommandCenter — sidvisningar, funktionsklick, felfrekvenser. Inga personuppgifter samlas in. Du kan avböja, och appen fungerar likadant. Se",
+    "ariaLabel": "Cookie-samtycke",
+    "lead": "Cookies & analys.",
+    "body": "Vi använder PostHog (EU-hostad) för att förstå hur folk använder CommandCenter — sidvisningar, funktionsklick, felfrekvenser. Inga personuppgifter samlas in. Du kan avböja, och appen fungerar likadant. Se",
     "privacyLink": "vår integritetspolicy",
-    "decline":     "Avböj",
-    "accept":      "Acceptera"
-  },
-  "orgGate": {
-    "eyebrow":     "Åtgärd krävs",
-    "title":       "Lägg till ditt organisationsnummer för att fortsätta",
-    "body":        "Din 30-dagars frist har upphört. För att fortsätta använda CommandCenter behöver vi ditt företags <b>10-siffriga svenska organisationsnummer</b> registrerat. Detta krävs för momsregistrerad fakturering och för att bekräfta den juridiska personen bakom ditt konto.",
-    "subBody":     "Det tar ungefär tio sekunder. Klicka nedan, klistra in ditt nummer, och du är tillbaka.",
-    "needHelp":    "Behöver du hjälp? hello@comandcenter.se",
-    "cta":         "Lägg till organisationsnummer →"
+    "decline": "Avböj",
+    "accept": "Acceptera"
   },
   "roleGate": {
-    "eyebrow":     "Åtkomst begränsad",
-    "title":       "Du har inte åtkomst till denna sida",
-    "body":        "Din kontoroll ({role}) inkluderar inte denna sektion. Om du behöver åtkomst, be kontoägaren att kontakta CommandCenter så uppdaterar vi dina behörigheter.",
-    "backToDash":  "Tillbaka till dashboard"
+    "eyebrow": "Åtkomst begränsad",
+    "title": "Du har inte åtkomst till denna sida",
+    "body": "Din kontoroll ({role}) inkluderar inte denna sektion. Om du behöver åtkomst, be kontoägaren att kontakta CommandCenter så uppdaterar vi dina behörigheter.",
+    "backToDash": "Tillbaka till dashboard"
   }
 }

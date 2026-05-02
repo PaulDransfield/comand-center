@@ -5,8 +5,11 @@ export const dynamic = 'force-dynamic'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
+import { validateOrgNr, formatOrgNr } from '@/lib/sweden/orgnr'
 
 const RESTAURANT_TYPE_KEYS = ['restaurant', 'bar', 'cafe', 'bakery', 'catering', 'group'] as const
+const STAGE_KEYS            = ['new', 'established_1y', 'established_3y'] as const
+const DAY_KEYS              = ['mon','tue','wed','thu','fri','sat','sun'] as const
 
 const STAFF_SYSTEMS = ['Personalkollen', 'Caspeco', 'Quinyx', 'Planday', 'Other', 'None']
 const ACCOUNTING    = ['Fortnox', 'Visma', 'Bokio', 'Other', 'None']
@@ -20,15 +23,23 @@ export default function OnboardingPage() {
   const [step,    setStep]    = useState(0)
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
+  const [businessId, setBusinessId] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     restaurantName:  '',
     city:            '',
     type:            'restaurant',
+    address:         '',
+    orgNumber:       '',
+    businessStage:   '',
     targetFoodCost:  '31',
     targetStaffCost: '35',
     targetMargin:    '15',
   })
+
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>(
+    Object.fromEntries(DAY_KEYS.map(d => [d, true]))
+  )
 
   const [systems, setSystems] = useState({
     staff:      '',
@@ -36,41 +47,116 @@ export default function OnboardingPage() {
     pos:        '',
   })
 
+  // PDF upload state for step 2 (only relevant when businessStage !== 'new')
+  const [pdfFile,    setPdfFile]    = useState<File | null>(null)
+  const [pdfStatus,  setPdfStatus]  = useState<'idle' | 'uploading' | 'uploaded' | 'failed'>('idle')
+  const [pdfError,   setPdfError]   = useState<string>('')
+
   function updateForm(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
     setError('')
   }
-
+  function toggleDay(d: string) {
+    setOpenDays(o => ({ ...o, [d]: !o[d] }))
+    setError('')
+  }
   function updateSystem(field: string, value: string) {
     setSystems(f => ({ ...f, [field]: value }))
   }
 
-  function saveAndContinue() {
+  // Step 1 → step 2: validate, then create the business so step 2 can
+  // attach an optional PDF upload to a real business_id. If creation
+  // already happened (user went back and forward), don't double-create.
+  async function saveAndContinue() {
     if (!form.restaurantName.trim()) {
-      setError(t('restaurant.errors.missingName'))
+      setError(t('restaurant.errors.missingName')); return
+    }
+    if (!form.address.trim()) {
+      setError(t('restaurant.errors.missingAddress')); return
+    }
+    const orgCheck = validateOrgNr(form.orgNumber)
+    if (!orgCheck.ok) {
+      setError(form.orgNumber.trim()
+        ? t('restaurant.errors.invalidOrgNumber')
+        : t('restaurant.errors.missingOrgNumber'))
       return
     }
+    if (!form.businessStage) {
+      setError(t('restaurant.errors.missingStage')); return
+    }
+    if (!Object.values(openDays).some(Boolean)) {
+      setError(t('restaurant.errors.noOpenDays')); return
+    }
     setError('')
-    setStep(2)
-  }
 
-  async function finish() {
+    if (businessId) { setStep(2); return }
+
     setLoading(true)
-    // Save the restaurant first
     try {
-      await fetch('/api/businesses/add', {
+      const r = await fetch('/api/businesses/add', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name:              form.restaurantName.trim(),
           city:              form.city.trim(),
           type:              form.type,
+          address:           form.address.trim(),
+          // We DON'T set org_number on the business row here — the
+          // org-level org_number written via /api/onboarding/complete
+          // is the authoritative one (drives invoicing). Per-business
+          // org_number is reserved for restaurant groups with multiple
+          // legal entities, which they can fill in later.
+          opening_days:      openDays,
+          business_stage:    form.businessStage,
           target_food_pct:   parseFloat(form.targetFoodCost)  || 31,
           target_staff_pct:  parseFloat(form.targetStaffCost) || 35,
           target_margin_pct: parseFloat(form.targetMargin)    || 15,
         }),
       })
-    } catch {}
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        throw new Error(j?.error || 'Failed to create restaurant')
+      }
+      const j = await r.json()
+      setBusinessId(j?.id ?? null)
+      setStep(2)
+    } catch (e: any) {
+      setError(e?.message || 'Something went wrong')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Step 2 PDF upload — fires immediately on file pick. Best-effort:
+  // failure here doesn't block the wizard, the owner can re-upload from
+  // /overheads later.
+  async function uploadPdf(file: File) {
+    if (!businessId) {
+      setPdfStatus('failed')
+      setPdfError('No business id')
+      return
+    }
+    setPdfFile(file)
+    setPdfStatus('uploading')
+    setPdfError('')
+    try {
+      const fd = new FormData()
+      fd.append('business_id', businessId)
+      fd.append('files', file)
+      const r = await fetch('/api/fortnox/upload', { method: 'POST', body: fd })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        throw new Error(j?.error || `HTTP ${r.status}`)
+      }
+      setPdfStatus('uploaded')
+    } catch (e: any) {
+      setPdfStatus('failed')
+      setPdfError(e?.message || 'Upload failed')
+    }
+  }
+
+  async function finish() {
+    setLoading(true)
     // Save system preferences for support team
     await fetch('/api/onboarding/setup-request', {
       method:  'POST',
@@ -83,12 +169,23 @@ export default function OnboardingPage() {
         pos:            systems.pos,
       }),
     }).catch(() => {})
-    await fetch('/api/onboarding/complete', { method: 'POST' }).catch(() => {})
+    // Complete onboarding — also writes the org-level org_number
+    // (M046 made this required; the helper validates server-side).
+    await fetch('/api/onboarding/complete', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_name: form.restaurantName,
+        city:          form.city,
+        systems:       systems,
+        org_number:    form.orgNumber,
+      }),
+    }).catch(() => {})
     router.push('/dashboard')
   }
 
   // Styles
-  const card:  React.CSSProperties = { background: 'white', borderRadius: 16, padding: '40px 36px', width: '100%', maxWidth: 500, boxShadow: '0 4px 32px rgba(0,0,0,0.10)' }
+  const card:  React.CSSProperties = { background: 'white', borderRadius: 16, padding: '40px 36px', width: '100%', maxWidth: 520, boxShadow: '0 4px 32px rgba(0,0,0,0.10)' }
   const label: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '.05em' }
   const input: React.CSSProperties = { width: '100%', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' as const, outline: 'none', color: '#111', background: 'white' }
   const btnP:  React.CSSProperties = { width: '100%', padding: '13px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 12 }
@@ -185,6 +282,65 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
+              <div>
+                <label style={label}>{t('restaurant.address')}</label>
+                <input style={input} value={form.address} onChange={e => updateForm('address', e.target.value)} placeholder={t('restaurant.addressPlaceholder')} />
+              </div>
+
+              <div>
+                <label style={label}>{t('restaurant.orgNumber')}</label>
+                <input
+                  style={input}
+                  value={form.orgNumber}
+                  onChange={e => updateForm('orgNumber', e.target.value)}
+                  placeholder={t('restaurant.orgNumberPlaceholder')}
+                  inputMode="numeric"
+                />
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{t('restaurant.orgNumberHint')}</div>
+              </div>
+
+              <div>
+                <label style={label}>{t('restaurant.stage')}</label>
+                <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                  {STAGE_KEYS.map(k => (
+                    <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: form.businessStage === k ? '#eff6ff' : '#f9fafb', border: `1.5px solid ${form.businessStage === k ? '#6366f1' : '#f3f4f6'}`, borderRadius: 8, cursor: 'pointer', fontSize: 13, color: '#374151' }}>
+                      <input type="radio" name="stage" value={k} checked={form.businessStage === k} onChange={() => updateForm('businessStage', k)} style={{ accentColor: '#6366f1' }} />
+                      {t(`restaurant.stageOptions.${k}`)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label style={label}>{t('restaurant.openingDays')}</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+                  {DAY_KEYS.map(d => {
+                    const on = openDays[d]
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => toggleDay(d)}
+                        style={{
+                          padding: '8px 14px',
+                          background:   on ? '#1a1f2e' : '#f9fafb',
+                          color:        on ? 'white'   : '#6b7280',
+                          border:       `1.5px solid ${on ? '#1a1f2e' : '#e5e7eb'}`,
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          minWidth: 52,
+                        }}
+                      >
+                        {t(`restaurant.days.${d}`)}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>{t('restaurant.openingDaysHint')}</div>
+              </div>
+
               <div style={{ background: '#f9fafb', borderRadius: 10, padding: '14px 16px' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 12 }}>{t('restaurant.targetsHeader')}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
@@ -214,7 +370,9 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            <button onClick={saveAndContinue} style={btnP}>{t('restaurant.continue')}</button>
+            <button onClick={saveAndContinue} disabled={loading} style={btnP}>
+              {loading ? t('done.loading') : t('restaurant.continue')}
+            </button>
             <button onClick={() => setStep(0)} style={btnS}>{t('restaurant.back')}</button>
           </div>
         )}
@@ -245,6 +403,44 @@ export default function OnboardingPage() {
             <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 14px', marginBottom: 16, fontSize: 13, color: '#92400e', lineHeight: 1.6 }}>
               {t('systems.promise')}
             </div>
+
+            {/* Optional PDF upload — only for established businesses; a
+                "new" business has no last-year results to pre-load. */}
+            {form.businessStage !== 'new' && businessId && (
+              <div style={{ background: '#f9fafb', border: '1px dashed #e5e7eb', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('systems.upload.title')}</div>
+                <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.55, marginBottom: 12 }}>{t('systems.upload.subtitle')}</div>
+
+                {pdfStatus === 'idle' && (
+                  <label style={{ display: 'inline-block', padding: '8px 14px', background: '#1a1f2e', color: 'white', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                    {t('systems.upload.cta')}
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        const f = e.target.files?.[0]
+                        if (f) uploadPdf(f)
+                      }}
+                    />
+                  </label>
+                )}
+                {pdfStatus === 'uploading' && pdfFile && (
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('systems.upload.uploading')} — {pdfFile.name}</div>
+                )}
+                {pdfStatus === 'uploaded' && pdfFile && (
+                  <div style={{ fontSize: 12, color: '#15803d' }}>
+                    ✓ {t('systems.upload.selected', { name: pdfFile.name })}
+                    <div style={{ marginTop: 4, color: '#6b7280' }}>{t('systems.upload.uploaded')}</div>
+                  </div>
+                )}
+                {pdfStatus === 'failed' && (
+                  <div style={{ fontSize: 12, color: '#dc2626' }}>
+                    {t('systems.upload.failed', { error: pdfError })}
+                  </div>
+                )}
+              </div>
+            )}
 
             <button onClick={() => setStep(3)} style={btnP}>{t('systems.continue')}</button>
             <button onClick={() => setStep(1)} style={btnS}>{t('systems.back')}</button>

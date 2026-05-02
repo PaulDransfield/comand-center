@@ -11,14 +11,6 @@
     "decline":     "Decline",
     "accept":      "Accept"
   },
-  "orgGate": {
-    "eyebrow":     "Action required",
-    "title":       "Add your organisationsnummer to continue",
-    "body":        "Your 30-day grace period has ended. To keep using CommandCenter we need your company's <b>10-digit Swedish organisationsnummer</b> on file. This is required for VAT-compliant invoicing and to confirm the legal entity behind your account.",
-    "subBody":     "It takes about ten seconds. Click below, paste your number, and you're back in.",
-    "needHelp":    "Need help? hello@comandcenter.se",
-    "cta":         "Add organisationsnummer →"
-  },
   "roleGate": {
     "eyebrow":     "Access restricted",
     "title":       "You don't have access to this page",

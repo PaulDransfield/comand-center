@@ -1,28 +1,20 @@
 {
   "_meta": {
-    "locale":  "nb",
+    "locale": "nb",
     "_status": "awaiting_review"
   },
   "cookieConsent": {
-    "ariaLabel":   "Informasjonskapsel-samtykke",
-    "lead":        "Informasjonskapsler & analyse.",
-    "body":        "Vi bruker PostHog (EU-hostet) for å forstå hvordan folk bruker CommandCenter — sidevisninger, funksjonsklikk, feilfrekvenser. Ingen personopplysninger samles inn. Du kan avslå, og appen fungerer likt. Se",
+    "ariaLabel": "Informasjonskapsel-samtykke",
+    "lead": "Informasjonskapsler & analyse.",
+    "body": "Vi bruker PostHog (EU-hostet) for å forstå hvordan folk bruker CommandCenter — sidevisninger, funksjonsklikk, feilfrekvenser. Ingen personopplysninger samles inn. Du kan avslå, og appen fungerer likt. Se",
     "privacyLink": "vår personvernerklæring",
-    "decline":     "Avslå",
-    "accept":      "Godta"
-  },
-  "orgGate": {
-    "eyebrow":     "Handling kreves",
-    "title":       "Legg til organisasjonsnummeret ditt for å fortsette",
-    "body":        "Din 30-dagers frist har utløpt. For å fortsette å bruke CommandCenter trenger vi firmaets <b>10-sifrede svenske organisasjonsnummer</b> registrert. Dette kreves for MVA-kompatibel fakturering og for å bekrefte den juridiske enheten bak kontoen din.",
-    "subBody":     "Det tar omtrent ti sekunder. Klikk nedenfor, lim inn nummeret ditt, og du er tilbake.",
-    "needHelp":    "Trenger du hjelp? hello@comandcenter.se",
-    "cta":         "Legg til organisasjonsnummer →"
+    "decline": "Avslå",
+    "accept": "Godta"
   },
   "roleGate": {
-    "eyebrow":     "Tilgang begrenset",
-    "title":       "Du har ikke tilgang til denne siden",
-    "body":        "Kontorollen din ({role}) inkluderer ikke denne delen. Hvis du trenger tilgang, be kontoeieren ta kontakt med CommandCenter så oppdaterer vi tillatelsene dine.",
-    "backToDash":  "Tilbake til dashbord"
+    "eyebrow": "Tilgang begrenset",
+    "title": "Du har ikke tilgang til denne siden",
+    "body": "Kontorollen din ({role}) inkluderer ikke denne delen. Hvis du trenger tilgang, be kontoeieren ta kontakt med CommandCenter så oppdaterer vi tillatelsene dine.",
+    "backToDash": "Tilbake til dashbord"
   }
 }

@@ -1,10 +1,22 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-04-30 | M022–M045 all applied
+> Last updated: 2026-05-02 | M022–M045 applied · M046 PENDING APPLY
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Recently applied — for reference
+
+### M046 — Onboarding expansion (opening_days + business_stage) ⏳ PENDING APPLY
+**File:** `M046-ONBOARDING-EXPANSION.sql` (repo root)
+**Purpose:** Onboarding now collects business address, organisationsnummer, business stage, opening days, and an optional last-year P&L PDF upfront — see app/onboarding/page.tsx. The DB needs two new columns on `businesses` to store the structured data the wizard captures.
+  - `businesses.opening_days   JSONB DEFAULT '{"mon":..,"sun":true}'` — drives scheduling AI (no labour-cut suggestions on closed days) and the /scheduling weekly grid. Column default keeps legacy rows rendering sensibly until owners update.
+  - `businesses.business_stage TEXT` with CHECK in (`new`, `established_1y`, `established_3y`). Drives budget AI: 'new' skips the historical-anchor rule (no last-year actuals exist), 'established_*' enforces it. NULL allowed for backfill safety.
+**Companion code:**
+  - `app/api/businesses/add/route.ts` — accepts `address`, `opening_days`, `business_stage`, validates the enum + JSON shape at the API edge.
+  - `app/api/onboarding/complete/route.ts` — accepts `org_number`, writes to `organisations.org_number` via the new shared helper `lib/sweden/applyOrgNumber.ts` (also handles Stripe metadata + tax_id sync). Same helper now backs `/api/settings/company-info` POST so the two paths can't drift.
+  - `components/OrgNumberBanner.tsx` and `components/OrgNumberGate.tsx` DELETED — onboarding now requires org_number upfront, the 30-day grace banner + lockout are dead. `misc.orgGate` and `settings.orgNumberBanner` keys removed from all 3 locale JSONs.
+**Backwards compat:** pure additions, defaults sensible, `IF NOT EXISTS` on each column, CHECK constraint guarded by an `information_schema` lookup so re-runs are safe. Wrapped in a transaction.
+**To apply:** open Supabase SQL Editor, paste file contents, run. Verify query at the bottom dumps the resulting columns.
 
 ### M045 — sync_log indexes (kill the 91% seq-scan rate) ✅ applied 2026-04-30
 **File:** `M045-SYNC-LOG-INDEXES.sql` (repo root)

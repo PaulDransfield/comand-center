@@ -41,6 +41,28 @@
       "catering":  "Catering",
       "group":     "Restaurantgruppe"
     },
+    "address":     "Gateadresse",
+    "addressPlaceholder":"f.eks. Karl Johans gate 12, 0154 Oslo",
+    "orgNumber":   "Organisasjonsnummer (svensk)",
+    "orgNumberPlaceholder":"556677-8899",
+    "orgNumberHint":"10 sifre — kreves for fakturering.",
+    "stage":       "Hvor lenge har virksomheten vært i drift?",
+    "stageOptions": {
+      "new":             "Ny (under 12 måneder)",
+      "established_1y":  "Etablert (1–3 år)",
+      "established_3y":  "Etablert (3+ år)"
+    },
+    "openingDays": "Åpne dager",
+    "openingDaysHint":"Trykk på en dag for å bytte. AI-vaktplanlegging hopper over stengte dager.",
+    "days": {
+      "mon": "Man",
+      "tue": "Tir",
+      "wed": "Ons",
+      "thu": "Tor",
+      "fri": "Fre",
+      "sat": "Lør",
+      "sun": "Søn"
+    },
     "targetsHeader":"Kostnadsmål",
     "foodCost":    "Matkostnad %",
     "foodHint":    "28-35%",
@@ -49,7 +71,12 @@
     "margin":      "Nettomargin %",
     "marginHint":  "10-20%",
     "errors": {
-      "missingName": "Vennligst oppgi restaurantens navn"
+      "missingName":      "Vennligst oppgi restaurantens navn",
+      "missingAddress":   "Oppgi gateadressen din",
+      "missingOrgNumber": "Oppgi organisasjonsnummeret ditt",
+      "invalidOrgNumber": "Organisasjonsnummeret er ikke gyldig — sjekk og prøv igjen",
+      "missingStage":     "Oppgi hvor lenge virksomheten har vært i drift",
+      "noOpenDays":       "Velg minst én åpen dag"
     },
     "continue":    "Fortsett",
     "back":        "Tilbake"
@@ -61,6 +88,16 @@
     "accounting":  "Regnskap",
     "pos":         "Kassesystem",
     "promise":     "Teamet vårt setter opp tilkoblingene innen 1 virkedag og sender e-post når alt er klart.",
+    "upload": {
+      "title":       "Fjorårets resultat (valgfritt)",
+      "subtitle":    "Slipp inn din siste årlige Resultatrapport (PDF) så forhåndslaster vi den historiske grunnlinjen din. Du kan også gjøre dette senere fra /overheads.",
+      "cta":         "Velg PDF",
+      "selected":    "{name} klar til opplasting",
+      "uploading":   "Laster opp…",
+      "uploaded":    "Lastet opp — vi behandler den snart",
+      "failed":      "Opplasting mislyktes: {error}",
+      "skip":        "Hopp over — jeg legger til dette senere"
+    },
     "continue":    "Fortsett",
     "back":        "Tilbake"
   },

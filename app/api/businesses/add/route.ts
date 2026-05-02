@@ -20,27 +20,52 @@ export async function POST(req: NextRequest) {
   const {
     name, type, city, org_number, colour,
     target_food_pct, target_staff_pct, target_margin_pct,
+    address, opening_days, business_stage,
   } = body
 
   if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
 
+  // Validate the M046 enum at the API edge so a bad client value can't
+  // hit the DB CHECK and return a 500. NULL is allowed (legacy + the
+  // enrichment-later case).
+  const stage = business_stage && ['new','established_1y','established_3y'].includes(business_stage)
+    ? business_stage
+    : null
+
+  // opening_days: accept the canonical { mon..sun: bool } shape, or null
+  // to fall back to the column default ("open every day"). Anything else
+  // is ignored — never trust the client to set arbitrary JSONB.
+  const DAYS = ['mon','tue','wed','thu','fri','sat','sun'] as const
+  let openingDays: Record<string, boolean> | null = null
+  if (opening_days && typeof opening_days === 'object') {
+    openingDays = {}
+    for (const d of DAYS) openingDays[d] = Boolean((opening_days as any)[d])
+  }
+
   const db = createAdminClient()
+
+  const insertRow: Record<string, any> = {
+    org_id:            auth.orgId,
+    name:              name.trim(),
+    type:              type || 'restaurant',
+    city:              city || null,
+    address:           address?.trim() || null,
+    org_number:        org_number || null,
+    colour:            colour || '#1A3F6B',
+    currency:          'SEK',
+    is_active:         true,
+    target_food_pct:   target_food_pct   ?? 31,
+    target_staff_pct:  target_staff_pct  ?? 35,
+    target_margin_pct: target_margin_pct ?? 15,
+    business_stage:    stage,
+  }
+  // Only set opening_days when the client sent something — otherwise let
+  // the column default apply ("open every day").
+  if (openingDays) insertRow.opening_days = openingDays
 
   const { data, error } = await db
     .from('businesses')
-    .insert({
-      org_id:            auth.orgId,
-      name:              name.trim(),
-      type:              type || 'restaurant',
-      city:              city || null,
-      org_number:        org_number || null,
-      colour:            colour || '#1A3F6B',
-      currency:          'SEK',
-      is_active:         true,
-      target_food_pct:   target_food_pct   ?? 31,
-      target_staff_pct:  target_staff_pct  ?? 35,
-      target_margin_pct: target_margin_pct ?? 15,
-    })
+    .insert(insertRow)
     .select('id, name')
     .single()
 

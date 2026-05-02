@@ -41,15 +41,42 @@
       "catering":  "Catering",
       "group":     "Restauranggrupp"
     },
+    "address":     "Gatuadress",
+    "addressPlaceholder":"t.ex. Storgatan 12, 114 51 Stockholm",
+    "orgNumber":   "Organisationsnummer",
+    "orgNumberPlaceholder":"556677-8899",
+    "orgNumberHint":"10 siffror — krävs för fakturering.",
+    "stage":       "Hur länge har verksamheten varit igång?",
+    "stageOptions": {
+      "new":             "Ny (under 12 månader)",
+      "established_1y":  "Etablerad (1–3 år)",
+      "established_3y":  "Etablerad (3+ år)"
+    },
+    "openingDays": "Öppna dagar",
+    "openingDaysHint":"Tryck på en dag för att växla. AI-schemaläggning hoppar över stängda dagar.",
+    "days": {
+      "mon": "Mån",
+      "tue": "Tis",
+      "wed": "Ons",
+      "thu": "Tor",
+      "fri": "Fre",
+      "sat": "Lör",
+      "sun": "Sön"
+    },
     "targetsHeader":"Kostnadsmål",
-    "foodCost":    "Matkostnad %",
+    "foodCost":    "Råvarukostnad %",
     "foodHint":    "28-35%",
     "staffCost":   "Personalkostnad %",
     "staffHint":   "30-40%",
     "margin":      "Nettomarginal %",
     "marginHint":  "10-20%",
     "errors": {
-      "missingName": "Vänligen ange restaurangens namn"
+      "missingName":      "Vänligen ange restaurangens namn",
+      "missingAddress":   "Ange din gatuadress",
+      "missingOrgNumber": "Ange ditt organisationsnummer",
+      "invalidOrgNumber": "Organisationsnumret är inte giltigt — kontrollera och försök igen",
+      "missingStage":     "Ange hur länge verksamheten har varit igång",
+      "noOpenDays":       "Välj minst en öppen dag"
     },
     "continue":    "Fortsätt",
     "back":        "Tillbaka"
@@ -61,6 +88,16 @@
     "accounting":  "Bokföring",
     "pos":         "Kassasystem",
     "promise":     "Vårt team kopplar in dina anslutningar inom 1 arbetsdag och mejlar dig när allt är klart.",
+    "upload": {
+      "title":       "Förra årets resultat (frivilligt)",
+      "subtitle":    "Släpp in din senaste årliga Resultatrapport (PDF) så förladdar vi din historiska baslinje. Du kan också göra detta senare från /overheads.",
+      "cta":         "Välj PDF",
+      "selected":    "{name} redo att laddas upp",
+      "uploading":   "Laddar upp…",
+      "uploaded":    "Uppladdad — vi bearbetar den inom kort",
+      "failed":      "Uppladdning misslyckades: {error}",
+      "skip":        "Hoppa över — jag lägger till detta senare"
+    },
     "continue":    "Fortsätt",
     "back":        "Tillbaka"
   },

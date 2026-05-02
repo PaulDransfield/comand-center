@@ -41,6 +41,28 @@
       "catering":  "Catering",
       "group":     "Restaurant Group"
     },
+    "address":     "Street address",
+    "addressPlaceholder":"e.g. Storgatan 12, 114 51 Stockholm",
+    "orgNumber":   "Organisationsnummer",
+    "orgNumberPlaceholder":"556677-8899",
+    "orgNumberHint":"10 digits — needed for invoicing.",
+    "stage":       "How long has the business been running?",
+    "stageOptions": {
+      "new":             "New (under 12 months)",
+      "established_1y":  "Established (1–3 years)",
+      "established_3y":  "Established (3+ years)"
+    },
+    "openingDays": "Open days",
+    "openingDaysHint":"Tap a day to toggle. AI scheduling skips closed days.",
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    },
     "targetsHeader":"Cost targets",
     "foodCost":    "Food cost %",
     "foodHint":    "28-35%",
@@ -49,7 +71,12 @@
     "margin":      "Net margin %",
     "marginHint":  "10-20%",
     "errors": {
-      "missingName": "Please enter your restaurant name"
+      "missingName":      "Please enter your restaurant name",
+      "missingAddress":   "Please enter your street address",
+      "missingOrgNumber": "Please enter your organisationsnummer",
+      "invalidOrgNumber": "Organisationsnummer is not valid — check the number and try again",
+      "missingStage":     "Please tell us how long you have been running",
+      "noOpenDays":       "Pick at least one open day"
     },
     "continue":    "Continue",
     "back":        "Back"
@@ -61,6 +88,16 @@
     "accounting":  "Accounting",
     "pos":         "POS system",
     "promise":     "Our team will set up your connections within 1 business day and email you when everything is ready.",
+    "upload": {
+      "title":       "Last year's results (optional)",
+      "subtitle":    "Drop in your most recent annual Resultatrapport PDF and we will pre-load your historical baseline. You can also do this later from /overheads.",
+      "cta":         "Choose PDF",
+      "selected":    "{name} ready to upload",
+      "uploading":   "Uploading…",
+      "uploaded":    "Uploaded — we will process it shortly",
+      "failed":      "Upload failed: {error}",
+      "skip":        "Skip — I'll add this later"
+    },
     "continue":    "Continue",
     "back":        "Back"
   },

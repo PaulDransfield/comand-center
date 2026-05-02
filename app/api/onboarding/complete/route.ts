@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { applyOrgNumberToOrg } from '@/lib/sweden/applyOrgNumber'
 export const dynamic = 'force-dynamic'
 
 const getAuth = getRequestAuth
@@ -10,9 +11,25 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   const body = await req.json().catch(() => ({}))
-  const { business_name, city, systems } = body
+  const { business_name, city, systems, org_number } = body
 
   const db = createAdminClient()
+
+  // M046: org_number is now required at signup (the soft 30-day grace
+  // banner + hard gate are gone). The wizard validates client-side, but
+  // the helper re-validates server-side and returns a 400 if anything's
+  // off — same checksum logic as /api/settings/company-info.
+  if (org_number) {
+    const orgResult = await applyOrgNumberToOrg({
+      db,
+      orgId:        auth.orgId,
+      rawOrgNumber: org_number,
+    })
+    if (!orgResult.ok) {
+      return NextResponse.json({ error: orgResult.error }, { status: 400 })
+    }
+  }
+
   await db.from('onboarding_progress').upsert({
     org_id:       auth.orgId,
     completed_at: new Date().toISOString(),
