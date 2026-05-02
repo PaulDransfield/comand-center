@@ -2,7 +2,7 @@
 // @ts-nocheck
 export const dynamic = 'force-dynamic'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { validateOrgNr, formatOrgNr } from '@/lib/sweden/orgnr'
@@ -24,6 +24,29 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
   const [businessId, setBusinessId] = useState<string | null>(null)
+
+  // M046 follow-up: org_number is currently collected at /api/auth/signup
+  // (look at the signup form on /login). The wizard would be asking for
+  // it twice. On mount, peek at /api/settings/company-info — if the org
+  // already has one, hide the field + skip its validation. If signup is
+  // ever simplified to drop org-nr collection, this just lights the
+  // field back up automatically.
+  const [orgAlreadySet, setOrgAlreadySet] = useState<boolean>(false)
+  const [orgPreview,    setOrgPreview]    = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/settings/company-info', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (cancelled || !j?.organisation) return
+        if (j.organisation.org_number) {
+          setOrgAlreadySet(true)
+          setOrgPreview(j.organisation.org_number_display ?? j.organisation.org_number)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   const [form, setForm] = useState({
     restaurantName:  '',
@@ -74,12 +97,16 @@ export default function OnboardingPage() {
     if (!form.address.trim()) {
       setError(t('restaurant.errors.missingAddress')); return
     }
-    const orgCheck = validateOrgNr(form.orgNumber)
-    if (!orgCheck.ok) {
-      setError(form.orgNumber.trim()
-        ? t('restaurant.errors.invalidOrgNumber')
-        : t('restaurant.errors.missingOrgNumber'))
-      return
+    // Skip org-nr validation when it was already collected during signup
+    // (the field is hidden in that case — see orgAlreadySet effect above).
+    if (!orgAlreadySet) {
+      const orgCheck = validateOrgNr(form.orgNumber)
+      if (!orgCheck.ok) {
+        setError(form.orgNumber.trim()
+          ? t('restaurant.errors.invalidOrgNumber')
+          : t('restaurant.errors.missingOrgNumber'))
+        return
+      }
     }
     if (!form.businessStage) {
       setError(t('restaurant.errors.missingStage')); return
@@ -178,7 +205,10 @@ export default function OnboardingPage() {
         business_name: form.restaurantName,
         city:          form.city,
         systems:       systems,
-        org_number:    form.orgNumber,
+        // Only send org_number when it was NOT already set (the field
+        // wasn't shown in that case, so form.orgNumber is empty). The
+        // complete endpoint treats absent org_number as a no-op.
+        ...(orgAlreadySet ? {} : { org_number: form.orgNumber }),
       }),
     }).catch(() => {})
     router.push('/dashboard')
@@ -287,17 +317,22 @@ export default function OnboardingPage() {
                 <input style={input} value={form.address} onChange={e => updateForm('address', e.target.value)} placeholder={t('restaurant.addressPlaceholder')} />
               </div>
 
-              <div>
-                <label style={label}>{t('restaurant.orgNumber')}</label>
-                <input
-                  style={input}
-                  value={form.orgNumber}
-                  onChange={e => updateForm('orgNumber', e.target.value)}
-                  placeholder={t('restaurant.orgNumberPlaceholder')}
-                  inputMode="numeric"
-                />
-                <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{t('restaurant.orgNumberHint')}</div>
-              </div>
+              {/* Org-nr field — only shown when the value isn't already on
+                  the org row (signup may have already captured it; double-
+                  asking is a known papercut). */}
+              {!orgAlreadySet && (
+                <div>
+                  <label style={label}>{t('restaurant.orgNumber')}</label>
+                  <input
+                    style={input}
+                    value={form.orgNumber}
+                    onChange={e => updateForm('orgNumber', e.target.value)}
+                    placeholder={t('restaurant.orgNumberPlaceholder')}
+                    inputMode="numeric"
+                  />
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{t('restaurant.orgNumberHint')}</div>
+                </div>
+              )}
 
               <div>
                 <label style={label}>{t('restaurant.stage')}</label>
