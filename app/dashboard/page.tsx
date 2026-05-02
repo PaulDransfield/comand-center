@@ -17,7 +17,7 @@ import dynamicImport from 'next/dynamic'
 // it reads localStorage at mount.
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 import OverviewChart, { PeriodOption } from '@/components/dashboard/OverviewChart'
-import { getUpcomingHolidays } from '@/lib/holidays'
+import { getUpcomingHolidays, getHolidaysForCountry } from '@/lib/holidays'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
@@ -447,6 +447,7 @@ function DashboardInner() {
     return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, hasActualData, isClosed, dayIdx, pred, prevDay }
   })
 
+
   // ── Available periods for the chart's dropdown ──────────────────────────
   // 6 past + current = 7 weeks, and 6 past + current = 7 months. Offsets
   // captured in the key so onPeriodChange can restore exact state.
@@ -510,6 +511,34 @@ function DashboardInner() {
 
   const selectedBiz = businesses.find(b => b.id === bizId)
   const targetPct   = (selectedBiz as any)?.target_staff_pct ?? 35
+
+  // Holiday set spanning the visible week + month windows so the chart
+  // can colour the X-axis labels red (alongside Sat/Sun). Cheap pure
+  // compute via lib/holidays — no fetch, no DB. Country comes from the
+  // selected business; defaults to 'SE' if not yet set. Sits below
+  // selectedBiz because the lookup depends on it.
+  const holidayDateSet = useMemo(() => {
+    const set = new Set<string>()
+    try {
+      const country = (selectedBiz as any)?.country ?? 'SE'
+      const wkStart = weekDays[0]?.date ?? curr.from
+      const wkEnd   = weekDays[weekDays.length - 1]?.date ?? curr.to
+      const mStart  = monthDays[0]?.date ?? `${currM.year}-${String(currM.month).padStart(2,'0')}-01`
+      const mEnd    = monthDays[monthDays.length - 1]?.date ?? mStart
+      const earliest = wkStart < mStart ? wkStart : mStart
+      const latest   = wkEnd   > mEnd   ? wkEnd   : mEnd
+      const years = new Set<number>([
+        Number(earliest.slice(0, 4)),
+        Number(latest.slice(0, 4)),
+      ])
+      for (const y of years) {
+        for (const h of getHolidaysForCountry(country, y)) {
+          if (h.date >= earliest && h.date <= latest) set.add(h.date)
+        }
+      }
+    } catch { /* never block chart render on holiday lookup */ }
+    return set
+  }, [selectedBiz, weekDays, monthDays, curr, currM])
 
   return (
     <AppShell>
@@ -748,6 +777,7 @@ function DashboardInner() {
               onCompareChange={handleCompareChange}
               fmtKr={fmtKr}
               fmtPct={fmtPct}
+              holidayDates={holidayDateSet}
             />
 
             {/* Supporting row — Departments summary + AttentionPanel.

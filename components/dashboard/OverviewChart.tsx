@@ -73,6 +73,14 @@ export interface OverviewChartProps {
 
   fmtKr:  (n: number) => string
   fmtPct: (n: number) => string
+
+  // Optional: dates the parent has identified as public/observed
+  // holidays. The X-axis day labels for these dates render in red so
+  // owners can visually spot upcoming holidays alongside weekends.
+  // Source: lib/holidays/getUpcomingHolidays(country, ...). Pass an
+  // empty Set or omit to disable. Works the same for SE today; nb/gb
+  // pick it up automatically once their holiday modules land.
+  holidayDates?: Set<string>
 }
 
 // ─── Tokens ──────────────────────────────────────────────────────────────────
@@ -194,6 +202,7 @@ export default function OverviewChart({
   selectedDates, onSelectedDatesChange,
   compareMode: cmpProp, onCompareChange,
   fmtKr, fmtPct,
+  holidayDates,
 }: OverviewChartProps) {
   const t = useTranslations('dashboard.chart')
   const isWeek = viewMode === 'week'
@@ -647,21 +656,35 @@ export default function OverviewChart({
             )
           })()}
 
-          {/* X-axis day labels */}
-          {days.map((d, i) => (
-            <text
-              key={`lbl${d.date}`}
-              x={xAt(i)}
-              y={VB_H - PAD_B + 18}
-              textAnchor="middle"
-              fontSize={isWeek ? 11 : 9}
-              fontWeight={d.isToday ? 700 : 400}
-              fill={d.isToday ? C.mar : C.axisInk}
-              style={{ opacity: !hasFilter || selected.has(d.date) ? 1 : 0.3 }}
-            >
-              {d.dayName}
-            </text>
-          ))}
+          {/* X-axis day labels — weekends + holidays render in red so
+              owners can spot them at a glance. "Today" still wins (green
+              + bold) when it overlaps a Sat/Sun/holiday because the
+              "today" highlight is more useful right now than the
+              red-day signal. */}
+          {days.map((d, i) => {
+            const dow       = toDate(d.date).getDay()           // 0=Sun..6=Sat
+            const isWeekend = dow === 0 || dow === 6
+            const isHoliday = !!holidayDates?.has(d.date)
+            const isRedDay  = isWeekend || isHoliday
+            const fill      = d.isToday ? C.mar
+                            : isRedDay  ? '#dc2626'             // tailwind red-600
+                            : C.axisInk
+            const fontWeight = d.isToday ? 700 : isRedDay ? 600 : 400
+            return (
+              <text
+                key={`lbl${d.date}`}
+                x={xAt(i)}
+                y={VB_H - PAD_B + 18}
+                textAnchor="middle"
+                fontSize={isWeek ? 11 : 9}
+                fontWeight={fontWeight}
+                fill={fill}
+                style={{ opacity: !hasFilter || selected.has(d.date) ? 1 : 0.3 }}
+              >
+                {d.dayName}
+              </text>
+            )
+          })}
 
           {/* Y-axis title */}
           <text x={PAD_L - 44} y={PAD_T + PLOT_H / 2} transform={`rotate(-90 ${PAD_L - 44} ${PAD_T + PLOT_H / 2})`} fontSize={10} fill={C.axisInk}>kr</text>
