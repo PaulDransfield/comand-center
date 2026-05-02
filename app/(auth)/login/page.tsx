@@ -20,7 +20,7 @@ function LoginForm() {
   const supabase = createClient()
   const searchParams = useSearchParams()
 
-  // Landing page "Start free trial" sends users here with ?mode=signup so they
+  // Landing page "Get started" sends users here with ?mode=signup so they
   // land on the signup form instead of the login form.
   const initialMode = searchParams.get('mode') === 'signup' ? 'signup'
                     : searchParams.get('mode') === 'forgot' ? 'forgot'
