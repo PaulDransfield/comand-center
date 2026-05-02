@@ -23,7 +23,7 @@
     "modal": {
       "title": "Legg til restaurant",
       "name": "Restaurantens navn",
-      "namePlaceholder": "f.eks. Vero Italiano",
+      "namePlaceholder": "f.eks. Bistro Nordlys",
       "city": "By",
       "cityPlaceholder": "Oslo",
       "type": "Type",

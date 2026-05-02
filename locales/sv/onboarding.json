@@ -29,7 +29,7 @@
     "title":       "Din restaurang",
     "subtitle":    "Berätta grunderna så sätter vi upp ditt konto.",
     "name":        "Restaurangens namn",
-    "namePlaceholder":"t.ex. Vero Italiano",
+    "namePlaceholder":"t.ex. Bistro Nordlys",
     "city":        "Stad",
     "cityPlaceholder":"t.ex. Stockholm",
     "type":        "Typ",
@@ -42,7 +42,7 @@
       "group":     "Restauranggrupp"
     },
     "address":     "Gatuadress",
-    "addressPlaceholder":"t.ex. Storgatan 12, 114 51 Stockholm",
+    "addressPlaceholder":"Gata, postnummer, ort",
     "orgNumber":   "Organisationsnummer",
     "orgNumberPlaceholder":"556677-8899",
     "orgNumberHint":"10 siffror — krävs för fakturering.",

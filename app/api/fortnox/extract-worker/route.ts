@@ -408,7 +408,7 @@ VALIDATION.  Before submitting:
   5. Skip "Summa…" / "Total…" / "S:a" subtotal rows when listing line items (they'd double-count).
   6. Monthly revenue under 10 000 SEK or over 100 000 000 SEK almost always means scale misread — re-check the header before submitting.
 
-EXAMPLE (single-month Resultatrapport, Vero restaurant, mars 2026, scale: SEK).
+EXAMPLE (single-month Resultatrapport, sample restaurant, mars 2026, scale: SEK).
 
 Visible PDF rows:
   3010 Försäljning mat 12% moms          412 800

@@ -23,7 +23,7 @@
     "modal": {
       "title": "Lägg till restaurang",
       "name": "Restaurangens namn",
-      "namePlaceholder": "t.ex. Vero Italiano",
+      "namePlaceholder": "t.ex. Bistro Nordlys",
       "city": "Stad",
       "cityPlaceholder": "Stockholm",
       "type": "Typ",

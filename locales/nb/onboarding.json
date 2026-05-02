@@ -29,7 +29,7 @@
     "title":       "Restauranten din",
     "subtitle":    "Fortell oss det grunnleggende så setter vi opp kontoen din.",
     "name":        "Restaurantens navn",
-    "namePlaceholder":"f.eks. Vero Italiano",
+    "namePlaceholder":"f.eks. Bistro Nordlys",
     "city":        "By",
     "cityPlaceholder":"f.eks. Oslo",
     "type":        "Type",
@@ -42,7 +42,7 @@
       "group":     "Restaurantgruppe"
     },
     "address":     "Gateadresse",
-    "addressPlaceholder":"f.eks. Karl Johans gate 12, 0154 Oslo",
+    "addressPlaceholder":"Gate, postnummer, sted",
     "orgNumber":   "Organisasjonsnummer (svensk)",
     "orgNumberPlaceholder":"556677-8899",
     "orgNumberHint":"10 sifre — kreves for fakturering.",

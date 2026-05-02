@@ -392,7 +392,7 @@ function SaveModal(props: {
           <input
             value={props.label}
             onChange={e => props.setLabel(e.target.value)}
-            placeholder="e.g. Vero — investigate Sept revenue gap"
+            placeholder="e.g. investigate Sept revenue gap"
             maxLength={120}
             style={inputStyle}
             autoFocus
