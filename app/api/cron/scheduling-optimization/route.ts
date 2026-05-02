@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         // Get all active businesses for this org
         const { data: businesses } = await db
           .from('businesses')
-          .select('id, name')
+          .select('id, name, country')
           .eq('org_id', org.id)
           .eq('is_active', true)
 
@@ -154,6 +154,29 @@ export async function POST(req: NextRequest) {
 
               const { SCOPE_NOTE } = await import('@/lib/ai/scope')
               const { INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY } = await import('@/lib/ai/rules')
+              const { getUpcomingHolidays } = await import('@/lib/holidays')
+
+              // Holiday awareness for the next 28 days. The scheduling
+              // memo runs weekly, so 28d covers ~4 weeks of staffing
+              // planning — the AI can flag "Midsummer Eve in 18 days,
+              // start booking double cover now". Failure-tolerant.
+              let upcomingHolidaysBlock = 'UPCOMING PUBLIC HOLIDAYS: none in next 28 days'
+              try {
+                const fromYmd = today.toISOString().slice(0, 10)
+                const list    = getUpcomingHolidays((biz as any).country ?? 'SE', fromYmd, 28)
+                if (list.length) {
+                  upcomingHolidaysBlock = `UPCOMING PUBLIC HOLIDAYS (next 28 days)
+${list.map(h => {
+  const tag = h.impact === 'high' ? ' · HIGH-DEMAND day (peak revenue, plan extra cover)'
+            : h.impact === 'low'  ? ' · LOW-DEMAND day (most restaurants close, do not schedule unless owner confirms)'
+            : ''
+  const off = h.kind === 'observed' ? ' (observed — de-facto closed/peak even though banks open)' : ''
+  return `  ${h.date}: ${h.name_sv}${off}${tag}`
+}).join('\n')}`
+                }
+              } catch (e: any) {
+                console.warn('[scheduling-optimization] holiday lookup failed:', e?.message)
+              }
 
               const prompt = `You are a restaurant scheduling optimization expert. Analyze this data and provide specific, actionable scheduling recommendations.
 
@@ -167,6 +190,8 @@ ${SCHEDULING_ASYMMETRY}
 
 BUSINESS: ${biz.name}
 ANALYSIS PERIOD: ${analysisData.analysis_period}
+
+${upcomingHolidaysBlock}
 
 STAFF SUMMARY:
 - Total shifts: ${analysisData.staff_summary.total_shifts}
@@ -193,6 +218,11 @@ Provide 3-5 specific scheduling optimization recommendations. Focus on:
 3. Addressing chronic lateness issues
 4. Department-specific staffing adjustments
 5. Potential cost savings opportunities
+6. UPCOMING HOLIDAYS — when one falls inside the next 28 days, factor it
+   into your recommendations: book extra cover for HIGH-DEMAND days
+   (Midsummer Eve, NYE, Christmas Eve), and DO NOT recommend cuts on
+   LOW-DEMAND days the owner is likely closing anyway. Be specific
+   ("Midsummer Eve in 12 days — confirm extra cover and lock the menu").
 
 Format as bullet points with concrete actions.`
 

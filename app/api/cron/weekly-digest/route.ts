@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
       // All active businesses
       const { data: businesses } = await db
         .from('businesses')
-        .select('id, name, city')
+        .select('id, name, city, country')
         .eq('org_id', org.id).eq('is_active', true)
       if (!businesses?.length) continue
 
@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       }> = []
 
       for (const biz of businesses) {
-        const ctx = await buildWeeklyContext(db, org.id, biz.id, biz.name, thisMonday, biz.city ?? null)
+        const ctx = await buildWeeklyContext(db, org.id, biz.id, biz.name, thisMonday, biz.city ?? null, (biz as any).country ?? null)
 
         // Skip businesses with no revenue in the last 8 weeks — nothing to say.
         const anyRev = ctx.thisWeek.revenue + ctx.lastWeek.revenue +

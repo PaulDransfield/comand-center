@@ -14,6 +14,7 @@ import { logAiRequest }          from '@/lib/ai/usage'
 import { SCOPE_NOTE }            from '@/lib/ai/scope'
 import { SCHEDULING_ASYMMETRY, VOICE, INDUSTRY_BENCHMARKS } from '@/lib/ai/rules'
 import { getForecast, coordsFor, DailyWeather, weatherBucket } from '@/lib/weather/forecast'
+import { getUpcomingHolidays } from '@/lib/holidays'
 import { signFeedback }          from '@/lib/email/feedback-token'
 
 type Db = any
@@ -58,6 +59,17 @@ export interface WeeklyContext {
     analogue_avg_rev: number | null
     all_weather_avg_rev: number   // for comparison
   }>
+  // Upcoming public holidays in the next ~21 days, country-aware. The
+  // weekly memo runs on Monday, so 21 days covers the upcoming week +
+  // the two after — enough for the AI to flag e.g. "Midsummer Eve in
+  // 12 days, plan staffing now". Empty when no holidays in the window.
+  upcomingHolidays: Array<{
+    date:    string                            // YYYY-MM-DD
+    name:    string                            // local-language name
+    kind:    'public' | 'observed'
+    impact:  'high' | 'low' | null
+    days_until: number
+  }>
 }
 
 interface WeekBlock {
@@ -89,6 +101,7 @@ export async function buildWeeklyContext(
   businessName: string,
   mondayOfBriefing: Date,  // the Monday AFTER the week being summarised
   businessCity: string | null = null,  // used for weather coord lookup
+  businessCountry: string | null = null,  // used for upcoming-holiday lookup
 ): Promise<WeeklyContext> {
   const lastSunday = new Date(mondayOfBriefing); lastSunday.setDate(lastSunday.getDate() - 1)
   const lastMonday = new Date(mondayOfBriefing); lastMonday.setDate(lastMonday.getDate() - 7)
@@ -319,6 +332,43 @@ export async function buildWeeklyContext(
     upcomingWeather,
     weatherPattern,
     nextWeekAnalogues,
+    upcomingHolidays: buildUpcomingHolidays(businessCountry, mondayOfBriefing),
+  }
+}
+
+/**
+ * Pull the next ~21 days of country-aware holidays for the AI memo.
+ * Pure function on top of lib/holidays — failure-tolerant (returns []
+ * if anything throws so the memo generation never crashes on this).
+ */
+function buildUpcomingHolidays(
+  country: string | null,
+  mondayOfBriefing: Date,
+): WeeklyContext['upcomingHolidays'] {
+  try {
+    // Window starts at the Monday of the briefing (i.e. "next week"
+    // from the owner's POV). 21 days covers the upcoming week + the
+    // two after it — enough lead time for staffing decisions.
+    const fromYmd = mondayOfBriefing.toISOString().slice(0, 10)
+    const list    = getUpcomingHolidays(country ?? 'SE', fromYmd, 21)
+    const fromMs  = Date.UTC(mondayOfBriefing.getUTCFullYear(), mondayOfBriefing.getUTCMonth(), mondayOfBriefing.getUTCDate())
+    return list.map(h => {
+      const [y, m, d] = h.date.split('-').map(Number)
+      const days_until = Math.round((Date.UTC(y, m - 1, d) - fromMs) / 86_400_000)
+      return {
+        date:    h.date,
+        // Sweden gets the Swedish name (more familiar to local owners);
+        // other countries fall back to English. We don't have a per-AI
+        // locale signal here yet — keep it simple, can refine later.
+        name:    (country ?? 'SE').toUpperCase() === 'SE' ? h.name_sv : h.name_en,
+        kind:    h.kind,
+        impact:  h.impact,
+        days_until,
+      }
+    })
+  } catch (e: any) {
+    console.warn('[weekly-manager] upcoming-holidays lookup failed:', e?.message)
+    return []
   }
 }
 
@@ -360,6 +410,24 @@ ${ctx.weatherPattern.map(p => `  ${p.bucket.padEnd(10)}  ${p.days} days  avg ${f
 
 ${ctx.nextWeekAnalogues.length ? `NEXT WEEK ANALOGUES (forecast matched to your own history)
 ${ctx.nextWeekAnalogues.map(a => `  ${a.date} ${a.weekday}: forecast ${a.forecast_summary} → bucket=${a.bucket}. ${a.analogue_days >= 2 ? `Matching historicals: ${a.analogue_days} days, avg rev ${fmt(a.analogue_avg_rev ?? 0)} (vs all-${a.weekday} avg ${fmt(a.all_weather_avg_rev)})` : `Only ${a.analogue_days} matching historicals — not enough to be confident.`}`).join('\n')}` : ''}
+
+${ctx.upcomingHolidays.length ? `UPCOMING PUBLIC HOLIDAYS (next 21 days)
+${ctx.upcomingHolidays.map(h => {
+  const inWhen = h.days_until === 0 ? 'today'
+               : h.days_until === 1 ? 'tomorrow'
+               : `in ${h.days_until} days`
+  const tag = h.impact === 'high' ? ' · HIGH-DEMAND day (peak revenue, bookings full early)'
+            : h.impact === 'low'  ? ' · LOW-DEMAND day (most restaurants close or run reduced service)'
+            : ''
+  const off = h.kind === 'observed' ? ' (observed — not a public holiday but de-facto closed/peak)' : ''
+  return `  ${h.date} (${inWhen}): ${h.name}${off}${tag}`
+}).join('\n')}
+
+USE THESE HOLIDAYS in your memo when they materially shift the week's pattern.
+Examples of GOOD use:
+  - "Friday is Midsommarafton — book extra cover and lock the menu now; staff cost will spike but revenue should clear it"
+  - "Christmas Day next Sunday — confirm closed status, no shifts to schedule"
+DO NOT mention a holiday if it falls outside the upcoming week or has no impact field set.` : 'UPCOMING PUBLIC HOLIDAYS: none in next 21 days'}
 
 ${SCOPE_NOTE}
 
