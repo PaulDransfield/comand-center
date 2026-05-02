@@ -1,59 +1,43 @@
 {
   "_meta": {
-    "locale":  "nb",
+    "locale": "nb",
     "_status": "awaiting_review"
   },
   "steps": {
-    "welcome":     "Velkommen",
-    "restaurant":  "Restauranten din",
-    "systems":     "Systemene dine",
-    "done":        "Ferdig"
+    "restaurant": "Restauranten din",
+    "systems": "Systemene dine",
+    "done": "Ferdig"
   },
-  "stepLabel":     "Steg {n} av {total}",
-  "welcome": {
-    "title":       "Velkommen til CommandCenter",
-    "subtitle":    "Din samlede plattform for å håndtere restaurantens økonomi, bemanningskostnader og prestasjon. Vi har deg i gang på cirka 2 minutter.",
-    "features": {
-      "pnl_t":     "Resultatregnskap",
-      "pnl_d":     "Følg inntekter, kostnader og overskudd hver måned",
-      "staff_t":   "Bemanningshåndtering",
-      "staff_d":   "Timer, kostnader og avdelingsfordeling",
-      "fc_t":      "Smart prognose",
-      "fc_d":      "AI-prediksjoner basert på historikken din",
-      "ai_t":      "AI-assistent",
-      "ai_d":      "Still spørsmål om virksomheten på vanlig norsk"
-    },
-    "cta":         "Kom i gang"
-  },
+  "stepLabel": "Steg {n} av {total}",
   "restaurant": {
-    "title":       "Restauranten din",
-    "subtitle":    "Fortell oss det grunnleggende så setter vi opp kontoen din.",
-    "name":        "Restaurantens navn",
-    "namePlaceholder":"f.eks. Bistro Nordlys",
-    "city":        "By",
-    "cityPlaceholder":"f.eks. Oslo",
-    "type":        "Type",
+    "title": "Restauranten din",
+    "subtitle": "Fortell oss det grunnleggende så setter vi opp kontoen din.",
+    "name": "Restaurantens navn",
+    "namePlaceholder": "f.eks. Bistro Nordlys",
+    "city": "By",
+    "cityPlaceholder": "f.eks. Oslo",
+    "type": "Type",
     "typeOptions": {
-      "restaurant":"Restaurant",
-      "bar":       "Bar & nattklubb",
-      "cafe":      "Kafé",
-      "bakery":    "Bakeri",
-      "catering":  "Catering",
-      "group":     "Restaurantgruppe"
+      "restaurant": "Restaurant",
+      "bar": "Bar & nattklubb",
+      "cafe": "Kafé",
+      "bakery": "Bakeri",
+      "catering": "Catering",
+      "group": "Restaurantgruppe"
     },
-    "address":     "Gateadresse",
-    "addressPlaceholder":"Gate, postnummer, sted",
-    "orgNumber":   "Organisasjonsnummer (svensk)",
-    "orgNumberPlaceholder":"556677-8899",
-    "orgNumberHint":"10 sifre — kreves for fakturering.",
-    "stage":       "Hvor lenge har virksomheten vært i drift?",
+    "address": "Gateadresse",
+    "addressPlaceholder": "Gate, postnummer, sted",
+    "orgNumber": "Organisasjonsnummer (svensk)",
+    "orgNumberPlaceholder": "556677-8899",
+    "orgNumberHint": "10 sifre — kreves for fakturering.",
+    "stage": "Hvor lenge har virksomheten vært i drift?",
     "stageOptions": {
-      "new":             "Ny (under 12 måneder)",
-      "established_1y":  "Etablert (1–3 år)",
-      "established_3y":  "Etablert (3+ år)"
+      "new": "Ny (under 12 måneder)",
+      "established_1y": "Etablert (1–3 år)",
+      "established_3y": "Etablert (3+ år)"
     },
     "openingDays": "Åpne dager",
-    "openingDaysHint":"Trykk på en dag for å bytte. AI-vaktplanlegging hopper over stengte dager.",
+    "openingDaysHint": "Trykk på en dag for å bytte. AI-vaktplanlegging hopper over stengte dager.",
     "days": {
       "mon": "Man",
       "tue": "Tir",
@@ -63,62 +47,62 @@
       "sat": "Lør",
       "sun": "Søn"
     },
-    "targetsHeader":"Kostnadsmål",
-    "foodCost":    "Matkostnad %",
-    "foodHint":    "28-35%",
-    "staffCost":   "Bemanningskostnad %",
-    "staffHint":   "30-40%",
-    "margin":      "Nettomargin %",
-    "marginHint":  "10-20%",
+    "targetsHeader": "Kostnadsmål",
+    "foodCost": "Matkostnad %",
+    "foodHint": "28-35%",
+    "staffCost": "Bemanningskostnad %",
+    "staffHint": "30-40%",
+    "margin": "Nettomargin %",
+    "marginHint": "10-20%",
     "errors": {
-      "missingName":      "Vennligst oppgi restaurantens navn",
-      "missingAddress":   "Oppgi gateadressen din",
+      "missingName": "Vennligst oppgi restaurantens navn",
+      "missingAddress": "Oppgi gateadressen din",
       "missingOrgNumber": "Oppgi organisasjonsnummeret ditt",
       "invalidOrgNumber": "Organisasjonsnummeret er ikke gyldig — sjekk og prøv igjen",
-      "missingStage":     "Oppgi hvor lenge virksomheten har vært i drift",
-      "noOpenDays":       "Velg minst én åpen dag"
+      "missingStage": "Oppgi hvor lenge virksomheten har vært i drift",
+      "noOpenDays": "Velg minst én åpen dag"
     },
-    "continue":    "Fortsett",
-    "back":        "Tilbake"
+    "continue": "Fortsett",
+    "back": "Tilbake"
   },
   "systems": {
-    "title":       "Systemene dine",
-    "subtitle":    "Fortell oss hvilke systemer du bruker. Teamet vårt kobler alt opp for deg — ingen teknisk jobb fra din side.",
-    "staff":       "Vaktplanlegging",
-    "accounting":  "Regnskap",
-    "pos":         "Kassesystem",
-    "promise":     "Teamet vårt setter opp tilkoblingene innen 1 virkedag og sender e-post når alt er klart.",
+    "title": "Systemene dine",
+    "subtitle": "Fortell oss hvilke systemer du bruker. Teamet vårt kobler alt opp for deg — ingen teknisk jobb fra din side.",
+    "staff": "Vaktplanlegging",
+    "accounting": "Regnskap",
+    "pos": "Kassesystem",
+    "promise": "Teamet vårt setter opp tilkoblingene innen 1 virkedag og sender e-post når alt er klart.",
     "upload": {
-      "title":       "Fjorårets resultat (valgfritt)",
-      "subtitle":    "Slipp inn din siste årlige Resultatrapport (PDF) så forhåndslaster vi den historiske grunnlinjen din. Du kan også gjøre dette senere fra /overheads.",
-      "cta":         "Velg PDF",
-      "selected":    "{name} klar til opplasting",
-      "uploading":   "Laster opp…",
-      "uploaded":    "Lastet opp — vi behandler den snart",
-      "failed":      "Opplasting mislyktes: {error}",
-      "skip":        "Hopp over — jeg legger til dette senere"
+      "title": "Fjorårets resultat (valgfritt)",
+      "subtitle": "Slipp inn din siste årlige Resultatrapport (PDF) så forhåndslaster vi den historiske grunnlinjen din. Du kan også gjøre dette senere fra /overheads.",
+      "cta": "Velg PDF",
+      "selected": "{name} klar til opplasting",
+      "uploading": "Laster opp…",
+      "uploaded": "Lastet opp — vi behandler den snart",
+      "failed": "Opplasting mislyktes: {error}",
+      "skip": "Hopp over — jeg legger til dette senere"
     },
-    "continue":    "Fortsett",
-    "back":        "Tilbake"
+    "continue": "Fortsett",
+    "back": "Tilbake"
   },
   "done": {
-    "title":       "Alt er klart!",
-    "subtitleNamed":"{name} er klar. Teamet vårt tar kontakt innen 1 virkedag for å koble til systemene dine. I mellomtiden kan du utforske plattformen.",
-    "subtitlePlain":"Restauranten din er klar. Teamet vårt tar kontakt innen 1 virkedag for å koble til systemene dine. I mellomtiden kan du utforske plattformen.",
-    "next1_t":     "Se dashbordet ditt",
-    "next1_d":     "Se KPI-er og ytelsesoversikt",
-    "next2_t":     "Sjekk prognosesiden",
-    "next2_d":     "AI-prediksjoner for kommende måneder",
-    "next3_t":     "Prøv AI-assistenten",
-    "next3_d":     "Still spørsmål om virksomheten din",
-    "next4_t":     "Last opp en faktura",
-    "next4_d":     "AI leser og kategoriserer den automatisk",
-    "loading":     "Laster…",
-    "cta":         "Gå til dashbord"
+    "title": "Alt er klart!",
+    "subtitleNamed": "{name} er klar. Teamet vårt tar kontakt innen 1 virkedag for å koble til systemene dine. I mellomtiden kan du utforske plattformen.",
+    "subtitlePlain": "Restauranten din er klar. Teamet vårt tar kontakt innen 1 virkedag for å koble til systemene dine. I mellomtiden kan du utforske plattformen.",
+    "next1_t": "Se dashbordet ditt",
+    "next1_d": "Se KPI-er og ytelsesoversikt",
+    "next2_t": "Sjekk prognosesiden",
+    "next2_d": "AI-prediksjoner for kommende måneder",
+    "next3_t": "Prøv AI-assistenten",
+    "next3_d": "Still spørsmål om virksomheten din",
+    "next4_t": "Last opp en faktura",
+    "next4_d": "AI leser og kategoriserer den automatisk",
+    "loading": "Laster…",
+    "cta": "Gå til dashbord"
   },
   "footer": {
-    "needHelp":     "Trenger du hjelp?",
-    "contactSupport":"Kontakt support",
-    "privacyPolicy":"Personvernerklæring"
+    "needHelp": "Trenger du hjelp?",
+    "contactSupport": "Kontakt support",
+    "privacyPolicy": "Personvernerklæring"
   }
 }

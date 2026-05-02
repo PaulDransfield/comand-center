@@ -33,7 +33,6 @@ function LoginForm() {
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [orgName,  setOrgName]  = useState('')
-  const [orgNumber, setOrgNumber] = useState('')
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -63,7 +62,7 @@ function LoginForm() {
     const res  = await fetch('/api/auth/signup', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ email, password, fullName, orgName, orgNumber }),
+      body:    JSON.stringify({ email, password, fullName, orgName }),
     })
     const data = await res.json()
 
@@ -128,26 +127,8 @@ function LoginForm() {
               <input className="input" type="text" placeholder={t('signup.orgPlaceholder')} value={orgName} onChange={e => setOrgName(e.target.value)} required />
             </div>
           )}
-          {mode === 'signup' && (
-            <div style={{ marginBottom:'14px' }}>
-              <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('signup.orgNumber')}</label>
-              <input
-                className="input"
-                type="text"
-                placeholder="556677-8899"
-                value={orgNumber}
-                onChange={e => setOrgNumber(e.target.value)}
-                required
-                inputMode="numeric"
-                pattern="[0-9\\-]{10,11}"
-                title={t('signup.orgNumberTitle')}
-                style={{ fontFamily: 'ui-monospace, monospace' }}
-              />
-              <div style={{ fontSize:'11px', color:'var(--ink-4)', marginTop:'4px' }}>
-                {t('signup.orgNumberHint')}
-              </div>
-            </div>
-          )}
+          {/* Org-nr field removed M046 — collected in the onboarding wizard
+              (Restaurant step) instead. Keeps the signup form short. */}
           <div style={{ marginBottom:'14px' }}>
             <label style={{ display:'block', fontSize:'11px', fontWeight:'700', textTransform:'uppercase', letterSpacing:'.08em', color:'var(--ink-4)', marginBottom:'5px' }}>{t('shared.email')}</label>
             <input className="input" type="email" placeholder={t('shared.emailPlaceholder')} value={email} onChange={e => setEmail(e.target.value)} required autoComplete="email" />

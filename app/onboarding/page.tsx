@@ -18,7 +18,9 @@ const POS_SYSTEMS   = ['Ancon', 'Swess', 'Trivec', 'Zettle', 'Other', 'None']
 export default function OnboardingPage() {
   const router = useRouter()
   const t      = useTranslations('onboarding')
-  const STEPS  = [t('steps.welcome'), t('steps.restaurant'), t('steps.systems'), t('steps.done')]
+  // 3-step wizard. The old "Welcome" slide was marketing, not data
+  // capture — dropped so the progress bar reflects real progress.
+  const STEPS  = [t('steps.restaurant'), t('steps.systems'), t('steps.done')]
 
   const [step,    setStep]    = useState(0)
   const [loading, setLoading] = useState(false)
@@ -87,9 +89,10 @@ export default function OnboardingPage() {
     setSystems(f => ({ ...f, [field]: value }))
   }
 
-  // Step 1 → step 2: validate, then create the business so step 2 can
-  // attach an optional PDF upload to a real business_id. If creation
-  // already happened (user went back and forward), don't double-create.
+  // Restaurant step → Systems step: validate, then create the business
+  // so Systems can attach an optional PDF upload to a real business_id.
+  // If creation already happened (user went back and forward), don't
+  // double-create.
   async function saveAndContinue() {
     if (!form.restaurantName.trim()) {
       setError(t('restaurant.errors.missingName')); return
@@ -116,7 +119,7 @@ export default function OnboardingPage() {
     }
     setError('')
 
-    if (businessId) { setStep(2); return }
+    if (businessId) { setStep(1); return }
 
     setLoading(true)
     try {
@@ -146,7 +149,7 @@ export default function OnboardingPage() {
       }
       const j = await r.json()
       setBusinessId(j?.id ?? null)
-      setStep(2)
+      setStep(1)
     } catch (e: any) {
       setError(e?.message || 'Something went wrong')
     } finally {
@@ -256,39 +259,8 @@ export default function OnboardingPage() {
           {t('stepLabel', { n: step + 1, total: STEPS.length })}
         </div>
 
-        {/* ── Step 0: Welcome ─────────────────────────────────── */}
+        {/* ── Step 0: Restaurant details ───────────────────────── */}
         {step === 0 && (
-          <div>
-            <h1 style={{ margin: '0 0 10px', fontSize: 26, fontWeight: 700, color: '#111', lineHeight: 1.2 }}>
-              {t('welcome.title')}
-            </h1>
-            <p style={{ margin: '0 0 28px', fontSize: 14, color: '#6b7280', lineHeight: 1.7 }}>
-              {t('welcome.subtitle')}
-            </p>
-
-            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10, marginBottom: 28 }}>
-              {[
-                { title: t('welcome.features.pnl_t'),    desc: t('welcome.features.pnl_d') },
-                { title: t('welcome.features.staff_t'),  desc: t('welcome.features.staff_d') },
-                { title: t('welcome.features.fc_t'),     desc: t('welcome.features.fc_d') },
-                { title: t('welcome.features.ai_t'),     desc: t('welcome.features.ai_d') },
-              ].map(f => (
-                <div key={f.title} style={{ display: 'flex', gap: 12, padding: '11px 14px', background: '#f9fafb', borderRadius: 10, alignItems: 'center' }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#1a1f2e', flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{f.title}</div>
-                    <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 1 }}>{f.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <button onClick={() => setStep(1)} style={btnP}>{t('welcome.cta')}</button>
-          </div>
-        )}
-
-        {/* ── Step 1: Restaurant details ───────────────────────── */}
-        {step === 1 && (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>{t('restaurant.title')}</h1>
             <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>{t('restaurant.subtitle')}</p>
@@ -408,12 +380,12 @@ export default function OnboardingPage() {
             <button onClick={saveAndContinue} disabled={loading} style={btnP}>
               {loading ? t('done.loading') : t('restaurant.continue')}
             </button>
-            <button onClick={() => setStep(0)} style={btnS}>{t('restaurant.back')}</button>
+            {/* No "back" — Restaurant is the first step now. */}
           </div>
         )}
 
-        {/* ── Step 2: Systems selection ────────────────────────── */}
-        {step === 2 && (
+        {/* ── Step 1: Systems selection ────────────────────────── */}
+        {step === 1 && (
           <div>
             <h1 style={{ margin: '0 0 10px', fontSize: 22, fontWeight: 700, color: '#111' }}>{t('systems.title')}</h1>
             <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6b7280', lineHeight: 1.6 }}>
@@ -477,13 +449,13 @@ export default function OnboardingPage() {
               </div>
             )}
 
-            <button onClick={() => setStep(3)} style={btnP}>{t('systems.continue')}</button>
-            <button onClick={() => setStep(1)} style={btnS}>{t('systems.back')}</button>
+            <button onClick={() => setStep(2)} style={btnP}>{t('systems.continue')}</button>
+            <button onClick={() => setStep(0)} style={btnS}>{t('systems.back')}</button>
           </div>
         )}
 
-        {/* ── Step 3: All done ─────────────────────────────────── */}
-        {step === 3 && (
+        {/* ── Step 2: All done ─────────────────────────────────── */}
+        {step === 2 && (
           <div style={{ textAlign: 'center' as const }}>
             <div style={{ width: 60, height: 60, borderRadius: '50%', background: '#f0fdf4', border: '2px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 24, color: '#15803d' }}>
               +

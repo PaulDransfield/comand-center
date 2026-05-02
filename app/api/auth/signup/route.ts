@@ -5,7 +5,14 @@
 //
 // Called by the signup form with:
 //   POST /api/auth/signup
-//   { email, password, fullName, orgName }
+//   { email, password, fullName, orgName, orgNumber? }
+//
+// orgNumber is OPTIONAL since M046 — the onboarding wizard now owns the
+// business-context capture (address, opening days, stage, etc.) and
+// org-nr collection moved there too. Signup stays at the bare minimum
+// (email/password/name/org-name) to keep the very first form short.
+// We still accept the field for backward compat with any in-flight old
+// clients and for manual signups that want to set it up front.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient }         from '@/lib/supabase/server'
@@ -42,15 +49,21 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Org-nr is mandatory at signup going forward (M042). Existing accounts
-  // get a 30-day grace via the org_number_grace_started_at column; new
-  // signups must supply a valid value.
-  const orgNrCheck = validateOrgNr(orgNumber)
-  if (!orgNrCheck.ok) {
-    return NextResponse.json(
-      { error: `Organisationsnummer: ${orgNrCheck.error}` },
-      { status: 400 }
-    )
+  // M046: org-nr capture moved to the onboarding wizard, so it's optional
+  // here. If the caller still sends one (legacy form, manual signup),
+  // validate it — silently dropping a bad value would surprise the user
+  // when they later try to use the product. If absent, we just skip the
+  // check and let onboarding collect it.
+  let validatedOrgNr: string | null = null
+  if (orgNumber !== undefined && orgNumber !== null && String(orgNumber).trim() !== '') {
+    const orgNrCheck = validateOrgNr(orgNumber)
+    if (!orgNrCheck.ok) {
+      return NextResponse.json(
+        { error: `Organisationsnummer: ${orgNrCheck.error}` },
+        { status: 400 }
+      )
+    }
+    validatedOrgNr = orgNrCheck.value
   }
 
   const supabase = createAdminClient()
@@ -93,18 +106,25 @@ export async function POST(req: NextRequest) {
   const now      = new Date()
   const trialEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)  // 30 days from now
 
+  const orgInsert: Record<string, any> = {
+    name:        orgName,
+    slug:        uniqueSlug,
+    plan:        'trial',
+    trial_start: now.toISOString(),
+    trial_end:   trialEnd.toISOString(),
+    is_active:   true,
+  }
+  // Only set org_number when the caller provided it. Onboarding will
+  // write it later via /api/onboarding/complete → applyOrgNumberToOrg
+  // for new signups.
+  if (validatedOrgNr) {
+    orgInsert.org_number        = validatedOrgNr
+    orgInsert.org_number_set_at = now.toISOString()
+  }
+
   const { data: org, error: orgError } = await supabase
     .from('organisations')
-    .insert({
-      name:               orgName,
-      slug:               uniqueSlug,
-      plan:               'trial',
-      trial_start:        now.toISOString(),
-      trial_end:          trialEnd.toISOString(),
-      is_active:          true,
-      org_number:         orgNrCheck.value,         // 10-digit form, no dashes
-      org_number_set_at:  now.toISOString(),
-    })
+    .insert(orgInsert)
     .select('id')
     .single()
 
