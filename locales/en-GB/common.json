@@ -64,6 +64,9 @@
   "time": {
     "ago":      "{value} ago",
     "in":       "in {value}",
+    "inDays":   "in {days, plural, one {# day} other {# days}}",
+    "today":    "today",
+    "tomorrow": "tomorrow",
     "justNow":  "just now",
     "minutes":  "{count, plural, one {# minute} other {# minutes}}",
     "hours":    "{count, plural, one {# hour} other {# hours}}",

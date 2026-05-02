@@ -17,6 +17,7 @@ import dynamicImport from 'next/dynamic'
 // it reads localStorage at mount.
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 import OverviewChart, { PeriodOption } from '@/components/dashboard/OverviewChart'
+import { getUpcomingHolidays } from '@/lib/holidays'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
@@ -775,7 +776,9 @@ function DashboardInner() {
                   targetPct,
                   labourPct,
                   totalRev,
+                  country: (selectedBiz as any)?.country ?? 'SE',
                   t: tDash,
+                  tCommon,
                 })}
               />
             </div>
@@ -1025,8 +1028,38 @@ function DepartmentsSummary({ depts, targetPct, periodLabel, fmtKr, fmtPct }: an
 // dept + AI saving. We approximate "trending-down" with the 2nd-worst margin
 // when a clear worst exists, since per-dept deltas aren't fetched yet.
 // ─────────────────────────────────────────────────────────────────────────────
-function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev, t }: any): AttentionItem[] {
+function daysBetweenYmd(fromYmd: string, toYmd: string): number {
+  const [fy, fm, fd] = fromYmd.split('-').map(Number)
+  const [ty, tm, td] = toYmd.split('-').map(Number)
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000)
+}
+
+function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev, country, t, tCommon }: any): AttentionItem[] {
   const items: AttentionItem[] = []
+
+  // 0. Upcoming public holiday in the next 14 days — peak (high impact)
+  // gets surfaced first because it's the most actionable for staffing
+  // decisions ("Midsummer Eve next Friday — book extra cover"). Quiet
+  // holidays (Christmas Day, Easter Sunday) are flagged neutrally.
+  // Computed client-side from the pure holiday lib — no fetch needed.
+  try {
+    const today    = new Date()
+    const fromYmd  = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+    const upcoming = getUpcomingHolidays(country ?? 'SE', fromYmd, 14)
+    const next     = upcoming[0]
+    if (next) {
+      const days = Math.max(0, daysBetweenYmd(fromYmd, next.date))
+      const when = days === 0 ? tCommon('time.today')
+                 : days === 1 ? tCommon('time.tomorrow')
+                 : tCommon('time.inDays', { days })
+      const localeName = next.name_sv  // we'll let the AttentionPanel rely on the en-GB fallback for now; sv users see the Swedish name everywhere else too
+      items.push({
+        tone:    next.impact === 'high' ? 'good' : next.impact === 'low' ? 'warning' : 'good',
+        entity:  '📅',
+        message: `${localeName} — ${when}${next.impact === 'high' ? ' · expect peak demand' : next.impact === 'low' ? ' · most restaurants close' : ''}`,
+      })
+    }
+  } catch { /* holiday lookup failure must never block the panel */ }
 
   // 1. AI saving (if any) — most actionable first.
   if (aiSaving > 0) {

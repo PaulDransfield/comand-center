@@ -64,6 +64,9 @@
   "time": {
     "ago":      "for {value} siden",
     "in":       "om {value}",
+    "inDays":   "om {days, plural, one {# dag} other {# dager}}",
+    "today":    "i dag",
+    "tomorrow": "i morgen",
     "justNow":  "akkurat nå",
     "minutes":  "{count, plural, one {# minutt} other {# minutter}}",
     "hours":    "{count, plural, one {# time} other {# timer}}",
