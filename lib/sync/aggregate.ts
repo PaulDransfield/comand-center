@@ -147,6 +147,23 @@ export async function aggregateMetrics(
     return out
   }
 
+  // Earliest staff_log date for this business — used to decide whether PK
+  // covers a given period or was connected mid-period. If oldest is, say,
+  // 2026-04-19 and we're aggregating March, PK's "staff cost" for March is
+  // structurally partial (just whatever PK could backfill at connect time).
+  // Using that as the canonical staff_cost would silently distort labour %
+  // for every period before the integration came online.
+  // Rosali March 2026 surfaced this: PK reported 386k staff vs Fortnox's
+  // 1.15M, producing a fictional 13.6% labour ratio.
+  const { data: oldestStaffRow } = await db
+    .from('staff_logs')
+    .select('shift_date')
+    .eq('org_id', orgId)
+    .eq('business_id', businessId)
+    .order('shift_date', { ascending: true })
+    .limit(1)
+  const oldestStaffDate: string | null = oldestStaffRow?.[0]?.shift_date ?? null
+
   const [rawRevLogs, staffLogs, trackerRes] = await Promise.all([
     fetchAllPaged((lo, hi) =>
       db.from('revenue_logs')
@@ -539,13 +556,66 @@ export async function aggregateMetrics(
       rev_source = 'none'
     }
 
-    // Staff cost: PK is always reliable per-shift, even in partial-month
-    // scenarios — it captures shifts as they happen at daily granularity
-    // and isn't subject to the partial-month-revenue distortion. So PK
-    // wins when present, regardless of revenue completeness.
-    const trackerStaff = Number(tracker?.staff_cost ?? 0)
-    const staff_cost   = a.hasStaff ? a.staff_cost : trackerStaff
-    const cost_source  = a.hasStaff ? 'pk' : (trackerStaff > 0 ? 'fortnox' : 'none')
+    // Staff cost priority — pre-2026-05-03 the logic was "PK wins whenever
+    // PK has any staff data", which broke in two ways:
+    //   (a) PK connected mid-period → PK has partial backfill → silently
+    //       overrode the complete Fortnox figure
+    //   (b) PK historical backfill is structurally incomplete (only some
+    //       workplaces / departments) → PK has rows for ALL period dates
+    //       but the totals are far below Fortnox
+    //
+    // Rosali March 2026 case: oldest PK staff date is 2022-09-01 so a
+    // simple "predates the period" check returns true, but PK staff total
+    // is 386k vs Fortnox's 1.15M (33%) — clearly incomplete.
+    //
+    // New rule, two-signal:
+    //   - Coverage: oldest PK staff date predates the period start (PK
+    //     was running for at least the start of the period)
+    //   - Agreement: when Fortnox ALSO has staff data, PK is within 30%
+    //     of it (small differences from accruals / employer contributions
+    //     / owner draws are normal; > 30% gap means a workplace or
+    //     department isn't mapped)
+    //
+    // Order of preference:
+    //   1. PK when both signals agree (or Fortnox has nothing to compare)
+    //   2. Fortnox when present (PK partial OR PK disagrees materially)
+    //   3. PK partial as last resort if Fortnox is also empty
+    //   4. None
+    //
+    // The cost_source field surfaces the decision so /api/tracker and the
+    // Performance page can show it (and a future "data confidence" badge
+    // can render the partial states differently).
+    const trackerStaff   = Number(tracker?.staff_cost ?? 0)
+    const periodStartIso = `${a.year}-${String(a.month).padStart(2, '0')}-01`
+    const pkPredatesPeriod = a.hasStaff && oldestStaffDate != null && oldestStaffDate <= periodStartIso
+    const PK_FORTNOX_AGREEMENT_MIN = 0.70   // PK ≥ 70 % of Fortnox = "agrees"
+    const PK_FORTNOX_AGREEMENT_MAX = 1.30   // PK ≤ 130 % of Fortnox = "agrees"
+    const pkVsFortnoxRatio = (a.hasStaff && trackerStaff > 0)
+      ? a.staff_cost / trackerStaff
+      : null
+    const pkAgreesWithFortnox =
+      pkVsFortnoxRatio === null
+      || (pkVsFortnoxRatio >= PK_FORTNOX_AGREEMENT_MIN && pkVsFortnoxRatio <= PK_FORTNOX_AGREEMENT_MAX)
+
+    let staff_cost: number
+    let cost_source: string
+    if (a.hasStaff && pkPredatesPeriod && pkAgreesWithFortnox) {
+      staff_cost  = a.staff_cost
+      cost_source = 'pk'
+    } else if (trackerStaff > 0) {
+      // Fortnox has data and PK either doesn't cover or disagrees materially.
+      staff_cost  = trackerStaff
+      cost_source = a.hasStaff
+        ? (pkPredatesPeriod ? 'fortnox_pk_disagrees' : 'fortnox_pk_partial')
+        : 'fortnox'
+    } else if (a.hasStaff) {
+      // No Fortnox to fall back to — use PK with a partial flag.
+      staff_cost  = a.staff_cost
+      cost_source = pkPredatesPeriod ? 'pk' : 'pk_partial'
+    } else {
+      staff_cost  = 0
+      cost_source = 'none'
+    }
 
     const food_cost    = Number(tracker?.food_cost    ?? 0)
     const rent_cost    = Number(tracker?.rent_cost    ?? 0)
