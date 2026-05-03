@@ -25,6 +25,12 @@
       "catering": "Catering",
       "group": "Restaurantgruppe"
     },
+    "country": "Land",
+    "countryOptions": {
+      "SE": "Sverige",
+      "NO": "Norge",
+      "GB": "Storbritannia"
+    },
     "address": "Gateadresse",
     "addressPlaceholder": "Gate, postnummer, sted",
     "orgNumber": "Organisasjonsnummer (svensk)",

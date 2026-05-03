@@ -25,6 +25,12 @@
       "catering": "Catering",
       "group": "Restaurant Group"
     },
+    "country": "Country",
+    "countryOptions": {
+      "SE": "Sweden",
+      "NO": "Norway",
+      "GB": "United Kingdom"
+    },
     "address": "Street address",
     "addressPlaceholder": "Street, postcode, city",
     "orgNumber": "Organisationsnummer",

@@ -10,6 +10,14 @@ import { validateOrgNr, formatOrgNr } from '@/lib/sweden/orgnr'
 const RESTAURANT_TYPE_KEYS = ['restaurant', 'bar', 'cafe', 'bakery', 'catering', 'group'] as const
 const STAGE_KEYS            = ['new', 'established_1y', 'established_3y'] as const
 const DAY_KEYS              = ['mon','tue','wed','thu','fri','sat','sun'] as const
+// Country picker — Phase 1 (2026-05-03 brainstorm). Just stored on
+// businesses.country today; a future phase localises org-nr validation,
+// currency formatting, holiday lookup, integration pickers, etc.
+// Default 'SE' since current customer base is Swedish.
+const COUNTRY_KEYS = ['SE', 'NO', 'GB'] as const
+const COUNTRY_FLAGS: Record<typeof COUNTRY_KEYS[number], string> = {
+  SE: '🇸🇪', NO: '🇳🇴', GB: '🇬🇧',
+}
 
 const STAFF_SYSTEMS = ['Personalkollen', 'Caspeco', 'Quinyx', 'Planday', 'Other', 'None']
 const ACCOUNTING    = ['Fortnox', 'Visma', 'Bokio', 'Other', 'None']
@@ -54,6 +62,7 @@ export default function OnboardingPage() {
     restaurantName:  '',
     city:            '',
     type:            'restaurant',
+    country:         'SE',          // Phase 1 default — current customer base
     address:         '',
     orgNumber:       '',
     businessStage:   '',
@@ -130,6 +139,7 @@ export default function OnboardingPage() {
           name:              form.restaurantName.trim(),
           city:              form.city.trim(),
           type:              form.type,
+          country:           form.country,    // Phase 1: just stored. Drives lib/holidays today; future phases will localise org-nr validation, currency, integrations.
           address:           form.address.trim(),
           // We DON'T set org_number on the business row here — the
           // org-level org_number written via /api/onboarding/complete
@@ -281,6 +291,40 @@ export default function OnboardingPage() {
                   <select style={input} value={form.type} onChange={e => updateForm('type', e.target.value)}>
                     {RESTAURANT_TYPE_KEYS.map(k => <option key={k} value={k}>{t(`restaurant.typeOptions.${k}`)}</option>)}
                   </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={label}>{t('restaurant.country')}</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {COUNTRY_KEYS.map(k => {
+                    const on = form.country === k
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => updateForm('country', k)}
+                        style={{
+                          flex:         1,
+                          padding:      '10px 8px',
+                          background:   on ? '#1a1f2e' : '#f9fafb',
+                          color:        on ? 'white'   : '#6b7280',
+                          border:       `1.5px solid ${on ? '#1a1f2e' : '#e5e7eb'}`,
+                          borderRadius: 8,
+                          fontSize:     13,
+                          fontWeight:   600,
+                          cursor:       'pointer',
+                          display:      'flex',
+                          alignItems:   'center',
+                          justifyContent:'center',
+                          gap:          8,
+                        }}
+                      >
+                        <span style={{ fontSize: 16 }}>{COUNTRY_FLAGS[k]}</span>
+                        {t(`restaurant.countryOptions.${k}`)}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

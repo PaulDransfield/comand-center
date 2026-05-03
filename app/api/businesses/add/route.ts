@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const {
     name, type, city, org_number, colour,
     target_food_pct, target_staff_pct, target_margin_pct,
-    address, opening_days, business_stage,
+    address, opening_days, business_stage, country,
   } = body
 
   if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
@@ -30,6 +30,14 @@ export async function POST(req: NextRequest) {
   // enrichment-later case).
   const stage = business_stage && ['new','established_1y','established_3y'].includes(business_stage)
     ? business_stage
+    : null
+
+  // Phase 1 country picker (2026-05-03 brainstorm). Whitelist to ISO
+  // codes we'll plausibly support; anything else falls back to the
+  // schema default ('SE'). Matches the businesses.country column shape.
+  const countryWhitelist = ['SE', 'NO', 'GB']
+  const countryCode = country && countryWhitelist.includes(String(country).toUpperCase())
+    ? String(country).toUpperCase()
     : null
 
   // opening_days: accept the canonical { mon..sun: bool } shape, or null
@@ -62,6 +70,9 @@ export async function POST(req: NextRequest) {
   // Only set opening_days when the client sent something — otherwise let
   // the column default apply ("open every day").
   if (openingDays) insertRow.opening_days = openingDays
+  // Same pattern for country — let the schema default ('SE') apply when
+  // the caller didn't pick one (legacy callers, programmatic creates).
+  if (countryCode) insertRow.country = countryCode
 
   const { data, error } = await db
     .from('businesses')
