@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import CookieConsent from '@/components/CookieConsent'
+import FragmentAuthRedirector from '@/components/FragmentAuthRedirector'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
 
@@ -72,6 +73,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           on every route. See the 2026-05-01 incident.
         */}
         <NextIntlClientProvider locale={locale} messages={messages}>
+          {/*
+            Catches Supabase implicit-flow auth redirects (#access_token=...)
+            that landed at the wrong path because the Site URL isn't the
+            handler. Forwards to /auth/handle preserving the fragment.
+            Cheap belt-and-braces — runs on every page, no-ops when there's
+            no fragment.
+          */}
+          <FragmentAuthRedirector />
           {children}
           <CookieConsent />
         </NextIntlClientProvider>
