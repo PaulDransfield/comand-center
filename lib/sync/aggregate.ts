@@ -192,32 +192,80 @@ export async function aggregateMetrics(
   })
 
   // ── Deduplicate revenue_logs ──────────────────────────────────────────────
-  // The sync engine writes BOTH an aggregate 'personalkollen' row AND per-dept
-  // 'pk_*' rows for the same sales data. If we sum all providers, we double-count.
-  // Priority: prefer per-dept rows (pk_*, inzii_*) over aggregate (personalkollen).
+  // Two classes of provider write to revenue_logs:
   //
-  // IMPORTANT: filter per-date, not globally. A global hasDeptRows check caused
-  // yesterday's data to vanish whenever per-dept matching failed for that day
-  // (new workplace, timeout on getWorkplaces, sale without workplace_url).
-  // Old dates would have pk_* rows → hasDeptRows=true → ALL 'personalkollen'
-  // rows dropped, including yesterday's where only the aggregate row existed.
-  const datesWithDeptRows = new Set(
-    rawRevLogs
-      .filter((r: any) => {
-        const p = r.provider ?? ''
-        return p.startsWith('pk_') || p.startsWith('inzii_')
-      })
-      .map((r: any) => r.revenue_date),
-  )
+  //   • Per-department slices (pk_<dept>, inzii_<dept>)  — these sum
+  //     legitimately across departments to give the day's full revenue.
+  //   • Full-business aggregates (personalkollen, onslip, ancon, swess)
+  //     — each represents the FULL day's revenue. Only one is correct
+  //     for a given date; summing two is a double-count.
+  //
+  // The PRE-2026-05-03 dedup only handled the personalkollen case. Any
+  // business that had Personalkollen + a separate POS connector (or
+  // pk_* per-dept rows + a non-PK aggregate) saw revenue inflated 2×
+  // every aggregator run. Vero March 2026 surfaced the bug: PK reported
+  // 1.42M kr, monthly_metrics held 2.84M kr, exact 2× signature.
+  //
+  // New rule, applied per-date:
+  //   1. If the date has pk_* rows  → use ONLY pk_* (drop ALL aggregates)
+  //   2. Else if inzii_* rows       → use ONLY inzii_* (drop ALL aggregates)
+  //   3. Else                       → keep at most ONE aggregate provider
+  //                                   per date, in priority order
+  //                                   (personalkollen > onslip > ancon > swess)
+  //   4. Unknown providers          → kept (defensive — better to count
+  //                                   than to silently drop)
+  //
+  // Per-date filtering avoids the regression that bit us when a global
+  // `hasDeptRows` check zeroed yesterday's `personalkollen`-only rows
+  // because some older date in the window had pk_* rows.
+  const FULL_AGGREGATE_PROVIDERS = ['personalkollen', 'onslip', 'ancon', 'swess'] as const
+  const FULL_AGGREGATE_PRIORITY  = new Map(FULL_AGGREGATE_PROVIDERS.map((p, i) => [p as string, i]))
+
+  const datesWithPkRows    = new Set<string>()
+  const datesWithInziiRows = new Set<string>()
+  for (const r of rawRevLogs) {
+    const p = r.provider ?? ''
+    if (p.startsWith('pk_'))    datesWithPkRows.add(r.revenue_date)
+    if (p.startsWith('inzii_')) datesWithInziiRows.add(r.revenue_date)
+  }
+
+  // Pick the highest-priority aggregate for each date that has one. If
+  // a date has both 'personalkollen' and 'ancon' rows (rare but seen),
+  // personalkollen wins by index.
+  const chosenAggregateByDate = new Map<string, string>()
+  for (const r of rawRevLogs) {
+    const p = r.provider ?? ''
+    if (!FULL_AGGREGATE_PRIORITY.has(p)) continue
+    const date = r.revenue_date
+    const existing = chosenAggregateByDate.get(date)
+    if (!existing || FULL_AGGREGATE_PRIORITY.get(p)! < FULL_AGGREGATE_PRIORITY.get(existing)!) {
+      chosenAggregateByDate.set(date, p)
+    }
+  }
+
+  let dedup_dropped = 0
   const revLogs = rawRevLogs.filter((r: any) => {
     const p = r.provider ?? ''
-    // For the aggregate 'personalkollen' row: only drop it on dates where
-    // per-dept rows exist (to avoid double-counting). If a date has NO pk_*
-    // rows (e.g. per-dept matching failed that day), keep the aggregate so
-    // the day is not silently zeroed.
-    if (p === 'personalkollen') return !datesWithDeptRows.has(r.revenue_date)
+    // Per-dept slices always kept — they're meant to sum.
+    if (p.startsWith('pk_') || p.startsWith('inzii_')) return true
+    if (FULL_AGGREGATE_PRIORITY.has(p)) {
+      // If per-dept rows exist for this date, drop ALL aggregates.
+      if (datesWithPkRows.has(r.revenue_date) || datesWithInziiRows.has(r.revenue_date)) {
+        dedup_dropped++
+        return false
+      }
+      // Otherwise keep only the priority-winning aggregate for this date.
+      const kept = chosenAggregateByDate.get(r.revenue_date) === p
+      if (!kept) dedup_dropped++
+      return kept
+    }
+    // Unknown provider — keep.
     return true
   })
+
+  if (dedup_dropped > 0) {
+    console.log('[aggregate] dedup dropped', { business_id: businessId, dropped: dedup_dropped, kept: revLogs.length })
+  }
 
   // ── 2. Build daily_metrics ────────────────────────────────────────────────
   // Aggregate revenue by date.
