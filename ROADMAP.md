@@ -1,8 +1,51 @@
 # ROADMAP.md — CommandCenter
-> Version 8.6 | Updated: 2026-05-02 | Session 15 ✅ (onboarding overhaul + auth-gate chain + holidays)
-> Active focus: TBD (Sprint 2 from external review still queued)
+> Version 8.7 | Updated: 2026-05-03 | Session 16 ✅ (data-source guardrails + Fortnox apply chokepoint)
+> Active focus: TBD (Sprint 2 from external review still queued; Stripe price IDs + onboarding smoke-test next)
 > UX redesign: phase 10 shipped (Performance page replaces Cashflow)
 > Read alongside CLAUDE.md and FIXES.md
+
+---
+
+## Session 16 — 2026-05-03 shipped (data-source guardrails)
+
+Born from two production data-quality incidents:
+- **Vero March 2026** — Performance page showed 2,842,948 kr revenue. PK reference: 1,422,650 kr. Exact 2× signature → aggregator double-count from PK aggregate stacking with another POS provider that the dedup didn't handle.
+- **Rosali March 2026** — labour ratio 13.6%, net margin 57.5% (impossible). Two compounding bugs: (a) `tracker_data` row with `source='manual'` + no `fortnox_upload_id` (owner says they didn't enter it), (b) PK staff_cost was 33% of Fortnox value because PK was connected mid-April with partial historical backfill.
+
+**A. Aggregator hardening**
+- `lib/sync/aggregate.ts` revenue dedup extended to ALL full-business aggregates (`personalkollen > onslip > ancon > swess`). Per-date filter so legitimate aggregates aren't dropped on dates where per-dept rows happen to exist for OTHER dates. Logs `[aggregate] dedup dropped` when active. Commit `7d8491c`.
+- Same file's staff_cost decision now gated on TWO signals: (a) oldest PK staff_log predates the period, AND (b) when Fortnox has staff data, PK is within 70–130 % of it. Outside the band → use Fortnox with `cost_source='fortnox_pk_disagrees'`. New cost_source codes: `pk` / `fortnox` / `fortnox_pk_partial` / `fortnox_pk_disagrees` / `pk_partial` / `none`. Commit `afd0b37`.
+- Repair scripts: `scripts/fix-vero-march-2026.mjs` and `scripts/fix-rosali-march-2026.mjs` apply the new logic to monthly_metrics for those specific cases.
+
+**B. Source-agnostic admin alerts**
+- `lib/admin/disagreements.ts` — single classification source, finds rows with `_disagrees` / `_partial` codes
+- `/api/admin/data-disagreements` — on-demand admin endpoint
+- `/api/cron/data-source-disagreements-alert` — daily 06:30 UTC, emails ops digest if any new disagreements in last 24h
+- Source-agnostic by design: when Caspeco / Onslip / Ancon land with their own dedup paths producing similar `_disagrees` codes, this pipeline picks them up. Commit `4075617`.
+
+**C. Fortnox apply chokepoint (M047)**
+- `lib/fortnox/validators.ts` — 10 rule-based checks in one module. Org-nr match (HARD reject), period match (HARD reject), period in reasonable range, doc-type vs claimed period, sign convention, math consistency, scale anomaly (50 % deviation from prior 6-month median), period gap, subset caps, company name fuzzy match.
+- `lib/fortnox/ai-auditor.ts` — Haiku second-opinion, ~$0.0005/apply, 20s timeout. Returns `{ confidence, summary, concerns }`. Fail-tolerant — never blocks apply on AI failure.
+- `app/api/fortnox/apply/route.ts` — runs both BEFORE any tracker_data write. Returns 422 with `kind='validation_blocked'` + structured findings. New body fields: `acknowledged_warnings: string[]`, `force: boolean`, `skip_validation: boolean`.
+- `app/overheads/upload/page.tsx` — review modal renders the structured response as inline checklist with per-warning checkboxes + AI auditor card. Apply button label adapts: `Apply to P&L` / `Apply with override` / `Resolve checklist above` / `Cannot apply (hard error)`. Commit `3f20833`.
+- M047 migration:
+  - `tracker_data.created_via TEXT` — origin tag for every write (default null for legacy; new code populates explicitly)
+  - `fortnox_uploads.pdf_sha256 TEXT` + index — SHA-256 dedup at upload time, `status='duplicate'` on hit
+  - CHECK constraints on `tracker_data`: revenue / food_cost / staff_cost / alcohol_cost / other_cost ≥ 0; period_month ∈ [0..12]; period_year ∈ [2000..2099]
+- `/api/cron/manual-tracker-audit` — daily 06:45 UTC, emails ops when rows appear with `source='manual' AND fortnox_upload_id IS NULL`. Direct catch for the Rosali class.
+
+**D. Privacy + cleanup**
+- Bogus tracker_data row for Rosali 2026-03 deleted (cleanup script). monthly_metrics rebuilt with revenue=0, staff=PK partial.
+- Vero March 2026 monthly_metrics correctly shows 1,422,782 kr revenue (matched PK reference) after the dedup fix.
+
+**Migrations applied this session:** M047 ✅ (verified via `tracker_data` CHECK constraint listing).
+
+**Follow-ups deliberately deferred** (added to the running list):
+- VAT-inclusion explicit detector (subset-cap covers most cases)
+- Multi-system reconciliation cron (quarterly)
+- Cross-business sanity sweep
+- Bolagsverket cross-check at onboarding
+- Owner-side override on /integrations for "PK is canonical for me, ignore the disagreement" (current behaviour: Fortnox wins on disagreement, which is wrong if Fortnox is stale)
 
 ---
 

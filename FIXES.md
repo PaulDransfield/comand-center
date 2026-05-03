@@ -1,5 +1,42 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-05-02
+Last updated: 2026-05-03
+
+---
+
+## 0bi. Rogue tracker_data row appears with no audit trail (Rosali March 2026, 2026-05-03)
+
+**Symptom:** Rosali Performance page showed revenue 2,842,948 kr for March 2026. Owner: "I never entered anything for 2026, only 2025 yearly". `tracker_data` had `source='manual'`, no `fortnox_upload_id`, created 2026-04-24T10:03 — about 56 minutes BEFORE the legitimate January 2026 Fortnox upload that day.
+
+**Root cause:** unknown. The row genuinely shouldn't have existed. Either a code path called the manual-write API without proper validation, or a half-finished extraction got committed as 'manual' by mistake. No audit trail since `created_via` didn't exist as a column yet.
+
+**Triage:**
+1. `scripts/trace-rosali-tracker-rows.mjs` enumerated every tracker_data row + fortnox_upload + tracker_line_item for Rosali → identified the rogue row (id `77c0135c-…`) with 0 line items
+2. `scripts/cleanup-rosali-march-2026.mjs` deleted it + recomputed monthly_metrics
+
+**Fix (defence-in-depth, M047):** see entry 0bj below.
+
+---
+
+## 0bj. Aggregator double-counted full-business POS aggregates (Vero March 2026, 2026-05-03)
+
+**Symptom:** Vero Performance page showed revenue 2,842,948 kr for March 2026. Personalkollen reference was 1,422,650 kr — exactly 2× signature. Diagnostic script confirmed PK aggregate (`personalkollen` provider, 1.42M) AND per-dept slices (`pk_*` providers, sum to 1.42M) were BOTH being kept by the aggregator dedup, then summed.
+
+**Root cause:** `lib/sync/aggregate.ts` dedup only handled `personalkollen` vs `pk_*`/`inzii_*`. Other full-business aggregate providers (`onslip`, `ancon`, `swess`) were kept unconditionally. Any business with PK + a separate POS connector — or `pk_*` per-dept rows alongside another aggregate — saw revenue summed twice every aggregator run.
+
+**Plus a separate Rosali staff-cost bug:** PK was connected ~2 weeks ago. Backfill provided some historical staff data but only ~33 % of Fortnox's value (workplaces unmapped). Aggregator blindly preferred PK → labour ratio 13.6 % (impossible), net margin 57.5 % (fictional).
+
+**Fix:**
+- Commit `7d8491c` — extended dedup to ALL full-business aggregates with priority order (`personalkollen > onslip > ancon > swess`); per-date filter so legitimate aggregates aren't dropped on dates where per-dept rows happen to exist for OTHER dates.
+- Commit `afd0b37` — staff_cost decision now gated on TWO signals: (a) oldest PK staff_log predates the period, AND (b) when Fortnox has staff data, PK is within 70–130 % of it. Outside the band → use Fortnox with `cost_source='fortnox_pk_disagrees'`.
+- Commit `4075617` — daily 06:30 UTC `/api/cron/data-source-disagreements-alert` emails ops when any monthly_metrics row carries `_disagrees` / `_partial` codes.
+
+**Defence-in-depth layer (M047, 2026-05-03):** new pipeline catches the Rosali class and the wrong-customer class in one chokepoint. Any future Fortnox apply runs through `lib/fortnox/validators.ts` (10 rule-based checks) + `lib/fortnox/ai-auditor.ts` (Haiku second-opinion) BEFORE any tracker_data write. Returns 422 with structured findings. UI checklist in `app/overheads/upload/page.tsx::ValidationChecklist`. Plus:
+- `tracker_data.created_via` column — origin tag for every write
+- `fortnox_uploads.pdf_sha256` — SHA-256 dedup, `status='duplicate'` on hit
+- DB CHECK constraints — revenue / food_cost / staff_cost / alcohol_cost / other_cost ≥ 0; period_month ∈ [0..12]; period_year ∈ [2000..2099]
+- Daily 06:45 UTC `/api/cron/manual-tracker-audit` — emails ops when rows appear with `source='manual' AND fortnox_upload_id IS NULL`
+
+**Memory:** `feedback_aggregator_dedup_pk_agreement.md`, `feedback_fortnox_apply_guardrails.md`.
 
 ---
 
