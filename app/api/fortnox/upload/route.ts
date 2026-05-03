@@ -73,6 +73,37 @@ export async function POST(req: NextRequest) {
 
     try {
       const buffer  = Buffer.from(await file.arrayBuffer())
+
+      // M047: SHA-256 fingerprint for duplicate detection. Computed
+      // pre-upload so we can short-circuit before paying for storage on
+      // a re-upload of the same file.
+      const { createHash } = await import('node:crypto')
+      const sha256 = createHash('sha256').update(buffer).digest('hex')
+
+      // If we've seen this exact PDF for this business before, surface
+      // the duplicate to the caller instead of writing it again. The
+      // existing supersede chain handles intentional re-uploads of a
+      // CORRECTED version (different bytes, same period); this catches
+      // the accidental "I just clicked Upload again on the same file"
+      // case.
+      const { data: existingByHash } = await db
+        .from('fortnox_uploads')
+        .select('id, status, pdf_filename, created_at')
+        .eq('business_id', businessId)
+        .eq('pdf_sha256',  sha256)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (existingByHash && existingByHash.length > 0) {
+        const prior = existingByHash[0]
+        uploads.push({
+          id:       prior.id,
+          filename: file.name,
+          status:   'duplicate',
+          error:    `Identical PDF was already uploaded (${prior.pdf_filename}, status=${prior.status}, ${prior.created_at?.slice(0, 10)}). Re-upload skipped.`,
+        })
+        continue
+      }
+
       const { error: upErr } = await db.storage
         .from('fortnox-pdfs')
         .upload(storagePath, buffer, { contentType: 'application/pdf', upsert: false })
@@ -91,6 +122,7 @@ export async function POST(req: NextRequest) {
           pdf_storage_path: storagePath,
           pdf_filename:     file.name,
           pdf_size_bytes:   file.size,
+          pdf_sha256:       sha256,
           status:           'pending',
           created_by:       auth.userId,
         })

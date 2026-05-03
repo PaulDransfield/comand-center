@@ -79,6 +79,10 @@
     {
       "path": "/api/cron/data-source-disagreements-alert",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/manual-tracker-audit",
+      "schedule": "45 6 * * *"
     }
   ]
 }

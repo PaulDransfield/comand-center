@@ -16,6 +16,8 @@ import { waitUntil } from '@vercel/functions'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { log } from '@/lib/log/structured'
 import { projectRollup } from '@/lib/finance/projectRollup'
+import { validateExtraction, type ValidationReport } from '@/lib/fortnox/validators'
+import { auditExtraction } from '@/lib/fortnox/ai-auditor'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -26,7 +28,26 @@ export async function POST(req: NextRequest) {
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   const body = await req.json().catch(() => ({} as any))
-  const { upload_id, overrides } = body as { upload_id?: string; overrides?: any }
+  const {
+    upload_id,
+    overrides,
+    /** Skip the validator/auditor step entirely. Useful only for dry-run
+     *  inspection — the route still rejects unless `force=true` follows. */
+    skip_validation,
+    /** Acknowledge the validator's warning codes (allows apply to proceed
+     *  past warnings without `force=true`). UI sets this when the owner
+     *  ticks "I've reviewed this". */
+    acknowledged_warnings,
+    /** Last-resort hard override for ERROR-severity findings that allow
+     *  it. Some errors (org_nr_mismatch) are never overridable. */
+    force,
+  } = body as {
+    upload_id?:             string
+    overrides?:             any
+    skip_validation?:       boolean
+    acknowledged_warnings?: string[]
+    force?:                 boolean
+  }
   if (!upload_id) return NextResponse.json({ error: 'upload_id required' }, { status: 400 })
 
   const started = Date.now()
@@ -45,6 +66,82 @@ export async function POST(req: NextRequest) {
 
   const extraction = (overrides ?? upload.extracted_json) as any
   if (!extraction) return NextResponse.json({ error: 'No extraction data' }, { status: 400 })
+
+  // ── Validation chokepoint ─────────────────────────────────────────────
+  // M047 / 2026-05-04: every apply runs through the rule-based validators
+  // + Haiku auditor before any tracker_data write. Catches the entire
+  // class of "wrong PDF / wrong period / scale error" mistakes that the
+  // rogue Rosali March 2026 row would have triggered.
+  let validation: ValidationReport | null = null
+  let aiAudit: Awaited<ReturnType<typeof auditExtraction>> | null = null
+  if (!skip_validation) {
+    // Pull the context the validators need — org row for org-nr, business
+    // row for name + per-business org-nr override, and history for scale
+    // anomaly + period-gap checks.
+    const [{ data: orgRow }, { data: bizRow }, { data: histRows }, { data: existingPeriodRows }] = await Promise.all([
+      db.from('organisations').select('org_number, name').eq('id', upload.org_id).maybeSingle(),
+      db.from('businesses').select('name, org_number').eq('id', upload.business_id).maybeSingle(),
+      // Last 12 months of monthly_metrics for context (validators read 6,
+      // auditor reads 12 — request 12 to cover both).
+      db.from('monthly_metrics')
+        .select('year, month, revenue, staff_cost, food_cost')
+        .eq('business_id', upload.business_id)
+        .order('year', { ascending: false }).order('month', { ascending: false })
+        .limit(12),
+      db.from('tracker_data')
+        .select('period_year, period_month')
+        .eq('business_id', upload.business_id),
+    ])
+
+    const history = (histRows ?? []).slice().reverse().map((r: any) => ({
+      year:       Number(r.year),
+      month:      Number(r.month),
+      revenue:    Number(r.revenue ?? 0),
+      staff_cost: Number(r.staff_cost ?? 0),
+      food_cost:  Number(r.food_cost ?? 0),
+    }))
+    const existingPeriods = new Set<string>(
+      (existingPeriodRows ?? []).map((r: any) => `${r.period_year}-${String(r.period_month).padStart(2, '0')}`),
+    )
+
+    validation = validateExtraction(extraction, {
+      org:      { org_number: orgRow?.org_number, name: orgRow?.name },
+      business: { name: bizRow?.name, org_number: bizRow?.org_number },
+      claimedPeriod:   { year: upload.period_year, month: upload.period_month },
+      history,
+      existingPeriods,
+    })
+
+    // AI auditor runs in parallel with rule-based — fire-and-fetch so
+    // we don't add round-trip latency. Cheap Haiku call, ~$0.0005, 20s
+    // timeout. Failure is non-blocking (auditor returns 'unavailable').
+    aiAudit = await auditExtraction(extraction, {
+      db,
+      orgId:        upload.org_id,
+      businessName: bizRow?.name ?? 'this business',
+      history,
+    })
+
+    // Decide: are we OK to proceed?
+    const acked = new Set<string>(acknowledged_warnings ?? [])
+    const blockingErrors = validation.findings.filter(f =>
+      f.severity === 'error' && (f.override_allowed === false || !force)
+    )
+    const unackedWarnings = validation.findings.filter(f =>
+      f.severity === 'warning' && !acked.has(f.code)
+    )
+
+    if (blockingErrors.length > 0 || unackedWarnings.length > 0) {
+      return NextResponse.json({
+        ok:               false,
+        kind:             'validation_blocked',
+        blocking_errors:  blockingErrors,
+        warnings_to_ack:  unackedWarnings,
+        ai_audit:         aiAudit,
+        full_report:      validation,
+      }, { status: 422 })
+    }
+  }
 
   // ── Multi-period branch ───────────────────────────────────────────────
   // When extraction.periods[] has more than one entry, the PDF was a
@@ -420,6 +517,9 @@ async function applyMonthly(db: any, args: {
       margin_pct:        projected.margin_pct,
       source:            'fortnox_pdf',
       fortnox_upload_id: uploadId,
+      // M047 origin tag: lets the manual-write audit cron distinguish
+      // pipeline writes (this branch) from rogue manual entries.
+      created_via:       'fortnox_apply',
     }, { onConflict: 'org_id,business_id,period_year,period_month' })
     .select('id')
     .single()

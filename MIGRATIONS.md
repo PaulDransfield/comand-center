@@ -1,10 +1,25 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-02 | M022–M045 applied · M046 PENDING APPLY
+> Last updated: 2026-05-03 | M022–M045 applied · M046 + M047 PENDING APPLY
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Recently applied — for reference
+
+### M047 — Fortnox apply guardrails (sha256 + CHECK + created_via) ⏳ PENDING APPLY
+**File:** `M047-FORTNOX-GUARDRAILS.sql` (repo root)
+**Purpose:** defence-in-depth for the Fortnox PDF apply pipeline. Three additions:
+  - `fortnox_uploads.pdf_sha256 TEXT` + index `(business_id, pdf_sha256) WHERE pdf_sha256 IS NOT NULL`. Computed at upload time; the upload route short-circuits with status='duplicate' on a hit so an accidental re-upload of the same PDF doesn't pile up.
+  - CHECK constraints on `tracker_data`: revenue / food_cost / staff_cost / alcohol_cost / other_cost ≥ 0; period_month in [0..12]; period_year in [2000..2099]. Even if the application code skips a validator, the DB rejects impossible values.
+  - `tracker_data.created_via TEXT` (nullable) — origin tag. New code paths populate explicitly: `'fortnox_apply'` for the Fortnox pipeline. The new daily cron `/api/cron/manual-tracker-audit` uses an index on `(business_id, created_at DESC) WHERE created_via IS NULL AND fortnox_upload_id IS NULL` to find rogue manual writes (the Rosali March 2026 case).
+**Companion code:**
+  - `lib/fortnox/validators.ts` — single chokepoint, 10 rule-based checks (org-nr match, period match, scale anomaly, sign convention, math consistency, doc-type vs claimed, period gap, subset caps, etc.).
+  - `lib/fortnox/ai-auditor.ts` — Haiku second-opinion call returning {confidence, summary, concerns}; fail-tolerant, never blocks apply.
+  - `app/api/fortnox/apply/route.ts` — runs validators + auditor before any tracker_data write. Returns 422 with `validation_blocked` when blocking errors or unacknowledged warnings present. UI passes `acknowledged_warnings: string[]` to proceed past warnings, `force: true` for overridable errors.
+  - `app/api/fortnox/upload/route.ts` — SHA-256 fingerprint + duplicate check.
+  - `app/api/cron/manual-tracker-audit` — daily 06:45 UTC ops email when suspicious manual rows appear.
+**Backwards compat:** all ADD COLUMN are nullable / IF NOT EXISTS; CHECK constraints guarded against re-application; index uses `IF NOT EXISTS`. Wrapped in transaction. Verify queries at the bottom dump the new column + constraint list.
+**To apply:** open Supabase SQL Editor, paste file contents, run.
 
 ### M046 — Onboarding expansion (opening_days + business_stage) ⏳ PENDING APPLY
 **File:** `M046-ONBOARDING-EXPANSION.sql` (repo root)
