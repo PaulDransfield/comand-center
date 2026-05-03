@@ -542,6 +542,13 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
   // Conflict state — if an existing tracker_data row would be replaced.
   const [conflict, setConflict] = useState<any>(null)
   const [ackConflict, setAckConflict] = useState(false)
+  // M047 validation state — when /api/fortnox/apply returns 422 with
+  // structured findings, we render them inline as a checklist instead
+  // of bouncing the user with a generic error message. Owner ticks each
+  // warning + (where allowed) overrides errors, then re-clicks Apply.
+  const [validation, setValidation] = useState<any>(null)
+  const [ackedWarnings, setAckedWarnings] = useState<Set<string>>(new Set())
+  const [forceApply, setForceApply] = useState(false)
 
   useEffect(() => {
     // Fetch the full list (default 50) and find the specific upload by id.
@@ -574,13 +581,38 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
       const r = await fetch('/api/fortnox/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upload_id: uploadId }),
+        body: JSON.stringify({
+          upload_id:             uploadId,
+          // Whatever warnings the owner has ticked off — empty Set on
+          // first attempt, populated after they review the checklist.
+          acknowledged_warnings: Array.from(ackedWarnings),
+          // Only sent when the owner has explicitly clicked the "force"
+          // override on overridable errors (HARD errors like
+          // org_nr_mismatch ignore this — they're never overridable).
+          force:                 forceApply,
+        }),
       })
       const j = await r.json()
+      // M047: 422 with kind='validation_blocked' means the validators or
+      // AI auditor flagged something. Render the structured report as a
+      // checklist instead of bouncing with a generic error.
+      if (r.status === 422 && j?.kind === 'validation_blocked') {
+        setValidation(j)
+        setApplying(false)
+        return
+      }
       if (!r.ok) throw new Error(j.error ?? `Apply failed (${r.status})`)
       onDone()
     } catch (e: any) { setErr(e.message) }
     setApplying(false)
+  }
+
+  function toggleAck(code: string) {
+    setAckedWarnings(prev => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code); else next.add(code)
+      return next
+    })
   }
 
   async function reject() {
@@ -689,6 +721,16 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                   />
                 )}
 
+                {validation && (
+                  <ValidationChecklist
+                    report={validation}
+                    ackedWarnings={ackedWarnings}
+                    onToggle={toggleAck}
+                    forceApply={forceApply}
+                    onForceToggle={() => setForceApply(v => !v)}
+                  />
+                )}
+
                 {conflict?.has_conflict && (
                   <ConflictPanel
                     existing={conflict.existing}
@@ -736,13 +778,147 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
               <button onClick={reject} disabled={rejecting || applying || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
                 {rejecting ? 'Rejecting…' : 'Reject'}
               </button>
-              <button onClick={apply} disabled={applying || reextracting || !extraction} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: UX.fsBody }}>
-                {applying ? 'Applying…' : 'Apply to P&L'}
-              </button>
+              {(() => {
+                // Apply gating logic — encodes the validation contract:
+                //   - Any HARD error (override_allowed===false) → never enable
+                //   - Any overridable error → require forceApply ticked
+                //   - Any unacked warning → disable until owner acks it
+                //   - Otherwise (no validation yet OR all clear) → enable
+                const hardErrors  = (validation?.blocking_errors ?? []).filter((f: any) => f.override_allowed === false)
+                const softErrors  = (validation?.blocking_errors ?? []).filter((f: any) => f.override_allowed !== false)
+                const warnings    = validation?.warnings_to_ack ?? []
+                const allWarnAcked = warnings.every((w: any) => ackedWarnings.has(w.code))
+                const blockedByHard = hardErrors.length > 0
+                const blockedBySoft = softErrors.length > 0 && !forceApply
+                const blockedByWarn = warnings.length > 0 && !allWarnAcked
+                const disabled      = applying || reextracting || !extraction || blockedByHard || blockedBySoft || blockedByWarn
+                const label = applying
+                  ? 'Applying…'
+                  : blockedByHard
+                    ? 'Cannot apply (hard error)'
+                    : blockedBySoft || blockedByWarn
+                      ? 'Resolve checklist above'
+                      : softErrors.length > 0
+                        ? 'Apply with override'
+                        : 'Apply to P&L'
+                return (
+                  <button onClick={apply} disabled={disabled} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: UX.fsBody }}>
+                    {label}
+                  </button>
+                )
+              })()}
             </>
           )}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── M047 validation checklist ────────────────────────────────────────
+// Renders the structured `validation_blocked` response from
+// /api/fortnox/apply as an actionable checklist:
+//   • Hard errors  — red, no override possible (e.g. org_nr_mismatch)
+//   • Soft errors  — red, single force-override checkbox
+//   • Warnings     — amber, one checkbox per code (owner ticks each)
+//   • AI auditor   — confidence badge + summary + concerns bullets
+//
+// The owner reads each row, ticks the warnings they understand, hits
+// Apply again — the parent passes ackedWarnings + forceApply to the
+// API on retry.
+function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onForceToggle }: any) {
+  const hardErrors = (report.blocking_errors ?? []).filter((f: any) => f.override_allowed === false)
+  const softErrors = (report.blocking_errors ?? []).filter((f: any) => f.override_allowed !== false)
+  const warnings   = report.warnings_to_ack ?? []
+  const audit      = report.ai_audit
+
+  const card = (bg: string, border: string) => ({
+    background: bg, border: `1px solid ${border}`, borderRadius: 10,
+    padding: '12px 14px', marginBottom: 12,
+  })
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+        Pre-apply checks
+      </div>
+
+      {hardErrors.length > 0 && (
+        <div style={card('#fef2f2', '#fecaca')}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            ⛔ {hardErrors.length} hard error{hardErrors.length === 1 ? '' : 's'} — cannot apply
+          </div>
+          {hardErrors.map((f: any) => (
+            <div key={f.code} style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, marginTop: 4 }}>
+              <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{f.code}</code>
+              <span style={{ marginLeft: 6 }}>{f.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {softErrors.length > 0 && (
+        <div style={card('#fef2f2', '#fecaca')}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            ⚠ {softErrors.length} error{softErrors.length === 1 ? '' : 's'} — override required
+          </div>
+          {softErrors.map((f: any) => (
+            <div key={f.code} style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, marginTop: 4 }}>
+              <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{f.code}</code>
+              <span style={{ marginLeft: 6 }}>{f.message}</span>
+            </div>
+          ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: '#991b1b', cursor: 'pointer', fontWeight: 600 }}>
+            <input type="checkbox" checked={forceApply} onChange={onForceToggle} style={{ accentColor: '#dc2626' }} />
+            I have reviewed the error{softErrors.length === 1 ? '' : 's'} and want to force apply anyway
+          </label>
+        </div>
+      )}
+
+      {warnings.length > 0 && (
+        <div style={card('#fffbeb', '#fde68a')}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            ⚠ {warnings.length} warning{warnings.length === 1 ? '' : 's'} — tick each to acknowledge
+          </div>
+          {warnings.map((f: any) => {
+            const acked = ackedWarnings.has(f.code)
+            return (
+              <label key={f.code} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 0', borderTop: '1px solid #fde68a', cursor: 'pointer' }}>
+                <input type="checkbox" checked={acked} onChange={() => onToggle(f.code)} style={{ marginTop: 2, accentColor: '#92400e' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <code style={{ background: '#fef3c7', padding: '1px 5px', borderRadius: 4, fontSize: 10, color: '#92400e' }}>{f.code}</code>
+                    {acked && <span style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>✓ acknowledged</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.5 }}>{f.message}</div>
+                </div>
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      {audit && audit.confidence !== 'unavailable' && (
+        <div style={card(
+          audit.confidence === 'high'   ? '#f0fdf4' : audit.confidence === 'medium' ? '#fffbeb' : '#fef2f2',
+          audit.confidence === 'high'   ? '#bbf7d0' : audit.confidence === 'medium' ? '#fde68a' : '#fecaca',
+        )}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 14 }}>🤖</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+              AI auditor — confidence: {audit.confidence}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.55 }}>{audit.summary}</div>
+          {audit.concerns?.length > 0 && (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 11, color: '#6b7280', lineHeight: 1.5 }}>
+              {audit.concerns.map((c: string, i: number) => (
+                <li key={i}>{c}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
