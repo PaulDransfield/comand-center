@@ -49,13 +49,19 @@ export async function sendVerifyEmail(args: SendVerifyEmailArgs): Promise<SendVe
   // Generate the magic verification link. `type: 'signup'` is the right
   // shape for the post-createUser confirmation flow. The redirectTo URL
   // is where Supabase forwards the browser AFTER it verifies the token
-  // and prepares the session — our /api/auth/callback consumes the code
-  // param and finishes the sign-in.
+  // and prepares the session.
+  //
+  // IMPORTANT: signup confirmation uses Supabase's IMPLICIT FLOW —
+  // tokens come back in the URL FRAGMENT (#access_token=...), which the
+  // server never sees. Point at /auth/handle (a client-side page) that
+  // reads the fragment in JS, calls supabase.auth.setSession(), and
+  // routes to ?next. /api/auth/callback handles the OTHER flow (PKCE
+  // code-exchange used by password-reset etc) and stays in place.
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type:    'signup',
     email,
     options: {
-      redirectTo: `${appOrigin}/api/auth/callback?next=/onboarding`,
+      redirectTo: `${appOrigin}/auth/handle?next=/onboarding`,
     },
   })
   if (error || !data?.properties?.action_link) {
