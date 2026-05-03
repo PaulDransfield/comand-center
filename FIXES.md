@@ -1,5 +1,39 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-04-30
+Last updated: 2026-05-02
+
+---
+
+## 0bg. CookieConsent outside NextIntlClientProvider crashed every page (2026-05-01)
+
+**Symptom:** every route on production returned 500. Build prerender failed across all pages with the same opaque error digest. Runtime logs showed identical "Error at /var/task/.next/server/chunks/5904.js:..." with no real stack. The user-facing screen was `app/global-error.tsx` ("Something went wrong"). Even the simplest pages (`/privacy`, `/_not-found`) failed — meaning a single global path was throwing.
+
+**Root cause:** `<CookieConsent />` was rendered as a **sibling** of `<NextIntlClientProvider>` in `app/layout.tsx`, not a child. CookieConsent calls `useTranslations('misc.cookieConsent')` during SSR. With no provider context, the hook's `useContext` returned null and the inner code threw. The next-intl runtime's wrapper caught the throw and rethrew as anonymous `Error(void 0)`:
+
+```js
+function o(e, t) {
+  return (...e) => {
+    try { return t(...e) }
+    catch { throw Error(void 0) }   // <-- swallows the real error
+  }
+}
+```
+
+That mask is why neither prerender failures nor runtime logs surfaced "useTranslations needs NextIntlClientProvider as ancestor" — just the same opaque digest on every page. Took ~1 hour to diagnose because the wrapper's swallowing forced manual chunk-byte-offset spelunking to find the real throw site.
+
+**Triage path that worked:**
+1. Reverted to last-known-READY commit (3737666) to restore production
+2. Reproduced locally with `next start`, captured the real error stack from Node stderr (which prints the wrapped Error but with file/column pointing at the wrapper)
+3. Walked the compiled chunk byte-by-byte to find `throw Error(void 0)` patterns; identified the throwing site as the wrapped useTranslations
+4. Searched `chunks/5295.js:6279` (the calling frame) — found it was inside `function a()` which contained `r.T("misc.cookieConsent")` — that's CookieConsent's compiled body
+5. One-line fix: move CookieConsent inside the provider
+
+**Fix:** moved `<CookieConsent />` inside `<NextIntlClientProvider>` in `app/layout.tsx`.
+
+**Prevention layer:** `i18n/request.ts` now wires `onError` and `getMessageFallback`. Future failures log a useful `[next-intl] CODE: real-message` line to Vercel runtime logs before the wrapper masks them, and missing translations render as `{ns.key[CODE]}` in the UI instead of crashing. Plus `app/layout.tsx` got `export const dynamic = 'force-dynamic'` and a try/catch around `getLocale()/getMessages()` so a future i18n breakage degrades to en-GB + empty messages instead of a global 500.
+
+**Memory:** `feedback_next_intl_provider_scope.md` — every `useTranslations`/`useLocale`/`useFormatter` consumer MUST live inside `<NextIntlClientProvider>`. Sibling placement is a known crash vector with masked errors. Future sessions should check this on any layout edit.
+
+**Commits:** revert `dfe48dc` → fix `7d798b7` → error-visibility patch `ce2329e`.
 
 ---
 

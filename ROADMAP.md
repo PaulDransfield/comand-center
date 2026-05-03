@@ -1,8 +1,46 @@
 # ROADMAP.md — CommandCenter
-> Version 8.5 | Updated: 2026-04-27 | Session 14 ✅ (Sprint 1 remediation — middleware + multi-org + supersede chain + atomic AI quota)
-> Active focus: Sprint 2 (Tasks 6–10 from external code review)
+> Version 8.6 | Updated: 2026-05-02 | Session 15 ✅ (onboarding overhaul + auth-gate chain + holidays)
+> Active focus: TBD (Sprint 2 from external review still queued)
 > UX redesign: phase 10 shipped (Performance page replaces Cashflow)
 > Read alongside CLAUDE.md and FIXES.md
+
+---
+
+## Session 15 — 2026-05-02 shipped (onboarding + auth + holidays)
+
+Three threads landed this session, all interlocking:
+
+**A. Onboarding wizard overhauled — single source of business data**
+- M046 migration: `businesses.opening_days JSONB`, `businesses.business_stage TEXT` enum (`new` | `established_1y` | `established_3y`).
+- Wizard restructured to 3 real steps (Restaurant → Systems → Done; the marketing welcome slide was removed). Restaurant step now collects address + organisationsnummer + business stage + opening days (Mon–Sun toggles) + cost targets. Optional last-year P&L PDF upload on the Systems step (only when stage ≠ 'new'); flows through the existing `/api/fortnox/upload` pipeline.
+- Org-nr capture moved out of the signup form. Signup now takes only email + password + name + org name (~30s). Single source-of-truth helper `lib/sweden/applyOrgNumber.ts` handles DB write + Stripe metadata + tax_id sync; both `/api/onboarding/complete` and `/api/settings/company-info` POST through it.
+- `OrgNumberGate` + `OrgNumberBanner` components DELETED. Onboarding requires org-nr upfront; the 30-day grace path is dead code. Locale keys (`misc.orgGate`, `settings.orgNumberBanner`) removed from all 3 locale JSONs.
+
+**B. Auth flow + gate chain**
+- Email verification ON. `/api/auth/signup` creates auth users with `email_confirm: false` and emails a Supabase-generated confirmation link via Resend with our branded template + locale-aware copy (`lib/email/sendVerifyEmail.ts`). Signup form no longer auto-signs-in; shows "Check your inbox" screen. Verification link routes through `/api/auth/callback?next=/onboarding`.
+- `OnboardingGate` component (mirrors `PlanGate` shape) added to `components/AppShell.tsx`. Mounted BEFORE `PlanGate` so unfinished owners get sent to `/onboarding` rather than `/upgrade`. New `/api/me/onboarding` endpoint backs the check (treats org as completed if `onboarding_progress.completed_at` set OR org has ≥1 business — legacy customers don't get surprise-redirected).
+- Final canonical flow: signup → email verify → onboarding wizard → plan pick → app.
+- Free-trial copy retired across signup form (en-GB / sv / nb). Pricing memory had said free-trial was retired but signup subtitle still advertised "30-day free trial · No credit card required" — now reads "Set up in minutes — pick a plan after onboarding" (and locale equivalents).
+
+**C. Swedish public holidays — first-class data**
+- `lib/holidays/sweden.ts` computes 17 SE restaurant-relevant days/year (public + observed). Easter via Anonymous Gregorian algorithm; Midsummer + All Saints' via "first weekday in window". Verified 2025/2026.
+- `lib/holidays/index.ts` exposes country router (`getHolidaysForCountry`) + windowed lookup (`getUpcomingHolidays`). Norway / UK plug in as sibling files later — no overlap.
+- `/api/holidays/upcoming` endpoint returns locale-named upcoming holidays for the active business's country.
+- Dashboard AttentionPanel surfaces the next holiday inside 14 days as the top item, with `high` (peak demand) / `low` (most close) impact tags.
+- OverviewChart X-axis day labels render Sat/Sun/holidays in red (#dc2626 + semibold), matching the printed-calendar convention. "Today" highlight (green + bold) wins overlap.
+- AI awareness wired in: weekly memo prompt (21-day window) + scheduling-optimization cron (28-day window). Both fail-tolerant — empty placeholder if lookup throws.
+
+**Bug fix — production-down recovery**
+- 2026-05-01 incident: every page on production 500'd because `<CookieConsent />` was rendered as a sibling of `<NextIntlClientProvider>` instead of a child. The next-intl runtime wrapper masked the SSR throw as anonymous `Error(void 0)`, so neither build prerender failures nor runtime logs surfaced the real cause. ~1 hour to find. Fix: one-line move (CookieConsent inside provider). Prevention layer: `i18n/request.ts` now wires `onError` + `getMessageFallback` so future failures log a useful `[next-intl] CODE: msg` line. Memory saved at `feedback_next_intl_provider_scope.md`.
+
+**Privacy scrub** — replaced `Vero Italiano` / `Paul Dransfield` / `paul@veroitaliano.se` / `Storgatan 12, 114 51 Stockholm` placeholders across signup + onboarding + settings + admin tools (3 locales). Also fixed the Fortnox extract-worker AI prompt that was leaking "Vero restaurant" to Anthropic on every PDF call (no ZDR yet — `project_company_formation_pending` memory).
+
+**Migrations applied this session:** M046 ✅.
+
+**Follow-ups deliberately deferred:**
+- Norway + UK holiday modules (`lib/holidays/norway.ts`, `lib/holidays/uk.ts`) — waiting on country-picker UX decision.
+- Inject `business_stage` into the budget AI prompt — when stage = 'new', skip the historical-anchor rule (no last-year actuals exist) so the AI doesn't anchor on zero.
+- Per-day holiday name in OverviewChart tooltip (currently the red number tells you it IS a holiday, but not which one — would need a tooltip hover state).
 
 ---
 
