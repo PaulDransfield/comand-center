@@ -25,9 +25,11 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
 
 function HandleInner() {
+  const t      = useTranslations('auth.verifyHandle')
   const params = useSearchParams()
   const [status, setStatus] = useState<'parsing' | 'setting' | 'redirecting' | 'error'>('parsing')
   const [error,  setError]  = useState<string>('')
@@ -51,7 +53,7 @@ function HandleInner() {
     const accessToken  = fragment.get('access_token')
     const refreshToken = fragment.get('refresh_token')
     if (!accessToken || !refreshToken) {
-      setError('This confirmation link is missing its token. It may have already been used or copied incorrectly. Try signing in again or request a new link.')
+      setError(t('missingToken'))
       setStatus('error')
       return
     }
@@ -63,7 +65,7 @@ function HandleInner() {
       refresh_token: refreshToken,
     }).then(({ error: setErr }) => {
       if (setErr) {
-        setError(setErr.message ?? 'Failed to establish session.')
+        setError(setErr.message ?? t('sessionFailed'))
         setStatus('error')
         return
       }
@@ -84,23 +86,23 @@ function HandleInner() {
         <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1f2e', marginBottom: 18, letterSpacing: '-0.01em' }}>CommandCenter</div>
         {status !== 'error' && (
           <>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#111', marginBottom: 8 }}>Signing you in…</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#111', marginBottom: 8 }}>{t('signingIn')}</div>
             <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.55 }}>
-              {status === 'parsing'      && 'Reading verification link…'}
-              {status === 'setting'      && 'Setting up your session…'}
-              {status === 'redirecting'  && 'Redirecting to onboarding…'}
+              {status === 'parsing'      && t('parsing')}
+              {status === 'setting'      && t('settingSession')}
+              {status === 'redirecting'  && t('redirecting')}
             </div>
           </>
         )}
         {status === 'error' && (
           <>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#991b1b', marginBottom: 10 }}>Confirmation failed</div>
+            <div style={{ fontSize: 18, fontWeight: 600, color: '#991b1b', marginBottom: 10 }}>{t('failedTitle')}</div>
             <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.55, marginBottom: 18 }}>{error}</div>
             <a
               href="/login"
               style={{ display: 'inline-block', padding: '10px 20px', background: '#1a1f2e', color: 'white', textDecoration: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
             >
-              Back to sign in
+              {t('backToSignIn')}
             </a>
           </>
         )}
