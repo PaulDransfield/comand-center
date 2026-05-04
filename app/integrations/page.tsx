@@ -16,82 +16,52 @@ interface Integration {
   last_sync_at: string | null
 }
 
+// Static structural manifest. Display strings (description, features,
+// configField labels/placeholders) live in locales/<lang>/integrations.json
+// under providers.<key>.* — extend both together when adding a provider.
 const PROVIDERS = [
-  { key: 'fortnox',       name: 'Fortnox',            category: 'Accounting', icon: 'F',
-    description: 'Accounting, supplier invoices and payroll reports',
-    authType: 'oauth2', docsUrl: 'https://developer.fortnox.se',
-    features: ['Supplier invoices (costs)', 'Sales invoices (revenue)', 'Payroll (staff cost)', 'Auto-sync tracker'],
+  { key: 'fortnox',        name: 'Fortnox',              category: 'Accounting', icon: 'F',
+    authType: 'oauth2',  docsUrl: 'https://developer.fortnox.se',
     configFields: [] },
-  { key: 'visma',         name: 'Visma eEkonomi',     category: 'Accounting', icon: 'V',
-    description: 'Accounting for larger businesses',
-    authType: 'oauth2', docsUrl: 'https://developer.visma.com',
-    features: ['Supplier invoices', 'Accounting data', 'Payroll', 'Reports'],
+  { key: 'visma',          name: 'Visma eEkonomi',       category: 'Accounting', icon: 'V',
+    authType: 'oauth2',  docsUrl: 'https://developer.visma.com',
     configFields: [] },
-  { key: 'ancon',         name: 'Ancon',              category: 'POS', icon: 'A',
-    description: 'POS system since 1998 - popular in Swedish restaurants',
+  { key: 'ancon',          name: 'Ancon',                category: 'POS', icon: 'A',
     authType: 'api_key', docsUrl: 'https://ancon.se',
-    features: ['Daily sales', 'Z-reports', 'Category breakdown', 'Cover counts'],
-    configFields: [{ key: 'unit_id', label: 'Unit ID', placeholder: 'Found in Ancon admin > Settings > Units' }] },
-  { key: 'trivec',        name: 'Trivec',             category: 'POS', icon: 'T',
-    description: '8,000+ customers - part of Caspeco group since 2025',
+    configFields: [{ key: 'unit_id' }] },
+  { key: 'trivec',         name: 'Trivec',               category: 'POS', icon: 'T',
     authType: 'api_key', docsUrl: 'https://mytrivec.com',
-    features: ['Daily sales', 'Cover counts', 'Table data', 'QR payments'],
-    configFields: [{ key: 'unit_id', label: 'Unit ID', placeholder: 'Your restaurant ID in Trivec' }] },
-  { key: 'zettle',        name: 'Zettle by PayPal',  category: 'POS', icon: 'Z',
-    description: 'Popular mobile POS - free basic version',
+    configFields: [{ key: 'unit_id' }] },
+  { key: 'zettle',         name: 'Zettle by PayPal',     category: 'POS', icon: 'Z',
     authType: 'api_key', docsUrl: 'https://developer.zettle.com',
-    features: ['Daily sales', 'Transaction data', 'Product reports'],
-    configFields: [
-      { key: 'client_id',     label: 'Client ID',     placeholder: 'From Zettle Developer Portal' },
-      { key: 'client_secret', label: 'Client Secret', placeholder: 'From Zettle Developer Portal' }] },
-  { key: 'quinyx',        name: 'Quinyx',             category: 'Staff', icon: 'Q',
-    description: 'AI-powered workforce management - used by large chains',
+    configFields: [{ key: 'client_id' }, { key: 'client_secret' }] },
+  { key: 'quinyx',         name: 'Quinyx',               category: 'Staff', icon: 'Q',
     authType: 'api_key', docsUrl: 'https://api.quinyx.com',
-    features: ['Scheduled hours', 'Actual worked hours', 'Labour cost forecast', 'Absence management'],
-    configFields: [{ key: 'group_id', label: 'Group ID', placeholder: 'Your Quinyx group ID' }] },
-  { key: 'caspeco',       name: 'Caspeco Personal',  category: 'Staff', icon: 'C',
-    description: 'Staff scheduling - part of Trivec group',
+    configFields: [{ key: 'group_id' }] },
+  { key: 'caspeco',        name: 'Caspeco Personal',     category: 'Staff', icon: 'C',
     authType: 'api_key', docsUrl: 'https://caspeco.se',
-    features: ['Scheduled hours', 'Actual hours', 'Staff cost', 'Absence'],
-    configFields: [{ key: 'unit_id', label: 'Unit ID', placeholder: 'Your Caspeco unit ID' }] },
-  { key: 'personalkollen', name: 'Personalkollen',   category: 'Staff', icon: 'P',
-    description: 'Time reports and staff costs for Swedish SMEs',
+    configFields: [{ key: 'unit_id' }] },
+  { key: 'personalkollen', name: 'Personalkollen',       category: 'Staff', icon: 'P',
     authType: 'api_key', docsUrl: 'https://personalkollen.se',
-    features: ['Time reports', 'Staff cost', 'Absence management'],
     configFields: [] },
-  { key: 'planday',       name: 'Planday',            category: 'Staff', icon: 'P',
-    description: 'Restaurant scheduling - owned by Xero',
+  { key: 'planday',        name: 'Planday',              category: 'Staff', icon: 'P',
     authType: 'api_key', docsUrl: 'https://developer.planday.com',
-    features: ['Scheduling', 'Time reports', 'Payroll integration', 'Absence'],
     configFields: [] },
-  { key: 'wolt',          name: 'Wolt',               category: 'Delivery', icon: 'W',
-    description: 'Food delivery - order data, revenue and commissions',
+  { key: 'wolt',           name: 'Wolt',                 category: 'Delivery', icon: 'W',
     authType: 'api_key', docsUrl: 'https://developer.wolt.com',
-    features: ['Daily orders', 'Net revenue (after commission)', 'Order statistics'],
-    configFields: [{ key: 'venue_id', label: 'Venue ID', placeholder: 'Your restaurant ID on Wolt' }] },
-  { key: 'foodora',       name: 'Foodora',            category: 'Delivery', icon: 'F',
-    description: 'Food delivery - order data, revenue and commissions',
+    configFields: [{ key: 'venue_id' }] },
+  { key: 'foodora',        name: 'Foodora',              category: 'Delivery', icon: 'F',
     authType: 'api_key', docsUrl: 'https://partner.foodora.se',
-    features: ['Daily orders', 'Net revenue', 'Order statistics'],
-    configFields: [{ key: 'restaurant_id', label: 'Restaurant ID', placeholder: 'Your ID on Foodora' }] },
-  { key: 'thefork',       name: 'TheFork',            category: 'Booking', icon: 'TF',
-    description: 'Europe leading booking platform - 20M+ visitors/month',
-    authType: 'oauth2', docsUrl: 'https://docs.thefork.io',
-    features: ['Reservations', 'Cover counts', 'No-show tracking', 'Guest profiles'],
-    configFields: [
-      { key: 'client_id',     label: 'Client ID',     placeholder: 'From TheFork Developer Portal' },
-      { key: 'client_secret', label: 'Client Secret', placeholder: 'From TheFork Developer Portal' },
-      { key: 'restaurant_id', label: 'Restaurant ID', placeholder: 'Your CustomerId in TheFork' }] },
-  { key: 'bokad',         name: 'Bokad.se',           category: 'Booking', icon: 'B',
-    description: 'Swedish booking system - reservations and table management',
+    configFields: [{ key: 'restaurant_id' }] },
+  { key: 'thefork',        name: 'TheFork',              category: 'Booking', icon: 'TF',
+    authType: 'oauth2',  docsUrl: 'https://docs.thefork.io',
+    configFields: [{ key: 'client_id' }, { key: 'client_secret' }, { key: 'restaurant_id' }] },
+  { key: 'bokad',          name: 'Bokad.se',             category: 'Booking', icon: 'B',
     authType: 'api_key', docsUrl: 'https://bokad.se',
-    features: ['Reservations', 'Cover counts by period', 'Table data'],
-    configFields: [{ key: 'restaurant_id', label: 'Restaurant ID', placeholder: 'Your ID on Bokad.se' }] },
-  { key: 'bokabord',      name: 'BokaBord / WaiterAid', category: 'Booking', icon: 'BB',
-    description: 'Leading Swedish booking system - 500k guests/year',
+    configFields: [{ key: 'restaurant_id' }] },
+  { key: 'bokabord',       name: 'BokaBord / WaiterAid', category: 'Booking', icon: 'BB',
     authType: 'api_key', docsUrl: 'https://waiteraid.com',
-    features: ['Reservations', 'Expected covers', 'Table data'],
-    configFields: [{ key: 'restaurant_id', label: 'Restaurant ID', placeholder: 'Your BokaBord ID' }] },
+    configFields: [{ key: 'restaurant_id' }] },
 ]
 
 export default function IntegrationsPage() {
@@ -399,11 +369,11 @@ export default function IntegrationsPage() {
                     )}
                   </div>
 
-                  <p style={{ fontSize:13, color:'#6b7280', marginBottom:10, lineHeight:1.5 }}>{provider.description}</p>
+                  <p style={{ fontSize:13, color:'#6b7280', marginBottom:10, lineHeight:1.5 }}>{t(`providers.${provider.key}.description`)}</p>
 
                   {/* Features */}
                   <div style={{ display:'flex', flexWrap:'wrap', gap:5, marginBottom:isConnected ? 12 : 0 }}>
-                    {provider.features.map(f => (
+                    {(t.raw(`providers.${provider.key}.features`) as string[]).map(f => (
                       <span key={f} style={{ fontSize:11, padding:'2px 9px', background:'#fafafa', border:'1px solid #e5e7eb', borderRadius:8, color:'#6b7280' }}>{f}</span>
                     ))}
                   </div>
@@ -556,12 +526,12 @@ export default function IntegrationsPage() {
             {PROVIDERS.find(p=>p.key===modal)?.configFields?.map((field:any) => (
               <div key={field.key} style={{ marginBottom:14 }}>
                 <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9ca3af', marginBottom:5 }}>
-                  {field.label}
+                  {t(`providers.${modal}.configFields.${field.key}.label`)}
                 </label>
                 <input
                   className="input"
                   type={field.key.includes('secret') ? 'password' : 'text'}
-                  placeholder={field.placeholder ?? ''}
+                  placeholder={t(`providers.${modal}.configFields.${field.key}.placeholder`)}
                   value={configValues[field.key] ?? ''}
                   onChange={e => setConfigValues((v:any) => ({ ...v, [field.key]: e.target.value }))}
                 />

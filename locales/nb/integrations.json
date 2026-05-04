@@ -60,5 +60,96 @@
     "saving":            "Lagrer…",
     "save":              "Lagre og koble til"
   },
-  "oauthBadge": "OAuth 2.0"
+  "oauthBadge": "OAuth 2.0",
+  "providers": {
+    "fortnox": {
+      "description": "Regnskap, leverandørfakturaer og lønnsrapporter",
+      "features": ["Leverandørfakturaer (kostnader)", "Salgsfakturaer (inntekter)", "Lønn (personalkostnad)", "Auto-sync av tracker"]
+    },
+    "visma": {
+      "description": "Regnskap for større virksomheter",
+      "features": ["Leverandørfakturaer", "Regnskapsdata", "Lønn", "Rapporter"]
+    },
+    "ancon": {
+      "description": "Kassesystem siden 1998 — populært på svenske restauranter",
+      "features": ["Daglig salg", "Z-rapporter", "Kategorifordeling", "Antall gjester"],
+      "configFields": {
+        "unit_id": { "label": "Enhets-ID", "placeholder": "Finnes i Ancon admin > Innstillinger > Enheter" }
+      }
+    },
+    "trivec": {
+      "description": "8 000+ kunder — del av Caspeco-gruppen siden 2025",
+      "features": ["Daglig salg", "Antall gjester", "Bordsdata", "QR-betaling"],
+      "configFields": {
+        "unit_id": { "label": "Enhets-ID", "placeholder": "Restaurant-ID-en din i Trivec" }
+      }
+    },
+    "zettle": {
+      "description": "Populær mobil kasseløsning — gratis basisversjon",
+      "features": ["Daglig salg", "Transaksjonsdata", "Produktrapporter"],
+      "configFields": {
+        "client_id":     { "label": "Klient-ID",         "placeholder": "Fra Zettle Developer Portal" },
+        "client_secret": { "label": "Klienthemmelighet", "placeholder": "Fra Zettle Developer Portal" }
+      }
+    },
+    "quinyx": {
+      "description": "AI-drevet bemanningsstyring — brukt av store kjeder",
+      "features": ["Planlagte timer", "Faktiske arbeidstimer", "Lønnsprognose", "Fraværshåndtering"],
+      "configFields": {
+        "group_id": { "label": "Gruppe-ID", "placeholder": "Din Quinyx gruppe-ID" }
+      }
+    },
+    "caspeco": {
+      "description": "Personalplanlegging — del av Trivec-gruppen",
+      "features": ["Planlagte timer", "Faktiske timer", "Personalkostnad", "Fravær"],
+      "configFields": {
+        "unit_id": { "label": "Enhets-ID", "placeholder": "Din Caspeco enhets-ID" }
+      }
+    },
+    "personalkollen": {
+      "description": "Timerapporter og personalkostnader for svenske SMB-er",
+      "features": ["Timerapporter", "Personalkostnad", "Fraværshåndtering"]
+    },
+    "planday": {
+      "description": "Restaurantplanlegging — eid av Xero",
+      "features": ["Planlegging", "Timerapporter", "Lønnsintegrasjon", "Fravær"]
+    },
+    "wolt": {
+      "description": "Matlevering — ordredata, inntekter og provisjoner",
+      "features": ["Daglige ordrer", "Nettoinntekter (etter provisjon)", "Ordrestatistikk"],
+      "configFields": {
+        "venue_id": { "label": "Venue-ID", "placeholder": "Restaurant-ID-en din på Wolt" }
+      }
+    },
+    "foodora": {
+      "description": "Matlevering — ordredata, inntekter og provisjoner",
+      "features": ["Daglige ordrer", "Nettoinntekter", "Ordrestatistikk"],
+      "configFields": {
+        "restaurant_id": { "label": "Restaurant-ID", "placeholder": "ID-en din på Foodora" }
+      }
+    },
+    "thefork": {
+      "description": "Europas ledende bookingplattform — 20M+ besøkende/måned",
+      "features": ["Reservasjoner", "Antall gjester", "Sporing av no-show", "Gjesteprofiler"],
+      "configFields": {
+        "client_id":     { "label": "Klient-ID",         "placeholder": "Fra TheFork Developer Portal" },
+        "client_secret": { "label": "Klienthemmelighet", "placeholder": "Fra TheFork Developer Portal" },
+        "restaurant_id": { "label": "Restaurant-ID",     "placeholder": "Din CustomerId i TheFork" }
+      }
+    },
+    "bokad": {
+      "description": "Svensk bookingsystem — reservasjoner og bordhåndtering",
+      "features": ["Reservasjoner", "Antall gjester per periode", "Bordsdata"],
+      "configFields": {
+        "restaurant_id": { "label": "Restaurant-ID", "placeholder": "ID-en din på Bokad.se" }
+      }
+    },
+    "bokabord": {
+      "description": "Ledende svensk bookingsystem — 500k gjester/år",
+      "features": ["Reservasjoner", "Forventet antall gjester", "Bordsdata"],
+      "configFields": {
+        "restaurant_id": { "label": "Restaurant-ID", "placeholder": "Din BokaBord-ID" }
+      }
+    }
+  }
 }

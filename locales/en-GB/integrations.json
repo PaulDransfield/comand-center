@@ -60,5 +60,96 @@
     "saving":            "Saving…",
     "save":              "Save & connect"
   },
-  "oauthBadge": "OAuth 2.0"
+  "oauthBadge": "OAuth 2.0",
+  "providers": {
+    "fortnox": {
+      "description": "Accounting, supplier invoices and payroll reports",
+      "features": ["Supplier invoices (costs)", "Sales invoices (revenue)", "Payroll (staff cost)", "Auto-sync tracker"]
+    },
+    "visma": {
+      "description": "Accounting for larger businesses",
+      "features": ["Supplier invoices", "Accounting data", "Payroll", "Reports"]
+    },
+    "ancon": {
+      "description": "POS system since 1998 — popular in Swedish restaurants",
+      "features": ["Daily sales", "Z-reports", "Category breakdown", "Cover counts"],
+      "configFields": {
+        "unit_id": { "label": "Unit ID", "placeholder": "Found in Ancon admin > Settings > Units" }
+      }
+    },
+    "trivec": {
+      "description": "8,000+ customers — part of Caspeco group since 2025",
+      "features": ["Daily sales", "Cover counts", "Table data", "QR payments"],
+      "configFields": {
+        "unit_id": { "label": "Unit ID", "placeholder": "Your restaurant ID in Trivec" }
+      }
+    },
+    "zettle": {
+      "description": "Popular mobile POS — free basic version",
+      "features": ["Daily sales", "Transaction data", "Product reports"],
+      "configFields": {
+        "client_id":     { "label": "Client ID",     "placeholder": "From Zettle Developer Portal" },
+        "client_secret": { "label": "Client Secret", "placeholder": "From Zettle Developer Portal" }
+      }
+    },
+    "quinyx": {
+      "description": "AI-powered workforce management — used by large chains",
+      "features": ["Scheduled hours", "Actual worked hours", "Labour cost forecast", "Absence management"],
+      "configFields": {
+        "group_id": { "label": "Group ID", "placeholder": "Your Quinyx group ID" }
+      }
+    },
+    "caspeco": {
+      "description": "Staff scheduling — part of Trivec group",
+      "features": ["Scheduled hours", "Actual hours", "Staff cost", "Absence"],
+      "configFields": {
+        "unit_id": { "label": "Unit ID", "placeholder": "Your Caspeco unit ID" }
+      }
+    },
+    "personalkollen": {
+      "description": "Time reports and staff costs for Swedish SMEs",
+      "features": ["Time reports", "Staff cost", "Absence management"]
+    },
+    "planday": {
+      "description": "Restaurant scheduling — owned by Xero",
+      "features": ["Scheduling", "Time reports", "Payroll integration", "Absence"]
+    },
+    "wolt": {
+      "description": "Food delivery — order data, revenue and commissions",
+      "features": ["Daily orders", "Net revenue (after commission)", "Order statistics"],
+      "configFields": {
+        "venue_id": { "label": "Venue ID", "placeholder": "Your restaurant ID on Wolt" }
+      }
+    },
+    "foodora": {
+      "description": "Food delivery — order data, revenue and commissions",
+      "features": ["Daily orders", "Net revenue", "Order statistics"],
+      "configFields": {
+        "restaurant_id": { "label": "Restaurant ID", "placeholder": "Your ID on Foodora" }
+      }
+    },
+    "thefork": {
+      "description": "Europe's leading booking platform — 20M+ visitors/month",
+      "features": ["Reservations", "Cover counts", "No-show tracking", "Guest profiles"],
+      "configFields": {
+        "client_id":     { "label": "Client ID",     "placeholder": "From TheFork Developer Portal" },
+        "client_secret": { "label": "Client Secret", "placeholder": "From TheFork Developer Portal" },
+        "restaurant_id": { "label": "Restaurant ID", "placeholder": "Your CustomerId in TheFork" }
+      }
+    },
+    "bokad": {
+      "description": "Swedish booking system — reservations and table management",
+      "features": ["Reservations", "Cover counts by period", "Table data"],
+      "configFields": {
+        "restaurant_id": { "label": "Restaurant ID", "placeholder": "Your ID on Bokad.se" }
+      }
+    },
+    "bokabord": {
+      "description": "Leading Swedish booking system — 500k guests/year",
+      "features": ["Reservations", "Expected covers", "Table data"],
+      "configFields": {
+        "restaurant_id": { "label": "Restaurant ID", "placeholder": "Your BokaBord ID" }
+      }
+    }
+  }
 }
