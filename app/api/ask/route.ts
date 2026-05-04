@@ -55,9 +55,10 @@ ${SCOPE_NOTE}`
 
 export async function POST(req: NextRequest) {
   // ── 1. Auth ────────────────────────────────────────────────────
-  // Use the battle-tested cookie parser — the old getOrgFromRequest relied on
-  // @supabase/ssr's createServerClient session getter which silently missed
-  // some cookie formats and was returning 401 for valid sessions (2026-04-18).
+  // getRequestAuth is the canonical helper — it handles every
+  // @supabase/ssr cookie shape including chunked cookies, validates
+  // the JWT cryptographically, and returns the resolved org via the
+  // M001 deterministic-by-earliest membership rule.
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 

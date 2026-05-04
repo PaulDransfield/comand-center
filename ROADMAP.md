@@ -1,6 +1,6 @@
 # ROADMAP.md — CommandCenter
 > Version 8.7 | Updated: 2026-05-03 | Session 16 ✅ (data-source guardrails + Fortnox apply chokepoint)
-> Active focus: TBD (Sprint 2 from external review still queued; Stripe price IDs + onboarding smoke-test next)
+> Active focus: Stripe price IDs + i18n coverage gaps. Sprint 1 + Sprint 2 fully shipped.
 > UX redesign: phase 10 shipped (Performance page replaces Cashflow)
 > Read alongside CLAUDE.md and FIXES.md
 
