@@ -437,6 +437,38 @@ export default function IntegrationsPage() {
                           {integ.last_error.slice(0, 120)}{integ.last_error.length > 120 ? '...' : ''}
                         </div>
                       )}
+                      {/* PK canonical override — only relevant when both PK
+                          and Fortnox are present and disagreeing. Owner
+                          flips this when Fortnox is stale (e.g. last PDF
+                          was 6 months ago) and PK is the live truth.
+                          Stored on integrations.config; aggregator reads
+                          it on every run. */}
+                      {provider.key === 'personalkollen' && (
+                        <label style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: '#374151', lineHeight: 1.4 }}>
+                          <input
+                            type="checkbox"
+                            checked={!!integ?.config?.canonical_for_staff_cost}
+                            onChange={async e => {
+                              const value = e.target.checked
+                              await fetch('/api/integrations/canonical', {
+                                method:  'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  provider:    'personalkollen',
+                                  business_id: integ?.business_id,
+                                  field:       'canonical_for_staff_cost',
+                                  value,
+                                }),
+                              })
+                              load()
+                            }}
+                            style={{ marginTop: 2, accentColor: '#1a1f2e' }}
+                          />
+                          <span>
+                            <strong>Trust Personalkollen over Fortnox</strong> for staff cost. Use this if your Fortnox PDFs are out of date — the next aggregator run will use PK numbers even when they disagree with Fortnox by &gt; 30%.
+                          </span>
+                        </label>
+                      )}
                     </div>
                   )}
                   {expiryWarning && (

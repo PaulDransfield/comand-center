@@ -164,6 +164,23 @@ export async function aggregateMetrics(
     .limit(1)
   const oldestStaffDate: string | null = oldestStaffRow?.[0]?.shift_date ?? null
 
+  // Owner override: when the PK integration row has
+  // config.canonical_for_staff_cost=true, the agreement gate is
+  // INVERTED — PK wins even when its total disagrees with Fortnox by
+  // >30 %. Use case: Fortnox PDF is stale (last filed 6 months ago)
+  // and PK is the live source of truth. Without this override, the
+  // disagreement check forces stale Fortnox over fresh PK.
+  // Stored on integrations.config (existing JSONB column) so it lives
+  // with the credential row it concerns.
+  const { data: pkIntegRow } = await db
+    .from('integrations')
+    .select('config')
+    .eq('org_id', orgId)
+    .eq('business_id', businessId)
+    .eq('provider', 'personalkollen')
+    .maybeSingle()
+  const pkIsCanonical: boolean = pkIntegRow?.config?.canonical_for_staff_cost === true
+
   const [rawRevLogs, staffLogs, trackerRes] = await Promise.all([
     fetchAllPaged((lo, hi) =>
       db.from('revenue_logs')
@@ -599,7 +616,14 @@ export async function aggregateMetrics(
 
     let staff_cost: number
     let cost_source: string
-    if (a.hasStaff && pkPredatesPeriod && pkAgreesWithFortnox) {
+    // Override path first: when the owner has flipped PK to canonical,
+    // PK wins as long as it has rows for the period — disagreement and
+    // coverage gates are bypassed. Surfaced via 'pk_canonical' so the
+    // disagreement alert pipeline still records the override decision.
+    if (a.hasStaff && pkIsCanonical) {
+      staff_cost  = a.staff_cost
+      cost_source = 'pk_canonical'
+    } else if (a.hasStaff && pkPredatesPeriod && pkAgreesWithFortnox) {
       staff_cost  = a.staff_cost
       cost_source = 'pk'
     } else if (trackerStaff > 0) {
