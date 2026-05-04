@@ -1,12 +1,12 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-03 | M022–M045 applied · M046 + M047 PENDING APPLY
+> Last updated: 2026-05-04 | M022–M047 all applied · all caught up
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Recently applied — for reference
 
-### M047 — Fortnox apply guardrails (sha256 + CHECK + created_via) ⏳ PENDING APPLY
+### M047 — Fortnox apply guardrails (sha256 + CHECK + created_via) ✅ applied 2026-05-03
 **File:** `M047-FORTNOX-GUARDRAILS.sql` (repo root)
 **Purpose:** defence-in-depth for the Fortnox PDF apply pipeline. Three additions:
   - `fortnox_uploads.pdf_sha256 TEXT` + index `(business_id, pdf_sha256) WHERE pdf_sha256 IS NOT NULL`. Computed at upload time; the upload route short-circuits with status='duplicate' on a hit so an accidental re-upload of the same PDF doesn't pile up.
@@ -21,7 +21,7 @@
 **Backwards compat:** all ADD COLUMN are nullable / IF NOT EXISTS; CHECK constraints guarded against re-application; index uses `IF NOT EXISTS`. Wrapped in transaction. Verify queries at the bottom dump the new column + constraint list.
 **To apply:** open Supabase SQL Editor, paste file contents, run.
 
-### M046 — Onboarding expansion (opening_days + business_stage) ⏳ PENDING APPLY
+### M046 — Onboarding expansion (opening_days + business_stage) ✅ applied 2026-05-02
 **File:** `M046-ONBOARDING-EXPANSION.sql` (repo root)
 **Purpose:** Onboarding now collects business address, organisationsnummer, business stage, opening days, and an optional last-year P&L PDF upfront — see app/onboarding/page.tsx. The DB needs two new columns on `businesses` to store the structured data the wizard captures.
   - `businesses.opening_days   JSONB DEFAULT '{"mon":..,"sun":true}'` — drives scheduling AI (no labour-cut suggestions on closed days) and the /scheduling weekly grid. Column default keeps legacy rows rendering sensibly until owners update.
