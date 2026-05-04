@@ -109,6 +109,69 @@
     "crumb":       "Gruppe",
     "loading":     "Laster gruppedata…",
     "prevMonth":   "Forrige måned",
-    "nextMonth":   "Neste måned"
+    "nextMonth":   "Neste måned",
+    "empty": {
+      "noBusinessesTitle":  "Ingen restauranter ennå",
+      "noBusinessesBody":   "Legg til restauranter fra Innstillinger — gruppevisningen våkner så snart du har to eller flere.",
+      "oneBusinessTitle":   "Bare én restaurant",
+      "oneBusinessBodyPre": "Gruppevisningen er for å sammenligne flere steder. Du har én — bruk ",
+      "oneBusinessBodyLink":"Dashboard",
+      "oneBusinessBodyPost":" for detaljer om én restaurant."
+    },
+    "eyebrow":      "GRUPPESTATUS — {label}",
+    "stats": {
+      "revenue":    "Inntekt",
+      "labourPct":  "Bemanning %",
+      "margin":     "Margin",
+      "groupAvg":   "gruppesnitt",
+      "afterLabour":"etter bemanning"
+    },
+    "pills": {
+      "outlier": "AVVIKER",
+      "best":    "BEST",
+      "noData":  "INGEN DATA"
+    },
+    "delta": {
+      "missing": "—",
+      "newUp":   "↑ ny"
+    },
+    "meta": {
+      "labour":   "Bemanning",
+      "labourPct":"Bemanning %",
+      "margin":   "Margin",
+      "revPerHour":"Innt/t"
+    },
+    "attention": {
+      "aiManager":   "AI-gruppesjef",
+      "synthesised": "Sammenstilt"
+    },
+    "hero": {
+      "noData":      "Ingen gruppedata for denne perioden ennå.",
+      "draining":    "{name} drenerer gruppen",
+      "drainingTail":" — {hours} bemanningstimer uten inntekt.",
+      "offTarget":   "{name} under mål",
+      "offTargetMargin":" på {pct} margin",
+      "carryingTail":" — {name} bærer gruppen på {pct}",
+      "leading":     "{name} leder gruppen",
+      "leadingTail": " med {pct} margin.",
+      "runningAll":  "Gruppen går på alle steder."
+    },
+    "context": {
+      "summary":    "{count} steder · {amount} totalt · bemanning {labour}",
+      "worstMargin":"{name} margin {pct}"
+    },
+    "synthesis": {
+      "drainingMsg":      "{hours}t bemanning ({cost}) uten inntekt — steng, omstrukturer eller kutt skiftet til bare gjester.",
+      "marginSwingMsg":   "margin {margin} på {revenue} — bemanning {labour} er hevstangen.",
+      "absorbHoursMsgKr": "kan absorbere timer fra {worstName} på {revPerHour}/t — ~{recovered}/uke gjenvunnet.",
+      "absorbHoursMsg":   "kan absorbere timer fra {worstName} på {revPerHour}/t — verdt å omfordele.",
+      "reallocateMsg":    "omfordel bemanning fra {sourceName} — {strength} slår å brenne timer uten inntekt.",
+      "reallocateStrengthRh":"{rh}/t",
+      "reallocateStrengthFallback":"sterkere output",
+      "carryingGroupMsg": "bærer gruppen — {margin} margin{rh}. Bevar skiftmønsteret.",
+      "rhSuffix":         ", {rh}/t",
+      "stableMsg":        "{margin} margin over {count} steder — ingen avvikere denne måneden.",
+      "stableEntity":     "Gruppen"
+    }
   }
 }

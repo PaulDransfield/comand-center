@@ -132,6 +132,12 @@
     "networkError": "Network error",
     "tryAgain":     "Try again in a moment"
   },
+  "attention": {
+    "defaultTitle":   "Needs your attention",
+    "nothingFlagged": "Nothing flagged right now.",
+    "moreLink":       "+ {count} more →",
+    "moreText":       "+ {count} more"
+  },
   "sync": {
     "syncing":       "Syncing…",
     "neverSynced":   "Never synced",

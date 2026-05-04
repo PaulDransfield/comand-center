@@ -112,38 +112,38 @@ export default function GroupPage() {
           <div style={{ background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: UX.r_lg, padding: '12px 16px', fontSize: UX.fsBody, color: UX.redInk }}>{error}</div>
         ) : businesses.length === 0 ? (
           <EmptyCard
-            title="No businesses yet"
-            body="Add businesses from Settings — the group view lights up as soon as you have two or more."
+            title={t('empty.noBusinessesTitle')}
+            body={t('empty.noBusinessesBody')}
           />
         ) : businesses.length === 1 ? (
           <EmptyCard
-            title="Only one business"
-            body={<>The group view is for comparing multiple locations. You have one — use <a href="/dashboard" style={{ color: UX.indigo }}>Dashboard</a> for single-business detail.</>}
+            title={t('empty.oneBusinessTitle')}
+            body={<>{t('empty.oneBusinessBodyPre')}<a href="/dashboard" style={{ color: UX.indigo }}>{t('empty.oneBusinessBodyLink')}</a>{t('empty.oneBusinessBodyPost')}</>}
           />
         ) : (
           <>
             {/* ─── PageHero ────────────────────────────────────────────── */}
             <PageHero
-              eyebrow={`GROUP STATUS — ${period.label.toUpperCase()}`}
-              headline={<HeroHeadline worst={worst} best={best} draining={draining} />}
-              context={buildContext(summary, businesses, worst)}
+              eyebrow={t('eyebrow', { label: period.label.toUpperCase() })}
+              headline={<HeroHeadline worst={worst} best={best} draining={draining} t={t} />}
+              context={buildContext(summary, businesses, worst, t)}
               right={summary ? (
                 <SupportingStats
                   items={[
                     {
-                      label: 'Revenue',
+                      label: t('stats.revenue'),
                       value: fmtKr(summary.total_revenue),
                     },
                     {
-                      label: 'Labour %',
+                      label: t('stats.labourPct'),
                       value: fmtPct(summary.group_labour_pct),
-                      sub:   'group avg',
+                      sub:   t('stats.groupAvg'),
                       deltaTone: summary.group_labour_pct != null && summary.group_labour_pct <= 40 ? 'good' : 'bad' as const,
                     },
                     {
-                      label: 'Margin',
+                      label: t('stats.margin'),
                       value: fmtPct(summary.group_margin_pct),
-                      sub:   'after labour',
+                      sub:   t('stats.afterLabour'),
                       deltaTone: summary.group_margin_pct != null && summary.group_margin_pct >= 45 ? 'good' : 'bad' as const,
                     },
                   ]}
@@ -168,9 +168,9 @@ export default function GroupPage() {
                 const pill:
                   | { tone: 'good' | 'warning' | 'bad' | 'neutral' | 'info'; label: string }
                   | null =
-                    isWorst ? { tone: 'bad',  label: 'OUTLIER' }
-                  : isBest  ? { tone: 'good', label: 'BEST' }
-                  : noData  ? { tone: 'neutral', label: 'NO DATA' }
+                    isWorst ? { tone: 'bad',  label: t('pills.outlier') }
+                  : isBest  ? { tone: 'good', label: t('pills.best') }
+                  : noData  ? { tone: 'neutral', label: t('pills.noData') }
                   : null
 
                 const tone: 'good' | 'bad' | 'warning' | 'neutral' =
@@ -204,13 +204,13 @@ export default function GroupPage() {
                 // card (GROUP-FIX § 2). Handles prev=0 and extreme values.
                 const deltaNode = (() => {
                   if (b.revenue === 0 && b.prev_revenue === 0) {
-                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>—</span>
+                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>{t('delta.missing')}</span>
                   }
                   if ((b.prev_revenue ?? 0) === 0 && b.revenue > 0) {
-                    return <span style={{ fontSize: UX.fsMicro, color: UX.greenInk, fontWeight: UX.fwMedium }}>↑ new</span>
+                    return <span style={{ fontSize: UX.fsMicro, color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('delta.newUp')}</span>
                   }
                   if (b.revenue_delta_pct == null) {
-                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>—</span>
+                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>{t('delta.missing')}</span>
                   }
                   const up = b.revenue_delta_pct >= 0
                   return (
@@ -287,10 +287,10 @@ export default function GroupPage() {
                       fontSize: UX.fsMicro,
                       color: UX.ink3,
                     }}>
-                      <Meta label="Labour"    value={b.staff_cost > 0 ? fmtKr(b.staff_cost) : '—'} />
-                      <Meta label="Labour %"  value={fmtPct(b.labour_pct)} tone={b.labour_pct != null && b.labour_pct > (b.target_staff_pct ?? 40) ? 'bad' : 'good'} />
-                      <Meta label="Margin"    value={fmtPct(marginPct)}    tone={tone} />
-                      <Meta label="Rev/hour"  value={b.rev_per_hour ? fmtKr(b.rev_per_hour) : '—'} />
+                      <Meta label={t('meta.labour')}    value={b.staff_cost > 0 ? fmtKr(b.staff_cost) : '—'} />
+                      <Meta label={t('meta.labourPct')} value={fmtPct(b.labour_pct)} tone={b.labour_pct != null && b.labour_pct > (b.target_staff_pct ?? 40) ? 'bad' : 'good'} />
+                      <Meta label={t('meta.margin')}    value={fmtPct(marginPct)}    tone={tone} />
+                      <Meta label={t('meta.revPerHour')} value={b.rev_per_hour ? fmtKr(b.rev_per_hour) : '—'} />
                     </div>
                   </button>
                 )
@@ -303,13 +303,12 @@ export default function GroupPage() {
                 back to the deterministic builder if Claude returned nothing
                 parseable, so the panel is never empty. */}
             <AttentionPanel
-              title="Needs your attention"
               rightSlot={
                 <span style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
-                  {aiItems?.length ? 'AI Group Manager' : 'Synthesised'} · {period.label}
+                  {aiItems?.length ? t('attention.aiManager') : t('attention.synthesised')} · {period.label}
                 </span>
               }
-              items={(aiItems?.length ? aiItems : buildGroupAttention(businesses, summary))}
+              items={(aiItems?.length ? aiItems : buildGroupAttention(businesses, summary, t))}
             />
           </>
         )}
@@ -341,25 +340,25 @@ export default function GroupPage() {
 // Hero headline — names the worst outlier if one exists, else the best.
 // Kept to one sentence under the 14-word spec where possible.
 // ─────────────────────────────────────────────────────────────────────────────
-function HeroHeadline({ worst, best, draining }: any) {
+function HeroHeadline({ worst, best, draining, t }: any) {
   if (!worst && !best) {
-    return <>No group data yet for this period.</>
+    return <>{t('hero.noData')}</>
   }
   if (draining && worst) {
     return (
       <>
-        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{worst.name} is draining the group</span>
-        {' '}— {Math.round(Number(worst.hours ?? 0))} labour hours on zero revenue.
+        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{t('hero.draining', { name: worst.name })}</span>
+        {t('hero.drainingTail', { hours: Math.round(Number(worst.hours ?? 0)) })}
       </>
     )
   }
   if (worst && worst.margin_pct != null && worst.margin_pct < 30) {
     return (
       <>
-        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{worst.name} off target</span>
-        {' '}at {fmtPct(worst.margin_pct)} margin
+        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{t('hero.offTarget', { name: worst.name })}</span>
+        {t('hero.offTargetMargin', { pct: fmtPct(worst.margin_pct) })}
         {best && best.id !== worst.id && best.margin_pct != null && (
-          <> — <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{best.name} carrying at {fmtPct(best.margin_pct)}</span>.</>
+          <><span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('hero.carryingTail', { name: best.name, pct: fmtPct(best.margin_pct) })}</span>.</>
         )}
         {(!best || best.id === worst.id || best.margin_pct == null) && '.'}
       </>
@@ -368,20 +367,24 @@ function HeroHeadline({ worst, best, draining }: any) {
   if (best && best.margin_pct != null) {
     return (
       <>
-        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{best.name} leading the group</span>
-        {' '}at {fmtPct(best.margin_pct)} margin.
+        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('hero.leading', { name: best.name })}</span>
+        {t('hero.leadingTail', { pct: fmtPct(best.margin_pct) })}
       </>
     )
   }
-  return <>Group running across all locations.</>
+  return <>{t('hero.runningAll')}</>
 }
 
-function buildContext(summary: any, businesses: any[], worst: any): string {
+function buildContext(summary: any, businesses: any[], worst: any, t: any): string {
   if (!summary) return ''
   const parts: string[] = []
-  parts.push(`${businesses.length} locations · ${fmtKr(summary.total_revenue)} total · labour ${fmtPct(summary.group_labour_pct)}`)
+  parts.push(t('context.summary', {
+    count: businesses.length,
+    amount: fmtKr(summary.total_revenue),
+    labour: fmtPct(summary.group_labour_pct),
+  }))
   if (worst && Number(worst.revenue ?? 0) > 0 && worst.margin_pct != null && worst.margin_pct < 45) {
-    parts.push(`${worst.name} margin ${fmtPct(worst.margin_pct)}`)
+    parts.push(t('context.worstMargin', { name: worst.name, pct: fmtPct(worst.margin_pct) }))
   }
   return parts.join(' · ')
 }
@@ -394,7 +397,7 @@ function buildContext(summary: any, businesses: any[], worst: any): string {
 //  - each starts with the entity name
 //  - each ≤ 120 chars
 //  - tone dots: red for outlier/close, amber for warnings, green for praise
-function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
+function buildGroupAttention(businesses: any[], summary: any, t: any): AttentionItem[] {
   const items: AttentionItem[] = []
   if (!businesses || !businesses.length) return items
 
@@ -416,7 +419,7 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
     items.push({
       tone:    'bad',
       entity:  b.name,
-      message: `${hrs}h labour (${kr}) on zero revenue — close, restructure, or cut schedule to covers only.`,
+      message: t('synthesis.drainingMsg', { hours: hrs, cost: kr }),
     })
   } else if (ranked.length) {
     const worst = ranked[0]
@@ -424,7 +427,11 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
       items.push({
         tone:    worst.margin_pct < 30 ? 'bad' : 'warning',
         entity:  worst.name,
-        message: `margin ${fmtPct(worst.margin_pct)} on ${fmtKr(worst.revenue)} — labour ${fmtPct(worst.labour_pct)} is the swing factor.`,
+        message: t('synthesis.marginSwingMsg', {
+          margin:  fmtPct(worst.margin_pct),
+          revenue: fmtKr(worst.revenue),
+          labour:  fmtPct(worst.labour_pct),
+        }),
       })
     }
   }
@@ -444,14 +451,19 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
         tone:    'warning',
         entity:  best.name,
         message: approxKr > 0
-          ? `could absorb hours from ${worst.name} at ${fmtKr(strongRh)}/h — ~${fmtKr(approxKr)}/wk recovered.`
-          : `could absorb hours from ${worst.name} at ${fmtKr(strongRh)}/h — worth reallocating.`,
+          ? t('synthesis.absorbHoursMsgKr', { worstName: worst.name, revPerHour: fmtKr(strongRh), recovered: fmtKr(approxKr) })
+          : t('synthesis.absorbHoursMsg',   { worstName: worst.name, revPerHour: fmtKr(strongRh) }),
       })
     } else if (draining.length && best) {
       items.push({
         tone:    'warning',
         entity:  best.name,
-        message: `reallocate labour from ${draining[0].name} — ${best.rev_per_hour ? fmtKr(best.rev_per_hour) + '/h' : 'stronger output'} beats burning hours on zero revenue.`,
+        message: t('synthesis.reallocateMsg', {
+          sourceName: draining[0].name,
+          strength:   best.rev_per_hour
+            ? t('synthesis.reallocateStrengthRh', { rh: fmtKr(best.rev_per_hour) })
+            : t('synthesis.reallocateStrengthFallback'),
+        }),
       })
     }
   }
@@ -463,7 +475,10 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
       items.push({
         tone:    'good',
         entity:  best.name,
-        message: `carrying the group — ${fmtPct(best.margin_pct)} margin${best.rev_per_hour ? `, ${fmtKr(best.rev_per_hour)}/h` : ''}. Preserve its schedule pattern.`,
+        message: t('synthesis.carryingGroupMsg', {
+          margin: fmtPct(best.margin_pct),
+          rh:     best.rev_per_hour ? t('synthesis.rhSuffix', { rh: fmtKr(best.rev_per_hour) }) : '',
+        }),
       })
     }
   }
@@ -472,8 +487,11 @@ function buildGroupAttention(businesses: any[], summary: any): AttentionItem[] {
   if (items.length === 0 && summary) {
     items.push({
       tone:    'good',
-      entity:  'Group',
-      message: `${fmtPct(summary.group_margin_pct)} margin across ${businesses.length} locations — no outliers this month.`,
+      entity:  t('synthesis.stableEntity'),
+      message: t('synthesis.stableMsg', {
+        margin: fmtPct(summary.group_margin_pct),
+        count:  businesses.length,
+      }),
     })
   }
 

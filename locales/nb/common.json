@@ -132,6 +132,12 @@
     "networkError": "Nettverksfeil",
     "tryAgain":     "Prøv igjen om litt"
   },
+  "attention": {
+    "defaultTitle":   "Trenger din oppmerksomhet",
+    "nothingFlagged": "Ingenting flagget akkurat nå.",
+    "moreLink":       "+ {count} til →",
+    "moreText":       "+ {count} til"
+  },
   "sync": {
     "syncing":       "Synker…",
     "neverSynced":   "Aldri synket",

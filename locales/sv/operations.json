@@ -109,6 +109,69 @@
     "crumb":       "Grupp",
     "loading":     "Laddar gruppdata…",
     "prevMonth":   "Föregående månad",
-    "nextMonth":   "Nästa månad"
+    "nextMonth":   "Nästa månad",
+    "empty": {
+      "noBusinessesTitle":  "Inga restauranger ännu",
+      "noBusinessesBody":   "Lägg till restauranger från Inställningar — gruppvyn aktiveras så fort du har två eller fler.",
+      "oneBusinessTitle":   "Endast en restaurang",
+      "oneBusinessBodyPre": "Gruppvyn är till för att jämföra flera platser. Du har en — använd ",
+      "oneBusinessBodyLink":"Dashboard",
+      "oneBusinessBodyPost":" för detaljer om en restaurang."
+    },
+    "eyebrow":      "GRUPPSTATUS — {label}",
+    "stats": {
+      "revenue":    "Intäkter",
+      "labourPct":  "Personal %",
+      "margin":     "Marginal",
+      "groupAvg":   "gruppsnitt",
+      "afterLabour":"efter personal"
+    },
+    "pills": {
+      "outlier": "AVVIKARE",
+      "best":    "BÄST",
+      "noData":  "INGEN DATA"
+    },
+    "delta": {
+      "missing": "—",
+      "newUp":   "↑ ny"
+    },
+    "meta": {
+      "labour":   "Personal",
+      "labourPct":"Personal %",
+      "margin":   "Marginal",
+      "revPerHour":"Int/tim"
+    },
+    "attention": {
+      "aiManager":   "AI-gruppchef",
+      "synthesised": "Sammanställd"
+    },
+    "hero": {
+      "noData":      "Ingen gruppdata för denna period ännu.",
+      "draining":    "{name} dränerar gruppen",
+      "drainingTail":" — {hours} personaltimmar utan intäkt.",
+      "offTarget":   "{name} under mål",
+      "offTargetMargin":" på {pct} marginal",
+      "carryingTail":" — {name} bär gruppen på {pct}",
+      "leading":     "{name} leder gruppen",
+      "leadingTail": " med {pct} marginal.",
+      "runningAll":  "Gruppen körs på alla platser."
+    },
+    "context": {
+      "summary":    "{count} platser · {amount} totalt · personal {labour}",
+      "worstMargin":"{name} marginal {pct}"
+    },
+    "synthesis": {
+      "drainingMsg":      "{hours}t personal ({cost}) utan intäkt — stäng, omstrukturera eller skär schemat till bara gäster.",
+      "marginSwingMsg":   "marginal {margin} på {revenue} — personal {labour} är hävstången.",
+      "absorbHoursMsgKr": "kan ta över timmar från {worstName} på {revPerHour}/t — ~{recovered}/v återvunna.",
+      "absorbHoursMsg":   "kan ta över timmar från {worstName} på {revPerHour}/t — värt att flytta.",
+      "reallocateMsg":    "flytta personal från {sourceName} — {strength} slår att bränna timmar utan intäkt.",
+      "reallocateStrengthRh":"{rh}/t",
+      "reallocateStrengthFallback":"starkare output",
+      "carryingGroupMsg": "bär gruppen — {margin} marginal{rh}. Behåll dess schemamönster.",
+      "rhSuffix":         ", {rh}/t",
+      "stableMsg":        "{margin} marginal över {count} platser — inga avvikare denna månad.",
+      "stableEntity":     "Gruppen"
+    }
   }
 }

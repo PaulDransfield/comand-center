@@ -132,6 +132,12 @@
     "networkError": "Nätverksfel",
     "tryAgain":     "Försök igen om en stund"
   },
+  "attention": {
+    "defaultTitle":   "Behöver din uppmärksamhet",
+    "nothingFlagged": "Inget flaggat just nu.",
+    "moreLink":       "+ {count} till →",
+    "moreText":       "+ {count} till"
+  },
   "sync": {
     "syncing":       "Synkar…",
     "neverSynced":   "Aldrig synkat",

@@ -109,6 +109,69 @@
     "crumb":       "Group",
     "loading":     "Loading group data…",
     "prevMonth":   "Previous month",
-    "nextMonth":   "Next month"
+    "nextMonth":   "Next month",
+    "empty": {
+      "noBusinessesTitle":  "No businesses yet",
+      "noBusinessesBody":   "Add businesses from Settings — the group view lights up as soon as you have two or more.",
+      "oneBusinessTitle":   "Only one business",
+      "oneBusinessBodyPre": "The group view is for comparing multiple locations. You have one — use ",
+      "oneBusinessBodyLink":"Dashboard",
+      "oneBusinessBodyPost":" for single-business detail."
+    },
+    "eyebrow":      "GROUP STATUS — {label}",
+    "stats": {
+      "revenue":    "Revenue",
+      "labourPct":  "Labour %",
+      "margin":     "Margin",
+      "groupAvg":   "group avg",
+      "afterLabour":"after labour"
+    },
+    "pills": {
+      "outlier": "OUTLIER",
+      "best":    "BEST",
+      "noData":  "NO DATA"
+    },
+    "delta": {
+      "missing": "—",
+      "newUp":   "↑ new"
+    },
+    "meta": {
+      "labour":   "Labour",
+      "labourPct":"Labour %",
+      "margin":   "Margin",
+      "revPerHour":"Rev/hour"
+    },
+    "attention": {
+      "aiManager":   "AI Group Manager",
+      "synthesised": "Synthesised"
+    },
+    "hero": {
+      "noData":      "No group data yet for this period.",
+      "draining":    "{name} is draining the group",
+      "drainingTail":" — {hours} labour hours on zero revenue.",
+      "offTarget":   "{name} off target",
+      "offTargetMargin":" at {pct} margin",
+      "carryingTail":" — {name} carrying at {pct}",
+      "leading":     "{name} leading the group",
+      "leadingTail": " at {pct} margin.",
+      "runningAll":  "Group running across all locations."
+    },
+    "context": {
+      "summary":    "{count} locations · {amount} total · labour {labour}",
+      "worstMargin":"{name} margin {pct}"
+    },
+    "synthesis": {
+      "drainingMsg":      "{hours}h labour ({cost}) on zero revenue — close, restructure, or cut schedule to covers only.",
+      "marginSwingMsg":   "margin {margin} on {revenue} — labour {labour} is the swing factor.",
+      "absorbHoursMsgKr": "could absorb hours from {worstName} at {revPerHour}/h — ~{recovered}/wk recovered.",
+      "absorbHoursMsg":   "could absorb hours from {worstName} at {revPerHour}/h — worth reallocating.",
+      "reallocateMsg":    "reallocate labour from {sourceName} — {strength} beats burning hours on zero revenue.",
+      "reallocateStrengthRh":"{rh}/h",
+      "reallocateStrengthFallback":"stronger output",
+      "carryingGroupMsg": "carrying the group — {margin} margin{rh}. Preserve its schedule pattern.",
+      "rhSuffix":         ", {rh}/h",
+      "stableMsg":        "{margin} margin across {count} locations — no outliers this month.",
+      "stableEntity":     "Group"
+    }
   }
 }

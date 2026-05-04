@@ -5,6 +5,7 @@
 
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { UX } from '@/lib/constants/tokens'
 import type { ReactNode } from 'react'
 
@@ -31,14 +32,16 @@ const DOT_COLOUR: Record<AttentionTone, string> = {
 }
 
 export default function AttentionPanel({
-  title = 'Needs your attention',
+  title,
   items,
   maxItems = 4,
   moreHref,
   rightSlot,
 }: AttentionPanelProps) {
+  const t = useTranslations('common.attention')
   const shown  = items.slice(0, maxItems)
   const hidden = Math.max(0, items.length - shown.length)
+  const headingTitle = title ?? t('defaultTitle')
 
   return (
     <div
@@ -60,14 +63,14 @@ export default function AttentionPanel({
           fontWeight:  UX.fwMedium,
           color:       UX.ink1,
         }}>
-          {title}
+          {headingTitle}
         </div>
         {rightSlot}
       </div>
 
       {shown.length === 0 ? (
         <div style={{ fontSize: UX.fsBody, color: UX.ink4, padding: '8px 0' }}>
-          Nothing flagged right now.
+          {t('nothingFlagged')}
         </div>
       ) : (
         <>
@@ -113,11 +116,11 @@ export default function AttentionPanel({
                   fontWeight:     UX.fwMedium,
                 }}
               >
-                + {hidden} more →
+                {t('moreLink', { count: hidden })}
               </a>
             ) : (
               <div style={{ marginTop: 6, fontSize: UX.fsLabel, color: UX.ink3 }}>
-                + {hidden} more
+                {t('moreText', { count: hidden })}
               </div>
             )
           )}
