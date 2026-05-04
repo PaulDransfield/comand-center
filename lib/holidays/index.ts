@@ -11,9 +11,11 @@
 //      builder) calls through this router so they pick it up for free.
 
 import type { Holiday } from './sweden'
-import { getSwedishHolidays } from './sweden'
+import { getSwedishHolidays }   from './sweden'
+import { getNorwegianHolidays } from './norway'
+import { getBritishHolidays }   from './uk'
 
-export type CountryCode = 'SE' | 'NB' | 'GB'
+export type CountryCode = 'SE' | 'NO' | 'GB'
 
 export type { Holiday }
 
@@ -26,8 +28,8 @@ export function getHolidaysForCountry(country: string | null | undefined, year: 
   const c = String(country ?? 'SE').toUpperCase()
   switch (c) {
     case 'SE': return getSwedishHolidays(year)
-    // case 'NB': return getNorwegianHolidays(year)
-    // case 'GB': return getBritishHolidays(year)
+    case 'NO': return getNorwegianHolidays(year)
+    case 'GB': return getBritishHolidays(year)
     default:   return []
   }
 }

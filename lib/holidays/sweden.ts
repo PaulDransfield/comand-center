@@ -34,62 +34,13 @@ export interface Holiday {
   kind:    HolidayKind
   /** Coarse demand hint for forecasting AI. */
   impact:  HolidayImpact
-  /** ISO country code — always 'SE' from this module. */
-  country: 'SE'
+  /** ISO-3166-1 alpha-2. Widens as new country modules land. */
+  country: 'SE' | 'NO' | 'GB'
 }
 
-/**
- * Anonymous Gregorian algorithm — returns Easter Sunday for the given
- * year as { year, month (1-12), day (1-31) }.
- */
-function easterSunday(year: number): { year: number; month: number; day: number } {
-  const a = year % 19
-  const b = Math.floor(year / 100)
-  const c = year % 100
-  const d = Math.floor(b / 4)
-  const e = b % 4
-  const f = Math.floor((b + 8) / 25)
-  const g = Math.floor((b - f + 1) / 3)
-  const h = (19 * a + b - d - g + 15) % 30
-  const i = Math.floor(c / 4)
-  const k = c % 4
-  const l = (32 + 2 * e + 2 * i - h - k) % 7
-  const m = Math.floor((a + 11 * h + 22 * l) / 451)
-  const month = Math.floor((h + l - 7 * m + 114) / 31)        // 3 or 4
-  const day   = ((h + l - 7 * m + 114) % 31) + 1
-  return { year, month, day }
-}
-
-/** Format a Date as YYYY-MM-DD (UTC-safe — uses the date components
- *  directly, no timezone conversion). */
-function fmt(year: number, month: number, day: number): string {
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-}
-
-/** Add `days` to a YYYY-MM-DD date and return the new YYYY-MM-DD. Uses
- *  UTC arithmetic to avoid DST surprises. */
-function addDays(year: number, month: number, day: number, days: number): { year: number; month: number; day: number } {
-  const d = new Date(Date.UTC(year, month - 1, day))
-  d.setUTCDate(d.getUTCDate() + days)
-  return {
-    year:  d.getUTCFullYear(),
-    month: d.getUTCMonth() + 1,
-    day:   d.getUTCDate(),
-  }
-}
-
-/** Find the first occurrence of `weekday` (0=Sun..6=Sat) within an
- *  inclusive date range. Used for Midsummer + All Saints' which are
- *  defined as "the [weekday] between [date] and [date]". */
-function firstWeekdayInRange(year: number, month: number, dayStart: number, dayEnd: number, weekday: number): { month: number; day: number } {
-  for (let d = dayStart; d <= dayEnd; d++) {
-    const wd = new Date(Date.UTC(year, month - 1, d)).getUTCDay()
-    if (wd === weekday) return { month, day: d }
-  }
-  // Window guarantees at least one match — but fall back to the start
-  // if something pathological happens.
-  return { month, day: dayStart }
-}
+// Easter math + date helpers extracted to lib/holidays/_easter.ts so
+// Norway/UK modules share them. See that file for the algorithm.
+import { easterSunday, fmt, addDays, firstWeekdayInRange } from './_easter'
 
 /**
  * Return all Swedish holidays for the given year, sorted ascending by
