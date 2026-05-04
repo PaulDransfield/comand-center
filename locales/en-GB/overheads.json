@@ -1,0 +1,231 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "months": {
+    "short": ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+  },
+  "categories": {
+    "overhead": "OVERHEAD",
+    "food":     "FOOD"
+  },
+  "review": {
+    "eyebrow":           "OVERHEADS REVIEW",
+    "headlinePending":   "{count, plural, one {# supplier} other {# suppliers}} pending · {amount}/mo at stake",
+    "headlineMissing":   "Run M039 to enable cost review",
+    "headlineEmpty":     "All caught up — nothing pending review.",
+    "context":           "{count, plural, one {# flag} other {# flags}} across {period}",
+    "tableMissingBanner":"overhead_flags table missing — run M039-OVERHEAD-REVIEW.sql in Supabase SQL Editor.",
+    "backfillResult":    "Backfill complete — marked {marked, plural, one {# supplier} other {# suppliers}} as essential, resolved {resolved, plural, one {# pending flag} other {# pending flags}}.",
+    "filter": {
+      "all":       "All",
+      "overheads": "Overheads",
+      "food":      "Food"
+    },
+    "loadingFlags": "Loading flags…",
+    "emptyStable":  "Your costs look stable. Nothing to review this period.",
+    "flagTones": {
+      "new":         "NEW",
+      "priceTpl":    "PRICE {sign}{pct}%",
+      "reappeared":  "REAPPEARED",
+      "oneOff":      "ONE-OFF",
+      "duplicate":   "DUPLICATE?"
+    },
+    "card": {
+      "lowConfidence":      "LOW CONFIDENCE",
+      "reexplainTitle":     "Regenerate AI explanation with full 12-month history",
+      "reexplaining":       "…",
+      "reexplain":          "re-explain",
+      "generating":         "Generating…",
+      "generateExplanation":"Generate AI explanation",
+      "alsoFlaggedIn":      "Also flagged in {periods}",
+      "alsoMore":           " +{count} more",
+      "oneDecision":        " · one decision applies to all",
+      "defer":              "Defer 30d",
+      "planCancel":         "Plan to cancel",
+      "essential":          "Essential"
+    },
+    "dismissModal": {
+      "title":        "Plan to cancel: {supplier}?",
+      "body":         "Marks this as a planned cancellation. Counts toward your monthly savings projection. The system will keep an eye on it — if it reappears in next month's books, you'll see a flag again.",
+      "notes":        "Notes (optional)",
+      "placeholder":  "e.g. cancelling at end of contract, March renewal",
+      "cancel":       "Cancel",
+      "saving":       "Saving…",
+      "confirm":      "Plan to cancel"
+    },
+    "backfillBanner": {
+      "title":     "First-time review — too much to wade through?",
+      "body":      "We can mark every supplier from the last 12 months as <b>essential</b> in one go. From then on, only new costs and price increases of more than 15% will be flagged.",
+      "decline":   "No, let me review them",
+      "marking":   "Marking…",
+      "confirm":   "Mark all essential"
+    }
+  },
+  "upload": {
+    "crumbs": {
+      "financials": "Financials",
+      "overheads":  "Overheads"
+    },
+    "forBusiness":  "for {name}",
+    "eyebrow":      "OVERHEADS — FORTNOX INGESTION",
+    "headlineEmpty":"Drop your Fortnox P&L PDFs below to get started.",
+    "headlineCounts": {
+      "uploads":        "{count, plural, one {# upload} other {# uploads}}",
+      "awaitingReview": "{count} awaiting review",
+      "applied":        "{count} applied",
+      "processing":     "{count} processing"
+    },
+    "contextEmpty": "Yearly P&L, monthly P&L, or supplier invoices. AI reads the PDF, extracts every line item, then you confirm before it hits your data.",
+    "drop": {
+      "uploading":   "Uploading…",
+      "dragOver":    "Drop to upload",
+      "default":     "Drop Fortnox PDFs here or click to select",
+      "constraints": "PDF only · up to 10 MB each · up to 20 at a time"
+    },
+    "reextractAll": {
+      "button": "Re-extract all {count} PDFs with current AI",
+      "title":  "Re-run the current AI extractor on all {count} PDF(s). PDFs stay in storage — no re-upload needed.",
+      "confirm":"Re-run AI extraction on all {count} PDF(s) for {name}? Each will need to be re-Applied individually after extraction completes (~20-60s per PDF).",
+      "failed": "Re-extract failed: {error}",
+      "queued": "Queued {count} PDF(s)"
+    },
+    "loadingUploads": "Loading uploads…",
+    "emptyAttention": {
+      "title":         "Nothing uploaded yet",
+      "yearlyEntity":  "Yearly P&L",
+      "yearlyMessage": "drop your Fortnox annual resultaträkning to track year-over-year overhead drift.",
+      "monthlyEntity": "Monthly P&L",
+      "monthlyMessage":"any months with Fortnox PDF detail land in /tracker and /overheads — AI flags cost creep."
+    },
+    "footerLink": "Applied rows feed {trackerLink} and the overheads breakdown below (landing next commit).",
+    "footerTracker": "/tracker",
+    "toast": {
+      "pickBusiness":     "Pick a business first",
+      "onlyPdfs":         "Only PDFs accepted",
+      "uploadedExtracting":"{count} uploaded — extracting…",
+      "uploadFailed":     "Upload failed — {error}",
+      "alreadyExtracting":"Already extracting — wait for it to finish.",
+      "discardConfirm":   "Discard this upload?"
+    },
+    "table": {
+      "cols": {
+        "file":   "File",
+        "period": "Period",
+        "size":   "Size",
+        "status": "Status",
+        "action": "Action"
+      },
+      "status": {
+        "lowConfidence":  "LOW CONFIDENCE",
+        "extractingTimer":"EXTRACTING · {seconds}s"
+      },
+      "period": {
+        "monthly": "{month} {year}",
+        "annual":  "{year} (annual)",
+        "missing": "—"
+      },
+      "size":     "{kb} KB",
+      "actions": {
+        "review": "Review",
+        "view":   "View",
+        "retry":  "Retry",
+        "cancel": "Cancel",
+        "discard":"Discard"
+      }
+    },
+    "review": {
+      "title":         "Review: {filename}",
+      "loadingTitle":  "Loading…",
+      "annualMeta":    "{year} · Annual P&L",
+      "monthlyMeta":   "{month} {year} · Monthly P&L",
+      "aiConfidence":  "AI confidence: {value}",
+      "pdf": {
+        "preview":     "PDF preview",
+        "openNewTab":  "Open in new tab ↗",
+        "loading":     "Loading PDF…",
+        "fallbackPre": "Your browser can't embed this PDF. ",
+        "fallbackLink":"Open it in a new tab",
+        "fallbackPost":" to cross-reference while you review."
+      },
+      "loadingExtraction": "Loading extraction…",
+      "warningsTitle":     "Warnings",
+      "warningsEntity":    "AI",
+      "rollupTitle":       "Rollup",
+      "lineItemsTitle":    "Line items ({count})",
+      "actions": {
+        "reextract":      "Re-extract",
+        "reextracting":   "Re-extracting…",
+        "reject":         "Reject",
+        "rejecting":      "Rejecting…",
+        "unapplyReject":  "Unapply + reject",
+        "applying":       "Applying…",
+        "cannotHardError":"Cannot apply (hard error)",
+        "resolveChecklist":"Resolve checklist above",
+        "applyOverride":  "Apply with override",
+        "apply":          "Apply to P&L"
+      },
+      "confirms": {
+        "reject":    "Reject this upload? Applied data will be rolled back.",
+        "reextract": "Re-run AI extraction on this PDF? The stored data stays until you click Apply on the new extraction."
+      },
+      "errors": {
+        "ackConflict":   "Please acknowledge the conflict before applying.",
+        "applyFailed":   "Apply failed ({status})",
+        "rejectFailed":  "Reject failed ({status})",
+        "reextractFailed":"Re-extract failed ({status})",
+        "uploadFailed":  "Upload failed ({status})"
+      }
+    },
+    "validation": {
+      "title":          "Pre-apply checks",
+      "hardErrors":     "⛔ {count, plural, one {# hard error} other {# hard errors}} — cannot apply",
+      "softErrors":     "⚠ {count, plural, one {# error} other {# errors}} — override required",
+      "warnings":       "⚠ {count, plural, one {# warning} other {# warnings}} — tick each to acknowledge",
+      "forceLabel":     "I have reviewed the {count, plural, one {error} other {errors}} and want to force apply anyway",
+      "acknowledged":   "✓ acknowledged",
+      "auditor":        "AI auditor — confidence: {confidence}"
+    },
+    "conflict": {
+      "title":           "Existing data for this period",
+      "bodyPre":         "Applying this PDF will replace ",
+      "bodyPost":        " for the same month. Compare the numbers below and acknowledge before continuing — the old values are preserved in the audit log ({code}) but will no longer drive the P&L.",
+      "sources": {
+        "manual":     "a manual entry you typed",
+        "fortnoxApi": "a Fortnox API sync",
+        "posSync":    "a POS auto-sync",
+        "other":      "source: {source}"
+      },
+      "cols": {
+        "metric":   "Metric",
+        "existing": "Existing",
+        "fortnox":  "Fortnox PDF",
+        "delta":    "Δ"
+      },
+      "deltaZero":   "0 kr",
+      "deltaMissing":"—",
+      "ack":         "Yes, replace the existing entry with the Fortnox values."
+    },
+    "rollup": {
+      "revenue":       "Revenue",
+      "foodCost":      "Food cost",
+      "staffCost":     "Staff cost",
+      "otherCost":     "Other cost",
+      "depreciation":  "Depreciation",
+      "financial":     "Financial",
+      "netProfit":     "Net profit"
+    },
+    "lines": {
+      "empty":    "No line items extracted.",
+      "missing":  "—",
+      "cols": {
+        "label":    "Label",
+        "category": "Category",
+        "sub":      "Sub",
+        "account":  "Account",
+        "amount":   "Amount"
+      }
+    }
+  }
+}

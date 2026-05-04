@@ -55,6 +55,54 @@
       "atLoss":      "running at a loss — {amount} deficit this period.",
       "lowMargin":   "margin {pct} — below 30% threshold.",
       "noLabour":    "100% margin flagged — labour not allocated, check sync."
+    },
+    "detail": {
+      "loading":       "Loading…",
+      "back":          "← Departments",
+      "weekLabel":     "Week {num}",
+      "loadingInline": "Loading...",
+      "empty": {
+        "title":         "No data for {dept} in {period}",
+        "bodyWeekToday": "This week has only just started — the daily sync runs at 06:00 UTC so today's numbers land tomorrow morning. Try the previous week or switch to Month.",
+        "bodyDefault":   "Nothing synced for this period yet. Try a different week/month, or run a sync from the admin panel if you're waiting on data.",
+        "prevWeek":      "← Previous week",
+        "viewMonth":     "View this month",
+        "prevMonth":     "← Previous month"
+      },
+      "kpi": {
+        "revenue":     "Revenue",
+        "labourCost":  "Labour Cost",
+        "labourPct":   "Labour %",
+        "gpPct":       "GP%",
+        "covers":      "{covers} covers · {avg} avg",
+        "hoursShifts": "{hours} · {shifts} shifts",
+        "ofRevenue":   "of revenue",
+        "perHour":     "{amount}/hr"
+      },
+      "ob": {
+        "title": "OB Supplements"
+      },
+      "late": {
+        "title":      "Late Arrivals",
+        "shifts":     "{count, plural, one {# shift} other {# shifts}}",
+        "avgMinutes": "avg {minutes} min late"
+      },
+      "staffTable": {
+        "title":   "Staff in {dept}",
+        "summary": "{count, plural, one {# person} other {# people}} · {hours}",
+        "cols": {
+          "name":      "Name",
+          "hours":     "Hours",
+          "cost":      "Cost",
+          "costPerHr": "Cost/hr",
+          "shifts":    "Shifts",
+          "late":      "Late"
+        }
+      },
+      "view": {
+        "week":  "W",
+        "month": "M"
+      }
     }
   },
   "group": {

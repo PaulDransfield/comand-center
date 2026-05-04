@@ -1,0 +1,231 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "months": {
+    "short": ["Jan","Feb","Mar","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Des"]
+  },
+  "categories": {
+    "overhead": "DRIFT",
+    "food":     "MAT"
+  },
+  "review": {
+    "eyebrow":           "DRIFTSKOSTNADER",
+    "headlinePending":   "{count, plural, one {# leverandør} other {# leverandører}} til gjennomgang · {amount}/mnd på spill",
+    "headlineMissing":   "Kjør M039 for å aktivere kostnadsgjennomgang",
+    "headlineEmpty":     "Alt i orden — ingenting å gjennomgå.",
+    "context":           "{count, plural, one {# flagg} other {# flagg}} over {period}",
+    "tableMissingBanner":"overhead_flags-tabellen mangler — kjør M039-OVERHEAD-REVIEW.sql i Supabase SQL Editor.",
+    "backfillResult":    "Tilbakefylling fullført — merket {marked, plural, one {# leverandør} other {# leverandører}} som nødvendig, løste {resolved, plural, one {# ventende flagg} other {# ventende flagg}}.",
+    "filter": {
+      "all":       "Alle",
+      "overheads": "Drift",
+      "food":      "Mat"
+    },
+    "loadingFlags": "Laster flagg…",
+    "emptyStable":  "Kostnadene dine ser stabile ut. Ingenting å gjennomgå denne perioden.",
+    "flagTones": {
+      "new":         "NY",
+      "priceTpl":    "PRIS {sign}{pct}%",
+      "reappeared":  "GJENOPPSTOD",
+      "oneOff":      "ENGANGS",
+      "duplicate":   "DUPLIKAT?"
+    },
+    "card": {
+      "lowConfidence":      "LAV TILLIT",
+      "reexplainTitle":     "Generer AI-forklaring på nytt med full 12-måneders historikk",
+      "reexplaining":       "…",
+      "reexplain":          "forklar igjen",
+      "generating":         "Genererer…",
+      "generateExplanation":"Generer AI-forklaring",
+      "alsoFlaggedIn":      "Også flagget i {periods}",
+      "alsoMore":           " +{count} til",
+      "oneDecision":        " · én beslutning gjelder alle",
+      "defer":              "Utsett 30d",
+      "planCancel":         "Planlegg avslutning",
+      "essential":          "Nødvendig"
+    },
+    "dismissModal": {
+      "title":        "Planlegg avslutning: {supplier}?",
+      "body":         "Merker dette som en planlagt avslutning. Telles mot din månedlige besparingsprognose. Systemet holder øye — hvis det dukker opp i neste måneds regnskap, ser du flagget igjen.",
+      "notes":        "Notater (valgfritt)",
+      "placeholder":  "f.eks. sier opp ved kontraktsslutt, fornyelse i mars",
+      "cancel":       "Avbryt",
+      "saving":       "Lagrer…",
+      "confirm":      "Planlegg avslutning"
+    },
+    "backfillBanner": {
+      "title":     "Første gjennomgang — for mye å gå gjennom?",
+      "body":      "Vi kan merke hver leverandør fra de siste 12 månedene som <b>nødvendig</b> i én operasjon. Etter det flagges kun nye kostnader og prisøkninger over 15%.",
+      "decline":   "Nei, la meg gjennomgå dem",
+      "marking":   "Merker…",
+      "confirm":   "Merk alle som nødvendige"
+    }
+  },
+  "upload": {
+    "crumbs": {
+      "financials": "Økonomi",
+      "overheads":  "Driftskostnader"
+    },
+    "forBusiness":  "for {name}",
+    "eyebrow":      "DRIFTSKOSTNADER — FORTNOX-IMPORT",
+    "headlineEmpty":"Slipp Fortnox-resultatrapportene dine nedenfor for å komme i gang.",
+    "headlineCounts": {
+      "uploads":        "{count, plural, one {# opplasting} other {# opplastinger}}",
+      "awaitingReview": "{count} venter på gjennomgang",
+      "applied":        "{count} anvendt",
+      "processing":     "{count} behandles"
+    },
+    "contextEmpty": "Årsresultat, månedsresultat eller leverandørfakturaer. AI leser PDF-en, henter ut hver linje, så bekrefter du før det treffer dataene dine.",
+    "drop": {
+      "uploading":   "Laster opp…",
+      "dragOver":    "Slipp for å laste opp",
+      "default":     "Slipp Fortnox-PDF-er her eller klikk for å velge",
+      "constraints": "Kun PDF · maks 10 MB hver · opptil 20 om gangen"
+    },
+    "reextractAll": {
+      "button": "Kjør AI på nytt for alle {count} PDF-er",
+      "title":  "Kjør dagens AI-uthenter på nytt på alle {count} PDF(er). PDF-ene ligger allerede i lagring — ingen ny opplasting trengs.",
+      "confirm":"Kjøre AI-uthenting på nytt for alle {count} PDF(er) for {name}? Hver må anvendes individuelt etter uthenting (~20–60 s per PDF).",
+      "failed": "Ny uthenting feilet: {error}",
+      "queued": "Køet {count} PDF(er)"
+    },
+    "loadingUploads": "Laster opplastinger…",
+    "emptyAttention": {
+      "title":         "Ingenting lastet opp ennå",
+      "yearlyEntity":  "Årsresultat",
+      "yearlyMessage": "slipp din Fortnox-årsresultatrapport for å spore årlig drift av driftskostnader.",
+      "monthlyEntity": "Månedsresultat",
+      "monthlyMessage":"alle måneder med Fortnox-PDF-detalj lander i /tracker og /overheads — AI flagger kostnadsøkninger."
+    },
+    "footerLink": "Anvendte rader mater {trackerLink} og driftsoversikten nedenfor (kommer i neste versjon).",
+    "footerTracker": "/tracker",
+    "toast": {
+      "pickBusiness":     "Velg en restaurant først",
+      "onlyPdfs":         "Kun PDF aksepteres",
+      "uploadedExtracting":"{count} lastet opp — henter ut…",
+      "uploadFailed":     "Opplasting feilet — {error}",
+      "alreadyExtracting":"Henter ut allerede — vent til det er ferdig.",
+      "discardConfirm":   "Forkaste denne opplastingen?"
+    },
+    "table": {
+      "cols": {
+        "file":   "Fil",
+        "period": "Periode",
+        "size":   "Størrelse",
+        "status": "Status",
+        "action": "Handling"
+      },
+      "status": {
+        "lowConfidence":  "LAV TILLIT",
+        "extractingTimer":"HENTER UT · {seconds}s"
+      },
+      "period": {
+        "monthly": "{month} {year}",
+        "annual":  "{year} (årlig)",
+        "missing": "—"
+      },
+      "size":     "{kb} KB",
+      "actions": {
+        "review": "Gjennomgå",
+        "view":   "Vis",
+        "retry":  "Prøv igjen",
+        "cancel": "Avbryt",
+        "discard":"Forkast"
+      }
+    },
+    "review": {
+      "title":         "Gjennomgang: {filename}",
+      "loadingTitle":  "Laster…",
+      "annualMeta":    "{year} · Årsresultat",
+      "monthlyMeta":   "{month} {year} · Månedsresultat",
+      "aiConfidence":  "AI-tillit: {value}",
+      "pdf": {
+        "preview":     "PDF-forhåndsvisning",
+        "openNewTab":  "Åpne i ny fane ↗",
+        "loading":     "Laster PDF…",
+        "fallbackPre": "Nettleseren din kan ikke bygge inn denne PDF-en. ",
+        "fallbackLink":"Åpne den i en ny fane",
+        "fallbackPost":" for å sammenligne under gjennomgangen."
+      },
+      "loadingExtraction": "Laster uthenting…",
+      "warningsTitle":     "Advarsler",
+      "warningsEntity":    "AI",
+      "rollupTitle":       "Oppsummering",
+      "lineItemsTitle":    "Linjer ({count})",
+      "actions": {
+        "reextract":      "Kjør AI på nytt",
+        "reextracting":   "Kjører AI på nytt…",
+        "reject":         "Avvis",
+        "rejecting":      "Avviser…",
+        "unapplyReject":  "Tilbakestill + avvis",
+        "applying":       "Anvender…",
+        "cannotHardError":"Kan ikke anvende (hard feil)",
+        "resolveChecklist":"Løs sjekklisten over",
+        "applyOverride":  "Anvend med overstyring",
+        "apply":          "Anvend på P&L"
+      },
+      "confirms": {
+        "reject":    "Avvise denne opplastingen? Anvendt data tilbakestilles.",
+        "reextract": "Kjøre AI-uthenting på nytt for denne PDF-en? Lagret data blir værende til du klikker Anvend på den nye uthentingen."
+      },
+      "errors": {
+        "ackConflict":   "Bekreft konflikten før du anvender.",
+        "applyFailed":   "Anvendelse feilet ({status})",
+        "rejectFailed":  "Avvisning feilet ({status})",
+        "reextractFailed":"Ny uthenting feilet ({status})",
+        "uploadFailed":  "Opplasting feilet ({status})"
+      }
+    },
+    "validation": {
+      "title":          "Forhåndssjekker",
+      "hardErrors":     "⛔ {count, plural, one {# hard feil} other {# harde feil}} — kan ikke anvende",
+      "softErrors":     "⚠ {count, plural, one {# feil} other {# feil}} — overstyring kreves",
+      "warnings":       "⚠ {count, plural, one {# advarsel} other {# advarsler}} — kryss av hver",
+      "forceLabel":     "Jeg har gjennomgått {count, plural, one {feilen} other {feilene}} og vil anvende uansett",
+      "acknowledged":   "✓ bekreftet",
+      "auditor":        "AI-revisor — tillit: {confidence}"
+    },
+    "conflict": {
+      "title":           "Eksisterende data for denne perioden",
+      "bodyPre":         "Anvendelse av denne PDF-en erstatter ",
+      "bodyPost":        " for samme måned. Sammenlign tallene under og bekreft før du fortsetter — gamle verdier bevares i revisjonsloggen ({code}) men driver ikke lenger P&L.",
+      "sources": {
+        "manual":     "en manuell oppføring du skrev inn",
+        "fortnoxApi": "en Fortnox-API-synk",
+        "posSync":    "en POS-autosynk",
+        "other":      "kilde: {source}"
+      },
+      "cols": {
+        "metric":   "Mål",
+        "existing": "Eksisterende",
+        "fortnox":  "Fortnox-PDF",
+        "delta":    "Δ"
+      },
+      "deltaZero":   "0 kr",
+      "deltaMissing":"—",
+      "ack":         "Ja, erstatt eksisterende oppføring med Fortnox-verdiene."
+    },
+    "rollup": {
+      "revenue":       "Inntekt",
+      "foodCost":      "Råvarekostnad",
+      "staffCost":     "Bemanningskostnad",
+      "otherCost":     "Andre kostnader",
+      "depreciation":  "Avskrivninger",
+      "financial":     "Finansielt",
+      "netProfit":     "Nettoresultat"
+    },
+    "lines": {
+      "empty":    "Ingen linjer hentet ut.",
+      "missing":  "—",
+      "cols": {
+        "label":    "Etikett",
+        "category": "Kategori",
+        "sub":      "Under",
+        "account":  "Konto",
+        "amount":   "Beløp"
+      }
+    }
+  }
+}

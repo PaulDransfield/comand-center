@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "assistant": {
+    "title":          "AI Assistant",
+    "subtitle":       "Ask anything about your restaurant data — revenue, staff costs, margins, and more.",
+    "contextLoading": "Loading your business data for context…",
+    "contextReady":   "AI sees last 6 months per business (pre-loaded). Each question counts toward your daily limit.",
+    "startersIntro":  "Start a conversation — or try one of these:",
+    "starters": [
+      "How is revenue tracking this month?",
+      "Which department has the best gross profit?",
+      "Is my labour cost percentage healthy?",
+      "What should I focus on to improve margin?",
+      "Compare this month to last month"
+    ],
+    "thinking":          "Thinking…",
+    "inputPlaceholder":  "Ask about your restaurant data…",
+    "send":              "Send",
+    "noResponse":        "No response.",
+    "genericError":      "Something went wrong. Please try again."
+  },
+  "studio": {
+    "backToAssistant": "Assistant",
+    "title":           "AI Studio",
+    "subtitle":        "Build custom AI-powered reports, set up scheduled insights, and create automated alerts — tailored to your restaurants.",
+    "comingSoon":      "Coming soon",
+    "features": {
+      "reports":   { "title": "Custom Reports",      "desc": "Build reports across any data combination" },
+      "scheduled": { "title": "Scheduled Insights",  "desc": "Automated weekly and monthly summaries" },
+      "alerts":    { "title": "Smart Alerts",        "desc": "Define custom thresholds for anomaly detection" },
+      "digests":   { "title": "Email Digests",       "desc": "Deliver insights directly to your inbox" }
+    }
+  }
+}

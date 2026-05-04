@@ -11,6 +11,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import PageHero from '@/components/ui/PageHero'
 import StatusPill from '@/components/ui/StatusPill'
@@ -49,9 +50,12 @@ interface Upload {
   extraction_jobs?:  ExtractionJob | ExtractionJob[] | null
 }
 
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS_FALLBACK = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 export default function OverheadsPage() {
+  const t  = useTranslations('overheads.upload')
+  const tM = useTranslations('overheads')
+  const months: string[] = (tM.raw('months.short') as string[]) ?? MONTHS_FALLBACK
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
   const [uploads,    setUploads]    = useState<Upload[]>([])
@@ -183,7 +187,7 @@ export default function OverheadsPage() {
       // was lost.
       if (r.status === 409) {
         const j = await r.json().catch(() => ({}))
-        setToast(j.error ?? 'Already extracting — wait for it to finish.')
+        setToast(j.error ?? t('toast.alreadyExtracting'))
         setTimeout(() => setToast(''), 5000)
       }
     } catch (e: any) {
@@ -194,9 +198,9 @@ export default function OverheadsPage() {
   }
 
   async function handleFiles(files: FileList | File[]) {
-    if (!bizId) { setToast('Pick a business first'); return }
+    if (!bizId) { setToast(t('toast.pickBusiness')); return }
     const arr = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'))
-    if (!arr.length) { setToast('Only PDFs accepted'); return }
+    if (!arr.length) { setToast(t('toast.onlyPdfs')); return }
 
     setUploading(true); setToast('')
     try {
@@ -205,10 +209,10 @@ export default function OverheadsPage() {
       for (const f of arr) fd.append('files', f)
       const r = await fetch('/api/fortnox/upload', { method: 'POST', body: fd })
       const j = await r.json()
-      if (!r.ok) throw new Error(j.error ?? `Upload failed (${r.status})`)
+      if (!r.ok) throw new Error(j.error ?? t('review.errors.uploadFailed', { status: r.status }))
 
       const okIds = (j.uploads ?? []).filter((u: any) => u.status === 'pending').map((u: any) => u.id).filter(Boolean)
-      setToast(`${j.uploaded} uploaded — extracting…`)
+      setToast(t('toast.uploadedExtracting', { count: j.uploaded }))
       await load()
 
       // Fire extractions in parallel (Sonnet call per PDF, ~15s each).
@@ -217,14 +221,14 @@ export default function OverheadsPage() {
       await Promise.all(okIds.map((id: string) => extractOne(id)))
       await load()
     } catch (e: any) {
-      setToast('Upload failed — ' + (e?.message ?? 'unknown'))
+      setToast(t('toast.uploadFailed', { error: e?.message ?? 'unknown' }))
     }
     setUploading(false)
     setTimeout(() => setToast(''), 6000)
   }
 
   async function deleteUpload(id: string) {
-    if (!confirm('Discard this upload?')) return
+    if (!confirm(t('toast.discardConfirm'))) return
     const r = await fetch(`/api/fortnox/uploads?id=${id}`, { method: 'DELETE' })
     if (r.ok) load()
   }
@@ -247,7 +251,7 @@ export default function OverheadsPage() {
   // you want history reprocessed without 30 individual clicks.
   async function reextractAll() {
     if (!bizId) return
-    if (!confirm(`Re-run AI extraction on all ${reextractableCount} PDF(s) for ${selectedBiz?.name ?? 'this business'}? Each will need to be re-Applied individually after extraction completes (~20-60s per PDF).`)) return
+    if (!confirm(t('reextractAll.confirm', { count: reextractableCount, name: selectedBiz?.name ?? 'this business' }))) return
     try {
       const r = await fetch('/api/fortnox/reextract-all', {
         method:  'POST',
@@ -255,10 +259,10 @@ export default function OverheadsPage() {
         body:    JSON.stringify({ business_id: bizId }),
       })
       const j = await r.json()
-      if (!r.ok) { setToast(`Re-extract failed: ${j.error ?? r.status}`); return }
-      setToast(j.message ?? `Queued ${j.queued} PDF(s)`)
+      if (!r.ok) { setToast(t('reextractAll.failed', { error: j.error ?? r.status })); return }
+      setToast(j.message ?? t('reextractAll.queued', { count: j.queued }))
       load()
-    } catch (e: any) { setToast(`Re-extract failed: ${e.message}`) }
+    } catch (e: any) { setToast(t('reextractAll.failed', { error: e.message })) }
   }
 
   return (
@@ -266,28 +270,30 @@ export default function OverheadsPage() {
       <div style={{ maxWidth: 1100 }}>
 
         <TopBar
-          crumbs={[{ label: 'Financials' }, { label: 'Overheads', active: true }]}
+          crumbs={[{ label: t('crumbs.financials') }, { label: t('crumbs.overheads'), active: true }]}
           rightSlot={selectedBiz ? (
             <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>
-              for <span style={{ color: UX.ink1, fontWeight: UX.fwMedium }}>{selectedBiz.name}</span>
+              {t.rich('forBusiness', {
+                name: () => <span style={{ color: UX.ink1, fontWeight: UX.fwMedium }}>{selectedBiz.name}</span>,
+              })}
             </span>
           ) : null}
         />
 
         <PageHero
-          eyebrow="OVERHEADS — FORTNOX INGESTION"
+          eyebrow={t('eyebrow')}
           headline={
             uploads.length === 0
-              ? <>Drop your Fortnox P&amp;L PDFs below to get started.</>
+              ? t('headlineEmpty')
               : <>
-                  <span style={{ fontWeight: UX.fwMedium }}>{uploads.length}</span> upload{uploads.length === 1 ? '' : 's'}
-                  {reviewCount > 0  && <> · <span style={{ color: UX.indigo,  fontWeight: UX.fwMedium }}>{reviewCount} awaiting review</span></>}
-                  {appliedCount > 0 && <> · <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{appliedCount} applied</span></>}
-                  {pendingCount > 0 && <> · <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{pendingCount} processing</span></>}
+                  <span style={{ fontWeight: UX.fwMedium }}>{t('headlineCounts.uploads', { count: uploads.length })}</span>
+                  {reviewCount > 0  && <> · <span style={{ color: UX.indigo,  fontWeight: UX.fwMedium }}>{t('headlineCounts.awaitingReview', { count: reviewCount })}</span></>}
+                  {appliedCount > 0 && <> · <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('headlineCounts.applied', { count: appliedCount })}</span></>}
+                  {pendingCount > 0 && <> · <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{t('headlineCounts.processing', { count: pendingCount })}</span></>}
                 </>
           }
           context={uploads.length === 0
-            ? 'Yearly P&L, monthly P&L, or supplier invoices. AI reads the PDF, extracts every line item, then you confirm before it hits your data.'
+            ? t('contextEmpty')
             : undefined}
         />
 
@@ -319,9 +325,9 @@ export default function OverheadsPage() {
             onChange={e => { if (e.target.files) handleFiles(e.target.files); if (fileRef.current) fileRef.current.value = '' }}
           />
           <div style={{ fontSize: 14, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 4 }}>
-            {uploading ? 'Uploading…' : dragging ? 'Drop to upload' : 'Drop Fortnox PDFs here or click to select'}
+            {uploading ? t('drop.uploading') : dragging ? t('drop.dragOver') : t('drop.default')}
           </div>
-          <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>PDF only · up to 10 MB each · up to 20 at a time</div>
+          <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('drop.constraints')}</div>
         </div>
 
         {/* Bulk re-extract — useful after AI prompt or schema upgrades.
@@ -332,9 +338,9 @@ export default function OverheadsPage() {
             <button
               onClick={(e) => { e.stopPropagation(); reextractAll() }}
               style={{ background: 'none', border: 'none', color: UX.ink3, fontSize: UX.fsMicro, cursor: 'pointer', textDecoration: 'underline', padding: '4px 6px' }}
-              title={`Re-run the current AI extractor on all ${reextractableCount} PDF(s). PDFs stay in storage — no re-upload needed.`}
+              title={t('reextractAll.title', { count: reextractableCount })}
             >
-              Re-extract all {reextractableCount} PDFs with current AI
+              {t('reextractAll.button', { count: reextractableCount })}
             </button>
           </div>
         )}
@@ -348,19 +354,20 @@ export default function OverheadsPage() {
         )}
 
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading uploads…</div>
+          <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loadingUploads')}</div>
         ) : uploads.length === 0 ? (
           <AttentionPanel
-            title="Nothing uploaded yet"
+            title={t('emptyAttention.title')}
             items={[
-              { tone: 'warning', entity: 'Yearly P&L',   message: 'drop your Fortnox annual resultaträkning to track year-over-year overhead drift.' },
-              { tone: 'warning', entity: 'Monthly P&L',  message: 'any months with Fortnox PDF detail land in /tracker and /overheads — AI flags cost creep.' },
+              { tone: 'warning', entity: t('emptyAttention.yearlyEntity'),  message: t('emptyAttention.yearlyMessage') },
+              { tone: 'warning', entity: t('emptyAttention.monthlyEntity'), message: t('emptyAttention.monthlyMessage') },
             ]}
           />
         ) : (
           <UploadsTable
             uploads={uploads}
             nowMs={nowMs}
+            months={months}
             onReview={(id: string) => setReviewId(id)}
             onRetry={retryExtract}
             onDelete={deleteUpload}
@@ -368,7 +375,9 @@ export default function OverheadsPage() {
         )}
 
         <div style={{ marginTop: 10, fontSize: UX.fsMicro, color: UX.ink4 }}>
-          Applied rows feed <a href="/tracker" style={{ color: UX.indigo }}>/tracker</a> and the overheads breakdown below (landing next commit).
+          {t.rich('footerLink', {
+            trackerLink: () => <a href="/tracker" style={{ color: UX.indigo }}>{t('footerTracker')}</a>,
+          })}
         </div>
       </div>
 
@@ -384,7 +393,8 @@ export default function OverheadsPage() {
 }
 
 // ─── Uploads table ─────────────────────────────────────────────────────
-function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
+function UploadsTable({ uploads, nowMs, months, onReview, onRetry, onDelete }: any) {
+  const t = useTranslations('overheads.upload')
   return (
     <div style={{
       background:   UX.cardBg,
@@ -405,11 +415,11 @@ function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
         letterSpacing: '.06em',
         textTransform: 'uppercase' as const,
       }}>
-        <span>File</span>
-        <span>Period</span>
-        <span style={{ textAlign: 'right' as const }}>Size</span>
-        <span style={{ textAlign: 'center' as const }}>Status</span>
-        <span style={{ textAlign: 'right' as const }}>Action</span>
+        <span>{t('table.cols.file')}</span>
+        <span>{t('table.cols.period')}</span>
+        <span style={{ textAlign: 'right' as const }}>{t('table.cols.size')}</span>
+        <span style={{ textAlign: 'center' as const }}>{t('table.cols.status')}</span>
+        <span style={{ textAlign: 'right' as const }}>{t('table.cols.action')}</span>
         <span />
       </div>
       {uploads.map((u: Upload) => {
@@ -430,15 +440,15 @@ function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
           ? Math.max(0, Math.floor(((nowMs ?? Date.now()) - new Date(u.created_at).getTime()) / 1000))
           : null
         const statusLabel = lowConfidence
-          ? 'LOW CONFIDENCE'
+          ? t('table.status.lowConfidence')
           : elapsedSec !== null
-            ? `EXTRACTING · ${elapsedSec}s`
+            ? t('table.status.extractingTimer', { seconds: elapsedSec })
             : u.status.toUpperCase()
         const periodLabel = u.period_year && u.period_month
-          ? `${MONTHS[u.period_month - 1]} ${u.period_year}`
+          ? t('table.period.monthly', { month: months[u.period_month - 1], year: u.period_year })
           : u.period_year
-            ? `${u.period_year} (annual)`
-            : '—'
+            ? t('table.period.annual', { year: u.period_year })
+            : t('table.period.missing')
         return (
           <div key={u.id} style={{
             display: 'grid',
@@ -471,30 +481,30 @@ function UploadsTable({ uploads, nowMs, onReview, onRetry, onDelete }: any) {
             </span>
             <span style={{ color: UX.ink3, fontSize: UX.fsMicro }}>{periodLabel}</span>
             <span style={{ textAlign: 'right' as const, color: UX.ink4, fontSize: UX.fsMicro, fontVariantNumeric: 'tabular-nums' as const }}>
-              {u.pdf_size_bytes ? `${(u.pdf_size_bytes / 1024).toFixed(0)} KB` : '—'}
+              {u.pdf_size_bytes ? t('table.size', { kb: (u.pdf_size_bytes / 1024).toFixed(0) }) : t('table.period.missing')}
             </span>
             <span style={{ textAlign: 'center' as const }}>
               <StatusPill tone={tone as any}>{statusLabel}</StatusPill>
             </span>
             <span style={{ textAlign: 'right' as const }}>
               {u.status === 'extracted' && (
-                <button onClick={() => onReview(u.id)} style={actionBtn('primary')}>Review</button>
+                <button onClick={() => onReview(u.id)} style={actionBtn('primary')}>{t('table.actions.review')}</button>
               )}
               {u.status === 'applied' && (
-                <button onClick={() => onReview(u.id)} style={actionBtn('ghost')}>View</button>
+                <button onClick={() => onReview(u.id)} style={actionBtn('ghost')}>{t('table.actions.view')}</button>
               )}
               {u.status === 'failed' && (
-                <button onClick={() => onRetry(u.id)} style={actionBtn('ghost')}>Retry</button>
+                <button onClick={() => onRetry(u.id)} style={actionBtn('ghost')}>{t('table.actions.retry')}</button>
               )}
               {(u.status === 'extracting' || u.status === 'pending') && (
-                <button onClick={() => onDelete(u.id)} style={{ ...actionBtn('ghost'), color: UX.redInk }}>Cancel</button>
+                <button onClick={() => onDelete(u.id)} style={{ ...actionBtn('ghost'), color: UX.redInk }}>{t('table.actions.cancel')}</button>
               )}
             </span>
             <span style={{ textAlign: 'right' as const }}>
               {u.status !== 'applied' && (
                 <button
                   onClick={() => onDelete(u.id)}
-                  title="Discard"
+                  title={t('table.actions.discard')}
                   style={{ background: 'none', border: 'none', color: UX.ink4, cursor: 'pointer', fontSize: 14, padding: 4 }}
                 >×</button>
               )}
@@ -533,6 +543,9 @@ function actionBtn(kind: 'primary' | 'ghost') {
 
 // ─── Review modal ──────────────────────────────────────────────────────
 function ReviewModal({ uploadId, onClose, onDone }: any) {
+  const t  = useTranslations('overheads.upload')
+  const tM = useTranslations('overheads')
+  const months: string[] = (tM.raw('months.short') as string[]) ?? MONTHS_FALLBACK
   const [upload, setUpload] = useState<any>(null)
   const [pdfUrl, setPdfUrl] = useState<string>('')
   const [applying, setApplying] = useState(false)
@@ -573,7 +586,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
 
   async function apply() {
     if (conflict && !ackConflict) {
-      setErr('Please acknowledge the conflict before applying.')
+      setErr(t('review.errors.ackConflict'))
       return
     }
     setApplying(true); setErr('')
@@ -601,7 +614,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         setApplying(false)
         return
       }
-      if (!r.ok) throw new Error(j.error ?? `Apply failed (${r.status})`)
+      if (!r.ok) throw new Error(j.error ?? t('review.errors.applyFailed', { status: r.status }))
       onDone()
     } catch (e: any) { setErr(e.message) }
     setApplying(false)
@@ -616,7 +629,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
   }
 
   async function reject() {
-    if (!confirm('Reject this upload? Applied data will be rolled back.')) return
+    if (!confirm(t('review.confirms.reject'))) return
     setRejecting(true); setErr('')
     try {
       const r = await fetch('/api/fortnox/reject', {
@@ -625,7 +638,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         body: JSON.stringify({ upload_id: uploadId }),
       })
       const j = await r.json()
-      if (!r.ok) throw new Error(j.error ?? `Reject failed (${r.status})`)
+      if (!r.ok) throw new Error(j.error ?? t('review.errors.rejectFailed', { status: r.status }))
       onDone()
     } catch (e: any) { setErr(e.message) }
     setRejecting(false)
@@ -637,7 +650,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
   // the prior extraction didn't capture, or when the prompts have improved.
   // After it lands, user reviews the new extracted_json and clicks Apply.
   async function reextract() {
-    if (!confirm('Re-run AI extraction on this PDF? The stored data stays until you click Apply on the new extraction.')) return
+    if (!confirm(t('review.confirms.reextract'))) return
     setReextracting(true); setErr('')
     try {
       const r = await fetch('/api/fortnox/reextract', {
@@ -646,7 +659,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         body: JSON.stringify({ upload_id: uploadId }),
       })
       const j = await r.json()
-      if (!r.ok) throw new Error(j.error ?? `Re-extract failed (${r.status})`)
+      if (!r.ok) throw new Error(j.error ?? t('review.errors.reextractFailed', { status: r.status }))
       onDone()
     } catch (e: any) { setErr(e.message) }
     setReextracting(false)
@@ -658,15 +671,15 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         <div style={{ padding: '14px 20px', borderBottom: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-              Review: {upload?.pdf_filename ?? 'Loading…'}
+              {t('review.title', { filename: upload?.pdf_filename ?? t('review.loadingTitle') })}
             </div>
             <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
               {extraction?.doc_type === 'pnl_annual'
-                ? `${extraction?.period?.year ?? ''} · Annual P&L`
+                ? t('review.annualMeta', { year: extraction?.period?.year ?? '' })
                 : extraction
-                  ? `${MONTHS[(extraction?.period?.month ?? 1) - 1]} ${extraction?.period?.year} · Monthly P&L`
+                  ? t('review.monthlyMeta', { month: months[(extraction?.period?.month ?? 1) - 1], year: extraction?.period?.year })
                   : ''}
-              {extraction?.confidence && <> · AI confidence: <span style={{ fontWeight: UX.fwMedium }}>{extraction.confidence}</span></>}
+              {extraction?.confidence && <> · {t.rich('review.aiConfidence', { value: () => <span style={{ fontWeight: UX.fwMedium }}>{extraction.confidence}</span> })}</>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: UX.ink4 }}>×</button>
@@ -682,42 +695,42 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
             {pdfUrl ? (
               <>
                 <div style={{ padding: '6px 10px', background: 'white', borderBottom: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: UX.fsMicro }}>
-                  <span style={{ color: UX.ink4 }}>PDF preview</span>
+                  <span style={{ color: UX.ink4 }}>{t('review.pdf.preview')}</span>
                   <a
                     href={pdfUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{ color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}
                   >
-                    Open in new tab ↗
+                    {t('review.pdf.openNewTab')}
                   </a>
                 </div>
                 <object data={pdfUrl} type="application/pdf" style={{ flex: 1, width: '100%', border: 0 }}>
                   {/* Fallback when inline PDF rendering is blocked */}
                   <div style={{ padding: 30, textAlign: 'center' as const, color: UX.ink3, fontSize: UX.fsBody }}>
-                    Your browser can't embed this PDF.{' '}
+                    {t('review.pdf.fallbackPre')}
                     <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: UX.indigo }}>
-                      Open it in a new tab
+                      {t('review.pdf.fallbackLink')}
                     </a>
-                    {' '}to cross-reference while you review.
+                    {t('review.pdf.fallbackPost')}
                   </div>
                 </object>
               </>
             ) : (
-              <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>Loading PDF…</div>
+              <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('review.pdf.loading')}</div>
             )}
           </div>
 
           {/* Extraction pane */}
           <div style={{ overflowY: 'auto' as const, padding: 20, minHeight: 0 }}>
             {!extraction ? (
-              <div style={{ fontSize: UX.fsBody, color: UX.ink4 }}>Loading extraction…</div>
+              <div style={{ fontSize: UX.fsBody, color: UX.ink4 }}>{t('review.loadingExtraction')}</div>
             ) : (
               <>
                 {extraction.warnings?.length > 0 && (
                   <AttentionPanel
-                    title="Warnings"
-                    items={extraction.warnings.map((w: string) => ({ tone: 'warning', entity: 'AI', message: w }))}
+                    title={t('review.warningsTitle')}
+                    items={extraction.warnings.map((w: string) => ({ tone: 'warning', entity: t('review.warningsEntity'), message: w }))}
                   />
                 )}
 
@@ -742,12 +755,12 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                 )}
 
                 <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 10, marginBottom: 8 }}>
-                  Rollup
+                  {t('review.rollupTitle')}
                 </div>
                 <RollupGrid rollup={extraction.rollup} />
 
                 <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 18, marginBottom: 8 }}>
-                  Line items ({extraction.lines?.length ?? 0})
+                  {t('review.lineItemsTitle', { count: extraction.lines?.length ?? 0 })}
                 </div>
                 <LineItemsTable lines={extraction.lines ?? []} />
               </>
@@ -766,17 +779,17 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
               schema or prompt upgrades. */}
           {upload && upload.status !== 'extracting' && upload.status !== 'pending' && (
             <button onClick={reextract} disabled={reextracting || applying || rejecting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
-              {reextracting ? 'Re-extracting…' : 'Re-extract'}
+              {reextracting ? t('review.actions.reextracting') : t('review.actions.reextract')}
             </button>
           )}
           {upload?.status === 'applied' ? (
             <button onClick={reject} disabled={rejecting || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody, color: UX.redInk }}>
-              {rejecting ? 'Rejecting…' : 'Unapply + reject'}
+              {rejecting ? t('review.actions.rejecting') : t('review.actions.unapplyReject')}
             </button>
           ) : (
             <>
               <button onClick={reject} disabled={rejecting || applying || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
-                {rejecting ? 'Rejecting…' : 'Reject'}
+                {rejecting ? t('review.actions.rejecting') : t('review.actions.reject')}
               </button>
               {(() => {
                 // Apply gating logic — encodes the validation contract:
@@ -793,14 +806,14 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                 const blockedByWarn = warnings.length > 0 && !allWarnAcked
                 const disabled      = applying || reextracting || !extraction || blockedByHard || blockedBySoft || blockedByWarn
                 const label = applying
-                  ? 'Applying…'
+                  ? t('review.actions.applying')
                   : blockedByHard
-                    ? 'Cannot apply (hard error)'
+                    ? t('review.actions.cannotHardError')
                     : blockedBySoft || blockedByWarn
-                      ? 'Resolve checklist above'
+                      ? t('review.actions.resolveChecklist')
                       : softErrors.length > 0
-                        ? 'Apply with override'
-                        : 'Apply to P&L'
+                        ? t('review.actions.applyOverride')
+                        : t('review.actions.apply')
                 return (
                   <button onClick={apply} disabled={disabled} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: UX.fsBody }}>
                     {label}
@@ -827,6 +840,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
 // Apply again — the parent passes ackedWarnings + forceApply to the
 // API on retry.
 function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onForceToggle }: any) {
+  const t = useTranslations('overheads.upload.validation')
   const hardErrors = (report.blocking_errors ?? []).filter((f: any) => f.override_allowed === false)
   const softErrors = (report.blocking_errors ?? []).filter((f: any) => f.override_allowed !== false)
   const warnings   = report.warnings_to_ack ?? []
@@ -840,13 +854,13 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
-        Pre-apply checks
+        {t('title')}
       </div>
 
       {hardErrors.length > 0 && (
         <div style={card('#fef2f2', '#fecaca')}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            ⛔ {hardErrors.length} hard error{hardErrors.length === 1 ? '' : 's'} — cannot apply
+            {t('hardErrors', { count: hardErrors.length })}
           </div>
           {hardErrors.map((f: any) => (
             <div key={f.code} style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, marginTop: 4 }}>
@@ -860,7 +874,7 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
       {softErrors.length > 0 && (
         <div style={card('#fef2f2', '#fecaca')}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            ⚠ {softErrors.length} error{softErrors.length === 1 ? '' : 's'} — override required
+            {t('softErrors', { count: softErrors.length })}
           </div>
           {softErrors.map((f: any) => (
             <div key={f.code} style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, marginTop: 4 }}>
@@ -870,7 +884,7 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
           ))}
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: '#991b1b', cursor: 'pointer', fontWeight: 600 }}>
             <input type="checkbox" checked={forceApply} onChange={onForceToggle} style={{ accentColor: '#dc2626' }} />
-            I have reviewed the error{softErrors.length === 1 ? '' : 's'} and want to force apply anyway
+            {t('forceLabel', { count: softErrors.length })}
           </label>
         </div>
       )}
@@ -878,7 +892,7 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
       {warnings.length > 0 && (
         <div style={card('#fffbeb', '#fde68a')}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            ⚠ {warnings.length} warning{warnings.length === 1 ? '' : 's'} — tick each to acknowledge
+            {t('warnings', { count: warnings.length })}
           </div>
           {warnings.map((f: any) => {
             const acked = ackedWarnings.has(f.code)
@@ -888,7 +902,7 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                     <code style={{ background: '#fef3c7', padding: '1px 5px', borderRadius: 4, fontSize: 10, color: '#92400e' }}>{f.code}</code>
-                    {acked && <span style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>✓ acknowledged</span>}
+                    {acked && <span style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>{t('acknowledged')}</span>}
                   </div>
                   <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.5 }}>{f.message}</div>
                 </div>
@@ -906,7 +920,7 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span style={{ fontSize: 14 }}>🤖</span>
             <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '.04em' }}>
-              AI auditor — confidence: {audit.confidence}
+              {t('auditor', { confidence: audit.confidence })}
             </span>
           </div>
           <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.55 }}>{audit.summary}</div>
@@ -925,18 +939,20 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
 
 // ─── Conflict diff panel ──────────────────────────────────────────────
 function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) {
+  const t  = useTranslations('overheads.upload.conflict')
+  const tR = useTranslations('overheads.upload.rollup')
   if (!existing) return null
   const rows = [
-    { label: 'Revenue',    existing: Number(existing.revenue     ?? 0), incoming: Number(incoming.revenue     ?? 0) },
-    { label: 'Food cost',  existing: Number(existing.food_cost   ?? 0), incoming: Number(incoming.food_cost   ?? 0) },
-    { label: 'Staff cost', existing: Number(existing.staff_cost  ?? 0), incoming: Number(incoming.staff_cost  ?? 0) },
-    { label: 'Other cost', existing: Number(existing.other_cost  ?? 0), incoming: Number(incoming.other_cost  ?? 0) },
-    { label: 'Net profit', existing: Number(existing.net_profit  ?? 0), incoming: Number(incoming.net_profit  ?? 0) },
+    { label: tR('revenue'),    existing: Number(existing.revenue     ?? 0), incoming: Number(incoming.revenue     ?? 0) },
+    { label: tR('foodCost'),   existing: Number(existing.food_cost   ?? 0), incoming: Number(incoming.food_cost   ?? 0) },
+    { label: tR('staffCost'),  existing: Number(existing.staff_cost  ?? 0), incoming: Number(incoming.staff_cost  ?? 0) },
+    { label: tR('otherCost'),  existing: Number(existing.other_cost  ?? 0), incoming: Number(incoming.other_cost  ?? 0) },
+    { label: tR('netProfit'),  existing: Number(existing.net_profit  ?? 0), incoming: Number(incoming.net_profit  ?? 0) },
   ]
-  const sourceLabel = existingSource === 'manual'       ? 'a manual entry you typed'
-                    : existingSource === 'fortnox_api'  ? 'a Fortnox API sync'
-                    : existingSource === 'pos_sync'     ? 'a POS auto-sync'
-                    :                                     `source: ${existingSource}`
+  const sourceLabel = existingSource === 'manual'       ? t('sources.manual')
+                    : existingSource === 'fortnox_api'  ? t('sources.fortnoxApi')
+                    : existingSource === 'pos_sync'     ? t('sources.posSync')
+                    :                                     t('sources.other', { source: existingSource })
   return (
     <div style={{
       marginBottom: 14,
@@ -946,18 +962,18 @@ function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) 
       padding:      '12px 14px',
     }}>
       <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
-        Existing data for this period
+        {t('title')}
       </div>
       <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10, lineHeight: 1.55 }}>
-        Applying this PDF will replace {sourceLabel} for the same month. Compare the numbers below and acknowledge before continuing — the old values are preserved in the audit log (<code>fortnox_upload_id</code>) but will no longer drive the P&amp;L.
+        {t('bodyPre')}{sourceLabel}{t.rich('bodyPost', { code: () => <code>fortnox_upload_id</code> })}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #fde68a' }}>
-            <th style={{ textAlign: 'left' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Metric</th>
-            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Existing</th>
-            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Fortnox PDF</th>
-            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>Δ</th>
+            <th style={{ textAlign: 'left' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.metric')}</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.existing')}</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.fortnox')}</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.delta')}</th>
           </tr>
         </thead>
         <tbody>
@@ -970,7 +986,7 @@ function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) 
                 <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: '#374151', fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.existing)}</td>
                 <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: '#111', fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.incoming)}</td>
                 <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: bothZero ? '#9ca3af' : (diff === 0 ? '#6b7280' : (diff > 0 ? '#15803d' : '#b91c1c')), fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>
-                  {bothZero ? '—' : diff === 0 ? '0 kr' : `${diff > 0 ? '+' : '−'}${fmtKr(Math.abs(diff))}`}
+                  {bothZero ? t('deltaMissing') : diff === 0 ? t('deltaZero') : `${diff > 0 ? '+' : '−'}${fmtKr(Math.abs(diff))}`}
                 </td>
               </tr>
             )
@@ -979,22 +995,23 @@ function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) 
       </table>
       <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, cursor: 'pointer', fontSize: 12, color: '#78350f' }}>
         <input type="checkbox" checked={ack} onChange={e => onAck(e.target.checked)} />
-        Yes, replace the existing entry with the Fortnox values.
+        {t('ack')}
       </label>
     </div>
   )
 }
 
 function RollupGrid({ rollup }: { rollup: any }) {
+  const t = useTranslations('overheads.upload.rollup')
   if (!rollup) return null
   const rows = [
-    { label: 'Revenue',      value: rollup.revenue,      tone: 'good' },
-    { label: 'Food cost',    value: rollup.food_cost,    tone: 'bad'  },
-    { label: 'Staff cost',   value: rollup.staff_cost,   tone: 'bad'  },
-    { label: 'Other cost',   value: rollup.other_cost,   tone: 'bad'  },
-    { label: 'Depreciation', value: rollup.depreciation, tone: 'neutral' },
-    { label: 'Financial',    value: rollup.financial,    tone: 'neutral' },
-    { label: 'Net profit',   value: rollup.net_profit,   tone: rollup.net_profit >= 0 ? 'good' : 'bad' },
+    { label: t('revenue'),      value: rollup.revenue,      tone: 'good' },
+    { label: t('foodCost'),     value: rollup.food_cost,    tone: 'bad'  },
+    { label: t('staffCost'),    value: rollup.staff_cost,   tone: 'bad'  },
+    { label: t('otherCost'),    value: rollup.other_cost,   tone: 'bad'  },
+    { label: t('depreciation'), value: rollup.depreciation, tone: 'neutral' },
+    { label: t('financial'),    value: rollup.financial,    tone: 'neutral' },
+    { label: t('netProfit'),    value: rollup.net_profit,   tone: rollup.net_profit >= 0 ? 'good' : 'bad' },
   ]
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
@@ -1017,13 +1034,21 @@ function RollupGrid({ rollup }: { rollup: any }) {
 }
 
 function LineItemsTable({ lines }: { lines: any[] }) {
-  if (!lines.length) return <div style={{ fontSize: UX.fsBody, color: UX.ink4 }}>No line items extracted.</div>
+  const t = useTranslations('overheads.upload.lines')
+  if (!lines.length) return <div style={{ fontSize: UX.fsBody, color: UX.ink4 }}>{t('empty')}</div>
+  const cols = [
+    { key: 'label',    label: t('cols.label'),    align: 'left'  as const },
+    { key: 'category', label: t('cols.category'), align: 'left'  as const },
+    { key: 'sub',      label: t('cols.sub'),      align: 'left'  as const },
+    { key: 'account',  label: t('cols.account'),  align: 'left'  as const },
+    { key: 'amount',   label: t('cols.amount'),   align: 'right' as const },
+  ]
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsMicro }}>
       <thead>
         <tr style={{ borderBottom: `1px solid ${UX.borderSoft}` }}>
-          {['Label', 'Category', 'Sub', 'Account', 'Amount'].map(h => (
-            <th key={h} style={{ padding: '5px 8px', textAlign: h === 'Amount' ? 'right' as const : 'left' as const, fontSize: 9, color: UX.ink4, fontWeight: UX.fwMedium, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>{h}</th>
+          {cols.map(h => (
+            <th key={h.key} style={{ padding: '5px 8px', textAlign: h.align, fontSize: 9, color: UX.ink4, fontWeight: UX.fwMedium, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>{h.label}</th>
           ))}
         </tr>
       </thead>
@@ -1032,8 +1057,8 @@ function LineItemsTable({ lines }: { lines: any[] }) {
           <tr key={i} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
             <td style={{ padding: '5px 8px', color: UX.ink1 }}>{l.label_sv ?? l.label}</td>
             <td style={{ padding: '5px 8px', color: UX.ink3 }}>{l.category}</td>
-            <td style={{ padding: '5px 8px', color: l.subcategory ? UX.ink2 : UX.ink5 }}>{l.subcategory ?? '—'}</td>
-            <td style={{ padding: '5px 8px', color: UX.ink4, fontVariantNumeric: 'tabular-nums' as const }}>{l.fortnox_account ?? '—'}</td>
+            <td style={{ padding: '5px 8px', color: l.subcategory ? UX.ink2 : UX.ink5 }}>{l.subcategory ?? t('missing')}</td>
+            <td style={{ padding: '5px 8px', color: UX.ink4, fontVariantNumeric: 'tabular-nums' as const }}>{l.fortnox_account ?? t('missing')}</td>
             <td style={{ padding: '5px 8px', textAlign: 'right' as const, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const, fontWeight: UX.fwMedium }}>{fmtKr(Number(l.amount) || 0)}</td>
           </tr>
         ))}

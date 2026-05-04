@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "title":    "Integrasjoner",
+  "subtitle": "Koble til regnskaps-, kasse- og skiftplanleggingssystemer. Data synkroniseres automatisk og fyller den økonomiske oversikten.",
+  "banners": {
+    "connected":      "{provider} tilkoblet! Dataene dine synkroniseres straks.",
+    "connectionError":"Tilkobling feilet: {error}. Prøv igjen eller kontakt support."
+  },
+  "categories": {
+    "Accounting": "Regnskap",
+    "POS":        "Kasse",
+    "Staff":      "Bemanning",
+    "Delivery":   "Levering",
+    "Booking":    "Bestilling"
+  },
+  "status": {
+    "connected":     "Tilkoblet",
+    "error":         "Feil",
+    "warning":       "Advarsel",
+    "disconnected":  "Frakoblet",
+    "not_connected": "Ikke tilkoblet",
+    "connectionError":"Tilkoblingsfeil"
+  },
+  "tokenExpiry":  "Token utløper om {count, plural, one {# dag} other {# dager}}",
+  "syncedAt":     "Synkronisert {date}",
+  "pk": {
+    "label": "Stol på Personalkollen foran Fortnox",
+    "body":  " for bemanningskostnad. Bruk dette hvis Fortnox-PDF-ene dine er utdaterte — neste aggregatorkjøring bruker PK-tallene selv når de avviker mer enn 30% fra Fortnox."
+  },
+  "actions": {
+    "connect":    "Koble til",
+    "syncNow":    "Synk nå",
+    "reconnect":  "Koble til på nytt",
+    "disconnect": "Koble fra"
+  },
+  "confirms": {
+    "disconnect": "Koble fra {provider}? Dette stopper synking av data fra tjenesten."
+  },
+  "errors": {
+    "saveGeneric":     "Kunne ikke lagre. Prøv igjen.",
+    "providerFailed":  "{provider}-tilkobling feilet: {message}",
+    "personalkollenFailed":"Personalkollen-tilkobling feilet: {message}",
+    "testFailed":      "Test feilet",
+    "saveFailed":      "Lagring feilet",
+    "credentialsSaved":"{provider}-legitimasjon lagret",
+    "connectionTestFailed":"Tilkoblingstest feilet",
+    "failedToSave":    "Kunne ikke lagre"
+  },
+  "modal": {
+    "title":             "Koble til {name}",
+    "subtitle":          "Skriv inn API-nøkkelen din. Den krypteres og lagres trygt — deles eller eksponeres aldri.",
+    "restaurantLabel":   "Restaurant",
+    "restaurantPlaceholder":"Velg restaurant…",
+    "apiKey":            "API-nøkkel",
+    "apiKeyPlaceholder": "Lim inn API-nøkkelen din her",
+    "cancel":            "Avbryt",
+    "saving":            "Lagrer…",
+    "save":              "Lagre og koble til"
+  },
+  "oauthBadge": "OAuth 2.0"
+}

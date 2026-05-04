@@ -55,6 +55,54 @@
       "atLoss":      "går med förlust — {amount} underskott denna period.",
       "lowMargin":   "marginal {pct} — under 30%-tröskeln.",
       "noLabour":    "100% marginal flaggad — personal inte allokerad, kontrollera synk."
+    },
+    "detail": {
+      "loading":       "Laddar…",
+      "back":          "← Avdelningar",
+      "weekLabel":     "Vecka {num}",
+      "loadingInline": "Laddar...",
+      "empty": {
+        "title":         "Ingen data för {dept} under {period}",
+        "bodyWeekToday": "Den här veckan har precis börjat — den dagliga synkningen körs 06:00 UTC, så dagens siffror landar i morgon bitti. Prova föregående vecka eller byt till Månad.",
+        "bodyDefault":   "Inget synkat för denna period ännu. Prova en annan vecka/månad, eller kör en synk från adminpanelen om du väntar på data.",
+        "prevWeek":      "← Föregående vecka",
+        "viewMonth":     "Visa denna månad",
+        "prevMonth":     "← Föregående månad"
+      },
+      "kpi": {
+        "revenue":     "Intäkter",
+        "labourCost":  "Personalkostnad",
+        "labourPct":   "Personal %",
+        "gpPct":       "GP%",
+        "covers":      "{covers} gäster · {avg} snitt",
+        "hoursShifts": "{hours} · {shifts} pass",
+        "ofRevenue":   "av intäkter",
+        "perHour":     "{amount}/tim"
+      },
+      "ob": {
+        "title": "OB-tillägg"
+      },
+      "late": {
+        "title":      "Sena ankomster",
+        "shifts":     "{count, plural, one {# pass} other {# pass}}",
+        "avgMinutes": "snitt {minutes} min sen"
+      },
+      "staffTable": {
+        "title":   "Personal i {dept}",
+        "summary": "{count, plural, one {# person} other {# personer}} · {hours}",
+        "cols": {
+          "name":      "Namn",
+          "hours":     "Timmar",
+          "cost":      "Kostnad",
+          "costPerHr": "Kost/tim",
+          "shifts":    "Pass",
+          "late":      "Sen"
+        }
+      },
+      "view": {
+        "week":  "V",
+        "month": "M"
+      }
     }
   },
   "group": {

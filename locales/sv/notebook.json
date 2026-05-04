@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "assistant": {
+    "title":          "AI-assistent",
+    "subtitle":       "Fråga vad som helst om din restaurangdata — intäkter, personalkostnader, marginaler och mer.",
+    "contextLoading": "Laddar din affärsdata som kontext…",
+    "contextReady":   "AI:n ser de senaste 6 månaderna per restaurang (förladdat). Varje fråga räknas mot din dagsgräns.",
+    "startersIntro":  "Starta en konversation — eller prova en av dessa:",
+    "starters": [
+      "Hur går intäkterna den här månaden?",
+      "Vilken avdelning har bäst bruttomarginal?",
+      "Är min personalkostnad i procent hälsosam?",
+      "Vad ska jag fokusera på för att förbättra marginalen?",
+      "Jämför den här månaden med förra"
+    ],
+    "thinking":          "Tänker…",
+    "inputPlaceholder":  "Fråga om din restaurangdata…",
+    "send":              "Skicka",
+    "noResponse":        "Inget svar.",
+    "genericError":      "Något gick fel. Försök igen."
+  },
+  "studio": {
+    "backToAssistant": "Assistent",
+    "title":           "AI-studio",
+    "subtitle":        "Bygg AI-drivna rapporter, schemalägg insikter och skapa automatiska larm — skräddarsytt för dina restauranger.",
+    "comingSoon":      "Kommer snart",
+    "features": {
+      "reports":   { "title": "Anpassade rapporter",  "desc": "Bygg rapporter över valfri datakombination" },
+      "scheduled": { "title": "Schemalagda insikter", "desc": "Automatiska vecko- och månadssammanfattningar" },
+      "alerts":    { "title": "Smarta larm",          "desc": "Definiera tröskelvärden för avvikelsedetektion" },
+      "digests":   { "title": "E-postsammandrag",     "desc": "Få insikter direkt i din inkorg" }
+    }
+  }
+}

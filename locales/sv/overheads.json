@@ -1,0 +1,231 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "months": {
+    "short": ["Jan","Feb","Mar","Apr","Maj","Jun","Jul","Aug","Sep","Okt","Nov","Dec"]
+  },
+  "categories": {
+    "overhead": "ÖVRIGT",
+    "food":     "MAT"
+  },
+  "review": {
+    "eyebrow":           "ÖVRIGA KOSTNADER",
+    "headlinePending":   "{count, plural, one {# leverantör} other {# leverantörer}} att granska · {amount}/mån i potten",
+    "headlineMissing":   "Kör M039 för att aktivera kostnadsgranskning",
+    "headlineEmpty":     "Allt klart — inget kvar att granska.",
+    "context":           "{count, plural, one {# flagga} other {# flaggor}} över {period}",
+    "tableMissingBanner":"overhead_flags-tabellen saknas — kör M039-OVERHEAD-REVIEW.sql i Supabase SQL Editor.",
+    "backfillResult":    "Återfyllnad klar — markerade {marked, plural, one {# leverantör} other {# leverantörer}} som nödvändig, löste {resolved, plural, one {# väntande flagga} other {# väntande flaggor}}.",
+    "filter": {
+      "all":       "Alla",
+      "overheads": "Övrigt",
+      "food":      "Mat"
+    },
+    "loadingFlags": "Laddar flaggor…",
+    "emptyStable":  "Dina kostnader ser stabila ut. Inget att granska denna period.",
+    "flagTones": {
+      "new":         "NY",
+      "priceTpl":    "PRIS {sign}{pct}%",
+      "reappeared":  "ÅTERKOM",
+      "oneOff":      "ENGÅNG",
+      "duplicate":   "DUPLICAT?"
+    },
+    "card": {
+      "lowConfidence":      "LÅG TILLFÖRLITLIGHET",
+      "reexplainTitle":     "Generera AI-förklaring på nytt med fullständig 12-månadshistorik",
+      "reexplaining":       "…",
+      "reexplain":          "förklara igen",
+      "generating":         "Genererar…",
+      "generateExplanation":"Generera AI-förklaring",
+      "alsoFlaggedIn":      "Även flaggad i {periods}",
+      "alsoMore":           " +{count} till",
+      "oneDecision":        " · ett beslut gäller alla",
+      "defer":              "Skjut upp 30d",
+      "planCancel":         "Planera att avsluta",
+      "essential":          "Nödvändig"
+    },
+    "dismissModal": {
+      "title":        "Planera att avsluta: {supplier}?",
+      "body":         "Markerar detta som en planerad uppsägning. Räknas mot din månadsbesparingsprognos. Systemet håller koll — om det dyker upp i nästa månads bokföring ser du flaggan igen.",
+      "notes":        "Anteckningar (valfritt)",
+      "placeholder":  "t.ex. säger upp vid kontraktsslut, förnyelse i mars",
+      "cancel":       "Avbryt",
+      "saving":       "Sparar…",
+      "confirm":      "Planera att avsluta"
+    },
+    "backfillBanner": {
+      "title":     "Första granskningen — för mycket att gå igenom?",
+      "body":      "Vi kan markera varje leverantör från senaste 12 månaderna som <b>nödvändig</b> på en gång. Sedan flaggas bara nya kostnader och prisökningar över 15%.",
+      "decline":   "Nej, låt mig granska dem",
+      "marking":   "Markerar…",
+      "confirm":   "Markera alla som nödvändiga"
+    }
+  },
+  "upload": {
+    "crumbs": {
+      "financials": "Ekonomi",
+      "overheads":  "Övriga kostnader"
+    },
+    "forBusiness":  "för {name}",
+    "eyebrow":      "ÖVRIGA KOSTNADER — FORTNOX-IMPORT",
+    "headlineEmpty":"Släpp dina Fortnox-resultaträkningar nedan för att komma igång.",
+    "headlineCounts": {
+      "uploads":        "{count, plural, one {# uppladdning} other {# uppladdningar}}",
+      "awaitingReview": "{count} väntar på granskning",
+      "applied":        "{count} tillämpade",
+      "processing":     "{count} bearbetas"
+    },
+    "contextEmpty": "Årsresultat, månadsresultat eller leverantörsfakturor. AI läser PDF:en, extraherar varje rad, sedan bekräftar du innan datat når dina siffror.",
+    "drop": {
+      "uploading":   "Laddar upp…",
+      "dragOver":    "Släpp för att ladda upp",
+      "default":     "Släpp Fortnox-PDF:er här eller klicka för att välja",
+      "constraints": "Endast PDF · max 10 MB per fil · upp till 20 åt gången"
+    },
+    "reextractAll": {
+      "button": "Kör AI igen på alla {count} PDF:er",
+      "title":  "Kör om dagens AI-extraktor på alla {count} PDF(er). PDF:erna ligger redan i lagringen — ingen omuppladdning behövs.",
+      "confirm":"Kör AI-extraktion igen på alla {count} PDF(er) för {name}? Var och en behöver tillämpas separat efter extraktionen (~20–60s per PDF).",
+      "failed": "Omkörning misslyckades: {error}",
+      "queued": "Köade {count} PDF(er)"
+    },
+    "loadingUploads": "Laddar uppladdningar…",
+    "emptyAttention": {
+      "title":         "Inget uppladdat ännu",
+      "yearlyEntity":  "Årsresultat",
+      "yearlyMessage": "släpp din Fortnox-årsresultaträkning för att spåra årlig drift av övriga kostnader.",
+      "monthlyEntity": "Månadsresultat",
+      "monthlyMessage":"alla månader med Fortnox-PDF-detalj landar i /tracker och /overheads — AI flaggar kostnadsökningar."
+    },
+    "footerLink": "Tillämpade rader matar {trackerLink} och översikten över övriga kostnader nedan (kommer i nästa version).",
+    "footerTracker": "/tracker",
+    "toast": {
+      "pickBusiness":     "Välj en restaurang först",
+      "onlyPdfs":         "Endast PDF accepteras",
+      "uploadedExtracting":"{count} uppladdade — extraherar…",
+      "uploadFailed":     "Uppladdning misslyckades — {error}",
+      "alreadyExtracting":"Extraherar redan — vänta tills det är klart.",
+      "discardConfirm":   "Kasta denna uppladdning?"
+    },
+    "table": {
+      "cols": {
+        "file":   "Fil",
+        "period": "Period",
+        "size":   "Storlek",
+        "status": "Status",
+        "action": "Åtgärd"
+      },
+      "status": {
+        "lowConfidence":  "LÅG TILLFÖRLITLIGHET",
+        "extractingTimer":"EXTRAHERAR · {seconds}s"
+      },
+      "period": {
+        "monthly": "{month} {year}",
+        "annual":  "{year} (årlig)",
+        "missing": "—"
+      },
+      "size":     "{kb} KB",
+      "actions": {
+        "review": "Granska",
+        "view":   "Visa",
+        "retry":  "Försök igen",
+        "cancel": "Avbryt",
+        "discard":"Kasta"
+      }
+    },
+    "review": {
+      "title":         "Granska: {filename}",
+      "loadingTitle":  "Laddar…",
+      "annualMeta":    "{year} · Årsresultat",
+      "monthlyMeta":   "{month} {year} · Månadsresultat",
+      "aiConfidence":  "AI-tillförlitlighet: {value}",
+      "pdf": {
+        "preview":     "PDF-förhandsgranskning",
+        "openNewTab":  "Öppna i ny flik ↗",
+        "loading":     "Laddar PDF…",
+        "fallbackPre": "Din webbläsare kan inte bädda in den här PDF:en. ",
+        "fallbackLink":"Öppna den i en ny flik",
+        "fallbackPost":" för att jämföra under granskningen."
+      },
+      "loadingExtraction": "Laddar extraktion…",
+      "warningsTitle":     "Varningar",
+      "warningsEntity":    "AI",
+      "rollupTitle":       "Sammanställning",
+      "lineItemsTitle":    "Rader ({count})",
+      "actions": {
+        "reextract":      "Kör AI igen",
+        "reextracting":   "Kör AI igen…",
+        "reject":         "Avvisa",
+        "rejecting":      "Avvisar…",
+        "unapplyReject":  "Återställ + avvisa",
+        "applying":       "Tillämpar…",
+        "cannotHardError":"Kan inte tillämpa (hårt fel)",
+        "resolveChecklist":"Åtgärda checklistan ovan",
+        "applyOverride":  "Tillämpa med åsidosättning",
+        "apply":          "Tillämpa på P&L"
+      },
+      "confirms": {
+        "reject":    "Avvisa denna uppladdning? Tillämpad data återställs.",
+        "reextract": "Kör AI-extraktion igen på denna PDF? Den lagrade datan ligger kvar tills du klickar Tillämpa på den nya extraktionen."
+      },
+      "errors": {
+        "ackConflict":   "Bekräfta konflikten innan du tillämpar.",
+        "applyFailed":   "Tillämpning misslyckades ({status})",
+        "rejectFailed":  "Avvisning misslyckades ({status})",
+        "reextractFailed":"Omkörning misslyckades ({status})",
+        "uploadFailed":  "Uppladdning misslyckades ({status})"
+      }
+    },
+    "validation": {
+      "title":          "Förkontroller",
+      "hardErrors":     "⛔ {count, plural, one {# hårt fel} other {# hårda fel}} — kan inte tillämpa",
+      "softErrors":     "⚠ {count, plural, one {# fel} other {# fel}} — åsidosättning krävs",
+      "warnings":       "⚠ {count, plural, one {# varning} other {# varningar}} — bocka för var och en",
+      "forceLabel":     "Jag har granskat {count, plural, one {felet} other {felen}} och vill tillämpa ändå",
+      "acknowledged":   "✓ bekräftad",
+      "auditor":        "AI-revisor — tillförlitlighet: {confidence}"
+    },
+    "conflict": {
+      "title":           "Befintlig data för denna period",
+      "bodyPre":         "Att tillämpa denna PDF ersätter ",
+      "bodyPost":        " för samma månad. Jämför siffrorna nedan och bekräfta innan du fortsätter — gamla värden bevaras i revisionsloggen ({code}) men driver inte längre P&L.",
+      "sources": {
+        "manual":     "en manuell post du skrev in",
+        "fortnoxApi": "en Fortnox-API-synk",
+        "posSync":    "en POS-autosynk",
+        "other":      "källa: {source}"
+      },
+      "cols": {
+        "metric":   "Mått",
+        "existing": "Befintligt",
+        "fortnox":  "Fortnox-PDF",
+        "delta":    "Δ"
+      },
+      "deltaZero":   "0 kr",
+      "deltaMissing":"—",
+      "ack":         "Ja, ersätt den befintliga posten med Fortnox-värdena."
+    },
+    "rollup": {
+      "revenue":       "Intäkter",
+      "foodCost":      "Råvarukostnad",
+      "staffCost":     "Personalkostnad",
+      "otherCost":     "Övriga kostnader",
+      "depreciation":  "Avskrivningar",
+      "financial":     "Finansiellt",
+      "netProfit":     "Nettoresultat"
+    },
+    "lines": {
+      "empty":    "Inga rader extraherades.",
+      "missing":  "—",
+      "cols": {
+        "label":    "Etikett",
+        "category": "Kategori",
+        "sub":      "Underk.",
+        "account":  "Konto",
+        "amount":   "Belopp"
+      }
+    }
+  }
+}

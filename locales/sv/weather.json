@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "title":             "Väder × Försäljning",
+  "selectBusiness":    "Välj en restaurang i sidofältet.",
+  "noDataTitle":       "Ingen korrelationsdata ännu.",
+  "noDataBody":        "Kör den historiska väder-backfillen en gång så vi kan para varje försäljningsdag med dess väder:",
+  "header": {
+    "summary":         "{days} handelsdagar analyserade · genomsnittlig intäkt {avg_rev} kr · total personal {labour}%"
+  },
+  "buckets": {
+    "clear":     "Klart",
+    "mild":      "Milt / molnigt",
+    "cold_dry":  "Kallt & torrt (<5°C)",
+    "wet":       "Vått (≥5mm regn)",
+    "snow":      "Snö",
+    "freezing":  "Frost (<0°C)",
+    "hot":       "Varmt (≥20°C)",
+    "thunder":   "Åska"
+  },
+  "byType": {
+    "title":     "Per vädertyp",
+    "subtitle":  "Hur mycket varje vädermönster påverkar intäkten och personal-% jämfört med ditt genomsnitt.",
+    "pts":       "p",
+    "cols": {
+      "weather":     "Väder",
+      "days":        "Dagar",
+      "avgRevenue":  "Snittintäkt",
+      "vsAvg":       "vs snitt",
+      "avgLabour":   "Snitt personal %",
+      "deltaPts":    "Δ p"
+    }
+  },
+  "weekday": {
+    "title":      "Veckodag × väder",
+    "subtitle":   "Genomsnittlig intäkt per veckodag uppdelat på väder. Tomma celler = inga dagar av den kombinationen ännu.",
+    "dayCol":     "Dag",
+    "daysSuffix": "d"
+  },
+  "samples": {
+    "title":     "Senaste 14 matchade dagar",
+    "cols": {
+      "date":     "Datum",
+      "weather":  "Väder",
+      "revenue":  "Intäkt",
+      "labour":   "Personal %"
+    }
+  }
+}

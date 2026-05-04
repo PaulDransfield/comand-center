@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "title":             "Weather × Sales",
+  "selectBusiness":    "Select a business in the sidebar.",
+  "noDataTitle":       "No correlation data yet.",
+  "noDataBody":        "Run the historical weather backfill once so we can pair every sales day with its weather:",
+  "header": {
+    "summary":         "{days} trading days analysed · overall avg revenue {avg_rev} kr · overall labour {labour}%"
+  },
+  "buckets": {
+    "clear":     "Clear",
+    "mild":      "Mild / overcast",
+    "cold_dry":  "Cold & dry (<5°C)",
+    "wet":       "Wet (≥5mm rain)",
+    "snow":      "Snow",
+    "freezing":  "Freezing (<0°C)",
+    "hot":       "Hot (≥20°C)",
+    "thunder":   "Thunderstorm"
+  },
+  "byType": {
+    "title":     "By weather type",
+    "subtitle":  "How much each weather pattern moves revenue and labour % vs your overall average.",
+    "pts":       "pts",
+    "cols": {
+      "weather":     "Weather",
+      "days":        "Days",
+      "avgRevenue":  "Avg revenue",
+      "vsAvg":       "vs avg",
+      "avgLabour":   "Avg labour %",
+      "deltaPts":    "Δ pts"
+    }
+  },
+  "weekday": {
+    "title":      "Weekday × weather",
+    "subtitle":   "Average revenue for each weekday split by weather. Empty cells = no days of that combination yet.",
+    "dayCol":     "Day",
+    "daysSuffix": "d"
+  },
+  "samples": {
+    "title":     "Last 14 matched days",
+    "cols": {
+      "date":     "Date",
+      "weather":  "Weather",
+      "revenue":  "Revenue",
+      "labour":   "Labour %"
+    }
+  }
+}

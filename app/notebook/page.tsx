@@ -3,6 +3,7 @@
 // app/notebook/page.tsx — AI Assistant (full-page chat interface)
 
 import { useState, useRef, useEffect } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { createClient } from '@/lib/supabase/client'
 import { fmtKr } from '@/lib/format'
@@ -54,6 +55,7 @@ async function buildContext(): Promise<string> {
 }
 
 export default function NotebookPage() {
+  const t = useTranslations('notebook.assistant')
   const [messages, setMessages] = useState<Message[]>([])
   const [input,    setInput]    = useState('')
   const [loading,  setLoading]  = useState(false)
@@ -100,21 +102,21 @@ export default function NotebookPage() {
         }),
       })
       const data = await res.json()
-      setMessages([...updated, { role: 'assistant', content: data.answer ?? data.error ?? 'No response.' }])
+      setMessages([...updated, { role: 'assistant', content: data.answer ?? data.error ?? t('noResponse') }])
       // Poke the sidebar meter so the counter updates immediately.
       if (res.ok) { try { window.dispatchEvent(new Event('cc_ai_used')) } catch {} }
     } catch {
-      setMessages([...updated, { role: 'assistant', content: 'Something went wrong. Please try again.' }])
+      setMessages([...updated, { role: 'assistant', content: t('genericError') }])
     }
     setLoading(false)
   }
 
   const STARTERS = [
-    'How is revenue tracking this month?',
-    'Which department has the best gross profit?',
-    'Is my labour cost percentage healthy?',
-    'What should I focus on to improve margin?',
-    'Compare this month to last month',
+    t('starters.0'),
+    t('starters.1'),
+    t('starters.2'),
+    t('starters.3'),
+    t('starters.4'),
   ]
 
   return (
@@ -123,14 +125,12 @@ export default function NotebookPage() {
 
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>AI Assistant</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>{t('title')}</h1>
           <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
-            Ask anything about your restaurant data — revenue, staff costs, margins, and more.
+            {t('subtitle')}
           </p>
           <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
-            {ctxLoading
-              ? 'Loading your business data for context…'
-              : 'AI sees last 6 months per business (pre-loaded). Each question counts toward your daily limit.'}
+            {ctxLoading ? t('contextLoading') : t('contextReady')}
           </p>
         </div>
 
@@ -139,7 +139,7 @@ export default function NotebookPage() {
           {messages.length === 0 ? (
             <div style={{ padding: '40px 0 20px' }}>
               <div style={{ textAlign: 'center', marginBottom: 32, color: '#9ca3af', fontSize: 14 }}>
-                Start a conversation — or try one of these:
+                {t('startersIntro')}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 {STARTERS.map(s => (
@@ -171,7 +171,7 @@ export default function NotebookPage() {
           {loading && (
             <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16 }}>
               <div style={{ padding: '10px 16px', background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', fontSize: 13, color: '#6b7280' }}>
-                Thinking…
+                {t('thinking')}
               </div>
             </div>
           )}
@@ -182,7 +182,7 @@ export default function NotebookPage() {
         <div style={{ borderTop: '1px solid #e5e7eb', padding: '16px 0 24px', display: 'flex', gap: 10 }}>
           <input
             style={{ flex: 1, padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, outline: 'none' }}
-            placeholder="Ask about your restaurant data…"
+            placeholder={t('inputPlaceholder')}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
@@ -192,7 +192,7 @@ export default function NotebookPage() {
             onClick={send}
             disabled={loading || !input.trim()}
             style={{ padding: '10px 20px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: loading || !input.trim() ? 0.5 : 1 }}>
-            Send
+            {t('send')}
           </button>
         </div>
       </div>

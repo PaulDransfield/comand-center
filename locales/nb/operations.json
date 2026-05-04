@@ -55,6 +55,54 @@
       "atLoss":      "går med tap — {amount} underskudd denne perioden.",
       "lowMargin":   "margin {pct} — under 30%-terskelen.",
       "noLabour":    "100% margin flagget — bemanning ikke allokert, sjekk synk."
+    },
+    "detail": {
+      "loading":       "Laster…",
+      "back":          "← Avdelinger",
+      "weekLabel":     "Uke {num}",
+      "loadingInline": "Laster...",
+      "empty": {
+        "title":         "Ingen data for {dept} i {period}",
+        "bodyWeekToday": "Denne uken har akkurat begynt — den daglige synkroniseringen kjører 06:00 UTC, så dagens tall lander i morgen tidlig. Prøv forrige uke eller bytt til Måned.",
+        "bodyDefault":   "Ingenting synkronisert for denne perioden ennå. Prøv en annen uke/måned, eller kjør en synk fra adminpanelet hvis du venter på data.",
+        "prevWeek":      "← Forrige uke",
+        "viewMonth":     "Vis denne måneden",
+        "prevMonth":     "← Forrige måned"
+      },
+      "kpi": {
+        "revenue":     "Inntekt",
+        "labourCost":  "Bemanningskostnad",
+        "labourPct":   "Bemanning %",
+        "gpPct":       "GP%",
+        "covers":      "{covers} gjester · {avg} snitt",
+        "hoursShifts": "{hours} · {shifts} vakter",
+        "ofRevenue":   "av inntekt",
+        "perHour":     "{amount}/t"
+      },
+      "ob": {
+        "title": "OB-tillegg"
+      },
+      "late": {
+        "title":      "Sene ankomster",
+        "shifts":     "{count, plural, one {# vakt} other {# vakter}}",
+        "avgMinutes": "snitt {minutes} min sen"
+      },
+      "staffTable": {
+        "title":   "Ansatte i {dept}",
+        "summary": "{count, plural, one {# person} other {# personer}} · {hours}",
+        "cols": {
+          "name":      "Navn",
+          "hours":     "Timer",
+          "cost":      "Kostnad",
+          "costPerHr": "Kost/t",
+          "shifts":    "Vakter",
+          "late":      "Sen"
+        }
+      },
+      "view": {
+        "week":  "U",
+        "month": "M"
+      }
     }
   },
   "group": {

@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense, useEffect, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { deptColor } from '@/lib/constants/colors'
 import OverviewChart from '@/components/dashboard/OverviewChart'
@@ -35,7 +36,7 @@ function getMonthBounds(offset = 0) {
 // <Suspense> boundary or the static prerender bails out (FIXES.md §0d).
 export default function DepartmentDetailPageWrapper() {
   return (
-    <Suspense fallback={<AppShell><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>Loading…</div></AppShell>}>
+    <Suspense fallback={<AppShell><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>…</div></AppShell>}>
       <DepartmentDetailPage />
     </Suspense>
   )
@@ -45,6 +46,7 @@ function DepartmentDetailPage() {
   const params   = useParams()
   const router   = useRouter()
   const search   = useSearchParams()
+  const t        = useTranslations('operations.departments.detail')
   const deptName = decodeURIComponent(params.id as string)
 
   // Initial period — if `?year=YYYY&month=M` is passed (e.g. from the
@@ -88,7 +90,7 @@ function DepartmentDetailPage() {
 
   const now = new Date()
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
+  const periodLabel = viewMode === 'week' ? t('weekLabel', { num: (curr as any).weekNum }) : curr.label
 
   const summary = data?.summary ?? {}
   const trend   = data?.trend ?? []
@@ -128,7 +130,7 @@ function DepartmentDetailPage() {
       <div className="page-wrap">
 
         {/* Breadcrumb */}
-        <button onClick={() => router.push('/departments')} style={{ background: 'none', border: 'none', fontSize: 12, color: '#9ca3af', cursor: 'pointer', padding: 0, marginBottom: 8 }}>← Departments</button>
+        <button onClick={() => router.push('/departments')} style={{ background: 'none', border: 'none', fontSize: 12, color: '#9ca3af', cursor: 'pointer', padding: 0, marginBottom: 8 }}>{t('back')}</button>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
@@ -141,7 +143,7 @@ function DepartmentDetailPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
                 <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Week {(curr as any).weekNum}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{t('weekLabel', { num: (curr as any).weekNum })}</div>
                   <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
                 </div>
                 <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
@@ -155,37 +157,37 @@ function DepartmentDetailPage() {
             )}
             <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
               {(['week', 'month'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: viewMode === m ? 'white' : 'transparent', color: viewMode === m ? '#111' : '#9ca3af', boxShadow: viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{m === 'week' ? 'W' : 'M'}</button>
+                <button key={m} onClick={() => setViewMode(m)} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: viewMode === m ? 'white' : 'transparent', color: viewMode === m ? '#111' : '#9ca3af', boxShadow: viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{m === 'week' ? t('view.week') : t('view.month')}</button>
               ))}
             </div>
           </div>
         </div>
 
         {loading ? (
-          <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>Loading...</div>
+          <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>{t('loadingInline')}</div>
         ) : (summary.revenue ?? 0) === 0 && (summary.staff_cost ?? 0) === 0 ? (
           <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '40px 24px', textAlign: 'center' as const }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 6 }}>
-              No data for {deptName} in {periodLabel}
+              {t('empty.title', { dept: deptName, period: periodLabel })}
             </div>
             <div style={{ fontSize: 13, color: '#6b7280', maxWidth: 420, margin: '0 auto 14px' }}>
               {viewMode === 'week' && weekOffset === 0
-                ? 'This week has only just started — the daily sync runs at 06:00 UTC so today\'s numbers land tomorrow morning. Try the previous week or switch to Month.'
-                : 'Nothing synced for this period yet. Try a different week/month, or run a sync from the admin panel if you\'re waiting on data.'}
+                ? t('empty.bodyWeekToday')
+                : t('empty.bodyDefault')}
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
               {viewMode === 'week' ? (
                 <>
                   <button onClick={() => setWeekOffset(o => o - 1)} style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-                    ← Previous week
+                    {t('empty.prevWeek')}
                   </button>
                   <button onClick={() => setViewMode('month')} style={{ padding: '8px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    View this month
+                    {t('empty.viewMonth')}
                   </button>
                 </>
               ) : (
                 <button onClick={() => setMonthOffset(o => o - 1)} style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-                  ← Previous month
+                  {t('empty.prevMonth')}
                 </button>
               )}
             </div>
@@ -195,10 +197,10 @@ function DepartmentDetailPage() {
             {/* KPI cards */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               {[
-                { label: 'Revenue', value: summary.revenue > 0 ? fmtKr(summary.revenue) : '—', sub: summary.covers > 0 ? `${summary.covers} covers · ${fmtKr(summary.avg_spend)} avg` : '', accent: color },
-                { label: 'Labour Cost', value: summary.staff_cost > 0 ? fmtKr(summary.staff_cost) : '—', sub: `${fmtH(summary.hours ?? 0)} · ${summary.shifts ?? 0} shifts`, accent: null },
-                { label: 'Labour %', value: fmtPct(summary.labour_pct), sub: 'of revenue', accent: summary.labour_pct > 40 ? '#dc2626' : summary.labour_pct > 30 ? '#d97706' : '#10b981' },
-                { label: 'GP%', value: fmtPct(summary.gp_pct), sub: summary.rev_per_hour > 0 ? `${fmtKr(summary.rev_per_hour)}/hr` : '', accent: summary.gp_pct >= 50 ? '#10b981' : summary.gp_pct >= 30 ? '#d97706' : '#dc2626' },
+                { label: t('kpi.revenue'),    value: summary.revenue > 0 ? fmtKr(summary.revenue) : '—', sub: summary.covers > 0 ? t('kpi.covers', { covers: summary.covers, avg: fmtKr(summary.avg_spend) }) : '', accent: color },
+                { label: t('kpi.labourCost'), value: summary.staff_cost > 0 ? fmtKr(summary.staff_cost) : '—', sub: t('kpi.hoursShifts', { hours: fmtH(summary.hours ?? 0), shifts: summary.shifts ?? 0 }), accent: null },
+                { label: t('kpi.labourPct'),  value: fmtPct(summary.labour_pct), sub: t('kpi.ofRevenue'), accent: summary.labour_pct > 40 ? '#dc2626' : summary.labour_pct > 30 ? '#d97706' : '#10b981' },
+                { label: t('kpi.gpPct'),      value: fmtPct(summary.gp_pct), sub: summary.rev_per_hour > 0 ? t('kpi.perHour', { amount: fmtKr(summary.rev_per_hour) }) : '', accent: summary.gp_pct >= 50 ? '#10b981' : summary.gp_pct >= 30 ? '#d97706' : '#dc2626' },
               ].map(k => (
                 <div key={k.label} style={{ flex: 1, background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', borderTop: k.accent ? `3px solid ${k.accent}` : undefined }}>
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{k.label}</div>
@@ -213,7 +215,7 @@ function DepartmentDetailPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                 {summary.ob_supplement > 0 && (
                   <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>OB Supplements</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>{t('ob.title')}</div>
                     <div style={{ fontSize: 18, fontWeight: 700, color: '#111' }}>{fmtKr(summary.ob_supplement)}</div>
                     {summary.ob_type_breakdown?.length > 0 && (
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
@@ -226,9 +228,9 @@ function DepartmentDetailPage() {
                 )}
                 {summary.late_shifts > 0 && (
                   <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>Late Arrivals</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#d97706' }}>{summary.late_shifts} shift{summary.late_shifts !== 1 ? 's' : ''}</div>
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>avg {summary.avg_late_minutes} min late</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>{t('late.title')}</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#d97706' }}>{t('late.shifts', { count: summary.late_shifts })}</div>
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{t('late.avgMinutes', { minutes: summary.avg_late_minutes })}</div>
                   </div>
                 )}
               </div>
@@ -250,14 +252,21 @@ function DepartmentDetailPage() {
             {staff.length > 0 && (
               <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
                 <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Staff in {deptName}</div>
-                  <div style={{ fontSize: 12, color: '#9ca3af' }}>{staff.length} people · {fmtH(summary.hours ?? 0)}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{t('staffTable.title', { dept: deptName })}</div>
+                  <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('staffTable.summary', { count: staff.length, hours: fmtH(summary.hours ?? 0) })}</div>
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: '#f9fafb' }}>
-                      {['Name','Hours','Cost','Cost/hr','Shifts','Late'].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Name' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h}</th>
+                      {[
+                        { key: 'name',      label: t('staffTable.cols.name'),      align: 'left'  as const },
+                        { key: 'hours',     label: t('staffTable.cols.hours'),     align: 'right' as const },
+                        { key: 'cost',      label: t('staffTable.cols.cost'),      align: 'right' as const },
+                        { key: 'costPerHr', label: t('staffTable.cols.costPerHr'), align: 'right' as const },
+                        { key: 'shifts',    label: t('staffTable.cols.shifts'),    align: 'right' as const },
+                        { key: 'late',      label: t('staffTable.cols.late'),      align: 'right' as const },
+                      ].map(h => (
+                        <th key={h.key} style={{ padding: '9px 14px', textAlign: h.align, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h.label}</th>
                       ))}
                     </tr>
                   </thead>

@@ -1,0 +1,37 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "assistant": {
+    "title":          "AI-assistent",
+    "subtitle":       "Spør hva som helst om restaurantdataene dine — inntekt, bemanningskostnader, marginer og mer.",
+    "contextLoading": "Laster forretningsdataene dine som kontekst…",
+    "contextReady":   "AI-en ser siste 6 måneder per restaurant (forhåndslastet). Hvert spørsmål teller mot din daglige grense.",
+    "startersIntro":  "Start en samtale — eller prøv en av disse:",
+    "starters": [
+      "Hvordan utvikler inntekten seg denne måneden?",
+      "Hvilken avdeling har best bruttomargin?",
+      "Er bemanningskostnaden min i prosent sunn?",
+      "Hva bør jeg fokusere på for å forbedre marginen?",
+      "Sammenlign denne måneden med forrige"
+    ],
+    "thinking":          "Tenker…",
+    "inputPlaceholder":  "Spør om restaurantdataene dine…",
+    "send":              "Send",
+    "noResponse":        "Ingen respons.",
+    "genericError":      "Noe gikk galt. Prøv igjen."
+  },
+  "studio": {
+    "backToAssistant": "Assistent",
+    "title":           "AI-studio",
+    "subtitle":        "Bygg AI-drevne rapporter, planlegg innsikter og opprett automatiske varsler — tilpasset restaurantene dine.",
+    "comingSoon":      "Kommer snart",
+    "features": {
+      "reports":   { "title": "Tilpassede rapporter", "desc": "Bygg rapporter på tvers av enhver datakombinasjon" },
+      "scheduled": { "title": "Planlagte innsikter",  "desc": "Automatiske ukentlige og månedlige sammendrag" },
+      "alerts":    { "title": "Smarte varsler",       "desc": "Definer egne terskler for avviksdeteksjon" },
+      "digests":   { "title": "E-postsammendrag",     "desc": "Få innsikter direkte i innboksen" }
+    }
+  }
+}

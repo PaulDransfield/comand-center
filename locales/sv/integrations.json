@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "locale":  "sv",
+    "_status": "awaiting_review"
+  },
+  "title":    "Integrationer",
+  "subtitle": "Anslut dina bokförings-, kassa- och schemaläggningssystem. Data synkas automatiskt och fyller i den ekonomiska översikten.",
+  "banners": {
+    "connected":      "{provider} ansluten! Din data synkroniseras strax.",
+    "connectionError":"Anslutning misslyckades: {error}. Försök igen eller kontakta support."
+  },
+  "categories": {
+    "Accounting": "Bokföring",
+    "POS":        "Kassa",
+    "Staff":      "Personal",
+    "Delivery":   "Leverans",
+    "Booking":    "Bokning"
+  },
+  "status": {
+    "connected":     "Ansluten",
+    "error":         "Fel",
+    "warning":       "Varning",
+    "disconnected":  "Frånkopplad",
+    "not_connected": "Ej ansluten",
+    "connectionError":"Anslutningsfel"
+  },
+  "tokenExpiry":  "Token går ut om {count, plural, one {# dag} other {# dagar}}",
+  "syncedAt":     "Synkad {date}",
+  "pk": {
+    "label": "Lita på Personalkollen framför Fortnox",
+    "body":  " för personalkostnad. Använd detta om dina Fortnox-PDF:er är gamla — nästa aggregatorkörning använder PK-siffrorna även när de avviker mer än 30% från Fortnox."
+  },
+  "actions": {
+    "connect":    "Anslut",
+    "syncNow":    "Synka nu",
+    "reconnect":  "Återanslut",
+    "disconnect": "Koppla från"
+  },
+  "confirms": {
+    "disconnect": "Koppla från {provider}? Detta stoppar synkning av data från tjänsten."
+  },
+  "errors": {
+    "saveGeneric":     "Det gick inte att spara. Försök igen.",
+    "providerFailed":  "{provider}-anslutning misslyckades: {message}",
+    "personalkollenFailed":"Personalkollen-anslutning misslyckades: {message}",
+    "testFailed":      "Test misslyckades",
+    "saveFailed":      "Sparande misslyckades",
+    "credentialsSaved":"{provider}-uppgifter sparade",
+    "connectionTestFailed":"Anslutningstest misslyckades",
+    "failedToSave":    "Det gick inte att spara"
+  },
+  "modal": {
+    "title":             "Anslut {name}",
+    "subtitle":          "Ange din API-nyckel. Den krypteras och lagras säkert — delas eller exponeras aldrig.",
+    "restaurantLabel":   "Restaurang",
+    "restaurantPlaceholder":"Välj restaurang…",
+    "apiKey":            "API-nyckel",
+    "apiKeyPlaceholder": "Klistra in din API-nyckel här",
+    "cancel":            "Avbryt",
+    "saving":            "Sparar…",
+    "save":              "Spara och anslut"
+  },
+  "oauthBadge": "OAuth 2.0"
+}

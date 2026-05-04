@@ -3,25 +3,19 @@
 // app/weather/page.tsx — sales by weather bucket + per-weekday breakdown.
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 
 export const dynamic = 'force-dynamic'
 
-const BUCKET_LABEL: Record<string, string> = {
-  clear:    'Clear',
-  mild:     'Mild / overcast',
-  cold_dry: 'Cold & dry (<5°C)',
-  wet:      'Wet (≥5mm rain)',
-  snow:     'Snow',
-  freezing: 'Freezing (<0°C)',
-  hot:      'Hot (≥20°C)',
-  thunder:  'Thunderstorm',
-}
+const BUCKET_KEYS = ['clear','mild','cold_dry','wet','snow','freezing','hot','thunder'] as const
 const BUCKET_COLOUR: Record<string, string> = {
   clear: '#fbbf24', mild: '#94a3b8', cold_dry: '#60a5fa', wet: '#3b82f6',
   snow: '#cbd5e1', freezing: '#a78bfa', hot: '#f97316', thunder: '#7c3aed',
 }
 
 export default function WeatherPage() {
+  const t       = useTranslations('weather')
+  const tCommon = useTranslations('common')
   const [bizId,   setBizId]   = useState('')
   const [data,    setData]    = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -42,17 +36,17 @@ export default function WeatherPage() {
       .finally(() => setLoading(false))
   }, [bizId])
 
-  if (!bizId)  return <div style={wrap}><p>Select a business in the sidebar.</p></div>
-  if (loading) return <div style={wrap}><p>Loading…</p></div>
+  if (!bizId)  return <div style={wrap}><p>{t('selectBusiness')}</p></div>
+  if (loading) return <div style={wrap}><p>{tCommon('state.loading')}</p></div>
   if (error)   return <div style={wrap}><p style={{ color: '#dc2626' }}>{error}</p></div>
   if (!data)   return null
 
   if (data.days_analyzed === 0) {
     return (
       <div style={wrap}>
-        <h1 style={h1}>Weather × Sales</h1>
+        <h1 style={h1}>{t('title')}</h1>
         <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: 16, fontSize: 13, color: '#78350f' }}>
-          <strong>No correlation data yet.</strong> Run the historical weather backfill once so we can pair every sales day with its weather:<br /><br />
+          <strong>{t('noDataTitle')}</strong> {t('noDataBody')}<br /><br />
           <code style={{ background: '#fff', padding: '4px 8px', borderRadius: 4, display: 'inline-block' }}>
             POST /api/admin/weather/backfill?secret=YOUR_ADMIN_SECRET
           </code>
@@ -66,30 +60,30 @@ export default function WeatherPage() {
 
   return (
     <div style={wrap}>
-      <h1 style={h1}>Weather × Sales</h1>
+      <h1 style={h1}>{t('title')}</h1>
       <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
-        {data.business_name} · {data.days_analyzed} trading days analysed · overall avg revenue {fmt(data.overall_avg_rev)} kr · overall labour {data.overall_avg_labour}%
+        {data.business_name} · {t('header.summary', { days: data.days_analyzed, avg_rev: fmt(data.overall_avg_rev), labour: data.overall_avg_labour })}
       </div>
 
-      <h2 style={h2}>By weather type</h2>
+      <h2 style={h2}>{t('byType.title')}</h2>
       <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
-        How much each weather pattern moves revenue and labour % vs your overall average.
+        {t('byType.subtitle')}
       </div>
       <table style={table}>
         <thead><tr>
-          <th style={th}>Weather</th>
-          <th style={{ ...th, textAlign: 'right' }}>Days</th>
-          <th style={{ ...th, textAlign: 'right' }}>Avg revenue</th>
-          <th style={{ ...th, textAlign: 'right' }}>vs avg</th>
-          <th style={{ ...th, textAlign: 'right' }}>Avg labour %</th>
-          <th style={{ ...th, textAlign: 'right' }}>Δ pts</th>
+          <th style={th}>{t('byType.cols.weather')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('byType.cols.days')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('byType.cols.avgRevenue')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('byType.cols.vsAvg')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('byType.cols.avgLabour')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('byType.cols.deltaPts')}</th>
         </tr></thead>
         <tbody>
           {data.buckets.map((b: any) => (
             <tr key={b.bucket}>
               <td style={td}>
                 <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: BUCKET_COLOUR[b.bucket], marginRight: 8 }} />
-                {BUCKET_LABEL[b.bucket] ?? b.bucket}
+                {BUCKET_KEYS.includes(b.bucket as any) ? t(`buckets.${b.bucket}`) : b.bucket}
               </td>
               <td style={{ ...td, textAlign: 'right' }}>{b.days}</td>
               <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{fmt(b.avg_revenue)} kr</td>
@@ -98,24 +92,24 @@ export default function WeatherPage() {
               </td>
               <td style={{ ...td, textAlign: 'right' }}>{b.avg_labour_pct != null ? `${b.avg_labour_pct}%` : '—'}</td>
               <td style={{ ...td, textAlign: 'right', color: b.labour_delta_pts != null ? (b.labour_delta_pts > 0 ? '#b91c1c' : '#059669') : '#6b7280' }}>
-                {b.labour_delta_pts != null ? `${b.labour_delta_pts > 0 ? '+' : ''}${b.labour_delta_pts} pts` : '—'}
+                {b.labour_delta_pts != null ? `${b.labour_delta_pts > 0 ? '+' : ''}${b.labour_delta_pts} ${t('byType.pts')}` : '—'}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <h2 style={{ ...h2, marginTop: 32 }}>Weekday × weather</h2>
+      <h2 style={{ ...h2, marginTop: 32 }}>{t('weekday.title')}</h2>
       <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
-        Average revenue for each weekday split by weather. Empty cells = no days of that combination yet.
+        {t('weekday.subtitle')}
       </div>
       <table style={table}>
         <thead><tr>
-          <th style={th}>Day</th>
-          {Object.keys(BUCKET_LABEL).map(b => (
+          <th style={th}>{t('weekday.dayCol')}</th>
+          {BUCKET_KEYS.map(b => (
             <th key={b} style={{ ...th, textAlign: 'right' }}>
               <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: BUCKET_COLOUR[b], marginRight: 4 }} />
-              {BUCKET_LABEL[b]}
+              {t(`buckets.${b}`)}
             </th>
           ))}
         </tr></thead>
@@ -123,13 +117,13 @@ export default function WeatherPage() {
           {data.weekdayBreakdown.map((row: any) => (
             <tr key={row.weekday}>
               <td style={{ ...td, fontWeight: 600 }}>{row.weekday}</td>
-              {Object.keys(BUCKET_LABEL).map(b => {
+              {BUCKET_KEYS.map(b => {
                 const c = row.cells.find((x: any) => x.bucket === b)
                 if (!c) return <td key={b} style={{ ...td, textAlign: 'right', color: '#d1d5db' }}>—</td>
                 return (
                   <td key={b} style={{ ...td, textAlign: 'right' }}>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{fmt(c.avg_rev)}</div>
-                    <div style={{ fontSize: 10, color: '#9ca3af' }}>{c.days}d {c.avg_labour != null ? `· ${c.avg_labour}%` : ''}</div>
+                    <div style={{ fontSize: 10, color: '#9ca3af' }}>{c.days}{t('weekday.daysSuffix')} {c.avg_labour != null ? `· ${c.avg_labour}%` : ''}</div>
                   </td>
                 )
               })}
@@ -138,13 +132,13 @@ export default function WeatherPage() {
         </tbody>
       </table>
 
-      <h2 style={{ ...h2, marginTop: 32 }}>Last 14 matched days</h2>
+      <h2 style={{ ...h2, marginTop: 32 }}>{t('samples.title')}</h2>
       <table style={table}>
         <thead><tr>
-          <th style={th}>Date</th>
-          <th style={th}>Weather</th>
-          <th style={{ ...th, textAlign: 'right' }}>Revenue</th>
-          <th style={{ ...th, textAlign: 'right' }}>Labour %</th>
+          <th style={th}>{t('samples.cols.date')}</th>
+          <th style={th}>{t('samples.cols.weather')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('samples.cols.revenue')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{t('samples.cols.labour')}</th>
         </tr></thead>
         <tbody>
           {data.samples.map((s: any) => (

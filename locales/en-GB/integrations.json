@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "locale":  "en-GB",
+    "_status": "ready"
+  },
+  "title":    "Integrations",
+  "subtitle": "Connect your accounting, POS, and scheduling systems. Data syncs automatically and populates the financial tracker.",
+  "banners": {
+    "connected":      "{provider} connected successfully! Your data will sync shortly.",
+    "connectionError":"Connection failed: {error}. Please try again or contact support."
+  },
+  "categories": {
+    "Accounting": "Accounting",
+    "POS":        "POS",
+    "Staff":      "Staff",
+    "Delivery":   "Delivery",
+    "Booking":    "Booking"
+  },
+  "status": {
+    "connected":     "Connected",
+    "error":         "Error",
+    "warning":       "Warning",
+    "disconnected":  "Disconnected",
+    "not_connected": "Not connected",
+    "connectionError":"Connection error"
+  },
+  "tokenExpiry":  "Token expires in {count, plural, one {# day} other {# days}}",
+  "syncedAt":     "Synced {date}",
+  "pk": {
+    "label": "Trust Personalkollen over Fortnox",
+    "body":  " for staff cost. Use this if your Fortnox PDFs are out of date — the next aggregator run will use PK numbers even when they disagree with Fortnox by > 30%."
+  },
+  "actions": {
+    "connect":    "Connect",
+    "syncNow":    "Sync now",
+    "reconnect":  "Reconnect",
+    "disconnect": "Disconnect"
+  },
+  "confirms": {
+    "disconnect": "Disconnect {provider}? This will stop syncing data from this service."
+  },
+  "errors": {
+    "saveGeneric":     "Failed to save. Please try again.",
+    "providerFailed":  "{provider} connection failed: {message}",
+    "personalkollenFailed":"Personalkollen connection failed: {message}",
+    "testFailed":      "Test failed",
+    "saveFailed":      "Save failed",
+    "credentialsSaved":"{provider} credentials saved",
+    "connectionTestFailed":"Connection test failed",
+    "failedToSave":    "Failed to save"
+  },
+  "modal": {
+    "title":             "Connect {name}",
+    "subtitle":          "Enter your API key. It will be encrypted and stored securely — never shared or exposed.",
+    "restaurantLabel":   "Restaurant",
+    "restaurantPlaceholder":"Select restaurant…",
+    "apiKey":            "API Key",
+    "apiKeyPlaceholder": "Paste your API key here",
+    "cancel":            "Cancel",
+    "saving":            "Saving…",
+    "save":              "Save & connect"
+  },
+  "oauthBadge": "OAuth 2.0"
+}

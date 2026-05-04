@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "locale":  "nb",
+    "_status": "awaiting_review"
+  },
+  "title":             "Vær × Salg",
+  "selectBusiness":    "Velg en restaurant i sidefeltet.",
+  "noDataTitle":       "Ingen korrelasjonsdata ennå.",
+  "noDataBody":        "Kjør den historiske vær-backfillen én gang så vi kan pare hver salgsdag med været:",
+  "header": {
+    "summary":         "{days} handelsdager analysert · gjennomsnittlig inntekt {avg_rev} kr · samlet bemanning {labour}%"
+  },
+  "buckets": {
+    "clear":     "Klart",
+    "mild":      "Mildt / overskyet",
+    "cold_dry":  "Kaldt & tørt (<5°C)",
+    "wet":       "Vått (≥5mm regn)",
+    "snow":      "Snø",
+    "freezing":  "Frost (<0°C)",
+    "hot":       "Varmt (≥20°C)",
+    "thunder":   "Tordenvær"
+  },
+  "byType": {
+    "title":     "Per værtype",
+    "subtitle":  "Hvor mye hvert værmønster flytter inntekt og bemanning-% mot snittet ditt.",
+    "pts":       "p",
+    "cols": {
+      "weather":     "Vær",
+      "days":        "Dager",
+      "avgRevenue":  "Snittinntekt",
+      "vsAvg":       "vs snitt",
+      "avgLabour":   "Snitt bemanning %",
+      "deltaPts":    "Δ p"
+    }
+  },
+  "weekday": {
+    "title":      "Ukedag × vær",
+    "subtitle":   "Gjennomsnittlig inntekt per ukedag fordelt på vær. Tomme celler = ingen dager av den kombinasjonen ennå.",
+    "dayCol":     "Dag",
+    "daysSuffix": "d"
+  },
+  "samples": {
+    "title":     "Siste 14 matchede dager",
+    "cols": {
+      "date":     "Dato",
+      "weather":  "Vær",
+      "revenue":  "Inntekt",
+      "labour":   "Bemanning %"
+    }
+  }
+}

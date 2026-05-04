@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import AppShell from '@/components/AppShell'
 import { useState, useEffect } from 'react'
 import { useSearchParams }     from 'next/navigation'
+import { useTranslations }     from 'next-intl'
 import { createClient }        from '@/lib/supabase/client'
 import { track }               from '@/lib/analytics/posthog'
 
@@ -94,6 +95,7 @@ const PROVIDERS = [
 ]
 
 export default function IntegrationsPage() {
+  const t = useTranslations('integrations')
   const searchParams = useSearchParams()
   const [integrations, setIntegrations] = useState<Record<string, Integration>>({})
   const [loading,      setLoading]      = useState(true)
@@ -189,11 +191,11 @@ export default function IntegrationsPage() {
             body: JSON.stringify({ action: 'test', api_key: apiKey.trim() }),
           })
           const testData = await testRes.json()
-          if (!testRes.ok || !testData.ok) throw new Error(testData.error ?? 'Test failed')
+          if (!testRes.ok || !testData.ok) throw new Error(testData.error ?? t('errors.testFailed'))
           testOk = true; testMsg = testData.message
         } else {
           // For other providers, just save and try sync
-          testOk = true; testMsg = `${provider} credentials saved`
+          testOk = true; testMsg = t('errors.credentialsSaved', { provider })
         }
 
         // Save to integrations table
@@ -208,7 +210,7 @@ export default function IntegrationsPage() {
             body: JSON.stringify({ action: 'connect', api_key: apiKey.trim(), business_id: bizForPOS }),
           })
           const saveData = await saveRes.json()
-          if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? 'Save failed')
+          if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? t('errors.saveFailed'))
         } else {
           // Generic save via sync API
           const saveRes = await fetch('/api/integrations/generic', {
@@ -216,7 +218,7 @@ export default function IntegrationsPage() {
             body: JSON.stringify({ provider, api_key: apiKey.trim(), business_id: bizForPOS }),
           })
           const saveData = await saveRes.json()
-          if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? 'Save failed')
+          if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? t('errors.saveFailed'))
         }
 
         // Trigger immediate historical sync
@@ -227,7 +229,7 @@ export default function IntegrationsPage() {
 
         setModal(null); setApiKey(''); setBizForPOS('')
         window.location.href = `/integrations?connected=${provider}`
-      } catch (e: any) { alert(`${provider} connection failed: ` + e.message) }
+      } catch (e: any) { alert(t('errors.providerFailed', { provider, message: e.message })) }
       setSaving(false); return
     }
 
@@ -241,7 +243,7 @@ export default function IntegrationsPage() {
           body:    JSON.stringify({ action: 'test', api_key: apiKey.trim() }),
         })
         const testData = await testRes.json()
-        if (!testRes.ok || !testData.ok) throw new Error(testData.error ?? 'Connection test failed')
+        if (!testRes.ok || !testData.ok) throw new Error(testData.error ?? t('errors.connectionTestFailed'))
 
         // Save credentials
         const saveRes = await fetch('/api/integrations/personalkollen', {
@@ -250,12 +252,12 @@ export default function IntegrationsPage() {
           body:    JSON.stringify({ action: 'connect', api_key: apiKey.trim(), business_id: bizForPOS }),
         })
         const saveData = await saveRes.json()
-        if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? 'Failed to save')
+        if (!saveRes.ok || !saveData.ok) throw new Error(saveData.error ?? t('errors.failedToSave'))
 
         setModal(null); setApiKey(''); setBizForPOS('')
         window.location.href = '/integrations?connected=personalkollen'
       } catch (e: any) {
-        alert('Personalkollen connection failed: ' + e.message)
+        alert(t('errors.personalkollenFailed', { message: e.message }))
       }
       setSaving(false)
       return
@@ -297,7 +299,7 @@ export default function IntegrationsPage() {
     }, { onConflict: 'org_id,provider' })
 
     if (error) {
-      alert('Failed to save. Please try again.')
+      alert(t('errors.saveGeneric'))
     } else {
       setModal(null)
       setApiKey('')
@@ -307,7 +309,7 @@ export default function IntegrationsPage() {
   }
 
   async function disconnect(provider: string) {
-    if (!confirm(`Disconnect ${provider}? This will stop syncing data from this service.`)) return
+    if (!confirm(t('confirms.disconnect', { provider }))) return
 
     const supabase = createClient()
     await supabase.from('integrations')
@@ -325,22 +327,22 @@ export default function IntegrationsPage() {
 
       <div style={{ marginBottom: 28 }}>
         <h1 style={{ fontFamily:'Georgia, serif', fontSize:24, fontWeight:400, fontStyle:'italic', color:'#1a1f2e', marginBottom:6 }}>
-          Integrations
+          {t('title')}
         </h1>
         <p style={{ fontSize:13, color:'#6b7280', lineHeight:1.6 }}>
-          Connect your accounting, POS, and scheduling systems. Data syncs automatically and populates the financial tracker.
+          {t('subtitle')}
         </p>
       </div>
 
       {/* Status messages */}
       {justConnected && (
         <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:'12px 16px', fontSize:13, color:'#15803d', marginBottom:20, fontWeight:500 }}>
-           {justConnected.charAt(0).toUpperCase() + justConnected.slice(1)} connected successfully! Your data will sync shortly.
+           {t('banners.connected', { provider: justConnected.charAt(0).toUpperCase() + justConnected.slice(1) })}
         </div>
       )}
       {connectError && (
         <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'12px 16px', fontSize:13, color:'#dc2626', marginBottom:20 }}>
-           Connection failed: {connectError.replace(/_/g,' ')}. Please try again or contact support.
+           {t('banners.connectionError', { error: connectError.replace(/_/g,' ') })}
         </div>
       )}
 
@@ -365,18 +367,18 @@ export default function IntegrationsPage() {
           }[status]
 
           const statusLabel = {
-            connected:     'Connected',
-            error:         'Error',
-            warning:       'Warning',
-            disconnected:  'Disconnected',
-            not_connected: 'Not connected',
+            connected:     t('status.connected'),
+            error:         t('status.error'),
+            warning:       t('status.warning'),
+            disconnected:  t('status.disconnected'),
+            not_connected: t('status.not_connected'),
           }[status]
 
           // Token expiry warning
           let expiryWarning = ''
           if (integ?.token_expires_at) {
             const daysLeft = Math.ceil((new Date(integ.token_expires_at).getTime() - Date.now()) / 86400000)
-            if (daysLeft <= 7) expiryWarning = `Token expires in ${daysLeft} day${daysLeft!==1?'s':''}`
+            if (daysLeft <= 7) expiryWarning = t('tokenExpiry', { count: daysLeft })
           }
 
           return (
@@ -387,13 +389,13 @@ export default function IntegrationsPage() {
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4, flexWrap:'wrap' }}>
                     <span style={{ fontSize:15, fontWeight:600, color:'#111827' }}>{provider.name}</span>
-                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:8, background:'#fafafa', color:'#9ca3af', border:'1px solid #e5e7eb', textTransform:'uppercase', letterSpacing:'.06em' }}>{provider.category}</span>
+                    <span style={{ fontSize:10, fontWeight:700, padding:'2px 8px', borderRadius:8, background:'#fafafa', color:'#9ca3af', border:'1px solid #e5e7eb', textTransform:'uppercase', letterSpacing:'.06em' }}>{t(`categories.${provider.category}`)}</span>
                     <span style={{ fontSize:11, fontWeight:600, color:statusColour, display:'flex', alignItems:'center', gap:4 }}>
                       <span style={{ width:6, height:6, borderRadius:'50%', background:statusColour, display:'inline-block' }} />
                       {statusLabel}
                     </span>
                     {provider.authType === 'oauth2' && (
-                      <span style={{ fontSize:10, color:'#9ca3af', fontFamily:'monospace' }}>OAuth 2.0</span>
+                      <span style={{ fontSize:10, color:'#9ca3af', fontFamily:'monospace' }}>{t('oauthBadge')}</span>
                     )}
                   </div>
 
@@ -412,7 +414,7 @@ export default function IntegrationsPage() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: isConnected ? '#10b981' : status === 'error' ? '#dc2626' : '#d1d5db', display: 'inline-block' }} />
                         <span style={{ fontWeight: 600, color: isConnected ? '#15803d' : status === 'error' ? '#dc2626' : '#6b7280' }}>
-                          {isConnected ? 'Connected' : status === 'error' ? 'Connection error' : 'Not connected'}
+                          {isConnected ? t('status.connected') : status === 'error' ? t('status.connectionError') : t('status.not_connected')}
                         </span>
                         {integ?.business_id && businesses.find((b: any) => b.id === integ.business_id) && (
                           <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '1px 7px', borderRadius: 3, fontWeight: 600, fontSize: 11 }}>
@@ -422,7 +424,7 @@ export default function IntegrationsPage() {
                       </div>
                       {integ?.last_sync_at && (
                         <span style={{ color: '#9ca3af', fontSize: 11 }}>
-                          Synced {new Date(integ.last_sync_at).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}
+                          {t('syncedAt', { date: new Date(integ.last_sync_at).toLocaleString('en-GB', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) })}
                         </span>
                       )}
                     </div>
@@ -465,7 +467,7 @@ export default function IntegrationsPage() {
                             style={{ marginTop: 2, accentColor: '#1a1f2e' }}
                           />
                           <span>
-                            <strong>Trust Personalkollen over Fortnox</strong> for staff cost. Use this if your Fortnox PDFs are out of date — the next aggregator run will use PK numbers even when they disagree with Fortnox by &gt; 30%.
+                            <strong>{t('pk.label')}</strong>{t('pk.body')}
                           </span>
                         </label>
                       )}
@@ -482,12 +484,12 @@ export default function IntegrationsPage() {
 
                   {!isConnected && provider.authType === 'oauth2' && (
                     <button className="btn btn-primary btn-sm" onClick={() => connectFortnox()}>
-                      Connect
+                      {t('actions.connect')}
                     </button>
                   )}
                   {!isConnected && provider.authType === 'api_key' && (
                     <button className="btn btn-primary btn-sm" onClick={() => { setModal(provider.key); setApiKey(''); setBizForPOS(selectedBiz) }}>
-                      Connect
+                      {t('actions.connect')}
                     </button>
                   )}
                   {isConnected && (
@@ -495,14 +497,14 @@ export default function IntegrationsPage() {
                       <button className="btn btn-sm" onClick={async () => {
                         await fetch('/api/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: provider.key }) })
                         load()
-                      }}>Sync now</button>
+                      }}>{t('actions.syncNow')}</button>
                       {status === 'error' && (
                         <button className="btn btn-sm" style={{ color:'#d97706', borderColor:'#fde68a', background:'#fffbeb' }} onClick={async () => {
                           await fetch('/api/integrations/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: provider.key }) })
                           load()
-                        }}>Reconnect</button>
+                        }}>{t('actions.reconnect')}</button>
                       )}
-                      <button className="btn btn-sm" style={{ color:'#dc2626', borderColor:'#fecaca' }} onClick={() => disconnect(provider.key)}>Disconnect</button>
+                      <button className="btn btn-sm" style={{ color:'#dc2626', borderColor:'#fecaca' }} onClick={() => disconnect(provider.key)}>{t('actions.disconnect')}</button>
                     </>
                   )}
                 </div>
@@ -518,19 +520,19 @@ export default function IntegrationsPage() {
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:199 }} onClick={() => setModal(null)} />
           <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', background:'#ffffff', borderRadius:14, width:460, maxWidth:'94vw', zIndex:200, padding:'28px', boxShadow:'0 25px 60px rgba(0,0,0,0.3)', border:'1px solid #e5e7eb' }}>
             <h2 style={{ fontFamily:'Georgia, serif', fontSize:18, fontStyle:'italic', color:'#1a1f2e', marginBottom:6 }}>
-              Connect {PROVIDERS.find(p=>p.key===modal)?.name}
+              {t('modal.title', { name: PROVIDERS.find(p=>p.key===modal)?.name ?? '' })}
             </h2>
             <p style={{ fontSize:13, color:'#6b7280', marginBottom:18, lineHeight:1.5 }}>
-              Enter your API key. It will be encrypted and stored securely — never shared or exposed.
+              {t('modal.subtitle')}
             </p>
             {/* Business selector for POS systems */}
             {PROVIDERS.find(p=>p.key===modal)?.category === 'POS' && businesses.length > 0 && (
               <div style={{ marginBottom:14 }}>
                 <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9ca3af', marginBottom:5 }}>
-                  Restaurang
+                  {t('modal.restaurantLabel')}
                 </label>
                 <select className="input" value={bizForPOS} onChange={e => setBizForPOS(e.target.value)}>
-                  <option value="">Välj restaurang…</option>
+                  <option value="">{t('modal.restaurantPlaceholder')}</option>
                   {businesses.map((b:any) => (
                     <option key={b.id} value={b.id}>{b.name}{b.city ? ` (${b.city})` : ''}</option>
                   ))}
@@ -539,11 +541,11 @@ export default function IntegrationsPage() {
             )}
 
             <div style={{ marginBottom:14 }}>
-              <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9ca3af', marginBottom:5 }}>API Key</label>
+              <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9ca3af', marginBottom:5 }}>{t('modal.apiKey')}</label>
               <input
                 className="input"
                 type="password"
-                placeholder="Paste your API key here"
+                placeholder={t('modal.apiKeyPlaceholder')}
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
                 autoFocus
@@ -567,11 +569,11 @@ export default function IntegrationsPage() {
             ))}
 
             <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
-              <button className="btn btn-sm" onClick={() => { setModal(null); setUnitId(''); setBizForPOS('') }}>Cancel</button>
+              <button className="btn btn-sm" onClick={() => { setModal(null); setUnitId(''); setBizForPOS('') }}>{t('modal.cancel')}</button>
               <button className="btn btn-sm btn-primary"
                 disabled={!apiKey.trim() || saving}
                 onClick={() => saveApiKey(modal!)}>
-                {saving ? <><span className="spin"></span> Saving…</> : 'Save & connect'}
+                {saving ? <><span className="spin"></span> {t('modal.saving')}</> : t('modal.save')}
               </button>
             </div>
           </div>

@@ -13,6 +13,7 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import PageHero from '@/components/ui/PageHero'
 import { UX } from '@/lib/constants/tokens'
@@ -34,9 +35,9 @@ interface Flag {
   ai_confidence:            number | null
 }
 
-const CATEGORY_TONE: Record<string, { bg: string; fg: string; label: string }> = {
-  other_cost: { bg: '#f3f4f6', fg: '#374151', label: 'OVERHEAD' },
-  food_cost:  { bg: '#fef3c7', fg: '#92400e', label: 'FOOD' },
+const CATEGORY_TONE: Record<string, { bg: string; fg: string; labelKey: 'overhead' | 'food' }> = {
+  other_cost: { bg: '#f3f4f6', fg: '#374151', labelKey: 'overhead' },
+  food_cost:  { bg: '#fef3c7', fg: '#92400e', labelKey: 'food' },
 }
 
 interface FlagsResponse {
@@ -47,17 +48,18 @@ interface FlagsResponse {
   note?:                     string
 }
 
-const FLAG_TONE: Record<string, { bg: string; fg: string; label: string }> = {
-  new_supplier:         { bg: '#eff6ff', fg: '#1e40af', label: 'NEW' },
-  price_spike:          { bg: '#fef3c7', fg: '#92400e', label: 'PRICE +%' },
-  dismissed_reappeared: { bg: '#fee2e2', fg: '#991b1b', label: 'REAPPEARED' },
-  one_off_high:         { bg: '#f3f4f6', fg: '#374151', label: 'ONE-OFF' },
-  duplicate_supplier:   { bg: '#f5f3ff', fg: '#6b21a8', label: 'DUPLICATE?' },
+const FLAG_TONE: Record<string, { bg: string; fg: string; toneKey: 'new' | 'priceTpl' | 'reappeared' | 'oneOff' | 'duplicate' }> = {
+  new_supplier:         { bg: '#eff6ff', fg: '#1e40af', toneKey: 'new' },
+  price_spike:          { bg: '#fef3c7', fg: '#92400e', toneKey: 'priceTpl' },
+  dismissed_reappeared: { bg: '#fee2e2', fg: '#991b1b', toneKey: 'reappeared' },
+  one_off_high:         { bg: '#f3f4f6', fg: '#374151', toneKey: 'oneOff' },
+  duplicate_supplier:   { bg: '#f5f3ff', fg: '#6b21a8', toneKey: 'duplicate' },
 }
 
-const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
 export default function OverheadReviewPage() {
+  const t  = useTranslations('overheads.review')
+  const tM = useTranslations('overheads')
+  const monthsShort: string[] = (tM.raw('months.short') as string[]) ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
   const [flags,      setFlags]      = useState<Flag[]>([])
@@ -100,7 +102,7 @@ export default function OverheadReviewPage() {
     try {
       const r = await fetch(`/api/overheads/flags?business_id=${bizId}`, { cache: 'no-store' })
       const j: FlagsResponse = await r.json()
-      if (!r.ok) throw new Error((j as any)?.error ?? 'Failed to load flags')
+      if (!r.ok) throw new Error((j as any)?.error ?? 'load_failed')
       setFlags(j.flags ?? [])
       setTotalSavings(j.total_monthly_savings_sek ?? 0)
       setTableMissing(j.table_missing ?? false)
@@ -283,31 +285,31 @@ export default function OverheadReviewPage() {
     const periods = grouped.map(g => g.latestKey)
     const earliestKey = Math.min(...periods)
     const latestKey   = Math.max(...periods)
-    const earliest = `${MONTHS_SHORT[(earliestKey % 100) - 1]} ${Math.floor(earliestKey / 100)}`
-    const latest   = `${MONTHS_SHORT[(latestKey   % 100) - 1]} ${Math.floor(latestKey   / 100)}`
+    const earliest = `${monthsShort[(earliestKey % 100) - 1]} ${Math.floor(earliestKey / 100)}`
+    const latest   = `${monthsShort[(latestKey   % 100) - 1]} ${Math.floor(latestKey   / 100)}`
     return earliest === latest ? latest : `${earliest} – ${latest}`
-  }, [grouped])
+  }, [grouped, monthsShort])
 
   return (
     <AppShell>
       <PageHero
-        eyebrow="OVERHEADS REVIEW"
+        eyebrow={t('eyebrow')}
         headline={
           grouped.length > 0
-            ? `${grouped.length} supplier${grouped.length === 1 ? '' : 's'} pending · ${fmtKr(dedupedAtStake)}/mo at stake`
+            ? t('headlinePending', { count: grouped.length, amount: fmtKr(dedupedAtStake) })
             : tableMissing
-              ? 'Run M039 to enable cost review'
-              : 'All caught up — nothing pending review.'
+              ? t('headlineMissing')
+              : t('headlineEmpty')
         }
         context={grouped.length > 0
-          ? `${flags.length} flag${flags.length === 1 ? '' : 's'} across ${periodLabel}`
+          ? t('context', { count: flags.length, period: periodLabel })
           : undefined}
       />
 
       <div style={{ padding: '0 24px 40px', maxWidth: 960, margin: '0 auto' }}>
         {error && <Banner tone="bad" text={error} />}
         {tableMissing && (
-          <Banner tone="warn" text="overhead_flags table missing — run M039-OVERHEAD-REVIEW.sql in Supabase SQL Editor." />
+          <Banner tone="warn" text={t('tableMissingBanner')} />
         )}
 
         {showBackfillBanner && !backfillResult && (
@@ -321,7 +323,7 @@ export default function OverheadReviewPage() {
         {backfillResult && (
           <Banner
             tone="ok"
-            text={`Backfill complete — marked ${backfillResult.marked} supplier${backfillResult.marked === 1 ? '' : 's'} as essential, resolved ${backfillResult.resolved} pending flag${backfillResult.resolved === 1 ? '' : 's'}.`}
+            text={t('backfillResult', { marked: backfillResult.marked, resolved: backfillResult.resolved })}
           />
         )}
 
@@ -330,27 +332,27 @@ export default function OverheadReviewPage() {
         {(categoryCounts.other_cost > 0 || categoryCounts.food_cost > 0) && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' as const }}>
             <CategoryButton active={categoryFilter === 'all'}        onClick={() => setCategoryFilter('all')}>
-              All <Count>{categoryCounts.all}</Count>
+              {t('filter.all')} <Count>{categoryCounts.all}</Count>
             </CategoryButton>
             {categoryCounts.other_cost > 0 && (
               <CategoryButton active={categoryFilter === 'other_cost'} onClick={() => setCategoryFilter('other_cost')}>
-                Overheads <Count>{categoryCounts.other_cost}</Count>
+                {t('filter.overheads')} <Count>{categoryCounts.other_cost}</Count>
               </CategoryButton>
             )}
             {categoryCounts.food_cost > 0 && (
               <CategoryButton active={categoryFilter === 'food_cost'}  onClick={() => setCategoryFilter('food_cost')}>
-                Food <Count>{categoryCounts.food_cost}</Count>
+                {t('filter.food')} <Count>{categoryCounts.food_cost}</Count>
               </CategoryButton>
             )}
           </div>
         )}
 
         {loading && grouped.length === 0 && (
-          <Empty text="Loading flags…" />
+          <Empty text={t('loadingFlags')} />
         )}
 
         {!loading && !tableMissing && grouped.length === 0 && (
-          <Empty text="Your costs look stable. Nothing to review this period." />
+          <Empty text={t('emptyStable')} />
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
@@ -385,6 +387,10 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
   onDefer:     () => void
   onReexplain: () => Promise<void>
 }) {
+  const t  = useTranslations('overheads.review')
+  const tCat = useTranslations('overheads.categories')
+  const tM = useTranslations('overheads')
+  const monthsShort: string[] = (tM.raw('months.short') as string[]) ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
   const [showDismissModal, setShowDismissModal] = useState<boolean>(false)
   const [dismissReason,    setDismissReason]    = useState<string>('')
   const [reexplaining,     setReexplaining]     = useState<boolean>(false)
@@ -392,12 +398,16 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
   const tone = FLAG_TONE[flag.flag_type] ?? FLAG_TONE.new_supplier
   // Sign-correct % for PRICE flags. The bug was: prepending "+" then letting
   // a negative pct render as "+-43%". Render the sign from the number itself.
-  let label = tone.label
-  if (tone.label === 'PRICE +%' && flag.prior_avg_sek) {
-    const pct = Math.round(((flag.amount_sek - flag.prior_avg_sek) / flag.prior_avg_sek) * 100)
-    label = `PRICE ${pct >= 0 ? '+' : ''}${pct}%`
+  let label: string
+  if (tone.toneKey === 'priceTpl') {
+    const pct = flag.prior_avg_sek
+      ? Math.round(((flag.amount_sek - flag.prior_avg_sek) / flag.prior_avg_sek) * 100)
+      : 0
+    label = t('flagTones.priceTpl', { sign: pct >= 0 ? '+' : '', pct })
+  } else {
+    label = t(`flagTones.${tone.toneKey}`)
   }
-  const periodLabel = `${MONTHS_SHORT[flag.period_month - 1]} ${flag.period_year}`
+  const periodLabel = `${monthsShort[flag.period_month - 1]} ${flag.period_year}`
 
   // Confidence interpretation: <0.5 = low (we'd rather not pretend),
   // 0.5-0.79 = medium (no badge), >=0.8 = high (no badge — assumed quality).
@@ -435,7 +445,7 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
                 <span style={{
                   padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
                   background: cat.bg, color: cat.fg,
-                }}>{cat.label}</span>
+                }}>{tCat(cat.labelKey)}</span>
               )
             })()}
             <span style={{ fontSize: 11, color: UX.ink4, fontWeight: 500 }}>{periodLabel}</span>
@@ -451,7 +461,7 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
                     background: '#f3f4f6', color: '#6b7280',
                     fontSize: 9, fontWeight: 600, fontStyle: 'normal' as const,
                   }}>
-                    LOW CONFIDENCE
+                    {t('card.lowConfidence')}
                   </span>
                 )}
                 <button
@@ -462,9 +472,9 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
                     fontSize: 10, color: UX.ink4, cursor: reexplaining ? 'wait' : 'pointer',
                     fontStyle: 'normal' as const, textDecoration: 'underline' as const,
                   }}
-                  title="Regenerate AI explanation with full 12-month history"
+                  title={t('card.reexplainTitle')}
                 >
-                  {reexplaining ? '…' : 're-explain'}
+                  {reexplaining ? t('card.reexplaining') : t('card.reexplain')}
                 </button>
               </span>
             )}
@@ -478,18 +488,20 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
                   textDecoration: 'underline' as const, display: 'block',
                 }}
               >
-                {reexplaining ? 'Generating…' : 'Generate AI explanation'}
+                {reexplaining ? t('card.generating') : t('card.generateExplanation')}
               </button>
             )}
             {otherPeriods.length > 0 && (
               <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: UX.ink4 }}>
-                Also flagged in {otherPeriods
-                  .sort((a, b) => (b.period_year * 100 + b.period_month) - (a.period_year * 100 + a.period_month))
-                  .slice(0, 4)
-                  .map(o => `${MONTHS_SHORT[o.period_month - 1]} ${o.period_year}`)
-                  .join(', ')}
-                {otherPeriods.length > 4 && ` +${otherPeriods.length - 4} more`}
-                <span style={{ color: UX.ink4 }}> · one decision applies to all</span>
+                {t('card.alsoFlaggedIn', {
+                  periods: otherPeriods
+                    .sort((a, b) => (b.period_year * 100 + b.period_month) - (a.period_year * 100 + a.period_month))
+                    .slice(0, 4)
+                    .map(o => `${monthsShort[o.period_month - 1]} ${o.period_year}`)
+                    .join(', '),
+                })}
+                {otherPeriods.length > 4 && t('card.alsoMore', { count: otherPeriods.length - 4 })}
+                <span style={{ color: UX.ink4 }}>{t('card.oneDecision')}</span>
               </span>
             )}
           </div>
@@ -503,9 +515,9 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-        <button onClick={onDefer} disabled={busy} style={btnGhost(busy)}>Defer 30d</button>
-        <button onClick={() => setShowDismissModal(true)} disabled={busy} style={btnDanger(busy)}>Plan to cancel</button>
-        <button onClick={onEssential} disabled={busy} style={btnPrimary(busy)}>Essential</button>
+        <button onClick={onDefer} disabled={busy} style={btnGhost(busy)}>{t('card.defer')}</button>
+        <button onClick={() => setShowDismissModal(true)} disabled={busy} style={btnDanger(busy)}>{t('card.planCancel')}</button>
+        <button onClick={onEssential} disabled={busy} style={btnPrimary(busy)}>{t('card.essential')}</button>
       </div>
 
       {showDismissModal && (
@@ -535,6 +547,7 @@ function DismissModal({ supplierName, reason, setReason, busy, onCancel, onConfi
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const t = useTranslations('overheads.review.dismissModal')
   return (
     <div
       onClick={e => { if (e.target === e.currentTarget) onCancel() }}
@@ -545,18 +558,18 @@ function DismissModal({ supplierName, reason, setReason, busy, onCancel, onConfi
     >
       <div style={{ background: 'white', borderRadius: 12, padding: 20, width: 460, maxWidth: '100%' }}>
         <h2 style={{ fontSize: 16, fontWeight: 600, color: UX.ink1, margin: '0 0 6px 0' }}>
-          Plan to cancel: {supplierName}?
+          {t('title', { supplier: supplierName })}
         </h2>
         <p style={{ fontSize: 12, color: UX.ink3, margin: '0 0 14px 0' }}>
-          Marks this as a planned cancellation. Counts toward your monthly savings projection. The system will keep an eye on it — if it reappears in next month's books, you'll see a flag again.
+          {t('body')}
         </p>
         <label style={{ fontSize: 11, fontWeight: 600, color: UX.ink2, display: 'block', marginBottom: 4 }}>
-          Notes (optional)
+          {t('notes')}
         </label>
         <textarea
           value={reason}
           onChange={e => setReason(e.target.value)}
-          placeholder="e.g. cancelling at end of contract, March renewal"
+          placeholder={t('placeholder')}
           rows={3}
           maxLength={1000}
           style={{
@@ -566,9 +579,9 @@ function DismissModal({ supplierName, reason, setReason, busy, onCancel, onConfi
           }}
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-          <button onClick={onCancel} disabled={busy} style={btnGhost(busy)}>Cancel</button>
+          <button onClick={onCancel} disabled={busy} style={btnGhost(busy)}>{t('cancel')}</button>
           <button onClick={onConfirm} disabled={busy} style={btnDanger(busy)}>
-            {busy ? 'Saving…' : 'Plan to cancel'}
+            {busy ? t('saving') : t('confirm')}
           </button>
         </div>
       </div>
@@ -581,21 +594,25 @@ function DismissModal({ supplierName, reason, setReason, busy, onCancel, onConfi
 // ────────────────────────────────────────────────────────────────────
 
 function BackfillBanner({ onConfirm, onDismiss, busy }: { onConfirm: () => void; onDismiss: () => void; busy: boolean }) {
+  const t = useTranslations('overheads.review.backfillBanner')
+  // Body uses <b>essential</b> markup. next-intl supports rich text via t.rich,
+  // but for a single tag the simpler split-on-marker approach keeps this
+  // banner readable. The string in JSON uses <b>…</b> as a literal marker.
+  const body = t('body')
   return (
     <div style={{
       background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
       padding: 16, marginBottom: 14,
     }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#1e3a8a', marginBottom: 4 }}>
-        First-time review — too much to wade through?
+        {t('title')}
       </div>
-      <div style={{ fontSize: 12, color: '#1e40af', lineHeight: 1.5, marginBottom: 12 }}>
-        We can mark every supplier from the last 12 months as <strong>essential</strong> in one go. From then on, only new costs and price increases of more than 15% will be flagged.
-      </div>
+      <div style={{ fontSize: 12, color: '#1e40af', lineHeight: 1.5, marginBottom: 12 }}
+           dangerouslySetInnerHTML={{ __html: body }} />
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <button onClick={onDismiss} disabled={busy} style={btnGhost(busy)}>No, let me review them</button>
+        <button onClick={onDismiss} disabled={busy} style={btnGhost(busy)}>{t('decline')}</button>
         <button onClick={onConfirm} disabled={busy} style={btnPrimary(busy)}>
-          {busy ? 'Marking…' : 'Mark all essential'}
+          {busy ? t('marking') : t('confirm')}
         </button>
       </div>
     </div>
