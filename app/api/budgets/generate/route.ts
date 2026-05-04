@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
       .eq('period_year', year)
       .gt('period_month', 0)
       .order('period_month'),
-    db.from('businesses').select('name, city').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
+    db.from('businesses').select('name, city, business_stage').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
     // Annual-summary fallback — older uploads stored a single annual
     // rollup with period_month=0. Kept so legacy data still contributes.
     db.from('tracker_line_items')
@@ -239,12 +239,42 @@ are direct feedback; weight them heavily.
 `
   }
 
-  const prompt = `You are helping set monthly budget targets for a Swedish restaurant: "${biz?.name ?? 'Unknown'}"${biz?.city ? ` in ${biz.city}` : ''}.
+  // M046 follow-up (Sprint 2 / 2026-05-04): when business_stage='new'
+  // the business has been operating <12 months. There IS no last year
+  // to anchor on, so the historical-anchor rule is impossible to apply
+  // and would force the AI to produce target=0 for every month with
+  // no prior data. New-business path uses YTD trajectory + industry
+  // benchmarks instead. Established businesses (1y+, 3y+) keep the
+  // hard anchor — the rule that prevents the Vero-style overshoot
+  // (forecast says big number → AI overshoots → owner over-staffs).
+  const stage = biz?.business_stage ?? null
+  const isNewBusiness = stage === 'new'
 
-${SCOPE_NOTE}
+  const anchorRules = isNewBusiness ? `
+PRIMARY RULE — NEW BUSINESS (under 12 months):
+  This business has been operating less than a year — there is no
+  full prior year to anchor on. Build budgets from:
+    1. THIS YEAR'S YTD ACTUALS (closed months only — current month YTD
+       is partial and never a baseline)
+    2. INDUSTRY BENCHMARKS for similar Swedish restaurants
+    3. The trajectory (is YTD trending up, flat, or down?)
 
-Your job: return 12 monthly budgets for ${year} that are GROUNDED IN LAST YEAR'S ACTUAL MONTHLY REVENUE. These become operational goals — an over-ambitious target will cause the owner to over-staff and burn real cash.
+  Targets should grow MODESTLY month-on-month — +3% to +10% over the
+  trailing closed-month average, never more than 20% above. Restaurants
+  in their first year typically see slow ramp; do NOT project hockey-
+  stick growth even when one good month suggests it.
 
+  If you have only 1-2 months of closed data, lean conservative —
+  match the most recent closed month within ±5% rather than
+  extrapolating. Better to under-target and beat it than over-staff
+  for revenue that doesn't materialise.
+
+SECONDARY RULE — INDUSTRY SHAPE:
+  Until this business has its OWN seasonality data, fall back to the
+  generic Swedish restaurant pattern (slight summer dip in inland
+  cities, December peak around Christmas). Tag the budget output as
+  "no-history" so the owner knows it's benchmark-based.
+` : `
 PRIMARY RULE — HISTORICAL ANCHOR:
   Each month's target MUST be anchored to the same month from last year.
   Maximum stretch: +3% to +8% above last year's ACTUAL revenue for that month.
@@ -261,6 +291,14 @@ SECONDARY RULE — RESPECT LAST YEAR'S SEASONALITY:
   June was lower than May, this year June should also be lower than May — the
   business may be a winter restaurant, a lunch spot, a takeaway, seasonal,
   etc. You do not know; the last-year numbers do.
+`
+
+  const prompt = `You are helping set monthly budget targets for a Swedish restaurant: "${biz?.name ?? 'Unknown'}"${biz?.city ? ` in ${biz.city}` : ''}.${stage ? ` Business stage: ${stage} (${isNewBusiness ? 'under 12 months — no full prior year' : 'has full prior-year history'}).` : ''}
+
+${SCOPE_NOTE}
+
+Your job: return 12 monthly budgets for ${year} that produce realistic operational goals — an over-ambitious target will cause the owner to over-staff and burn real cash.
+${anchorRules}
 
 HANDLING DATA GAPS — READ CAREFULLY:
   A last-year month showing revenue=0 with staff_cost > 0 means the business
