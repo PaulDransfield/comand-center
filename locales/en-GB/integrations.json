@@ -34,7 +34,8 @@
     "connect":    "Connect",
     "syncNow":    "Sync now",
     "reconnect":  "Reconnect",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "connectDisabledNoBusiness": "Select a restaurant in the sidebar first"
   },
   "confirms": {
     "disconnect": "Disconnect {provider}? This will stop syncing data from this service."

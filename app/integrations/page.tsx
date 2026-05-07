@@ -453,7 +453,12 @@ export default function IntegrationsPage() {
                   </div>
 
                   {!isConnected && provider.authType === 'oauth2' && (
-                    <button className="btn btn-primary btn-sm" onClick={() => connectFortnox()}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={!selectedBiz}
+                      title={!selectedBiz ? t('actions.connectDisabledNoBusiness') : undefined}
+                      onClick={() => connectFortnox(selectedBiz)}
+                    >
                       {t('actions.connect')}
                     </button>
                   )}

@@ -34,7 +34,8 @@
     "connect":    "Anslut",
     "syncNow":    "Synka nu",
     "reconnect":  "Återanslut",
-    "disconnect": "Koppla från"
+    "disconnect": "Koppla från",
+    "connectDisabledNoBusiness": "Välj en restaurang i sidofältet först"
   },
   "confirms": {
     "disconnect": "Koppla från {provider}? Detta stoppar synkning av data från tjänsten."
