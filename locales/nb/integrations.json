@@ -35,7 +35,11 @@
     "syncNow":    "Synk nå",
     "reconnect":  "Koble til på nytt",
     "disconnect": "Koble fra",
-    "connectDisabledNoBusiness": "Velg en restaurant i sidefeltet først"
+    "connectDisabledNoBusiness": "Velg en restaurant i sidefeltet først",
+    "runBackfill": "Hent 12 måneder",
+    "runBackfillTitle": "Hent de siste 12 månedene fra Fortnox for å fylle prognoser og budsjetter",
+    "backfillRunning": "Henter historikk…",
+    "backfillRunningTitle": "Bakfyllingen pågår — oppdater siden om en stund for å se status"
   },
   "confirms": {
     "disconnect": "Koble fra {provider}? Dette stopper synking av data fra tjenesten."

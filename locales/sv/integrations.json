@@ -35,7 +35,11 @@
     "syncNow":    "Synka nu",
     "reconnect":  "Återanslut",
     "disconnect": "Koppla från",
-    "connectDisabledNoBusiness": "Välj en restaurang i sidofältet först"
+    "connectDisabledNoBusiness": "Välj en restaurang i sidofältet först",
+    "runBackfill": "Hämta 12 månader",
+    "runBackfillTitle": "Hämta de senaste 12 månaderna från Fortnox för att fylla prognoser och budgetar",
+    "backfillRunning": "Hämtar historik…",
+    "backfillRunningTitle": "Bakfyllningen pågår — uppdatera sidan om en stund för att se status"
   },
   "confirms": {
     "disconnect": "Koppla från {provider}? Detta stoppar synkning av data från tjänsten."

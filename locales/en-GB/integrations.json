@@ -35,7 +35,11 @@
     "syncNow":    "Sync now",
     "reconnect":  "Reconnect",
     "disconnect": "Disconnect",
-    "connectDisabledNoBusiness": "Select a restaurant in the sidebar first"
+    "connectDisabledNoBusiness": "Select a restaurant in the sidebar first",
+    "runBackfill": "Backfill 12 months",
+    "runBackfillTitle": "Fetch the last 12 months from Fortnox to populate forecasts and budgets",
+    "backfillRunning": "Backfilling…",
+    "backfillRunningTitle": "Backfill is running — refresh the page in a minute to see progress"
   },
   "confirms": {
     "disconnect": "Disconnect {provider}? This will stop syncing data from this service."

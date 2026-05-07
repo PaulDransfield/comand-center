@@ -115,7 +115,7 @@ export default function IntegrationsPage() {
 
     const { data } = await supabase
       .from('integrations')
-      .select('id, provider, status, last_sync_at, last_error, token_expires_at, business_id')
+      .select('id, provider, status, last_sync_at, last_error, token_expires_at, business_id, backfill_status, backfill_progress')
 
     const allData = data ?? []
     const map: Record<string, any> = {}
@@ -471,12 +471,34 @@ export default function IntegrationsPage() {
                     <>
                       <button className="btn btn-sm" onClick={async () => {
                         await fetch('/api/sync', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: provider.key }) })
-                        load()
+                        fetchIntegrations()
                       }}>{t('actions.syncNow')}</button>
+                      {provider.key === 'fortnox' && (() => {
+                        const bf = integ?.backfill_status as ('pending' | 'running' | 'completed' | 'failed' | null | undefined)
+                        const inFlight = bf === 'pending' || bf === 'running'
+                        const label    = inFlight ? t('actions.backfillRunning') : t('actions.runBackfill')
+                        return (
+                          <button
+                            className="btn btn-sm"
+                            disabled={inFlight}
+                            title={inFlight ? t('actions.backfillRunningTitle') : t('actions.runBackfillTitle')}
+                            onClick={async () => {
+                              await fetch('/api/integrations/fortnox/run-backfill', {
+                                method:  'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body:    JSON.stringify({ business_id: integ?.business_id ?? null }),
+                              })
+                              fetchIntegrations()
+                            }}
+                          >
+                            {label}
+                          </button>
+                        )
+                      })()}
                       {status === 'error' && (
                         <button className="btn btn-sm" style={{ color:'#d97706', borderColor:'#fde68a', background:'#fffbeb' }} onClick={async () => {
                           await fetch('/api/integrations/reset', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider: provider.key }) })
-                          load()
+                          fetchIntegrations()
                         }}>{t('actions.reconnect')}</button>
                       )}
                       <button className="btn btn-sm" style={{ color:'#dc2626', borderColor:'#fecaca' }} onClick={() => disconnect(provider.key)}>{t('actions.disconnect')}</button>
