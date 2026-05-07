@@ -1,6 +1,6 @@
 # AI Cost Control Plan — CommandCenter
 
-> Last updated: 2026-04-18
+> Last updated: 2026-05-07 (§7 cost model refreshed for the 2026-04-23 pricing overhaul; rates and tranche status otherwise unchanged from 2026-04-18)
 > Owner: Paul Dransfield
 > Status: design in progress. Tranche 1 shipped (data capture, per-request cost, admin endpoint). Tranches 2–4 below.
 > **Constraint:** AI usage is the only variable cost CommandCenter carries per customer. Every decision must balance customer convenience, data privacy, operational security, and a hard ceiling on what we spend.
@@ -268,15 +268,17 @@ organisations
 | Budget generate | Haiku | 2 000 | 2 000 | $0.0120 | 0.13 kr |
 | Scheduling opt (Sonnet) | Sonnet | 2 000 | 400 | $0.0120 | 0.13 kr |
 
-**At plan caps, monthly cost-of-goods per customer:**
+**At plan caps, monthly cost-of-goods per customer** (current pricing — see `lib/stripe/config.ts`):
 
 | Plan | Daily cap | Expected mix | Worst case mix (Sonnet-only) | Plan price | Margin worst case |
 |---|---|---|---|---|---|
-| Starter | 20 | Haiku-heavy: ~1 kr/day = 30 kr/mo | Sonnet-heavy: ~3 kr/day = 90 kr/mo | 499 kr | 82 % |
-| Pro | 50 | 3 kr/day = 90 kr/mo | 7 kr/day = 210 kr/mo | 799 kr | 74 % |
-| Group | 500 safety | 30 kr/day = 900 kr/mo | 70 kr/day = 2 100 kr/mo | 1 499 kr | – (LOSS) |
+| Founding | 30 | 2 kr/day = 60 kr/mo | 4 kr/day = 120 kr/mo | 995 kr (24-mo lock) | 88 % |
+| Solo | 30 | 2 kr/day = 60 kr/mo | 4 kr/day = 120 kr/mo | 1 995 kr | 94 % |
+| Group | 100 | 7 kr/day = 210 kr/mo | 14 kr/day = 420 kr/mo | 4 995 kr | 92 % |
+| Chain | 500 safety | 30 kr/day = 900 kr/mo | 70 kr/day = 2 100 kr/mo | 9 995 kr | 79 % |
+| Enterprise | unlimited (500 safety) | quoted bespoke | quoted bespoke | bespoke | – |
 
-**Implication:** Group plan at the 500/day safety cap running Sonnet exclusively is UNPROFITABLE. Monthly cost ceiling (P0) must be set per-plan to prevent this — suggested: 500 kr/mo for Group. Above that, block with "contact support" until we agree scope.
+**Implication:** the 2026-04-23 reprice (Solo 1 995 / Group 4 995 / Chain 9 995) restored healthy margins across every plan, including Chain at the safety cap — the legacy "Group as loss" scenario no longer exists at current prices. Monthly cost ceilings still matter as a runaway-protection backstop, not a margin defence: see `MONTHLY_COST_CEILING_SEK` in `lib/ai/usage.ts` (founding/solo 150, group 500, chain 1 500). Above the ceiling, block with "contact support" until we agree scope.
 
 ---
 

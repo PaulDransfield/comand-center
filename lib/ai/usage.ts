@@ -90,13 +90,24 @@ export type LimitGate = LimitGateOk | LimitGateBlocked
 // ── Monthly cost ceilings per plan, in SEK ───────────────────────────────────
 // Set above a typical-month COGS so only runaway usage trips them. Acts as
 // a backstop when the daily cap + model tiering aren't enough.
-// Reviewed against pricing sheet 2026-04-18.
+// Reviewed against pricing sheet 2026-05-07 (post-2026-04-23 reprice).
+//
+// Sizing rule: ~1.5–2× the expected Sonnet-heavy COGS for the plan's daily
+// cap, so a normal heavy-usage month doesn't trip but a runaway 2× spike
+// does. founding/solo share the 30 q/day cap so share the same ceiling;
+// chain mirrors enterprise since both run on the 500/day safety cap.
 const MONTHLY_COST_CEILING_SEK: Record<string, number> = {
-  trial:      30,
+  trial:       30,
+  founding:   150,
+  solo:       150,
+  group:      500,
+  chain:     1500,
+  enterprise:1500,
+  // Legacy aliases — kept so any old DB rows on the pre-2026-04-23 plans
+  // still resolve. Sized for the OLD daily caps (starter 20/day, pro 50/day);
+  // new equivalents are solo and group above.
   starter:    60,
   pro:       150,
-  group:     500,
-  enterprise: 1500,
 }
 function monthlyCeilingFor(planKey: string): number {
   return MONTHLY_COST_CEILING_SEK[planKey] ?? MONTHLY_COST_CEILING_SEK.trial
