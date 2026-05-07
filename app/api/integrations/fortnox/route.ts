@@ -51,13 +51,21 @@ const FORTNOX_API     = 'https://api.fortnox.se/3'
 const FORTNOX_AUTH    = 'https://apps.fortnox.se/oauth-v1/auth'
 const FORTNOX_TOKEN   = 'https://apps.fortnox.se/oauth-v1/token'
 
-// What data we ask permission to read from the customer's Fortnox account
+// What data we ask permission to read from the customer's Fortnox account.
+// Expanded 2026-05-07 (Fortnox-OAuth-Scope-Expansion-Prompt) ahead of Phase 2
+// of the API backfill plan — the original 5 stay first, the new 5 follow.
+// Fortnox treats the list as a set so order is for diff-readability only.
 const FORTNOX_SCOPES  = [
-  'bookkeeping',     // vouchers, accounts
-  'invoice',         // customer invoices (revenue)
-  'supplierinvoice', // supplier invoices (costs)
-  'salary',          // payroll (staff cost)
-  'companyinformation', // org details
+  'bookkeeping',        // vouchers + general ledger entries — core financial data
+  'invoice',            // sales invoices (revenue)
+  'supplierinvoice',    // supplier invoices (AP analytics, costs)
+  'salary',             // salary transactions — for Lön activation later
+  'companyinformation', // basic company info, fiscal periods
+  'costcenter',         // cost-center / department dimensions on transactions — feeds dept_metrics
+  'customer',           // customer master records — for AR analytics, customer name lookups
+  'supplier',           // supplier master records — for supplier price-creep analytics
+  'timereport',         // attendance + scheduling time — pairs with `salary` for full Lön
+  'article',            // article master data — for future item-level analysis
 ].join(' ')
 
 // ── CONNECT: start the OAuth flow ────────────────────────────────
