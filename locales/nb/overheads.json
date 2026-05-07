@@ -61,6 +61,24 @@
       "decline":   "Nei, la meg gjennomgå dem",
       "marking":   "Merker…",
       "confirm":   "Merk alle som nødvendige"
+    },
+    "drilldown": {
+      "show":              "Vis fakturaer ▾",
+      "hide":              "Skjul fakturaer ▴",
+      "loading":           "Henter fakturaer fra Fortnox…",
+      "errorGeneric":      "Kunne ikke laste fakturaer. Prøv igjen om litt.",
+      "errorNoConnection": "Koble til Fortnox for å se fakturaene bak denne kostnaden.",
+      "header":            "{count, plural, one {# faktura} other {# fakturaer}} for {supplier} — {total} totalt",
+      "noMatch":           "Ingen fakturaer funnet for {supplier} i Fortnox for denne perioden.",
+      "viewPdf":           "Vis PDF",
+      "inFortnox":         "I Fortnox ↗",
+      "inFortnoxTitle":    "Åpne denne fakturaen i Fortnox web-grensesnitt",
+      "drift": {
+        "flagged":  "Flagget beløp: {amount}",
+        "live":     "Aktuelt i Fortnox: {amount}",
+        "added":    "+{amount} er lagt til siden flagget ble laget",
+        "removed":  "−{amount} er fjernet siden flagget ble laget"
+      }
     }
   },
   "upload": {

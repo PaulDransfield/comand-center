@@ -6,6 +6,11 @@
 
 ## Pending — apply when ready
 
+### M051 — Overhead drilldown cache table ✅ applied 2026-05-07 (direct SQL)
+**File:** `sql/M051-OVERHEAD-DRILLDOWN-CACHE.sql`
+**Purpose:** five-minute cache for owner-facing drill-down on overhead-review flag cards. The new endpoint `/api/integrations/fortnox/drilldown` writes payloads here keyed by `(business_id, period_year, period_month, category)` so multiple supplier flags in the same category+month share one Fortnox fetch. Client filters to the requested supplier on render.
+**Note:** Paul applied the table directly via Supabase SQL editor on 2026-05-07 before the migration file was written; this file is idempotent (`CREATE TABLE IF NOT EXISTS`) so re-running for documentation/audit-trail purposes is safe. Includes RLS policy for service-role-only access.
+
 ### M050 — Fortnox API backfill state columns on `integrations` ⏳ pending application
 **File:** `sql/M050-FORTNOX-BACKFILL-COLUMNS.sql`
 **Purpose:** state machine for the 12-month Fortnox API backfill triggered after OAuth connect. Adds `backfill_status` (NULL / `idle` / `pending` / `running` / `completed` / `failed`), `backfill_started_at`, `backfill_finished_at`, `backfill_progress JSONB`, `backfill_error TEXT` to `integrations`. CHECK constraint guards the enum. Partial index `idx_integrations_backfill_pending` for cheap "find next pending" claim queries.

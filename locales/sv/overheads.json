@@ -61,6 +61,24 @@
       "decline":   "Nej, låt mig granska dem",
       "marking":   "Markerar…",
       "confirm":   "Markera alla som nödvändiga"
+    },
+    "drilldown": {
+      "show":              "Visa fakturor ▾",
+      "hide":              "Dölj fakturor ▴",
+      "loading":           "Hämtar fakturor från Fortnox…",
+      "errorGeneric":      "Kunde inte ladda fakturor. Försök igen om en stund.",
+      "errorNoConnection": "Anslut Fortnox för att se fakturorna bakom denna kostnad.",
+      "header":            "{count, plural, one {# faktura} other {# fakturor}} för {supplier} — {total} totalt",
+      "noMatch":           "Inga fakturor hittades för {supplier} i Fortnox för denna period.",
+      "viewPdf":           "Visa PDF",
+      "inFortnox":         "I Fortnox ↗",
+      "inFortnoxTitle":    "Öppna denna faktura i Fortnox webbgränssnitt",
+      "drift": {
+        "flagged":  "Flaggat belopp: {amount}",
+        "live":     "Aktuellt i Fortnox: {amount}",
+        "added":    "+{amount} har tillkommit sedan flaggan skapades",
+        "removed":  "−{amount} har tagits bort sedan flaggan skapades"
+      }
     }
   },
   "upload": {

@@ -362,6 +362,7 @@ export default function OverheadReviewPage() {
               flag={g.latest}
               otherPeriods={g.others}
               busy={deciding === g.latest.id}
+              bizId={bizId}
               onEssential={() => decide(g.latest.id, 'essential')}
               onDismiss={(reason) => decide(g.latest.id, 'dismissed', reason)}
               onDefer={() => decide(g.latest.id, 'deferred')}
@@ -378,10 +379,11 @@ export default function OverheadReviewPage() {
 //   FlagCard
 // ────────────────────────────────────────────────────────────────────
 
-function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, onReexplain }: {
+function FlagCard({ flag, otherPeriods, busy, bizId, onEssential, onDismiss, onDefer, onReexplain }: {
   flag:         Flag
   otherPeriods: Flag[]
   busy:         boolean
+  bizId:        string | null
   onEssential: () => void
   onDismiss:   (reason?: string) => void
   onDefer:     () => void
@@ -520,6 +522,8 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
         <button onClick={onEssential} disabled={busy} style={btnPrimary(busy)}>{t('card.essential')}</button>
       </div>
 
+      {bizId && <InvoiceDrilldown flag={flag} bizId={bizId} />}
+
       {showDismissModal && (
         <DismissModal
           supplierName={flag.supplier_name}
@@ -535,6 +539,286 @@ function FlagCard({ flag, otherPeriods, busy, onEssential, onDismiss, onDefer, o
           }}
         />
       )}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────
+//   InvoiceDrilldown — owner clicks "Show invoices" to see what makes
+//   up this supplier+period flag. Live fetch from Fortnox API on first
+//   expand, cached server-side for 5 min, filtered client-side to just
+//   this flag's supplier.
+// ────────────────────────────────────────────────────────────────────
+
+interface DrilldownInvoice {
+  source_type:        'supplier_invoice' | 'manual_journal'
+  source_id:          string
+  fortnox_url:        string
+  file_id:            string | null
+  date:               string
+  invoice_number:     string
+  supplier_name:      string
+  amount:             number
+  full_total:         number | null
+  account:            number
+  account_description: string | null
+  description:        string | null
+}
+
+interface SupplierGroup {
+  supplier_name:            string
+  supplier_name_normalised: string
+  total:                    number
+  invoice_count:            number
+  first_date:               string
+  last_date:                string
+  invoices:                 DrilldownInvoice[]
+}
+
+interface DrilldownPayload {
+  flagged_total:    number
+  suppliers:        SupplierGroup[]
+  manual_journals:  DrilldownInvoice[]
+  fetched_at:       string
+}
+
+function InvoiceDrilldown({ flag, bizId }: { flag: Flag; bizId: string }) {
+  const t  = useTranslations('overheads.review.drilldown')
+  const tM = useTranslations('overheads')
+  const monthsShort: string[] = (tM.raw('months.short') as string[]) ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  const [expanded,   setExpanded]   = useState(false)
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState<string | null>(null)
+  const [drilldown,  setDrilldown]  = useState<DrilldownPayload | null>(null)
+
+  // Match to this flag's supplier. Defensive — try exact normalised match
+  // first, fall back to a substring match on supplier_name in case the
+  // server's normaliser and the existing flag's normalised name disagree.
+  const matchedGroup = useMemo<SupplierGroup | null>(() => {
+    if (!drilldown) return null
+    const target = String(flag.supplier_name_normalised ?? '').toLowerCase().trim()
+    const exact = drilldown.suppliers.find(s => s.supplier_name_normalised === target)
+    if (exact) return exact
+    const fuzzy = drilldown.suppliers.find(s =>
+      s.supplier_name.toLowerCase().includes(flag.supplier_name.toLowerCase()) ||
+      flag.supplier_name.toLowerCase().includes(s.supplier_name.toLowerCase())
+    )
+    return fuzzy ?? null
+  }, [drilldown, flag])
+
+  async function toggle() {
+    if (expanded) {
+      setExpanded(false)
+      return
+    }
+    setExpanded(true)
+    if (drilldown) return  // already loaded
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/integrations/fortnox/drilldown', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          business_id: bizId,
+          year:        flag.period_year,
+          month:       flag.period_month,
+          category:    flag.category,
+        }),
+      })
+      const body = await res.json().catch(() => null) as any
+      if (!res.ok) {
+        if (body?.error === 'no_fortnox_connection') {
+          setError(t('errorNoConnection'))
+        } else {
+          setError(body?.error ?? t('errorGeneric'))
+        }
+        return
+      }
+      setDrilldown(body as DrilldownPayload)
+    } catch (e: any) {
+      setError(e?.message ?? t('errorGeneric'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Drift between the flag's stored amount and the live Fortnox total for
+  // this supplier — surfaces "the accountant added stuff since I last
+  // reviewed this" cases.
+  const drift = matchedGroup ? Math.round(matchedGroup.total - flag.amount_sek) : 0
+  const showDrift = matchedGroup && Math.abs(drift) >= 1  // ignore 1 kr rounding
+
+  return (
+    <>
+      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={toggle}
+          style={{
+            background:    'transparent',
+            border:        'none',
+            padding:       '4px 0',
+            fontSize:      11,
+            color:         UX.ink4,
+            cursor:        'pointer',
+            textDecoration:'underline' as const,
+            fontFamily:    'inherit',
+          }}
+        >
+          {expanded ? t('hide') : t('show')}
+        </button>
+      </div>
+
+      {expanded && (
+        <div
+          style={{
+            marginTop:    10,
+            padding:      14,
+            background:   '#fafafa',
+            border:       `1px solid ${UX.borderSoft}`,
+            borderRadius: 8,
+          }}
+        >
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: UX.ink3 }}>
+              <span className="spin" style={{ fontSize: 14 }} />
+              <span>{t('loading')}</span>
+            </div>
+          )}
+
+          {error && !loading && (
+            <div style={{ fontSize: 12, color: '#b91c1c', padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6 }}>
+              {error}
+            </div>
+          )}
+
+          {!loading && !error && matchedGroup && (
+            <>
+              {showDrift && (
+                <div
+                  style={{
+                    marginBottom: 12,
+                    padding:      '8px 10px',
+                    background:   drift > 0 ? '#fef3c7' : '#eff6ff',
+                    border:       `1px solid ${drift > 0 ? '#fde68a' : '#bfdbfe'}`,
+                    borderRadius: 6,
+                    fontSize:     11,
+                    color:        UX.ink2,
+                    lineHeight:   1.5,
+                  }}
+                >
+                  <div>{t('drift.flagged', { amount: fmtKr(flag.amount_sek) })}</div>
+                  <div>{t('drift.live',    { amount: fmtKr(matchedGroup.total) })}</div>
+                  <div style={{ marginTop: 4, fontWeight: 600, color: drift > 0 ? '#92400e' : '#1e40af' }}>
+                    {drift > 0
+                      ? t('drift.added',   { amount: fmtKr(Math.abs(drift)) })
+                      : t('drift.removed', { amount: fmtKr(Math.abs(drift)) })}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ fontSize: 11, color: UX.ink3, marginBottom: 8, fontWeight: 500 }}>
+                {t('header', {
+                  count:    matchedGroup.invoice_count,
+                  supplier: matchedGroup.supplier_name,
+                  total:    fmtKr(matchedGroup.total),
+                })}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                {matchedGroup.invoices.map((inv, idx) => (
+                  <InvoiceRow key={`${inv.source_id}-${idx}`} invoice={inv} bizId={bizId} monthsShort={monthsShort} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {!loading && !error && !matchedGroup && drilldown && (
+            <div style={{ fontSize: 12, color: UX.ink3 }}>
+              {t('noMatch', { supplier: flag.supplier_name })}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+function InvoiceRow({ invoice, bizId, monthsShort }: {
+  invoice:     DrilldownInvoice
+  bizId:       string
+  monthsShort: string[]
+}) {
+  const t = useTranslations('overheads.review.drilldown')
+  const d = new Date(invoice.date)
+  const dateLabel = `${d.getUTCDate()} ${monthsShort[d.getUTCMonth()] ?? ''}`
+  const fileUrl = invoice.file_id
+    ? `/api/integrations/fortnox/file?business_id=${bizId}&file_id=${encodeURIComponent(invoice.file_id)}&filename=${encodeURIComponent(invoice.invoice_number || invoice.source_id || 'invoice')}.pdf`
+    : null
+
+  return (
+    <div
+      style={{
+        display:      'flex',
+        alignItems:   'center',
+        gap:          10,
+        padding:      '8px 10px',
+        background:   'white',
+        border:       `1px solid ${UX.borderSoft}`,
+        borderRadius: 6,
+        fontSize:     12,
+      }}
+    >
+      <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UX.ink3, flexShrink: 0, width: 60 }}>
+        {dateLabel}
+      </span>
+      <span style={{ color: UX.ink2, flexShrink: 0, width: 140, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }} title={invoice.invoice_number}>
+        #{invoice.invoice_number}
+      </span>
+      <span style={{ color: UX.ink4, flex: 1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, fontSize: 11 }}>
+        {invoice.account_description ?? `Konto ${invoice.account}`}
+      </span>
+      <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UX.ink1, fontWeight: 500, flexShrink: 0 }}>
+        {fmtKr(invoice.amount)}
+      </span>
+      {fileUrl ? (
+        <a
+          href={fileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize:       11,
+            color:          UX.indigo,
+            textDecoration: 'none' as const,
+            padding:        '4px 8px',
+            border:         `1px solid ${UX.borderSoft}`,
+            borderRadius:   4,
+            flexShrink:     0,
+          }}
+        >
+          {t('viewPdf')}
+        </a>
+      ) : (
+        <span style={{ flexShrink: 0, width: 60 }} />
+      )}
+      <a
+        href={invoice.fortnox_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          fontSize:       11,
+          color:          UX.ink3,
+          textDecoration: 'none' as const,
+          padding:        '4px 8px',
+          border:         `1px solid ${UX.borderSoft}`,
+          borderRadius:   4,
+          flexShrink:     0,
+        }}
+        title={t('inFortnoxTitle')}
+      >
+        {t('inFortnox')}
+      </a>
     </div>
   )
 }

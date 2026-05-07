@@ -61,6 +61,24 @@
       "decline":   "No, let me review them",
       "marking":   "Marking…",
       "confirm":   "Mark all essential"
+    },
+    "drilldown": {
+      "show":              "Show invoices ▾",
+      "hide":              "Hide invoices ▴",
+      "loading":           "Loading invoices from Fortnox…",
+      "errorGeneric":      "Couldn't load invoices. Try again in a moment.",
+      "errorNoConnection": "Connect Fortnox to drill into this cost.",
+      "header":            "{count, plural, one {# invoice} other {# invoices}} for {supplier} — {total} total",
+      "noMatch":           "No invoices found for {supplier} in Fortnox for this period.",
+      "viewPdf":           "View PDF",
+      "inFortnox":         "In Fortnox ↗",
+      "inFortnoxTitle":    "Open this invoice in the Fortnox web UI",
+      "drift": {
+        "flagged":  "Flagged total: {amount}",
+        "live":     "Live in Fortnox: {amount}",
+        "added":    "+{amount} added since the flag was generated",
+        "removed":  "−{amount} removed since the flag was generated"
+      }
     }
   },
   "upload": {
