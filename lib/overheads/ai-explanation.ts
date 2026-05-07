@@ -103,8 +103,9 @@ For each flag, give a one-sentence explanation (max 140 chars) telling the owner
   - If the supplier name is generic (e.g. "Konsultarvoden") and could be many things, say "could be X, Y, Z — check the invoice to know".
   - If a price spike is plausibly seasonal (insurance annual renewal, year-end accounting fees), suggest the seasonal explanation as a likely cause.
   - For NEW lines that look like they could be a vendor swap (e.g. new IT supplier appearing same month an old one disappeared), flag the swap pattern.
-  - When the line's specifics would clarify the call (generic supplier name, ambiguous spike, possible one-off vs trend), tell the owner to click "Show invoices" on the flag — it pulls the underlying supplier invoices live from Fortnox so they can confirm before deciding.
-  - NEVER claim specific invoice details (single 950 kr invoice on the 11th, etc.) — you only see supplier-level totals here, not individual invoices. Speak at the supplier-period granularity.
+  - If the rule_reason carries an "invoices: ..." block, those are the real Fortnox invoices for this supplier-period — you may cite specific dates, amounts, and account descriptions to identify the dominant driver (largest invoice, an unusual one, a swap pattern). Stay within 140 chars and lead with the insight, not a list dump.
+  - If no "invoices: ..." block is present, you only see supplier-level totals — speak at the supplier-period granularity and tell the owner to click "Show invoices" on the flag if the call would benefit from invoice-level detail (generic supplier name, ambiguous spike, possible one-off vs trend).
+  - NEVER fabricate invoice specifics. If the data isn't in rule_reason, don't say "the 950 kr invoice on the 11th" — that's a hallucination.
   - NEVER tell the owner "you should cut this" — they know their business better than you do. Just surface what's worth a closer look.
 
 Confidence: 0.0-1.0. High (>0.8) when the explanation is concrete and supported by the data. Low (<0.5) when the line label is too generic to say anything specific.`

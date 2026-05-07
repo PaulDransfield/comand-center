@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: { flagId: str
   // Load + scope the flag.
   const { data: flag, error: fErr } = await db
     .from('overhead_flags')
-    .select('id, org_id, business_id, supplier_name, supplier_name_normalised, flag_type, reason, amount_sek, prior_avg_sek, period_year, period_month, resolution_status')
+    .select('id, org_id, business_id, supplier_name, supplier_name_normalised, flag_type, reason, amount_sek, prior_avg_sek, period_year, period_month, resolution_status, category')
     .eq('id', flagId)
     .eq('org_id', auth.orgId)
     .maybeSingle()
@@ -121,12 +121,63 @@ export async function POST(req: NextRequest, { params }: { params: { flagId: str
     ? ` | history: ${trimmedHistory.map(h => `${h.year}-${String(h.month).padStart(2,'0')}=${Math.round(h.amount)}`).join(', ')}`
     : ''
 
+  // Phase 3 — opportunistically enrich with invoice-level detail when the
+  // owner already clicked "Show invoices" on this flag (warming the cache).
+  // We never trigger a fresh Fortnox fetch here — that'd add 5-10s to the
+  // reexplain click. If the cache is cold, we just skip the enrichment and
+  // the AI explains at supplier granularity as before.
+  //
+  // 30-min staleness window is intentionally longer than the UI's 5-min
+  // — for AI input, slightly stale invoice data is still useful, and we'd
+  // rather ride a recent cache than skip enrichment over a 6-min-old payload.
+  let invoiceDetail = ''
+  try {
+    const { data: cached } = await db
+      .from('overhead_drilldown_cache')
+      .select('payload, fetched_at')
+      .eq('business_id',  flag.business_id)
+      .eq('period_year',  flag.period_year)
+      .eq('period_month', flag.period_month)
+      .eq('category',     flag.category)
+      .maybeSingle()
+
+    if (cached?.fetched_at) {
+      const age = Date.now() - new Date(cached.fetched_at).getTime()
+      if (age < 30 * 60 * 1000) {
+        const payload  = cached.payload as any
+        const norm     = String(flag.supplier_name_normalised ?? '').toLowerCase().trim()
+        const supplier = (payload?.suppliers ?? []).find((s: any) =>
+          s.supplier_name_normalised === norm
+          || (s.supplier_name && flag.supplier_name && (
+               String(s.supplier_name).toLowerCase().includes(String(flag.supplier_name).toLowerCase())
+            || String(flag.supplier_name).toLowerCase().includes(String(s.supplier_name).toLowerCase())
+          ))
+        )
+        const invoices: any[] = supplier?.invoices ?? []
+        if (invoices.length > 0) {
+          // Compact format: date=amount(account-or-description). Capped at
+          // ~12 invoices to stay inside the AI's per-flag token budget; for
+          // a busier supplier the AI sees the most recent dozen, which is
+          // enough to spot the dominant driver of any spike.
+          const trimmed = invoices.slice(-12)
+          const lines   = trimmed.map((inv: any) => {
+            const date = String(inv.date ?? '').slice(5)  // YYYY-MM-DD → MM-DD
+            const amt  = Math.round(Number(inv.amount ?? 0))
+            const ctx  = String(inv.account_description ?? `acct ${inv.account ?? '?'}`).slice(0, 30)
+            return `${date}=${amt}kr(${ctx})`
+          }).join('; ')
+          invoiceDetail = ` | invoices: ${lines}`
+        }
+      }
+    }
+  } catch { /* cache lookup failure is non-fatal — fall through without */ }
+
   const explanations = await explainOverheadFlags({
     db,
     orgId: auth.orgId,
     flags: [{
       ...flag,
-      reason: (flag.reason ?? '') + historySummary,
+      reason: (flag.reason ?? '') + historySummary + invoiceDetail,
     }],
     business: {
       business_name:       biz?.name ?? 'this business',
