@@ -30,19 +30,30 @@ import { createHmac, timingSafeEqual } from 'crypto'
 // HMAC-sign the OAuth state so Fortnox can't be used to bind an attacker's
 // Fortnox account to a victim's org. Signed with ADMIN_SECRET — same trust
 // boundary as the rest of the admin surface.
+//
+// base64url (RFC 4648 §5) used for both halves so the value round-trips
+// cleanly through any URL encoding/decoding step. Standard base64 contains
+// `+` and `/` characters; `+` in URL query values gets form-decoded to a
+// literal space (WHATWG URL spec), so a base64 signature with a `+` byte
+// would arrive at the callback with that byte mangled to ' ' and HMAC
+// verification would fail. base64url uses `-`/`_` instead, which are
+// URL-safe. This is the same encoding JWT uses for the same reason.
+// Incident: 2026-05-07 14:57 UTC — first OAuth callback that ever made it
+// past the page-button bug failed signature verification because the sig
+// happened to contain `+` chars.
 function signState(payload: { orgId: string; businessId: string; nonce: string }): string {
-  const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
-  const sig  = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64')
+  const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
+  const sig  = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64url')
   return `${body}.${sig}`
 }
 function verifyState(state: string): { orgId: string; businessId: string; nonce: string } | null {
   try {
     const [body, sig] = state.split('.')
     if (!body || !sig) return null
-    const expected = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64')
+    const expected = createHmac('sha256', process.env.ADMIN_SECRET || '').update(body).digest('base64url')
     const a = Buffer.from(expected, 'utf8'), b = Buffer.from(sig, 'utf8')
     if (a.length !== b.length || !timingSafeEqual(a, b)) return null
-    return JSON.parse(Buffer.from(body, 'base64').toString('utf8'))
+    return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'))
   } catch { return null }
 }
 
