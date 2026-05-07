@@ -64,7 +64,7 @@ const FORTNOX_SCOPES  = [
   'costcenter',         // cost-center / department dimensions on transactions — feeds dept_metrics
   'customer',           // customer master records — for AR analytics, customer name lookups
   'supplier',           // supplier master records — for supplier price-creep analytics
-  'timereport',         // attendance + scheduling time — pairs with `salary` for full Lön
+  'timereporting',      // attendance + scheduling time — pairs with `salary` for full Lön
   'article',            // article master data — for future item-level analysis
 ].join(' ')
 
