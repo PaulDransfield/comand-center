@@ -6,6 +6,14 @@
 
 ## Pending — apply when ready
 
+### M049 — Non-partial unique index for Fortnox OAuth upsert ⏳ pending application
+**File:** `sql/M049-INTEGRATIONS-OAUTH-UPSERT-KEY.sql`
+**Purpose:** the OAuth callback upsert at `app/api/integrations/fortnox/route.ts` was failing with `42P10` because every existing unique enforcement on `integrations` is via partial indexes (`WHERE department IS NULL`, `WHERE business_id IS NOT NULL`, expression-based `COALESCE(department, '')`), and PostgREST's `?onConflict=col1,col2` only matches non-partial unique constraints/indexes by column list. Adds a non-partial `UNIQUE (org_id, business_id, provider)` so the upsert (with onConflict updated to that key in the matching code commit) can land. The new index is functionally redundant with the existing `integrations_org_biz_provider_dept_unique` partial for the `business_id IS NOT NULL` case — it just exposes the same constraint to PostgREST in a shape it can use.
+**Pre-flight:** the migration runs a `DO $$ ... EXCEPTION` block that aborts with a clear error if any duplicate `(org_id, business_id, provider)` rows exist in `integrations`. Production has zero Fortnox rows so a duplicate is unlikely, but the guard is there in case any pre-existing PK / Caspeco / Onslip data violates the new shape.
+**Caveat:** still does not dedupe rows where `business_id IS NULL` (Postgres treats NULL as distinct under standard UNIQUE). Those are covered by the existing `integrations_org_null_biz_provider_unique` partial. New OAuth callbacks always carry a non-null business_id thanks to the page-button guard (`disabled={!selectedBiz}`, commit 66ffb5b), so this gap doesn't affect the OAuth path. Admin concierge tokens that omit business_id can still produce NULL — separate follow-up.
+**Companion code:** matching commit changes `onConflict: 'business_id,provider'` to `onConflict: 'org_id,business_id,provider'` in `app/api/integrations/fortnox/route.ts`.
+**Order of operations:** apply M049 in Supabase BEFORE Vercel deploys the matching code — otherwise the upsert will continue failing with the new column list. (Or apply concurrently — either order works once both are live.)
+
 ### M048 — Fortnox API verification harness mirror tables ⏳ pending application
 **File:** `sql/M048-VERIFICATION-TABLES.sql`
 **Purpose:** Phase 1 of the Fortnox API backfill plan. Creates `verification_*` mirror tables (cloned from `tracker_data`, `tracker_line_items`, `monthly_metrics`, `daily_metrics`, `dept_metrics`, `revenue_logs`, `financial_logs` via `LIKE INCLUDING ALL`) plus `verification_runs` for run metadata. The harness writes API-derived metrics into the mirrors so they can be diff'd against PDF-derived production data without touching production rows.

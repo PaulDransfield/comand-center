@@ -232,7 +232,12 @@ async function handleCallback(req: NextRequest) {
       last_error:      null,
       updated_at:      new Date().toISOString(),
     }, {
-      onConflict: 'business_id,provider',
+      // Targets the non-partial unique index integrations_org_biz_provider_uniq
+      // added by M049. PostgREST onConflict only matches non-partial indexes
+      // by column list — every other unique enforcement on this table is
+      // partial (WHERE department IS NULL / WHERE business_id IS NOT NULL /
+      // expression-based COALESCE) and therefore unusable here.
+      onConflict: 'org_id,business_id,provider',
     })
 
   if (dbError) {
