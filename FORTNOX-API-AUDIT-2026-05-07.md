@@ -166,9 +166,9 @@ None of these participate in production data flow.
 
 ## 8. Open questions raised by this audit
 
-1. **Is the Path A → `financial_logs` write path intentional or vestigial?** Phase 1 cannot tell. It runs daily via master-sync against any connected Fortnox integration but produces data that nothing reads. Either the readers were removed in a refactor, or the path was wired before the canonical PDF + projectRollup architecture and never decommissioned.
+1. **Is the Path A → `financial_logs` write path intentional or vestigial?** Phase 1 cannot tell. It runs daily via master-sync against any connected Fortnox integration but produces data that nothing reads. Either the readers were removed in a refactor, or the path was wired before the canonical PDF + projectRollup architecture and never decommissioned. **Update 2026-05-07 (post-DB check):** zero `provider='fortnox'` rows exist in `integrations` anywhere in the system, so Path A has been firing daily against an empty result set since at least the audit date — it does nothing in practice today regardless of whether it was originally intentional.
 
-2. **Has any Fortnox OAuth integration row in production ever populated `financial_logs` and `tracker_data` simultaneously for the same customer?** If yes, the two writers can disagree (Path A writes raw events, Path B writes aggregated rollups). Determining this requires DB access and is out of Phase 1 scope.
+2. **Has any Fortnox OAuth integration row in production ever populated `financial_logs` and `tracker_data` simultaneously for the same customer?** **Answered 2026-05-07:** No. The DB shows zero `provider='fortnox'` rows in `integrations` across all orgs. The OAuth code path in `app/api/integrations/fortnox/route.ts` (Path B) has never been completed by any customer. All Fortnox-derived data in `tracker_data` for Vero and Rosali came from PDF upload via the `/api/fortnox/apply` chokepoint.
 
 3. **Why does `ensureFreshFortnoxToken` exist twice?** Both `lib/sync/engine.ts:465` and `app/api/integrations/fortnox/route.ts:484` implement effectively the same logic with slightly different thresholds. Cleanup item, not Phase 1 scope.
 
