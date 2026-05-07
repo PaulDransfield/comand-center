@@ -1,8 +1,75 @@
 # ROADMAP.md — CommandCenter
-> Version 8.7 | Updated: 2026-05-03 | Session 16 ✅ (data-source guardrails + Fortnox apply chokepoint)
-> Active focus: Stripe price IDs + i18n coverage gaps. Sprint 1 + Sprint 2 fully shipped.
-> UX redesign: phase 10 shipped (Performance page replaces Cashflow)
+> Version 8.8 | Updated: 2026-05-07 | Session 17 ✅ (Fortnox OAuth chain unblocked + 12-month backfill + overhead drilldown)
+> Active focus: Vero owner onboarding scheduled Saturday 2026-05-09. Stripe price IDs still pending. i18n coverage of /scheduling, /notebook, /overheads/* still pending.
 > Read alongside CLAUDE.md and FIXES.md
+
+---
+
+## Session 17 — 2026-05-07 shipped (Fortnox OAuth + backfill + drilldown)
+
+Day-long session that took the Fortnox OAuth flow from "code exists but never used" to "real customer can connect, get 12 months of data backfilled, and drill from any cost flag straight to the source supplier invoice." Twelve commits, four migrations applied (M048–M051), seven new endpoints, three new reports.
+
+**A. OAuth chain unblocked end-to-end — 4 chained bugs, fixed in dependency order**
+
+Each bug was hidden behind the previous one, so they only surfaced sequentially as fixes landed:
+
+1. **Empty `business_id` on the URL** — `app/integrations/page.tsx:460` called `connectFortnox()` with no argument; the URL dropped `business_id`; the upsert wrote NULL; nothing usable. Fix in `66ffb5b` — pass `selectedBiz` + `disabled={!selectedBiz}` guard. New i18n key `actions.connectDisabledNoBusiness` in en-GB / sv / nb.
+2. **State signature `+`/space corruption** — `signState` / `verifyState` used standard base64; `+` chars in the HMAC sig got URL-mangled to spaces during the Fortnox callback round-trip; signature verification failed (`fortnox_invalid_state`). Fix in `f2913e9` — switch both halves to `Buffer.toString('base64url')` (RFC 4648 §5, JWT-style URL-safe alphabet).
+3. **`42P10` upsert mismatch** — every existing unique index on `integrations` is partial (`WHERE department IS NULL`, expression-based `COALESCE`), and PostgREST `onConflict=col1,col2` only matches non-partial indexes by column list. Fix in `1147d9a` — M049 adds `integrations_org_biz_provider_uniq` (non-partial UNIQUE on `(org_id, business_id, provider)`); upsert switched to `onConflict: 'org_id,business_id,provider'`.
+4. **Dev account licensing (Fortnox `2001101`)** — Paul's developer Fortnox doesn't have an active Bokföring license, so `/3/vouchers` returns 400 even though the OAuth scope was granted. Not a code bug; resolves Saturday when Vero authorises with their actually-licensed account.
+
+OAuth flow now demonstrably works end-to-end against a real Fortnox account. Vero's `integrations` row landed cleanly at 17:31 UTC.
+
+**B. 12-month backfill on OAuth connect**
+
+- M050 added `backfill_status` (`pending`/`running`/`completed`/`failed`), `backfill_started_at`, `backfill_finished_at`, `backfill_progress JSONB`, `backfill_error` to `integrations` plus a partial index on `(provider, backfill_status)` for cheap claim queries.
+- `app/api/cron/fortnox-backfill-worker/route.ts` — atomic claim via `UPDATE WHERE backfill_status='pending'`, fetches 12 months via `lib/fortnox/api/vouchers.ts`, translates via `lib/fortnox/api/voucher-to-aggregator.ts`, writes per-month `tracker_data` rows with `source='fortnox_api'`, `created_via='fortnox_backfill'`. Idempotency check skips months where PDF apply already populated the row. Daily 07:00 UTC cron as backstop; OAuth callback fires worker via authenticated HTTP POST so customer doesn't wait for cron tick.
+- Owner-facing button on `/integrations` (commit `a3ee75f`) — context-aware label adapts to `backfill_status`. Disabled when in flight.
+- Admin Quick Action on `/admin/v2/customers/[orgId]` (commit `1b067bb`) — uses existing `requireAdmin` + audit pattern, includes ≥10-char reason. New `INTEGRATION_BACKFILL` enum entry. Backfill state visible in CustomerIntegrations table with coloured badge + live progress.
+- Bonus fix while editing `/integrations`: pre-existing `load()` ReferenceError on Sync Now / Reconnect / Disconnect buttons fixed (`load()` → `fetchIntegrations()`).
+
+**C. Drill-down from cost flag → supplier invoices**
+
+Owner clicks "Show invoices" on an overhead-review flag card → expands inline to a chronological list of the supplier's invoices for the period, with drift indicator and per-row "View PDF" / "In Fortnox" actions:
+
+- M051 — `overhead_drilldown_cache` table (5-min TTL, keyed on `(business_id, period_year, period_month, category)`). Note: Paul applied via direct SQL editor before the migration file was written; M051 is idempotent for documentation/replay.
+- `app/api/integrations/fortnox/drilldown/route.ts` — fetches vouchers + supplier invoices in parallel from Fortnox, joins by `VoucherSeries+VoucherNumber`, filters voucher rows by BAS account range matching the requested category, groups by supplier. Cache-or-fetch.
+- `app/api/integrations/fortnox/file/route.ts` — streams the attached supplier-invoice PDF from Fortnox's archive endpoint to the browser with `Content-Disposition: inline` so it renders natively in a new tab. Tries `/3/inbox/{id}` first, falls back to `/3/archive/{id}`.
+- New `InvoiceDrilldown` + `InvoiceRow` components inside `app/overheads/review/page.tsx` (kept co-located with `FlagCard` per existing pattern). Drift indicator surfaces "Flagged: X / Live: Y / +N added since flag was generated" when the accountant has added entries since the PDF was applied.
+- New `overheads.review.drilldown.*` i18n namespace in en-GB / sv / nb (11 keys + 4 drift sub-keys, parity verified).
+
+**D. AI invoice-awareness**
+
+- `lib/ai/scope.ts` — new `INVOICE-LEVEL DATA` paragraph in `SCOPE_NOTE`. Every AI surface that imports it (every predictive surface per CLAUDE.md) now knows: per-invoice voucher detail is NOT in your context unless explicitly provided; you may mention the drill-down affordance as a next step; you may NOT claim invoice specifics without seeing them.
+- `lib/overheads/ai-explanation.ts` — overhead reexplain prompt updated. New bullets: (1) point owner at "Show invoices" when supplier name is generic / spike is ambiguous; (2) cite specifics only when `invoices: ...` block is present in the rule_reason; (3) never fabricate.
+- `app/api/overheads/explain/[flagId]/route.ts` — opportunistic cache lookup. If the drilldown cache is warm (≤30 min, looser than UI's 5 min — slightly stale invoice data is fine for AI input), filters to the matched supplier, formats up to 12 invoices into a compact `invoices: MM-DD=NNNkr(account-desc); ...` block, appends to the AI's `reason` context. Cold cache → AI explains at supplier granularity as before. No fresh Fortnox fetch from the explain path (would add 5-10s to a reexplain click).
+
+**E. Reports written**
+
+- `FORTNOX-API-AUDIT-2026-05-07.md` — Phase 1 Question 1: enumeration of every Fortnox API call site, categorised by active-cron / active-apply / admin-only / unused / tested-only. Headline finding: two parallel Fortnox sync paths exist; Path A (`lib/sync/engine.ts`) writes to `financial_logs` which nothing reads.
+- `FORTNOX-VERIFICATION-REPORT-2026-05-07.md` — Phase 1 Question 2 stub. Updated to reflect that no Fortnox OAuth integration existed in production until 17:31 UTC (Vero's connection); harness is ready, awaiting real data Saturday.
+- `FORTNOX-OAUTH-CONFIG-2026-05-07.md` — for the developer-portal config: redirect URI string, the 10 scopes mapped to Fortnox's permission UI, the explicit UNCHECK list, service-account checkbox guidance, ⚠ flag about query-parameter-in-redirect-URI being potentially rejected by Fortnox.
+- `INTEGRATIONS-FLOW-INVESTIGATION-2026-05-07.md` — read-only diagnosis of the page-button bug (#1) before the fix.
+- `ROADMAP-REVIEW-BRIEFING.md` — paste-ready briefing for outside Claude.ai roadmap review.
+- `FORTNOX-DIAGNOSTIC-2026-05-07.md` — original integration diagnostic before today's work; some open questions now answered.
+
+**Migrations applied this session:** M048 ✅ (verification harness mirror tables), M049 ✅ (non-partial unique index for OAuth upsert), M050 ✅ (backfill state columns), M051 ✅ (overhead_drilldown_cache).
+
+**Saturday 2026-05-09 (planned):** Paul meets Vero owner. Live OAuth onboarding using owner's actual Fortnox session in incognito. Backfill writes 12 months of real data. Drill-down on flagged costs is the demo's strongest closer. Notes for the meeting documented in this session's chat.
+
+**Follow-ups deliberately deferred:**
+- Phase 4 of AI awareness (cost-intelligence / supplier-price-creep / weekly-memo learning to use invoice-level data — wait for usage signal first).
+- Webhooks for invoices (decided against; on-demand drill-down covers the core use case; revisit if a customer asks for sub-day freshness).
+- Cleanup of two parallel Fortnox sync paths (`lib/sync/engine.ts` writes to dead `financial_logs`; cleanup belongs in a separate task).
+- Voucher-list endpoint bug in `lib/sync/engine.ts:584` (`v.TransactionInformation` is a free-text field being parseFloat'd as if it were a numeric amount — pre-existing, dormant code, not load-bearing).
+- API-priority `tracker_data` overwrite (kept PDF priority per the architectural pushback; revisit only if Paul actively wants it).
+- Decision tracking on the drill-down (mark necessary / cuttable / revisit) — defer until after real-customer usage.
+- Per-invoice in-app modal (currently "View PDF" opens in a new tab, which delivers the same outcome).
+
+**Out of scope, observed during this work:**
+- Local `.env.local`'s `CRON_SECRET` doesn't match production's (manual triggering via curl from local hits 401). Worth syncing via Vercel CLI (when installed) before any future scripted testing.
+- The `t('tokenExpiry', { count: daysLeft })` rounding shows "1 day" for any token under 24h via `Math.ceil`. Pre-existing cosmetic issue; non-blocker.
+- Verification harness scripts (`scripts/verification-runner.ts`, `scripts/verification-report.ts`) ready to run once Vero has real data — produces Phase 1 Q2 numerical answer that's currently a stub.
 
 ---
 

@@ -1,5 +1,37 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-05-03
+Last updated: 2026-05-07
+
+---
+
+## 0bj. Fortnox OAuth chain — four sequentially-hidden bugs unblocked end-to-end (2026-05-07)
+
+**Context:** OAuth code path in `app/api/integrations/fortnox/route.ts` had been wired for months but never used in production by any customer (zero `provider='fortnox'` rows in `integrations` across all orgs, confirmed via SQL on 2026-05-07). The session-long debug session surfaced four chained bugs, each hidden behind the previous one — every fix was the trigger for discovering the next bug.
+
+### §0bj-1: Empty `business_id` on the OAuth URL — fixed in `66ffb5b`
+**Symptom:** OAuth state at the callback decoded to `{businessId: ""}`. Upsert wrote `business_id: null`, partial unique index couldn't dedup, page's per-business lookup couldn't find the row.
+**Cause:** `app/integrations/page.tsx:460` called `connectFortnox()` with no argument. Equivalent api_key (PK) button at line 461 did `setBizForPOS(selectedBiz)` automatically, but the OAuth path skipped that wiring entirely.
+**Fix:** Pass `selectedBiz` to `connectFortnox(selectedBiz)`. Add `disabled={!selectedBiz}` guard with i18n'd tooltip. Bonus: the existing Sync Now / Reconnect / Disconnect buttons all called a non-existent `load()` function — fixed to `fetchIntegrations()` while in the file.
+
+### §0bj-2: State signature `+`/space corruption — fixed in `f2913e9`
+**Symptom:** OAuth callback after fix #1 returned `?error=fortnox_invalid_state`. Vercel logs: `Fortnox OAuth callback: invalid state signature`. State value's signature half had literal spaces where `+` chars should be: `1NvASe5MRKMTa3s5VkoB0j9hWGafpaY8CH 2 NFCCxY=`.
+**Cause:** `signState`/`verifyState` used `Buffer.toString('base64')`. Standard base64 contains `+` and `/`. `+` in URL query values gets form-decoded to a literal space (WHATWG URL spec). The body half of the state happened to lack `+` chars (JSON base64 mostly avoids them); the HMAC sig is uniformly random and statistically had `+` ~3% of bytes. Two adjacent `+` bytes → both mangled to spaces → signature mismatch.
+**Fix:** Switch both halves to `Buffer.toString('base64url')` (RFC 4648 §5, JWT-style URL-safe alphabet — `-` instead of `+`, `_` instead of `/`, no padding). Same encoding `lib/admin/oauth-link.ts` was already using correctly. Added inline comment block referencing the incident date so this doesn't get re-introduced.
+
+### §0bj-3: `42P10` upsert constraint mismatch — fixed in `1147d9a` + M049
+**Symptom:** OAuth callback after fix #2 returned `?error=fortnox_save_failed`. Vercel logs: PostgREST `42P10 — there is no unique or exclusion constraint matching the ON CONFLICT specification`.
+**Cause:** Earlier session diagnosis had read `archive/migrations/supabase_schema.sql:104` (`UNIQUE(business_id, provider)`) and concluded the constraint matched the upsert. **That file is in `archive/` — not authoritative for production schema.** The actual production `integrations` table has 5 unique indexes, all of them PARTIAL (`WHERE department IS NULL`, `WHERE business_id IS NOT NULL`, expression-based `COALESCE(department, '')`). PostgREST `onConflict=col1,col2` only matches non-partial unique constraints/indexes by column list — partial indexes are invisible to it.
+**Fix:** M049 adds `CREATE UNIQUE INDEX integrations_org_biz_provider_uniq ON integrations (org_id, business_id, provider)` (non-partial). Upsert switched from `onConflict: 'business_id,provider'` to `onConflict: 'org_id,business_id,provider'`. Migration includes pre-flight `DO $$ ... EXCEPTION` block that aborts with a clear error if any duplicate `(org_id, business_id, provider)` rows existed.
+**Lesson learned:** memory `feedback_archive_migrations_not_authoritative.md`. When a constraint claim is load-bearing, always query `pg_indexes` / `pg_constraint` directly via Supabase before asserting the schema state. Trusting `archive/`-suffixed migration files burned an hour of debugging.
+
+### §0bj-4: Dev-account licensing (Fortnox `2001101`) — not a code bug
+**Symptom:** OAuth callback after fix #3 succeeded, the integration row landed cleanly with valid tokens. Background backfill worker fired immediately and failed with `Backfill failed: Fortnox /vouchers list failed: HTTP 400 — {"ErrorInformation":{"error":1,"message":"Det finns ingen aktiv licens för önskat scope.","code":2001101}}`.
+**Cause:** Paul's developer Fortnox account doesn't have an active **Bokföring** (bookkeeping) module license. Fortnox grants the `bookkeeping` OAuth scope at the consent screen (because the dev portal allows requesting it), but the underlying `/3/vouchers` endpoint rejects calls because the account isn't licensed to actually access voucher data.
+**Status:** Not fixable in code. Vero's actual Fortnox account (Saturday's onboarding) has the Bokföring module — same code path will succeed.
+**Validates:** the worker's error path is correct — caught the failure, populated `backfill_error` + `last_error`, marked status=failed, didn't crash.
+
+**Validation that the chain is sound:** at 14:57 UTC, after all three code fixes deployed and M049 applied, the state body decoded cleanly to `{orgId: e917d4b8-..., businessId: 0f948ac3-..., nonce: ...}` (Vero org, Vero Italiano). Token exchange returned 200. Upsert wrote the row. Worker started, hit the licensing error, marked failed. Every step except the licensing was working as designed.
+
+**Memory:** `feedback_fortnox_oauth_state_encoding.md`, `feedback_fortnox_business_id_required.md`, `feedback_archive_migrations_not_authoritative.md`.
 
 ---
 
