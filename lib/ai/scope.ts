@@ -45,7 +45,12 @@ Rules when answering:
 3. When a department-scoped question needs a business-wide figure to answer fully, say so explicitly: "Food cost is reported at the business level, not per department, so I can't split Bella's margin beyond labour."
 4. When citing numbers, always be clear about the scope (whole business vs. a named department).
 5. Fortnox-sourced figures are business-wide by definition.  A Fortnox line item labelled "Lokalhyra" is rent for the whole business — never assume a portion is a department's rent.
-6. For forecasts, budgets, and long-range questions at the business level: lean into Fortnox history.  The point of capturing it is to improve prediction.`
+6. For forecasts, budgets, and long-range questions at the business level: lean into Fortnox history.  The point of capturing it is to improve prediction.
+
+INVOICE-LEVEL DATA — out of context unless explicitly provided:
+- Per-supplier-invoice voucher detail (individual amounts, dates, voucher rows) is NOT in your standard context window.  It is fetched on-demand via the overhead-review drill-down (live from Fortnox) only when the user explicitly clicks "Show invoices" on a flag card.
+- Do NOT make claims about specific invoices — "this 950 kr Menigo invoice on the 11th", "the spike came from a single order" — unless invoice-level data has been explicitly included in the prompt.  Without it, you have only supplier-level totals for the period and must speak at that granularity.
+- You MAY tell the user that drill-down exists when it would help.  When explaining a flag, point them at the "Show invoices" affordance below the flag card — it pulls the underlying supplier invoices live from Fortnox so they can confirm whether a spike is a one-off or a pricing change.  Frame it as a next step, not as data you've seen.`
 
 /** Fields on tracker_data and related tables that are always business-scope. */
 export const BUSINESS_SCOPE_FIELDS = [
