@@ -1,6 +1,20 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-04 | M022–M047 all applied · all caught up
+> Last updated: 2026-05-07 | M022–M047 applied · M048 pending (Phase 1 harness only)
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Pending — apply when ready
+
+### M048 — Fortnox API verification harness mirror tables ⏳ pending application
+**File:** `sql/M048-VERIFICATION-TABLES.sql`
+**Purpose:** Phase 1 of the Fortnox API backfill plan. Creates `verification_*` mirror tables (cloned from `tracker_data`, `tracker_line_items`, `monthly_metrics`, `daily_metrics`, `dept_metrics`, `revenue_logs`, `financial_logs` via `LIKE INCLUDING ALL`) plus `verification_runs` for run metadata. The harness writes API-derived metrics into the mirrors so they can be diff'd against PDF-derived production data without touching production rows.
+**Notes:**
+  - Verification harness only. Safe to drop after Phase 1 completes — drop script is at the bottom of the SQL file.
+  - The Phase 1 prompt named `vat_breakdown` in the mirror list; that table does NOT exist (VAT split lives as columns on `tracker_data` per M029). Skipped.
+  - `tracker_line_items` was not in the prompt's list but was added so material-drift root-causing has line-level data to walk back through.
+  - No new application code reads these tables. They are visible only to the verification harness and the report generator.
+**Scripts that depend on this:** `scripts/verification-runner.ts`, `scripts/verification-report.ts`. Both will refuse to run until the migration is applied.
 
 ---
 
