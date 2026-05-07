@@ -230,6 +230,13 @@ async function handleCallback(req: NextRequest) {
       token_expires_at:expiresAt,
       last_sync_at:    null,
       last_error:      null,
+      // Enqueue the 12-month backfill (M050). The worker at
+      // /api/cron/fortnox-backfill-worker drains pending Fortnox integrations
+      // and writes per-month tracker_data rows via projectRollup. We trigger
+      // the worker once below so the customer doesn't wait for the cron tick.
+      backfill_status: 'pending',
+      backfill_progress: { phase: 'enqueued' },
+      backfill_error:    null,
       updated_at:      new Date().toISOString(),
     }, {
       // Targets the non-partial unique index integrations_org_biz_provider_uniq
@@ -254,11 +261,28 @@ async function handleCallback(req: NextRequest) {
     req,
   })
 
-  // Trigger initial sync in background (don't wait for it)
-  syncFortnoxInBackground(orgId, access_token).catch(console.error)
+  // Kick the backfill worker immediately so the customer doesn't wait for
+  // the cron tick. Worker auths via CRON_SECRET; matches the dispatcher
+  // pattern used by /api/fortnox/extract.
+  triggerBackfillWorker().catch(err => console.error('Failed to trigger backfill worker:', err))
 
   // Redirect back to the integrations page with success
   return NextResponse.redirect(`${appUrl}/integrations?connected=fortnox`)
+}
+
+async function triggerBackfillWorker(): Promise<void> {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !process.env.CRON_SECRET) return
+  await fetch(`${base}/api/cron/fortnox-backfill-worker`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ trigger: 'oauth_callback' }),
+  }).catch(() => {})
 }
 
 // ── SYNC: pull data from Fortnox ──────────────────────────────────
@@ -278,10 +302,6 @@ export async function POST(req: NextRequest) {
   if (action === 'refresh') return refreshToken(auth.orgId)
 
   return syncFortnox(auth.orgId)
-}
-
-async function syncFortnoxInBackground(orgId: string, accessToken: string) {
-  await syncFortnox(orgId)
 }
 
 async function syncFortnox(orgId: string): Promise<Response> {

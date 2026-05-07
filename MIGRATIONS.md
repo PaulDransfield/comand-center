@@ -6,6 +6,15 @@
 
 ## Pending — apply when ready
 
+### M050 — Fortnox API backfill state columns on `integrations` ⏳ pending application
+**File:** `sql/M050-FORTNOX-BACKFILL-COLUMNS.sql`
+**Purpose:** state machine for the 12-month Fortnox API backfill triggered after OAuth connect. Adds `backfill_status` (NULL / `idle` / `pending` / `running` / `completed` / `failed`), `backfill_started_at`, `backfill_finished_at`, `backfill_progress JSONB`, `backfill_error TEXT` to `integrations`. CHECK constraint guards the enum. Partial index `idx_integrations_backfill_pending` for cheap "find next pending" claim queries.
+**Companion code:**
+  - `app/api/cron/fortnox-backfill-worker/route.ts` — drains pending Fortnox integrations: claims atomically, fetches 12 months of vouchers via `lib/fortnox/api/vouchers.ts`, translates via `lib/fortnox/api/voucher-to-aggregator.ts`, projects via `projectRollup`, writes `tracker_data` rows with `source='fortnox_api'` and `created_via='fortnox_backfill'`. Idempotency check skips months that PDF apply has already populated (`source IN ('fortnox_pdf', 'fortnox_apply')`).
+  - OAuth callback now sets `backfill_status='pending'` as part of the upsert (instead of the old current-month-only `syncFortnoxInBackground`) and fires the worker via fire-and-forget HTTP POST.
+  - Daily cron `/api/cron/fortnox-backfill-worker` at 07:00 UTC as a backstop in case the immediate fire-and-forget didn't reach the worker.
+**Order of operations:** apply M050 in Supabase before the matching code deploys, otherwise the OAuth callback's upsert will fail with `42703` (column does not exist) on the new `backfill_*` columns.
+
 ### M049 — Non-partial unique index for Fortnox OAuth upsert ⏳ pending application
 **File:** `sql/M049-INTEGRATIONS-OAUTH-UPSERT-KEY.sql`
 **Purpose:** the OAuth callback upsert at `app/api/integrations/fortnox/route.ts` was failing with `42P10` because every existing unique enforcement on `integrations` is via partial indexes (`WHERE department IS NULL`, `WHERE business_id IS NOT NULL`, expression-based `COALESCE(department, '')`), and PostgREST's `?onConflict=col1,col2` only matches non-partial unique constraints/indexes by column list. Adds a non-partial `UNIQUE (org_id, business_id, provider)` so the upsert (with onConflict updated to that key in the matching code commit) can land. The new index is functionally redundant with the existing `integrations_org_biz_provider_dept_unique` partial for the `business_id IS NOT NULL` case — it just exposes the same constraint to PostgREST in a shape it can use.
