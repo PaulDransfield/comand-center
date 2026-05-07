@@ -25,6 +25,7 @@ export const ADMIN_ACTIONS = {
   INTEGRATION_DELETE:     'integration_delete',
   INTEGRATION_TEST:       'integration_test',
   INTEGRATION_SYNC:       'integration_sync',
+  INTEGRATION_BACKFILL:   'integration_backfill',
   DISCOVERY_RUN:          'discovery_run',
   DEPT_SETUP:             'dept_setup',
   // Agents

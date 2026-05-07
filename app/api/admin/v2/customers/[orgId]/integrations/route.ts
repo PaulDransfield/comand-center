@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: { orgId: strin
 
   const [integsRes, bizRes] = await Promise.all([
     db.from('integrations')
-      .select('id, business_id, provider, status, last_sync_at, last_error, reauth_notified_at, created_at')
+      .select('id, business_id, provider, status, last_sync_at, last_error, reauth_notified_at, created_at, backfill_status, backfill_progress, backfill_error, backfill_started_at, backfill_finished_at')
       .eq('org_id', orgId)
       .order('created_at', { ascending: true }),
     db.from('businesses')
@@ -54,6 +54,11 @@ export async function GET(req: NextRequest, { params }: { params: { orgId: strin
       reauth_notified_at: i.reauth_notified_at,
       created_at:       i.created_at,
       health:           healthBadge,
+      backfill_status:  i.backfill_status ?? null,
+      backfill_progress: i.backfill_progress ?? null,
+      backfill_error:   i.backfill_error ?? null,
+      backfill_started_at: i.backfill_started_at ?? null,
+      backfill_finished_at: i.backfill_finished_at ?? null,
     }
   })
 

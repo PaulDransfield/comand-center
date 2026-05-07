@@ -58,6 +58,17 @@ export function RightRail({ orgId, currentPlan, onActionComplete }: RightRailPro
     return { message: `Re-aggregated ${ok}/${r.results.length} business-year combos` }
   }
 
+  async function runFortnoxBackfill(reason: string) {
+    const r = await adminFetch<{ ok: boolean; enqueued: number; already_running: number; results: any[] }>(
+      `/api/admin/v2/customers/${orgId}/run-fortnox-backfill`,
+      { method: 'POST', body: JSON.stringify({ reason }) },
+    )
+    const parts: string[] = []
+    if (r.enqueued > 0)        parts.push(`Enqueued ${r.enqueued}`)
+    if (r.already_running > 0) parts.push(`${r.already_running} already running`)
+    return { message: parts.length ? parts.join(' · ') : 'Nothing to enqueue' }
+  }
+
   function openMemoPreview() {
     // Memo preview is a GET — no audit needed (read-only). Open in new
     // tab. The legacy endpoint stays, no v2 wrapper required.
@@ -98,6 +109,14 @@ export function RightRail({ orgId, currentPlan, onActionComplete }: RightRailPro
           description="Rebuilds daily_metrics and monthly_metrics for every business in this org for the current year. Use after data drift or post-sync issues."
           confirmLabel="Re-aggregate"
           onAction={reaggregate}
+          onComplete={onActionComplete}
+        />
+        <QuickActionButton
+          label="Run Fortnox backfill (12mo)"
+          modalTitle="Run Fortnox 12-month backfill"
+          description="Queues every Fortnox integration on this org for the 12-month API backfill. Worker fetches vouchers via Fortnox API and writes per-month tracker_data rows (skipping months where PDF apply has already populated). Skips integrations whose backfill is currently running. Customer-side equivalent: the 'Backfill 12 months' button on /integrations."
+          confirmLabel="Enqueue backfill"
+          onAction={runFortnoxBackfill}
           onComplete={onActionComplete}
         />
         <button

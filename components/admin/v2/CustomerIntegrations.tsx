@@ -18,6 +18,18 @@ interface IntegrationRow {
   reauth_notified_at: string | null
   created_at: string
   health: 'ok' | 'warn' | 'critical'
+  backfill_status: 'pending' | 'running' | 'completed' | 'failed' | 'idle' | null
+  backfill_progress: any
+  backfill_error: string | null
+  backfill_started_at: string | null
+  backfill_finished_at: string | null
+}
+
+const BACKFILL_BADGE: Record<string, { bg: string; fg: string; label: string }> = {
+  pending:   { bg: '#eff6ff', fg: '#1d4ed8', label: 'BACKFILL PENDING' },
+  running:   { bg: '#fef3c7', fg: '#92400e', label: 'BACKFILL RUNNING' },
+  completed: { bg: '#dcfce7', fg: '#15803d', label: 'BACKFILL DONE' },
+  failed:    { bg: '#fef2f2', fg: '#b91c1c', label: 'BACKFILL FAILED' },
 }
 
 interface IntegrationsResponse {
@@ -92,7 +104,32 @@ export function CustomerIntegrations({ orgId }: { orgId: string }) {
                       Re-auth notified {fmtDate(i.reauth_notified_at)}
                     </div>
                   )}
-                  {!i.last_error && !i.reauth_notified_at && (
+                  {i.backfill_status && BACKFILL_BADGE[i.backfill_status] && (() => {
+                    const b = BACKFILL_BADGE[i.backfill_status as string]
+                    const p = i.backfill_progress ?? {}
+                    const detail = i.backfill_status === 'running'
+                      ? `${p.months_done ?? p.months_written ?? 0}/${p.months_total ?? 12} months`
+                      : i.backfill_status === 'completed'
+                        ? `${p.months_written ?? 0} written${p.months_skipped_pdf ? ` · ${p.months_skipped_pdf} skipped (PDF)` : ''}`
+                        : i.backfill_status === 'failed'
+                          ? (i.backfill_error?.slice(0, 60) ?? 'see logs')
+                          : null
+                    return (
+                      <div style={{ marginTop: i.last_error || i.reauth_notified_at ? 4 : 0 }}>
+                        <span style={{
+                          fontSize:      9,
+                          fontWeight:    700,
+                          letterSpacing: '0.06em',
+                          padding:       '2px 6px',
+                          borderRadius:  3,
+                          background:    b.bg,
+                          color:         b.fg,
+                        }}>{b.label}</span>
+                        {detail && <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 6 }}>{detail}</span>}
+                      </div>
+                    )
+                  })()}
+                  {!i.last_error && !i.reauth_notified_at && !i.backfill_status && (
                     <span style={{ color: '#d1d5db' }}>—</span>
                   )}
                 </Td>
