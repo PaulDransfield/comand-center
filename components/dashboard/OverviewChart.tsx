@@ -934,8 +934,8 @@ export default function OverviewChart({
         <span><LegendDot color={C.predRev} />Predicted</span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span>Labour ratio:</span>
-          <LegendDot color={C.tierGood} /><span>good</span>
-          <LegendDot color={C.tierAmber} style={{ marginLeft: 2 }} /><span>amber</span>
+          <LegendDot color={C.tierGood} /><span>on target</span>
+          <LegendDot color={C.tierAmber} style={{ marginLeft: 2 }} /><span>watch</span>
           <LegendDot color={C.tierRed}   style={{ marginLeft: 2 }} /><span>over</span>
         </span>
         <span><LegendBar color={C.mar} />Gross margin</span>
