@@ -23,6 +23,84 @@
       "overheads": "Övrigt",
       "food":      "Mat"
     },
+    "headline": {
+      "totalAtStake":     "I potten totalt",
+      "totalAtStakeMeta": "Hos {suppliers, plural, one {# leverantör} other {# leverantörer}} · {flags, plural, one {# flagga} other {# flaggor}}",
+      "priceSpikes":      "Prisökningar",
+      "priceSpikesMeta":  "{amount}/mån på spel",
+      "reappeared":       "Återkomna",
+      "reappearedMeta":   "{amount}/mån ej uppsagda",
+      "decided90d":       "Beslut · 90d",
+      "decided90dMeta":   "flaggor lösta · ~{amount}/mån sänkt"
+    },
+    "filters": {
+      "all":         "Alla",
+      "spike":       "Prishöjning",
+      "reappeared":  "Återkom",
+      "newSupplier": "Ny leverantör",
+      "oneOff":      "Engångsbelopp"
+    },
+    "list": {
+      "searchPlaceholder":   "Sök leverantör…",
+      "resolvedToggleOn":    "✓ Lösta",
+      "resolvedToggleOff":   "+ Lösta",
+      "resolvedToggleTitle": "Visa lösta flaggor tillsammans med väntande",
+      "sortAtStake":         "Sortera: belopp ↓",
+      "counter":             "{shown} av {total}",
+      "emptyAfterFilter":    "Inga flaggor matchar filtret."
+    },
+    "row": {
+      "catFood":     "Mat",
+      "catOther":    "Övrigt",
+      "perMo":       "/mån",
+      "plusPeriods": "+{count, plural, one {# period} other {# perioder}}",
+      "resolved":    "Löst"
+    },
+    "chart": {
+      "loading":       "Laddar 12-månadshistorik…",
+      "noData":        "Ingen fakturahistorik för leverantören de senaste 12 månaderna.",
+      "avgLabel":      "snitt {amount}",
+      "legendMonthly": "Månadsfaktura",
+      "legendAvg":     "12-mån snitt ({amount})",
+      "legendSpike":   "Aktuell prishöjning"
+    },
+    "periodChips": {
+      "label": "Byt period:"
+    },
+    "detail": {
+      "backToList":            "← Tillbaka till listan",
+      "decisionNeeded":        "Beslut krävs",
+      "alreadyDecided":        "Redan beslutat",
+      "scopeSingle":           "Gäller endast denna flagga · 1 period",
+      "scopeMulti":             "Gäller leverantör-brett för \"{category}\" · löser alla {count} väntande perioder samtidigt",
+      "defer":                 "Skjut upp 30d",
+      "planCancel":            "Planera att avsluta",
+      "essential":             "Markera Nödvändig",
+      "periodMonthly":         "{period} · månadsvis",
+      "vsAvg":                 "mot snitt",
+      "resolvedBadge":         "Löst",
+      "aiHeader":              "AI-förklaring",
+      "aiEmpty":               "Ingen AI-förklaring ännu för denna flagga.",
+      "generate":              "Generera förklaring",
+      "generating":            "Genererar…",
+      "reexplain":             "Förklara igen ↻",
+      "reexplaining":          "Förklarar igen…",
+      "confidence":            "Tillförlitlighet: {value}",
+      "chartHeader":           "12-månaders prishistorik",
+      "chartError":            "Kunde inte ladda prishistoriken.",
+      "newData":               "NY DATA",
+      "invoicesHeader":        "Fakturor · {period}",
+      "invoicesScope":         "begränsat till vald period",
+      "drilldownLoading":      "Hämtar fakturor från Fortnox…",
+      "drilldownNoConnection": "Anslut Fortnox för att se fakturorna bakom denna kostnad.",
+      "drilldownEmpty":        "Inga fakturor hittades för {supplier} i denna period.",
+      "invoicePdf":            "PDF",
+      "invoiceFortnox":        "I Fortnox ↗",
+      "relatedHeader":         "Mönstret över perioder",
+      "relatedBody":           "{supplier} har flaggats {count, plural, one {# gång} other {# gånger}} i granskningsfönstret. Ditt beslut gäller alla {count, plural, one {# väntande period} other {# väntande perioder}} — Markera Nödvändig eller Planera att avsluta löser dem i en åtgärd. Total månadspåverkan: {total}.",
+      "emptyTitle":            "Välj en flagga",
+      "emptyBody":             "Välj en leverantör i listan för att se historik och fatta beslut."
+    },
     "loadingFlags": "Laddar flaggor…",
     "emptyStable":  "Dina kostnader ser stabila ut. Inget att granska denna period.",
     "flagTones": {

@@ -23,6 +23,84 @@
       "overheads": "Overheads",
       "food":      "Food"
     },
+    "headline": {
+      "totalAtStake":     "Total at stake",
+      "totalAtStakeMeta": "Across {suppliers, plural, one {# supplier} other {# suppliers}} · {flags, plural, one {# flag} other {# flags}}",
+      "priceSpikes":      "Price spikes",
+      "priceSpikesMeta":  "{amount}/mo at risk",
+      "reappeared":       "Dismissed reappeared",
+      "reappearedMeta":   "{amount}/mo not cancelled",
+      "decided90d":       "Decided · last 90d",
+      "decided90dMeta":   "flags resolved · ~{amount}/mo cut"
+    },
+    "filters": {
+      "all":         "All",
+      "spike":       "Spike",
+      "reappeared":  "Reappeared",
+      "newSupplier": "New supplier",
+      "oneOff":      "One-off high"
+    },
+    "list": {
+      "searchPlaceholder":   "Search suppliers…",
+      "resolvedToggleOn":    "✓ Resolved",
+      "resolvedToggleOff":   "+ Resolved",
+      "resolvedToggleTitle": "Show resolved flags alongside pending ones",
+      "sortAtStake":         "Sort: at stake ↓",
+      "counter":             "{shown} of {total}",
+      "emptyAfterFilter":    "No flags match this filter."
+    },
+    "row": {
+      "catFood":     "Food",
+      "catOther":    "Other",
+      "perMo":       "/mo",
+      "plusPeriods": "+{count, plural, one {# period} other {# periods}}",
+      "resolved":    "Resolved"
+    },
+    "chart": {
+      "loading":       "Loading 12-month history…",
+      "noData":        "No invoice history for this supplier in the last 12 months.",
+      "avgLabel":      "avg {amount}",
+      "legendMonthly": "Monthly invoice",
+      "legendAvg":     "12-mo average ({amount})",
+      "legendSpike":   "Current spike"
+    },
+    "periodChips": {
+      "label": "Switch period:"
+    },
+    "detail": {
+      "backToList":            "← Back to list",
+      "decisionNeeded":        "Decision needed",
+      "alreadyDecided":        "Already decided",
+      "scopeSingle":           "Applies to this flag only · 1 period",
+      "scopeMulti":             "Applies supplier-wide for \"{category}\" · resolves all {count} pending periods at once",
+      "defer":                 "Defer 30d",
+      "planCancel":            "Plan to cancel",
+      "essential":             "Mark Essential",
+      "periodMonthly":         "{period} · monthly",
+      "vsAvg":                 "vs avg",
+      "resolvedBadge":         "Resolved",
+      "aiHeader":              "AI explanation",
+      "aiEmpty":               "No AI explanation yet for this flag.",
+      "generate":              "Generate explanation",
+      "generating":            "Generating…",
+      "reexplain":             "Re-explain ↻",
+      "reexplaining":          "Re-explaining…",
+      "confidence":            "Confidence: {value}",
+      "chartHeader":           "12-month price history",
+      "chartError":            "Couldn't load price history.",
+      "newData":               "NEW DATA",
+      "invoicesHeader":        "Invoices · {period}",
+      "invoicesScope":         "scoped to selected period",
+      "drilldownLoading":      "Loading invoices from Fortnox…",
+      "drilldownNoConnection": "Connect Fortnox to drill into this cost.",
+      "drilldownEmpty":        "No invoices found for {supplier} in this period.",
+      "invoicePdf":            "PDF",
+      "invoiceFortnox":        "In Fortnox ↗",
+      "relatedHeader":         "This pattern across periods",
+      "relatedBody":           "{supplier} has been flagged {count, plural, one {# time} other {# times}} in the review window. Your decision applies to all {count, plural, one {# pending period} other {# pending periods}} — Mark Essential or Plan to cancel resolves them in one action. Total monthly impact: {total}.",
+      "emptyTitle":            "Pick a flag",
+      "emptyBody":             "Select a supplier from the list to see its history and decide."
+    },
     "loadingFlags": "Loading flags…",
     "emptyStable":  "Your costs look stable. Nothing to review this period.",
     "flagTones": {

@@ -23,6 +23,84 @@
       "overheads": "Drift",
       "food":      "Mat"
     },
+    "headline": {
+      "totalAtStake":     "På spill totalt",
+      "totalAtStakeMeta": "Hos {suppliers, plural, one {# leverandør} other {# leverandører}} · {flags, plural, one {# flagg} other {# flagg}}",
+      "priceSpikes":      "Prishopp",
+      "priceSpikesMeta":  "{amount}/mnd i risiko",
+      "reappeared":       "Gjenoppstod",
+      "reappearedMeta":   "{amount}/mnd ikke avsluttet",
+      "decided90d":       "Besluttet · 90d",
+      "decided90dMeta":   "flagg løst · ~{amount}/mnd kuttet"
+    },
+    "filters": {
+      "all":         "Alle",
+      "spike":       "Prishopp",
+      "reappeared":  "Gjenoppstod",
+      "newSupplier": "Ny leverandør",
+      "oneOff":      "Engangsbeløp"
+    },
+    "list": {
+      "searchPlaceholder":   "Søk leverandører…",
+      "resolvedToggleOn":    "✓ Løst",
+      "resolvedToggleOff":   "+ Løst",
+      "resolvedToggleTitle": "Vis løste flagg sammen med ventende",
+      "sortAtStake":         "Sorter: beløp ↓",
+      "counter":             "{shown} av {total}",
+      "emptyAfterFilter":    "Ingen flagg matcher filteret."
+    },
+    "row": {
+      "catFood":     "Mat",
+      "catOther":    "Drift",
+      "perMo":       "/mnd",
+      "plusPeriods": "+{count, plural, one {# periode} other {# perioder}}",
+      "resolved":    "Løst"
+    },
+    "chart": {
+      "loading":       "Laster 12-måneders historikk…",
+      "noData":        "Ingen fakturahistorikk for leverandøren de siste 12 månedene.",
+      "avgLabel":      "snitt {amount}",
+      "legendMonthly": "Månedsfaktura",
+      "legendAvg":     "12-mnd snitt ({amount})",
+      "legendSpike":   "Aktuelt prishopp"
+    },
+    "periodChips": {
+      "label": "Bytt periode:"
+    },
+    "detail": {
+      "backToList":            "← Tilbake til listen",
+      "decisionNeeded":        "Beslutning kreves",
+      "alreadyDecided":        "Allerede besluttet",
+      "scopeSingle":           "Gjelder kun dette flagget · 1 periode",
+      "scopeMulti":             "Gjelder leverandør-bredt for \"{category}\" · løser alle {count} ventende perioder samtidig",
+      "defer":                 "Utsett 30d",
+      "planCancel":            "Planlegg avslutning",
+      "essential":             "Merk Nødvendig",
+      "periodMonthly":         "{period} · månedlig",
+      "vsAvg":                 "mot snitt",
+      "resolvedBadge":         "Løst",
+      "aiHeader":              "AI-forklaring",
+      "aiEmpty":               "Ingen AI-forklaring ennå for dette flagget.",
+      "generate":              "Generer forklaring",
+      "generating":            "Genererer…",
+      "reexplain":             "Forklar igjen ↻",
+      "reexplaining":          "Forklarer igjen…",
+      "confidence":            "Tillit: {value}",
+      "chartHeader":           "12-måneders prishistorikk",
+      "chartError":            "Kunne ikke laste prishistorikken.",
+      "newData":               "NYE DATA",
+      "invoicesHeader":        "Fakturaer · {period}",
+      "invoicesScope":         "begrenset til valgt periode",
+      "drilldownLoading":      "Henter fakturaer fra Fortnox…",
+      "drilldownNoConnection": "Koble til Fortnox for å se fakturaene bak denne kostnaden.",
+      "drilldownEmpty":        "Ingen fakturaer funnet for {supplier} i denne perioden.",
+      "invoicePdf":            "PDF",
+      "invoiceFortnox":        "I Fortnox ↗",
+      "relatedHeader":         "Mønsteret over perioder",
+      "relatedBody":           "{supplier} har blitt flagget {count, plural, one {# gang} other {# ganger}} i gjennomgangsvinduet. Beslutningen din gjelder alle {count, plural, one {# ventende periode} other {# ventende perioder}} — Merk Nødvendig eller Planlegg avslutning løser dem i én handling. Total månedlig påvirkning: {total}.",
+      "emptyTitle":            "Velg et flagg",
+      "emptyBody":             "Velg en leverandør i listen for å se historikk og ta avgjørelse."
+    },
     "loadingFlags": "Laster flagg…",
     "emptyStable":  "Kostnadene dine ser stabile ut. Ingenting å gjennomgå denne perioden.",
     "flagTones": {

@@ -8,6 +8,8 @@
 // Filters:
 //   business_id (required)
 //   include_resolved=1 (optional) — include accepted/dismissed/deferred
+//   stats=1            (optional) — append a `stats` block with
+//                                   { decided_last_90d, dismissed_savings_last_90d_sek }
 //
 // Response shape is the same the UI will consume across the rest of the
 // feature, so PR 3 (UI) doesn't need to refit.
@@ -35,6 +37,7 @@ export async function GET(req: NextRequest) {
   const u          = new URL(req.url)
   const businessId = u.searchParams.get('business_id')
   const includeResolved = u.searchParams.get('include_resolved') === '1'
+  const wantStats       = u.searchParams.get('stats') === '1'
 
   if (!businessId) {
     return NextResponse.json({ error: 'business_id required' }, { status: 400 })
@@ -81,10 +84,42 @@ export async function GET(req: NextRequest) {
   const pending       = flags.filter(f => f.resolution_status === 'pending')
   const totalSavings  = pending.reduce((s, f) => s + Number(f.amount_sek ?? 0), 0)
 
+  // Optional stats block — second small query against resolved rows in the
+  // last 90d. Done lazily so the bare GET stays cheap; the redesigned page
+  // sends ?stats=1 once on initial load.
+  let stats: { decided_last_90d: number; dismissed_savings_last_90d_sek: number } | undefined
+  if (wantStats) {
+    const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+    const { data: resolved, error: rErr } = await db
+      .from('overhead_flags')
+      .select('id, resolution_status, amount_sek, resolved_at')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .neq('resolution_status', 'pending')
+      .gte('resolved_at', since)
+      .limit(2000)
+
+    if (rErr && !isMissingTable(rErr)) {
+      // Don't fail the whole call for a stats failure — surface it but keep
+      // the flags response intact.
+      stats = { decided_last_90d: 0, dismissed_savings_last_90d_sek: 0 }
+    } else {
+      const rows = resolved ?? []
+      const dismissed = rows.filter(r => r.resolution_status === 'dismissed')
+      stats = {
+        decided_last_90d: rows.length,
+        dismissed_savings_last_90d_sek: Math.round(
+          dismissed.reduce((s, r) => s + Number(r.amount_sek ?? 0), 0),
+        ),
+      }
+    }
+  }
+
   return NextResponse.json({
     flags,
     total_pending: pending.length,
     total_monthly_savings_sek: Math.round(totalSavings),
     table_missing: false,
+    ...(stats ? { stats } : {}),
   }, { headers: { 'Cache-Control': 'no-store' } })
 }

@@ -1,14 +1,18 @@
 'use client'
 // app/overheads/review/page.tsx
 //
-// Owner-facing review queue for overhead flags. One card per supplier
-// (not per flag) — decisions are supplier-wide so showing five Lokalhyra
-// rows from five different months would mean five clicks for one
-// decision. The card surfaces the LATEST period's data plus a
-// "also flagged in: …" footer if the supplier appears in multiple
-// periods.
+// Two-pane (list + detail) overhead-review page. Replaces the legacy
+// scrollable-list-of-cards layout. Right pane = "email client" detail
+// view: AI explanation, 12-month price chart, period chips + invoice
+// drilldown, related-periods card.
 //
-// FIXES.md §0ap (initial), §0aq (real-data fixes).
+// The page is a thin orchestrator — fetches the flags list once, groups
+// by `${supplier}::${category}`, and threads the selected group into
+// FlagDetailPane. The detail pane fires its own follow-up requests for
+// supplier-history and per-period drilldown.
+//
+// Mobile: at <880px the layout collapses to single-pane navigation
+// (list → detail → back).
 
 export const dynamic = 'force-dynamic'
 
@@ -17,68 +21,33 @@ import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import PageHero from '@/components/ui/PageHero'
 import { UX } from '@/lib/constants/tokens'
-import { fmtKr } from '@/lib/format'
+import HeadlineStrip from '@/components/overheads/HeadlineStrip'
+import FlagListPane  from '@/components/overheads/FlagListPane'
+import FlagDetailPane from '@/components/overheads/FlagDetailPane'
+import type { Flag, FlagGroup, FlagTypeFilter, CategoryFilter } from '@/components/overheads/types'
 
 interface Business { id: string; name: string }
-interface Flag {
-  id:                       string
-  supplier_name:            string
-  supplier_name_normalised: string
-  category:                 'other_cost' | 'food_cost'
-  flag_type:                'new_supplier' | 'price_spike' | 'dismissed_reappeared' | 'one_off_high' | 'duplicate_supplier'
-  reason:                   string | null
-  amount_sek:               number
-  prior_avg_sek:            number | null
-  period_year:              number
-  period_month:             number
-  ai_explanation:           string | null
-  ai_confidence:            number | null
-}
-
-const CATEGORY_TONE: Record<string, { bg: string; fg: string; labelKey: 'overhead' | 'food' }> = {
-  other_cost: { bg: '#f3f4f6', fg: '#374151', labelKey: 'overhead' },
-  food_cost:  { bg: '#fef3c7', fg: '#92400e', labelKey: 'food' },
-}
 
 interface FlagsResponse {
   flags:                     Flag[]
   total_pending:             number
   total_monthly_savings_sek: number
   table_missing:             boolean
-  note?:                     string
+  stats?: {
+    decided_last_90d:                number
+    dismissed_savings_last_90d_sek:  number
+  }
+  note?: string
 }
 
-const FLAG_TONE: Record<string, { bg: string; fg: string; toneKey: 'new' | 'priceTpl' | 'reappeared' | 'oneOff' | 'duplicate' }> = {
-  new_supplier:         { bg: '#eff6ff', fg: '#1e40af', toneKey: 'new' },
-  price_spike:          { bg: '#fef3c7', fg: '#92400e', toneKey: 'priceTpl' },
-  dismissed_reappeared: { bg: '#fee2e2', fg: '#991b1b', toneKey: 'reappeared' },
-  one_off_high:         { bg: '#f3f4f6', fg: '#374151', toneKey: 'oneOff' },
-  duplicate_supplier:   { bg: '#f5f3ff', fg: '#6b21a8', toneKey: 'duplicate' },
-}
+const MOBILE_BREAKPOINT = 880
 
 export default function OverheadReviewPage() {
   const t  = useTranslations('overheads.review')
-  const tM = useTranslations('overheads')
-  const monthsShort: string[] = (tM.raw('months.short') as string[]) ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  // ── Business selection (mirrors legacy page) ──────────────────────────
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
-  const [flags,      setFlags]      = useState<Flag[]>([])
-  const [totalSavings, setTotalSavings] = useState<number>(0)
-  const [loading,    setLoading]    = useState<boolean>(true)
-  const [tableMissing, setTableMissing] = useState<boolean>(false)
-  const [error,      setError]      = useState<string | null>(null)
-  const [deciding,   setDeciding]   = useState<string | null>(null)
-  // Category filter — Food / Overheads / All. Persists per session.
-  const [categoryFilter, setCategoryFilter] = useState<'all' | 'other_cost' | 'food_cost'>(() => {
-    if (typeof window === 'undefined') return 'all'
-    try { return (sessionStorage.getItem('cc_overheads_review_filter') as any) || 'all' } catch { return 'all' }
-  })
-  // Backfill state — only show banner for businesses that have line items
-  // but no classifications yet (the "first-time owner" case).
-  const [showBackfillBanner, setShowBackfillBanner] = useState<boolean>(false)
-  const [backfilling, setBackfilling] = useState<boolean>(false)
-  const [backfillResult, setBackfillResult] = useState<{ marked: number; resolved: number } | null>(null)
-
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
       if (!Array.isArray(data) || !data.length) return
@@ -95,64 +64,144 @@ export default function OverheadReviewPage() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  // ── Data state ────────────────────────────────────────────────────────
+  const [flags,        setFlags]        = useState<Flag[]>([])
+  const [stats,        setStats]        = useState<FlagsResponse['stats']>()
+  const [totalSavings, setTotalSavings] = useState<number>(0)
+  const [loading,      setLoading]      = useState<boolean>(true)
+  const [tableMissing, setTableMissing] = useState<boolean>(false)
+  const [error,        setError]        = useState<string | null>(null)
+  const [deciding,     setDeciding]     = useState<string | null>(null)
+
+  // URL-persisted "+ Resolved" toggle so refresh preserves the view.
+  const [includeResolved, setIncludeResolved] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return new URLSearchParams(window.location.search).get('include_resolved') === '1'
+  })
+
+  // Filters — purely client-side (single fetch, multiple filters).
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(() => {
+    if (typeof window === 'undefined') return 'all'
+    try { return (sessionStorage.getItem('cc_overheads_review_filter') as any) || 'all' } catch { return 'all' }
+  })
+  const [flagTypeFilter, setFlagTypeFilter] = useState<FlagTypeFilter>('all')
+  const [search, setSearch] = useState('')
+
+  // Selected (supplier, category) group — by composite key.
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+
+  // Mobile (single-pane) detection.
+  const [isMobile, setIsMobile] = useState<boolean>(false)
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list')
+
+  // ── Data fetch ────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     if (!bizId) return
     setLoading(true)
     setError(null)
     try {
-      const r = await fetch(`/api/overheads/flags?business_id=${bizId}`, { cache: 'no-store' })
+      const params = new URLSearchParams({ business_id: bizId, stats: '1' })
+      if (includeResolved) params.set('include_resolved', '1')
+      const r = await fetch(`/api/overheads/flags?${params.toString()}`, { cache: 'no-store' })
       const j: FlagsResponse = await r.json()
       if (!r.ok) throw new Error((j as any)?.error ?? 'load_failed')
       setFlags(j.flags ?? [])
+      setStats(j.stats)
       setTotalSavings(j.total_monthly_savings_sek ?? 0)
       setTableMissing(j.table_missing ?? false)
-
-      // Decide backfill-banner visibility: only show when there are pending
-      // flags AND the owner hasn't started classifying yet. We approximate
-      // "hasn't classified" by asking the projection endpoint — if it
-      // reports zero from-pending savings while flags exist, that's not it;
-      // we want zero classifications. Simpler: if pending count is high
-      // (>10) and no flag has been resolved yet, show the banner. Tunable.
-      if (!j.table_missing) {
-        const includeAll = await fetch(`/api/overheads/flags?business_id=${bizId}&include_resolved=1`, { cache: 'no-store' })
-        const allJ = await includeAll.json()
-        const totalEver = (allJ.flags ?? []).length
-        const anyResolved = (allJ.flags ?? []).some((f: any) => f.resolution_status !== 'pending')
-        setShowBackfillBanner(totalEver > 10 && !anyResolved && (j.flags?.length ?? 0) > 0)
-      } else {
-        setShowBackfillBanner(false)
-      }
     } catch (e: any) {
       setError(e?.message ?? 'Failed to load flags')
       setFlags([])
     } finally {
       setLoading(false)
     }
-  }, [bizId])
-
+  }, [bizId, includeResolved])
   useEffect(() => { load() }, [load])
 
+  // Persist filters/toggles.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try { sessionStorage.setItem('cc_overheads_review_filter', categoryFilter) } catch {}
+  }, [categoryFilter])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const u = new URL(window.location.href)
+    if (includeResolved) u.searchParams.set('include_resolved', '1')
+    else u.searchParams.delete('include_resolved')
+    window.history.replaceState(null, '', u.toString())
+  }, [includeResolved])
+
+  // ── Derived: groups (post-filter) ─────────────────────────────────────
+  const allGroups = useMemo<FlagGroup[]>(() => groupFlags(flags), [flags])
+
+  const filteredGroups = useMemo<FlagGroup[]>(() => {
+    return allGroups.filter(g => {
+      const cat = g.latest.category ?? 'other_cost'
+      if (categoryFilter !== 'all' && cat !== categoryFilter) return false
+      if (flagTypeFilter !== 'all' && g.latest.flag_type !== flagTypeFilter) return false
+      return true
+    })
+  }, [allGroups, categoryFilter, flagTypeFilter])
+
+  // Default-select first group whenever the list changes; clear when empty.
+  useEffect(() => {
+    if (filteredGroups.length === 0) { setSelectedKey(null); return }
+    if (!filteredGroups.find(g => g.key === selectedKey)) {
+      setSelectedKey(filteredGroups[0].key)
+    }
+  }, [filteredGroups])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedGroup = useMemo<FlagGroup | null>(() => {
+    if (!selectedKey) return null
+    return filteredGroups.find(g => g.key === selectedKey) ?? null
+  }, [filteredGroups, selectedKey])
+
+  // ── Headline-strip computed numbers ───────────────────────────────────
+  const headline = useMemo(() => {
+    const pending = flags.filter(f => f.resolution_status === 'pending')
+    const groups  = groupFlags(pending)
+    const supplierCount = groups.length
+    const flagCount     = pending.length
+    const spike       = pending.filter(f => f.flag_type === 'price_spike')
+    const reappeared  = pending.filter(f => f.flag_type === 'dismissed_reappeared')
+    return {
+      totalSavings,
+      supplierCount,
+      flagCount,
+      priceSpikeCount:    spike.length,
+      priceSpikeSavings:  Math.round(spike.reduce((s, f) => s + Number(f.amount_sek ?? 0), 0)),
+      reappearedCount:    reappeared.length,
+      reappearedSavings:  Math.round(reappeared.reduce((s, f) => s + Number(f.amount_sek ?? 0), 0)),
+      decidedLast90d:     stats?.decided_last_90d ?? null,
+      dismissedSavings90d:stats?.dismissed_savings_last_90d_sek ?? 0,
+    }
+  }, [flags, totalSavings, stats])
+
+  // ── Decision handlers ────────────────────────────────────────────────
   async function decide(flagId: string, decision: 'essential' | 'dismissed' | 'deferred', reason?: string) {
     if (deciding) return
     setDeciding(flagId)
     setError(null)
+
+    // Optimistic local removal — same scope as the existing endpoint:
+    //   deferred  → snoozes only THIS flag (per-flag)
+    //   essential / dismissed → bulk-resolves every pending flag for the
+    //                            (supplier_normalised, category) group.
     const flag = flags.find(f => f.id === flagId)
-    // Optimistic: 'deferred' removes only this flag (per-flag snooze).
-    // 'essential' / 'dismissed' bulk-resolve every pending flag for the
-    // supplier — mirror that in local state so the UI doesn't lag.
     if (decision === 'deferred') {
       setFlags(prev => prev.filter(f => f.id !== flagId))
       if (flag) setTotalSavings(s => Math.max(0, s - Number(flag.amount_sek)))
     } else if (flag) {
-      // Bulk-resolve scoped to (supplier, category) — matches the decide
-      // endpoint's category-aware bulk update.
-      const flagCategory = flag.category ?? 'other_cost'
-      const removedAmount = flags
-        .filter(f => f.supplier_name_normalised === flag.supplier_name_normalised
-                  && (f.category ?? 'other_cost') === flagCategory)
-        .reduce((s, f) => s + Number(f.amount_sek), 0)
-      setFlags(prev => prev.filter(f => !(f.supplier_name_normalised === flag.supplier_name_normalised
-                                       && (f.category ?? 'other_cost') === flagCategory)))
+      const fcat = flag.category ?? 'other_cost'
+      const removed = flags.filter(f => f.supplier_name_normalised === flag.supplier_name_normalised && (f.category ?? 'other_cost') === fcat)
+      const removedAmount = removed.reduce((s, f) => s + Number(f.amount_sek ?? 0), 0)
+      setFlags(prev => prev.filter(f => !(f.supplier_name_normalised === flag.supplier_name_normalised && (f.category ?? 'other_cost') === fcat)))
       setTotalSavings(s => Math.max(0, s - removedAmount))
     }
 
@@ -166,10 +215,12 @@ export default function OverheadReviewPage() {
         const j = await r.json().catch(() => ({}))
         throw new Error(j?.error ?? `HTTP ${r.status}`)
       }
+      // Mobile: jump back to list after a successful bulk decide so the user
+      // sees the next item.
+      if (isMobile) setMobileView('list')
     } catch (e: any) {
       setError(e?.message ?? 'Decision failed')
-      // Re-load to restore truth.
-      load()
+      load()  // restore truth
     } finally {
       setDeciding(null)
     }
@@ -177,735 +228,172 @@ export default function OverheadReviewPage() {
 
   async function reexplain(flagId: string) {
     setError(null)
-    try {
-      const r = await fetch(`/api/overheads/explain/${flagId}`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
-      // Patch the local flag with the fresh explanation so the card updates
-      // immediately without a full reload.
-      setFlags(prev => prev.map(f => f.id === flagId
-        ? { ...f, ai_explanation: j.ai_explanation, ai_confidence: j.ai_confidence }
-        : f))
-    } catch (e: any) {
-      setError(e?.message ?? 'Re-explain failed')
+    const r = await fetch(`/api/overheads/explain/${flagId}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      setError(j?.error ?? `HTTP ${r.status}`)
+      return
     }
+    setFlags(prev => prev.map(f => f.id === flagId
+      ? { ...f, ai_explanation: j.ai_explanation, ai_confidence: j.ai_confidence }
+      : f))
   }
 
-  async function runBackfill() {
-    if (!bizId || backfilling) return
-    setBackfilling(true)
-    setError(null)
-    try {
-      const r = await fetch('/api/overheads/backfill', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ business_id: bizId, months: 12 }),
-      })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`)
-      setBackfillResult({ marked: j.suppliers_marked_essential ?? 0, resolved: j.flags_resolved ?? 0 })
-      setShowBackfillBanner(false)
-      await load()
-    } catch (e: any) {
-      setError(e?.message ?? 'Backfill failed')
-    } finally {
-      setBackfilling(false)
-    }
+  // ── Selection handler — switches to detail view on mobile ────────────
+  function handleSelect(key: string) {
+    setSelectedKey(key)
+    if (isMobile) setMobileView('detail')
   }
 
-  // Group flags by supplier_name_normalised. Decisions are supplier-wide,
-  // so showing N cards for N months of the same supplier creates N×decision
-  // fatigue. The grouped card surfaces the LATEST period's flag data with
-  // the absolute amount + a footer listing other periods this supplier
-  // showed up in.
-  const grouped = useMemo(() => {
-    const map = new Map<string, { latest: Flag; others: Flag[]; latestKey: number }>()
-    for (const f of flags) {
-      // Apply the category filter BEFORE grouping so a filtered-out flag
-      // doesn't pollute the latest-period selection for its supplier-group.
-      const cat = f.category ?? 'other_cost'
-      if (categoryFilter !== 'all' && cat !== categoryFilter) continue
-
-      // Key by (supplier, category) — M041 made decisions category-scoped,
-      // so a supplier appearing in both food_cost and other_cost should
-      // surface as two separate cards.
-      const key = `${f.supplier_name_normalised}::${cat}`
-      const periodKey = f.period_year * 100 + f.period_month  // sortable
-      const cur = map.get(key)
-      if (!cur || periodKey > cur.latestKey) {
-        const others = cur ? [...cur.others, cur.latest] : []
-        map.set(key, { latest: f, others, latestKey: periodKey })
-      } else {
-        cur.others.push(f)
-      }
-    }
-    // Order by latest amount desc — biggest savings opportunities first.
-    return Array.from(map.values())
-      .sort((a, b) => Number(b.latest.amount_sek) - Number(a.latest.amount_sek))
-  }, [flags, categoryFilter])
-
-  // Persist the filter so it survives a refresh.
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    try { sessionStorage.setItem('cc_overheads_review_filter', categoryFilter) } catch {}
-  }, [categoryFilter])
-
-  // Per-category counts for the filter buttons (compute from raw flags so
-  // the active filter doesn't hide the unread counts).
-  const categoryCounts = useMemo(() => {
-    const map = new Map<string, Set<string>>()
-    for (const f of flags) {
-      const cat = f.category ?? 'other_cost'
-      const key = `${f.supplier_name_normalised}::${cat}`
-      if (!map.has(cat)) map.set(cat, new Set())
-      map.get(cat)!.add(key)
-    }
-    return {
-      all:        Array.from(map.values()).reduce((s, set) => s + set.size, 0),
-      other_cost: map.get('other_cost')?.size ?? 0,
-      food_cost:  map.get('food_cost')?.size ?? 0,
-    }
-  }, [flags])
-
-  // "At stake" = sum of LATEST amount per unique supplier. Showing the raw
-  // sum across all periods would multi-count Lokalhyra appearing 5 months in
-  // a row.
-  const dedupedAtStake = useMemo(
-    () => grouped.reduce((s, g) => s + Number(g.latest.amount_sek), 0),
-    [grouped],
-  )
-
-  // Period summary — flags can span multiple months when the worker was
-  // first kicked off across a year of historical data. Show range or single.
-  const periodLabel = useMemo(() => {
-    if (grouped.length === 0) return ''
-    const periods = grouped.map(g => g.latestKey)
-    const earliestKey = Math.min(...periods)
-    const latestKey   = Math.max(...periods)
-    const earliest = `${monthsShort[(earliestKey % 100) - 1]} ${Math.floor(earliestKey / 100)}`
-    const latest   = `${monthsShort[(latestKey   % 100) - 1]} ${Math.floor(latestKey   / 100)}`
-    return earliest === latest ? latest : `${earliest} – ${latest}`
-  }, [grouped, monthsShort])
+  // ── Render ────────────────────────────────────────────────────────────
+  const showListPane   = !isMobile || mobileView === 'list'
+  const showDetailPane = !isMobile || mobileView === 'detail'
 
   return (
     <AppShell>
       <PageHero
         eyebrow={t('eyebrow')}
         headline={
-          grouped.length > 0
-            ? t('headlinePending', { count: grouped.length, amount: fmtKr(dedupedAtStake) })
-            : tableMissing
-              ? t('headlineMissing')
-              : t('headlineEmpty')
+          tableMissing
+            ? t('headlineMissing')
+            : allGroups.length === 0
+              ? t('headlineEmpty')
+              : t('headlinePending', { count: filteredGroups.length, amount: '' })
         }
-        context={grouped.length > 0
-          ? t('context', { count: flags.length, period: periodLabel })
-          : undefined}
       />
 
-      <div style={{ padding: '0 24px 40px', maxWidth: 960, margin: '0 auto' }}>
+      <div style={{ padding: '0 24px 40px', maxWidth: 1500, margin: '0 auto' }}>
         {error && <Banner tone="bad" text={error} />}
-        {tableMissing && (
-          <Banner tone="warn" text={t('tableMissingBanner')} />
-        )}
+        {tableMissing && <Banner tone="warn" text={t('tableMissingBanner')} />}
 
-        {showBackfillBanner && !backfillResult && (
-          <BackfillBanner
-            onConfirm={runBackfill}
-            onDismiss={() => setShowBackfillBanner(false)}
-            busy={backfilling}
+        {!tableMissing && !loading && allGroups.length > 0 && (
+          <HeadlineStrip
+            totalSavings={headline.totalSavings}
+            supplierCount={headline.supplierCount}
+            flagCount={headline.flagCount}
+            priceSpikeCount={headline.priceSpikeCount}
+            priceSpikeSavings={headline.priceSpikeSavings}
+            reappearedCount={headline.reappearedCount}
+            reappearedSavings={headline.reappearedSavings}
+            decidedLast90d={headline.decidedLast90d}
+            dismissedSavings90d={headline.dismissedSavings90d}
           />
         )}
 
-        {backfillResult && (
-          <Banner
-            tone="ok"
-            text={t('backfillResult', { marked: backfillResult.marked, resolved: backfillResult.resolved })}
+        {/* Category filter row — preserved from legacy page */}
+        {!tableMissing && allGroups.length > 0 && (
+          <CategoryRow
+            value={categoryFilter}
+            onChange={setCategoryFilter}
+            counts={{
+              all:        allGroups.length,
+              other_cost: allGroups.filter(g => (g.latest.category ?? 'other_cost') === 'other_cost').length,
+              food_cost:  allGroups.filter(g => g.latest.category === 'food_cost').length,
+            }}
           />
         )}
 
-        {/* Category filter — only render once we know there are categorised
-            flags (avoids confusing a fresh-empty user with three buttons). */}
-        {(categoryCounts.other_cost > 0 || categoryCounts.food_cost > 0) && (
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' as const }}>
-            <CategoryButton active={categoryFilter === 'all'}        onClick={() => setCategoryFilter('all')}>
-              {t('filter.all')} <Count>{categoryCounts.all}</Count>
-            </CategoryButton>
-            {categoryCounts.other_cost > 0 && (
-              <CategoryButton active={categoryFilter === 'other_cost'} onClick={() => setCategoryFilter('other_cost')}>
-                {t('filter.overheads')} <Count>{categoryCounts.other_cost}</Count>
-              </CategoryButton>
-            )}
-            {categoryCounts.food_cost > 0 && (
-              <CategoryButton active={categoryFilter === 'food_cost'}  onClick={() => setCategoryFilter('food_cost')}>
-                {t('filter.food')} <Count>{categoryCounts.food_cost}</Count>
-              </CategoryButton>
-            )}
-          </div>
-        )}
-
-        {loading && grouped.length === 0 && (
+        {loading && allGroups.length === 0 && (
           <Empty text={t('loadingFlags')} />
         )}
-
-        {!loading && !tableMissing && grouped.length === 0 && (
+        {!loading && !tableMissing && allGroups.length === 0 && (
           <Empty text={t('emptyStable')} />
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
-          {grouped.map(g => (
-            <FlagCard
-              key={g.latest.id}
-              flag={g.latest}
-              otherPeriods={g.others}
-              busy={deciding === g.latest.id}
-              bizId={bizId}
-              onEssential={() => decide(g.latest.id, 'essential')}
-              onDismiss={(reason) => decide(g.latest.id, 'dismissed', reason)}
-              onDefer={() => decide(g.latest.id, 'deferred')}
-              onReexplain={() => reexplain(g.latest.id)}
-            />
-          ))}
-        </div>
+        {!loading && !tableMissing && allGroups.length > 0 && (
+          <div style={panesStyle(isMobile)}>
+            {showListPane && (
+              <FlagListPane
+                groups={filteredGroups}
+                rawFlags={flags}
+                selectedKey={selectedKey}
+                onSelect={handleSelect}
+                search={search}
+                onSearch={setSearch}
+                flagTypeFilter={flagTypeFilter}
+                onFlagType={setFlagTypeFilter}
+                includeResolved={includeResolved}
+                onToggleResolved={() => setIncludeResolved(v => !v)}
+                totalGroupCount={allGroups.length}
+              />
+            )}
+
+            {showDetailPane && bizId && (
+              selectedGroup ? (
+                <FlagDetailPane
+                  group={selectedGroup}
+                  bizId={bizId}
+                  busy={deciding != null}
+                  onEssential={(id) => decide(id, 'essential')}
+                  onPlanCancel={(id, r) => decide(id, 'dismissed', r)}
+                  onDefer={(id) => decide(id, 'deferred')}
+                  onReexplain={reexplain}
+                  onBack={isMobile ? () => setMobileView('list') : undefined}
+                />
+              ) : (
+                <DetailEmpty />
+              )
+            )}
+          </div>
+        )}
       </div>
     </AppShell>
   )
 }
 
-// ────────────────────────────────────────────────────────────────────
-//   FlagCard
-// ────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────
+//   helpers
+// ────────────────────────────────────────────────────────────────────────
 
-function FlagCard({ flag, otherPeriods, busy, bizId, onEssential, onDismiss, onDefer, onReexplain }: {
-  flag:         Flag
-  otherPeriods: Flag[]
-  busy:         boolean
-  bizId:        string | null
-  onEssential: () => void
-  onDismiss:   (reason?: string) => void
-  onDefer:     () => void
-  onReexplain: () => Promise<void>
-}) {
-  const t  = useTranslations('overheads.review')
-  const tCat = useTranslations('overheads.categories')
-  const tM = useTranslations('overheads')
-  const monthsShort: string[] = (tM.raw('months.short') as string[]) ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const [showDismissModal, setShowDismissModal] = useState<boolean>(false)
-  const [dismissReason,    setDismissReason]    = useState<string>('')
-  const [reexplaining,     setReexplaining]     = useState<boolean>(false)
-
-  const tone = FLAG_TONE[flag.flag_type] ?? FLAG_TONE.new_supplier
-  // Sign-correct % for PRICE flags. The bug was: prepending "+" then letting
-  // a negative pct render as "+-43%". Render the sign from the number itself.
-  let label: string
-  if (tone.toneKey === 'priceTpl') {
-    const pct = flag.prior_avg_sek
-      ? Math.round(((flag.amount_sek - flag.prior_avg_sek) / flag.prior_avg_sek) * 100)
-      : 0
-    label = t('flagTones.priceTpl', { sign: pct >= 0 ? '+' : '', pct })
-  } else {
-    label = t(`flagTones.${tone.toneKey}`)
-  }
-  const periodLabel = `${monthsShort[flag.period_month - 1]} ${flag.period_year}`
-
-  // Confidence interpretation: <0.5 = low (we'd rather not pretend),
-  // 0.5-0.79 = medium (no badge), >=0.8 = high (no badge — assumed quality).
-  const conf = typeof flag.ai_confidence === 'number' ? flag.ai_confidence : null
-  const showLowConfBadge = conf !== null && conf < 0.5
-
-  async function handleReexplain() {
-    if (reexplaining) return
-    setReexplaining(true)
-    try {
-      await onReexplain()
-    } finally {
-      setReexplaining(false)
-    }
-  }
-
-  return (
-    <div style={{
-      background:   'white',
-      border:       `1px solid ${UX.borderSoft}`,
-      borderRadius: 10,
-      padding:      16,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, marginBottom: 4 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: UX.ink1 }}>{flag.supplier_name}</span>
-            <span style={{
-              padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-              background: tone.bg, color: tone.fg,
-            }}>{label}</span>
-            {(() => {
-              const cat = CATEGORY_TONE[flag.category] ?? CATEGORY_TONE.other_cost
-              return (
-                <span style={{
-                  padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-                  background: cat.bg, color: cat.fg,
-                }}>{tCat(cat.labelKey)}</span>
-              )
-            })()}
-            <span style={{ fontSize: 11, color: UX.ink4, fontWeight: 500 }}>{periodLabel}</span>
-          </div>
-          <div style={{ fontSize: 12, color: UX.ink3, lineHeight: 1.5 }}>
-            {flag.reason ?? '—'}
-            {flag.ai_explanation && (
-              <span style={{ display: 'block', marginTop: 4, color: UX.ink4, fontStyle: 'italic' as const }}>
-                {flag.ai_explanation}
-                {showLowConfBadge && (
-                  <span style={{
-                    marginLeft: 6, padding: '1px 6px', borderRadius: 999,
-                    background: '#f3f4f6', color: '#6b7280',
-                    fontSize: 9, fontWeight: 600, fontStyle: 'normal' as const,
-                  }}>
-                    {t('card.lowConfidence')}
-                  </span>
-                )}
-                <button
-                  onClick={handleReexplain}
-                  disabled={reexplaining}
-                  style={{
-                    marginLeft: 6, background: 'transparent', border: 'none',
-                    fontSize: 10, color: UX.ink4, cursor: reexplaining ? 'wait' : 'pointer',
-                    fontStyle: 'normal' as const, textDecoration: 'underline' as const,
-                  }}
-                  title={t('card.reexplainTitle')}
-                >
-                  {reexplaining ? t('card.reexplaining') : t('card.reexplain')}
-                </button>
-              </span>
-            )}
-            {!flag.ai_explanation && (
-              <button
-                onClick={handleReexplain}
-                disabled={reexplaining}
-                style={{
-                  marginTop: 4, background: 'transparent', border: 'none', padding: 0,
-                  fontSize: 11, color: UX.ink4, cursor: reexplaining ? 'wait' : 'pointer',
-                  textDecoration: 'underline' as const, display: 'block',
-                }}
-              >
-                {reexplaining ? t('card.generating') : t('card.generateExplanation')}
-              </button>
-            )}
-            {otherPeriods.length > 0 && (
-              <span style={{ display: 'block', marginTop: 6, fontSize: 11, color: UX.ink4 }}>
-                {t('card.alsoFlaggedIn', {
-                  periods: otherPeriods
-                    .sort((a, b) => (b.period_year * 100 + b.period_month) - (a.period_year * 100 + a.period_month))
-                    .slice(0, 4)
-                    .map(o => `${monthsShort[o.period_month - 1]} ${o.period_year}`)
-                    .join(', '),
-                })}
-                {otherPeriods.length > 4 && t('card.alsoMore', { count: otherPeriods.length - 4 })}
-                <span style={{ color: UX.ink4 }}>{t('card.oneDecision')}</span>
-              </span>
-            )}
-          </div>
-        </div>
-        <div style={{ textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
-          <div style={{ fontSize: 18, fontWeight: 500, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>
-            {fmtKr(flag.amount_sek)}
-          </div>
-          <div style={{ fontSize: 11, color: UX.ink4 }}>{periodLabel}</div>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-        <button onClick={onDefer} disabled={busy} style={btnGhost(busy)}>{t('card.defer')}</button>
-        <button onClick={() => setShowDismissModal(true)} disabled={busy} style={btnDanger(busy)}>{t('card.planCancel')}</button>
-        <button onClick={onEssential} disabled={busy} style={btnPrimary(busy)}>{t('card.essential')}</button>
-      </div>
-
-      {bizId && <InvoiceDrilldown flag={flag} bizId={bizId} />}
-
-      {showDismissModal && (
-        <DismissModal
-          supplierName={flag.supplier_name}
-          reason={dismissReason}
-          setReason={setDismissReason}
-          busy={busy}
-          onCancel={() => { setShowDismissModal(false); setDismissReason('') }}
-          onConfirm={() => {
-            const r = dismissReason.trim() || null
-            setShowDismissModal(false)
-            onDismiss(r ?? undefined)
-            setDismissReason('')
-          }}
-        />
-      )}
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────
-//   InvoiceDrilldown — owner clicks "Show invoices" to see what makes
-//   up this supplier+period flag. Live fetch from Fortnox API on first
-//   expand, cached server-side for 5 min, filtered client-side to just
-//   this flag's supplier.
-// ────────────────────────────────────────────────────────────────────
-
-interface DrilldownInvoice {
-  source_type:        'supplier_invoice' | 'manual_journal'
-  source_id:          string
-  fortnox_url:        string
-  file_id:            string | null
-  date:               string
-  invoice_number:     string
-  supplier_name:      string
-  amount:             number
-  full_total:         number | null
-  account:            number
-  account_description: string | null
-  description:        string | null
-}
-
-interface SupplierGroup {
-  supplier_name:            string
-  supplier_name_normalised: string
-  total:                    number
-  invoice_count:            number
-  first_date:               string
-  last_date:                string
-  invoices:                 DrilldownInvoice[]
-}
-
-interface DrilldownPayload {
-  flagged_total:    number
-  suppliers:        SupplierGroup[]
-  manual_journals:  DrilldownInvoice[]
-  fetched_at:       string
-}
-
-function InvoiceDrilldown({ flag, bizId }: { flag: Flag; bizId: string }) {
-  const t  = useTranslations('overheads.review.drilldown')
-  const tM = useTranslations('overheads')
-  const monthsShort: string[] = (tM.raw('months.short') as string[]) ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-  const [expanded,   setExpanded]   = useState(false)
-  const [loading,    setLoading]    = useState(false)
-  const [error,      setError]      = useState<string | null>(null)
-  const [drilldown,  setDrilldown]  = useState<DrilldownPayload | null>(null)
-
-  // Match to this flag's supplier. Defensive — try exact normalised match
-  // first, fall back to a substring match on supplier_name in case the
-  // server's normaliser and the existing flag's normalised name disagree.
-  const matchedGroup = useMemo<SupplierGroup | null>(() => {
-    if (!drilldown) return null
-    const target = String(flag.supplier_name_normalised ?? '').toLowerCase().trim()
-    const exact = drilldown.suppliers.find(s => s.supplier_name_normalised === target)
-    if (exact) return exact
-    const fuzzy = drilldown.suppliers.find(s =>
-      s.supplier_name.toLowerCase().includes(flag.supplier_name.toLowerCase()) ||
-      flag.supplier_name.toLowerCase().includes(s.supplier_name.toLowerCase())
-    )
-    return fuzzy ?? null
-  }, [drilldown, flag])
-
-  async function toggle() {
-    if (expanded) {
-      setExpanded(false)
-      return
-    }
-    setExpanded(true)
-    if (drilldown) return  // already loaded
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/integrations/fortnox/drilldown', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          business_id: bizId,
-          year:        flag.period_year,
-          month:       flag.period_month,
-          category:    flag.category,
-        }),
+function groupFlags(flags: Flag[]): FlagGroup[] {
+  const map = new Map<string, FlagGroup>()
+  for (const f of flags) {
+    const cat = f.category ?? 'other_cost'
+    const key = `${f.supplier_name_normalised}::${cat}`
+    const periodKey = f.period_year * 100 + f.period_month
+    const cur = map.get(key)
+    if (!cur) {
+      map.set(key, {
+        key,
+        latest:       f,
+        others:       [],
+        latestKey:    periodKey,
+        pendingCount: f.resolution_status === 'pending' ? 1 : 0,
+        totalAmount:  f.resolution_status === 'pending' ? Number(f.amount_sek ?? 0) : 0,
       })
-      const body = await res.json().catch(() => null) as any
-      if (!res.ok) {
-        if (body?.error === 'no_fortnox_connection') {
-          setError(t('errorNoConnection'))
-        } else {
-          setError(body?.error ?? t('errorGeneric'))
-        }
-        return
+    } else {
+      if (periodKey > cur.latestKey) {
+        cur.others.push(cur.latest)
+        cur.latest = f
+        cur.latestKey = periodKey
+      } else {
+        cur.others.push(f)
       }
-      setDrilldown(body as DrilldownPayload)
-    } catch (e: any) {
-      setError(e?.message ?? t('errorGeneric'))
-    } finally {
-      setLoading(false)
+      if (f.resolution_status === 'pending') {
+        cur.pendingCount += 1
+        cur.totalAmount  += Number(f.amount_sek ?? 0)
+      }
     }
   }
-
-  // Drift between the flag's stored amount and the live Fortnox total for
-  // this supplier — surfaces "the accountant added stuff since I last
-  // reviewed this" cases.
-  const drift = matchedGroup ? Math.round(matchedGroup.total - flag.amount_sek) : 0
-  const showDrift = matchedGroup && Math.abs(drift) >= 1  // ignore 1 kr rounding
-
-  return (
-    <>
-      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          onClick={toggle}
-          style={{
-            background:    'transparent',
-            border:        'none',
-            padding:       '4px 0',
-            fontSize:      11,
-            color:         UX.ink4,
-            cursor:        'pointer',
-            textDecoration:'underline' as const,
-            fontFamily:    'inherit',
-          }}
-        >
-          {expanded ? t('hide') : t('show')}
-        </button>
-      </div>
-
-      {expanded && (
-        <div
-          style={{
-            marginTop:    10,
-            padding:      14,
-            background:   '#fafafa',
-            border:       `1px solid ${UX.borderSoft}`,
-            borderRadius: 8,
-          }}
-        >
-          {loading && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: UX.ink3 }}>
-              <span className="spin" style={{ fontSize: 14 }} />
-              <span>{t('loading')}</span>
-            </div>
-          )}
-
-          {error && !loading && (
-            <div style={{ fontSize: 12, color: '#b91c1c', padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6 }}>
-              {error}
-            </div>
-          )}
-
-          {!loading && !error && matchedGroup && (
-            <>
-              {showDrift && (
-                <div
-                  style={{
-                    marginBottom: 12,
-                    padding:      '8px 10px',
-                    background:   drift > 0 ? '#fef3c7' : '#eff6ff',
-                    border:       `1px solid ${drift > 0 ? '#fde68a' : '#bfdbfe'}`,
-                    borderRadius: 6,
-                    fontSize:     11,
-                    color:        UX.ink2,
-                    lineHeight:   1.5,
-                  }}
-                >
-                  <div>{t('drift.flagged', { amount: fmtKr(flag.amount_sek) })}</div>
-                  <div>{t('drift.live',    { amount: fmtKr(matchedGroup.total) })}</div>
-                  <div style={{ marginTop: 4, fontWeight: 600, color: drift > 0 ? '#92400e' : '#1e40af' }}>
-                    {drift > 0
-                      ? t('drift.added',   { amount: fmtKr(Math.abs(drift)) })
-                      : t('drift.removed', { amount: fmtKr(Math.abs(drift)) })}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ fontSize: 11, color: UX.ink3, marginBottom: 8, fontWeight: 500 }}>
-                {t('header', {
-                  count:    matchedGroup.invoice_count,
-                  supplier: matchedGroup.supplier_name,
-                  total:    fmtKr(matchedGroup.total),
-                })}
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
-                {matchedGroup.invoices.map((inv, idx) => (
-                  <InvoiceRow key={`${inv.source_id}-${idx}`} invoice={inv} bizId={bizId} monthsShort={monthsShort} />
-                ))}
-              </div>
-            </>
-          )}
-
-          {!loading && !error && !matchedGroup && drilldown && (
-            <div style={{ fontSize: 12, color: UX.ink3 }}>
-              {t('noMatch', { supplier: flag.supplier_name })}
-            </div>
-          )}
-        </div>
-      )}
-    </>
-  )
+  return Array.from(map.values())
+    .sort((a, b) => Number(b.latest.amount_sek ?? 0) - Number(a.latest.amount_sek ?? 0))
 }
 
-function InvoiceRow({ invoice, bizId, monthsShort }: {
-  invoice:     DrilldownInvoice
-  bizId:       string
-  monthsShort: string[]
-}) {
-  const t = useTranslations('overheads.review.drilldown')
-  const d = new Date(invoice.date)
-  const dateLabel = `${d.getUTCDate()} ${monthsShort[d.getUTCMonth()] ?? ''}`
-  const fileUrl = invoice.file_id
-    ? `/api/integrations/fortnox/file?business_id=${bizId}&file_id=${encodeURIComponent(invoice.file_id)}&filename=${encodeURIComponent(invoice.invoice_number || invoice.source_id || 'invoice')}.pdf`
-    : null
-
-  return (
-    <div
-      style={{
-        display:      'flex',
-        alignItems:   'center',
-        gap:          10,
-        padding:      '8px 10px',
-        background:   'white',
-        border:       `1px solid ${UX.borderSoft}`,
-        borderRadius: 6,
-        fontSize:     12,
-      }}
-    >
-      <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UX.ink3, flexShrink: 0, width: 60 }}>
-        {dateLabel}
-      </span>
-      <span style={{ color: UX.ink2, flexShrink: 0, width: 140, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }} title={invoice.invoice_number}>
-        #{invoice.invoice_number}
-      </span>
-      <span style={{ color: UX.ink4, flex: 1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, fontSize: 11 }}>
-        {invoice.account_description ?? `Konto ${invoice.account}`}
-      </span>
-      <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UX.ink1, fontWeight: 500, flexShrink: 0 }}>
-        {fmtKr(invoice.amount)}
-      </span>
-      {fileUrl ? (
-        <a
-          href={fileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            fontSize:       11,
-            color:          UX.indigo,
-            textDecoration: 'none' as const,
-            padding:        '4px 8px',
-            border:         `1px solid ${UX.borderSoft}`,
-            borderRadius:   4,
-            flexShrink:     0,
-          }}
-        >
-          {t('viewPdf')}
-        </a>
-      ) : (
-        <span style={{ flexShrink: 0, width: 60 }} />
-      )}
-      <a
-        href={invoice.fortnox_url}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          fontSize:       11,
-          color:          UX.ink3,
-          textDecoration: 'none' as const,
-          padding:        '4px 8px',
-          border:         `1px solid ${UX.borderSoft}`,
-          borderRadius:   4,
-          flexShrink:     0,
-        }}
-        title={t('inFortnoxTitle')}
-      >
-        {t('inFortnox')}
-      </a>
-    </div>
-  )
+function panesStyle(isMobile: boolean): React.CSSProperties {
+  return {
+    display:             'grid',
+    gridTemplateColumns: isMobile ? '1fr' : '380px 1fr',
+    gap:                 14,
+    minHeight:           isMobile ? undefined : 600,
+  }
 }
 
-function DismissModal({ supplierName, reason, setReason, busy, onCancel, onConfirm }: {
-  supplierName: string
-  reason: string
-  setReason: (s: string) => void
-  busy: boolean
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  const t = useTranslations('overheads.review.dismissModal')
-  return (
-    <div
-      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
-      style={{
-        position: 'fixed' as const, inset: 0, background: 'rgba(17, 24, 39, 0.5)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20,
-      }}
-    >
-      <div style={{ background: 'white', borderRadius: 12, padding: 20, width: 460, maxWidth: '100%' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: UX.ink1, margin: '0 0 6px 0' }}>
-          {t('title', { supplier: supplierName })}
-        </h2>
-        <p style={{ fontSize: 12, color: UX.ink3, margin: '0 0 14px 0' }}>
-          {t('body')}
-        </p>
-        <label style={{ fontSize: 11, fontWeight: 600, color: UX.ink2, display: 'block', marginBottom: 4 }}>
-          {t('notes')}
-        </label>
-        <textarea
-          value={reason}
-          onChange={e => setReason(e.target.value)}
-          placeholder={t('placeholder')}
-          rows={3}
-          maxLength={1000}
-          style={{
-            width: '100%', padding: 10, border: `1px solid ${UX.borderSoft}`, borderRadius: 7,
-            fontSize: 13, fontFamily: 'inherit', color: UX.ink1, resize: 'vertical' as const,
-            boxSizing: 'border-box' as const, lineHeight: 1.5,
-          }}
-        />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-          <button onClick={onCancel} disabled={busy} style={btnGhost(busy)}>{t('cancel')}</button>
-          <button onClick={onConfirm} disabled={busy} style={btnDanger(busy)}>
-            {busy ? t('saving') : t('confirm')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────
-//   BackfillBanner — first-run UX
-// ────────────────────────────────────────────────────────────────────
-
-function BackfillBanner({ onConfirm, onDismiss, busy }: { onConfirm: () => void; onDismiss: () => void; busy: boolean }) {
-  const t = useTranslations('overheads.review.backfillBanner')
-  // Body uses <b>essential</b> markup. next-intl supports rich text via t.rich,
-  // but for a single tag the simpler split-on-marker approach keeps this
-  // banner readable. The string in JSON uses <b>…</b> as a literal marker.
-  const body = t('body')
-  return (
-    <div style={{
-      background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
-      padding: 16, marginBottom: 14,
-    }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#1e3a8a', marginBottom: 4 }}>
-        {t('title')}
-      </div>
-      <div style={{ fontSize: 12, color: '#1e40af', lineHeight: 1.5, marginBottom: 12 }}
-           dangerouslySetInnerHTML={{ __html: body }} />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <button onClick={onDismiss} disabled={busy} style={btnGhost(busy)}>{t('decline')}</button>
-        <button onClick={onConfirm} disabled={busy} style={btnPrimary(busy)}>
-          {busy ? t('marking') : t('confirm')}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ────────────────────────────────────────────────────────────────────
-//   small UI
-// ────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────
+//   small components (banners, empty, category row)
+// ────────────────────────────────────────────────────────────────────────
 
 function Banner({ tone, text }: { tone: 'bad' | 'warn' | 'ok'; text: string }) {
   const palette = tone === 'bad'
@@ -934,22 +422,48 @@ function Empty({ text }: { text: string }) {
   )
 }
 
-function CategoryButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function CategoryRow({ value, onChange, counts }: {
+  value:    CategoryFilter
+  onChange: (v: CategoryFilter) => void
+  counts:   { all: number; other_cost: number; food_cost: number }
+}) {
+  const t = useTranslations('overheads.review.filter')
+  if (counts.other_cost === 0 && counts.food_cost === 0) return null
+  return (
+    <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' as const }}>
+      <CatBtn active={value === 'all'} onClick={() => onChange('all')}>
+        {t('all')} <Pill>{counts.all}</Pill>
+      </CatBtn>
+      {counts.other_cost > 0 && (
+        <CatBtn active={value === 'other_cost'} onClick={() => onChange('other_cost')}>
+          {t('overheads')} <Pill>{counts.other_cost}</Pill>
+        </CatBtn>
+      )}
+      {counts.food_cost > 0 && (
+        <CatBtn active={value === 'food_cost'} onClick={() => onChange('food_cost')}>
+          {t('food')} <Pill>{counts.food_cost}</Pill>
+        </CatBtn>
+      )}
+    </div>
+  )
+}
+
+function CatBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       style={{
-        padding: '6px 12px',
-        background: active ? UX.ink1 : 'white',
-        color:      active ? 'white' : UX.ink2,
-        border:     `1px solid ${active ? UX.ink1 : UX.borderSoft}`,
+        padding:      '6px 12px',
+        background:   active ? UX.ink1 : 'white',
+        color:        active ? 'white' : UX.ink2,
+        border:       `1px solid ${active ? UX.ink1 : UX.borderSoft}`,
         borderRadius: 999,
-        fontSize:    12,
-        fontWeight:  active ? 600 : 500,
-        cursor:      'pointer',
-        display:     'inline-flex',
-        alignItems:  'center',
-        gap:         6,
+        fontSize:     12,
+        fontWeight:   active ? 600 : 500,
+        cursor:       'pointer',
+        display:      'inline-flex',
+        alignItems:   'center',
+        gap:          6,
       }}
     >
       {children}
@@ -957,25 +471,39 @@ function CategoryButton({ active, onClick, children }: { active: boolean; onClic
   )
 }
 
-function Count({ children }: { children: React.ReactNode }) {
+function Pill({ children }: { children: React.ReactNode }) {
   return (
     <span style={{
       fontSize: 10, fontWeight: 700,
       padding: '1px 6px', borderRadius: 999,
-      background: 'rgba(255,255,255,0.18)',
-      color: 'inherit',
+      background: 'rgba(255,255,255,0.18)', color: 'inherit',
     }}>
       {children}
     </span>
   )
 }
 
-function btnPrimary(busy: boolean): React.CSSProperties {
-  return { padding: '7px 14px', background: busy ? UX.ink4 : UX.ink1, color: 'white', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: busy ? 'not-allowed' : 'pointer' }
-}
-function btnDanger(busy: boolean): React.CSSProperties {
-  return { padding: '7px 14px', background: 'white', border: `1px solid ${busy ? UX.borderSoft : '#fecaca'}`, color: busy ? UX.ink4 : '#991b1b', borderRadius: 7, fontSize: 12, fontWeight: 500, cursor: busy ? 'not-allowed' : 'pointer' }
-}
-function btnGhost(busy: boolean): React.CSSProperties {
-  return { padding: '7px 14px', background: 'transparent', border: 'none', color: busy ? UX.ink4 : UX.ink3, fontSize: 12, fontWeight: 500, cursor: busy ? 'not-allowed' : 'pointer' }
+function DetailEmpty() {
+  const t = useTranslations('overheads.review.detail')
+  return (
+    <div style={{
+      background:    'white',
+      border:        `1px solid ${UX.border}`,
+      borderRadius:  UX.r_lg,
+      display:       'grid',
+      placeItems:    'center',
+      padding:       48,
+      textAlign:     'center' as const,
+    }}>
+      <div>
+        <div style={{ fontSize: 36, color: UX.ink4, opacity: 0.4, marginBottom: 12 }}>○</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: UX.ink3, marginBottom: 4 }}>
+          {t('emptyTitle')}
+        </div>
+        <div style={{ fontSize: 13, color: UX.ink4, maxWidth: 320 }}>
+          {t('emptyBody')}
+        </div>
+      </div>
+    </div>
+  )
 }
