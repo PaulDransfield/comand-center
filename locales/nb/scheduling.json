@@ -145,6 +145,8 @@
     "emptyTitle":   "Ingen PK-skift funnet for denne perioden",
     "emptyBody":    "Enten er planen ikke publisert i Personalkollen ennå, eller så må integrasjonen kobles til på nytt.",
     "headSubtitle": "Klikk på en grønn celle for å se hvorfor · Anvend individuelt eller alle på en gang",
+    "headSubtitleMulti": "{count} uker · klikk en hvilken som helst grønn celle for forklaringen",
+    "weekLabel":    "Uke {num}",
     "row": {
       "forecast":     "Etterspørsel",
       "forecastSub":  "12 mnd + vær",

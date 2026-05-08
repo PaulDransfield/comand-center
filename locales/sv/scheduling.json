@@ -145,6 +145,8 @@
     "emptyTitle":   "Inga PK-skift hittades för denna period",
     "emptyBody":    "Antingen är schemat inte publicerat i Personalkollen ännu, eller så behöver integrationen återanslutas.",
     "headSubtitle": "Klicka på en grön cell för att se varför · Tillämpa individuellt eller alla samtidigt",
+    "headSubtitleMulti": "{count} veckor · klicka på valfri grön cell för förklaringen",
+    "weekLabel":    "Vecka {num}",
     "row": {
       "forecast":     "Efterfrågan",
       "forecastSub":  "12 mån + väder",

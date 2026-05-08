@@ -112,6 +112,12 @@ export default function WeekGridView({
     ? `${formatRangeLabel(data.week_from)} — ${formatRangeLabel(data.week_to, true)}`
     : rangeLabel
 
+  // Group rows by ISO week. For 7-day ranges this collapses to a single
+  // group (no visual change). For 14/28/~30-day ranges this stacks weeks
+  // vertically with a divider strip between each, so the 7-column grid
+  // shape stays clean instead of overflowing or wrapping unpredictably.
+  const weekGroups = groupByIsoWeek(stats.rows)
+
   // ── Grid render ─────────────────────────────────────────────────────────
   return (
     <>
@@ -130,71 +136,96 @@ export default function WeekGridView({
               {dateRangeLabel}
             </div>
             <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>
-              {t('headSubtitle')}
+              {weekGroups.length > 1
+                ? t('headSubtitleMulti', { count: weekGroups.length })
+                : t('headSubtitle')}
             </div>
           </div>
         </div>
 
-        {/* Grid table */}
-        <div style={{ padding: '16px 22px 20px', overflowX: 'auto' }}>
-          <div style={gridTable}>
-            {/* Top-left empty cell */}
-            <div />
-            {/* Column headers (one per day) */}
-            {stats.rows.map(r => {
-              const date = new Date(r.date)
-              const isToday = sameYmd(r.date, new Date())
-              const dayAbbrev = ABBREV[(date.getUTCDay() + 6) % 7]
-              const dayNum = date.getUTCDate()
-              return (
-                <div key={`hdr-${r.date}`} style={{ padding: '4px 4px 10px', textAlign: 'center' }}>
-                  <div style={{
-                    fontSize:      10,
-                    color:         isToday ? UX.greenInk : UX.ink4,
-                    textTransform: 'uppercase' as const,
-                    letterSpacing: '0.06em',
-                    fontWeight:    500,
-                    marginBottom:  2,
-                  }}>{dayAbbrev}</div>
-                  <div style={{
-                    fontSize:   17,
-                    fontWeight: 700,
-                    color:      isToday ? UX.greenInk : UX.ink1,
-                    lineHeight: 1,
-                  }}>{dayNum}</div>
+        {/* One block per ISO week, stacked vertically. Single-week ranges
+            render exactly one block (no divider). Multi-week ranges get a
+            week-label strip between blocks. */}
+        <div style={{ padding: '16px 22px 20px' }}>
+          {weekGroups.map((group, groupIdx) => (
+            <div key={`week-${group.year}-${group.weekNum}`} style={{ marginTop: groupIdx === 0 ? 0 : 22 }}>
+              {/* Week divider strip — shows the week number + date range.
+                  Hidden for single-week ranges (the card-head already names
+                  the period). */}
+              {weekGroups.length > 1 && (
+                <div style={weekDividerStrip}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: UX.ink2, letterSpacing: '0.04em' }}>
+                    {t('weekLabel', { num: group.weekNum })}
+                  </div>
+                  <div style={{ fontSize: 11, color: UX.ink4 }}>
+                    {formatRangeLabel(group.weekStart, true)} — {formatRangeLabel(group.weekEnd, true)}
+                  </div>
                 </div>
-              )
-            })}
+              )}
 
-            {/* Row 1 — Demand forecast */}
-            <RowLabel name={t('row.forecast')} sub={t('row.forecastSub')} />
-            {stats.rows.map(r => (
-              <ForecastCell key={`fcst-${r.date}`} row={r} fmt={fmt} t={t} />
-            ))}
+              {/* The actual 3-row × N-column mini-grid */}
+              <div style={{ overflowX: 'auto' }}>
+                <div style={gridTableFor(group.days.length)}>
+                  {/* Top-left empty cell */}
+                  <div />
+                  {/* Column headers */}
+                  {group.days.map(r => {
+                    const date = new Date(r.date)
+                    const isToday = sameYmd(r.date, new Date())
+                    const dayAbbrev = ABBREV[(date.getUTCDay() + 6) % 7]
+                    const dayNum = date.getUTCDate()
+                    return (
+                      <div key={`hdr-${r.date}`} style={{ padding: '4px 4px 10px', textAlign: 'center' }}>
+                        <div style={{
+                          fontSize:      10,
+                          color:         isToday ? UX.greenInk : UX.ink4,
+                          textTransform: 'uppercase' as const,
+                          letterSpacing: '0.06em',
+                          fontWeight:    500,
+                          marginBottom:  2,
+                        }}>{dayAbbrev}</div>
+                        <div style={{
+                          fontSize:   17,
+                          fontWeight: 700,
+                          color:      isToday ? UX.greenInk : UX.ink1,
+                          lineHeight: 1,
+                        }}>{dayNum}</div>
+                      </div>
+                    )
+                  })}
 
-            {/* Row 2 — You scheduled */}
-            <RowLabel name={t('row.scheduled')} sub={t('row.scheduledSub')} />
-            {stats.rows.map(r => (
-              <ScheduledCell key={`cur-${r.date}`} row={r} fmt={fmt} fmtHrs={fmtHrs} t={t} />
-            ))}
+                  {/* Row 1 — Demand forecast */}
+                  <RowLabel name={t('row.forecast')} sub={t('row.forecastSub')} />
+                  {group.days.map(r => (
+                    <ForecastCell key={`fcst-${r.date}`} row={r} fmt={fmt} t={t} />
+                  ))}
 
-            {/* Row 3 — AI suggests */}
-            <RowLabel name={t('row.aiSuggests')} sub={t('row.aiSuggestsSub')} />
-            {stats.rows.map(r => (
-              <SuggestedCell
-                key={`sug-${r.date}`}
-                row={r}
-                isSelected={selectedIdx === r.index}
-                onClick={() => {
-                  if (r.status !== 'green') return
-                  setSelectedIdx(prev => prev === r.index ? null : r.index)
-                }}
-                fmt={fmt}
-                fmtHrs={fmtHrs}
-                t={t}
-              />
-            ))}
-          </div>
+                  {/* Row 2 — You scheduled */}
+                  <RowLabel name={t('row.scheduled')} sub={t('row.scheduledSub')} />
+                  {group.days.map(r => (
+                    <ScheduledCell key={`cur-${r.date}`} row={r} fmt={fmt} fmtHrs={fmtHrs} t={t} />
+                  ))}
+
+                  {/* Row 3 — AI suggests */}
+                  <RowLabel name={t('row.aiSuggests')} sub={t('row.aiSuggestsSub')} />
+                  {group.days.map(r => (
+                    <SuggestedCell
+                      key={`sug-${r.date}`}
+                      row={r}
+                      isSelected={selectedIdx === r.index}
+                      onClick={() => {
+                        if (r.status !== 'green') return
+                        setSelectedIdx(prev => prev === r.index ? null : r.index)
+                      }}
+                      fmt={fmt}
+                      fmtHrs={fmtHrs}
+                      t={t}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -497,11 +528,32 @@ const containerCard: React.CSSProperties = {
   marginBottom: 18,
 }
 
-const gridTable: React.CSSProperties = {
-  display:             'grid',
-  gridTemplateColumns: '100px repeat(7, minmax(110px, 1fr))',
-  gap:                 4,
-  minWidth:            880,
+/**
+ * Build the gridTemplateColumns for an N-day week. Used so partial weeks
+ * (e.g. the first/last week of a "Next month" range) render with the right
+ * number of columns instead of stretching 7 cells over fewer days.
+ */
+function gridTableFor(dayCount: number): React.CSSProperties {
+  return {
+    display:             'grid',
+    gridTemplateColumns: `100px repeat(${dayCount}, minmax(110px, 1fr))`,
+    gap:                 4,
+    // minWidth scales with day count so a 5-day partial week doesn't
+    // force horizontal scroll the way a full 7-day week needs to on
+    // narrow viewports.
+    minWidth:            100 + dayCount * 110,
+  }
+}
+
+const weekDividerStrip: React.CSSProperties = {
+  display:        'flex',
+  justifyContent: 'space-between',
+  alignItems:     'center',
+  padding:        '8px 12px',
+  marginBottom:   10,
+  background:     '#f3f4f0',
+  border:         `1px solid ${UX.borderSoft}`,
+  borderRadius:   6,
 }
 
 const cellForecast: React.CSSProperties = {
@@ -699,4 +751,48 @@ function sameYmd(iso: string, d: Date): boolean {
 }
 function pad2(n: number): string {
   return String(n).padStart(2, '0')
+}
+
+interface WeekGroup {
+  year:      number
+  weekNum:   number       // ISO 8601 week number
+  weekStart: string       // YYYY-MM-DD of Monday (or first day in group if range starts mid-week)
+  weekEnd:   string       // YYYY-MM-DD of Sunday (or last day in group)
+  days:      DayRow[]     // chronologically ordered, length 1-7
+}
+
+/**
+ * Group rows by ISO 8601 week. Preserves chronological order. Partial weeks
+ * (range starts mid-week or ends mid-week) render with fewer columns rather
+ * than padding — the user sees what's actually in their range.
+ */
+function groupByIsoWeek(rows: DayRow[]): WeekGroup[] {
+  const out: WeekGroup[] = []
+  let current: WeekGroup | null = null
+  for (const r of rows) {
+    const d = new Date(r.date + 'T00:00:00Z')
+    const { year, week } = isoYearAndWeek(d)
+    if (!current || current.year !== year || current.weekNum !== week) {
+      current = { year, weekNum: week, weekStart: r.date, weekEnd: r.date, days: [] }
+      out.push(current)
+    }
+    current.days.push(r)
+    current.weekEnd = r.date  // last seen date in this group
+  }
+  return out
+}
+
+/**
+ * ISO 8601 year + week number for a date. Same algorithm as the existing
+ * getISOWeek() helper on app/scheduling/page.tsx — duplicated here so this
+ * component stays self-contained (no cross-import to a page-level helper).
+ */
+function isoYearAndWeek(d: Date): { year: number; week: number } {
+  const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  // Move to the nearest Thursday (ISO weeks are anchored to Thursday)
+  const dayNum = dt.getUTCDay() || 7
+  dt.setUTCDate(dt.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1))
+  const week = Math.ceil(((dt.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return { year: dt.getUTCFullYear(), week }
 }

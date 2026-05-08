@@ -145,6 +145,8 @@
     "emptyTitle":   "No PK shifts found for this window",
     "emptyBody":    "Either the schedule isn't published yet in Personalkollen, or the integration needs reconnecting.",
     "headSubtitle": "Click a green cell to see why · Apply individually or all at once",
+    "headSubtitleMulti": "{count} weeks · click any green cell to see why",
+    "weekLabel":    "Week {num}",
     "row": {
       "forecast":     "Demand forecast",
       "forecastSub":  "12mo + weather",
