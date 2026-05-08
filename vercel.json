@@ -87,6 +87,10 @@
     {
       "path": "/api/cron/fortnox-backfill-worker",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/today-data-sentinel",
+      "schedule": "0 14 * * *"
     }
   ]
 }
