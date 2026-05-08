@@ -122,8 +122,8 @@ const C = {
   revAccent: '#6366f1',
   lab:       '#c2410c',
   labBg:     'rgba(194,65,12,0.28)',
-  mar:       '#8d8f86',   // gross margin recedes — thin, light
-  marAi:     '#0f7a3e',   // AI forecast line — visual hero, primary
+  mar:       '#0f7a3e',   // gross margin (actual) — solid green, the truth
+  marAi:     '#5e6058',   // AI forecast — dashed neutral grey, the projection
   axis:      '#dcddd6',   // slightly darker baseline
   axisGrid:  '#f0f0eb',   // very faint horizontal-only gridlines
   axisInk:   '#b6b8af',   // lighter y-axis labels
@@ -528,9 +528,12 @@ export default function OverviewChart({
               stay defined for back-compat with anything else that may
               still reference them. */}
           <defs>
-            {/* Area gradient under AI forecast line — fades 14% → 0%. */}
+            {/* Area gradient under AI forecast line — fades very softly.
+                Neutral fill so it doesn't compete with the (solid green)
+                actual margin line. v8 rule: only the truth gets vivid
+                colour; projections recede. */}
             <linearGradient id="cc-forecast-grad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={C.marAi} stopOpacity={0.14} />
+              <stop offset="0%" stopColor={C.marAi} stopOpacity={0.08} />
               <stop offset="100%" stopColor={C.marAi} stopOpacity={0} />
             </linearGradient>
             {/* Soft drop shadow used for emphasis on the today marker. */}
@@ -710,20 +713,42 @@ export default function OverviewChart({
             })
             if (pts.length < 2) return null
             const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+            // AI forecast = projection. Dashed neutral line so the eye
+            // never reads it as the truth. Today's marker stays a hollow
+            // ringed circle for emphasis (it's the join point between
+            // actuals and the forecast tail).
             return (
               <>
-                <path d={path} stroke={C.marAi} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                <path
+                  d={path}
+                  stroke={C.marAi}
+                  strokeWidth={1.6}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="4,3"
+                  fill="none"
+                  opacity={0.85}
+                />
                 {pts.map(p => {
                   if (p.isToday) {
                     return (
                       <g key={`fc${p.date}`}>
-                        <circle cx={p.x} cy={p.y} r={9} fill={C.marAi} opacity={0.18} />
-                        <circle cx={p.x} cy={p.y} r={4.5} fill={C.marAi} stroke="#fff" strokeWidth={2} />
+                        <circle cx={p.x} cy={p.y} r={8} fill={C.marAi} opacity={0.14} />
+                        <circle cx={p.x} cy={p.y} r={4} fill="#fff" stroke={C.marAi} strokeWidth={1.6} />
                       </g>
                     )
                   }
                   return (
-                    <circle key={`fc${p.date}`} cx={p.x} cy={p.y} r={3.5} fill={C.marAi} opacity={p.isFuture ? 0.55 : 1} />
+                    <circle
+                      key={`fc${p.date}`}
+                      cx={p.x}
+                      cy={p.y}
+                      r={2.5}
+                      fill="#fff"
+                      stroke={C.marAi}
+                      strokeWidth={1.2}
+                      opacity={p.isFuture ? 0.75 : 0.55}
+                    />
                   )
                 })}
               </>
@@ -783,19 +808,24 @@ export default function OverviewChart({
                 {segments.map((seg, i) => {
                   if (seg.points.length < 2) return null
                   const path = seg.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-                  // v7: gross margin recedes — thin, light, dashed. The
-                  // hero of the chart is the AI forecast line above; the
-                  // margin line is supporting context.
+                  // Gross margin = actual data. Solid green — the truth.
+                  // Predicted-margin segments (future days where we
+                  // synthesise from AI est_revenue minus AI cost) stay
+                  // dashed so the eye still reads them as projections,
+                  // but they keep the green colour to belong to the same
+                  // line family. v8 inversion: solid = actual, dashed =
+                  // forecast — matches the AI-line treatment below.
                   return (
                     <path
                       key={`seg${i}`}
                       d={path}
                       stroke={C.mar}
-                      strokeWidth={1.2}
+                      strokeWidth={2}
                       strokeLinejoin="round"
+                      strokeLinecap="round"
                       fill="none"
-                      strokeDasharray="2,4"
-                      opacity={seg.kind === 'pred' ? 0.45 : 0.55}
+                      strokeDasharray={seg.kind === 'pred' ? '4,3' : undefined}
+                      opacity={seg.kind === 'pred' ? 0.7 : 1}
                     />
                   )
                 })}
@@ -908,8 +938,8 @@ export default function OverviewChart({
           <LegendDot color={C.tierAmber} style={{ marginLeft: 2 }} /><span>amber</span>
           <LegendDot color={C.tierRed}   style={{ marginLeft: 2 }} /><span>over</span>
         </span>
-        <span><LegendBar color={C.marAi} />AI forecast</span>
-        <span><LegendBar color={C.mar} dashed />Margin</span>
+        <span><LegendBar color={C.mar} />Gross margin</span>
+        <span><LegendBar color={C.marAi} dashed />AI forecast</span>
       </div>
     </div>
   )
