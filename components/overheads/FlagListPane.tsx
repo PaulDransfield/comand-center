@@ -90,7 +90,19 @@ export default function FlagListPane(props: Props) {
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const }}>
+        {/* Pills stay on one row — overflow scrolls horizontally rather than
+            wrapping. Wrap behaviour was visually unstable across locales /
+            counts, and reflowed the list pane when the overall page width
+            changed. */}
+        <div style={{
+          display:        'flex',
+          gap:            4,
+          overflowX:      'auto',
+          overflowY:      'hidden',
+          scrollbarWidth: 'thin' as const,
+          paddingBottom:  2,
+          margin:         '0 -2px',
+        }}>
           <Pill active={props.flagTypeFilter === 'all'} onClick={() => props.onFlagType('all')}>
             {tF('all')} <Count>{counts.all}</Count>
           </Pill>
@@ -286,6 +298,7 @@ const paneStyle: React.CSSProperties = {
   overflow:      'hidden',
   display:       'flex',
   flexDirection: 'column',
+  minWidth:      0,
 }
 
 const headStyle: React.CSSProperties = {

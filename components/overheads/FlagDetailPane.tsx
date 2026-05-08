@@ -214,16 +214,16 @@ export default function FlagDetailPane({
 
       {/* HEADER */}
       <div style={headStyle}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' as const }}>
             <BadgeLarge tone={badgeTone}>{badgeLabel}</BadgeLarge>
             <BadgeLarge tone="gray">{tCat(f.category === 'food_cost' ? 'food' : 'overhead')}</BadgeLarge>
             {isResolved && <BadgeLarge tone="gray">{t('resolvedBadge')}</BadgeLarge>}
           </div>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: UX.ink1, letterSpacing: '-0.015em', margin: '0 0 4px 0', lineHeight: 1.2 }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: UX.ink1, letterSpacing: '-0.015em', margin: '0 0 4px 0', lineHeight: 1.2, overflowWrap: 'anywhere' as const }}>
             {f.supplier_name}
           </h2>
-          {f.reason && <div style={{ fontSize: 13, color: UX.ink3 }}>{f.reason}</div>}
+          {f.reason && <div style={{ fontSize: 13, color: UX.ink3, overflowWrap: 'anywhere' as const }}>{f.reason}</div>}
         </div>
         <div style={{ textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
           <div style={{
@@ -247,7 +247,7 @@ export default function FlagDetailPane({
 
       {/* ACTION BAR */}
       <div style={actionBarStyle}>
-        <div style={{ fontSize: 13, color: UX.ink3, lineHeight: 1.4 }}>
+        <div style={{ fontSize: 13, color: UX.ink3, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' as const }}>
           <strong style={{ color: UX.ink1, fontWeight: 600 }}>
             {isResolved ? t('alreadyDecided') : t('decisionNeeded')}
           </strong>
@@ -296,7 +296,7 @@ export default function FlagDetailPane({
         }>
           {f.ai_explanation ? (
             <div style={aiExplanationStyle}>
-              <div style={{ whiteSpace: 'pre-wrap' as const }}>{f.ai_explanation}</div>
+              <div style={{ whiteSpace: 'pre-wrap' as const, overflowWrap: 'anywhere' as const }}>{f.ai_explanation}</div>
               {f.ai_confidence != null && (
                 <div style={{
                   marginTop: 10, paddingTop: 10,
@@ -426,7 +426,7 @@ function InvoiceRow({ invoice, bizId, monthsShort }: {
       padding:      '11px 0',
       borderBottom: `1px solid ${UX.borderSoft}`,
       display:      'grid',
-      gridTemplateColumns: '80px 1fr auto auto',
+      gridTemplateColumns: '80px minmax(0, 1fr) auto auto',
       gap:          12,
       alignItems:   'center',
       fontSize:     13,
@@ -580,8 +580,13 @@ const paneStyle: React.CSSProperties = {
   border:        `1px solid ${UX.border}`,
   borderRadius:  UX.r_lg,
   overflowY:     'auto',
+  overflowX:     'hidden',
   display:       'flex',
   flexDirection: 'column',
+  // Without minWidth:0 the pane's intrinsic content min-width (long supplier
+  // names, AI explanation paragraphs, invoice description text) bubbles up
+  // through the parent grid track and pushes the page wider on flag switch.
+  minWidth:      0,
 }
 
 const mobileBackStyle: React.CSSProperties = {
@@ -601,7 +606,7 @@ const headStyle: React.CSSProperties = {
   padding:             '20px 26px 16px',
   borderBottom:        `1px solid ${UX.borderSoft}`,
   display:             'grid',
-  gridTemplateColumns: '1fr auto',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
   gap:                 18,
   alignItems:          'flex-start',
 }
@@ -611,14 +616,15 @@ const actionBarStyle: React.CSSProperties = {
   background:          UX.subtleBg,
   borderBottom:        `1px solid ${UX.borderSoft}`,
   display:             'grid',
-  gridTemplateColumns: '1fr auto',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
   gap:                 18,
   alignItems:          'center',
 }
 
 const bodyStyle: React.CSSProperties = {
-  padding: '22px 26px',
-  flex:    1,
+  padding:  '22px 26px',
+  flex:     1,
+  minWidth: 0,
 }
 
 function btnDefer(busy: boolean): React.CSSProperties {

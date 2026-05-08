@@ -384,13 +384,17 @@ function groupFlags(flags: Flag[]): FlagGroup[] {
 
 function panesStyle(isMobile: boolean): React.CSSProperties {
   // minmax(0, 1fr) for the right column — without it, intrinsic content
-  // width (the SVG chart, long invoice descriptions) forces the grid
-  // track wider than the viewport instead of shrinking to fit.
+  // width (the SVG chart, long invoice descriptions, AI explanation
+  // paragraphs) forces the grid track wider than the viewport instead of
+  // shrinking to fit. minWidth:0 on the container itself stops THIS grid
+  // from being widened by its parent's content-sizing pass.
   return {
     display:             'grid',
     gridTemplateColumns: isMobile ? '1fr' : '380px minmax(0, 1fr)',
     gap:                 14,
     minHeight:           isMobile ? undefined : 600,
+    minWidth:            0,
+    width:               '100%',
   }
 }
 
