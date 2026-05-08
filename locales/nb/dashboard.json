@@ -16,6 +16,27 @@
   "alerts": {
     "viewAll": "Vis alle varsler →"
   },
+  "header": {
+    "breadcrumb":  "Oversikt · {biz}",
+    "title":       "Oversikt",
+    "anomalyAria": "Avvik: {title} — åpne varselsiden",
+    "export":      "Eksporter"
+  },
+  "outlook": {
+    "eyebrow":          "ETTERSPØRSEL · NESTE 7 DAGER · VÆR × HELLIGDAGER × AI-SALGSMØNSTER",
+    "headlineSteady":   "Stabil uke i vente — ingen større topper eller bunner forventet.",
+    "headlinePeak":     "{day} topp",
+    "headlineHoliday":  "{day} helligdag",
+    "headlineDip":      "{day} bunn",
+    "confidenceLine":   "Prognoser bruker {weeks} ukers historikk × SMHI-vær × svenske helligdager · {samples} matchede dager.",
+    "totalLabel":       "7-dagers prognoseinntekt",
+    "vsTypical":        "vs typisk uke",
+    "forecastLabel":    "prognose",
+    "peakLabel":        "topp",
+    "dipLabel":         "regnfall",
+    "baselineEst":      "grunnlinjeestimat",
+    "cutAvailable":     "−{hours}t kan kuttes"
+  },
   "labour": {
     "predictiveEyebrow":  "NESTE UKE · BEMANNINGSPROGNOSE",
     "ofRevenue":          "av inntekter",
@@ -78,6 +99,18 @@
     "badgeClosed":  "STENGT",
     "badgePredicted":"PROGNOSE",
     "badgeAi":      "AI",
+    "strip": {
+      "revenue":      "Inntekt",
+      "labour":       "Bemanning",
+      "labourMargin": "Bemanningsmargin",
+      "covers":       "Gjester"
+    },
+    "notes": {
+      "dayRatioTitle":  "Daglig bemannings-% er veiledende",
+      "dayRatioBody":   "operatørmålet er ukens snitt, ikke hver enkelt dag. En regntung lørdag går varmt; en solrik fredag går svalt.",
+      "readingTitle":   "Tolke stolpene:",
+      "readingBody":    "fylt = faktisk, mykt fylt = AI-prognose for kommende dager. Framtidige dager uten vaktplan vises matt."
+    },
     "filter": {
       "all":        "Alle dager",
       "weekdays":   "Hverdager",

@@ -81,28 +81,77 @@ export interface OverviewChartProps {
   // empty Set or omit to disable. Works the same for SE today; nb/gb
   // pick it up automatically once their holiday modules land.
   holidayDates?: Set<string>
+
+  // v7 redesign: optional inline anomaly callout. When the parent has
+  // an active high/critical alert mapping to a date in the visible
+  // range, the chart paints a soft dot+connector+label near that day's
+  // labour bar. Title is the detector's deterministic format
+  // ("OB supplement spike +X% — {bizName}"); description is the
+  // Haiku-rewritten subtitle. Strictly additive — passing nothing keeps
+  // the chart's pre-v7 behaviour unchanged.
+  anomalyCallout?: {
+    date:        string
+    title:       string
+    description?: string | null
+  } | null
+}
+
+// Per-day labour ratio tier classifier. Green ≤ targetPct, amber within
+// +5pp, red beyond. Returns the colour AND a soft variant for the
+// matching predicted-labour fill.
+function labourTier(staffPct: number | null | undefined, targetPct: number): {
+  ink: string
+  predFill: string
+  tier: 'good' | 'amber' | 'red'
+} {
+  const pct = typeof staffPct === 'number' ? staffPct : null
+  // Unknown defaults to amber — visually neutral. The page hides bars
+  // that have no data via the no-data path, so this is rare.
+  if (pct == null || !Number.isFinite(pct)) {
+    return { ink: C.tierAmber, predFill: C.predLabAmber, tier: 'amber' }
+  }
+  if (pct <= targetPct) return { ink: C.tierGood,  predFill: C.predLabGood,  tier: 'good' }
+  if (pct <= targetPct + 5) return { ink: C.tierAmber, predFill: C.predLabAmber, tier: 'amber' }
+  return { ink: C.tierRed, predFill: C.predLabRed, tier: 'red' }
 }
 
 // ─── Tokens ──────────────────────────────────────────────────────────────────
 const C = {
-  rev:       '#1a1f2e',
-  revBg:     'rgba(26,31,46,0.28)',
+  rev:       '#1a1d18',   // refined ink — matches v7 mockup
+  revBg:     'rgba(26,29,24,0.28)',
   revAccent: '#6366f1',
   lab:       '#c2410c',
   labBg:     'rgba(194,65,12,0.28)',
-  mar:       '#16a34a',
-  axis:      '#e5e7eb',
-  axisInk:   '#9ca3af',
+  mar:       '#8d8f86',   // gross margin recedes — thin, light
+  marAi:     '#0f7a3e',   // AI forecast line — visual hero, primary
+  axis:      '#dcddd6',   // slightly darker baseline
+  axisGrid:  '#f0f0eb',   // very faint horizontal-only gridlines
+  axisInk:   '#b6b8af',   // lighter y-axis labels
+  axisInk2:  '#8d8f86',
   ttBg:      '#0a0e1a',
   ttMute:    'rgba(255,255,255,0.55)',
   goodGreen: '#86efac',
   badRed:    '#fca5a5',
-  // Predicted-revenue bar fill: distinctly lighter / cooler than the solid
-  // navy actuals so forecasts fade into the background visually. Sky-blue
-  // tones at low opacity — can't be mistaken for a dark actual bar at a
-  // glance.
-  predFill1: '#c7d2fe',   // light indigo
-  predFill2: '#e0e7ff',   // even lighter stripe
+  // v7 modernization: tier colours for labour bars based on
+  // (labour_cost / revenue) vs targetLabourPct. Green ≤ target,
+  // amber within +5pp, red beyond.
+  tierGood:  '#3d8a5a',
+  tierAmber: '#c98847',
+  tierRed:   '#b8412e',
+  // Predicted-revenue bar fill — soft solid (no diagonal stripes per v7).
+  // Indigo-grey so it reads as "tentative / forecast" against the dark
+  // actuals. Subtle border keeps it visible on white.
+  predRev:   '#dde6ee',
+  predRevBorder: '#c4d2dc',
+  // Predicted-labour soft fills — tier-coloured, lower saturation than
+  // the actuals so forecasts fade.
+  predLabGood:  '#cae3d2',
+  predLabAmber: '#f0d4ad',
+  predLabRed:   '#e8c5be',
+  // Predicted-revenue bar fill: legacy-compat names retained because
+  // some helpers still reference them while the chart transitions.
+  predFill1: '#c7d2fe',
+  predFill2: '#e0e7ff',
   predBorder:'#a5b4fc',   // soft outline to separate from white bg
 }
 
@@ -191,6 +240,7 @@ function dayForecast(d: DayRow, mode: 'none' | 'prev' | 'ai'): { rev: number | n
 // Number of-day helpers
 function pad2(n: number) { return n < 10 ? '0' + n : String(n) }
 function toDate(iso: string) { return new Date(iso + 'T12:00:00') }
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function OverviewChart({
@@ -203,6 +253,7 @@ export default function OverviewChart({
   compareMode: cmpProp, onCompareChange,
   fmtKr, fmtPct,
   holidayDates,
+  anomalyCallout,
 }: OverviewChartProps) {
   const t = useTranslations('dashboard.chart')
   const isWeek = viewMode === 'week'
@@ -472,31 +523,41 @@ export default function OverviewChart({
           style={{ display: 'block' as const }}
           onMouseLeave={() => setHoverDate(null)}
         >
-          {/* Pattern for predicted revenue bars */}
+          {/* v7 modernization — soft solid fills (no diagonal stripes) +
+              area gradient under the AI forecast line. Striped patterns
+              stay defined for back-compat with anything else that may
+              still reference them. */}
           <defs>
-            {/* Predicted-revenue fill — two light tones, no dark colour in
-                the pattern, so it reads as "soft / forecast" against the
-                solid-dark actuals. */}
+            {/* Area gradient under AI forecast line — fades 14% → 0%. */}
+            <linearGradient id="cc-forecast-grad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={C.marAi} stopOpacity={0.14} />
+              <stop offset="100%" stopColor={C.marAi} stopOpacity={0} />
+            </linearGradient>
+            {/* Soft drop shadow used for emphasis on the today marker. */}
+            <filter id="cc-soft-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+            {/* Legacy stripe patterns retained to avoid breaking any
+                consumer that may still reference them via fill="url(...)";
+                v7 paint paths now use solid soft fills instead. */}
             <pattern id="pk-pred" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(-45)">
               <rect width="8" height="8" fill={C.predFill1} />
               <rect width="4" height="8" fill={C.predFill2} />
             </pattern>
-            {/* Predicted-labour fill — same stripe style in burnt-orange
-                tones so predicted labour reads as "planned cost" rather than
-                a solid actual. */}
             <pattern id="pk-pred-lab" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(-45)">
               <rect width="8" height="8" fill="#fed7aa" />
               <rect width="4" height="8" fill="#ffedd5" />
             </pattern>
           </defs>
 
-          {/* Gridlines + y-axis labels */}
+          {/* Gridlines — horizontal-only, very faint per v7. */}
           {ticksPos.map(v => {
             const y = yAt(v)
             return (
               <g key={`p${v}`}>
-                <line x1={PAD_L} x2={VB_W - PAD_R} y1={y} y2={y} stroke={C.axis} strokeWidth={0.5} strokeDasharray={v === 0 ? undefined : '2 2'} />
-                <text x={PAD_L - 6} y={y + 3} textAnchor="end" fontSize={10} fill={C.axisInk}>{formatAxis(v)}</text>
+                <line x1={PAD_L} x2={VB_W - PAD_R} y1={y} y2={y} stroke={C.axisGrid} strokeWidth={0.5} />
+                <text x={PAD_L - 6} y={y + 3} textAnchor="end" fontSize={10} fill={C.axisInk} fontWeight={500}>{formatAxis(v)}</text>
               </g>
             )
           })}
@@ -504,15 +565,37 @@ export default function OverviewChart({
             const y = yAt(v)
             return (
               <g key={`n${v}`}>
-                <line x1={PAD_L} x2={VB_W - PAD_R} y1={y} y2={y} stroke={C.axis} strokeWidth={0.5} strokeDasharray="2 2" />
-                <text x={PAD_L - 6} y={y + 3} textAnchor="end" fontSize={10} fill={C.axisInk}>{formatAxis(v)}</text>
+                <line x1={PAD_L} x2={VB_W - PAD_R} y1={y} y2={y} stroke={C.axisGrid} strokeWidth={0.5} />
+                <text x={PAD_L - 6} y={y + 3} textAnchor="end" fontSize={10} fill={C.axisInk} fontWeight={500}>{formatAxis(v)}</text>
               </g>
             )
           })}
-          {/* Zero line (solid) */}
-          <line x1={PAD_L} x2={VB_W - PAD_R} y1={zeroY} y2={zeroY} stroke={C.axis} strokeWidth={0.8} />
+          {/* Zero line — slightly darker than the gridlines so it reads as
+              the baseline. */}
+          <line x1={PAD_L} x2={VB_W - PAD_R} y1={zeroY} y2={zeroY} stroke={C.axis} strokeWidth={1.2} />
 
-          {/* Bars + whiskers */}
+          {/* Area gradient under AI forecast line — drawn BEFORE bars so
+              the bars sit on top. Path closes back along the zero baseline. */}
+          {(() => {
+            const pts = days
+              .map((d, i) => {
+                const v = (d.pred?.est_revenue ?? 0) > 0
+                  ? d.pred!.est_revenue
+                  : (d.revenue > 0 ? d.revenue : null)
+                if (v == null) return null
+                return { x: xAt(i), y: yAt(v) }
+              })
+              .filter((p): p is { x: number; y: number } => p != null)
+            if (pts.length < 2) return null
+            const path = `M ${pts[0].x} ${zeroY} ` +
+              pts.map(p => `L ${p.x} ${p.y}`).join(' ') +
+              ` L ${pts[pts.length - 1].x} ${zeroY} Z`
+            return <path d={path} fill="url(#cc-forecast-grad)" />
+          })()}
+
+          {/* Bars + whiskers — v7 modernization: rounded corners (rx=5),
+              soft solid predicted fill (no diagonal stripes), per-day
+              labour tier coloring driven by staff_pct vs targetLabourPct. */}
           {days.map((d, i) => {
             const inFilter = !hasFilter || selected.has(d.date)
             const op  = inFilter ? 1 : 0.18
@@ -524,6 +607,26 @@ export default function OverviewChart({
             const hasPredLab = !d.staff_cost && d.pred && (d.pred.planned_cost ?? 0) > 0
 
             const fcast = dayForecast(d, compareMode)
+
+            // Per-day labour tier — drives bar colour (actual or predicted)
+            // and the above-bar percentage annotation.
+            const tierInfo = labourTier(d.staff_pct, targetLabourPct)
+            const labFill  = hasPredLab ? tierInfo.predFill : tierInfo.ink
+
+            // Cap-stripe at the bottom of the labour bar — the v7 mockup
+            // adds a slim accented bar under each labour bar so the value
+            // pops at a glance even when the bar is short.
+            const labBottomY = yAt(-lab)
+
+            // Above-bar labour % annotation (shown when we have a pct AND
+            // the bar's tall enough to host a label without overlap).
+            const showLabPct = lab > 0 && d.staff_pct != null && Number.isFinite(d.staff_pct)
+
+            // v7 chart's modern rx — bigger rounded corners on the
+            // top edge of each bar. We can't apply rx only to top corners
+            // in plain SVG without a path, but rx=5 gives the visual
+            // effect we want at the top while the bottom is anchored.
+            const r = 5
 
             return (
               <g
@@ -539,38 +642,57 @@ export default function OverviewChart({
                 }}
                 style={{ opacity: opH, transition: 'opacity .15s', cursor: onDayClick ? 'pointer' : 'default' }}
               >
-                {/* Revenue bar — predicted bars use the light stripe pattern
-                    + a thin border + reduced opacity so they read as "forecast
-                    / tentative" next to the solid navy actuals. */}
+                {/* Revenue bar — predicted variant uses a soft solid fill
+                    with a subtle border so it reads as "tentative / forecast"
+                    next to the solid dark actuals. */}
                 {rev > 0 && (
                   <rect
                     x={cx - barW / 2}
                     y={yAt(rev)}
                     width={barW}
                     height={Math.max(1, zeroY - yAt(rev))}
-                    rx={barR} ry={barR}
-                    fill={hasPred ? 'url(#pk-pred)' : C.rev}
-                    stroke={hasPred ? C.predBorder : 'none'}
+                    rx={r} ry={r}
+                    fill={hasPred ? C.predRev : C.rev}
+                    stroke={hasPred ? C.predRevBorder : 'none'}
                     strokeWidth={hasPred ? 0.6 : 0}
-                    opacity={hasPred ? 0.85 : 1}
+                    opacity={hasPred ? 0.95 : 1}
                   />
                 )}
-                {/* Labour bar (below zero line, extending down) */}
+                {/* Labour bar — tier-coloured (green/amber/red) based on
+                    staff_pct vs targetLabourPct. Predicted-labour days use
+                    the matching soft variant. */}
                 {lab > 0 && (
                   <rect
                     x={cx - barW / 2}
                     y={zeroY}
                     width={barW}
-                    height={Math.max(1, yAt(-lab) - zeroY)}
-                    rx={barR} ry={barR}
-                    fill={hasPredLab ? 'url(#pk-pred-lab)' : C.lab}
-                    stroke={hasPredLab ? '#fdba74' : 'none'}
-                    strokeWidth={hasPredLab ? 0.6 : 0}
-                    opacity={hasPredLab ? 0.85 : 1}
+                    height={Math.max(1, labBottomY - zeroY)}
+                    rx={r} ry={r}
+                    fill={labFill}
+                    opacity={hasPredLab ? 0.92 : 1}
                   />
                 )}
 
-                {/* Forecast whiskers */}
+                {/* Above-bar labour % annotation — sits just above the
+                    revenue bar (or at the zero line if no revenue) so it
+                    doesn't collide with the bar tops. v7-style colour
+                    matches the tier so the eye can pattern-match
+                    cool/warm rows immediately. */}
+                {showLabPct && (
+                  <text
+                    x={cx}
+                    y={Math.min(yAt(rev) - 5, zeroY - 5)}
+                    textAnchor="middle"
+                    fontSize={9}
+                    fontWeight={700}
+                    fill={tierInfo.ink}
+                    opacity={hasPredLab ? 0.65 : 1}
+                  >
+                    {Math.round(d.staff_pct as number)}%
+                  </text>
+                )}
+
+                {/* Forecast whiskers (compare mode prev/ai) */}
                 {fcast.rev != null && (
                   <line
                     x1={cx - barW / 2 - (isWeek ? 4 : 1)}
@@ -590,6 +712,60 @@ export default function OverviewChart({
               </g>
             )
           })}
+
+          {/* AI forecast line — connects the est_revenue / shownRev
+              points across days. Drawn AFTER bars so it sits on top.
+              Today's marker gets a soft halo + white-ringed circle for
+              emphasis; future-day markers fade slightly so the actuals
+              pop. */}
+          {(() => {
+            type Pt = { x: number; y: number; idx: number; date: string; isToday: boolean; isFuture: boolean }
+            const pts: Pt[] = []
+            days.forEach((d, i) => {
+              const v = (d.pred?.est_revenue ?? 0) > 0
+                ? d.pred!.est_revenue
+                : (d.revenue > 0 ? d.revenue : null)
+              if (v == null) return
+              pts.push({ x: xAt(i), y: yAt(v), idx: i, date: d.date, isToday: d.isToday, isFuture: d.isFuture })
+            })
+            if (pts.length < 2) return null
+            const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+            return (
+              <>
+                <path d={path} stroke={C.marAi} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                {pts.map(p => {
+                  if (p.isToday) {
+                    return (
+                      <g key={`fc${p.date}`}>
+                        <circle cx={p.x} cy={p.y} r={9} fill={C.marAi} opacity={0.18} />
+                        <circle cx={p.x} cy={p.y} r={4.5} fill={C.marAi} stroke="#fff" strokeWidth={2} />
+                      </g>
+                    )
+                  }
+                  return (
+                    <circle key={`fc${p.date}`} cx={p.x} cy={p.y} r={3.5} fill={C.marAi} opacity={p.isFuture ? 0.55 : 1} />
+                  )
+                })}
+              </>
+            )
+          })()}
+
+          {/* TODAY marker — vertical dashed line spanning the chart with
+              a small dark pill at the top. Shows only when "today" falls
+              inside the visible range. */}
+          {(() => {
+            const todayDay = days.find(d => d.isToday)
+            if (!todayDay) return null
+            const i = days.indexOf(todayDay)
+            const x = xAt(i)
+            return (
+              <g>
+                <line x1={x} y1={PAD_T - 4} x2={x} y2={zeroY + 32} stroke={C.rev} strokeWidth={1} strokeDasharray="2 3" opacity={0.55} />
+                <rect x={x - 26} y={PAD_T - 16} width={52} height={14} rx={3} fill={C.rev} />
+                <text x={x} y={PAD_T - 6} textAnchor="middle" fontSize={9} fontWeight={700} fill="#fff" letterSpacing="0.05em">TODAY</text>
+              </g>
+            )
+          })()}
 
           {/* Gross margin line — split into segments by kind so actual/closed
               segments are SOLID and predicted segments are DASHED.
@@ -627,64 +803,113 @@ export default function OverviewChart({
                 {segments.map((seg, i) => {
                   if (seg.points.length < 2) return null
                   const path = seg.points.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+                  // v7: gross margin recedes — thin, light, dashed. The
+                  // hero of the chart is the AI forecast line above; the
+                  // margin line is supporting context.
                   return (
                     <path
                       key={`seg${i}`}
                       d={path}
                       stroke={C.mar}
-                      strokeWidth={2}
+                      strokeWidth={1.2}
                       strokeLinejoin="round"
                       fill="none"
-                      strokeDasharray={seg.kind === 'pred' ? '4,3' : undefined}
-                      opacity={seg.kind === 'pred' ? 0.7 : 1}
+                      strokeDasharray="2,4"
+                      opacity={seg.kind === 'pred' ? 0.45 : 0.55}
                     />
                   )
-                })}
-                {allPoints.map((p, i) => {
-                  const isHovered = hoverDate && p.date === hoverDate
-                  const r = isHovered ? 4 : markerR
-                  // Predicted: hollow ring. Closed: small solid square-ish marker.
-                  // Real-with-data: solid filled circle (existing behaviour).
-                  if (p.kind === 'pred') {
-                    return (
-                      <circle key={`c${i}`} cx={p.x} cy={p.y} r={r} stroke={C.mar} strokeWidth={1.5} fill="white" />
-                    )
-                  }
-                  return <circle key={`c${i}`} cx={p.x} cy={p.y} r={r} fill={C.mar} />
                 })}
               </>
             )
           })()}
 
-          {/* X-axis day labels — weekends + holidays render in red so
-              owners can spot them at a glance. "Today" still wins (green
-              + bold) when it overlaps a Sat/Sun/holiday because the
-              "today" highlight is more useful right now than the
-              red-day signal. */}
+          {/* X-axis labels — v7 two-line format: weekday on top
+              (tier-coloured for today / red-day / labour-tier), date
+              on the bottom row in muted ink. Weekends and holidays
+              render the weekday red. */}
           {days.map((d, i) => {
-            const dow       = toDate(d.date).getDay()           // 0=Sun..6=Sat
+            const dow       = toDate(d.date).getDay()
             const isWeekend = dow === 0 || dow === 6
             const isHoliday = !!holidayDates?.has(d.date)
             const isRedDay  = isWeekend || isHoliday
-            const fill      = d.isToday ? C.mar
-                            : isRedDay  ? '#dc2626'             // tailwind red-600
-                            : C.axisInk
-            const fontWeight = d.isToday ? 700 : isRedDay ? 600 : 400
+            // Per-day tier from labour ratio — lets the X-axis weekday
+            // pick up the same green/amber/red signal as the bars
+            // (without colliding with the today / red-day rules).
+            const tierForLabel = labourTier(d.staff_pct, targetLabourPct)
+            const dayFill      = d.isToday ? C.rev
+                              : isRedDay  ? C.tierRed
+                              : (d.staff_pct != null ? tierForLabel.ink : C.axisInk2)
+            const dayFontWeight = d.isToday ? 700 : isRedDay ? 600 : 600
+            const dayY    = VB_H - PAD_B + 18
+            const dateY   = VB_H - PAD_B + 33
+            const dateLabel = (() => {
+              const dt = toDate(d.date)
+              return `${MONTHS_SHORT[dt.getMonth()]} ${dt.getDate()}`
+            })()
+            const op = !hasFilter || selected.has(d.date) ? 1 : 0.3
             return (
-              <text
-                key={`lbl${d.date}`}
-                x={xAt(i)}
-                y={VB_H - PAD_B + 18}
-                textAnchor="middle"
-                fontSize={isWeek ? 11 : 9}
-                fontWeight={fontWeight}
-                fill={fill}
-                style={{ opacity: !hasFilter || selected.has(d.date) ? 1 : 0.3 }}
-              >
-                {d.dayName}
-              </text>
+              <g key={`lbl${d.date}`} style={{ opacity: op }}>
+                <text
+                  x={xAt(i)}
+                  y={dayY}
+                  textAnchor="middle"
+                  fontSize={isWeek ? 11 : 9}
+                  fontWeight={dayFontWeight}
+                  fill={dayFill}
+                >
+                  {d.dayName}
+                </text>
+                {isWeek && (
+                  <text
+                    x={xAt(i)}
+                    y={dateY}
+                    textAnchor="middle"
+                    fontSize={10}
+                    fontWeight={d.isToday ? 600 : 400}
+                    fill={d.isToday ? C.rev : C.axisInk2}
+                  >
+                    {dateLabel}
+                  </text>
+                )}
+              </g>
             )
           })}
+
+          {/* Anomaly callout — v7 soft inline annotation. Renders only
+              when the parent passes anomalyCallout AND that date is in
+              view. Soft dot + thin connector + two-line label, no
+              red rectangle. */}
+          {(() => {
+            if (!anomalyCallout) return null
+            const i = days.findIndex(d => d.date === anomalyCallout.date)
+            if (i < 0) return null
+            const dot = { x: xAt(i), y: zeroY + 8 }
+            // Anchor the label to the right of the dot, but flip to the
+            // left when within 200px of the right edge so the text never
+            // overflows the plot area.
+            const goRight = dot.x < (VB_W - PAD_R) - 200
+            const lblX    = goRight ? dot.x + 50 : dot.x - 56
+            const lblAnchor: 'start' | 'end' = goRight ? 'start' : 'end'
+            const linkX2  = goRight ? lblX - 4 : lblX + 4
+            const linkY2  = zeroY - 30
+            const titleY  = linkY2 - 6
+            const subY    = titleY + 12
+            return (
+              <g style={{ pointerEvents: 'none' }}>
+                <circle cx={dot.x} cy={dot.y} r={6} fill="#fff" stroke={C.tierRed} strokeWidth={2} />
+                <circle cx={dot.x} cy={dot.y} r={2.5} fill={C.tierRed} />
+                <line x1={dot.x + (goRight ? 5 : -5)} y1={dot.y - 3} x2={linkX2} y2={linkY2} stroke={C.tierRed} strokeWidth={1} opacity={0.5} />
+                <text x={lblX} y={titleY} fontSize={11} fontWeight={700} fill={C.tierRed} textAnchor={lblAnchor}>
+                  {anomalyCallout.title}
+                </text>
+                {anomalyCallout.description && (
+                  <text x={lblX} y={subY} fontSize={10} fill={C.tierRed} fontWeight={500} opacity={0.7} textAnchor={lblAnchor}>
+                    {anomalyCallout.description.length > 60 ? anomalyCallout.description.slice(0, 58) + '…' : anomalyCallout.description}
+                  </text>
+                )}
+              </g>
+            )
+          })()}
 
           {/* Y-axis title */}
           <text x={PAD_L - 44} y={PAD_T + PLOT_H / 2} transform={`rotate(-90 ${PAD_L - 44} ${PAD_T + PLOT_H / 2})`} fontSize={10} fill={C.axisInk}>kr</text>
@@ -712,19 +937,28 @@ export default function OverviewChart({
         )}
       </div>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', flexWrap: 'wrap' as const, justifyContent: 'center', gap: 18, paddingBottom: 6 }}>
-        <LegendItem kind="swatch"   color={C.rev}  label="Revenue (actual)" />
-        <LegendItem kind="striped"  label="Revenue (predicted)" />
-        <LegendItem kind="swatch"   color={C.lab}  label="Labour cost" />
-        <LegendItem kind="dashed"   color="#6b7280" label="AI forecast" />
-        <LegendItem kind="line"     color={C.mar}  label="Gross margin (actual)" />
-        <LegendItem kind="dashed"   color={C.mar}  label="Gross margin (predicted)" />
-      </div>
-
-      {/* Tip text */}
-      <div style={{ textAlign: 'center' as const, fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-        Hover a bar for detail · click to drill in · use the calendar to focus on specific days
+      {/* Legend — v7 compact style: smaller swatches, lighter text,
+          a tier-colour mini-cluster for labour-ratio. */}
+      <div style={{
+        display:    'flex',
+        flexWrap:   'wrap' as const,
+        gap:        18,
+        fontSize:   11,
+        color:      C.axisInk2,
+        paddingTop: 14,
+        marginTop:  2,
+        borderTop:  `1px solid ${C.axisGrid}`,
+      }}>
+        <span><LegendDot color={C.rev} />Revenue</span>
+        <span><LegendDot color={C.predRev} />Predicted</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span>Labour ratio:</span>
+          <LegendDot color={C.tierGood} /><span>good</span>
+          <LegendDot color={C.tierAmber} style={{ marginLeft: 2 }} /><span>amber</span>
+          <LegendDot color={C.tierRed}   style={{ marginLeft: 2 }} /><span>over</span>
+        </span>
+        <span><LegendBar color={C.marAi} />AI forecast</span>
+        <span><LegendBar color={C.mar} dashed />Margin</span>
       </div>
     </div>
   )
@@ -890,6 +1124,40 @@ function LegendItem({ kind, color, label }: any) {
       {swatch}
       <span style={{ fontSize: 12, color: '#6b7280' }}>{label}</span>
     </div>
+  )
+}
+
+// v7-style compact legend swatches — small square block + tiny line bar.
+// Used by the redesigned legend below the chart.
+function LegendDot({ color, style }: { color: string; style?: React.CSSProperties }) {
+  return (
+    <span style={{
+      display:      'inline-block',
+      width:        10,
+      height:       10,
+      borderRadius: 2,
+      background:   color,
+      marginRight:  5,
+      verticalAlign:'middle',
+      ...style,
+    }} />
+  )
+}
+
+function LegendBar({ color, dashed, style }: { color: string; dashed?: boolean; style?: React.CSSProperties }) {
+  const bg = dashed
+    ? `repeating-linear-gradient(90deg, ${color} 0 2px, transparent 2px 6px)`
+    : color
+  return (
+    <span style={{
+      display:      'inline-block',
+      width:        14,
+      height:       2,
+      background:   bg,
+      marginRight:  5,
+      verticalAlign:'middle',
+      ...style,
+    }} />
   )
 }
 

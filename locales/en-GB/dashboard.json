@@ -16,6 +16,27 @@
   "alerts": {
     "viewAll": "View all alerts →"
   },
+  "header": {
+    "breadcrumb":  "Overview · {biz}",
+    "title":       "Dashboard",
+    "anomalyAria": "Anomaly: {title} — open alerts page",
+    "export":      "Export"
+  },
+  "outlook": {
+    "eyebrow":          "DEMAND OUTLOOK · NEXT 7 DAYS · WEATHER × HOLIDAYS × AI SALES PATTERN",
+    "headlineSteady":   "Steady week ahead — no major peaks or dips forecast.",
+    "headlinePeak":     "{day} peak",
+    "headlineHoliday":  "{day} holiday",
+    "headlineDip":      "{day} dip",
+    "confidenceLine":   "Forecasts use {weeks}-week history × SMHI weather × Swedish holidays · {samples} matched sample days.",
+    "totalLabel":       "7-day forecast revenue",
+    "vsTypical":        "vs typical week",
+    "forecastLabel":    "forecast",
+    "peakLabel":        "peak",
+    "dipLabel":         "rain dip",
+    "baselineEst":      "baseline est.",
+    "cutAvailable":     "−{hours}h cut available"
+  },
   "labour": {
     "predictiveEyebrow":  "NEXT WEEK · LABOUR PROJECTION",
     "ofRevenue":          "of revenue",
@@ -78,6 +99,18 @@
     "badgeClosed":  "CLOSED",
     "badgePredicted":"PREDICTED",
     "badgeAi":      "AI",
+    "strip": {
+      "revenue":      "Revenue",
+      "labour":       "Labour",
+      "labourMargin": "Labour margin",
+      "covers":       "Covers"
+    },
+    "notes": {
+      "dayRatioTitle":  "Day labour % is informational",
+      "dayRatioBody":   "the operator target is the week's average, not each day. A rainy Saturday will run hot; a sunny Friday will run cool.",
+      "readingTitle":   "Reading the bars:",
+      "readingBody":    "solid = actual, soft fill = AI forecast for upcoming days. Future days without a schedule yet show as faint."
+    },
     "filter": {
       "all":        "All days",
       "weekdays":   "Weekdays",

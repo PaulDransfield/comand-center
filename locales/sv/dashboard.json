@@ -16,6 +16,27 @@
   "alerts": {
     "viewAll": "Visa alla varningar →"
   },
+  "header": {
+    "breadcrumb":  "Översikt · {biz}",
+    "title":       "Översikt",
+    "anomalyAria": "Avvikelse: {title} — öppna varningssidan",
+    "export":      "Exportera"
+  },
+  "outlook": {
+    "eyebrow":          "EFTERFRÅGAN · NÄSTA 7 DAGAR · VÄDER × HELGDAGAR × AI-SÄLJMÖNSTER",
+    "headlineSteady":   "Stabil vecka framöver — inga större toppar eller dalar prognostiserade.",
+    "headlinePeak":     "{day} topp",
+    "headlineHoliday":  "{day} helgdag",
+    "headlineDip":      "{day} dal",
+    "confidenceLine":   "Prognoser använder {weeks} veckors historik × SMHI-väder × svenska helgdagar · {samples} matchade dagar.",
+    "totalLabel":       "7-dagars prognosintäkt",
+    "vsTypical":        "mot typisk vecka",
+    "forecastLabel":    "prognos",
+    "peakLabel":        "topp",
+    "dipLabel":         "regnfall",
+    "baselineEst":      "baslinjeskattning",
+    "cutAvailable":     "−{hours}h kan kapas"
+  },
   "labour": {
     "predictiveEyebrow":  "NÄSTA VECKA · PERSONALPROGNOS",
     "ofRevenue":          "av intäkter",
@@ -78,6 +99,18 @@
     "badgeClosed":  "STÄNGT",
     "badgePredicted":"PROGNOS",
     "badgeAi":      "AI",
+    "strip": {
+      "revenue":      "Intäkt",
+      "labour":       "Personal",
+      "labourMargin": "Personalmarginal",
+      "covers":       "Gäster"
+    },
+    "notes": {
+      "dayRatioTitle":  "Dag-personal % är vägledande",
+      "dayRatioBody":   "operatörens mål är veckans snitt, inte varje dag. En regnig lördag går varm; en solig fredag går sval.",
+      "readingTitle":   "Tolka staplarna:",
+      "readingBody":    "fyllt = faktiskt utfall, mjukt fyllt = AI-prognos för kommande dagar. Framtida dagar utan schema visas som matta."
+    },
     "filter": {
       "all":        "Alla dagar",
       "weekdays":   "Vardagar",

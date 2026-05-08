@@ -22,6 +22,8 @@ import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import WeatherDemandWidget from '@/components/dashboard/WeatherDemandWidget'
+import DashboardHeader from '@/components/dashboard/DashboardHeader'
+import DemandOutlook from '@/components/dashboard/DemandOutlook'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -191,6 +193,7 @@ function DashboardInner() {
   const [monthOffset, setMonthOffset] = useState(0)
   const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
   const [dailyRows,   setDailyRows]   = useState<any[]>([])
+  const [currSummary, setCurrSummary] = useState<any>(null)
   const [prevSummary, setPrevSummary] = useState<any>(null)
   const [depts,       setDepts]       = useState<any>(null)
   const [alerts,      setAlerts]      = useState<any[]>([])
@@ -307,6 +310,7 @@ function DashboardInner() {
     if (!bizId) return
     setLoading(true)
     setDailyRows([])
+    setCurrSummary(null)
     setPrevSummary(null)
     setDepts(null)
 
@@ -332,6 +336,7 @@ function DashboardInner() {
       // Map daily_metrics field names to what the dashboard expects
       const rows = (curr_.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct }))
       setDailyRows(rows)
+      setCurrSummary(curr_.summary ?? null)
       setPrevSummary(prev_.summary ?? null)
       setPrevDailyRows(prev_.rows ?? [])
       setDepts(deptRes ?? null)
@@ -590,16 +595,14 @@ function DashboardInner() {
             inside OverviewChart's own control row. Keeping both would be the
             exact duplication the redesign is trying to eliminate. */}
 
-        {/* ── Alerts strip ────────────────────────────────────────────────── */}
-        {alerts.filter(a => a.severity === 'high' || a.severity === 'critical').slice(0, 1).map(a => (
-          <a key={a.id} href="/alerts" style={{ textDecoration: 'none', display: 'flex', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 16, justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#c2410c' }}>⚠ {a.title}</span>
-              <span style={{ fontSize: 12, color: '#9a3412', marginLeft: 8 }}>{a.description?.slice(0, 70)}{a.description?.length > 70 ? '…' : ''}</span>
-            </div>
-            <span style={{ fontSize: 11, color: '#c2410c', fontWeight: 600, whiteSpace: 'nowrap' }}>{tDash('alerts.viewAll')}</span>
-          </a>
-        ))}
+        {/* ── Dashboard header — replaces the legacy yellow alert banner.
+              Pulses a small anomaly pill linking to /alerts; same filter
+              the banner used (severity high/critical, top row only). */}
+        <DashboardHeader
+          breadcrumb={tDash('header.breadcrumb', { biz: selectedBiz?.name ?? '' })}
+          pageTitle={tDash('header.title')}
+          alerts={alerts as any[]}
+        />
 
         {/* ─── PageHero + chart + supporting row ─────────────────────────────
             One consolidated view for both week and month — the chart's own
@@ -760,6 +763,26 @@ function DashboardInner() {
               )
             })()}
 
+            {/* Four-stat strip on the chart header — Revenue / Labour /
+                Labour margin / Covers. Lives ABOVE the chart card so the
+                chart's own controls stay clean. Numbers come from
+                already-loaded daily summary; covers is newly consumed
+                (already in `summary.total_covers`, just unread before). */}
+            <ChartHeaderStrip
+              viewMode={viewMode}
+              periodLabel={viewMode === 'week'
+                ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) })
+                : formatMonthLabel(currM)}
+              totalRev={totalRev}
+              totalLabour={totalLabour}
+              labourPct={labourPct}
+              covers={Number(currSummary?.total_covers ?? 0)}
+              prevRev={prevRev}
+              prevLabPct={prevLabPct}
+              fmtKr={fmtKr}
+              fmtPct={fmtPct}
+            />
+
             <OverviewChart
               days={viewMode === 'week' ? weekDays : monthDays}
               viewMode={viewMode}
@@ -779,42 +802,77 @@ function DashboardInner() {
               fmtKr={fmtKr}
               fmtPct={fmtPct}
               holidayDates={holidayDateSet}
+              anomalyCallout={(() => {
+                // Pass the top-severity alert ONLY when its surfaced
+                // date falls inside the visible day range; otherwise the
+                // chart wouldn't have anywhere to anchor it.
+                const topAlert = (alerts ?? []).find((a: any) =>
+                  a.severity === 'high' || a.severity === 'critical')
+                if (!topAlert) return null
+                const dateField = topAlert.detected_at ?? topAlert.created_at ?? topAlert.surfaced_at
+                if (!dateField) return null
+                const date = String(dateField).slice(0, 10)
+                const visibleDays = viewMode === 'week' ? weekDays : monthDays
+                if (!visibleDays.find((d: any) => d.date === date)) return null
+                return {
+                  date,
+                  title:       String(topAlert.title ?? ''),
+                  description: topAlert.description ?? null,
+                }
+              })()}
             />
 
-            {/* Supporting row — Departments summary + AttentionPanel.
-                Spec § 1 Overview: grid 1fr 260px, max 5 dept rows + max 3
-                attention items. */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 260px',
-              gap: 12,
-              marginTop: 12,
-              marginBottom: 16,
-            }}>
-              <DepartmentsSummary
-                depts={(depts?.departments ?? [])}
-                targetPct={targetPct}
-                periodLabel={viewMode === 'week'
-                  ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) }).split(' · ')[0]
-                  : formatMonthLabel(currM)}
-                fmtKr={fmtKr}
-                fmtPct={fmtPct}
-              />
-              <AttentionPanel
-                items={buildAttentionItems({
-                  depts: depts?.departments ?? [],
-                  aiSaving: aiSched?.summary?.saving_kr ?? 0,
-                  targetPct,
-                  labourPct,
-                  totalRev,
-                  country: (selectedBiz as any)?.country ?? 'SE',
-                  t: tDash,
-                  tCommon,
-                })}
-              />
+            {/* Two chart footer notes — honesty about how to read the chart.
+                Stack to single column at <880px. */}
+            <div className="cc-chart-footer-notes" style={chartFooterNotesStyle}>
+              <div style={chartFooterNoteStyle}>
+                <strong style={{ color: UX.ink3 }}>{tDash('chart.notes.dayRatioTitle')}</strong>
+                {' '}— {tDash('chart.notes.dayRatioBody')}
+              </div>
+              <div style={chartFooterNoteStyle}>
+                <strong style={{ color: UX.ink3 }}>{tDash('chart.notes.readingTitle')}</strong>
+                {' '}{tDash('chart.notes.readingBody')}
+              </div>
+              <style>{`
+                @media (max-width: 880px) {
+                  .cc-chart-footer-notes { grid-template-columns: 1fr !important; }
+                }
+              `}</style>
             </div>
 
-            <WeatherDemandWidget bizId={bizId} />
+            {/* Demand outlook — replaces the old WeatherDemandWidget. Same
+                endpoint (`/api/weather/demand-forecast`), restructured as a
+                7-day day-card grid combining weather, holidays, and AI
+                cut-hour deltas. */}
+            <DemandOutlook
+              bizId={bizId}
+              cutHoursByDate={(() => {
+                const map: Record<string, number> = {}
+                if (aiSched?.suggested) {
+                  for (const s of aiSched.suggested) {
+                    if (typeof s.delta_hours === 'number') map[s.date] = s.delta_hours
+                  }
+                }
+                return map
+              })()}
+            />
+
+            {/* Compact horizontal attention strip — was a right-rail card,
+                now a single-row footer with horizontally-scrolling items.
+                DepartmentsSummary removed entirely; the /departments route
+                still works for direct navigation. */}
+            <CompactAttentionStrip
+              items={buildAttentionItems({
+                depts: depts?.departments ?? [],
+                aiSaving: aiSched?.summary?.saving_kr ?? 0,
+                targetPct,
+                labourPct,
+                totalRev,
+                country: (selectedBiz as any)?.country ?? 'SE',
+                t: tDash,
+                tCommon,
+              })}
+            />
 
           </>
         )}
@@ -1143,4 +1201,242 @@ function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev, 
   }
 
   return items
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChartHeaderStrip — four-stat strip above the chart card. Revenue / Labour /
+// Labour margin / Covers, label-above-value layout per v7 mockup. Re-introduced
+// after the legacy KPI strip was removed in commit 63809e7 (it duplicated
+// PageHero/SupportingStats); v7's design has no SupportingStats so the
+// duplication risk doesn't apply.
+// ─────────────────────────────────────────────────────────────────────────────
+function ChartHeaderStrip({
+  viewMode, periodLabel,
+  totalRev, totalLabour, labourPct, covers,
+  prevRev, prevLabPct,
+  fmtKr, fmtPct,
+}: any) {
+  const tDash = useTranslations('dashboard')
+
+  // Revenue delta vs previous period — same source the existing OverviewHero
+  // already uses. Sign drives the badge tone.
+  const revDelta = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
+  const revDeltaTone = revDelta == null ? 'neutral' : revDelta >= 0 ? 'good' : 'bad'
+
+  // Labour delta in percentage POINTS (not relative). +21pp etc.
+  const labDeltaPp = (labourPct != null && prevLabPct != null) ? Math.round(labourPct - prevLabPct) : null
+  const labDeltaTone = labDeltaPp == null ? 'neutral' : labDeltaPp <= 0 ? 'good' : 'bad'
+
+  // Labour margin = revenue − labour. NOT net margin (no food/overhead here).
+  const labourMargin = Math.max(0, totalRev - totalLabour)
+  // No reliable YoY comparison wired today — show prev-period delta if we
+  // have it, else omit. Mockup's "+9pp YoY" is illustrative.
+  const marginDeltaPp = (labourPct != null && prevLabPct != null) ? Math.round(prevLabPct - labourPct) : null
+  const marginDeltaTone = marginDeltaPp == null ? 'neutral' : marginDeltaPp >= 0 ? 'good' : 'bad'
+
+  return (
+    <div className="cc-chart-strip" style={{
+      display:        'flex',
+      gap:            36,
+      alignItems:     'flex-start',
+      padding:        '14px 20px 16px',
+      background:     UX.cardBg,
+      border:         `1px solid ${UX.border}`,
+      borderRadius:   12,
+      marginBottom:   12,
+      flexWrap:       'wrap' as const,
+    }}>
+      <Stat
+        label={tDash('chart.strip.revenue')}
+        value={fmtKr(totalRev)}
+        delta={revDelta == null ? null : `${revDelta >= 0 ? '+' : ''}${(Math.round(revDelta * 10) / 10).toFixed(1)}%`}
+        tone={revDeltaTone}
+      />
+      <Stat
+        label={tDash('chart.strip.labour')}
+        value={totalRev > 0 ? `${(Math.round(labourPct * 10) / 10).toFixed(1)}%` : '—'}
+        delta={labDeltaPp == null ? null : `${labDeltaPp >= 0 ? '+' : ''}${labDeltaPp}pp`}
+        tone={labDeltaTone}
+        valueTone={labDeltaTone}
+      />
+      <Stat
+        label={tDash('chart.strip.labourMargin')}
+        value={fmtKr(labourMargin)}
+        delta={marginDeltaPp == null ? null : `${marginDeltaPp >= 0 ? '+' : ''}${marginDeltaPp}pp`}
+        tone={marginDeltaTone}
+        valueTone={marginDeltaTone}
+      />
+      <Stat
+        label={tDash('chart.strip.covers')}
+        value={covers > 0 ? String(covers) : '—'}
+      />
+      <style>{`
+        @media (max-width: 880px) {
+          .cc-chart-strip { gap: 14px !important; padding: 12px 14px !important; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+function Stat({ label, value, delta, tone, valueTone }: {
+  label:     string
+  value:     string
+  delta?:    string | null
+  tone?:     'good' | 'bad' | 'neutral'
+  valueTone?:'good' | 'bad' | 'neutral'
+}) {
+  const valueColor = valueTone === 'good' ? UX.greenInk : valueTone === 'bad' ? UX.redInk : UX.ink1
+  const deltaPalette = tone === 'good'
+    ? { bg: UX.greenBg, fg: UX.greenInk }
+    : tone === 'bad'
+    ? { bg: UX.redSoft, fg: UX.redInk }
+    : { bg: 'transparent', fg: UX.ink4 }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, minWidth: 0 }}>
+      <span style={{
+        fontSize:      11,
+        color:         UX.ink4,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase' as const,
+        fontWeight:    500,
+        lineHeight:    1.2,
+        whiteSpace:    'nowrap' as const,
+      }}>
+        {label}
+      </span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' as const }}>
+        <span style={{
+          fontSize:      26,
+          fontWeight:    700,
+          color:         valueColor,
+          letterSpacing: '-0.02em',
+          lineHeight:    1,
+          whiteSpace:    'nowrap' as const,
+        }}>
+          {value}
+        </span>
+        {delta && (
+          <span style={{
+            fontSize:    11,
+            fontWeight:  700,
+            padding:     '2px 8px',
+            borderRadius:999,
+            background:  deltaPalette.bg,
+            color:       deltaPalette.fg,
+            whiteSpace:  'nowrap' as const,
+          }}>
+            {delta}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CompactAttentionStrip — horizontal version of AttentionPanel for the new
+// dashboard footer. Same input shape (AttentionItem[]) so the existing
+// buildAttentionItems() helper feeds it unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+function CompactAttentionStrip({ items }: { items: AttentionItem[] }) {
+  const t = useTranslations('common.attention')
+  if (!items.length) return null
+  return (
+    <div className="cc-attention-strip" style={{
+      background:   UX.cardBg,
+      border:       `1px solid ${UX.border}`,
+      borderRadius: 10,
+      padding:      '16px 22px',
+      display:      'flex',
+      gap:          18,
+      alignItems:   'center',
+      marginTop:    16,
+      marginBottom: 16,
+    }}>
+      <div className="cc-attention-strip-h" style={{
+        fontSize:      11,
+        color:         UX.ink4,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase' as const,
+        fontWeight:    500,
+        flexShrink:    0,
+        paddingRight:  18,
+        borderRight:   `1px solid ${UX.borderSoft}`,
+      }}>
+        {t('defaultTitle')}{' '}
+        <span style={{
+          background:   UX.ink1,
+          color:        'white',
+          fontSize:     10,
+          fontWeight:   600,
+          padding:      '1px 6px',
+          borderRadius: 999,
+          marginLeft:   4,
+        }}>{items.length}</span>
+      </div>
+      <div style={{
+        display:    'flex',
+        gap:        22,
+        flex:       1,
+        overflowX:  'auto',
+      }}>
+        {items.slice(0, 6).map((it, i) => {
+          const palette = it.tone === 'bad'
+            ? { bg: UX.redSoft, fg: UX.redInk, glyph: '!' }
+            : it.tone === 'warning'
+            ? { bg: UX.amberSoft, fg: UX.amberInk, glyph: '⌖' }
+            : { bg: UX.greenBg, fg: UX.greenInk, glyph: '→' }
+          return (
+            <div key={`${it.entity}-${i}`} style={{
+              display:    'flex',
+              alignItems: 'center',
+              gap:        8,
+              fontSize:   12,
+              whiteSpace: 'nowrap' as const,
+              minWidth:   0,
+            }}>
+              <span style={{
+                width:        18,
+                height:       18,
+                borderRadius: 5,
+                display:      'grid',
+                placeItems:   'center',
+                fontSize:     10,
+                fontWeight:   700,
+                background:   palette.bg,
+                color:        palette.fg,
+                flexShrink:   0,
+              }}>{palette.glyph}</span>
+              <span style={{ fontWeight: 600, color: UX.ink1 }}>{it.entity}</span>
+              <span style={{ color: UX.ink4 }}>— {it.message}</span>
+            </div>
+          )
+        })}
+      </div>
+      <style>{`
+        @media (max-width: 880px) {
+          .cc-attention-strip { flex-direction: column; align-items: flex-start; }
+          .cc-attention-strip-h { border-right: none; border-bottom: 1px solid ${UX.borderSoft}; padding-right: 0; padding-bottom: 12px; width: 100%; }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+const chartFooterNotesStyle: React.CSSProperties = {
+  display:             'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap:                 12,
+  marginTop:           10,
+  marginBottom:        16,
+}
+
+const chartFooterNoteStyle: React.CSSProperties = {
+  fontSize:    11,
+  color:       UX.ink4,
+  padding:     '8px 12px',
+  background:  UX.subtleBg,
+  borderRadius:6,
+  lineHeight:  1.5,
 }
