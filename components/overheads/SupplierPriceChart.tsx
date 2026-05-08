@@ -35,21 +35,17 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
     padding:      '16px 18px',
   }
 
-  if (loading) {
-    return <div style={{ ...wrapStyle, color: UX.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('loading')}</div>
-  }
-  if (error) {
-    return <div style={{ ...wrapStyle, color: UX.redInk, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{error}</div>
-  }
-
-  const data = history.filter(h => Number.isFinite(h.amount))
-  if (data.length === 0) {
-    return <div style={{ ...wrapStyle, color: UX.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('noData')}</div>
-  }
-
-  // Average over the historical window EXCLUDING the trailing month — that
-  // matches "prior 11-month average" in the AI explanation.
+  // ALL hooks must run unconditionally before any early-return — `useMemo`
+  // below previously sat after the loading/error/empty branches and crashed
+  // SSR↔client when the loading state flipped.
+  const data = useMemo(
+    () => history.filter(h => Number.isFinite(h.amount)),
+    [history],
+  )
   const stats = useMemo(() => {
+    if (data.length === 0) {
+      return { trail: { year: 0, month: 0, amount: 0 } as HistoryPoint, prior: [] as HistoryPoint[], priorAvg: 0, max: 1, min: 0, isSpike: false }
+    }
     const trail = data[data.length - 1]
     const prior = data.slice(0, -1).filter(d => d.amount > 0)
     const priorAvg = prior.length ? prior.reduce((s, d) => s + d.amount, 0) / prior.length : 0
@@ -58,6 +54,16 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
     const isSpike = priorAvg > 0 && trail.amount > priorAvg * 1.5
     return { trail, prior, priorAvg, max, min, isSpike }
   }, [data])
+
+  if (loading) {
+    return <div style={{ ...wrapStyle, color: UX.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('loading')}</div>
+  }
+  if (error) {
+    return <div style={{ ...wrapStyle, color: UX.redInk, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{error}</div>
+  }
+  if (data.length === 0) {
+    return <div style={{ ...wrapStyle, color: UX.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('noData')}</div>
+  }
 
   // Layout
   const W = 600, H = 140
