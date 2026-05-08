@@ -192,11 +192,18 @@ export async function aggregateMetrics(
     ),
     fetchAllPaged((lo, hi) =>
       db.from('staff_logs')
-        .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr')
+        .select('shift_date, cost_actual, estimated_salary, hours_worked, staff_group, is_late, ob_supplement_kr, pk_staff_url, pk_log_url')
         .eq('org_id', orgId).eq('business_id', businessId)
         .gte('shift_date', fromDate)
         .or('cost_actual.gt.0,estimated_salary.gt.0')
-        .not('pk_log_url', 'like', '%_scheduled')
+        // Include scheduled rows (pk_log_url ending in '_scheduled') — they
+        // carry estimated_salary for shifts that haven't been logged yet,
+        // which is how today's projected staff cost shows up before shifts
+        // finish. Dedup against logged rows in-memory below so a shift that
+        // moves from scheduled → logged later in the day doesn't double-count.
+        // Pre-2026-05-08 the aggregator hard-filtered scheduled rows, so
+        // today's daily_metrics.staff_cost stayed 0 all day until shifts
+        // closed in PK.
         .order('shift_date', { ascending: true })
         .range(lo, hi)
     ),
@@ -327,9 +334,25 @@ export async function aggregateMetrics(
     dailyRev[d].takeaway     += toNum(r.takeaway_revenue)
   }
 
+  // Dedupe: if a (staff, date) has BOTH a logged row and a scheduled row,
+  // keep the logged one. PK promotes scheduled → logged when a shift
+  // closes; until then, the scheduled row is the only source of cost data
+  // for that staff/date. Without this dedupe, a shift that flips during
+  // the day would double-count the second time the aggregator runs.
+  const isScheduled = (s: any) => typeof s.pk_log_url === 'string' && s.pk_log_url.endsWith('_scheduled')
+  const hasLogged   = new Set<string>()
+  for (const s of staffLogs) {
+    if (!isScheduled(s) && s.pk_staff_url && s.shift_date) {
+      hasLogged.add(`${s.pk_staff_url}::${s.shift_date}`)
+    }
+  }
+
   // Aggregate staff cost by date
   const dailyStaff: Record<string, any> = {}
   for (const s of staffLogs) {
+    if (isScheduled(s) && s.pk_staff_url && hasLogged.has(`${s.pk_staff_url}::${s.shift_date}`)) {
+      continue  // logged sibling exists — skip the scheduled twin
+    }
     const d = s.shift_date
     if (!dailyStaff[d]) dailyStaff[d] = { cost: 0, hours: 0, shifts: 0, late: 0, ob: 0 }
     const cost = Number(s.cost_actual ?? 0) > 0 ? Number(s.cost_actual) : Number(s.estimated_salary ?? 0)
@@ -714,11 +737,16 @@ export async function aggregateMetrics(
   }
 
   // ── 4. Build dept_metrics ─────────────────────────────────────────────────
-  // Group staff by department + month
+  // Group staff by department + month. Same scheduled/logged dedupe as the
+  // daily aggregation above — drop a scheduled row when its logged sibling
+  // exists for the same (staff, date).
   const deptAcc: Record<string, any> = {}
   for (const s of staffLogs) {
     const dept = s.staff_group
     if (!dept) continue
+    if (isScheduled(s) && s.pk_staff_url && hasLogged.has(`${s.pk_staff_url}::${s.shift_date}`)) {
+      continue
+    }
     const y = parseInt(s.shift_date.slice(0, 4))
     const m = parseInt(s.shift_date.slice(5, 7))
     const key = `${dept}|${y}-${m}`
