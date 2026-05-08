@@ -802,24 +802,10 @@ function DashboardInner() {
               fmtKr={fmtKr}
               fmtPct={fmtPct}
               holidayDates={holidayDateSet}
-              anomalyCallout={(() => {
-                // Pass the top-severity alert ONLY when its surfaced
-                // date falls inside the visible day range; otherwise the
-                // chart wouldn't have anywhere to anchor it.
-                const topAlert = (alerts ?? []).find((a: any) =>
-                  a.severity === 'high' || a.severity === 'critical')
-                if (!topAlert) return null
-                const dateField = topAlert.detected_at ?? topAlert.created_at ?? topAlert.surfaced_at
-                if (!dateField) return null
-                const date = String(dateField).slice(0, 10)
-                const visibleDays = viewMode === 'week' ? weekDays : monthDays
-                if (!visibleDays.find((d: any) => d.date === date)) return null
-                return {
-                  date,
-                  title:       String(topAlert.title ?? ''),
-                  description: topAlert.description ?? null,
-                }
-              })()}
+              /* v8 cleaner-chart: no inline anomaly callout. The page-
+                 header pill (DashboardHeader above) is the single alert
+                 surface; the chart stays clean for revenue / labour
+                 reading. */
             />
 
             {/* Two chart footer notes — honesty about how to read the chart.

@@ -6,7 +6,7 @@
 
 ## What this is
 
-We're redesigning `/dashboard` — the main post-login overview. The mockup at `prompts/dashboard-v7-investigation-aligned.html` shows the target. Open it in a browser before starting.
+We're redesigning `/dashboard` — the main post-login overview. The mockup at `prompts/dashboard-v8-cleaner-chart.html` shows the target. Open it in a browser before starting.
 
 The redesign:
 - Replaces the current yellow alert banner with a small pulsing pill in the page header
@@ -86,11 +86,10 @@ The mockup at `prompts/dashboard-v7-investigation-aligned.html` is the visual ta
 | `40 414 kr` labour margin | hardcoded | `Math.max(0, totalRev - totalLabour)` (NOT net margin) |
 | `+9pp YoY` margin delta | hardcoded | derived from comparable period last year, if available; if not, use prev-period delta and label accordingly |
 | `285` covers | hardcoded | `summary.total_covers` from `/api/metrics/daily` (already in response, just newly consumed) |
-| `OB supplement spike +78% — Vero Italiano` | hardcoded | `alert.title` from the highest-severity active alert; falls back to "no anomalies" pill if none |
-| `Vero Italiano · May 8 · check overtime` (chart callout subtitle) | hardcoded | `alert.description` (Haiku-rewritten in production) |
+| `OB supplement spike +78% — Vero Italiano` | hardcoded | `alert.title` from the highest-severity active alert (header pill only — NOT the chart); falls back to hidden pill if no high/critical alerts |
 | Daily revenue/labour bars | hardcoded shapes | `dailyRows[i].revenue` and `dailyRows[i].staff_cost` |
-| `32%`, `38%`, `42%` above-bar labour % | hardcoded | `dailyRows[i].labour_pct` (already in chart data) |
 | Bar tier colors (green/amber/red) | hardcoded | computed from `dailyRows[i].labour_pct` vs `targetPct` |
+| Tooltip labour % (on hover) | n/a | `dailyRows[i].labour_pct` — surfaced via existing `ChartTooltip` sub-component, NOT as always-visible above-bar text |
 | AI forecast line points | hardcoded | `aiSched.suggested[].est_revenue` |
 | Predicted soft-fill bars (Sat/Sun) | hardcoded | `aiSched.suggested[].est_revenue` and `effectiveAiCost(d)` |
 | `~ 28 900 kr` Wednesday holiday baseline | hardcoded | `predicted_revenue` from `/api/weather/demand-forecast` for that holiday day; the model returns `baseline_revenue` (not bucket-lifted) for holidays per `lib/weather/demand.ts` |
@@ -99,7 +98,7 @@ The mockup at `prompts/dashboard-v7-investigation-aligned.html` is the visual ta
 | `+12% vs typical week` | hardcoded | derived from baseline; if not available, omit |
 | `−20.5h cut available` (Saturday flag) | hardcoded | from `aiSched.suggested[i].delta_hours` for that day; only show when negative |
 
-Anything in the mockup that's purely visual (gradient under AI line, rounded bar corners, "TODAY" pill, soft anomaly callout treatment, two footer notes, label-above-value layout, dimensional rhythm of the row) is the design target. Implement faithfully.
+Anything in the mockup that's purely visual (gradient under AI line, rounded bar corners, "TODAY" pill, two footer notes, label-above-value layout, dimensional rhythm of the row) is the design target. Implement faithfully — except the inline chart anomaly callout, which is explicitly excluded (see Hard Constraints and §3 Chart visual modernization).
 
 ---
 
@@ -129,9 +128,9 @@ Modify `components/dashboard/OverviewChart.tsx`:
 - Replace the 45° striped predicted-bar pattern with a soft solid fill (the underlying logic — which days are "predicted" — stays the same)
 - Add an area gradient under the AI forecast line (subtle, fading 14% to 0%)
 - Add the "TODAY" vertical line spanning chart height with a small "TODAY" pill at the top
-- Refine the anomaly callout to soft inline annotation (no red rectangle, no white-on-red text)
-- Apply per-day color-tier on labour bars based on `staff_pct` vs `targetPct`
-- Add small above-bar labour percentage annotations
+- **Do NOT add an inline anomaly callout on the chart.** The page-header anomaly pill is the alert surface. Inline callouts on the chart compete with the data and create visual mess. Anomaly information stays in the header pill (with click-through to `/alerts`) and out of the chart proper.
+- Apply per-day color-tier on labour bars based on `staff_pct` vs `targetPct`. The bar fill color IS the signal — green = at/under target, amber = within ~5pp of target, red = over target by 5pp+.
+- **Do NOT add above-bar labour percentage annotations.** The bar color tier already communicates the labour ratio. Showing the exact number above each bar crowds the chart and competes with the AI forecast line and gross margin line. The exact percentage is available via hover tooltip (already implemented in the existing `ChartTooltip` sub-component) — extend the tooltip to show the labour % prominently, not the chart canvas.
 - Add weekday + date two-line x-axis labels (currently single weekday label only)
 - Y-axis labels right-aligned in their own implicit column, lighter weight
 - Compact legend with smaller swatches, lighter color, less prominent

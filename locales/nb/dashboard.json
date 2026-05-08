@@ -99,6 +99,9 @@
     "badgeClosed":  "STENGT",
     "badgePredicted":"PROGNOSE",
     "badgeAi":      "AI",
+    "tooltipLabourPct": "Bemanning %",
+    "tooltipVsTarget":  "{sign}{pp}pp mot {target}% mål",
+    "tooltipOnTarget":  "på mål",
     "strip": {
       "revenue":      "Inntekt",
       "labour":       "Bemanning",

@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CommandCenter — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f3f4f0; --bg-2: #e9eae5; --paper: #ffffff; --paper-soft: #fbfbf9;
+    --ink: #11140f; --ink-2: #2c2e28; --ink-3: #5e6058; --ink-4: #8d8f86; --ink-5: #b6b8af;
+    --line: #dcddd6; --line-2: #e8e8e2; --line-3: #f0f0eb;
+    --green: #0f7a3e; --green-2: #14965b; --green-bg: #e8f3ec; --green-line: #c5e3d2;
+    --amber: #c46a18; --amber-bg: #fbeede; --amber-line: #f0d29e;
+    --red: #b8412e; --red-bg: #fceeea; --red-line: #efc7c0;
+    --info: #3a6f9a; --info-bg: #ebf2f8; --info-line: #cfdce9;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+
+  .app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+
+  /* SIDEBAR */
+  .sidebar { background: var(--paper-soft); border-right: 1px solid var(--line); padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .sidebar-brand { padding: 4px 8px 18px; border-bottom: 1px solid var(--line-2); margin-bottom: 14px; }
+  .sidebar-brand-text { font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .sidebar-brand-text::after { content: ' ‹'; color: var(--ink-4); font-weight: 400; }
+  .sidebar-biz { background: var(--paper); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+  .sidebar-biz-name { font-size: 14px; font-weight: 600; }
+  .sidebar-biz svg { width: 12px; height: 12px; color: var(--ink-4); }
+  .sidebar-biz-id { font-size: 11px; color: var(--ink-4); padding: 2px 12px 0; margin-bottom: 12px; }
+  .sync-status { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 0 -12px 14px; border-bottom: 1px solid var(--line-2); border-top: 1px solid var(--line-2); font-size: 12px; color: var(--ink-3); }
+  .sync-status::before { content: ''; width: 7px; height: 7px; background: var(--green-2); border-radius: 50%; }
+  .sidebar-section { font-size: 10px; text-transform: uppercase; color: var(--ink-4); letter-spacing: 0.08em; padding: 0 8px; margin: 16px 0 4px; font-weight: 500; }
+  .sidebar ul { list-style: none; }
+  .sidebar li { padding: 8px 10px; font-size: 13px; color: var(--ink-2); border-radius: 5px; cursor: pointer; margin-bottom: 1px; display: flex; align-items: center; gap: 10px; font-weight: 500; }
+  .sidebar li:hover { background: var(--bg); }
+  .sidebar li.active { background: var(--ink); color: var(--paper); }
+  .sidebar li .ico { width: 14px; height: 14px; color: var(--ink-4); flex-shrink: 0; font-size: 12px; }
+  .sidebar li.active .ico { color: var(--paper); }
+  .sidebar li.alerts .badge { margin-left: auto; background: var(--red); color: var(--paper); font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 100px; }
+
+  .main { padding: 22px 32px 60px; max-width: 1400px; }
+
+  /* HEADER */
+  .header-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    gap: 18px;
+  }
+  .header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .breadcrumb { font-size: 12px; color: var(--ink-3); }
+  .page-title { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; }
+
+  /* anomaly pill (replaces full-width banner) */
+  .anomaly-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--red-bg);
+    border: 1px solid var(--red-line);
+    color: var(--red);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px 5px 8px;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .anomaly-pill:hover { background: #f9dfd9; }
+  .anomaly-pill::before {
+    content: '';
+    width: 8px; height: 8px;
+    background: var(--red);
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(184, 65, 46, 0.5);
+    animation: pulse 2.4s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(184, 65, 46, 0.5); }
+    70% { box-shadow: 0 0 0 7px rgba(184, 65, 46, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(184, 65, 46, 0); }
+  }
+  .anomaly-pill .arrow { font-weight: 400; opacity: 0.7; margin-left: 2px; }
+
+  .header-right {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .pill-toggle { display: inline-flex; background: var(--bg-2); border-radius: 100px; padding: 3px; }
+  .pill-toggle button { background: transparent; border: none; padding: 6px 14px; font-size: 12px; font-weight: 500; color: var(--ink-3); border-radius: 100px; cursor: pointer; font-family: var(--sans); }
+  .pill-toggle button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+  .btn-secondary { background: var(--paper); color: var(--ink-2); border: 1px solid var(--line); padding: 8px 14px; border-radius: 100px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: var(--sans); }
+
+  /* THE BIG GRAPH */
+  .graph-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 22px 28px 24px;
+    margin-bottom: 16px;
+  }
+  .graph-head {
+    margin-bottom: 18px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .graph-head-title-block {
+    margin-bottom: 16px;
+  }
+  .graph-head-bottom-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 48px;
+  }
+  .graph-title-block .graph-label {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .graph-title {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.25;
+    margin-bottom: 12px;
+  }
+  /* this-week strip in graph header — label above value for breathing room */
+  .week-strip {
+    display: flex;
+    gap: 36px;
+    align-items: flex-start;
+  }
+  .week-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  .week-stat .lbl {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    min-height: 14px;
+  }
+  .week-stat .num-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .week-stat .num {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .week-stat .num.bad { color: var(--red); }
+  .week-stat .num.good { color: var(--green); }
+  .week-stat .num.amber { color: var(--amber); }
+  .week-stat .delta {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+  .week-stat .delta.bad { background: var(--red-bg); color: var(--red); }
+  .week-stat .delta.good { background: var(--green-bg); color: var(--green); }
+  .graph-controls {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    flex-shrink: 0;
+  }
+  .graph-control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+  .graph-controls .lbl-prefix {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    min-height: 14px;
+  }
+
+  /* SVG */
+  .graph-svg-wrap { width: 100%; height: 340px; }
+  .graph-svg-wrap svg { width: 100%; height: 100%; }
+  .graph-legend {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: var(--ink-4);
+    padding-top: 14px;
+    margin-top: 2px;
+    border-top: 1px solid var(--line-3);
+  }
+  .legend-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .legend-line {
+    display: inline-block;
+    width: 14px;
+    height: 2px;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+
+  /* PILLAR ROW — staff + overhead */
+  .pillar-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  .pillar-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 0;
+    overflow: hidden;
+  }
+  .pillar-card.green-stripe { border-left: 4px solid var(--green); }
+  .pillar-card.amber-stripe { border-left: 4px solid var(--amber); }
+
+  .pillar-head {
+    padding: 18px 24px 14px;
+    border-bottom: 1px solid var(--line-2);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .pillar-h-label {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .pillar-status {
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 100px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .pillar-status.green { background: var(--green-bg); color: var(--green); }
+  .pillar-status.amber { background: var(--amber-bg); color: var(--amber); }
+  .pillar-status.red { background: var(--red-bg); color: var(--red); }
+
+  .pillar-body { padding: 18px 24px 22px; }
+
+  /* before/after big number row */
+  .ba-row {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .ba-current {
+    font-size: 38px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .ba-current.bad { color: var(--red); }
+  .ba-current.amber { color: var(--amber); }
+  .ba-arrow {
+    font-size: 22px;
+    color: var(--ink-4);
+    font-weight: 300;
+  }
+  .ba-projected {
+    font-size: 38px;
+    font-weight: 700;
+    color: var(--green);
+    letter-spacing: -0.025em;
+    line-height: 1;
+  }
+  .ba-suffix {
+    font-size: 14px;
+    color: var(--ink-3);
+    font-weight: 500;
+  }
+
+  .pillar-context {
+    font-size: 13px;
+    color: var(--ink-3);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .pillar-context strong { color: var(--ink); font-weight: 700; }
+
+  /* mini stat row inside pillar */
+  .pillar-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line-2);
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .pillar-stat-cell {
+    background: var(--paper);
+    padding: 12px 14px;
+  }
+  .pillar-stat-label {
+    font-size: 10px;
+    color: var(--ink-4);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .pillar-stat-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .pillar-stat-value.good { color: var(--green); }
+  .pillar-stat-value.bad { color: var(--red); }
+
+  .pillar-cta {
+    background: var(--ink);
+    color: var(--paper);
+    border: none;
+    padding: 11px 22px;
+    border-radius: 100px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--sans);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+  }
+  .pillar-cta:hover { background: var(--ink-2); }
+  .pillar-cta.green-cta {
+    background: var(--green);
+  }
+  .pillar-cta.green-cta:hover {
+    background: var(--green-2);
+  }
+
+  /* DEMAND OUTLOOK — combined weather + holidays */
+  .outlook-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 22px 28px 24px;
+    margin-bottom: 16px;
+  }
+  .outlook-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .outlook-title-block .outlook-label {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .outlook-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    margin-bottom: 4px;
+  }
+  .outlook-title .green { color: var(--green); }
+  .outlook-title .amber { color: var(--amber); }
+  .outlook-sub {
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .outlook-summary {
+    text-align: right;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .outlook-summary .num { font-weight: 700; color: var(--ink); font-size: 16px; }
+  .outlook-summary .num.good { color: var(--green); }
+
+  .outlook-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+  }
+  .outlook-day {
+    background: var(--bg);
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    padding: 12px 8px 10px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    position: relative;
+  }
+  .outlook-day:hover { border-color: var(--ink-4); }
+  .outlook-day.today {
+    background: var(--paper);
+    border-color: var(--ink);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  }
+  .outlook-day.holiday {
+    background: var(--amber-bg);
+    border-color: var(--amber-line);
+  }
+  .outlook-day.peak {
+    background: var(--green-bg);
+    border-color: var(--green-line);
+  }
+  .outlook-day.dip {
+    background: var(--red-bg);
+    border-color: var(--red-line);
+  }
+
+  .od-name {
+    font-size: 10px;
+    color: var(--ink-4);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+  }
+  .od-date {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1;
+    margin: 3px 0 8px;
+  }
+  .od-weather {
+    font-size: 22px;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .od-temp {
+    font-size: 10px;
+    color: var(--ink-4);
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+  .od-rev {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .od-rev.good { color: var(--green); }
+  .od-rev.bad { color: var(--red); }
+  .od-rev-label {
+    font-size: 9px;
+    color: var(--ink-4);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+    margin-top: 2px;
+  }
+  .od-flags {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .od-flag {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .od-flag.holiday-f { color: var(--amber); }
+  .od-flag.cut-f { color: var(--green); }
+  .od-flag.peak-f { color: var(--green); }
+  .od-flag.weather-f { color: var(--info); }
+
+  .od-corner-flag {
+    position: absolute;
+    top: 6px; right: 6px;
+    width: 14px; height: 14px;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .od-corner-flag.holiday-corner { background: var(--amber); color: var(--paper); }
+
+  /* COMPACT ATTENTION FEED */
+  .attention-strip {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 22px;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+  }
+  .attention-h-inline {
+    font-size: 11px;
+    color: var(--ink-4);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    flex-shrink: 0;
+    padding-right: 18px;
+    border-right: 1px solid var(--line-2);
+  }
+  .attention-h-inline .count {
+    background: var(--ink);
+    color: var(--paper);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 100px;
+    margin-left: 4px;
+  }
+  .attention-items {
+    display: flex;
+    gap: 22px;
+    flex: 1;
+    overflow-x: auto;
+  }
+  .attention-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .attention-item:hover .attention-item-title { text-decoration: underline; }
+  .ai-icon {
+    width: 18px; height: 18px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .ai-icon.red { background: var(--red-bg); color: var(--red); }
+  .ai-icon.amber { background: var(--amber-bg); color: var(--amber); }
+  .ai-icon.green { background: var(--green-bg); color: var(--green); }
+  .ai-icon.info { background: var(--info-bg); color: var(--info); }
+  .attention-item-title {
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .attention-item-meta { color: var(--ink-4); }
+
+  @media (max-width: 1100px) {
+    .pillar-row { grid-template-columns: 1fr; }
+    .outlook-grid { grid-template-columns: repeat(4, 1fr); }
+    .graph-head-bottom-row { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .week-strip { flex-wrap: wrap; gap: 14px; }
+  }
+  @media (max-width: 880px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .main { padding: 18px 16px; }
+    .header-strip { flex-direction: column; align-items: flex-start; }
+    .outlook-grid { grid-template-columns: repeat(2, 1fr); }
+    .pillar-stats { grid-template-columns: 1fr; }
+    .ba-row { flex-wrap: wrap; }
+    .ba-current, .ba-projected { font-size: 30px; }
+    .attention-strip { flex-direction: column; align-items: flex-start; }
+    .attention-h-inline { border-right: none; border-bottom: 1px solid var(--line-2); padding-right: 0; padding-bottom: 12px; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-brand"><div class="sidebar-brand-text">command·center</div></div>
+    <div class="sidebar-biz">
+      <span class="sidebar-biz-name">Rosali Deli</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </div>
+    <div class="sidebar-biz-id">556764-8992</div>
+    <div class="sync-status">Synced 1m ago</div>
+    <ul>
+      <li class="active"><span class="ico">⊞</span>Overview</li>
+      <li><span class="ico">⌾</span>Group</li>
+    </ul>
+    <div class="sidebar-section">Financials</div>
+    <ul>
+      <li><span class="ico">↗</span>P&amp;L Tracker</li>
+      <li><span class="ico">⊟</span>Budget vs A...</li>
+      <li><span class="ico">⊿</span>Performance</li>
+      <li><span class="ico">↺</span>Forecast</li>
+      <li><span class="ico">⊠</span>Overheads</li>
+    </ul>
+    <div class="sidebar-section">Operations</div>
+    <ul>
+      <li><span class="ico">$</span>Revenue</li>
+      <li><span class="ico">◷</span>Staff</li>
+      <li><span class="ico">▦</span>Scheduling</li>
+      <li><span class="ico">▤</span>Departments</li>
+      <li><span class="ico">⊟</span>Invoices</li>
+      <li class="alerts"><span class="ico">⌃</span>Alerts <span class="badge">4</span></li>
+    </ul>
+    <div class="sidebar-section">&nbsp;</div>
+    <ul>
+      <li><span class="ico">⌗</span>Subscription</li>
+      <li><span class="ico">⌘</span>Settings</li>
+    </ul>
+  </aside>
+
+  <main class="main">
+
+    <!-- HEADER -->
+    <div class="header-strip">
+      <div class="header-left">
+        <div class="breadcrumb">Overview · Rosali Deli</div>
+        <h1 class="page-title">Dashboard</h1>
+      </div>
+      <a class="anomaly-pill">
+        OB supplement spike +78% — Vero Italiano
+        <span class="arrow">→</span>
+      </a>
+      <div class="header-right">
+        <div class="pill-toggle">
+          <button>Week</button>
+          <button class="active">Month</button>
+          <button>Quarter</button>
+        </div>
+        <button class="btn-secondary">Export</button>
+      </div>
+    </div>
+
+    <!-- THE BIG GRAPH -->
+    <div class="graph-card">
+      <div class="graph-head">
+        <div class="graph-head-title-block">
+          <div class="graph-label">Week 19 · 4–10 May · daily revenue, labour, AI forecast</div>
+          <h2 class="graph-title">Revenue tracking 13% below AI forecast this week.</h2>
+        </div>
+        <div class="graph-head-bottom-row">
+          <div class="week-strip">
+            <div class="week-stat">
+              <span class="lbl">Revenue</span>
+              <div class="num-row">
+                <span class="num bad">110 072 kr</span>
+                <span class="delta bad">−38.6%</span>
+              </div>
+            </div>
+            <div class="week-stat">
+              <span class="lbl">Labour</span>
+              <div class="num-row">
+                <span class="num bad">63.3%</span>
+                <span class="delta bad">+21pp</span>
+              </div>
+            </div>
+            <div class="week-stat">
+              <span class="lbl">Labour margin</span>
+              <div class="num-row">
+                <span class="num good">40 414 kr</span>
+                <span class="delta good">+9pp YoY</span>
+              </div>
+            </div>
+            <div class="week-stat">
+              <span class="lbl">Covers</span>
+              <div class="num-row">
+                <span class="num">285</span>
+              </div>
+            </div>
+          </div>
+          <div class="graph-controls">
+            <div class="graph-control-group">
+              <span class="lbl-prefix">View</span>
+              <div class="pill-toggle">
+                <button class="active">Week</button>
+                <button>Month</button>
+                <button>All days</button>
+              </div>
+            </div>
+            <div class="graph-control-group">
+              <span class="lbl-prefix">Compare</span>
+              <div class="pill-toggle">
+                <button>None</button>
+                <button>Prev wk</button>
+                <button class="active">AI</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="graph-svg-wrap">
+        <svg viewBox="0 0 900 360" preserveAspectRatio="none">
+          <defs>
+            <!-- AI forecast line gets a soft area gradient -->
+            <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#0f7a3e" stop-opacity="0.14"/>
+              <stop offset="100%" stop-color="#0f7a3e" stop-opacity="0"/>
+            </linearGradient>
+            <!-- soft drop shadow for the today line -->
+            <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="b"/>
+              <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+
+          <!-- horizontal-only gridlines, very faint -->
+          <line x1="40" y1="20" x2="870" y2="20" stroke="#e8e8e2" stroke-width="1"/>
+          <line x1="40" y1="80" x2="870" y2="80" stroke="#f0f0eb" stroke-width="1"/>
+          <line x1="40" y1="140" x2="870" y2="140" stroke="#f0f0eb" stroke-width="1"/>
+          <line x1="40" y1="200" x2="870" y2="200" stroke="#f0f0eb" stroke-width="1"/>
+          <!-- baseline (zero line) -->
+          <line x1="40" y1="245" x2="870" y2="245" stroke="#dcddd6" stroke-width="1.2"/>
+
+          <!-- y axis labels, lighter, in their own implicit column -->
+          <text x="34" y="23" font-family="Inter, sans-serif" font-size="10" fill="#b6b8af" text-anchor="end" font-weight="500">40k</text>
+          <text x="34" y="83" font-family="Inter, sans-serif" font-size="10" fill="#b6b8af" text-anchor="end" font-weight="500">30k</text>
+          <text x="34" y="143" font-family="Inter, sans-serif" font-size="10" fill="#b6b8af" text-anchor="end" font-weight="500">20k</text>
+          <text x="34" y="203" font-family="Inter, sans-serif" font-size="10" fill="#b6b8af" text-anchor="end" font-weight="500">10k</text>
+          <text x="34" y="248" font-family="Inter, sans-serif" font-size="10" fill="#b6b8af" text-anchor="end" font-weight="500">0</text>
+          <text x="34" y="273" font-family="Inter, sans-serif" font-size="10" fill="#b6b8af" text-anchor="end" font-weight="500">−10k</text>
+
+          <!-- soft area fade under AI forecast line -->
+          <path d="M71,35 L191,60 L311,45 L431,80 L551,20 L671,175 L791,185 L791,245 L71,245 Z"
+            fill="url(#forecastGrad)"/>
+
+          <!-- bars: revenue (dark, soft rounded) — actual days -->
+          <rect x="50" y="55" width="42" height="190" fill="#1a1d18" rx="5"/>
+          <rect x="170" y="85" width="42" height="160" fill="#1a1d18" rx="5"/>
+          <rect x="290" y="65" width="42" height="180" fill="#1a1d18" rx="5"/>
+          <rect x="410" y="105" width="42" height="140" fill="#1a1d18" rx="5"/>
+
+          <!-- predicted revenue: solid soft fill, no dashed stroke -->
+          <rect x="530" y="25" width="42" height="220" fill="#dde6ee" rx="5"/>
+          <rect x="650" y="165" width="42" height="80" fill="#dde6ee" rx="5"/>
+          <rect x="770" y="185" width="42" height="60" fill="#dde6ee" rx="5"/>
+
+          <!-- labour bars: actual days, color-coded by daily ratio -->
+          <!-- Mon · 32% · GOOD -->
+          <rect x="50" y="245" width="42" height="40" fill="#3d8a5a" rx="0" ry="0"/>
+          <rect x="50" y="281" width="42" height="4" fill="#3d8a5a" rx="2"/>
+          <!-- Tue · 38% · AMBER -->
+          <rect x="170" y="245" width="42" height="32" fill="#c98847" rx="0"/>
+          <rect x="170" y="273" width="42" height="4" fill="#c98847" rx="2"/>
+          <!-- Wed · 42% · AMBER -->
+          <rect x="290" y="245" width="42" height="34" fill="#c98847" rx="0"/>
+          <rect x="290" y="275" width="42" height="4" fill="#c98847" rx="2"/>
+          <!-- Thu · 30% · GOOD -->
+          <rect x="410" y="245" width="42" height="28" fill="#3d8a5a" rx="0"/>
+          <rect x="410" y="269" width="42" height="4" fill="#3d8a5a" rx="2"/>
+
+          <!-- predicted labour: soft tinted -->
+          <rect x="530" y="245" width="42" height="22" fill="#cae3d2" rx="0"/>
+          <rect x="530" y="263" width="42" height="4" fill="#cae3d2" rx="2"/>
+          <rect x="650" y="245" width="42" height="36" fill="#e8c5be" rx="0"/>
+          <rect x="650" y="277" width="42" height="4" fill="#e8c5be" rx="2"/>
+          <rect x="770" y="245" width="42" height="22" fill="#e8c5be" rx="0"/>
+          <rect x="770" y="263" width="42" height="4" fill="#e8c5be" rx="2"/>
+
+          <!-- today: vertical line spanning the chart -->
+          <line x1="551" y1="14" x2="551" y2="285" stroke="#11140f" stroke-width="1" stroke-dasharray="2,3" opacity="0.55"/>
+          <rect x="525" y="2" width="52" height="14" rx="3" fill="#11140f"/>
+          <text x="551" y="12" font-family="Inter, sans-serif" font-size="9" fill="#fff" text-anchor="middle" font-weight="700" letter-spacing="0.05em">TODAY</text>
+
+          <!-- AI forecast line — visual hero, thicker, primary -->
+          <polyline points="71,35 191,60 311,45 431,80 551,20 671,175 791,185"
+            fill="none" stroke="#0f7a3e" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+          <!-- forecast points: small filled dots, today gets a soft halo -->
+          <circle cx="71" cy="35" r="3.5" fill="#0f7a3e"/>
+          <circle cx="191" cy="60" r="3.5" fill="#0f7a3e"/>
+          <circle cx="311" cy="45" r="3.5" fill="#0f7a3e"/>
+          <circle cx="431" cy="80" r="3.5" fill="#0f7a3e"/>
+          <circle cx="551" cy="20" r="9" fill="#0f7a3e" opacity="0.18"/>
+          <circle cx="551" cy="20" r="4.5" fill="#0f7a3e" stroke="#fff" stroke-width="2"/>
+          <circle cx="671" cy="175" r="3.5" fill="#0f7a3e" opacity="0.55"/>
+          <circle cx="791" cy="185" r="3.5" fill="#0f7a3e" opacity="0.55"/>
+
+          <!-- gross margin line: recedes — thin, light, subtle -->
+          <polyline points="71,140 191,150 311,135 431,160 551,115 671,210 791,220"
+            fill="none" stroke="#8d8f86" stroke-width="1.2" stroke-dasharray="2,4" opacity="0.55" stroke-linejoin="round"/>
+
+          <!-- NO inline anomaly callout — the header pill is the alert surface, the chart stays clean -->
+
+          <!-- x axis: weekday + date, weekday colored by daily labour ratio · two lines only -->
+          <text x="71" y="305" font-family="Inter, sans-serif" font-size="11" fill="#3d8a5a" text-anchor="middle" font-weight="600">Mon</text>
+          <text x="71" y="320" font-family="Inter, sans-serif" font-size="10" fill="#8d8f86" text-anchor="middle">May 6</text>
+          <text x="191" y="305" font-family="Inter, sans-serif" font-size="11" fill="#c98847" text-anchor="middle" font-weight="600">Tue</text>
+          <text x="191" y="320" font-family="Inter, sans-serif" font-size="10" fill="#8d8f86" text-anchor="middle">May 7</text>
+          <text x="311" y="305" font-family="Inter, sans-serif" font-size="11" fill="#c98847" text-anchor="middle" font-weight="600">Wed</text>
+          <text x="311" y="320" font-family="Inter, sans-serif" font-size="10" fill="#8d8f86" text-anchor="middle">May 8</text>
+          <text x="431" y="305" font-family="Inter, sans-serif" font-size="11" fill="#3d8a5a" text-anchor="middle" font-weight="600">Thu</text>
+          <text x="431" y="320" font-family="Inter, sans-serif" font-size="10" fill="#8d8f86" text-anchor="middle">May 9</text>
+          <text x="551" y="305" font-family="Inter, sans-serif" font-size="11" fill="#11140f" text-anchor="middle" font-weight="700">Fri</text>
+          <text x="551" y="320" font-family="Inter, sans-serif" font-size="10" fill="#11140f" text-anchor="middle" font-weight="600">May 10</text>
+          <text x="671" y="305" font-family="Inter, sans-serif" font-size="11" fill="#b8412e" text-anchor="middle" font-weight="600">Sat</text>
+          <text x="671" y="320" font-family="Inter, sans-serif" font-size="10" fill="#8d8f86" text-anchor="middle">May 11</text>
+          <text x="791" y="305" font-family="Inter, sans-serif" font-size="11" fill="#b8412e" text-anchor="middle" font-weight="600">Sun</text>
+          <text x="791" y="320" font-family="Inter, sans-serif" font-size="10" fill="#8d8f86" text-anchor="middle">May 12</text>
+
+          <!-- labour ratio is communicated by bar color tier alone — the exact % is on hover tooltip -->
+        </svg>
+      </div>
+
+      <!-- chart footer notes — honesty about how to read the chart -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px;">
+        <div style="font-size: 11px; color: var(--ink-4); padding: 8px 12px; background: var(--bg); border-radius: 6px; line-height: 1.5;">
+          <strong style="color: var(--ink-3);">Day labour % is informational</strong> — the operator target is the week's average, not each day. A rainy Saturday will run hot; a sunny Friday will run cool.
+        </div>
+        <div style="font-size: 11px; color: var(--ink-4); padding: 8px 12px; background: var(--bg); border-radius: 6px; line-height: 1.5;">
+          <strong style="color: var(--ink-3);">Reading the bars:</strong> solid = actual, soft fill = AI forecast for upcoming days. Future days without a schedule yet show as faint.
+        </div>
+      </div>
+
+      <div class="graph-legend">
+        <span><span class="legend-swatch" style="background: #1a1d18;"></span>Revenue</span>
+        <span><span class="legend-swatch" style="background: #dde6ee;"></span>Predicted</span>
+        <span style="display: inline-flex; align-items: center; gap: 4px;">
+          <span>Labour ratio:</span>
+          <span class="legend-swatch" style="background: #3d8a5a;"></span><span>good</span>
+          <span class="legend-swatch" style="background: #c98847; margin-left: 2px;"></span><span>amber</span>
+          <span class="legend-swatch" style="background: #b8412e; margin-left: 2px;"></span><span>over</span>
+        </span>
+        <span><span class="legend-line" style="background: #0f7a3e;"></span>AI forecast</span>
+        <span><span class="legend-line" style="background: repeating-linear-gradient(90deg, #8d8f86 0, #8d8f86 2px, transparent 2px, transparent 6px);"></span>Margin</span>
+      </div>
+    </div>
+
+    <!-- TWO PILLARS — STAFF PROJECTION + OVERHEADS -->
+    <div class="pillar-row">
+
+      <!-- STAFF PROJECTION -->
+      <div class="pillar-card green-stripe">
+        <div class="pillar-head">
+          <span class="pillar-h-label">Next week · labour projection</span>
+          <span class="pillar-status green">Ready to apply</span>
+        </div>
+        <div class="pillar-body">
+          <div class="ba-row">
+            <span class="ba-current bad">45%</span>
+            <span class="ba-arrow">→</span>
+            <span class="ba-projected">39%</span>
+            <span class="ba-suffix">of revenue</span>
+          </div>
+          <p class="pillar-context">
+            Your current schedule projects to <strong>45% labour</strong>. AI cuts (rain-day Saturday + a Tuesday trim) bring the week to <strong>39%</strong>. Cuts only — never adds.
+          </p>
+          <div class="pillar-stats">
+            <div class="pillar-stat-cell">
+              <div class="pillar-stat-label">Saves</div>
+              <div class="pillar-stat-value good">13 085 kr</div>
+            </div>
+            <div class="pillar-stat-cell">
+              <div class="pillar-stat-label">Hours cut</div>
+              <div class="pillar-stat-value">−51.4h</div>
+            </div>
+            <div class="pillar-stat-cell">
+              <div class="pillar-stat-label">Days flagged</div>
+              <div class="pillar-stat-value">2 of 7</div>
+            </div>
+          </div>
+          <button class="pillar-cta green-cta">Open scheduling →</button>
+        </div>
+      </div>
+
+      <!-- OVERHEADS -->
+      <div class="pillar-card amber-stripe">
+        <div class="pillar-head">
+          <span class="pillar-h-label">Overheads review</span>
+          <span class="pillar-status amber">20 pending</span>
+        </div>
+        <div class="pillar-body">
+          <div class="ba-row">
+            <span class="ba-current amber">18%</span>
+            <span class="ba-arrow">→</span>
+            <span class="ba-projected">29%</span>
+            <span class="ba-suffix">net margin</span>
+          </div>
+          <p class="pillar-context">
+            Overheads run <strong>139 607 kr/mo</strong>. Cancelling 20 flagged items drops them to <strong>28 289 kr/mo</strong> and lifts net margin from 18% to 29%.
+          </p>
+          <div class="pillar-stats">
+            <div class="pillar-stat-cell">
+              <div class="pillar-stat-label">Saves</div>
+              <div class="pillar-stat-value good">111 318 kr/mo</div>
+            </div>
+            <div class="pillar-stat-cell">
+              <div class="pillar-stat-label">Reappeared</div>
+              <div class="pillar-stat-value">11 suppliers</div>
+            </div>
+            <div class="pillar-stat-cell">
+              <div class="pillar-stat-label">Price spikes</div>
+              <div class="pillar-stat-value bad">3</div>
+            </div>
+          </div>
+          <button class="pillar-cta">Review overheads →</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- DEMAND OUTLOOK — combined weather + holidays -->
+    <div class="outlook-card">
+      <div class="outlook-head">
+        <div class="outlook-title-block">
+          <div class="outlook-label">Demand outlook · next 7 days · weather × holidays × AI sales pattern</div>
+          <h2 class="outlook-title">Sunny Friday peak, <span class="amber">public holiday Wednesday</span>, rain dip Saturday.</h2>
+          <div class="outlook-sub">Forecasts use 12-mo history × SMHI weather × Swedish holidays. Confidence: high.</div>
+        </div>
+        <div class="outlook-summary">
+          <div>7-day forecast revenue</div>
+          <div class="num good">158 200 kr</div>
+          <div style="margin-top: 4px; color: var(--ink-4);">vs typical week · <span class="num good" style="font-size: 12px;">+12%</span></div>
+        </div>
+      </div>
+
+      <div class="outlook-grid">
+
+        <div class="outlook-day">
+          <div class="od-name">Mon</div>
+          <div class="od-date">11</div>
+          <div class="od-weather">⛅</div>
+          <div class="od-temp">10° / 16°</div>
+          <div class="od-rev">19 800 kr</div>
+          <div class="od-rev-label">forecast</div>
+        </div>
+
+        <div class="outlook-day">
+          <div class="od-name">Tue</div>
+          <div class="od-date">12</div>
+          <div class="od-weather">⛅</div>
+          <div class="od-temp">11° / 17°</div>
+          <div class="od-rev">21 400 kr</div>
+          <div class="od-rev-label">forecast</div>
+          <div class="od-flags">
+            <span class="od-flag cut-f">−2.5h cut available</span>
+          </div>
+        </div>
+
+        <div class="outlook-day holiday">
+          <div class="od-corner-flag holiday-corner">H</div>
+          <div class="od-name">Wed</div>
+          <div class="od-date">13</div>
+          <div class="od-weather">☀</div>
+          <div class="od-temp">14° / 19°</div>
+          <div class="od-rev">~ 28 900 kr</div>
+          <div class="od-rev-label">baseline est.</div>
+          <div class="od-flags">
+            <span class="od-flag holiday-f">Kr. himmelsfärds dag</span>
+          </div>
+        </div>
+
+        <div class="outlook-day">
+          <div class="od-name">Thu</div>
+          <div class="od-date">14</div>
+          <div class="od-weather">☀</div>
+          <div class="od-temp">15° / 20°</div>
+          <div class="od-rev">26 100 kr</div>
+          <div class="od-rev-label">forecast</div>
+        </div>
+
+        <div class="outlook-day peak today">
+          <div class="od-name">Fri</div>
+          <div class="od-date">15</div>
+          <div class="od-weather">☀</div>
+          <div class="od-temp">15° / 22°</div>
+          <div class="od-rev good">36 200 kr</div>
+          <div class="od-rev-label">peak</div>
+          <div class="od-flags">
+            <span class="od-flag peak-f">+24% vs avg Fri</span>
+          </div>
+        </div>
+
+        <div class="outlook-day dip">
+          <div class="od-name">Sat</div>
+          <div class="od-date">16</div>
+          <div class="od-weather">🌦</div>
+          <div class="od-temp">12° / 16°</div>
+          <div class="od-rev bad">14 800 kr</div>
+          <div class="od-rev-label">rain dip</div>
+          <div class="od-flags">
+            <span class="od-flag cut-f">−20.5h cut available</span>
+            <span class="od-flag weather-f">Heavy rain forecast</span>
+          </div>
+        </div>
+
+        <div class="outlook-day">
+          <div class="od-name">Sun</div>
+          <div class="od-date">17</div>
+          <div class="od-weather">⛅</div>
+          <div class="od-temp">8° / 15°</div>
+          <div class="od-rev">11 000 kr</div>
+          <div class="od-rev-label">forecast</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ATTENTION STRIP — compact, only if items exist -->
+    <div class="attention-strip">
+      <div class="attention-h-inline">
+        Needs your attention <span class="count">4</span>
+      </div>
+      <div class="attention-items">
+        <div class="attention-item">
+          <span class="ai-icon red">!</span>
+          <span class="attention-item-title">OB supplement +78%</span>
+          <span class="attention-item-meta">Vero Italiano · today</span>
+        </div>
+        <div class="attention-item">
+          <span class="ai-icon amber">⌖</span>
+          <span class="attention-item-title">Holiday Wed</span>
+          <span class="attention-item-meta">in 5 days</span>
+        </div>
+        <div class="attention-item">
+          <span class="ai-icon green">→</span>
+          <span class="attention-item-title">Saturday cut</span>
+          <span class="attention-item-meta">approve by Fri 18:00</span>
+        </div>
+        <div class="attention-item">
+          <span class="ai-icon info">i</span>
+          <span class="attention-item-title">3 invoice flags</span>
+          <span class="attention-item-meta">since Mon</span>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

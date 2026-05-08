@@ -99,6 +99,9 @@
     "badgeClosed":  "CLOSED",
     "badgePredicted":"PREDICTED",
     "badgeAi":      "AI",
+    "tooltipLabourPct": "Labour %",
+    "tooltipVsTarget":  "{sign}{pp}pp vs {target}% target",
+    "tooltipOnTarget":  "on target",
     "strip": {
       "revenue":      "Revenue",
       "labour":       "Labour",

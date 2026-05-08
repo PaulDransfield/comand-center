@@ -613,19 +613,18 @@ export default function OverviewChart({
             const tierInfo = labourTier(d.staff_pct, targetLabourPct)
             const labFill  = hasPredLab ? tierInfo.predFill : tierInfo.ink
 
-            // Cap-stripe at the bottom of the labour bar — the v7 mockup
-            // adds a slim accented bar under each labour bar so the value
-            // pops at a glance even when the bar is short.
             const labBottomY = yAt(-lab)
 
-            // Above-bar labour % annotation (shown when we have a pct AND
-            // the bar's tall enough to host a label without overlap).
-            const showLabPct = lab > 0 && d.staff_pct != null && Number.isFinite(d.staff_pct)
+            // v8 cleaner-chart: bar tier colour alone communicates the
+            // labour ratio. The exact percentage is exposed via the
+            // ChartTooltip on hover (see prominent labour_pct row), not
+            // as always-visible above-bar text — that crowded the chart
+            // and competed with the AI forecast line + gross margin line.
 
-            // v7 chart's modern rx — bigger rounded corners on the
-            // top edge of each bar. We can't apply rx only to top corners
-            // in plain SVG without a path, but rx=5 gives the visual
-            // effect we want at the top while the bottom is anchored.
+            // Modern rx — bigger rounded corners on the top edge of each
+            // bar. Plain SVG can't apply rx only to top corners without a
+            // path, but rx=5 gives the right visual effect at the top
+            // while the bottom is anchored.
             const r = 5
 
             return (
@@ -671,25 +670,6 @@ export default function OverviewChart({
                     fill={labFill}
                     opacity={hasPredLab ? 0.92 : 1}
                   />
-                )}
-
-                {/* Above-bar labour % annotation — sits just above the
-                    revenue bar (or at the zero line if no revenue) so it
-                    doesn't collide with the bar tops. v7-style colour
-                    matches the tier so the eye can pattern-match
-                    cool/warm rows immediately. */}
-                {showLabPct && (
-                  <text
-                    x={cx}
-                    y={Math.min(yAt(rev) - 5, zeroY - 5)}
-                    textAnchor="middle"
-                    fontSize={9}
-                    fontWeight={700}
-                    fill={tierInfo.ink}
-                    opacity={hasPredLab ? 0.65 : 1}
-                  >
-                    {Math.round(d.staff_pct as number)}%
-                  </text>
                 )}
 
                 {/* Forecast whiskers (compare mode prev/ai) */}
@@ -875,41 +855,11 @@ export default function OverviewChart({
             )
           })}
 
-          {/* Anomaly callout — v7 soft inline annotation. Renders only
-              when the parent passes anomalyCallout AND that date is in
-              view. Soft dot + thin connector + two-line label, no
-              red rectangle. */}
-          {(() => {
-            if (!anomalyCallout) return null
-            const i = days.findIndex(d => d.date === anomalyCallout.date)
-            if (i < 0) return null
-            const dot = { x: xAt(i), y: zeroY + 8 }
-            // Anchor the label to the right of the dot, but flip to the
-            // left when within 200px of the right edge so the text never
-            // overflows the plot area.
-            const goRight = dot.x < (VB_W - PAD_R) - 200
-            const lblX    = goRight ? dot.x + 50 : dot.x - 56
-            const lblAnchor: 'start' | 'end' = goRight ? 'start' : 'end'
-            const linkX2  = goRight ? lblX - 4 : lblX + 4
-            const linkY2  = zeroY - 30
-            const titleY  = linkY2 - 6
-            const subY    = titleY + 12
-            return (
-              <g style={{ pointerEvents: 'none' }}>
-                <circle cx={dot.x} cy={dot.y} r={6} fill="#fff" stroke={C.tierRed} strokeWidth={2} />
-                <circle cx={dot.x} cy={dot.y} r={2.5} fill={C.tierRed} />
-                <line x1={dot.x + (goRight ? 5 : -5)} y1={dot.y - 3} x2={linkX2} y2={linkY2} stroke={C.tierRed} strokeWidth={1} opacity={0.5} />
-                <text x={lblX} y={titleY} fontSize={11} fontWeight={700} fill={C.tierRed} textAnchor={lblAnchor}>
-                  {anomalyCallout.title}
-                </text>
-                {anomalyCallout.description && (
-                  <text x={lblX} y={subY} fontSize={10} fill={C.tierRed} fontWeight={500} opacity={0.7} textAnchor={lblAnchor}>
-                    {anomalyCallout.description.length > 60 ? anomalyCallout.description.slice(0, 58) + '…' : anomalyCallout.description}
-                  </text>
-                )}
-              </g>
-            )
-          })()}
+          {/* v8 cleaner-chart: NO inline anomaly callout. The page-header
+              pill is the alert surface — inline callouts here compete
+              with the data and create visual mess. The `anomalyCallout`
+              prop stays in the type definition for back-compat with any
+              caller that passes it, but is intentionally unused. */}
 
           {/* Y-axis title */}
           <text x={PAD_L - 44} y={PAD_T + PLOT_H / 2} transform={`rotate(-90 ${PAD_L - 44} ${PAD_T + PLOT_H / 2})`} fontSize={10} fill={C.axisInk}>kr</text>
@@ -925,6 +875,7 @@ export default function OverviewChart({
             compareLabel={compareLabelFor(compareMode, isWeek)}
             fmtKr={fmtKr}
             fmtPct={fmtPct}
+            targetLabourPct={targetLabourPct}
             anchorXPct={((days.findIndex(d => d.date === hoverDay.date) + 0.5) / Math.max(days.length, 1)) * 100}
           />
         )}
@@ -1161,7 +1112,7 @@ function LegendBar({ color, dashed, style }: { color: string; dashed?: boolean; 
   )
 }
 
-function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmtKr, fmtPct, anchorXPct }: any) {
+function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmtKr, fmtPct, targetLabourPct, anchorXPct }: any) {
   const t = useTranslations('dashboard.chart')
   const hasActual = day.revenue > 0
   const hasPred   = !hasActual && day.pred?.est_revenue > 0
@@ -1175,6 +1126,28 @@ function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmt
   const f = dayForecast(day, compareMode)
   const revF = f.rev, labF = f.lab
   const marF = revF != null && labF != null ? revF - labF : null
+
+  // v8: prominent labour-% row at the top. Use the persisted staff_pct
+  // on actual days; fall back to planned-ratio on predicted days. Tier
+  // colour matches the bar so hover signal aligns with the visual.
+  const target  = Number(targetLabourPct ?? 35)
+  const dayPct = (() => {
+    if (typeof day.staff_pct === 'number' && Number.isFinite(day.staff_pct)) return day.staff_pct
+    if (revActual > 0 && labActual > 0) return (labActual / revActual) * 100
+    return null
+  })()
+  const tierForTooltip = dayPct != null ? labourTier(dayPct, target) : null
+  // Tier ink colours are designed for white backgrounds; the tooltip
+  // is dark, so map to the light variants (greenGood / amberWarn /
+  // redBad already exposed in C).
+  const tierBgPalette = (tier: 'good' | 'amber' | 'red' | undefined): string => {
+    if (tier === 'good')  return C.goodGreen
+    if (tier === 'amber') return '#fcd34d'
+    if (tier === 'red')   return C.badRed
+    return C.ttMute as string
+  }
+  const tierColor = tierForTooltip ? tierBgPalette(tierForTooltip.tier) : (C.ttMute as string)
+  const ppDelta   = dayPct != null && Number.isFinite(target) ? Math.round(dayPct - target) : null
 
   // Horizontal clamp — tooltip width ~240, chart card inner width ~ viewport.
   // CSS-only clamp: translateX(-50%) with computed left %.
@@ -1218,6 +1191,36 @@ function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmt
             <span>· {Math.round(day.pred.weather.temp_min)}–{Math.round(day.pred.weather.temp_max)}°</span>
           )}
           {Number(day.pred.weather.precip_mm) > 0.5 && <span>· {day.pred.weather.precip_mm}mm</span>}
+        </div>
+      )}
+
+      {/* v8 prominent labour-% row — tier colour matches the bar; pp delta
+          tells the operator whether they're at, near, or over target. */}
+      {dayPct != null && (
+        <div style={{
+          background:    'rgba(255,255,255,0.08)',
+          borderLeft:    `3px solid ${tierColor}`,
+          borderRadius:  4,
+          padding:       '6px 10px',
+          marginBottom:  10,
+          display:       'flex',
+          alignItems:    'baseline',
+          justifyContent:'space-between',
+          gap:           8,
+        }}>
+          <span style={{ fontSize: 10, color: C.ttMute, letterSpacing: '.04em', textTransform: 'uppercase' as const, fontWeight: 600 }}>
+            {t('tooltipLabourPct')}
+          </span>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: tierColor, fontVariantNumeric: 'tabular-nums' as const }}>
+              {Math.round(dayPct)}%
+            </span>
+            {ppDelta != null && (
+              <span style={{ fontSize: 10, color: C.ttMute, fontWeight: 500 }}>
+                {ppDelta === 0 ? t('tooltipOnTarget') : t('tooltipVsTarget', { sign: ppDelta > 0 ? '+' : '', pp: ppDelta, target: Math.round(target) })}
+              </span>
+            )}
+          </span>
         </div>
       )}
 
