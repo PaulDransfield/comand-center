@@ -265,7 +265,17 @@ export default function OverheadReviewPage() {
         }
       />
 
-      <div style={{ padding: '0 24px 40px', maxWidth: 1500, margin: '0 auto' }}>
+      <div style={{
+        padding:   '0 24px 40px',
+        maxWidth:  1500,
+        margin:    '0 auto',
+        // Final-line-of-defence: clip any horizontal overflow rather than
+        // let it widen the page. Anything inside that wants to be wider
+        // than the viewport gets cut off — the page itself stays put.
+        width:     '100%',
+        overflowX: 'hidden',
+        boxSizing: 'border-box',
+      }}>
         {error && <Banner tone="bad" text={error} />}
         {tableMissing && <Banner tone="warn" text={t('tableMissingBanner')} />}
 
@@ -306,36 +316,46 @@ export default function OverheadReviewPage() {
         {!loading && !tableMissing && allGroups.length > 0 && (
           <div style={panesStyle(isMobile)}>
             {showListPane && (
-              <FlagListPane
-                groups={filteredGroups}
-                rawFlags={flags}
-                selectedKey={selectedKey}
-                onSelect={handleSelect}
-                search={search}
-                onSearch={setSearch}
-                flagTypeFilter={flagTypeFilter}
-                onFlagType={setFlagTypeFilter}
-                includeResolved={includeResolved}
-                onToggleResolved={() => setIncludeResolved(v => !v)}
-                totalGroupCount={allGroups.length}
-              />
+              <div style={isMobile
+                ? { width: '100%', minWidth: 0 }
+                : { width: 380, flex: '0 0 380px', minWidth: 0 }
+              }>
+                <FlagListPane
+                  groups={filteredGroups}
+                  rawFlags={flags}
+                  selectedKey={selectedKey}
+                  onSelect={handleSelect}
+                  search={search}
+                  onSearch={setSearch}
+                  flagTypeFilter={flagTypeFilter}
+                  onFlagType={setFlagTypeFilter}
+                  includeResolved={includeResolved}
+                  onToggleResolved={() => setIncludeResolved(v => !v)}
+                  totalGroupCount={allGroups.length}
+                />
+              </div>
             )}
 
             {showDetailPane && bizId && (
-              selectedGroup ? (
-                <FlagDetailPane
-                  group={selectedGroup}
-                  bizId={bizId}
-                  busy={deciding != null}
-                  onEssential={(id) => decide(id, 'essential')}
-                  onPlanCancel={(id, r) => decide(id, 'dismissed', r)}
-                  onDefer={(id) => decide(id, 'deferred')}
-                  onReexplain={reexplain}
-                  onBack={isMobile ? () => setMobileView('list') : undefined}
-                />
-              ) : (
-                <DetailEmpty />
-              )
+              <div style={isMobile
+                ? { width: '100%', minWidth: 0 }
+                : { flex: '1 1 0', minWidth: 0, overflow: 'hidden' }
+              }>
+                {selectedGroup ? (
+                  <FlagDetailPane
+                    group={selectedGroup}
+                    bizId={bizId}
+                    busy={deciding != null}
+                    onEssential={(id) => decide(id, 'essential')}
+                    onPlanCancel={(id, r) => decide(id, 'dismissed', r)}
+                    onDefer={(id) => decide(id, 'deferred')}
+                    onReexplain={reexplain}
+                    onBack={isMobile ? () => setMobileView('list') : undefined}
+                  />
+                ) : (
+                  <DetailEmpty />
+                )}
+              </div>
             )}
           </div>
         )}
@@ -383,18 +403,19 @@ function groupFlags(flags: Flag[]): FlagGroup[] {
 }
 
 function panesStyle(isMobile: boolean): React.CSSProperties {
-  // minmax(0, 1fr) for the right column — without it, intrinsic content
-  // width (the SVG chart, long invoice descriptions, AI explanation
-  // paragraphs) forces the grid track wider than the viewport instead of
-  // shrinking to fit. minWidth:0 on the container itself stops THIS grid
-  // from being widened by its parent's content-sizing pass.
+  // Flexbox instead of CSS Grid — the previous `minmax(0, 1fr)` track
+  // STILL let intrinsic-content widths bubble up under specific layouts
+  // and widened the list-pane visually between selections. Flex with
+  // explicit pixel widths on the pane wrappers (380px hard, flex:1 for
+  // the rest) is fully deterministic.
   return {
-    display:             'grid',
-    gridTemplateColumns: isMobile ? '1fr' : '380px minmax(0, 1fr)',
-    gap:                 14,
-    minHeight:           isMobile ? undefined : 600,
-    minWidth:            0,
-    width:               '100%',
+    display:        isMobile ? 'block' : 'flex',
+    flexDirection:  'row',
+    gap:            14,
+    minHeight:      isMobile ? undefined : 600,
+    minWidth:       0,
+    width:          '100%',
+    alignItems:     'stretch',
   }
 }
 

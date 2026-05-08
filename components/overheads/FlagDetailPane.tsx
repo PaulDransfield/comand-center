@@ -585,8 +585,10 @@ const paneStyle: React.CSSProperties = {
   flexDirection: 'column',
   // Without minWidth:0 the pane's intrinsic content min-width (long supplier
   // names, AI explanation paragraphs, invoice description text) bubbles up
-  // through the parent grid track and pushes the page wider on flag switch.
+  // through the parent flex track and pushes the page wider on flag switch.
   minWidth:      0,
+  width:         '100%',
+  height:        '100%',
 }
 
 const mobileBackStyle: React.CSSProperties = {
