@@ -2,7 +2,7 @@
 // @ts-nocheck
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
@@ -17,6 +17,8 @@ import { fmtKr, fmtPct, fmtHrs as fmtH } from '@/lib/format'
 // for one cycle in case rollback is needed; can be deleted in a
 // follow-up if the new layout sticks.
 import AiHoursReductionMap from '@/components/scheduling/AiHoursReductionMap'
+import WeekGridView        from '@/components/scheduling/WeekGridView'
+import { computeWeekStats } from '@/components/scheduling/computeWeekStats'
 
 // Local-date helpers matching departments/dashboard pages
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -91,6 +93,36 @@ export default function SchedulingPage() {
   const [aiLoading,    setAiLoading]    = useState(false)
   const [aiError,      setAiError]      = useState('')
   const [aiRange,      setAiRange]      = useState<'this_week'|'next_week'|'2w'|'4w'|'next_month'>('next_week')
+
+  // View toggle: "grid" = new three-row WeekGridView (default), "list" =
+  // existing AiHoursReductionMap. Persists per session so reload doesn't
+  // bounce the user back to grid mid-investigation.
+  // Named `gridView` to avoid collision with the existing `viewMode`
+  // (week/month) state used elsewhere on the page.
+  const [gridView,     setGridView]     = useState<'grid'|'list'>(() => {
+    if (typeof window === 'undefined') return 'grid'
+    try { return (sessionStorage.getItem('cc_scheduling_view') as any) === 'list' ? 'list' : 'grid' } catch { return 'grid' }
+  })
+  useEffect(() => {
+    try { sessionStorage.setItem('cc_scheduling_view', gridView) } catch {}
+  }, [gridView])
+
+  // target_staff_pct comes from businesses.target_staff_pct (DECIMAL, default
+  // 35-40 depending on read path). Default 30 if missing — matches the mockup
+  // and the conventional restaurant operating target.
+  const [targetPct,    setTargetPct]    = useState<number>(30)
+  useEffect(() => {
+    if (!selectedBiz) return
+    fetch('/api/businesses', { cache: 'no-store' })
+      .then(r => r.json())
+      .then((data: any[]) => {
+        if (!Array.isArray(data)) return
+        const biz = data.find(b => b.id === selectedBiz)
+        const tp  = Number(biz?.target_staff_pct)
+        if (Number.isFinite(tp) && tp > 0) setTargetPct(tp)
+      })
+      .catch(() => { /* keep default */ })
+  }, [selectedBiz])
 
   // (Observations + historical scorecard expanders were removed per
   // SCHEDULING-FIX §§ 3, 5 — hero + always-visible by-day grid cover
@@ -379,20 +411,51 @@ export default function SchedulingPage() {
                 works (triggered from inside the AI panel's day rows). */}
 
             {/* ═══════════════════════════════════════════════════════
-                AI-SUGGESTED SCHEDULE — now the first visual on the
-                page under TopBar + range picker.
+                AI-SUGGESTED SCHEDULE
+                Section label + range picker + headline + ready card +
+                info banner + view toggle, then the chosen view, then a
+                rationale + signals footer. Visual spec lives at
+                scheduling-page-v4.html.
             ═══════════════════════════════════════════════════════ */}
             <AiRangePicker value={aiRange} onChange={setAiRange} label={aiBounds.label} />
-            <AiHoursReductionMap
-              loading={aiLoading}
-              error={aiError}
+
+            <SchedulingHeader
               data={aiSched}
-              rangeLabel={aiBounds.label}
+              targetPct={targetPct}
               acceptances={acceptances}
+              rangeLabel={aiBounds.label}
+              viewMode={gridView}
+              onViewModeChange={setGridView}
               onAcceptAll={acceptAll}
-              fmt={fmtKr}
-              fmtHrs={fmtH}
+              t={t}
+              tCommon={tCommon}
             />
+
+            {gridView === 'grid' ? (
+              <WeekGridView
+                loading={aiLoading}
+                error={aiError}
+                data={aiSched}
+                rangeLabel={aiBounds.label}
+                acceptances={acceptances}
+                onAcceptDay={acceptDay}
+                fmt={fmtKr}
+                fmtHrs={fmtH}
+              />
+            ) : (
+              <AiHoursReductionMap
+                loading={aiLoading}
+                error={aiError}
+                data={aiSched}
+                rangeLabel={aiBounds.label}
+                acceptances={acceptances}
+                onAcceptAll={acceptAll}
+                fmt={fmtKr}
+                fmtHrs={fmtH}
+              />
+            )}
+
+            <SchedulingFooter targetPct={targetPct} t={t} />
 
             {/* ═══════════════════════════════════════════════════════
                 Observations — removed from the page.
@@ -631,3 +694,299 @@ function AiRangePicker({ value, onChange, label }: { value: string; onChange: (v
 
 // SchSegmentedToggle + schNavBtn removed along with the historical
 // period nav on 2026-04-23.
+
+// ────────────────────────────────────────────────────────────────────
+//   SchedulingHeader — page-level chrome above the toggleable view.
+//   Headline labour-% card, "ready to implement" CTA, info banner,
+//   day-header + legend, view toggle. All values computed from the
+//   /api/scheduling/ai-suggestion payload via computeWeekStats.
+// ────────────────────────────────────────────────────────────────────
+
+function SchedulingHeader({
+  data, targetPct, acceptances, rangeLabel, viewMode, onViewModeChange, onAcceptAll, t, tCommon,
+}: {
+  data:             any
+  targetPct:        number
+  acceptances:      Record<string, any>
+  rangeLabel:       string
+  viewMode:         'grid' | 'list'
+  onViewModeChange: (v: 'grid' | 'list') => void
+  onAcceptAll:      (rows: any[]) => Promise<void> | void
+  t:                (key: string, vars?: any) => string
+  tCommon:          (key: string, vars?: any) => string
+}) {
+  const stats = useMemo(() => {
+    if (!data?.current?.length) return null
+    return computeWeekStats({
+      current:     data.current,
+      suggested:   data.suggested ?? [],
+      summary:     data.summary  ?? { saving_kr: 0, current_hours: 0, suggested_hours: 0 },
+      acceptances,
+    })
+  }, [data, acceptances])
+
+  if (!stats) return null
+
+  const greenReady = stats.rows.filter(r => r.status === 'green' && !r.isAccepted)
+  const pctCur     = stats.weekLabourPctCurrent
+  const pctProj    = stats.weekLabourPctProjected
+  const aboveTarget = pctCur != null && pctCur > targetPct
+  const readyDayLabels = greenReady.map(r => {
+    const wd = r.weekday ?? new Date(r.date).toLocaleDateString('en-GB', { weekday: 'short' })
+    return `${wd} ${fmtSignedHrs(-r.deltaHours)}`
+  }).join(' · ')
+
+  return (
+    <>
+      <div style={{ fontSize: 11, color: '#8d8f86', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500, marginBottom: 12, marginTop: 8 }}>
+        {t('weekHeader.eyebrow', { range: rangeLabel })}
+      </div>
+
+      {/* Headline labour-% impact card */}
+      <div style={cardGreenStripe}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr auto auto auto', gap: 32, alignItems: 'center' }}>
+          <div>
+            <div style={metaLabel}>{t('weekHeader.headline.label')}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <span style={{ fontSize: 40, fontWeight: 700, color: aboveTarget ? '#b8412e' : '#11140f', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                {pctCur != null ? `${Math.round(pctCur)}%` : '—'}
+              </span>
+              <span style={{ fontSize: 22, color: '#8d8f86', fontWeight: 300 }}>→</span>
+              <span style={{ fontSize: 40, fontWeight: 700, color: '#0f7a3e', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                {pctProj != null ? `${Math.round(pctProj)}%` : '—'}
+              </span>
+              <span style={{ fontSize: 13, color: '#5e6058', fontWeight: 500, marginLeft: 6 }}>{t('weekHeader.headline.ofRevenue')}</span>
+            </div>
+            <div style={{ fontSize: 13, color: '#5e6058', marginTop: 8 }}>
+              {t('weekHeader.headline.statesLine', { count: greenReady.length })}
+            </div>
+          </div>
+          <Stat label={t('weekHeader.stat.saves')} value={fmtKr(stats.weekSavingsKr)} sub={t('weekHeader.stat.savesSub')} valueColor="#0f7a3e" />
+          <Stat label={t('weekHeader.stat.hoursCut')} value={fmtSignedHrs(stats.weekHoursCut)} sub={t('weekHeader.stat.hoursCutSub', { count: greenReady.length })} valueColor="#0f7a3e" />
+          <Stat
+            label={t('weekHeader.stat.days')}
+            value={t('weekHeader.stat.daysValue', { ready: stats.daysReadyCount, amber: stats.daysAmberCount })}
+            sub={t('weekHeader.stat.daysSub', { count: stats.daysUnchangedCount })}
+            valueColor="#11140f"
+          />
+        </div>
+      </div>
+
+      {/* Ready-to-implement card. Renders only when there ARE green ready
+          rows; otherwise hidden so we don't show an "Open PK" CTA on a
+          quiet week. */}
+      {greenReady.length > 0 && (
+        <div style={cardGreenStripe}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 24, alignItems: 'center' }}>
+            <div>
+              <div style={metaLabel}>{t('weekHeader.ready.label')}</div>
+              <div style={{ fontSize: 17, fontWeight: 700, color: '#11140f', marginBottom: 4, lineHeight: 1.3 }}>
+                {t('weekHeader.ready.headline', { count: greenReady.length })}{' · '}
+                <span style={{ color: '#0f7a3e', fontWeight: 700 }}>{t('weekHeader.ready.savePrefix', { amount: fmtKr(stats.weekSavingsKr) })}</span>
+              </div>
+              <div style={{ fontSize: 13, color: '#5e6058' }}>{readyDayLabels}</div>
+            </div>
+            <a
+              href="https://app.personalkollen.se/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={btnPrimaryLink}
+            >
+              {t('weekHeader.ready.openPk')} ↗
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Info banner — daily-vs-weekly framing */}
+      <div style={infoBanner}>
+        <div style={infoBannerIcon}>i</div>
+        <span>
+          <strong style={{ color: '#3a6f9a', fontWeight: 600 }}>{t('weekHeader.banner.strong')}</strong>{' '}
+          {t('weekHeader.banner.body')}
+        </span>
+      </div>
+
+      {/* Day-header + legend */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '20px 0 10px' }}>
+        <div style={{ fontSize: 11, color: '#8d8f86', textTransform: 'uppercase' as const, letterSpacing: '0.08em', fontWeight: 500 }}>
+          {t('weekHeader.dayHeaderTitle', { range: rangeLabel })}
+        </div>
+        <div style={{ display: 'flex', gap: 18, fontSize: 12, color: '#5e6058' }}>
+          <LegendDot color="#0f7a3e" label={t('weekHeader.legend.ready', { count: stats.daysReadyCount })} />
+          <LegendDot color="#c46a18" label={t('weekHeader.legend.amber', { count: stats.daysAmberCount })} />
+          <LegendDot color="#b6b8af" label={t('weekHeader.legend.unchanged', { count: stats.daysUnchangedCount })} />
+        </div>
+      </div>
+
+      {/* View toggle */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+        <ToggleButton active={viewMode === 'grid'} onClick={() => onViewModeChange('grid')}>
+          {t('weekHeader.toggle.grid')}
+        </ToggleButton>
+        <ToggleButton active={viewMode === 'list'} onClick={() => onViewModeChange('list')}>
+          {t('weekHeader.toggle.list')}
+        </ToggleButton>
+      </div>
+    </>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────
+//   SchedulingFooter — rationale + signals row, always at the bottom.
+// ────────────────────────────────────────────────────────────────────
+
+function SchedulingFooter({ targetPct, t }: {
+  targetPct: number
+  t:         (key: string, vars?: any) => string
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginTop: 18, marginBottom: 24 }}>
+      <div style={{ background: 'white', border: '1px solid #dcddd6', borderRadius: 10, padding: '20px 24px' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#11140f', marginBottom: 12 }}>{t('footer.rationale.title')}</h3>
+        <div style={{ fontSize: 13, lineHeight: 1.6, color: '#2c2e28' }}>
+          <p style={{ marginBottom: 12 }}>
+            <strong style={{ color: '#11140f' }}>{t('footer.rationale.p1Strong')}</strong>{' '}
+            {t('footer.rationale.p1Body')}
+          </p>
+          <p>
+            <strong style={{ color: '#11140f' }}>{t('footer.rationale.p2Strong')}</strong>{' '}
+            {t('footer.rationale.p2Body', { target: Math.round(targetPct) })}
+          </p>
+        </div>
+      </div>
+
+      <div style={{ background: 'white', border: '1px solid #dcddd6', borderRadius: 10, padding: '20px 24px' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#11140f', marginBottom: 12 }}>{t('footer.signals.title')}</h3>
+        {[
+          { name: t('footer.signals.historicalRevenue.name'), value: t('footer.signals.historicalRevenue.value') },
+          { name: t('footer.signals.weatherForecast.name'),   value: t('footer.signals.weatherForecast.value') },
+          { name: t('footer.signals.scheduleLive.name'),       value: t('footer.signals.scheduleLive.value') },
+          { name: t('footer.signals.paceBaseline.name'),       value: t('footer.signals.paceBaseline.value') },
+          { name: t('footer.signals.holidayGate.name'),        value: t('footer.signals.holidayGate.value') },
+        ].map(s => (
+          <div key={s.name} style={{ display: 'grid', gridTemplateColumns: '1fr auto', padding: '8px 0', borderBottom: '1px solid #f0f0eb', fontSize: 12 }}>
+            <span style={{ color: '#5e6058' }}>{s.name}</span>
+            <span style={{ color: '#11140f', fontWeight: 500 }}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Sub-components for the header ───────────────────────────────────
+
+function Stat({ label, value, sub, valueColor }: {
+  label: string; value: string; sub?: string; valueColor?: string
+}) {
+  return (
+    <div style={{ borderLeft: '1px solid #e8e8e2', paddingLeft: 26 }}>
+      <div style={metaLabel}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: valueColor ?? '#11140f', letterSpacing: '-0.015em', lineHeight: 1 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 12, color: '#5e6058', marginTop: 6 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function ToggleButton({ active, onClick, children }: {
+  active: boolean; onClick: () => void; children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background:    active ? '#11140f' : 'white',
+        color:         active ? '#fbfbf9' : '#2c2e28',
+        border:        '1px solid ' + (active ? '#11140f' : '#dcddd6'),
+        padding:       '8px 16px',
+        borderRadius:  100,
+        fontSize:      13,
+        fontWeight:    500,
+        cursor:        'pointer',
+        fontFamily:    'inherit',
+        transition:    'all 0.15s',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ── Style tokens used by this header (kept inline; tokens.ts equivalents
+//    don't fully cover the v4 mockup colour palette). ─────────────────────
+
+const cardGreenStripe: React.CSSProperties = {
+  background:   'white',
+  border:       '1px solid #dcddd6',
+  borderLeft:   '4px solid #0f7a3e',
+  borderRadius: 10,
+  padding:      '20px 24px',
+  marginBottom: 14,
+}
+
+const metaLabel: React.CSSProperties = {
+  fontSize:      11,
+  color:         '#8d8f86',
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase' as const,
+  fontWeight:    500,
+  marginBottom:  8,
+}
+
+const infoBanner: React.CSSProperties = {
+  background:   '#ebf2f8',
+  border:       '1px solid #cfdce9',
+  borderRadius: 8,
+  padding:      '12px 16px',
+  margin:       '20px 0 0',
+  display:      'flex',
+  alignItems:   'center',
+  gap:          12,
+  fontSize:     13,
+  color:        '#3a6f9a',
+}
+const infoBannerIcon: React.CSSProperties = {
+  width:        18,
+  height:       18,
+  background:   '#3a6f9a',
+  color:        '#fff',
+  borderRadius: '50%',
+  display:      'grid',
+  placeItems:   'center',
+  fontSize:     11,
+  fontWeight:   700,
+  flexShrink:   0,
+}
+const btnPrimaryLink: React.CSSProperties = {
+  background:     '#0f7a3e',
+  color:          '#fff',
+  border:         'none',
+  padding:        '12px 22px',
+  borderRadius:   100,
+  fontSize:       14,
+  fontWeight:     600,
+  cursor:         'pointer',
+  display:        'inline-flex',
+  alignItems:     'center',
+  gap:            8,
+  fontFamily:     'inherit',
+  textDecoration: 'none' as const,
+}
+
+function fmtSignedHrs(n: number): string {
+  if (!Number.isFinite(n) || Math.abs(n) < 0.05) return '0h'
+  const sign = n < 0 ? '−' : '+'
+  return `${sign}${Math.abs(n).toFixed(1)}h`
+}

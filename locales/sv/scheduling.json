@@ -103,6 +103,100 @@
     },
     "drillStub":       "Beslutsdetaljer för {date} — boknings-mot-mönster-vy kommer härnäst."
   },
+  "weekHeader": {
+    "eyebrow":       "AI-PROGNOS · {range}",
+    "headline": {
+      "label":       "Personalkostnadens påverkan",
+      "ofRevenue":   "av intäkter",
+      "statesLine":  "Nuvarande schema · {count, plural, one {efter att # klar dag tillämpats} other {efter att # klara dagar tillämpats}}"
+    },
+    "stat": {
+      "saves":        "Sparar",
+      "savesSub":     "jämfört med nu",
+      "hoursCut":     "Timmar tagna",
+      "hoursCutSub":  "{count, plural, one {över # dag} other {över # dagar}}",
+      "days":         "Dagar",
+      "daysValue":    "{ready} klara · {amber} bärnsten",
+      "daysSub":      "{count, plural, one {# oförändrad} other {# oförändrade}}"
+    },
+    "ready": {
+      "label":       "Redo att tillämpa",
+      "headline":    "Öppna Personalkollen och trimma {count, plural, one {# dag} other {# dagar}}",
+      "savePrefix":  "spara {amount}",
+      "openPk":      "Öppna Personalkollen"
+    },
+    "banner": {
+      "strong":  "Daglig % varierar — veckans mål är det som räknas.",
+      "body":    "En regnig måndag kommer att gå hett. En solig fredag kommer att gå kallt. Veckans genomsnitt är det vi optimerar mot. Daglig % visas som kontext, inte som mål."
+    },
+    "dayHeaderTitle": "Vecka-för-vecka · {range}",
+    "legend": {
+      "ready":     "{count, plural, one {# dag · redo att tillämpa} other {# dagar · redo att tillämpa}}",
+      "amber":     "{count, plural, one {# dag · ditt val} other {# dagar · ditt val}}",
+      "unchanged": "{count, plural, one {# oförändrad} other {# oförändrade}}"
+    },
+    "toggle": {
+      "grid": "Veckorutnät",
+      "list": "Dag-för-dag-lista"
+    }
+  },
+  "weekGrid": {
+    "loading":      "Laddar veckorutnätet…",
+    "emptyTitle":   "Inga PK-skift hittades för denna period",
+    "emptyBody":    "Antingen är schemat inte publicerat i Personalkollen ännu, eller så behöver integrationen återanslutas.",
+    "headSubtitle": "Klicka på en grön cell för att se varför · Tillämpa individuellt eller alla samtidigt",
+    "row": {
+      "forecast":     "Efterfrågan",
+      "forecastSub":  "12 mån + väder",
+      "scheduled":    "Du schemalade",
+      "scheduledSub": "Personalkollen",
+      "aiSuggests":   "AI föreslår",
+      "aiSuggestsSub":"Endast trimning"
+    },
+    "cell": {
+      "dayPct":     "Dag pct",
+      "applied":    "✓ Tillämpad",
+      "cutSave":    "{hrs} · spara {kr}",
+      "amber":      "Ditt val",
+      "closed":     "Stängt",
+      "onTarget":   "På mål",
+      "clickHint":  "Klicka för förklaringen"
+    },
+    "panel": {
+      "selected":     "vald",
+      "close":        "Stäng",
+      "weekImpact":   "Veckopåverkan",
+      "saves":        "Sparar",
+      "applyDay":     "Tillämpa för {day} →",
+      "applying":     "Tillämpar…",
+      "decline":      "Avvisa",
+      "headline":     "Trimma {hrs} från {day} — flyttar veckans personal-% från {pctCur} till {pctIfDay}.",
+      "compoundingTitle": "Veckopåverkan vid kumulativ tillämpning",
+      "compounding": {
+        "scheduled":     "Som schemalagd",
+        "ifDayApplied":  "Om endast {day} tillämpas",
+        "ifAllApplied":  "Om alla klara dagar tillämpas"
+      },
+      "deptTitle":    "Var ska trimmas · per avdelning"
+    }
+  },
+  "footer": {
+    "rationale": {
+      "title":     "Hur AI tänker om denna vecka",
+      "p1Strong":  "Endast nedskärningar — vi rekommenderar aldrig att lägga till timmar.",
+      "p1Body":    "Modellen kan flagga dagar där prognostiserad efterfrågan överstiger din täckning, men den föreslår inte att du lägger till personal. Det beslutet stannar hos dig.",
+      "p2Strong":  "Veckans genomsnitt är målet — inte varje enskild dag.",
+      "p2Body":    "En regnig måndag kommer alltid att ha en högre personal-% än en solig fredag eftersom intäkterna varierar mer än den fasta minsta bemanningen. Vi optimerar veckans genomsnittliga personal-% mot ditt {target}%-mål och behandlar varje dags siffra som informativ."
+    },
+    "signals": {
+      "title": "Signalkällor",
+      "historicalRevenue": { "name": "Historisk intäkt", "value": "12 mån · daglig" },
+      "weatherForecast":   { "name": "Väderprognos",      "value": "SMHI · 7 dagar" },
+      "scheduleLive":      { "name": "Schema (live)",     "value": "Personalkollen" },
+      "paceBaseline":      { "name": "Tempobaslinje",     "value": "P75 av 12 veckor" },
+      "holidayGate":       { "name": "Helgdagsfilter",    "value": "Sverige · 28d" }
+    }
+  },
   "drill": {
     "headerEyebrow":  "{day} i {period}",
     "loading":        "Laddar…",

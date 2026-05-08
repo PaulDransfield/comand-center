@@ -103,6 +103,100 @@
     },
     "drillStub":       "Beslutningsdetaljer for {date} — booking-mot-mønster-visning kommer snart."
   },
+  "weekHeader": {
+    "eyebrow":       "AI-PROGNOSE · {range}",
+    "headline": {
+      "label":       "Bemanningskostnadens påvirkning",
+      "ofRevenue":   "av inntekter",
+      "statesLine":  "Nåværende plan · {count, plural, one {etter at # klar dag er anvendt} other {etter at # klare dager er anvendt}}"
+    },
+    "stat": {
+      "saves":        "Sparer",
+      "savesSub":     "vs. nåværende",
+      "hoursCut":     "Timer kuttet",
+      "hoursCutSub":  "{count, plural, one {over # dag} other {over # dager}}",
+      "days":         "Dager",
+      "daysValue":    "{ready} klare · {amber} rav",
+      "daysSub":      "{count, plural, one {# uendret} other {# uendrede}}"
+    },
+    "ready": {
+      "label":       "Klar til å implementere",
+      "headline":    "Åpne Personalkollen og trim {count, plural, one {# dag} other {# dager}}",
+      "savePrefix":  "spar {amount}",
+      "openPk":      "Åpne Personalkollen"
+    },
+    "banner": {
+      "strong":  "Daglig % varierer — ukens mål er det som teller.",
+      "body":    "En regnfull mandag vil gå varmt. En solrik fredag vil gå kjølig. Ukens gjennomsnitt er det vi optimaliserer mot. Daglig % vises som kontekst, ikke som mål."
+    },
+    "dayHeaderTitle": "Uke-for-uke · {range}",
+    "legend": {
+      "ready":     "{count, plural, one {# dag · klar til å anvende} other {# dager · klare til å anvende}}",
+      "amber":     "{count, plural, one {# dag · ditt valg} other {# dager · ditt valg}}",
+      "unchanged": "{count, plural, one {# uendret} other {# uendrede}}"
+    },
+    "toggle": {
+      "grid": "Ukerutenett",
+      "list": "Dag-for-dag-liste"
+    }
+  },
+  "weekGrid": {
+    "loading":      "Laster ukerutenettet…",
+    "emptyTitle":   "Ingen PK-skift funnet for denne perioden",
+    "emptyBody":    "Enten er planen ikke publisert i Personalkollen ennå, eller så må integrasjonen kobles til på nytt.",
+    "headSubtitle": "Klikk på en grønn celle for å se hvorfor · Anvend individuelt eller alle på en gang",
+    "row": {
+      "forecast":     "Etterspørsel",
+      "forecastSub":  "12 mnd + vær",
+      "scheduled":    "Du planla",
+      "scheduledSub": "Personalkollen",
+      "aiSuggests":   "AI foreslår",
+      "aiSuggestsSub":"Bare trimming"
+    },
+    "cell": {
+      "dayPct":     "Dag pct",
+      "applied":    "✓ Anvendt",
+      "cutSave":    "{hrs} · spar {kr}",
+      "amber":      "Ditt valg",
+      "closed":     "Stengt",
+      "onTarget":   "På mål",
+      "clickHint":  "Klikk for forklaringen"
+    },
+    "panel": {
+      "selected":     "valgt",
+      "close":        "Lukk",
+      "weekImpact":   "Ukepåvirkning",
+      "saves":        "Sparer",
+      "applyDay":     "Anvend for {day} →",
+      "applying":     "Anvender…",
+      "decline":      "Avvis",
+      "headline":     "Trim {hrs} fra {day} — flytter ukens bemannings-% fra {pctCur} til {pctIfDay}.",
+      "compoundingTitle": "Ukepåvirkning ved kumulativ anvendelse",
+      "compounding": {
+        "scheduled":     "Som planlagt",
+        "ifDayApplied":  "Hvis bare {day} anvendes",
+        "ifAllApplied":  "Hvis alle klare dager anvendes"
+      },
+      "deptTitle":    "Hvor å trimme · per avdeling"
+    }
+  },
+  "footer": {
+    "rationale": {
+      "title":     "Hvordan AI tenker om denne uken",
+      "p1Strong":  "Bare kutt — vi anbefaler aldri å legge til timer.",
+      "p1Body":    "Modellen kan flagge dager der prognostisert etterspørsel overstiger din dekning, men den foreslår ikke at du legger til personell. Den avgjørelsen forblir hos deg.",
+      "p2Strong":  "Ukens gjennomsnitt er målet — ikke hver enkelt dag.",
+      "p2Body":    "En regnfull mandag vil alltid ha en høyere bemannings-% enn en solrik fredag fordi inntektene varierer mer enn den faste minimumsbemanningen. Vi optimaliserer ukens gjennomsnittlige bemannings-% mot ditt {target}%-mål og behandler hver dags tall som informativt."
+    },
+    "signals": {
+      "title": "Signalkilder",
+      "historicalRevenue": { "name": "Historisk inntekt", "value": "12 mnd · daglig" },
+      "weatherForecast":   { "name": "Værprognose",        "value": "SMHI · 7 dager" },
+      "scheduleLive":      { "name": "Plan (live)",         "value": "Personalkollen" },
+      "paceBaseline":      { "name": "Tempobasis",          "value": "P75 av 12 uker" },
+      "holidayGate":       { "name": "Helligdagsfilter",    "value": "Norge · 28d" }
+    }
+  },
   "drill": {
     "headerEyebrow":  "{day} i {period}",
     "loading":        "Laster…",

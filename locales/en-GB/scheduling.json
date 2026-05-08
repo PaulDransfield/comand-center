@@ -103,6 +103,100 @@
     },
     "drillStub":       "Decision drilldown for {date} — booking-vs-pattern view coming next."
   },
+  "weekHeader": {
+    "eyebrow":       "AI OUTLOOK · {range}",
+    "headline": {
+      "label":       "Labour ratio impact",
+      "ofRevenue":   "of revenue",
+      "statesLine":  "Current schedule · {count, plural, one {after applying # ready day} other {after applying # ready days}}"
+    },
+    "stat": {
+      "saves":        "Saves",
+      "savesSub":     "vs. current",
+      "hoursCut":     "Hours cut",
+      "hoursCutSub":  "{count, plural, one {across # day} other {across # days}}",
+      "days":         "Days",
+      "daysValue":    "{ready} ready · {amber} amber",
+      "daysSub":      "{count, plural, one {# unchanged} other {# unchanged}}"
+    },
+    "ready": {
+      "label":       "Ready to implement",
+      "headline":    "Open Personalkollen and trim {count, plural, one {# day} other {# days}}",
+      "savePrefix":  "save {amount}",
+      "openPk":      "Open Personalkollen"
+    },
+    "banner": {
+      "strong":  "Daily % varies — week target is what matters.",
+      "body":    "A rainy Monday will run hot. A sunny Friday will run cool. The week's average is what we optimise against. Daily % is shown for context, not as a goal."
+    },
+    "dayHeaderTitle": "Week-by-week · {range}",
+    "legend": {
+      "ready":     "{count, plural, one {# day · ready to apply} other {# days · ready to apply}}",
+      "amber":     "{count, plural, one {# day · needs your call} other {# days · needs your call}}",
+      "unchanged": "{count, plural, one {# unchanged} other {# unchanged}}"
+    },
+    "toggle": {
+      "grid": "Week grid",
+      "list": "Day-by-day list"
+    }
+  },
+  "weekGrid": {
+    "loading":      "Loading the week grid…",
+    "emptyTitle":   "No PK shifts found for this window",
+    "emptyBody":    "Either the schedule isn't published yet in Personalkollen, or the integration needs reconnecting.",
+    "headSubtitle": "Click a green cell to see why · Apply individually or all at once",
+    "row": {
+      "forecast":     "Demand forecast",
+      "forecastSub":  "12mo + weather",
+      "scheduled":    "You scheduled",
+      "scheduledSub": "Personalkollen",
+      "aiSuggests":   "AI suggests",
+      "aiSuggestsSub":"Trim only"
+    },
+    "cell": {
+      "dayPct":     "Day pct",
+      "applied":    "✓ Applied",
+      "cutSave":    "{hrs} · save {kr}",
+      "amber":      "Your call",
+      "closed":     "Closed",
+      "onTarget":   "On target",
+      "clickHint":  "Click for the reasoning"
+    },
+    "panel": {
+      "selected":     "selected",
+      "close":        "Close",
+      "weekImpact":   "Week impact",
+      "saves":        "Saves",
+      "applyDay":     "Apply for {day} →",
+      "applying":     "Applying…",
+      "decline":      "Decline",
+      "headline":     "Trim {hrs} from {day} — moves the week's labour % from {pctCur} to {pctIfDay}.",
+      "compoundingTitle": "Week impact compounding",
+      "compounding": {
+        "scheduled":     "As scheduled",
+        "ifDayApplied":  "If {day} only applied",
+        "ifAllApplied":  "If all ready days applied"
+      },
+      "deptTitle":    "Where to trim · by department"
+    }
+  },
+  "footer": {
+    "rationale": {
+      "title":     "How the AI thinks about this week",
+      "p1Strong":  "Cuts only — we never recommend adding hours.",
+      "p1Body":    "The model can flag days where forecasted demand exceeds your coverage, but it won't suggest you add staff. That decision stays with you.",
+      "p2Strong":  "The week's average is the target — not each day.",
+      "p2Body":    "A rainy Monday will always run a higher labour % than a sunny Friday because revenue varies more than fixed minimum staffing. We optimise the week's average labour % against your {target}% target, treating each day's number as informational."
+    },
+    "signals": {
+      "title": "Signal sources",
+      "historicalRevenue": { "name": "Historical revenue", "value": "12 mo · daily" },
+      "weatherForecast":   { "name": "Weather forecast",   "value": "SMHI · 7-day" },
+      "scheduleLive":      { "name": "Schedule (live)",     "value": "Personalkollen" },
+      "paceBaseline":      { "name": "Pace baseline",        "value": "P75 of 12 weeks" },
+      "holidayGate":       { "name": "Holiday gate",         "value": "Sweden · 28d" }
+    }
+  },
   "drill": {
     "headerEyebrow":  "{day}s in {period}",
     "loading":        "Loading…",
