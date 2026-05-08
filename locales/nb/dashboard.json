@@ -38,6 +38,17 @@
     "cutAvailable":     "−{hours}t kan kuttes"
   },
   "labour": {
+    "contextRich":        "Din nåværende vaktplan beregnes til <strong>{curr}% bemanning</strong>. AI-justeringer tar uken til <strong>{ai}%</strong>. Bare kutt — aldri tilføyer.",
+    "statusReady":        "Klar til å anvende",
+    "statusOnTarget":     "På mål",
+    "statusOver":         "Over mål",
+    "statSaves":          "Sparer",
+    "statHoursCut":       "Timer kuttet",
+    "statDaysFlagged":    "Flaggede dager",
+    "statActual":         "Faktisk",
+    "statTargetCost":     "Målkostnad",
+    "statSurplus":        "Overskudd",
+    "statMissed":         "Bommet",
     "predictiveEyebrow":  "NESTE UKE · BEMANNINGSPROGNOSE",
     "ofRevenue":          "av inntekter",
     "currentLine":        "Din nåværende vaktplan beregnes til {curr}% bemanningsandel. AI-justeringer tar den til {ai}%.",

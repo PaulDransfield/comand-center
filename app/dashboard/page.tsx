@@ -145,6 +145,155 @@ const schedCardCta: React.CSSProperties = {
   fontWeight:   500,
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Pillar card styles — shared between the labour scheduling card (inline)
+// and OverheadReviewCard (separate file imports its own copy). v8 redesign:
+// header strip with status pill, big 38px before/after, context paragraph,
+// 3-cell mini stat row, dark CTA button.
+// ─────────────────────────────────────────────────────────────────────────────
+function pillarCardLink(stripe: 'green' | 'amber' | 'navy'): React.CSSProperties {
+  const stripeColor =
+    stripe === 'amber' ? UX.amberInk :
+    stripe === 'navy'  ? UX.ink1     :
+                         UX.greenInk
+  return {
+    background:     UX.cardBg,
+    border:         `1px solid ${UX.border}`,
+    borderLeft:     `4px solid ${stripeColor}`,
+    borderRadius:   12,
+    padding:        0,
+    overflow:       'hidden' as const,
+    textDecoration: 'none',
+    color:          'inherit',
+    cursor:         'pointer',
+    transition:     'box-shadow 0.15s',
+    display:        'flex',
+    flexDirection:  'column' as const,
+    minWidth:       0,
+  }
+}
+const pillarHeadStyle: React.CSSProperties = {
+  padding:        '18px 24px 14px',
+  borderBottom:   `1px solid ${UX.borderSoft}`,
+  display:        'flex',
+  justifyContent: 'space-between',
+  alignItems:     'center',
+  gap:            8,
+}
+const pillarHLabelStyle: React.CSSProperties = {
+  fontSize:      11,
+  color:         UX.ink4,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase' as const,
+  fontWeight:    500,
+  whiteSpace:    'nowrap' as const,
+  overflow:      'hidden' as const,
+  textOverflow:  'ellipsis' as const,
+}
+const pillarStatusStyle: React.CSSProperties = {
+  fontSize:      10,
+  padding:       '3px 9px',
+  borderRadius:  999,
+  fontWeight:    600,
+  letterSpacing: '0.04em',
+  whiteSpace:    'nowrap' as const,
+}
+const pillarBodyStyle: React.CSSProperties = {
+  padding:       '18px 24px 22px',
+  flex:          1,
+  display:       'flex',
+  flexDirection: 'column' as const,
+}
+const baRowStyle: React.CSSProperties = {
+  display:    'flex',
+  alignItems: 'baseline',
+  gap:        16,
+  marginBottom: 8,
+  flexWrap:   'wrap' as const,
+}
+const baCurrentStyle: React.CSSProperties = {
+  fontSize:      38,
+  fontWeight:    700,
+  color:         UX.ink1,
+  letterSpacing: '-0.025em',
+  lineHeight:    1,
+}
+const baArrowStyle: React.CSSProperties = {
+  fontSize:   22,
+  color:      UX.ink4,
+  fontWeight: 300,
+}
+const baProjectedStyle: React.CSSProperties = {
+  fontSize:      38,
+  fontWeight:    700,
+  color:         UX.greenInk,
+  letterSpacing: '-0.025em',
+  lineHeight:    1,
+}
+const baSuffixStyle: React.CSSProperties = {
+  fontSize:   14,
+  color:      UX.ink3,
+  fontWeight: 500,
+}
+const pillarContextStyle: React.CSSProperties = {
+  fontSize:    13,
+  color:       UX.ink3,
+  lineHeight:  1.5,
+  margin:      '0 0 16px 0',
+}
+const pillarStrongStyle: React.CSSProperties = {
+  color:      UX.ink1,
+  fontWeight: 700,
+}
+const pillarStatsStyle: React.CSSProperties = {
+  display:             'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)',
+  gap:                 1,
+  background:          UX.borderSoft,
+  border:              `1px solid ${UX.borderSoft}`,
+  borderRadius:        8,
+  overflow:            'hidden' as const,
+  marginBottom:        18,
+}
+const pillarStatCellStyle: React.CSSProperties = {
+  background: UX.cardBg,
+  padding:    '12px 14px',
+  minWidth:   0,
+}
+const pillarStatLabelStyle: React.CSSProperties = {
+  fontSize:      10,
+  color:         UX.ink4,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase' as const,
+  fontWeight:    500,
+  marginBottom:  4,
+}
+const pillarStatValueStyle: React.CSSProperties = {
+  fontSize:      16,
+  fontWeight:    700,
+  color:         UX.ink1,
+  letterSpacing: '-0.01em',
+  whiteSpace:    'nowrap' as const,
+  overflow:      'hidden' as const,
+  textOverflow:  'ellipsis' as const,
+}
+const pillarCtaStyle: React.CSSProperties = {
+  background:   UX.ink1,
+  color:        'white',
+  border:       'none',
+  padding:      '11px 22px',
+  borderRadius: 999,
+  fontSize:     13,
+  fontWeight:   600,
+  cursor:       'pointer',
+  fontFamily:   'inherit',
+  display:      'inline-flex',
+  alignItems:   'center',
+  gap:          8,
+  alignSelf:    'flex-start',
+  marginTop:    'auto',
+}
+
 export default function DashboardPage() {
   return (
     <Suspense fallback={<DashboardLoadingFallback />}>
@@ -681,78 +830,127 @@ function DashboardInner() {
                     fmtPct={fmtPct}
                   />
 
-                  {hasPredictive && (
-                    <a
-                      href="/scheduling"
-                      style={schedCardLink}
-                      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)')}
-                      onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
-                    >
-                      <div>
-                        <div style={schedCardEyebrow}>{tDash('labour.predictiveEyebrow')}</div>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
-                          <span style={{ fontSize: 26, fontWeight: 500, color: UX.ink2, letterSpacing: '-0.02em' }}>
-                            {Math.round(curPct!)}%
+                  {hasPredictive && (() => {
+                    // Days flagged = days where AI proposes a cut
+                    // (delta_cost < 0). Total days in window for the
+                    // "N of M" context.
+                    const flaggedDays = sugg.filter((s: any) => Number(s.delta_cost ?? 0) < 0).length
+                    return (
+                      <a
+                        href="/scheduling"
+                        style={pillarCardLink('green')}
+                        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)')}
+                        onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
+                      >
+                        <div style={pillarHeadStyle}>
+                          <span style={pillarHLabelStyle}>{tDash('labour.predictiveEyebrow')}</span>
+                          <span style={{ ...pillarStatusStyle, background: UX.greenBg, color: UX.greenInk }}>
+                            {tDash('labour.statusReady')}
                           </span>
-                          <span style={{ fontSize: 18, color: UX.ink4 }}>→</span>
-                          <span style={{ fontSize: 26, fontWeight: 500, color: UX.greenInk, letterSpacing: '-0.02em' }}>
-                            {Math.round(aiPct!)}%
-                          </span>
-                          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>{tDash('labour.ofRevenue')}</span>
                         </div>
-                        <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
-                          {tDash('labour.currentLine', { curr: Math.round(curPct!), ai: Math.round(aiPct!) })}
+
+                        <div style={pillarBodyStyle}>
+                          <div style={baRowStyle}>
+                            <span style={{ ...baCurrentStyle, color: UX.amberInk }}>{Math.round(curPct!)}%</span>
+                            <span style={baArrowStyle}>→</span>
+                            <span style={baProjectedStyle}>{Math.round(aiPct!)}%</span>
+                            <span style={baSuffixStyle}>{tDash('labour.ofRevenue')}</span>
+                          </div>
+
+                          <p style={pillarContextStyle}>
+                            {tDash.rich('labour.contextRich', {
+                              curr:   Math.round(curPct!),
+                              ai:     Math.round(aiPct!),
+                              strong: (chunks: any) => <strong style={pillarStrongStyle}>{chunks}</strong>,
+                            })}
+                          </p>
+
+                          <div style={pillarStatsStyle}>
+                            <div style={pillarStatCellStyle}>
+                              <div style={pillarStatLabelStyle}>{tDash('labour.statSaves')}</div>
+                              <div style={{ ...pillarStatValueStyle, color: UX.greenInk }}>{fmtKr(aiSaving)}</div>
+                            </div>
+                            <div style={pillarStatCellStyle}>
+                              <div style={pillarStatLabelStyle}>{tDash('labour.statHoursCut')}</div>
+                              <div style={pillarStatValueStyle}>
+                                {aiCutH > 0.05 ? `−${(Math.round(aiCutH * 10) / 10).toFixed(1)}h` : '—'}
+                              </div>
+                            </div>
+                            <div style={pillarStatCellStyle}>
+                              <div style={pillarStatLabelStyle}>{tDash('labour.statDaysFlagged')}</div>
+                              <div style={pillarStatValueStyle}>
+                                {flaggedDays} of {sugg.length || 7}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button type="button" style={{ ...pillarCtaStyle, background: UX.greenInk }} onClick={(e) => e.preventDefault()}>
+                            {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
+                          </button>
                         </div>
-                        <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
-                          {tDash('labour.saves', { amount: fmtKr(aiSaving) })}
-                          {aiCutH > 0.5 && <span> · {tDash('labour.hoursCut', { hours: Math.round(aiCutH * 10) / 10 })}</span>}
-                        </div>
-                      </div>
-                      <div style={schedCardCta}>{tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span></div>
-                    </a>
-                  )}
+                      </a>
+                    )
+                  })()}
 
                   {hasRetrospective && (() => {
                     const periodLabel = viewMode === 'week'
                       ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) }).split(' · ')[0].toUpperCase()
                       : formatMonthLabel(currM).toUpperCase()
-                    const onTarget    = labourPct <= targetPct
-                    // Could-have-saved math: actual labour cost vs target labour cost.
-                    // target_cost = revenue × target%
-                    // missed = totalLabour - target_cost (positive = overspent vs target)
-                    const targetCost  = totalRev * (targetPct / 100)
-                    const couldSave   = Math.max(0, totalLabour - targetCost)
-                    const accent      = onTarget ? UX.greenInk : UX.amberInk
+                    const onTarget   = labourPct <= targetPct
+                    const targetCost = totalRev * (targetPct / 100)
+                    const couldSave  = Math.max(0, totalLabour - targetCost)
+                    const stripe: 'green' | 'amber' = onTarget ? 'green' : 'amber'
+                    const accent     = onTarget ? UX.greenInk : UX.amberInk
                     return (
                       <a
                         href="/scheduling"
-                        style={{ ...schedCardLink, borderLeft: `4px solid ${accent}` }}
-                        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)')}
+                        style={pillarCardLink(stripe)}
+                        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)')}
                         onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
                       >
-                        <div>
-                          <div style={schedCardEyebrow}>{tDash('labour.retroEyebrow', { period: periodLabel })}</div>
-                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
-                            <span style={{ fontSize: 26, fontWeight: 500, color: accent, letterSpacing: '-0.02em' }}>
-                              {Math.round(labourPct)}%
-                            </span>
-                            <span style={{ fontSize: 12, color: UX.ink3 }}>
-                              {tDash('labour.retroVsTarget', { target: Math.round(targetPct) })}
-                            </span>
+                        <div style={pillarHeadStyle}>
+                          <span style={pillarHLabelStyle}>{tDash('labour.retroEyebrow', { period: periodLabel })}</span>
+                          <span style={{
+                            ...pillarStatusStyle,
+                            background: onTarget ? UX.greenBg : UX.amberBg,
+                            color:      accent,
+                          }}>
+                            {onTarget ? tDash('labour.statusOnTarget') : tDash('labour.statusOver')}
+                          </span>
+                        </div>
+
+                        <div style={pillarBodyStyle}>
+                          <div style={baRowStyle}>
+                            <span style={{ ...baCurrentStyle, color: accent }}>{Math.round(labourPct)}%</span>
+                            <span style={baSuffixStyle}>{tDash('labour.retroVsTarget', { target: Math.round(targetPct) })}</span>
                           </div>
-                          <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
+
+                          <p style={pillarContextStyle}>
                             {onTarget
                               ? tDash('labour.retroOnTarget')
                               : tDash('labour.retroOver', { pp: Math.round(labourPct - targetPct) })}
+                          </p>
+
+                          <div style={pillarStatsStyle}>
+                            <div style={pillarStatCellStyle}>
+                              <div style={pillarStatLabelStyle}>{tDash('labour.statActual')}</div>
+                              <div style={pillarStatValueStyle}>{fmtKr(totalLabour)}</div>
+                            </div>
+                            <div style={pillarStatCellStyle}>
+                              <div style={pillarStatLabelStyle}>{tDash('labour.statTargetCost')}</div>
+                              <div style={pillarStatValueStyle}>{fmtKr(targetCost)}</div>
+                            </div>
+                            <div style={pillarStatCellStyle}>
+                              <div style={pillarStatLabelStyle}>{onTarget ? tDash('labour.statSurplus') : tDash('labour.statMissed')}</div>
+                              <div style={{ ...pillarStatValueStyle, color: onTarget ? UX.greenInk : UX.redInk }}>
+                                {onTarget ? '—' : fmtKr(couldSave)}
+                              </div>
+                            </div>
                           </div>
-                          <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
-                            {onTarget
-                              ? tDash('labour.retroNoMissed')
-                              : tDash('labour.retroCouldSave', { amount: fmtKr(couldSave) })}
-                          </div>
-                        </div>
-                        <div style={{ ...schedCardCta, color: accent }}>
-                          {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
+
+                          <button type="button" style={{ ...pillarCtaStyle, background: UX.ink1 }} onClick={(e) => e.preventDefault()}>
+                            {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
+                          </button>
                         </div>
                       </a>
                     )

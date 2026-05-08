@@ -38,6 +38,17 @@
     "cutAvailable":     "−{hours}h kan kapas"
   },
   "labour": {
+    "contextRich":        "Ditt nuvarande schema beräknas till <strong>{curr}% personal</strong>. AI-justeringar tar veckan till <strong>{ai}%</strong>. Bara nedskärningar — aldrig påslag.",
+    "statusReady":        "Klar att tillämpa",
+    "statusOnTarget":     "På mål",
+    "statusOver":         "Över mål",
+    "statSaves":          "Sparar",
+    "statHoursCut":       "Timmar kapade",
+    "statDaysFlagged":    "Flaggade dagar",
+    "statActual":         "Faktiskt",
+    "statTargetCost":     "Målkostnad",
+    "statSurplus":        "Överskott",
+    "statMissed":         "Missat",
     "predictiveEyebrow":  "NÄSTA VECKA · PERSONALPROGNOS",
     "ofRevenue":          "av intäkter",
     "currentLine":        "Ditt nuvarande schema beräknas till {curr}% personalandel. AI:s justeringar tar det till {ai}%.",

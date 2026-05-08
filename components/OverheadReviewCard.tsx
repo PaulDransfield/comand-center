@@ -1,8 +1,12 @@
 // components/OverheadReviewCard.tsx
 //
-// Dashboard hero-rail card mirroring the scheduling labour-savings card.
-// Shows current vs projected net margin, the kr savings, and a CTA to
-// /overheads/review.
+// Dashboard "Overheads review" pillar card. v8 redesign:
+//   - Amber-stripe left border
+//   - Header: label + amber "N pending" status pill
+//   - Big 38px before/after numbers (current margin → projected margin)
+//   - Context paragraph with strong emphasis on key kr values
+//   - 3-cell mini stat row (Saves / Pending / Current run-rate)
+//   - Dark CTA button: "Review overheads →"
 //
 // Conditional visibility (rendered by parent dashboard):
 //   - businessId selected
@@ -24,43 +28,7 @@ interface ProjectionData {
   period:    { year: number; month: number }
 }
 
-const MONTHS_SHORT = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-
-const cardLink: React.CSSProperties = {
-  display:        'flex',
-  flexDirection:  'column' as const,
-  justifyContent: 'space-between',
-  background:     UX.cardBg,
-  border:         `1px solid ${UX.border}`,
-  borderLeft:     `4px solid ${UX.greenInk}`,
-  borderRadius:   UX.r_lg,
-  padding:        '18px 20px',
-  textDecoration: 'none',
-  color:          'inherit',
-  cursor:         'pointer',
-  transition:     'box-shadow 0.15s',
-}
-
-const eyebrow: React.CSSProperties = {
-  fontSize:      10,
-  fontWeight:    500,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase' as const,
-  color:         UX.ink4,
-}
-
-const cta: React.CSSProperties = {
-  marginTop:    14,
-  display:      'inline-flex',
-  alignItems:   'center',
-  gap:          6,
-  color:        UX.greenInk,
-  fontSize:     13,
-  fontWeight:   500,
-}
-
 export function OverheadReviewCard({ data }: { data: ProjectionData }) {
-  const periodLabel = `${MONTHS_SHORT[data.period.month - 1]} ${data.period.year}`
   const currentMargin   = Math.round(data.current.margin_pct)
   const projectedMargin = Math.round(data.projected.margin_pct)
 
@@ -68,31 +36,209 @@ export function OverheadReviewCard({ data }: { data: ProjectionData }) {
     <a
       href="/overheads/review"
       style={cardLink}
-      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)')}
+      onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)')}
       onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
     >
-      <div>
-        <div style={eyebrow}>{periodLabel} · OVERHEADS REVIEW</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
-          <span style={{ fontSize: 26, fontWeight: 500, color: UX.ink2, letterSpacing: '-0.02em' }}>
-            {currentMargin}%
-          </span>
-          <span style={{ fontSize: 18, color: UX.ink4 }}>→</span>
-          <span style={{ fontSize: 26, fontWeight: 500, color: UX.greenInk, letterSpacing: '-0.02em' }}>
-            {projectedMargin}%
-          </span>
-          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>net margin</span>
-        </div>
-        <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
-          Your current overheads run <span style={{ color: UX.ink2, fontWeight: 500 }}>{fmtKr(data.current.overheads_sek)}</span>/mo. Cancelling{' '}
-          <span style={{ color: UX.ink2, fontWeight: 500 }}>{data.pending_count}</span> flagged item{data.pending_count === 1 ? '' : 's'} brings them to{' '}
-          <span style={{ color: UX.greenInk, fontWeight: 500 }}>{fmtKr(data.projected.overheads_sek)}</span>.
-        </div>
-        <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
-          Saves <span style={{ color: UX.greenInk, fontWeight: 500 }}>{fmtKr(data.savings.total_sek)}/mo</span> · {data.pending_count} flag{data.pending_count === 1 ? '' : 's'} pending
-        </div>
+      {/* Header — eyebrow on the left, status pill on the right */}
+      <div style={pillarHead}>
+        <span style={pillarHLabel}>Overheads review</span>
+        <span style={{ ...pillarStatus, background: UX.amberBg, color: UX.amberInk }}>
+          {data.pending_count} pending
+        </span>
       </div>
-      <div style={cta}>Review overheads <span aria-hidden style={{ fontSize: 14 }}>→</span></div>
+
+      <div style={pillarBody}>
+        {/* Big before/after numbers */}
+        <div style={baRow}>
+          <span style={{ ...baCurrent, color: UX.amberInk }}>{currentMargin}%</span>
+          <span style={baArrow}>→</span>
+          <span style={{ ...baProjected }}>{projectedMargin}%</span>
+          <span style={baSuffix}>net margin</span>
+        </div>
+
+        {/* Context — single paragraph, strong-emphasised numbers */}
+        <p style={pillarContext}>
+          Overheads run <strong style={pillarStrong}>{fmtKr(data.current.overheads_sek)}/mo</strong>.
+          Cancelling {data.pending_count} flagged item{data.pending_count === 1 ? '' : 's'} drops them
+          to <strong style={pillarStrong}>{fmtKr(data.projected.overheads_sek)}/mo</strong> and lifts
+          net margin from <strong style={pillarStrong}>{currentMargin}%</strong> to{' '}
+          <strong style={pillarStrong}>{projectedMargin}%</strong>.
+        </p>
+
+        {/* Mini stat row — 3 cells separated by hairlines */}
+        <div style={pillarStats}>
+          <div style={pillarStatCell}>
+            <div style={pillarStatLabel}>Saves</div>
+            <div style={{ ...pillarStatValue, color: UX.greenInk }}>{fmtKr(data.savings.total_sek)}/mo</div>
+          </div>
+          <div style={pillarStatCell}>
+            <div style={pillarStatLabel}>Pending</div>
+            <div style={pillarStatValue}>{data.pending_count} flag{data.pending_count === 1 ? '' : 's'}</div>
+          </div>
+          <div style={pillarStatCell}>
+            <div style={pillarStatLabel}>Current</div>
+            <div style={pillarStatValue}>{fmtKr(data.current.overheads_sek)}/mo</div>
+          </div>
+        </div>
+
+        <button type="button" style={pillarCta} onClick={(e) => { e.preventDefault() }}>
+          Review overheads <span aria-hidden style={{ fontSize: 14 }}>→</span>
+        </button>
+      </div>
     </a>
   )
+}
+
+// ─── styles ──────────────────────────────────────────────────────────────────
+
+const cardLink: React.CSSProperties = {
+  background:     UX.cardBg,
+  border:         `1px solid ${UX.border}`,
+  borderLeft:     `4px solid ${UX.amberInk}`,
+  borderRadius:   12,
+  padding:        0,
+  overflow:       'hidden' as const,
+  textDecoration: 'none',
+  color:          'inherit',
+  cursor:         'pointer',
+  transition:     'box-shadow 0.15s',
+  display:        'flex',
+  flexDirection:  'column' as const,
+  minWidth:       0,
+}
+
+const pillarHead: React.CSSProperties = {
+  padding:        '18px 24px 14px',
+  borderBottom:   `1px solid ${UX.borderSoft}`,
+  display:        'flex',
+  justifyContent: 'space-between',
+  alignItems:     'center',
+  gap:            8,
+}
+
+const pillarHLabel: React.CSSProperties = {
+  fontSize:      11,
+  color:         UX.ink4,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase' as const,
+  fontWeight:    500,
+  whiteSpace:    'nowrap' as const,
+}
+
+const pillarStatus: React.CSSProperties = {
+  fontSize:      10,
+  padding:       '3px 9px',
+  borderRadius:  999,
+  fontWeight:    600,
+  letterSpacing: '0.04em',
+  whiteSpace:    'nowrap' as const,
+}
+
+const pillarBody: React.CSSProperties = {
+  padding:    '18px 24px 22px',
+  flex:       1,
+  display:    'flex',
+  flexDirection: 'column' as const,
+}
+
+const baRow: React.CSSProperties = {
+  display:    'flex',
+  alignItems: 'baseline',
+  gap:        16,
+  marginBottom: 8,
+  flexWrap:   'wrap' as const,
+}
+
+const baCurrent: React.CSSProperties = {
+  fontSize:      38,
+  fontWeight:    700,
+  color:         UX.ink1,
+  letterSpacing: '-0.025em',
+  lineHeight:    1,
+}
+
+const baArrow: React.CSSProperties = {
+  fontSize:   22,
+  color:      UX.ink4,
+  fontWeight: 300,
+}
+
+const baProjected: React.CSSProperties = {
+  fontSize:      38,
+  fontWeight:    700,
+  color:         UX.greenInk,
+  letterSpacing: '-0.025em',
+  lineHeight:    1,
+}
+
+const baSuffix: React.CSSProperties = {
+  fontSize:   14,
+  color:      UX.ink3,
+  fontWeight: 500,
+}
+
+const pillarContext: React.CSSProperties = {
+  fontSize:    13,
+  color:       UX.ink3,
+  lineHeight:  1.5,
+  marginBottom: 16,
+  margin:      '0 0 16px 0',
+}
+
+const pillarStrong: React.CSSProperties = {
+  color:      UX.ink1,
+  fontWeight: 700,
+}
+
+const pillarStats: React.CSSProperties = {
+  display:             'grid',
+  gridTemplateColumns: 'repeat(3, 1fr)',
+  gap:                 1,
+  background:          UX.borderSoft,
+  border:              `1px solid ${UX.borderSoft}`,
+  borderRadius:        8,
+  overflow:            'hidden' as const,
+  marginBottom:        18,
+}
+
+const pillarStatCell: React.CSSProperties = {
+  background: UX.cardBg,
+  padding:    '12px 14px',
+  minWidth:   0,
+}
+
+const pillarStatLabel: React.CSSProperties = {
+  fontSize:      10,
+  color:         UX.ink4,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase' as const,
+  fontWeight:    500,
+  marginBottom:  4,
+}
+
+const pillarStatValue: React.CSSProperties = {
+  fontSize:      16,
+  fontWeight:    700,
+  color:         UX.ink1,
+  letterSpacing: '-0.01em',
+  whiteSpace:    'nowrap' as const,
+  overflow:      'hidden' as const,
+  textOverflow:  'ellipsis' as const,
+}
+
+const pillarCta: React.CSSProperties = {
+  background:   UX.ink1,
+  color:        'white',
+  border:       'none',
+  padding:      '11px 22px',
+  borderRadius: 999,
+  fontSize:     13,
+  fontWeight:   600,
+  cursor:       'pointer',
+  fontFamily:   'inherit',
+  display:      'inline-flex',
+  alignItems:   'center',
+  gap:          8,
+  alignSelf:    'flex-start',
+  marginTop:    'auto',
 }

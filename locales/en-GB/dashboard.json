@@ -38,18 +38,29 @@
     "cutAvailable":     "−{hours}h cut available"
   },
   "labour": {
-    "predictiveEyebrow":  "NEXT WEEK · LABOUR PROJECTION",
+    "predictiveEyebrow":  "Next week · labour projection",
     "ofRevenue":          "of revenue",
     "currentLine":        "Your current schedule projects to {curr}% labour. AI cuts bring it to {ai}%.",
+    "contextRich":        "Your current schedule projects to <strong>{curr}% labour</strong>. AI cuts bring the week to <strong>{ai}%</strong>. Cuts only — never adds.",
     "saves":              "Saves {amount}",
     "hoursCut":           "{hours}h cut",
     "openScheduling":     "Open scheduling",
-    "retroEyebrow":       "{period} · LABOUR vs TARGET",
+    "retroEyebrow":       "{period} · labour vs target",
     "retroVsTarget":      "vs {target}% target",
     "retroOnTarget":      "Labour was on target — well done.",
     "retroOver":          "Labour ran {pp}pp over target.",
     "retroNoMissed":      "No saving missed for this period.",
-    "retroCouldSave":     "Could have saved {amount} by hitting target."
+    "retroCouldSave":     "Could have saved {amount} by hitting target.",
+    "statusReady":        "Ready to apply",
+    "statusOnTarget":     "On target",
+    "statusOver":         "Over target",
+    "statSaves":          "Saves",
+    "statHoursCut":       "Hours cut",
+    "statDaysFlagged":    "Days flagged",
+    "statActual":         "Actual",
+    "statTargetCost":     "Target cost",
+    "statSurplus":        "Surplus",
+    "statMissed":         "Missed"
   },
   "hero": {
     "eyebrowWeek":   "THIS WEEK · {label}",
