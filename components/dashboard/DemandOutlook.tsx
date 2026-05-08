@@ -98,15 +98,13 @@ export default function DemandOutlook({ bizId, cutHoursByDate }: Props) {
     return () => { cancelled = true }
   }, [bizId])
 
-  if (!bizId) return null
-
-  // Hide entirely when there's no usable forecast — same behaviour as the
-  // legacy WeatherDemandWidget. No empty-state clutter.
-  if (!loading && (!data || data.days.length === 0)) return null
-
-  const days = data?.days ?? []
+  // ALL hooks must run unconditionally before any early-return. Past
+  // bug (2026-05-08, SupplierPriceChart): a useMemo placed after the
+  // loading/empty branches changed the hook count between renders and
+  // React threw "Rendered more hooks than during the previous render."
+  // Hoist BEFORE the conditional returns.
+  const days  = data?.days ?? []
   const today = new Date().toISOString().slice(0, 10)
-
   const totalForecast = useMemo(
     () => days.reduce((s, d) => s + Number(d.predicted_revenue ?? 0), 0),
     [days],
@@ -115,6 +113,13 @@ export default function DemandOutlook({ bizId, cutHoursByDate }: Props) {
     () => days.length ? days.reduce((s, d) => s + Number(d.baseline_revenue ?? 0), 0) : 0,
     [days],
   )
+
+  if (!bizId) return null
+
+  // Hide entirely when there's no usable forecast — same behaviour as the
+  // legacy WeatherDemandWidget. No empty-state clutter.
+  if (!loading && (!data || data.days.length === 0)) return null
+
   // "+X% vs typical week" — comparing forecast to baseline-summed week.
   // Both are 7-day windows so the comparison is apples-to-apples.
   const totalDelta = avgBaseline > 0 ? Math.round(((totalForecast - avgBaseline) / avgBaseline) * 100) : null
