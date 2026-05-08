@@ -92,7 +92,7 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
 
   return (
     <div style={wrapStyle}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 140, marginBottom: 12 }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', width: '100%', maxWidth: '100%', height: 140, marginBottom: 12 }}>
         {/* Grid */}
         <defs>
           <pattern id="cc-overheads-grid" width="50" height="35" patternUnits="userSpaceOnUse">
