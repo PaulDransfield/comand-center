@@ -6,6 +6,28 @@
 
 ## Pending — apply when ready
 
+### M052-M057 — Piece 0 of prediction system v3.1 ⏳ pending application
+**Files (in apply order — all idempotent):**
+1. `sql/M052-TRACKER-CREATED-VIA-BACKFILL.sql` — UPDATE-only; backfills the ~21 NULL `tracker_data.created_via` rows to `'manual_pre_m047'`. Run this first; it has no schema dependencies.
+2. `sql/M053-ANOMALY-CONFIRMATION-WORKFLOW.sql` — adds `confirmation_status`, `confirmed_at`, `confirmed_by`, `confirmation_notes` to `anomaly_alerts` + partial index. Defaults all existing rows to `'pending'`.
+3. `sql/M054-BUSINESS-CLUSTER-COLUMNS.sql` — adds `cuisine`, `location_segment`, `size_segment`, `kommun` to `businesses`. UPDATEs both Vero rows with manual values: Vero Italiano = (italian, city_center, medium, 0180); Rosali Deli = (deli, city_center, small, 0180).
+4. `sql/M055-BUSINESS-CLUSTER-MEMBERSHIP.sql` — new join table for many-to-many cluster mapping. DDL only; no data.
+5. `sql/M056-SCHOOL-HOLIDAYS.sql` — new table for kommun-level school holidays. DDL only; Skolverket scraper lands in Piece 3 batch 2.
+6. `sql/M057-BUSINESS-FEATURE-FLAGS.sql` — new per-business flag table parallel to existing `feature_flags`. Defaults `enabled=false`. RLS service-role-only writes, member-read.
+
+**Architecture context:** all six are Piece 0 of the prediction-system rebuild. v3.1 decision log at `PREDICTION-SYSTEM-ARCHITECTURE-2026-05-08-v3.md` Appendix Z. Companion code already merged in the same commit:
+- `app/api/admin/weather/backfill/route.ts` — accepts `start_date` query param for ≥3yr historical fetch
+- `app/api/cron/ai-accuracy-reconciler/route.ts` — also writes `forecast_calibration.accuracy_pct`/`bias_factor` (replacing the deprecated calibration cron)
+- `vercel.json` — `/api/cron/forecast-calibration` removed
+- `app/api/cron/forecast-calibration/route.ts` — deprecation header added; route file kept in tree
+
+**Run order:** safe to run all six in sequence in Supabase SQL Editor. Each is idempotent. After applying, hit `POST /api/admin/weather/backfill?secret=...&start_date=2023-05-01` once to populate ~3 years of `weather_daily` for both Vero businesses.
+
+**What still needs Piece 0 (deferred to next session):**
+- Stream D — `/api/alerts` PATCH `confirm`/`reject` actions + `/alerts` page UI buttons + OB step-change detector tuning + Vero anomaly triage call
+- Stream F.2 — `lib/featureFlags/prediction-v2.ts` wrapper querying `business_feature_flags`
+- Stream E — `docs/operations/vero-anomaly-triage-runbook.md`
+
 ### M051 — Overhead drilldown cache table ✅ applied 2026-05-07 (direct SQL)
 **File:** `sql/M051-OVERHEAD-DRILLDOWN-CACHE.sql`
 **Purpose:** five-minute cache for owner-facing drill-down on overhead-review flag cards. The new endpoint `/api/integrations/fortnox/drilldown` writes payloads here keyed by `(business_id, period_year, period_month, category)` so multiple supplier flags in the same category+month share one Fortnox fetch. Client filters to the requested supplier on render.

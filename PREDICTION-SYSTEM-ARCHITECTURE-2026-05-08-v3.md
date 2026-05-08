@@ -1695,3 +1695,35 @@ Implementation order: Piece 0 first. Don't deviate.
 Each implementation prompt should be reviewed before the next is written — what we learn building Piece 0 informs the schema details and code patterns for everything that follows.
 
 The accompanying Piece 0 implementation prompt is the next deliverable.
+
+---
+
+## Appendix Z — v3.1 decision log (2026-05-08)
+
+Piece 0 investigation surfaced four contradictions between v3 and the codebase. Halt-and-report at `PIECE-0-INVESTIGATION-HALT-2026-05-08.md`. User decision: go with the Claude-recommended path on each.
+
+| # | Issue | Decision | Implementation |
+|---|---|---|---|
+| 1 | M020 reconciler does NOT write `accuracy_pct`/`bias_factor` to `forecast_calibration` (spec assumed it did). Disabling the `forecast-calibration` cron would freeze those columns and stale the `lib/ai/contextBuilder.ts:483-485` reader feeding /api/ask. | **Move the writes.** Add `accuracy_pct`/`bias_factor` UPSERT to `app/api/cron/ai-accuracy-reconciler/route.ts` BEFORE disabling the legacy cron. Reconciler already aggregates the `actual_revenue`/`suggested_revenue` deltas it would need; one writer is cleaner than two. | Stream B is now "patch reconciler + disable cron," not just "disable cron." |
+| 2 | `feature_flags` is keyed `(org_id, flag)`, defaults ENABLED. v3 spec assumes per-business `(business_id, flag)` defaulting OFF — neither matches existing infrastructure. Vero org has TWO businesses (`0f948ac3…` Vero Italiano, `97187ef3…` Rosali Deli); an org-scoped flag flips both at once which defeats Section 11's "Vero Italiano gets anomaly UI ON at end of Week 3" intent. | **New `business_feature_flags` table** parallel to existing `feature_flags`. Same shape plus `business_id`; defaults OFF. Existing `feature_flags` + `is-agent-enabled.ts` stay unchanged for org-scoped agents. | Stream F.1 gains a new migration; Stream F.2 wrapper queries the new table. |
+| 3 | Vero org has TWO businesses; v3 spec implies single-row cluster pre-populate. | **Both businesses get rows** with distinct values: Vero Italiano = (italian, city_center, medium, 0180); Rosali Deli = (deli, city_center, small, 0180). Operator can correct during the triage call. | Stream F.1 cluster columns migration includes both UPDATE statements. |
+| 4 | v3 spec uses `migrations/MXXX_*.sql` paths — folder doesn't exist; archive/migrations is non-authoritative per CLAUDE.md. | **Use `sql/MXXX-*.sql`** with hyphenated names, matching existing convention (`sql/M048-VERIFICATION-TABLES.sql`, `sql/M051-OVERHEAD-DRILLDOWN-CACHE.sql`). Next free numbers M052+. | All Piece 0 migrations renumbered to M052-M057. |
+
+### v3.1 migration list (Piece 0)
+
+| File | Purpose |
+|---|---|
+| `sql/M052-TRACKER-CREATED-VIA-BACKFILL.sql` | One-line UPDATE: backfill the ~21 NULL `tracker_data.created_via` rows to `'manual_pre_m047'`. |
+| `sql/M053-ANOMALY-CONFIRMATION-WORKFLOW.sql` | ALTER `anomaly_alerts` to add `confirmation_status` / `confirmed_at` / `confirmed_by` / `confirmation_notes` + partial index on `confirmation_status='confirmed'`. |
+| `sql/M054-BUSINESS-CLUSTER-COLUMNS.sql` | ALTER `businesses` to add `cuisine` / `location_segment` / `size_segment` / `kommun` IF NOT EXISTS + UPDATEs for both Vero businesses. |
+| `sql/M055-BUSINESS-CLUSTER-MEMBERSHIP.sql` | New table `business_cluster_membership` with composite PK + lookup index. No RLS for v1; admin-only writes. |
+| `sql/M056-SCHOOL-HOLIDAYS.sql` | New table `school_holidays` with `(kommun, start_date, name)` UNIQUE + lookup index. DDL only — no scraper, no data. |
+| `sql/M057-BUSINESS-FEATURE-FLAGS.sql` | New table `business_feature_flags (id, org_id, business_id, flag, enabled, notes, set_by, updated_at)` with `(business_id, flag)` UNIQUE + RLS. Defaults `enabled = false`. |
+
+### Launch model — Piece 0 silent improvements (decided 2026-05-08)
+
+User confirmed the architecture's default: weather backfill and OB-supplement detector tuning ship as silent improvements (no flags). The current "broken weather" (`weather_daily` empty → all-weather averages) and "OB false-alarm spam" (daily re-fires of the same step-change) states are worse than the fixed states; gating bug fixes behind flags whose only purpose is "decide whether to stay broken" was rejected as over-engineering.
+
+The anomaly-confirm UI stays gated behind `PREDICTION_V2_ANOMALY_CONFIRM_UI` per Section 11 — flag flips ON for Vero Italiano at end of Week 3 after the operator triage call.
+
+All Piece 1+ work (consolidated forecaster, audit ledger, LLM adjustment, owner-flagged events) stays gated until Section 11's validation period passes.

@@ -21,10 +21,6 @@
       "schedule": "0 6 * * 1"
     },
     {
-      "path": "/api/cron/forecast-calibration",
-      "schedule": "0 4 1 * *"
-    },
-    {
       "path": "/api/cron/supplier-price-creep",
       "schedule": "0 5 1 * *"
     },

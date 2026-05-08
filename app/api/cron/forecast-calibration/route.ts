@@ -1,5 +1,33 @@
 // @ts-nocheck
 // app/api/cron/forecast-calibration/route.ts
+//
+// DEPRECATED 2026-05-08 (Piece 0 of prediction system v3.1).
+//
+// Why disabled:
+//   - dow_factors had a sample-size bug (Vero Sun=0.009 because two
+//     near-zero Sundays divided by ~30k mean produced nonsense).
+//     Any consumer multiplying by it would predict ~90 kr Sundays.
+//   - dow_factors had no operational reader anyway — only the AI ASSIST
+//     context builder cited it.
+//
+// What replaced it:
+//   - accuracy_pct + bias_factor are now written by
+//     /api/cron/ai-accuracy-reconciler (07:00 UTC daily) which already
+//     resolves the underlying ai_forecast_outcomes rows. One writer is
+//     cleaner than two; values stay fresh.
+//   - Per-weekday baselines move to lib/forecast/daily.ts in Piece 2 of
+//     the architecture (with sample-size guardrails so single-sample
+//     weekdays don't poison the average).
+//
+// Removed from vercel.json in the same commit as this comment.
+// Route file kept in tree in case the dow_factors approach gets revived
+// later with a guardrail patch — undeleted dead code is cheap and
+// reversible.
+//
+// See PREDICTION-SYSTEM-ARCHITECTURE-2026-05-08-v3.md Appendix Z (Decision 1).
+//
+// (Original header below.)
+//
 // Runs 1st of each month at 04:00 UTC — calculates forecast accuracy and bias
 // No Claude needed — pure arithmetic
 // Follows spec in claude_code_agents_prompt.md
