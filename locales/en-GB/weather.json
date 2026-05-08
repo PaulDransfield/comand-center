@@ -47,5 +47,30 @@
       "revenue":  "Revenue",
       "labour":   "Labour %"
     }
+  },
+  "demand": {
+    "eyebrow":  "WEATHER OUTLOOK",
+    "title":    "Next 7 days — weather × your sales pattern",
+    "basedOn":  "Based on {weeks}-week baseline · {samples} historical days matched",
+    "holiday":  "HOLIDAY",
+    "error":    "Couldn't load forecast",
+    "close":    "Close",
+    "weekday": {
+      "mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu",
+      "fri": "Fri", "sat": "Sat", "sun": "Sun"
+    },
+    "confidence": {
+      "high":        "High",
+      "medium":      "Medium",
+      "low":         "Low",
+      "unavailable": "Not enough history"
+    },
+    "detail": {
+      "baseline":         "Typical for this weekday",
+      "predicted":        "Predicted",
+      "confidence":       "Confidence",
+      "basedOnSamples":   "{count, plural, one {# similar day} other {# similar days}} in your history",
+      "holidayNote":      "Holiday — typical-day patterns don't apply. Plan from your prior years' data for this date."
+    }
   }
 }

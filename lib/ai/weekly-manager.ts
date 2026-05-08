@@ -14,6 +14,7 @@ import { logAiRequest }          from '@/lib/ai/usage'
 import { SCOPE_NOTE }            from '@/lib/ai/scope'
 import { SCHEDULING_ASYMMETRY, VOICE, INDUSTRY_BENCHMARKS } from '@/lib/ai/rules'
 import { getForecast, coordsFor, DailyWeather, weatherBucket } from '@/lib/weather/forecast'
+import { computeDemandForecast, type DemandForecast }           from '@/lib/weather/demand'
 import { getUpcomingHolidays } from '@/lib/holidays'
 import { signFeedback }          from '@/lib/email/feedback-token'
 
@@ -70,6 +71,11 @@ export interface WeeklyContext {
     impact:  'high' | 'low' | null
     days_until: number
   }>
+  // Per-day demand forecast for the next 7 days — predicted revenue +
+  // delta vs typical + per-day recommendation. Populated when this
+  // business has enough weather × revenue history; null otherwise so
+  // the prompt can omit the block cleanly.
+  demandForecast: DemandForecast | null
 }
 
 interface WeekBlock {
@@ -312,6 +318,22 @@ export async function buildWeeklyContext(
     console.warn('[weekly-manager] weather correlation skipped:', e.message)
   }
 
+  // ── Per-day demand forecast (next 7 days) ────────────────────────────────
+  // Uses computeDemandForecast which combines forecast + per-business bucket
+  // lifts + per-weekday baseline + holiday gate. Null if business has too
+  // little history; the prompt omits the block cleanly when null.
+  let demandForecast: DemandForecast | null = null
+  try {
+    demandForecast = await computeDemandForecast({
+      db,
+      orgId,
+      businessId,
+      days: 7,
+    })
+  } catch (e: any) {
+    console.warn('[weekly-manager] demand-forecast skipped:', e?.message)
+  }
+
   return {
     businessName,
     weekLabel,
@@ -333,6 +355,7 @@ export async function buildWeeklyContext(
     weatherPattern,
     nextWeekAnalogues,
     upcomingHolidays: buildUpcomingHolidays(businessCountry, mondayOfBriefing),
+    demandForecast,
   }
 }
 
@@ -410,6 +433,21 @@ ${ctx.weatherPattern.map(p => `  ${p.bucket.padEnd(10)}  ${p.days} days  avg ${f
 
 ${ctx.nextWeekAnalogues.length ? `NEXT WEEK ANALOGUES (forecast matched to your own history)
 ${ctx.nextWeekAnalogues.map(a => `  ${a.date} ${a.weekday}: forecast ${a.forecast_summary} → bucket=${a.bucket}. ${a.analogue_days >= 2 ? `Matching historicals: ${a.analogue_days} days, avg rev ${fmt(a.analogue_avg_rev ?? 0)} (vs all-${a.weekday} avg ${fmt(a.all_weather_avg_rev)})` : `Only ${a.analogue_days} matching historicals — not enough to be confident.`}`).join('\n')}` : ''}
+
+${ctx.demandForecast?.days?.length ? `WEATHER-DRIVEN DEMAND FORECAST (next 7 days, this business)
+Model: predicted_revenue = baseline_for_weekday × bucket_lift_for_this_business. Baseline = trailing 12-week per-weekday average. Bucket lift = (avg revenue in this bucket) / (overall avg) for this business specifically. Confidence reflects historical sample size in the matched bucket.
+${ctx.demandForecast.days.map(d => {
+  const tag = d.is_holiday ? `HOLIDAY: ${d.holiday_name}` : `${d.confidence.toUpperCase()} confidence (${d.sample_size} historical days in bucket)`
+  const delta = d.is_holiday ? '' : ` (${d.delta_pct >= 0 ? '+' : ''}${d.delta_pct}% vs typical ${d.weekday})`
+  const rec = d.recommendation ? `\n      → ${d.recommendation}` : ''
+  return `  ${d.date} ${d.weekday}: ${d.weather.bucket} (${d.weather.summary}, ${d.weather.temp_min}-${d.weather.temp_max}°C${d.weather.precip_mm > 0.5 ? `, ${d.weather.precip_mm}mm` : ''}). Predicted ${fmt(d.predicted_revenue)} kr${delta}. ${tag}.${rec}`
+}).join('\n')}
+
+USE THIS FORECAST in your memo:
+  - Identify the SINGLE biggest weather-driven swing of the week (largest |delta_pct| with confidence ≥ medium) and call it out by name.
+  - Recommendation language is suggestive ("consider"), not directive — the model is advisory, owner decides.
+  - Don't lecture about the model's existence. Just use the numbers ("Saturday's forecast is 22% below your typical Sat — heavy rain expected, consider trimming a closing shift").
+  - Skip the swing call-out when no day has |delta_pct| ≥ 12% with confidence medium-or-better — quiet weeks don't need a weather alert.` : ''}
 
 ${ctx.upcomingHolidays.length ? `UPCOMING PUBLIC HOLIDAYS (next 21 days)
 ${ctx.upcomingHolidays.map(h => {

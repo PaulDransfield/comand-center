@@ -21,6 +21,7 @@ import { getUpcomingHolidays, getHolidaysForCountry } from '@/lib/holidays'
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
+import WeatherDemandWidget from '@/components/dashboard/WeatherDemandWidget'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -812,6 +813,8 @@ function DashboardInner() {
                 })}
               />
             </div>
+
+            <WeatherDemandWidget bizId={bizId} />
 
           </>
         )}

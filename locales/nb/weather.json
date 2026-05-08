@@ -47,5 +47,30 @@
       "revenue":  "Inntekt",
       "labour":   "Bemanning %"
     }
+  },
+  "demand": {
+    "eyebrow":  "VÆRPROGNOSE",
+    "title":    "Neste 7 dager — vær × ditt salgsmønster",
+    "basedOn":  "Basert på {weeks}-ukers grunnlinje · {samples} matchede historiske dager",
+    "holiday":  "HELLIGDAG",
+    "error":    "Kunne ikke laste prognose",
+    "close":    "Lukk",
+    "weekday": {
+      "mon": "Man", "tue": "Tir", "wed": "Ons", "thu": "Tor",
+      "fri": "Fre", "sat": "Lør", "sun": "Søn"
+    },
+    "confidence": {
+      "high":        "Høy",
+      "medium":      "Middels",
+      "low":         "Lav",
+      "unavailable": "For lite historikk"
+    },
+    "detail": {
+      "baseline":         "Typisk for ukedagen",
+      "predicted":        "Prognose",
+      "confidence":       "Sikkerhet",
+      "basedOnSamples":   "{count, plural, one {# lignende dag} other {# lignende dager}} i din historikk",
+      "holidayNote":      "Helligdag — vanlige mønstre gjelder ikke. Planlegg ut fra forrige års data for denne datoen."
+    }
   }
 }

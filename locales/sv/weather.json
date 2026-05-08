@@ -47,5 +47,30 @@
       "revenue":  "Intäkt",
       "labour":   "Personal %"
     }
+  },
+  "demand": {
+    "eyebrow":  "VÄDERPROGNOS",
+    "title":    "Närmaste 7 dagar — väder × ditt försäljningsmönster",
+    "basedOn":  "Baseras på {weeks}-veckors baslinje · {samples} matchade historiska dagar",
+    "holiday":  "HELGDAG",
+    "error":    "Kunde inte ladda prognos",
+    "close":    "Stäng",
+    "weekday": {
+      "mon": "Mån", "tue": "Tis", "wed": "Ons", "thu": "Tor",
+      "fri": "Fre", "sat": "Lör", "sun": "Sön"
+    },
+    "confidence": {
+      "high":        "Hög",
+      "medium":      "Medel",
+      "low":         "Låg",
+      "unavailable": "För lite historik"
+    },
+    "detail": {
+      "baseline":         "Typisk för veckodagen",
+      "predicted":        "Prognos",
+      "confidence":       "Säkerhet",
+      "basedOnSamples":   "{count, plural, one {# liknande dag} other {# liknande dagar}} i din historik",
+      "holidayNote":      "Helgdag — vanliga mönster gäller inte. Planera utifrån föregående års data för detta datum."
+    }
   }
 }
