@@ -21,6 +21,7 @@ import { fetchAllPaged } from '@/lib/supabase/page'
 import { decrypt }                    from '@/lib/integrations/encryption'
 import { getWorkPeriods }              from '@/lib/pos/personalkollen'
 import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
+import { weightedAvg, thisWeekScaler, RECENCY } from '@/lib/forecast/recency'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -169,7 +170,7 @@ export async function GET(req: NextRequest) {
   // weather_daily's future rows go out of date whenever the backfill hasn't
   // run recently, which was the root cause of "weather not loading".
   const { lat, lon } = coordsFor(biz.city)
-  const [dailyRes, wxHistRes, fcastResult] = await Promise.all([
+  const [dailyRes, wxHistRes, fcastResult, thisRangeDailyRes] = await Promise.all([
     db.from('daily_metrics')
       .select('date, revenue, staff_cost, hours_worked, labour_pct')
       .eq('business_id', bizId)
@@ -185,21 +186,32 @@ export async function GET(req: NextRequest) {
       console.warn('[ai-suggestion] live weather fetch failed:', e?.message)
       return []
     }),
+    // This-period actuals for the requested range — used for the
+    // "this-week pull-forward" scaler. If completed days run materially
+    // above/below the model's prediction, the remaining days get scaled
+    // by the same ratio (clamped 0.75-1.25).
+    db.from('daily_metrics')
+      .select('date, revenue')
+      .eq('business_id', bizId)
+      .gte('date', weekFrom).lte('date', weekTo)
+      .gt('revenue', 0),
   ])
   const daily   = dailyRes.data ?? []
   const wxHist  = wxHistRes.data ?? []
+  const thisRangeActuals = thisRangeDailyRes.data ?? []
   const wxNext  = (fcastResult ?? []).filter(w => w.date >= weekFrom && w.date <= weekTo)
   const wxNextByDate: Record<string, any> = {}
   for (const w of wxNext) wxNextByDate[w.date] = w
   const wxHistByDate: Record<string, any> = {}
   for (const w of wxHist) wxHistByDate[w.date] = w
 
-  // Per-weekday historical averages (ignore days with zero rev).
-  const byDow: Record<number, { rev: number[]; hours: number[]; revPerHour: number[]; labourPct: number[] }> = {}
-  for (let i = 0; i < 7; i++) byDow[i] = { rev: [], hours: [], revPerHour: [], labourPct: [] }
+  // Per-weekday historical averages (ignore days with zero rev). Retain
+  // each sample's date so recency weighting can apply (last 4 weeks 2×).
+  const byDow: Record<number, { rev: number[]; hours: number[]; revPerHour: number[]; labourPct: number[]; dates: string[]; rphDates: string[] }> = {}
+  for (let i = 0; i < 7; i++) byDow[i] = { rev: [], hours: [], revPerHour: [], labourPct: [], dates: [], rphDates: [] }
 
   // Per (weekday × bucket) for weather-aware refinement.
-  const byDowBucket: Record<string, { rev: number[]; hours: number[]; revPerHour: number[] }> = {}
+  const byDowBucket: Record<string, { rev: number[]; hours: number[]; revPerHour: number[]; dates: string[]; rphDates: string[] }> = {}
 
   for (const r of (daily ?? [])) {
     if (!r.date || Number(r.revenue ?? 0) <= 0) continue
@@ -208,20 +220,69 @@ export async function GET(req: NextRequest) {
     const hrs = Number(r.hours_worked ?? 0)
     byDow[dow].rev.push(rev)
     byDow[dow].hours.push(hrs)
-    if (hrs > 0) byDow[dow].revPerHour.push(rev / hrs)
+    byDow[dow].dates.push(r.date)
+    if (hrs > 0) {
+      byDow[dow].revPerHour.push(rev / hrs)
+      byDow[dow].rphDates.push(r.date)
+    }
     if (r.labour_pct != null) byDow[dow].labourPct.push(Number(r.labour_pct))
 
     const wx = wxHistByDate[r.date]
     if (wx) {
       const bucket = weatherBucket(wx)
       const key    = `${dow}|${bucket}`
-      if (!byDowBucket[key]) byDowBucket[key] = { rev: [], hours: [], revPerHour: [] }
+      if (!byDowBucket[key]) byDowBucket[key] = { rev: [], hours: [], revPerHour: [], dates: [], rphDates: [] }
       byDowBucket[key].rev.push(rev)
       byDowBucket[key].hours.push(hrs)
-      if (hrs > 0) byDowBucket[key].revPerHour.push(rev / hrs)
+      byDowBucket[key].dates.push(r.date)
+      if (hrs > 0) {
+        byDowBucket[key].revPerHour.push(rev / hrs)
+        byDowBucket[key].rphDates.push(r.date)
+      }
     }
   }
+  // Plain mean — used for things that aren't time-series (e.g. quantile
+  // input). Recency weighting applies to revenue / hours / rev-per-hour
+  // averages explicitly via weightedAvg().
   const avg = (a: number[]) => a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0
+  const refDate = new Date()
+  const wAvg = (vals: number[], dates: string[]) =>
+    weightedAvg(vals, dates, refDate, {
+      recentWindowDays:  RECENCY.RECENT_WINDOW_DAYS,
+      recencyMultiplier: RECENCY.RECENCY_MULTIPLIER,
+    })
+
+  // ── This-week pull-forward scaler ──────────────────────────────────────────
+  // Pre-compute the model's revenue prediction for every date in the
+  // requested range. Pair completed days (those with actual revenue) with
+  // their prediction and derive a single multiplicative scaler — clamped
+  // 0.75-1.25, median across days. Apply to all output dates so days
+  // running 14% above the pattern lift the rest of the week's forecast
+  // proportionally instead of staying anchored to a stale 12-week mean.
+  const rawPredByDate: Record<string, number> = {}
+  for (const date of Object.keys(currentByDate)) {
+    const dow = (new Date(date).getUTCDay() + 6) % 7
+    const d   = byDow[dow]
+    const fcast = wxNextByDate[date]
+    const bucket = fcast ? weatherBucket(fcast) : null
+    const bucketKey = bucket ? `${dow}|${bucket}` : null
+    const bucketData = bucketKey ? byDowBucket[bucketKey] : null
+    const useBucket  = !!(bucketData && bucketData.rev.length >= 3)
+    const srcRev     = useBucket ? bucketData!.rev   : d.rev
+    const srcDates   = useBucket ? bucketData!.dates : d.dates
+    rawPredByDate[date] = Math.round(wAvg(srcRev, srcDates))
+  }
+
+  const actualByDateInRange: Record<string, number> = {}
+  for (const r of thisRangeActuals) actualByDateInRange[r.date] = Number(r.revenue ?? 0)
+
+  const scalerInput: Array<{ actual: number; predicted: number }> = []
+  for (const date of Object.keys(rawPredByDate)) {
+    const actual    = actualByDateInRange[date] ?? 0
+    const predicted = rawPredByDate[date]
+    if (actual > 0 && predicted > 0) scalerInput.push({ actual, predicted })
+  }
+  const { scaler: thisWeekScale, samples: thisWeekSamples, raw: thisWeekRaw } = thisWeekScaler(scalerInput)
 
   // ── Suggested schedule: target rev-per-hour at 75th percentile of history ─
   // If last 8 weeks Mon averaged 25k rev at 40h (= 625 kr/h), and the best Mons
@@ -255,15 +316,25 @@ export async function GET(req: NextRequest) {
     const bucketKey = bucket ? `${dow}|${bucket}` : null
     const bucketData = bucketKey ? byDowBucket[bucketKey] : null
 
-    const useBucket    = !!(bucketData && bucketData.rev.length >= 3)
-    const sourceRev    = useBucket ? bucketData!.rev        : d.rev
-    const sourceHours  = useBucket ? bucketData!.hours      : d.hours
-    const sourceRph    = useBucket ? bucketData!.revPerHour : d.revPerHour
+    const useBucket       = !!(bucketData && bucketData.rev.length >= 3)
+    const sourceRev       = useBucket ? bucketData!.rev        : d.rev
+    const sourceHours     = useBucket ? bucketData!.hours      : d.hours
+    const sourceRph       = useBucket ? bucketData!.revPerHour : d.revPerHour
+    const sourceRevDates  = useBucket ? bucketData!.dates      : d.dates
+    const sourceHoursDates= useBucket ? bucketData!.dates      : d.dates
 
-    const avgRev    = Math.round(avg(sourceRev))
-    const avgHours  = Math.round(avg(sourceHours) * 10) / 10
-    const sortedRph = [...sourceRph].sort((a, b) => a - b)
-    const p75Rph    = sortedRph.length ? sortedRph[Math.floor(sortedRph.length * 0.75)] : 0
+    // Recency-weighted: last 4 weeks count 2× weeks 5-12. P75 still uses
+    // raw values because percentiles aren't a "what's the typical day"
+    // statistic — they're a "what's a good day" target.
+    const rawAvgRev = wAvg(sourceRev, sourceRevDates)
+    // Scaler applies to days that DON'T already have an actual — past
+    // days within the period keep their actual value as the prediction
+    // (no scaling needed; the truth IS the actual).
+    const dayHasActual = (actualByDateInRange[date] ?? 0) > 0
+    const avgRev      = Math.round(dayHasActual ? rawAvgRev : rawAvgRev * thisWeekScale)
+    const avgHours    = Math.round(wAvg(sourceHours, sourceHoursDates) * 10) / 10
+    const sortedRph   = [...sourceRph].sort((a, b) => a - b)
+    const p75Rph      = sortedRph.length ? sortedRph[Math.floor(sortedRph.length * 0.75)] : 0
     const modelTarget = avgRev > 0 && p75Rph > 0 ? Math.round((avgRev / p75Rph) * 10) / 10 : avgHours
 
     const current   = currentByDate[date]
@@ -362,7 +433,13 @@ export async function GET(req: NextRequest) {
       added_cost_kr:    0,
       net_saving_kr:    savingKr,
       under_staffed_days: underStaffedDays,
-      rationale:        'Cuts only — we never recommend adding hours. Adding exposes the business to labour cost on days where the extra demand may not show up; trimming only risks slightly more savings than projected. Target rev-per-hour is the 75th-percentile of your last 12 weeks; where the forecast matches ≥3 days of the same weekday+weather combination (e.g. rainy Friday), that subset drives the target. Days where the model would have added are shown with an informational note — a judgment call for you, not a recommendation from us.',
+      // v8.1 forecast tuning: surface the recency model's response so
+      // callers can SEE that the prediction adapted to this week.
+      this_week_scaler:        Math.round(thisWeekScale * 100) / 100,
+      this_week_scaler_raw:    Math.round(thisWeekRaw   * 100) / 100,
+      this_week_scaler_samples: thisWeekSamples,
+      recency_weighted:        true,
+      rationale:        'Cuts only — we never recommend adding hours. Adding exposes the business to labour cost on days where the extra demand may not show up; trimming only risks slightly more savings than projected. Target rev-per-hour is the 75th-percentile of your last 12 weeks (recency-weighted: last 4 weeks count 2× the older 8); where the forecast matches ≥3 days of the same weekday+weather combination (e.g. rainy Friday), that subset drives the target. When this week is running materially above or below pattern, remaining-day forecasts are scaled by the same ratio (clamped 0.75-1.25). Days where the model would have added are shown with an informational note — a judgment call for you, not a recommendation from us.',
     },
   }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
 }

@@ -21,6 +21,7 @@
 
 import { getForecast, weatherBucket, coordsFor, type DailyWeather } from './forecast'
 import { getUpcomingHolidays }                                       from '@/lib/holidays'
+import { weightedAvg, thisWeekScaler, RECENCY }                      from '@/lib/forecast/recency'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,11 +111,14 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
 
   const { lat, lon } = coordsFor(biz.city)
 
-  // Three parallel data fetches: live forecast, historical correlation, baseline.
-  const [forecast, correlation, baselineByWeekday] = await Promise.all([
+  // Four parallel data fetches: live forecast, historical correlation,
+  // baseline, and the current calendar week's actuals (for the
+  // pull-forward scaler).
+  const [forecast, correlation, baselineByWeekday, thisWeekActuals] = await Promise.all([
     fetchForecast(lat, lon, days),
     fetchBucketLifts(opts.db, opts.businessId),
     fetchBaselineByWeekday(opts.db, opts.businessId),
+    fetchThisWeekActuals(opts.db, opts.businessId),
   ])
 
   // Holidays — best-effort. Failure isn't fatal, we just don't gate on them.
@@ -131,16 +135,56 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
     }
   } catch { /* missing country module — ignore */ }
 
-  const out: DemandDay[] = []
+  // First pass: compute the un-scaled prediction for every forecast day
+  // so the this-week scaler can compare completed days' actuals to what
+  // the model would have predicted yesterday. Future-day predictions
+  // get scaled in the second pass; past-day predictions stay raw.
+  type RawPred = { baseline: number; rawPredicted: number; bucket: string; lift?: BucketLift; isHoliday: boolean; holidayName: string | null }
+  const rawByDate: Record<string, RawPred> = {}
   for (const f of forecast.slice(0, days)) {
     const weekdayIdx = (new Date(f.date).getUTCDay() + 6) % 7
     const weekday    = WEEKDAY_LABELS[weekdayIdx]
     const baseline   = baselineByWeekday.get(weekday) ?? 0
     const bucket     = weatherBucket(f)
     const lift       = correlation.byBucket.get(bucket)
-    const sampleSize = lift?.sampleSize ?? 0
     const isHoliday  = holidaysByDate.has(f.date)
     const holidayName = holidaysByDate.get(f.date) ?? null
+    const rawPredicted = isHoliday ? baseline
+                       : lift && baseline > 0 ? baseline * lift.factor
+                       : baseline
+    rawByDate[f.date] = { baseline, rawPredicted, bucket, lift, isHoliday, holidayName }
+  }
+
+  // This-week scaler: pair completed days' actuals against the model's
+  // raw prediction. If the median completed-day ratio is materially off
+  // 1.0, future-day predictions in the SAME calendar week scale by it
+  // (clamped 0.75-1.25). Past or different-week dates aren't scaled.
+  const thisWeekStart = mondayOf(new Date()).toISOString().slice(0, 10)
+  const thisWeekEnd   = sundayOf(new Date()).toISOString().slice(0, 10)
+  const actualByDate: Record<string, number> = {}
+  for (const r of thisWeekActuals) actualByDate[r.date] = Number(r.revenue ?? 0)
+  const scalerInput: Array<{ actual: number; predicted: number }> = []
+  for (const date of Object.keys(rawByDate)) {
+    if (date < thisWeekStart || date > thisWeekEnd) continue
+    const actual = actualByDate[date] ?? 0
+    const predicted = rawByDate[date].rawPredicted
+    if (actual > 0 && predicted > 0) scalerInput.push({ actual, predicted })
+  }
+  const { scaler: weekScale } = thisWeekScaler(scalerInput)
+
+  const out: DemandDay[] = []
+  for (const f of forecast.slice(0, days)) {
+    const weekdayIdx = (new Date(f.date).getUTCDay() + 6) % 7
+    const weekday    = WEEKDAY_LABELS[weekdayIdx]
+    const raw        = rawByDate[f.date]
+    const baseline   = raw.baseline
+    const bucket     = raw.bucket
+    const lift       = raw.lift
+    const sampleSize = lift?.sampleSize ?? 0
+    const isHoliday  = raw.isHoliday
+    const holidayName = raw.holidayName
+    const dateInThisWeek = f.date >= thisWeekStart && f.date <= thisWeekEnd
+    const dayHasActual = (actualByDate[f.date] ?? 0) > 0
 
     let predicted = baseline
     let confidence: Confidence = 'unavailable'
@@ -160,6 +204,14 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
       // bucket. Fall back to baseline; mark unavailable so UI shows muted.
       predicted  = baseline
       confidence = baseline > 0 ? 'low' : 'unavailable'
+    }
+
+    // Apply this-week pull-forward scaler — only to days that are inside
+    // the current calendar week AND don't already have a logged actual.
+    // Holidays are excluded because their pattern is already structurally
+    // different from a normal weekday.
+    if (dateInThisWeek && !dayHasActual && !isHoliday && weekScale !== 1) {
+      predicted = predicted * weekScale
     }
 
     const delta_pct = baseline > 0 ? ((predicted - baseline) / baseline) * 100 : 0
@@ -261,29 +313,39 @@ async function fetchBucketLifts(db: any, businessId: string): Promise<Correlatio
   const joined = (metrics ?? [])
     .filter((r: any) => Number(r.revenue ?? 0) > 0 && wxByDate[r.date])
     .map((r: any) => ({
+      date:    r.date as string,
       revenue: Number(r.revenue),
       bucket:  weatherBucket(wxByDate[r.date]),
     }))
 
-  const overallAvg = joined.length > 0
-    ? joined.reduce((s: number, d: { revenue: number }) => s + d.revenue, 0) / joined.length
-    : 0
+  // Recency-weighted overall average: last 4 weeks count 2× the older 8.
+  // Pre-2026-05-08 this was a flat mean which lagged 2-4 weeks behind any
+  // sustained trend.
+  const ref = now
+  const overallAvg = weightedAvg(
+    joined.map((d: { revenue: number }) => d.revenue),
+    joined.map((d: { date: string }) => d.date),
+    ref,
+    { recentWindowDays: RECENCY.RECENT_WINDOW_DAYS, recencyMultiplier: RECENCY.RECENCY_MULTIPLIER },
+  )
 
-  const byBucketRaw: Record<string, { total: number; days: number }> = {}
+  const byBucketRows: Record<string, { revenues: number[]; dates: string[] }> = {}
   for (const d of joined) {
-    if (!byBucketRaw[d.bucket]) byBucketRaw[d.bucket] = { total: 0, days: 0 }
-    byBucketRaw[d.bucket].total += d.revenue
-    byBucketRaw[d.bucket].days  += 1
+    if (!byBucketRows[d.bucket]) byBucketRows[d.bucket] = { revenues: [], dates: [] }
+    byBucketRows[d.bucket].revenues.push(d.revenue)
+    byBucketRows[d.bucket].dates.push(d.date)
   }
 
   const byBucket = new Map<string, BucketLift>()
-  for (const [bucket, info] of Object.entries(byBucketRaw)) {
-    const avg = info.days > 0 ? info.total / info.days : 0
+  for (const [bucket, info] of Object.entries(byBucketRows)) {
+    const avg = info.revenues.length > 0
+      ? weightedAvg(info.revenues, info.dates, ref, { recentWindowDays: RECENCY.RECENT_WINDOW_DAYS, recencyMultiplier: RECENCY.RECENCY_MULTIPLIER })
+      : 0
     const factor = overallAvg > 0 ? avg / overallAvg : 1
     byBucket.set(bucket, {
       bucket,
       factor,
-      sampleSize: info.days,
+      sampleSize: info.revenues.length,
     })
   }
 
@@ -315,19 +377,62 @@ async function fetchBaselineByWeekday(db: any, businessId: string): Promise<Map<
     .gt('revenue', 0)
     .limit(2000)
 
-  const byWeekday: Record<string, { total: number; days: number }> = {}
+  // Group revenues per weekday, retaining each row's date so we can apply
+  // recency weighting (last 4 weeks 2× weeks 5-12).
+  const byWeekday: Record<string, { revenues: number[]; dates: string[] }> = {}
   for (const row of data ?? []) {
     const idx = (new Date(row.date).getUTCDay() + 6) % 7
     const wd  = WEEKDAY_LABELS[idx]
-    if (!byWeekday[wd]) byWeekday[wd] = { total: 0, days: 0 }
-    byWeekday[wd].total += Number(row.revenue ?? 0)
-    byWeekday[wd].days  += 1
+    if (!byWeekday[wd]) byWeekday[wd] = { revenues: [], dates: [] }
+    byWeekday[wd].revenues.push(Number(row.revenue ?? 0))
+    byWeekday[wd].dates.push(row.date as string)
   }
 
+  const ref = new Date()
   const out = new Map<string, number>()
   for (const [wd, info] of Object.entries(byWeekday)) {
-    if (info.days > 0) out.set(wd, info.total / info.days)
+    if (info.revenues.length > 0) {
+      out.set(wd, weightedAvg(info.revenues, info.dates, ref, {
+        recentWindowDays:  RECENCY.RECENT_WINDOW_DAYS,
+        recencyMultiplier: RECENCY.RECENCY_MULTIPLIER,
+      }))
+    }
   }
+  return out
+}
+
+/**
+ * Fetch this calendar week's daily_metrics rows for the business so the
+ * pull-forward scaler can pair completed-day actuals against the
+ * model's raw prediction. Returns an empty array on the (rare) error
+ * path so the forecast still renders without the scaler.
+ */
+async function fetchThisWeekActuals(db: any, businessId: string): Promise<Array<{ date: string; revenue: number }>> {
+  const monday = mondayOf(new Date()).toISOString().slice(0, 10)
+  const sunday = sundayOf(new Date()).toISOString().slice(0, 10)
+  const { data, error } = await db
+    .from('daily_metrics')
+    .select('date, revenue')
+    .eq('business_id', businessId)
+    .gte('date', monday).lte('date', sunday)
+    .gt('revenue', 0)
+  if (error) return []
+  return (data ?? []) as Array<{ date: string; revenue: number }>
+}
+
+/** Monday of the same ISO week as the given date (00:00 local). */
+function mondayOf(d: Date): Date {
+  const out = new Date(d)
+  out.setHours(0, 0, 0, 0)
+  const dow = out.getDay()  // 0=Sun..6=Sat
+  out.setDate(out.getDate() - (dow === 0 ? 6 : dow - 1))
+  return out
+}
+/** Sunday of the same ISO week as the given date (00:00 local). */
+function sundayOf(d: Date): Date {
+  const m = mondayOf(d)
+  const out = new Date(m)
+  out.setDate(m.getDate() + 6)
   return out
 }
 
