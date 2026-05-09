@@ -315,12 +315,13 @@ export default function ToolsPage() {
             <input
               type="number"
               value={opsMonths}
-              onChange={e => setOpsMonths(Math.max(1, Math.min(24, parseInt(e.target.value || '12', 10) || 12)))}
-              min={1}
+              onChange={e => setOpsMonths(Math.max(0, Math.min(24, parseInt(e.target.value || '12', 10))))}
+              min={0}
               max={24}
               style={{ width: 60, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
-              title="1-24. Bisect issues by trying a smaller window first (e.g. 5 = current fiscal year only for Vero)."
+              title="0 = all available history (fetcher auto-detects fiscal years). 1-24 = bounded window."
             />
+            <span style={{ fontSize: 10, color: '#9ca3af' }}>{opsMonths === 0 ? '(all available)' : ''}</span>
           </label>
           <button
             onClick={kickFortnoxBackfill}

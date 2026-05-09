@@ -55,7 +55,11 @@ export const maxDuration = 600
 
 const PROVIDER       = 'fortnox'
 const DEFAULT_MONTHS = 12
-const MIN_MONTHS     = 1
+// months=0 is the sentinel for "all available history" — the fetcher
+// receives an effectively unbounded fromDate and clampRangeToFiscalYears
+// limits the actual range to whatever the customer's /financialyears
+// returns. Cleaner than guessing "is this customer 6mo old or 5yr old?"
+const MIN_MONTHS     = 0
 const MAX_MONTHS     = 24
 
 export async function POST(req: NextRequest) {
@@ -123,13 +127,29 @@ export async function POST(req: NextRequest) {
 
   try {
     // ── 2. Compute date range ─────────────────────────────────────────────
-    const toDate   = new Date()
-    const fromDate = new Date(toDate)
-    fromDate.setUTCMonth(fromDate.getUTCMonth() - MONTHS)
-    const fromIso  = fromDate.toISOString().slice(0, 10)
+    // months=0 → fetch everything Fortnox has (fetcher clamps to actual
+    // fiscal years via /financialyears). Otherwise compute a bounded
+    // window relative to today.
+    const toDate = new Date()
+    let fromIso:  string
+    if (MONTHS === 0) {
+      // Sentinel: ask for everything since 1990. clampRangeToFiscalYears
+      // turns this into "all fiscal years on file" automatically.
+      fromIso = '1990-01-01'
+    } else {
+      const fromDate = new Date(toDate)
+      fromDate.setUTCMonth(fromDate.getUTCMonth() - MONTHS)
+      fromIso = fromDate.toISOString().slice(0, 10)
+    }
     const toIso    = toDate.toISOString().slice(0, 10)
 
-    await markProgress(db, integrationId, { phase: 'fetching', from_date: fromIso, to_date: toIso, months_requested: MONTHS, months_done: 0 })
+    await markProgress(db, integrationId, {
+      phase:            'fetching',
+      from_date:        fromIso,
+      to_date:          toIso,
+      months_requested: MONTHS === 0 ? 'all_available' : MONTHS,
+      months_done:      0,
+    })
 
     // ── 3. Fetch vouchers ──────────────────────────────────────────────────
     // onProgress is called every 25 detail GETs (configurable via
