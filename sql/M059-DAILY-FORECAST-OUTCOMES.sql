@@ -35,11 +35,18 @@ CREATE TABLE IF NOT EXISTS public.daily_forecast_outcomes (
   predicted_revenue INTEGER NOT NULL,
   baseline_revenue  INTEGER,
 
-  first_predicted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  predicted_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  -- Lead time (days). PostgreSQL date - date = integer. STORED so indexes work.
+  first_predicted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Date-only anchor for the lead-time generated column. TIMESTAMPTZ::DATE
+  -- depends on session timezone, which Postgres treats as not-immutable and
+  -- so refuses inside a STORED expression (42P17). A standalone DATE column
+  -- with CURRENT_DATE default — CURRENT_DATE is immutable inside a row's
+  -- INSERT/UPDATE evaluation — sidesteps that. Both columns get written on
+  -- the same INSERT and neither is updated on UPSERT, so they stay in sync.
+  first_predicted_date DATE        NOT NULL DEFAULT CURRENT_DATE,
+  predicted_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Lead time (days). DATE - DATE = INTEGER, immutable. STORED so indexes work.
   prediction_horizon_days INTEGER GENERATED ALWAYS AS
-    (forecast_date - first_predicted_at::date) STORED,
+    (forecast_date - first_predicted_date) STORED,
 
   model_version    TEXT  NOT NULL,
   snapshot_version TEXT  NOT NULL,

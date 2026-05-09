@@ -98,8 +98,9 @@ export async function captureForecastOutcome(
       baseline_revenue:  outcome.baseline_revenue == null
                           ? null
                           : Math.round(outcome.baseline_revenue),
-      // first_predicted_at intentionally omitted — column default fires on
-      // INSERT and is NOT touched by ON CONFLICT (preserves true lead time).
+      // first_predicted_at + first_predicted_date intentionally omitted —
+      // column defaults fire on INSERT and neither is in the payload so
+      // ON CONFLICT DO UPDATE doesn't touch them (preserves true lead time).
       predicted_at:      new Date().toISOString(),
       model_version:    outcome.model_version,
       snapshot_version: outcome.snapshot_version,
