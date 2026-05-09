@@ -6,6 +6,13 @@
 
 ## Pending — apply when ready
 
+### M058 — Vero OB-supplement step-change auto-resolve backfill ⏳ pending application
+**File:** `sql/M058-VERO-OB-AUTO-RESOLVE-BACKFILL.sql`
+**Purpose:** one-shot WHERE-IN-(business_id, alert_type) CLEANUP. After M053 + the detector's step-change patch in `lib/alerts/detector.ts` shipped, Vero's existing 14 pending alerts include multiple duplicates of the same OB-supplement step-change pattern. This SQL keeps the EARLIEST alert per (business_id, alert_type) group as `pending` (so the operator can triage one) and flips the rest to `auto_resolved` with an explanatory note. Idempotent — re-running finds no rows to update.
+**Pre-requisite:** M053 must already be applied so `confirmation_status` exists.
+**Run after:** M053 applied.
+**Companion:** Stream D's detector patch ensures future step-change continuations auto-resolve at write time, so this backfill is a one-time clean-up — not a recurring need.
+
 ### M052-M057 — Piece 0 of prediction system v3.1 ⏳ pending application
 **Files (in apply order — all idempotent):**
 1. `sql/M052-TRACKER-CREATED-VIA-BACKFILL.sql` — UPDATE-only; backfills the ~21 NULL `tracker_data.created_via` rows to `'manual_pre_m047'`. Run this first; it has no schema dependencies.

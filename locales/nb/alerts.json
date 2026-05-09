@@ -21,16 +21,45 @@
     "empty":       "Ingen aktive varsler. Klikk \"Kjør sjekk nå\" for å skanne etter avvik."
   },
   "card": {
-    "detected":    "Oppdaget {created} · Periode: {period} · AI-generert — vurder før handling",
-    "markRead":    "Merk som lest",
-    "dismiss":     "Avvis"
+    "detected":        "Oppdaget {created} · Periode: {period} · AI-generert — vurder før handling",
+    "markRead":        "Merk som lest",
+    "dismiss":         "Avvis",
+    "confirm":         "Ja — utelat fra baselinje",
+    "reject":          "Nei — normal dag",
+    "confirmTooltip":  "Merker denne dagen som en reell engangshendelse så framtidige prognoser ikke behandler den som typisk.",
+    "rejectTooltip":   "Behandle som falsk varsel; dagen forblir i baselinjesnittet."
+  },
+  "filter": {
+    "all":          "Alle statuser",
+    "pending":      "Venter",
+    "confirmed":    "Bekreftet",
+    "rejected":     "Avvist",
+    "autoResolved": "Auto-løst"
+  },
+  "badge": {
+    "pending":      "Venter",
+    "confirmed":    "Bekreftet",
+    "rejected":     "Avvist som normal",
+    "autoResolved": "Auto-løst"
+  },
+  "modal": {
+    "confirmTitle":   "Bekreft: reell engangshendelse",
+    "confirmBody":    "Vi utelater denne dagens faktiske tall fra baselinjesnittet så framtidige prognoser ikke behandler den som typisk. Legg til et kort notat som forklarer hva som skjedde, så revisjonsloggen bevarer konteksten.",
+    "rejectTitle":    "Avvis: ikke et reelt avvik",
+    "rejectBody":     "Merk som falsk varsel. Dagen forblir i baselinjene. Valgfritt notat for revisjonsloggen.",
+    "notes":          "Notater (valgfritt)",
+    "placeholder":    "f.eks. Kontraktfornyelse — ny OB-sats trådte i kraft / Vinterferie / utstyrsfeil kansellerte service",
+    "cancel":         "Avbryt",
+    "confirmAction":  "Bekreft — utelat",
+    "rejectAction":   "Avvis — behold i baselinje"
   },
   "type": {
-    "revenue_drop":     "Inntektsfall",
-    "food_cost_spike":  "Matkostnadstopp",
-    "staff_cost_spike": "Bemanningskostnadstopp",
-    "invoice_spike":    "Fakturaavvik",
-    "covers_drop":      "Gjestebortfall"
+    "revenue_drop":         "Inntektsfall",
+    "food_cost_spike":      "Matkostnadstopp",
+    "staff_cost_spike":     "Bemanningskostnadstopp",
+    "ob_supplement_spike":  "OB-tillegg topp",
+    "invoice_spike":        "Fakturaavvik",
+    "covers_drop":          "Gjestebortfall"
   },
   "invoices": {
     "page": {

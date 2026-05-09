@@ -21,16 +21,45 @@
     "empty":       "Inga aktiva varningar. Klicka \"Kör kontroll nu\" för att söka efter avvikelser."
   },
   "card": {
-    "detected":    "Upptäckt {created} · Period: {period} · AI-genererad — granska innan åtgärd",
-    "markRead":    "Markera som läst",
-    "dismiss":     "Avfärda"
+    "detected":        "Upptäckt {created} · Period: {period} · AI-genererad — granska innan åtgärd",
+    "markRead":        "Markera som läst",
+    "dismiss":         "Avfärda",
+    "confirm":         "Ja — exkludera från baslinje",
+    "reject":          "Nej — normal dag",
+    "confirmTooltip":  "Markerar denna dag som en verklig engångshändelse så att framtida prognoser inte behandlar den som typisk.",
+    "rejectTooltip":   "Behandla detta som falskt larm; dagen finns kvar i baslinjegenomsnitten."
+  },
+  "filter": {
+    "all":          "Alla statusar",
+    "pending":      "Väntar",
+    "confirmed":    "Bekräftad",
+    "rejected":     "Avvisad",
+    "autoResolved": "Auto-löst"
+  },
+  "badge": {
+    "pending":      "Väntar",
+    "confirmed":    "Bekräftad",
+    "rejected":     "Avvisad som normal",
+    "autoResolved": "Auto-löst"
+  },
+  "modal": {
+    "confirmTitle":   "Bekräfta: verklig engångshändelse",
+    "confirmBody":    "Vi exkluderar denna dags faktiska siffror från baslinjegenomsnitten så att framtida prognoser inte behandlar den som typisk. Lägg till en kort anteckning som förklarar vad som hände så att granskningsloggen bevarar kontexten.",
+    "rejectTitle":    "Avvisa: inte en verklig avvikelse",
+    "rejectBody":     "Markera som falskt larm. Dagen finns kvar i baslinjerna. Valfri anteckning för granskningsloggen.",
+    "notes":          "Anteckningar (valfritt)",
+    "placeholder":    "t.ex. Kontraktsförnyelse — ny OB-taxa började gälla / Sportlovsvecka / utrustningsfel ställde in service",
+    "cancel":         "Avbryt",
+    "confirmAction":  "Bekräfta — exkludera",
+    "rejectAction":   "Avvisa — behåll i baslinje"
   },
   "type": {
-    "revenue_drop":     "Intäktsfall",
-    "food_cost_spike":  "Matkostnadstopp",
-    "staff_cost_spike": "Personalkostnadstopp",
-    "invoice_spike":    "Fakturaavvikelse",
-    "covers_drop":      "Gästbortfall"
+    "revenue_drop":         "Intäktsfall",
+    "food_cost_spike":      "Matkostnadstopp",
+    "staff_cost_spike":     "Personalkostnadstopp",
+    "ob_supplement_spike":  "OB-tillägg topp",
+    "invoice_spike":        "Fakturaavvikelse",
+    "covers_drop":          "Gästbortfall"
   },
   "invoices": {
     "page": {

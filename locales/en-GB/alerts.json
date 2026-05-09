@@ -21,16 +21,45 @@
     "empty":       "No active alerts. Click \"Run check now\" to scan for anomalies."
   },
   "card": {
-    "detected":    "Detected {created} · Period: {period} · AI-generated — review before acting",
-    "markRead":    "Mark read",
-    "dismiss":     "Dismiss"
+    "detected":        "Detected {created} · Period: {period} · AI-generated — review before acting",
+    "markRead":        "Mark read",
+    "dismiss":         "Dismiss",
+    "confirm":         "Yes — exclude from baseline",
+    "reject":          "No — normal day",
+    "confirmTooltip":  "Marks this day as a real one-time event so future predictions don't treat it as typical.",
+    "rejectTooltip":   "Treat this as a false alarm; the day stays in baseline averages."
+  },
+  "filter": {
+    "all":          "All statuses",
+    "pending":      "Pending",
+    "confirmed":    "Confirmed",
+    "rejected":     "Rejected",
+    "autoResolved": "Auto-resolved"
+  },
+  "badge": {
+    "pending":      "Pending",
+    "confirmed":    "Confirmed",
+    "rejected":     "Rejected as normal",
+    "autoResolved": "Auto-resolved"
+  },
+  "modal": {
+    "confirmTitle":   "Confirm: real one-time event",
+    "confirmBody":    "We'll exclude this day's actuals from baseline averages so future predictions don't treat it as typical. Add a quick note explaining what happened so the audit log preserves context.",
+    "rejectTitle":    "Reject: not a real anomaly",
+    "rejectBody":     "Mark this as a false alarm. The day stays in baselines. Optional note for the audit log.",
+    "notes":          "Notes (optional)",
+    "placeholder":    "e.g. Contract renewal — new OB rate took effect / Sportlov week / equipment failure cancelled service",
+    "cancel":         "Cancel",
+    "confirmAction":  "Confirm — exclude",
+    "rejectAction":   "Reject — keep in baseline"
   },
   "type": {
-    "revenue_drop":     "Revenue drop",
-    "food_cost_spike":  "Food cost spike",
-    "staff_cost_spike": "Staff cost spike",
-    "invoice_spike":    "Invoice anomaly",
-    "covers_drop":      "Covers drop"
+    "revenue_drop":         "Revenue drop",
+    "food_cost_spike":      "Food cost spike",
+    "staff_cost_spike":     "Staff cost spike",
+    "ob_supplement_spike":  "OB supplement spike",
+    "invoice_spike":        "Invoice anomaly",
+    "covers_drop":          "Covers drop"
   },
   "invoices": {
     "page": {

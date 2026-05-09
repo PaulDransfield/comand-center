@@ -187,11 +187,23 @@ export async function runAnomalyDetection(orgId?: string): Promise<Alert[]> {
     }
   }
 
-  // Save new alerts to DB (avoid duplicates for same day)
+  // Save new alerts to DB (avoid duplicates for same day, auto-resolve continuations)
   if (alerts.length > 0) {
     const todayStr = today.toISOString().slice(0, 10)
+    // Step-change auto-resolution window — if we've already raised the
+    // same (business, alert_type) anywhere in the last 14 days, the
+    // new fire is a continuation of an already-known pattern (e.g.
+    // Vero's OB-supplement step-change after a contract renewal) and
+    // the operator's already seen / triaged it. Mark the new row
+    // `auto_resolved` so it doesn't pile back into the queue. Window
+    // resets after 14 days of silence — a re-fire after that is treated
+    // as a genuinely new pattern again.
+    //
+    // See PREDICTION-SYSTEM-ARCHITECTURE-2026-05-08-v3.md Appendix Z (Stream D.5).
+    const fourteenDaysAgoStr = new Date(today.getTime() - 14 * 86_400_000).toISOString().slice(0, 10)
+
     for (const alert of alerts) {
-      // Check if this alert already exists for today
+      // Check if this alert already exists for today (same-day dedupe).
       const { data: existing } = await db
         .from('anomaly_alerts')
         .select('id')
@@ -200,9 +212,28 @@ export async function runAnomalyDetection(orgId?: string): Promise<Alert[]> {
         .eq('period_date', alert.period_date)
         .single()
 
-      if (!existing) {
-        await db.from('anomaly_alerts').insert(alert)
+      if (existing) continue
+
+      // Check the step-change window — any prior fire of the same
+      // (business, alert_type) in the last 14 days?
+      const { data: priorSame } = await db
+        .from('anomaly_alerts')
+        .select('id')
+        .eq('business_id', alert.business_id)
+        .eq('alert_type', alert.alert_type)
+        .gte('period_date', fourteenDaysAgoStr)
+        .lt('period_date', alert.period_date)
+        .limit(1)
+        .maybeSingle()
+
+      const isContinuation = !!priorSame
+      const insertRow: any = { ...alert }
+      if (isContinuation) {
+        insertRow.confirmation_status = 'auto_resolved'
+        insertRow.confirmed_at        = new Date().toISOString()
+        insertRow.confirmation_notes  = 'Auto-resolved as continuation of step-change pattern within 14d window.'
       }
+      await db.from('anomaly_alerts').insert(insertRow)
     }
   }
 
