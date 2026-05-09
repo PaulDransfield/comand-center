@@ -417,8 +417,12 @@ function InvoiceRow({ invoice, bizId, monthsShort }: {
   const t = useTranslations('overheads.review.detail')
   const d = new Date(invoice.date)
   const dateLabel = `${monthsShort[d.getUTCMonth()] ?? ''} ${d.getUTCDate()}`
-  const fileUrl = invoice.file_id
-    ? `/api/integrations/fortnox/file?business_id=${bizId}&file_id=${encodeURIComponent(invoice.file_id)}&filename=${encodeURIComponent(invoice.invoice_number || invoice.source_id || 'invoice')}.pdf`
+  // /supplierinvoices LIST omits SupplierInvoiceFileConnections — file_id
+  // from drilldown's payload is therefore always null. Use the invoice-pdf
+  // endpoint, which does on-demand detail fetch + 302 to the PDF proxy.
+  // For manual_journal entries (no GivenNumber) we fall back to no-PDF.
+  const fileUrl = invoice.source_type === 'supplier_invoice' && invoice.source_id
+    ? `/api/integrations/fortnox/invoice-pdf?business_id=${bizId}&given_number=${encodeURIComponent(invoice.source_id)}`
     : null
 
   return (

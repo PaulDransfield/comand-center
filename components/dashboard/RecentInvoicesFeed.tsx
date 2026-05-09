@@ -140,9 +140,13 @@ export default function RecentInvoicesFeed({ businessId, days = 14, maxRows = 25
 }
 
 function InvoiceRow({ invoice, businessId }: { invoice: RecentInvoice; businessId: string }) {
-  const pdfUrl = invoice.file_id
-    ? `/api/integrations/fortnox/file?business_id=${encodeURIComponent(businessId)}&file_id=${encodeURIComponent(invoice.file_id)}&filename=${encodeURIComponent((invoice.invoice_number || invoice.given_number || 'invoice') + '.pdf')}`
-    : null
+  // The /supplierinvoices LIST endpoint doesn't include file connections —
+  // that field is only on /supplierinvoices/{GivenNumber} (detail). So we
+  // ALWAYS link to /invoice-pdf which does an on-demand detail fetch and
+  // 302-redirects to the PDF proxy. First click incurs ~500ms latency for
+  // the detail fetch; if no PDF is attached, the redirect lands on a 404
+  // with a friendly message.
+  const pdfUrl = `/api/integrations/fortnox/invoice-pdf?business_id=${encodeURIComponent(businessId)}&given_number=${encodeURIComponent(invoice.given_number)}`
 
   return (
     <div style={ROW_STYLE}>
@@ -160,15 +164,9 @@ function InvoiceRow({ invoice, businessId }: { invoice: RecentInvoice; businessI
         )}
       </div>
       <div style={ROW_ACTIONS_STYLE}>
-        {pdfUrl ? (
-          <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={LINK_STYLE} title="View invoice PDF">
-            View PDF
-          </a>
-        ) : (
-          <span style={{ ...LINK_STYLE, color: '#9ca3af', cursor: 'default' }} title="No PDF attached to this invoice in Fortnox">
-            No PDF
-          </span>
-        )}
+        <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={LINK_STYLE} title="View invoice PDF (fetches from Fortnox on click)">
+          View PDF
+        </a>
       </div>
     </div>
   )
