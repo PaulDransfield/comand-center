@@ -169,6 +169,35 @@ export default function ToolsPage() {
     try { window.sessionStorage.removeItem(HISTORY_KEY) } catch {}
   }
 
+  // ── Operations: Fortnox backfill kick ─────────────────────────────────
+  // One-click "kick the worker" for stuck/failed Fortnox backfills.
+  // Bypasses the owner-side button's gates (status filters, fire-and-forget
+  // unreliability) and AWAITS the worker's response so the admin sees the
+  // exact result (months_written / error). Posts to:
+  //   /api/admin/fortnox/kick-backfill { business_id }
+  const [opsBizId,    setOpsBizId]    = useState<string>('')
+  const [opsRunning,  setOpsRunning]  = useState<boolean>(false)
+  const [opsResult,   setOpsResult]   = useState<any>(null)
+  const [opsError,    setOpsError]    = useState<string | null>(null)
+
+  async function kickFortnoxBackfill() {
+    if (opsRunning || !opsBizId.trim()) return
+    setOpsRunning(true)
+    setOpsResult(null)
+    setOpsError(null)
+    try {
+      const r = await adminFetch<any>('/api/admin/fortnox/kick-backfill', {
+        method: 'POST',
+        body:   JSON.stringify({ business_id: opsBizId.trim() }),
+      })
+      setOpsResult(r)
+    } catch (e: any) {
+      setOpsError(e?.message ?? 'Kick failed')
+    } finally {
+      setOpsRunning(false)
+    }
+  }
+
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault()
@@ -186,6 +215,55 @@ export default function ToolsPage() {
         tone="warn"
         text="Service-role context — RLS bypassed. Read-only enforced (SELECT / WITH / TABLE / VALUES / EXPLAIN only). Every run is recorded in admin_audit_log."
       />
+
+      {/* ── Operations panel ─────────────────────────────────────────────
+          One-click admin actions that don't fit a SQL editor. Add new
+          rows here as we build them. */}
+      <div style={{ marginTop: 14, marginBottom: 14, background: 'white', border: '1px solid #e5e7eb', borderRadius: 10, padding: 14 }}>
+        <h2 style={{ fontSize: 13, fontWeight: 600, color: '#111', margin: 0, marginBottom: 10 }}>Operations</h2>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12, color: '#374151', minWidth: 220 }}>
+            Kick Fortnox backfill (business_id):
+          </label>
+          <input
+            type="text"
+            value={opsBizId}
+            onChange={e => setOpsBizId(e.target.value)}
+            placeholder="0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99 (Vero Italiano)"
+            style={{
+              flex: 1, minWidth: 360, padding: '6px 10px',
+              border: '1px solid #d1d5db', borderRadius: 6,
+              fontSize: 12, fontFamily: 'ui-monospace, monospace',
+            }}
+          />
+          <button
+            onClick={kickFortnoxBackfill}
+            disabled={opsRunning || !opsBizId.trim()}
+            style={btnPrimary(opsRunning || !opsBizId.trim())}
+            title="Resets backfill_status to pending and synchronously calls the worker. Returns the worker's response."
+          >
+            {opsRunning ? 'Running…' : 'Kick worker'}
+          </button>
+        </div>
+
+        {(opsResult || opsError) && (
+          <div style={{
+            marginTop: 10, padding: 10,
+            background: opsError ? '#fef2f2' : (opsResult?.ok ? '#f0fdf4' : '#fef3c7'),
+            border:     `1px solid ${opsError ? '#fecaca' : (opsResult?.ok ? '#bbf7d0' : '#fde68a')}`,
+            borderRadius: 6,
+            fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            color:    opsError ? '#991b1b' : '#111',
+            whiteSpace: 'pre-wrap' as const,
+            wordBreak: 'break-word' as const,
+          }}>
+            {opsError
+              ? opsError
+              : JSON.stringify(opsResult, null, 2)}
+          </div>
+        )}
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 14 }}>
         <div>
