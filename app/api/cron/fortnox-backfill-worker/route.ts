@@ -40,6 +40,7 @@ import { log }                           from '@/lib/log/structured'
 import { fetchVouchersForRange }         from '@/lib/fortnox/api/vouchers'
 import { translateVouchersToPeriods }    from '@/lib/fortnox/api/voucher-to-aggregator'
 import { projectRollup }                 from '@/lib/finance/projectRollup'
+import { validateApiBackfillBatch }      from '@/lib/fortnox/api/validate-backfill'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -171,11 +172,12 @@ export async function POST(req: NextRequest) {
       detail_requests: fetchResult.detailRequests,
     })
 
-    // ── 4. Translate + project + write per period ──────────────────────────
+    // ── 4. Translate + project + validate + write per period ──────────────
     const translated = translateVouchersToPeriods(fetchResult.vouchers)
 
     // Pre-load existing tracker_data sources for these periods so we can
-    // skip months that PDF apply has already written. Single query.
+    // detect when we're overwriting a PDF row (logged) and reuse the row id
+    // for UPDATE rather than blindly INSERTing duplicates.
     const periodKeys = translated.periods.map(p => `${p.year}-${String(p.month).padStart(2, '0')}`)
     const existingByKey = new Map<string, { id: string; source: string | null }>()
     if (businessId && periodKeys.length > 0) {
@@ -193,22 +195,99 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const PDF_SOURCES   = new Set(['fortnox_pdf', 'fortnox_apply'])
-    let monthsWritten   = 0
-    let monthsSkippedPdf = 0
-    let monthsTotal     = translated.periods.length
+    // Pre-load business + org rows for validator context. Used by the scale-
+    // anomaly check (history) and the org-nr checks. Cheap — one row each.
+    const [{ data: bizRow }, { data: orgRow }] = await Promise.all([
+      db.from('businesses').select('name, org_number').eq('id', businessId).maybeSingle(),
+      db.from('organisations').select('name, org_number').eq('id', orgId).maybeSingle(),
+    ])
+
+    // Six-month history for scale-anomaly detection. Fetch BEFORE this
+    // backfill writes anything so we're comparing against the prior baseline,
+    // not our own about-to-be-written rows.
+    const historyFromYear  = translated.periods.length > 0 ? Math.min(...translated.periods.map(p => p.year)) - 1 : new Date().getUTCFullYear() - 1
+    const { data: historyRows } = await db
+      .from('tracker_data')
+      .select('period_year, period_month, revenue, staff_cost, food_cost')
+      .eq('business_id', businessId)
+      .gte('period_year', historyFromYear)
+      .order('period_year', { ascending: true })
+      .order('period_month', { ascending: true })
+      .limit(24)
+    const history = (historyRows ?? []).map(h => ({
+      year:       Number(h.period_year),
+      month:      Number(h.period_month),
+      revenue:    Number(h.revenue ?? 0),
+      staff_cost: Number(h.staff_cost ?? 0),
+      food_cost:  Number(h.food_cost ?? 0),
+    }))
+
+    // Project every period up-front so validators see the same shape that
+    // tracker_data will store.
+    const projectedByKey = new Map<string, ReturnType<typeof projectRollup>>()
+    for (const p of translated.periods) {
+      const key = `${p.year}-${String(p.month).padStart(2, '0')}`
+      projectedByKey.set(key, projectRollup(p.rollup, p.lines))
+    }
+
+    // ── Validate batch via the same chokepoint PDF apply uses ───────────
+    // Per project_api_priority_strategy memory: API path now goes through
+    // the same validators as PDF apply BEFORE writing tracker_data. Failed
+    // periods skip-and-log; passing periods proceed to write.
+    const existingPeriodSet = new Set(existingByKey.keys())
+    const validation = validateApiBackfillBatch(
+      translated.periods.map(p => ({
+        period:    p,
+        projected: projectedByKey.get(`${p.year}-${String(p.month).padStart(2, '0')}`)!,
+      })),
+      {
+        org:             { name: orgRow?.name ?? null, org_number: orgRow?.org_number ?? null },
+        business:        { name: bizRow?.name ?? null, org_number: bizRow?.org_number ?? null },
+        history,
+        existingPeriods: existingPeriodSet,
+      },
+    )
+    const validationByKey = new Map<string, typeof validation.results[number]>(
+      validation.results.map(v => [`${v.year}-${String(v.month).padStart(2, '0')}`, v]),
+    )
+
+    log.info('fortnox-backfill validated', {
+      route:           'cron/fortnox-backfill-worker',
+      integration_id:  integrationId,
+      passed:          validation.summary.passed,
+      failed:          validation.summary.failed,
+      total_warnings:  validation.summary.total_warnings,
+      total_errors:    validation.summary.total_errors,
+    })
+
+    let monthsWritten           = 0
+    let monthsSkippedValidation = 0
+    let monthsOverwrittenPdf    = 0
+    let monthsTotal             = translated.periods.length
+    const validationFailures:  Array<{ period: string; codes: string[] }> = []
 
     for (let i = 0; i < translated.periods.length; i++) {
       const period = translated.periods[i]
       const key    = `${period.year}-${String(period.month).padStart(2, '0')}`
       const existing = existingByKey.get(key)
 
-      if (existing && existing.source && PDF_SOURCES.has(existing.source)) {
-        monthsSkippedPdf++
+      // ── Validation gate ────────────────────────────────────────────
+      // Per Phase A: API path inherits the same chokepoint as PDF apply.
+      // Periods with `error` findings skip the write and surface in the
+      // failure list. `warning`-only periods proceed (mirrors PDF apply's
+      // ack-warnings behaviour — for backfill we auto-ack, the warnings
+      // remain visible in the report).
+      const valResult = validationByKey.get(key)
+      if (valResult && !valResult.ok) {
+        monthsSkippedValidation++
+        validationFailures.push({
+          period: key,
+          codes:  valResult.findings.filter(f => f.severity === 'error').map(f => f.code),
+        })
         continue
       }
 
-      const proj = projectRollup(period.rollup, period.lines)
+      const proj = projectedByKey.get(key)!
 
       // tracker_data write payload — uses storage convention from
       // lib/finance/conventions.ts: revenue +, costs +, financial signed.
@@ -236,7 +315,17 @@ export async function POST(req: NextRequest) {
       }
 
       if (existing) {
-        // Overwrite our own prior fortnox_api row (re-runs are idempotent).
+        // Track PDF overwrites separately — the API-priority flip means we
+        // legitimately overwrite buggy pre-Session-13 PDF rows now.
+        if (existing.source === 'fortnox_pdf' || existing.source === 'fortnox_apply') {
+          monthsOverwrittenPdf++
+          log.info('fortnox-backfill overwriting pdf', {
+            route:           'cron/fortnox-backfill-worker',
+            integration_id:  integrationId,
+            period:          key,
+            previous_source: existing.source,
+          })
+        }
         const { error } = await db.from('tracker_data').update(payload).eq('id', existing.id)
         if (error) throw new Error(`update ${key}: ${error.message}`)
       } else {
@@ -249,11 +338,12 @@ export async function POST(req: NextRequest) {
       // hammering the DB.
       if ((i + 1) % 3 === 0) {
         await markProgress(db, integrationId, {
-          phase:               'writing',
-          months_total:        monthsTotal,
-          months_done:         i + 1,
-          months_written:      monthsWritten,
-          months_skipped_pdf:  monthsSkippedPdf,
+          phase:                     'writing',
+          months_total:              monthsTotal,
+          months_done:               i + 1,
+          months_written:            monthsWritten,
+          months_skipped_validation: monthsSkippedValidation,
+          months_overwritten_pdf:    monthsOverwrittenPdf,
         })
       }
     }
@@ -265,12 +355,14 @@ export async function POST(req: NextRequest) {
         backfill_status:      'completed',
         backfill_finished_at: new Date().toISOString(),
         backfill_progress: {
-          phase:               'completed',
-          months_total:        monthsTotal,
-          months_written:      monthsWritten,
-          months_skipped_pdf:  monthsSkippedPdf,
-          voucher_count:       fetchResult.vouchers.length,
-          duration_ms:         Date.now() - startedAt,
+          phase:                     'completed',
+          months_total:              monthsTotal,
+          months_written:            monthsWritten,
+          months_skipped_validation: monthsSkippedValidation,
+          months_overwritten_pdf:    monthsOverwrittenPdf,
+          validation_failures:       validationFailures,
+          voucher_count:             fetchResult.vouchers.length,
+          duration_ms:               Date.now() - startedAt,
         },
         last_sync_at:         new Date().toISOString(),
         last_error:           null,
@@ -279,13 +371,14 @@ export async function POST(req: NextRequest) {
       .eq('id', integrationId)
 
     log.info('fortnox-backfill complete', {
-      route:               'cron/fortnox-backfill-worker',
-      integration_id:      integrationId,
-      months_written:      monthsWritten,
-      months_skipped_pdf:  monthsSkippedPdf,
-      voucher_count:       fetchResult.vouchers.length,
-      duration_ms:         Date.now() - startedAt,
-      status:              'success',
+      route:                     'cron/fortnox-backfill-worker',
+      integration_id:            integrationId,
+      months_written:            monthsWritten,
+      months_skipped_validation: monthsSkippedValidation,
+      months_overwritten_pdf:    monthsOverwrittenPdf,
+      voucher_count:             fetchResult.vouchers.length,
+      duration_ms:               Date.now() - startedAt,
+      status:                    'success',
     })
 
     // Re-fire ourselves in case more pending integrations are queued (the
@@ -294,12 +387,14 @@ export async function POST(req: NextRequest) {
     waitUntil(triggerNext())
 
     return NextResponse.json({
-      ok:                  true,
-      integration_id:      integrationId,
-      months_written:      monthsWritten,
-      months_skipped_pdf:  monthsSkippedPdf,
-      voucher_count:       fetchResult.vouchers.length,
-      duration_ms:         Date.now() - startedAt,
+      ok:                        true,
+      integration_id:            integrationId,
+      months_written:            monthsWritten,
+      months_skipped_validation: monthsSkippedValidation,
+      months_overwritten_pdf:    monthsOverwrittenPdf,
+      validation_failures:       validationFailures,
+      voucher_count:             fetchResult.vouchers.length,
+      duration_ms:               Date.now() - startedAt,
     })
   } catch (e: any) {
     const msg = String(e?.message ?? e).slice(0, 1000)
