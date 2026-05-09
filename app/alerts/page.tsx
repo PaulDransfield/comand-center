@@ -290,10 +290,12 @@ function DecisionModal({ action, notes, setNotes, onCancel, onConfirm, t }: {
         <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 14px 0', lineHeight: 1.5 }}>
           {action === 'confirm' ? t('modal.confirmBody') : t('modal.rejectBody')}
         </p>
-        <label style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
+        <label htmlFor="cc-anomaly-decision-notes" style={{ fontSize: 11, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>
           {t('modal.notes')}
         </label>
         <textarea
+          id="cc-anomaly-decision-notes"
+          name="anomaly_decision_notes"
           value={notes}
           onChange={e => setNotes(e.target.value)}
           placeholder={t('modal.placeholder')}
