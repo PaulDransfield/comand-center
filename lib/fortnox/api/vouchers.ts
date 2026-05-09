@@ -102,6 +102,43 @@ export interface VoucherFetchResult {
   tokenRefreshed:  boolean
 }
 
+/** Summary with the fiscal-year context attached, so the later detail
+ *  GET can use the same year header / query param. */
+export type FortnoxVoucherSummaryWithContext = FortnoxVoucherSummary & { __fyId: number; __fyDate: string }
+
+export interface VoucherSummariesResult {
+  summaries:       FortnoxVoucherSummaryWithContext[]
+  listRequests:    number
+  durationMs:      number
+  tokenRefreshed:  boolean
+}
+
+export interface VoucherDetailsBatchResult {
+  vouchers:        FortnoxVoucher[]
+  detailRequests:  number
+  durationMs:      number
+  tokenRefreshed:  boolean
+  /** Did we exit early because the time budget elapsed? */
+  aborted:         boolean
+  /** How many summaries we processed before exit (cursor + this = next start). */
+  processed:       number
+}
+
+export interface VoucherDetailsBatchOptions {
+  db:           any
+  orgId:        string
+  businessId?:  string
+  /** Pre-fetched summaries (with fiscal-year context). */
+  summaries:    FortnoxVoucherSummaryWithContext[]
+  /** Optional: stop fetching once Date.now() > deadlineMs. Lets the
+   *  worker checkpoint before its function timeout kills the process. */
+  deadlineMs?:  number
+  /** Optional: callback invoked every `progressEvery` vouchers (default 25)
+   *  so the caller can persist a cursor to its own state. */
+  progressEvery?: number
+  onProgress?:  (state: { vouchersFetched: number; vouchersTotal: number; detailRequests: number }) => Promise<void> | void
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const FORTNOX_API   = 'https://api.fortnox.se/3'
@@ -115,7 +152,162 @@ const RATE_WINDOW_MS = 5_000
 const RATE_MAX      = 18
 const REFRESH_THRESHOLD_MS = 5 * 60 * 1000  // refresh if <5min to expiry
 
-// ── Public entry point ───────────────────────────────────────────────────────
+// ── Public entry points ──────────────────────────────────────────────────────
+
+/**
+ * Fetch ONLY the voucher summaries for the requested range — Phase 0
+ * (financial years) + Phase 1 (paginated list calls). Returns the full
+ * summary list with fiscal-year context attached. Use when you need to
+ * checkpoint between summary-fetch and detail-fetch (e.g. resumable
+ * worker). Single-call diagnostic should still use `fetchVouchersForRange`.
+ */
+export async function fetchVoucherSummariesForRange(opts: VoucherFetchOptions): Promise<VoucherSummariesResult> {
+  const startedAt = Date.now()
+  const db        = opts.db
+
+  const integ = await loadIntegration(db, opts.orgId, opts.businessId)
+  let creds   = await ensureFreshToken(db, integ)
+
+  const throttle = new SlidingWindowThrottle(RATE_MAX, RATE_WINDOW_MS)
+  let listRequests   = 0
+  let tokenRefreshed = false
+
+  await throttle.acquire()
+  const { years: allYears } = await fetchFinancialYears(creds.access_token)
+  if (allYears.length === 0) {
+    throw new Error('Fortnox /financialyears returned no years — customer has no fiscal year configured')
+  }
+  const yearSlices = clampRangeToFiscalYears(opts.fromDate, opts.toDate, allYears)
+  if (yearSlices.length === 0) {
+    throw new Error(
+      `Fortnox: requested range ${opts.fromDate}..${opts.toDate} does not overlap any fiscal year on file ` +
+      `(years: ${allYears.map(y => `${y.FromDate}..${y.ToDate}`).join(', ')})`,
+    )
+  }
+
+  const summaries: FortnoxVoucherSummaryWithContext[] = []
+  for (const slice of yearSlices) {
+    const fyId   = slice.year.Id
+    const fyDate = slice.year.FromDate
+    let page = 1
+    while (true) {
+      await throttle.acquire()
+      const url =
+        `${FORTNOX_API}/vouchers?fromdate=${slice.fromDate}&todate=${slice.toDate}` +
+        `&financialyear=${fyId}&limit=${PAGE_SIZE}&page=${page}`
+      const res = await authedFetch(url, creds.access_token, fyId, fyDate)
+      listRequests++
+
+      if (res.status === 401) {
+        creds = await ensureFreshToken(db, integ, /*force*/ true)
+        tokenRefreshed = true
+        const retry = await authedFetch(url, creds.access_token, fyId, fyDate)
+        if (!retry.ok) throw new Error(`Fortnox /vouchers list failed after refresh: HTTP ${retry.status}`)
+        const body = await retry.json()
+        collectListPage(body, summaries, fyId, fyDate)
+        if (isLastPage(body, page)) break
+      } else if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`Fortnox /vouchers list failed (year ${slice.year.FromDate}..${slice.year.ToDate}, id=${fyId}): HTTP ${res.status} — ${text.slice(0, 200)}`)
+      } else {
+        const body = await res.json()
+        collectListPage(body, summaries, fyId, fyDate)
+        if (isLastPage(body, page)) break
+      }
+      page++
+      if (page > 1000) throw new Error('Fortnox /vouchers list pagination exceeded 1000 pages — aborting (likely runaway)')
+    }
+  }
+
+  return {
+    summaries,
+    listRequests,
+    durationMs: Date.now() - startedAt,
+    tokenRefreshed,
+  }
+}
+
+/**
+ * Fetch full voucher details for a pre-built list of summaries. Honors
+ * `deadlineMs` for early exit (the resumable worker uses this to checkpoint
+ * before Vercel kills the function). Returns `aborted: true` + `processed: N`
+ * when it exits early so the caller can resume from `summaries[N]` later.
+ */
+export async function fetchVoucherDetailsForSummaries(opts: VoucherDetailsBatchOptions): Promise<VoucherDetailsBatchResult> {
+  const startedAt = Date.now()
+  const db        = opts.db
+
+  const integ = await loadIntegration(db, opts.orgId, opts.businessId)
+  let creds   = await ensureFreshToken(db, integ)
+
+  const throttle = new SlidingWindowThrottle(RATE_MAX, RATE_WINDOW_MS)
+  let detailRequests = 0
+  let tokenRefreshed = false
+  let processed      = 0
+
+  const progressEvery = opts.progressEvery ?? 25
+  const vouchers: FortnoxVoucher[] = []
+
+  for (let i = 0; i < opts.summaries.length; i++) {
+    // Deadline check — bail BEFORE acquiring the throttle slot so we don't
+    // burn time waiting for rate-limit headroom we'll never use.
+    if (opts.deadlineMs != null && Date.now() >= opts.deadlineMs) {
+      return {
+        vouchers,
+        detailRequests,
+        durationMs: Date.now() - startedAt,
+        tokenRefreshed,
+        aborted:    true,
+        processed,
+      }
+    }
+
+    const sum = opts.summaries[i]
+    await throttle.acquire()
+
+    if (creds.expires_at - Date.now() < REFRESH_THRESHOLD_MS) {
+      creds = await ensureFreshToken(db, integ, /*force*/ true)
+      tokenRefreshed = true
+    }
+
+    const url =
+      `${FORTNOX_API}/vouchers/${encodeURIComponent(sum.VoucherSeries)}/${sum.VoucherNumber}` +
+      `?financialyear=${sum.__fyId}`
+    const res = await authedFetch(url, creds.access_token, sum.__fyId, sum.__fyDate)
+    detailRequests++
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Fortnox /vouchers/${sum.VoucherSeries}/${sum.VoucherNumber} failed: HTTP ${res.status} — ${text.slice(0, 200)}`)
+    }
+    const body = await res.json()
+    const v = body?.Voucher as FortnoxVoucher
+    if (!v) throw new Error(`Fortnox /vouchers/${sum.VoucherSeries}/${sum.VoucherNumber} returned no Voucher payload`)
+    vouchers.push(v)
+    processed = i + 1
+
+    if (detailRequests % progressEvery === 0) {
+      if (opts.onProgress) {
+        try {
+          await opts.onProgress({
+            vouchersFetched: vouchers.length,
+            vouchersTotal:   opts.summaries.length,
+            detailRequests,
+          })
+        } catch { /* progress writes are best-effort */ }
+      }
+    }
+  }
+
+  return {
+    vouchers,
+    detailRequests,
+    durationMs: Date.now() - startedAt,
+    tokenRefreshed,
+    aborted:    false,
+    processed,
+  }
+}
 
 export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<VoucherFetchResult> {
   const startedAt = Date.now()

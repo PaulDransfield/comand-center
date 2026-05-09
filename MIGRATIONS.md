@@ -6,6 +6,25 @@
 
 ## Pending — apply when ready
 
+### M060 — Fortnox backfill resumability state ⏳ pending application
+**File:** `sql/M060-FORTNOX-BACKFILL-STATE.sql`
+**Purpose:** new `fortnox_backfill_state` table — persists work-in-progress so the backfill worker can checkpoint before the Vercel function timeout (600-800s) kills it. Without this, any backfill of >~10 minutes (Vero alone has ~17 minutes of work for 12 months) dies mid-flight with the row stuck at `running`.
+**Schema:**
+- `integration_id UUID PRIMARY KEY` — one state row per integration
+- `voucher_queue JSONB` — full list of voucher summaries with fiscal-year context (built once during Phase 1; ~5KB per summary, 3,800 summaries ≈ 19MB JSONB row for Vero — acceptable, will revisit if needed)
+- `cursor INTEGER` — index into voucher_queue of next summary to fetch
+- `written_periods JSONB` — array of "YYYY-MM" strings already written to tracker_data
+- `from_date / to_date` — range bounds for diagnostics
+- `started_at / last_progress_at / resume_count` — telemetry
+**Lifecycle:** created when worker enters Phase 1 (fresh start); updated after every period flush; deleted on `completed` or `failed`.
+**Companion code:**
+- `lib/fortnox/api/vouchers.ts` — split into `fetchVoucherSummariesForRange()` (Phase 0+1) + `fetchVoucherDetailsForSummaries()` (Phase 2 with `deadlineMs` for early exit). `fetchVouchersForRange()` retained as orchestrator for diagnose endpoint.
+- `app/api/cron/fortnox-backfill-worker/route.ts` — full rewrite for resumability. Claims `pending` OR `paused`. Loads state row on resume; otherwise fetches summaries. Per-period flush after each period's summaries are exhausted. Time-budget gate at `maxDuration - 60s`; on hit, persists state, sets `backfill_status='paused'`, chains next worker via `waitUntil(triggerNext())`. New `backfill_progress.phase` values: `'listing'`, `'paused'`, `'resuming'`. New `backfill_status` value: `'paused'`.
+- `app/api/admin/fortnox/kick-backfill/route.ts` — clears state row before flipping to `pending` (admin "kick" is fresh-start intent).
+- `app/admin/v2/tools/page.tsx` — polling continues through `paused` state (only `completed`/`failed` are terminal); 60-min poll ceiling for multi-run chains.
+**Apply order:** M060 must apply before the worker code deploys, else `fortnox_backfill_state` references throw 42P01.
+**Architecture note:** see `project_api_priority_strategy` memory — this is Phase C of the API-priority strategy (Phase A = validators inherited from PDF apply; Phase B = skip-PDF rule inverted; **Phase C = resumability** unblocks multi-year backfills). Phase D = re-extract Vero's existing PDF months. Phase E = onboarding flow without PDF requirement.
+
 ### M059 — Daily forecast outcomes audit ledger (Piece 1) ⏳ pending application
 **File:** `sql/M059-DAILY-FORECAST-OUTCOMES.sql`
 **Purpose:** new `daily_forecast_outcomes` table — the audit ledger for every revenue prediction the two legacy forecasters (`/api/scheduling/ai-suggestion`, `lib/weather/demand.ts`) emit, plus future surfaces (`consolidated_daily`, `llm_adjusted`). Captured row carries `predicted_revenue`, `inputs_snapshot` (the exact signals the model used), `model_version`, `snapshot_version`, `prediction_horizon_days` (generated column = `forecast_date - first_predicted_at::date`). UNIQUE `(business_id, forecast_date, surface)` makes capture idempotent — re-firing the dashboard 5x produces one row per (business, date, surface) with the latest prediction winning. RLS read policy via `organisation_members` matches M020 / M053 / M057 verbatim. Retention RPC `prune_daily_forecast_outcomes()` mirrors the M020 3-year sweep.

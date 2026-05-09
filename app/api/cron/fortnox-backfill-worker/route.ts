@@ -37,7 +37,12 @@ import { NextRequest, NextResponse }     from 'next/server'
 import { waitUntil }                     from '@vercel/functions'
 import { createAdminClient }             from '@/lib/supabase/server'
 import { log }                           from '@/lib/log/structured'
-import { fetchVouchersForRange }         from '@/lib/fortnox/api/vouchers'
+import {
+  fetchVoucherSummariesForRange,
+  fetchVoucherDetailsForSummaries,
+  type FortnoxVoucherSummaryWithContext,
+  type FortnoxVoucher,
+} from '@/lib/fortnox/api/vouchers'
 import { translateVouchersToPeriods }    from '@/lib/fortnox/api/voucher-to-aggregator'
 import { projectRollup }                 from '@/lib/finance/projectRollup'
 import { validateApiBackfillBatch }      from '@/lib/fortnox/api/validate-backfill'
@@ -80,14 +85,13 @@ export async function POST(req: NextRequest) {
     : DEFAULT_MONTHS
 
   // ── 1. Atomic claim ──────────────────────────────────────────────────────
-  // Find one pending Fortnox integration. If two workers fire at the same
-  // moment they may both read this row, but only one of them survives the
-  // UPDATE because the second eq('backfill_status','pending') turns the
-  // other worker's UPDATE into a zero-row no-op.
+  // Find one row in pending OR paused status. 'paused' rows are partially-
+  // processed backfills with a state row that needs resuming. The same
+  // atomic-CAS-via-eq pattern means contended workers no-op cleanly.
   const { data: pending } = await db
     .from('integrations')
-    .select('id, org_id, business_id')
-    .eq('backfill_status', 'pending')
+    .select('id, org_id, business_id, backfill_status')
+    .in('backfill_status', ['pending', 'paused'])
     .eq('provider', PROVIDER)
     .limit(1)
     .maybeSingle()
@@ -96,21 +100,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, empty: true })
   }
 
+  const previousStatus = pending.backfill_status as 'pending' | 'paused'
   const { data: claimed, error: claimErr } = await db
     .from('integrations')
     .update({
       backfill_status:     'running',
-      backfill_started_at: new Date().toISOString(),
-      backfill_progress:   { phase: 'claimed', months_total: MONTHS, months_done: 0 },
+      backfill_started_at: previousStatus === 'pending' ? new Date().toISOString() : undefined,  // preserve original start on resume
+      backfill_progress:   { phase: previousStatus === 'paused' ? 'resuming' : 'claimed' },
       backfill_error:      null,
     })
     .eq('id', pending.id)
-    .eq('backfill_status', 'pending')        // atomic gate — second worker no-ops
+    .eq('backfill_status', previousStatus)   // atomic gate
     .select('id, org_id, business_id')
     .maybeSingle()
 
   if (claimErr || !claimed) {
-    // Another worker claimed this row first.
     return NextResponse.json({ ok: true, empty: false, contended: true })
   }
 
@@ -126,114 +130,128 @@ export async function POST(req: NextRequest) {
   })
 
   try {
-    // ── 2. Compute date range ─────────────────────────────────────────────
-    // months=0 → fetch everything Fortnox has (fetcher clamps to actual
-    // fiscal years via /financialyears). Otherwise compute a bounded
-    // window relative to today.
-    const toDate = new Date()
-    let fromIso:  string
-    if (MONTHS === 0) {
-      // Sentinel: ask for everything since 1990. clampRangeToFiscalYears
-      // turns this into "all fiscal years on file" automatically.
-      fromIso = '1990-01-01'
+    // ── Resumable design (M060) ────────────────────────────────────────
+    // Worker leaves 60s headroom before maxDuration; if the time budget
+    // runs out mid-detail-loop, we persist {cursor, written_periods} to
+    // fortnox_backfill_state, set integrations.backfill_status='paused',
+    // and chain another worker invocation via waitUntil. The next claim
+    // sees the paused row, skips Phase 1 (summaries are already in state),
+    // and resumes from the cursor.
+    const TIME_BUDGET_MS = (maxDuration - 60) * 1000  // leave 60s for cleanup
+    const deadline       = startedAt + TIME_BUDGET_MS
+
+    // Try to load existing state row (resume case).
+    const { data: existingState } = await db
+      .from('fortnox_backfill_state')
+      .select('*')
+      .eq('integration_id', integrationId)
+      .maybeSingle()
+
+    let summaries:      FortnoxVoucherSummaryWithContext[]
+    const writtenPeriods = new Set<string>()
+    let cursor:         number
+    let fromIso:        string
+    let toIso:          string
+    let resumeCount:    number
+
+    if (existingState && Array.isArray(existingState.voucher_queue) && existingState.voucher_queue.length > 0) {
+      // ── Resume mode ────────────────────────────────────────────────
+      summaries     = existingState.voucher_queue
+      cursor        = Number(existingState.cursor ?? 0)
+      fromIso       = existingState.from_date  ?? '1990-01-01'
+      toIso         = existingState.to_date    ?? new Date().toISOString().slice(0, 10)
+      resumeCount   = Number(existingState.resume_count ?? 0)
+      for (const k of (existingState.written_periods ?? []) as string[]) writtenPeriods.add(k)
+
+      log.info('fortnox-backfill resuming', {
+        route:           'cron/fortnox-backfill-worker',
+        integration_id:  integrationId,
+        cursor,
+        total_vouchers:  summaries.length,
+        months_written:  writtenPeriods.size,
+        resume_count:    resumeCount,
+      })
     } else {
-      const fromDate = new Date(toDate)
-      fromDate.setUTCMonth(fromDate.getUTCMonth() - MONTHS)
-      fromIso = fromDate.toISOString().slice(0, 10)
-    }
-    const toIso    = toDate.toISOString().slice(0, 10)
-
-    await markProgress(db, integrationId, {
-      phase:            'fetching',
-      from_date:        fromIso,
-      to_date:          toIso,
-      months_requested: MONTHS === 0 ? 'all_available' : MONTHS,
-      months_done:      0,
-    })
-
-    // ── 3. Fetch vouchers ──────────────────────────────────────────────────
-    // onProgress is called every 25 detail GETs (configurable via
-    // progressEvery) so the admin UI sees live movement during the long
-    // detail-fetch loop instead of the row sitting silently at 'fetching'.
-    const fetchResult = await fetchVouchersForRange({
-      db,
-      orgId,
-      businessId: businessId ?? undefined,
-      fromDate:   fromIso,
-      toDate:     toIso,
-      onProgress: async (state) => {
-        await markProgress(db, integrationId, {
-          phase:             'fetching',
-          from_date:         fromIso,
-          to_date:           toIso,
-          months_requested:  MONTHS,
-          vouchers_fetched:  state.vouchersFetched,
-          vouchers_total:    state.vouchersTotal,
-          list_requests:     state.listRequests,
-          detail_requests:   state.detailRequests,
-        })
-      },
-    })
-
-    log.info('fortnox-backfill fetched', {
-      route:           'cron/fortnox-backfill-worker',
-      integration_id:  integrationId,
-      voucher_count:   fetchResult.vouchers.length,
-      list_requests:   fetchResult.listRequests,
-      detail_requests: fetchResult.detailRequests,
-      duration_ms:     fetchResult.durationMs,
-      token_refreshed: fetchResult.tokenRefreshed,
-    })
-
-    await markProgress(db, integrationId, {
-      phase:           'translating',
-      voucher_count:   fetchResult.vouchers.length,
-      list_requests:   fetchResult.listRequests,
-      detail_requests: fetchResult.detailRequests,
-    })
-
-    // ── 4. Translate + project + validate + write per period ──────────────
-    const translated = translateVouchersToPeriods(fetchResult.vouchers)
-
-    // Pre-load existing tracker_data sources for these periods so we can
-    // detect when we're overwriting a PDF row (logged) and reuse the row id
-    // for UPDATE rather than blindly INSERTing duplicates.
-    const periodKeys = translated.periods.map(p => `${p.year}-${String(p.month).padStart(2, '0')}`)
-    const existingByKey = new Map<string, { id: string; source: string | null }>()
-    if (businessId && periodKeys.length > 0) {
-      const minYear = Math.min(...translated.periods.map(p => p.year))
-      const maxYear = Math.max(...translated.periods.map(p => p.year))
-      const { data: existing } = await db
-        .from('tracker_data')
-        .select('id, period_year, period_month, source')
-        .eq('business_id', businessId)
-        .gte('period_year', minYear)
-        .lte('period_year', maxYear)
-      for (const row of existing ?? []) {
-        const key = `${row.period_year}-${String(row.period_month).padStart(2, '0')}`
-        existingByKey.set(key, { id: row.id, source: row.source })
+      // ── Fresh start ────────────────────────────────────────────────
+      const toDate = new Date()
+      if (MONTHS === 0) {
+        fromIso = '1990-01-01'
+      } else {
+        const fromDate = new Date(toDate)
+        fromDate.setUTCMonth(fromDate.getUTCMonth() - MONTHS)
+        fromIso = fromDate.toISOString().slice(0, 10)
       }
+      toIso       = toDate.toISOString().slice(0, 10)
+      resumeCount = 0
+
+      await markProgress(db, integrationId, {
+        phase:            'listing',
+        from_date:        fromIso,
+        to_date:          toIso,
+        months_requested: MONTHS === 0 ? 'all_available' : MONTHS,
+      })
+
+      // Phase 1: fetch summaries only. Single round-trip — fast.
+      const sumResult = await fetchVoucherSummariesForRange({
+        db,
+        orgId,
+        businessId: businessId ?? undefined,
+        fromDate:   fromIso,
+        toDate:     toIso,
+      })
+      summaries = sumResult.summaries
+      // Sort by TransactionDate ascending so periods are processed in order.
+      // The per-period flush logic relies on knowing when a period is fully
+      // fetched; sorting by date guarantees we never see a summary from an
+      // earlier period after we've started processing a later one.
+      summaries.sort((a, b) => (a.TransactionDate ?? '').localeCompare(b.TransactionDate ?? ''))
+      cursor = 0
+
+      log.info('fortnox-backfill listed', {
+        route:           'cron/fortnox-backfill-worker',
+        integration_id:  integrationId,
+        voucher_total:   summaries.length,
+        list_requests:   sumResult.listRequests,
+        duration_ms:     sumResult.durationMs,
+      })
+
+      // Persist state row so a future timeout can resume from this point.
+      const { error: stateErr } = await db
+        .from('fortnox_backfill_state')
+        .upsert({
+          integration_id:  integrationId,
+          org_id:          orgId,
+          business_id:     businessId,
+          voucher_queue:   summaries,
+          total_vouchers:  summaries.length,
+          cursor:          0,
+          written_periods: [],
+          from_date:       fromIso,
+          to_date:         toIso,
+        }, { onConflict: 'integration_id' })
+      if (stateErr) throw new Error(`state init: ${stateErr.message}`)
     }
 
-    // Pre-load business + org rows for validator context. Used by the scale-
-    // anomaly check (history) and the org-nr checks. Cheap — one row each.
+    // Pre-load context once per worker invocation (used for validators)
     const [{ data: bizRow }, { data: orgRow }] = await Promise.all([
       db.from('businesses').select('name, org_number').eq('id', businessId).maybeSingle(),
       db.from('organisations').select('name, org_number').eq('id', orgId).maybeSingle(),
     ])
 
-    // Six-month history for scale-anomaly detection. Fetch BEFORE this
-    // backfill writes anything so we're comparing against the prior baseline,
-    // not our own about-to-be-written rows.
-    const historyFromYear  = translated.periods.length > 0 ? Math.min(...translated.periods.map(p => p.year)) - 1 : new Date().getUTCFullYear() - 1
+    // History from tracker_data BEFORE we write anything in THIS run. Note
+    // that on resumes, this picks up rows already written by earlier runs —
+    // that's actually FINE because those rows are correct API data anyway.
+    const minSummaryYear = summaries.length > 0
+      ? Number(summaries[0].TransactionDate?.slice(0, 4) ?? new Date().getUTCFullYear()) - 1
+      : new Date().getUTCFullYear() - 1
     const { data: historyRows } = await db
       .from('tracker_data')
       .select('period_year, period_month, revenue, staff_cost, food_cost')
       .eq('business_id', businessId)
-      .gte('period_year', historyFromYear)
+      .gte('period_year', minSummaryYear)
       .order('period_year', { ascending: true })
       .order('period_month', { ascending: true })
-      .limit(24)
+      .limit(36)
     const history = (historyRows ?? []).map(h => ({
       year:       Number(h.period_year),
       month:      Number(h.period_month),
@@ -242,133 +260,218 @@ export async function POST(req: NextRequest) {
       food_cost:  Number(h.food_cost ?? 0),
     }))
 
-    // Project every period up-front so validators see the same shape that
-    // tracker_data will store.
-    const projectedByKey = new Map<string, ReturnType<typeof projectRollup>>()
-    for (const p of translated.periods) {
-      const key = `${p.year}-${String(p.month).padStart(2, '0')}`
-      projectedByKey.set(key, projectRollup(p.rollup, p.lines))
+    // Compute remaining-summaries-per-period from cursor onwards. As we fetch
+    // each detail and decrement, we know when a period is fully fetched and
+    // ready to flush.
+    const remainingByPeriod = new Map<string, number>()
+    for (let i = cursor; i < summaries.length; i++) {
+      const s = summaries[i]
+      const yyyymm = (s.TransactionDate ?? '').slice(0, 7)  // YYYY-MM
+      if (!yyyymm) continue
+      if (writtenPeriods.has(yyyymm)) continue
+      remainingByPeriod.set(yyyymm, (remainingByPeriod.get(yyyymm) ?? 0) + 1)
     }
 
-    // ── Validate batch via the same chokepoint PDF apply uses ───────────
-    // Per project_api_priority_strategy memory: API path now goes through
-    // the same validators as PDF apply BEFORE writing tracker_data. Failed
-    // periods skip-and-log; passing periods proceed to write.
-    const existingPeriodSet = new Set(existingByKey.keys())
-    const validation = validateApiBackfillBatch(
-      translated.periods.map(p => ({
-        period:    p,
-        projected: projectedByKey.get(`${p.year}-${String(p.month).padStart(2, '0')}`)!,
-      })),
-      {
-        org:             { name: orgRow?.name ?? null, org_number: orgRow?.org_number ?? null },
-        business:        { name: bizRow?.name ?? null, org_number: bizRow?.org_number ?? null },
-        history,
-        existingPeriods: existingPeriodSet,
-      },
-    )
-    const validationByKey = new Map<string, typeof validation.results[number]>(
-      validation.results.map(v => [`${v.year}-${String(v.month).padStart(2, '0')}`, v]),
-    )
+    const accumulatedByPeriod = new Map<string, FortnoxVoucher[]>()
+    let monthsWrittenThisRun     = 0
+    let monthsOverwrittenPdfThis = 0
+    let monthsSkippedValidation  = 0
+    const validationFailures: Array<{ period: string; codes: string[] }> = []
+    let detailRequestsThisRun    = 0
 
-    log.info('fortnox-backfill validated', {
-      route:           'cron/fortnox-backfill-worker',
-      integration_id:  integrationId,
-      passed:          validation.summary.passed,
-      failed:          validation.summary.failed,
-      total_warnings:  validation.summary.total_warnings,
-      total_errors:    validation.summary.total_errors,
-    })
+    // ── Detail loop with deadline-aware checkpointing ────────────────
+    while (cursor < summaries.length) {
+      // Deadline check BEFORE the next fetch so we exit cleanly.
+      if (Date.now() > deadline) {
+        // Persist state, set status='paused', chain re-fire.
+        await db.from('fortnox_backfill_state').update({
+          cursor,
+          written_periods:  Array.from(writtenPeriods),
+          last_progress_at: new Date().toISOString(),
+          resume_count:     resumeCount + 1,
+        }).eq('integration_id', integrationId)
 
-    let monthsWritten           = 0
-    let monthsSkippedValidation = 0
-    let monthsOverwrittenPdf    = 0
-    let monthsTotal             = translated.periods.length
-    const validationFailures:  Array<{ period: string; codes: string[] }> = []
+        await db.from('integrations').update({
+          backfill_status: 'paused',
+          backfill_progress: {
+            phase:                       'paused',
+            cursor,
+            total_vouchers:              summaries.length,
+            months_written_total:        writtenPeriods.size,
+            months_written_this_run:     monthsWrittenThisRun,
+            detail_requests_this_run:    detailRequestsThisRun,
+            duration_ms_this_run:        Date.now() - startedAt,
+            resume_count:                resumeCount + 1,
+          },
+        }).eq('id', integrationId)
 
-    for (let i = 0; i < translated.periods.length; i++) {
-      const period = translated.periods[i]
-      const key    = `${period.year}-${String(period.month).padStart(2, '0')}`
-      const existing = existingByKey.get(key)
-
-      // ── Validation gate ────────────────────────────────────────────
-      // Per Phase A: API path inherits the same chokepoint as PDF apply.
-      // Periods with `error` findings skip the write and surface in the
-      // failure list. `warning`-only periods proceed (mirrors PDF apply's
-      // ack-warnings behaviour — for backfill we auto-ack, the warnings
-      // remain visible in the report).
-      const valResult = validationByKey.get(key)
-      if (valResult && !valResult.ok) {
-        monthsSkippedValidation++
-        validationFailures.push({
-          period: key,
-          codes:  valResult.findings.filter(f => f.severity === 'error').map(f => f.code),
+        log.info('fortnox-backfill paused', {
+          route:                       'cron/fortnox-backfill-worker',
+          integration_id:              integrationId,
+          cursor,
+          total_vouchers:              summaries.length,
+          months_written_total:        writtenPeriods.size,
+          months_written_this_run:     monthsWrittenThisRun,
+          duration_ms_this_run:        Date.now() - startedAt,
+          resume_count:                resumeCount + 1,
         })
+
+        waitUntil(triggerNext())
+        return NextResponse.json({
+          ok:                       true,
+          integration_id:           integrationId,
+          status:                   'paused',
+          cursor,
+          total_vouchers:           summaries.length,
+          months_written_total:     writtenPeriods.size,
+          months_written_this_run:  monthsWrittenThisRun,
+        })
+      }
+
+      const summary  = summaries[cursor]
+      const yyyymm   = (summary.TransactionDate ?? '').slice(0, 7)
+      if (!yyyymm) { cursor++; continue }
+
+      // Skip already-written periods (resume after a prior run that wrote some)
+      if (writtenPeriods.has(yyyymm)) {
+        cursor++
         continue
       }
 
-      const proj = projectedByKey.get(key)!
-
-      // tracker_data write payload — uses storage convention from
-      // lib/finance/conventions.ts: revenue +, costs +, financial signed.
-      // source='fortnox_api' to distinguish from PDF apply.
-      // created_via='fortnox_backfill' per M047.
-      const payload: Record<string, any> = {
-        org_id:           orgId,
-        business_id:      businessId,
-        period_year:      period.year,
-        period_month:     period.month,
-        revenue:          proj.revenue,
-        dine_in_revenue:  proj.dine_in_revenue,
-        takeaway_revenue: proj.takeaway_revenue,
-        alcohol_revenue:  proj.alcohol_revenue,
-        food_cost:        proj.food_cost,
-        alcohol_cost:     proj.alcohol_cost,
-        staff_cost:       proj.staff_cost,
-        other_cost:       proj.other_cost,
-        total_cost:       proj.food_cost + proj.staff_cost + proj.other_cost + proj.depreciation,
-        net_profit:       proj.net_profit,
-        margin_pct:       proj.margin_pct,
-        source:           'fortnox_api',
-        created_via:      'fortnox_backfill',
-        updated_at:       new Date().toISOString(),
+      // Fetch one detail. We use the batch helper with summaries=[single]
+      // for code reuse — its internal throttle + token refresh handle one
+      // call just as well as N calls.
+      const detailBatch = await fetchVoucherDetailsForSummaries({
+        db,
+        orgId,
+        businessId: businessId ?? undefined,
+        summaries:  [summary],
+      })
+      detailRequestsThisRun += detailBatch.detailRequests
+      if (detailBatch.vouchers.length === 0) {
+        // Defensive — shouldn't happen for a single non-aborted call.
+        cursor++
+        continue
       }
+      const voucher = detailBatch.vouchers[0]
 
-      if (existing) {
-        // Track PDF overwrites separately — the API-priority flip means we
-        // legitimately overwrite buggy pre-Session-13 PDF rows now.
-        if (existing.source === 'fortnox_pdf' || existing.source === 'fortnox_apply') {
-          monthsOverwrittenPdf++
-          log.info('fortnox-backfill overwriting pdf', {
-            route:           'cron/fortnox-backfill-worker',
-            integration_id:  integrationId,
-            period:          key,
-            previous_source: existing.source,
-          })
+      // Accumulate by period.
+      const list = accumulatedByPeriod.get(yyyymm) ?? []
+      list.push(voucher)
+      accumulatedByPeriod.set(yyyymm, list)
+
+      cursor++
+      const rem = (remainingByPeriod.get(yyyymm) ?? 1) - 1
+      remainingByPeriod.set(yyyymm, rem)
+
+      // Period complete → translate, validate, write, persist state.
+      if (rem === 0) {
+        const periodVouchers = accumulatedByPeriod.get(yyyymm)!
+        const translated     = translateVouchersToPeriods(periodVouchers)
+        const periodOutput   = translated.periods.find(
+          p => `${p.year}-${String(p.month).padStart(2, '0')}` === yyyymm,
+        )
+
+        if (periodOutput) {
+          const projected = projectRollup(periodOutput.rollup, periodOutput.lines)
+
+          // Validate via the shared chokepoint
+          const valBatch = validateApiBackfillBatch(
+            [{ period: periodOutput, projected }],
+            {
+              org:             { name: orgRow?.name ?? null, org_number: orgRow?.org_number ?? null },
+              business:        { name: bizRow?.name ?? null, org_number: bizRow?.org_number ?? null },
+              history,
+              existingPeriods: writtenPeriods,
+            },
+          )
+          const valResult = valBatch.results[0]
+
+          if (!valResult.ok) {
+            monthsSkippedValidation++
+            validationFailures.push({
+              period: yyyymm,
+              codes:  valResult.findings.filter(f => f.severity === 'error').map(f => f.code),
+            })
+          } else {
+            // Look up existing tracker_data row for upsert decision
+            const { data: existing } = await db
+              .from('tracker_data')
+              .select('id, source')
+              .eq('business_id', businessId)
+              .eq('period_year', periodOutput.year)
+              .eq('period_month', periodOutput.month)
+              .maybeSingle()
+
+            const payload: Record<string, any> = {
+              org_id:           orgId,
+              business_id:      businessId,
+              period_year:      periodOutput.year,
+              period_month:     periodOutput.month,
+              revenue:          projected.revenue,
+              dine_in_revenue:  projected.dine_in_revenue,
+              takeaway_revenue: projected.takeaway_revenue,
+              alcohol_revenue: projected.alcohol_revenue,
+              food_cost:        projected.food_cost,
+              alcohol_cost:     projected.alcohol_cost,
+              staff_cost:       projected.staff_cost,
+              other_cost:       projected.other_cost,
+              total_cost:       projected.food_cost + projected.staff_cost + projected.other_cost + projected.depreciation,
+              net_profit:       projected.net_profit,
+              margin_pct:       projected.margin_pct,
+              source:           'fortnox_api',
+              created_via:      'fortnox_backfill',
+              updated_at:       new Date().toISOString(),
+            }
+
+            if (existing) {
+              if (existing.source === 'fortnox_pdf' || existing.source === 'fortnox_apply') {
+                monthsOverwrittenPdfThis++
+                log.info('fortnox-backfill overwriting pdf', {
+                  route:           'cron/fortnox-backfill-worker',
+                  integration_id:  integrationId,
+                  period:          yyyymm,
+                  previous_source: existing.source,
+                })
+              }
+              const { error } = await db.from('tracker_data').update(payload).eq('id', existing.id)
+              if (error) throw new Error(`update ${yyyymm}: ${error.message}`)
+            } else {
+              const { error } = await db.from('tracker_data').insert(payload)
+              if (error) throw new Error(`insert ${yyyymm}: ${error.message}`)
+            }
+            monthsWrittenThisRun++
+          }
         }
-        const { error } = await db.from('tracker_data').update(payload).eq('id', existing.id)
-        if (error) throw new Error(`update ${key}: ${error.message}`)
-      } else {
-        const { error } = await db.from('tracker_data').insert(payload)
-        if (error) throw new Error(`insert ${key}: ${error.message}`)
-      }
-      monthsWritten++
 
-      // Progress every 3 months keeps the UI feedback lively without
-      // hammering the DB.
-      if ((i + 1) % 3 === 0) {
+        writtenPeriods.add(yyyymm)
+        accumulatedByPeriod.delete(yyyymm)
+        remainingByPeriod.delete(yyyymm)
+
+        // Persist state after every period flush so a crash mid-run doesn't
+        // lose progress on already-written tracker_data rows.
+        await db.from('fortnox_backfill_state').update({
+          cursor,
+          written_periods:  Array.from(writtenPeriods),
+          last_progress_at: new Date().toISOString(),
+        }).eq('integration_id', integrationId)
+      }
+
+      // Periodic progress write so the admin UI sees movement during long
+      // mid-period stretches.
+      if (cursor % 25 === 0) {
         await markProgress(db, integrationId, {
-          phase:                     'writing',
-          months_total:              monthsTotal,
-          months_done:               i + 1,
-          months_written:            monthsWritten,
-          months_skipped_validation: monthsSkippedValidation,
-          months_overwritten_pdf:    monthsOverwrittenPdf,
+          phase:                'fetching',
+          cursor,
+          total_vouchers:       summaries.length,
+          months_written_total: writtenPeriods.size,
+          from_date:            fromIso,
+          to_date:              toIso,
         })
       }
     }
 
-    // ── 5. Mark completed ─────────────────────────────────────────────────
+    // ── All done. Mark completed + delete state row ─────────────────
     await db
       .from('integrations')
       .update({
@@ -376,13 +479,14 @@ export async function POST(req: NextRequest) {
         backfill_finished_at: new Date().toISOString(),
         backfill_progress: {
           phase:                     'completed',
-          months_total:              monthsTotal,
-          months_written:            monthsWritten,
+          total_vouchers:            summaries.length,
+          months_written_total:      writtenPeriods.size,
+          months_written_this_run:   monthsWrittenThisRun,
+          months_overwritten_pdf:    monthsOverwrittenPdfThis,
           months_skipped_validation: monthsSkippedValidation,
-          months_overwritten_pdf:    monthsOverwrittenPdf,
           validation_failures:       validationFailures,
-          voucher_count:             fetchResult.vouchers.length,
-          duration_ms:               Date.now() - startedAt,
+          duration_ms_this_run:      Date.now() - startedAt,
+          resume_count:              resumeCount,
         },
         last_sync_at:         new Date().toISOString(),
         last_error:           null,
@@ -390,31 +494,35 @@ export async function POST(req: NextRequest) {
       })
       .eq('id', integrationId)
 
+    await db.from('fortnox_backfill_state').delete().eq('integration_id', integrationId)
+
     log.info('fortnox-backfill complete', {
       route:                     'cron/fortnox-backfill-worker',
       integration_id:            integrationId,
-      months_written:            monthsWritten,
+      months_written_total:      writtenPeriods.size,
+      months_written_this_run:   monthsWrittenThisRun,
+      months_overwritten_pdf:    monthsOverwrittenPdfThis,
       months_skipped_validation: monthsSkippedValidation,
-      months_overwritten_pdf:    monthsOverwrittenPdf,
-      voucher_count:             fetchResult.vouchers.length,
-      duration_ms:               Date.now() - startedAt,
+      total_vouchers:            summaries.length,
+      duration_ms_this_run:      Date.now() - startedAt,
+      resume_count:              resumeCount,
       status:                    'success',
     })
 
-    // Re-fire ourselves in case more pending integrations are queued (the
-    // typical case is one customer at a time, but a burst of OAuth connects
-    // would otherwise drain at cron-tick speed).
+    // Re-fire ourselves in case more pending integrations are queued.
     waitUntil(triggerNext())
 
     return NextResponse.json({
       ok:                        true,
       integration_id:            integrationId,
-      months_written:            monthsWritten,
+      months_written_total:      writtenPeriods.size,
+      months_written_this_run:   monthsWrittenThisRun,
+      months_overwritten_pdf:    monthsOverwrittenPdfThis,
       months_skipped_validation: monthsSkippedValidation,
-      months_overwritten_pdf:    monthsOverwrittenPdf,
       validation_failures:       validationFailures,
-      voucher_count:             fetchResult.vouchers.length,
-      duration_ms:               Date.now() - startedAt,
+      total_vouchers:            summaries.length,
+      duration_ms_this_run:      Date.now() - startedAt,
+      resume_count:              resumeCount,
     })
   } catch (e: any) {
     const msg = String(e?.message ?? e).slice(0, 1000)

@@ -251,7 +251,9 @@ export default function ToolsPage() {
 
   async function pollBackfill(bizId: string) {
     const startedAt = Date.now()
-    const MAX_MS    = 12 * 60_000   // 12-min ceiling matches worker timeout headroom
+    // 60-min ceiling — resumable workers can chain across multiple
+    // 10-min slots. A 5-year backfill might run 5-6 chained runs.
+    const MAX_MS = 60 * 60_000
     while (Date.now() - startedAt < MAX_MS) {
       try {
         const r = await adminFetch<SqlSuccess>('/api/admin/v2/tools/sql', {
@@ -264,6 +266,8 @@ export default function ToolsPage() {
         const row = r.rows?.[0]
         if (row) {
           setOpsPollSnapshot(row)
+          // Stop only on terminal states. 'paused' is intermediate —
+          // worker has chained another invocation and will continue.
           if (row.backfill_status === 'completed' || row.backfill_status === 'failed') break
         }
       } catch { /* transient — keep polling */ }

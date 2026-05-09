@@ -71,8 +71,12 @@ export async function POST(req: NextRequest) {
   const guard = await requireAdmin(req, { orgId: integ.org_id, businessId })
   if (!('ok' in guard)) return guard  // 401/403/404 NextResponse
 
-  // Reset the row so the worker's atomic claim can pick it up. We don't
-  // care about the prior status — admin intent is "run it now".
+  // Reset the row so the worker's atomic claim can pick it up. Admin
+  // intent is "run it now" — wipe any stale state row so the next run
+  // starts fresh from Phase 1 (summary fetch). If the admin wanted to
+  // RESUME a paused backfill, they can let the daily cron pick it up
+  // or fire the worker directly without going through this endpoint.
+  await db.from('fortnox_backfill_state').delete().eq('integration_id', integ.id)
   const { error: resetErr } = await db
     .from('integrations')
     .update({
