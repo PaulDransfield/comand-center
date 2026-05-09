@@ -37,13 +37,19 @@ export async function POST(req: NextRequest) {
 
   // Find the integration. Scope by org_id (from session) and provider; if
   // business_id is supplied, filter to that specific row, otherwise pick
-  // the first connected Fortnox row in the org.
+  // the first non-disconnected Fortnox row in the org.
+  //
+  // Accept status IN ('connected', 'error', 'warning') — the credentials
+  // are fine in any of those states, only 'disconnected' / 'not_connected'
+  // means we have nothing to retry. A backfill that failed at the Fortnox
+  // API layer flips the row to status='error' but the OAuth tokens are
+  // still valid, so the retry path needs to work without reconnecting.
   let q = db
     .from('integrations')
     .select('id, business_id, backfill_status')
     .eq('org_id',   auth.orgId)
     .eq('provider', 'fortnox')
-    .eq('status',   'connected')
+    .in('status',   ['connected', 'error', 'warning'])
 
   if (businessId) q = q.eq('business_id', businessId)
 

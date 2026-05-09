@@ -326,7 +326,11 @@ export default function IntegrationsPage() {
             : allIntegs.find((i: any) => !i.business_id) ?? allIntegs[0]
           const integ  = bizInteg ?? null
           const status = integ?.status ?? 'not_connected'
-          const isConnected = status === 'connected'
+          // Show management actions (Sync / Run-backfill / Disconnect / Reconnect)
+          // for any active integration row. status='error' means the credentials
+          // exist but the last operation failed — the user must be able to retry,
+          // reconnect, or disconnect from this state, otherwise they're stuck.
+          const isConnected = status === 'connected' || status === 'error' || status === 'warning'
 
           const statusColour = {
             connected:     '#15803d',
