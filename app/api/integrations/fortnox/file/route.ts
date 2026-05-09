@@ -21,6 +21,7 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { decrypt }                      from '@/lib/integrations/encryption'
+import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -78,14 +79,19 @@ export async function GET(req: NextRequest) {
 
   // Try inbox first (where uploaded supplier-invoice files live before being
   // archived). Fortnox's `/3/inbox/{id}` returns the raw bytes; some files
-  // live in `/3/archive/{id}` instead.
-  let fortnoxRes = await fetch(`https://api.fortnox.se/3/inbox/${encodeURIComponent(fileId)}`, {
-    headers: { 'Authorization': `Bearer ${accessToken}` },
-  })
+  // live in `/3/archive/{id}` instead. fortnoxFetch handles 429 retry-with-
+  // backoff so a transient rate limit doesn't 502 the user.
+  let fortnoxRes = await fortnoxFetch(
+    `https://api.fortnox.se/3/inbox/${encodeURIComponent(fileId)}`,
+    accessToken,
+    { accept: '*/*' },   // PDF binary, not JSON
+  )
   if (fortnoxRes.status === 404) {
-    fortnoxRes = await fetch(`https://api.fortnox.se/3/archive/${encodeURIComponent(fileId)}`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` },
-    })
+    fortnoxRes = await fortnoxFetch(
+      `https://api.fortnox.se/3/archive/${encodeURIComponent(fileId)}`,
+      accessToken,
+      { accept: '*/*' },
+    )
   }
 
   if (!fortnoxRes.ok) {

@@ -35,6 +35,7 @@ import { NextRequest, NextResponse }    from 'next/server'
 import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { decrypt }                      from '@/lib/integrations/encryption'
+import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -178,12 +179,7 @@ export async function GET(req: NextRequest) {
     // fullypaid, unpaid, unpaidoverdue, unbooked, bookkept). Sending an
     // invalid filter value triggers HTTP 400 from /supplierinvoices.
     const url = `${FORTNOX_API}/supplierinvoices?fromdate=${fromIso}&todate=${toIso}&limit=500&page=${page}`
-    const res = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Accept':        'application/json',
-      },
-    })
+    const res = await fortnoxFetch(url, accessToken)
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       return NextResponse.json({

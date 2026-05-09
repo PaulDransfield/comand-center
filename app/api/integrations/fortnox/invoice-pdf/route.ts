@@ -28,6 +28,7 @@ import { NextRequest, NextResponse }    from 'next/server'
 import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { decrypt }                      from '@/lib/integrations/encryption'
+import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -83,14 +84,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'No access token' }, { status: 500 })
   }
 
-  // Fetch invoice detail
+  // Fetch invoice detail (with 429 retry baked in)
   const detailUrl = `${FORTNOX_API}/supplierinvoices/${encodeURIComponent(givenNumber)}`
-  const res = await fetch(detailUrl, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Accept':        'application/json',
-    },
-  })
+  const res = await fortnoxFetch(detailUrl, accessToken)
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     return NextResponse.json({

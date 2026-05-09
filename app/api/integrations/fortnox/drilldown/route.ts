@@ -31,6 +31,7 @@ import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fetchVouchersForRange }        from '@/lib/fortnox/api/vouchers'
 import { decrypt }                      from '@/lib/integrations/encryption'
+import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -346,12 +347,7 @@ async function fetchSupplierInvoices(db: any, integrationId: string, fromDate: s
   // No `filter=` param — Fortnox returns all non-cancelled invoices by
   // default. `filter=all` is NOT a valid value (caused HTTP 400 on /supplierinvoices).
   const url = `https://api.fortnox.se/3/supplierinvoices?fromdate=${fromDate}&todate=${toDate}&limit=500`
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Accept':        'application/json',
-    },
-  })
+  const res = await fortnoxFetch(url, accessToken)
   if (!res.ok) return []
   const body = await res.json().catch(() => null) as any
   const invoices: FortnoxSupplierInvoice[] = body?.SupplierInvoices ?? []
