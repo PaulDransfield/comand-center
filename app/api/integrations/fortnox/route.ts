@@ -77,6 +77,8 @@ const FORTNOX_SCOPES  = [
   'supplier',           // supplier master records — for supplier price-creep analytics
   'timereporting',      // attendance + scheduling time — pairs with `salary` for full Lön
   'article',            // article master data — for future item-level analysis
+  'archive',            // file archive — required to download PDFs via /3/archive/{id} and /3/inbox/{id}
+  'connectfile',        // file<->resource connection metadata — required for SupplierInvoiceFileConnections to populate
 ].join(' ')
 
 // ── CONNECT: start the OAuth flow ────────────────────────────────
