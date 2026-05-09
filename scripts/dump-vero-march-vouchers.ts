@@ -186,5 +186,16 @@ function formatKr(n: number): string {
 
 main().catch(err => {
   console.error('[dump] FAILED:', err?.stack ?? err)
+  // Node 18+ fetch wraps the real network error in `cause`. Dig through.
+  let cause: any = err?.cause
+  let depth = 1
+  while (cause && depth < 6) {
+    console.error(`  cause[${depth}]:`, cause?.message ?? cause, cause?.code ? `(code=${cause.code})` : '')
+    if (cause?.errors && Array.isArray(cause.errors)) {
+      for (const e of cause.errors) console.error(`    sub:`, e?.message ?? e, e?.code ? `(code=${e.code})` : '')
+    }
+    cause = cause?.cause
+    depth++
+  }
   process.exit(1)
 })
