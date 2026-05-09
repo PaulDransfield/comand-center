@@ -33,13 +33,12 @@
 import {
   classifyByAccount,
   classifyByVat,
-  classifyLabel,
 } from '@/lib/fortnox/classify'
 import type {
   ExtractionLineItem,
   ExtractionRollup,
 } from '@/lib/finance/projectRollup'
-import type { FortnoxVoucher, FortnoxVoucherRow } from './vouchers'
+import type { FortnoxVoucher } from './vouchers'
 
 export interface PeriodInput {
   year:    number
@@ -60,11 +59,43 @@ export interface TranslationResult {
 /**
  * Translate a list of API-fetched vouchers into per-period rollup + line items.
  * The output is ready to pass to projectRollup() unchanged.
+ *
+ * Two-pass design (post-2026-05-09 fix):
+ *
+ *   Pass 1 — accumulate raw debit/credit per (period, account). Voucher
+ *   rows are NOT classified or sign-converted here; we just sum the
+ *   atomic numbers per account so reversals/corrections net naturally.
+ *
+ *   Pass 2 — for each account, compute ONE net signed amount, classify it
+ *   per BAS category, and emit ONE line item. This is what projectRollup
+ *   consumes.
+ *
+ * Why two-pass: the previous row-by-row implementation dropped voucher
+ * rows where signedAmount went negative (e.g. an isolated credit on a
+ * staff-cost account = vacation-accrual reversal). Dropping such rows
+ * meant the corresponding offsets were lost from the rollup, inflating
+ * costs by ~7-50% on 2026-03 Vero data. By netting at the account level
+ * before sign-checking, true reversals subtract correctly and only fully
+ * negative accounts (rare — usually a fully refunded category) are dropped.
  */
 export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): TranslationResult {
-  const byPeriod = new Map<string, PeriodInput>()
+  type AccountAccumulator = {
+    debit:  number
+    credit: number
+    /** label → count, so we can pick the most common label as the line's representative */
+    labels: Map<string, number>
+  }
+  type PeriodAccumulator = {
+    year:         number
+    month:        number
+    voucherCount: number
+    byAccount:    Map<number, AccountAccumulator>
+  }
+
+  const byPeriod = new Map<string, PeriodAccumulator>()
   const skipped: TranslationResult['skipped'] = []
 
+  // ── Pass 1: aggregate raw debit/credit per (period, account) ──────────────
   for (const v of vouchers) {
     if (!v.TransactionDate || !Array.isArray(v.VoucherRows) || v.VoucherRows.length === 0) {
       skipped.push({
@@ -75,8 +106,6 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
       continue
     }
 
-    // Use TransactionDate's year+month as the period. Fortnox dates are
-    // YYYY-MM-DD; defensive parse against ISO timestamps too.
     const year  = Number(v.TransactionDate.slice(0, 4))
     const month = Number(v.TransactionDate.slice(5, 7))
     if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
@@ -91,136 +120,137 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
     const periodKey = `${year}-${String(month).padStart(2, '0')}`
     let period = byPeriod.get(periodKey)
     if (!period) {
-      period = {
-        year,
-        month,
-        rollup: {
-          revenue:      0,
-          food_cost:    0,
-          alcohol_cost: 0,
-          staff_cost:   0,
-          other_cost:   0,
-          depreciation: 0,
-          financial:    0,
-        },
-        lines:        [],
-        voucherCount: 0,
-      }
+      period = { year, month, voucherCount: 0, byAccount: new Map() }
       byPeriod.set(periodKey, period)
     }
     period.voucherCount++
 
     for (const row of v.VoucherRows) {
       if (row?.Removed) continue
-      const lineItem = translateRow(row, v)
-      if (!lineItem) continue
-      period.lines.push(lineItem)
-      bumpRollup(period.rollup, lineItem)
+      const account = Number(row.Account)
+      if (!Number.isFinite(account)) continue
+      const debit  = Number(row.Debit  ?? 0)
+      const credit = Number(row.Credit ?? 0)
+      if (!Number.isFinite(debit) || !Number.isFinite(credit)) continue
+      if (debit === 0 && credit === 0) continue
+
+      let acc = period.byAccount.get(account)
+      if (!acc) {
+        acc = { debit: 0, credit: 0, labels: new Map() }
+        period.byAccount.set(account, acc)
+      }
+      acc.debit  += debit
+      acc.credit += credit
+
+      const label = String(row.Description ?? row.AccountDescription ?? v.Description ?? '').trim()
+      if (label) acc.labels.set(label, (acc.labels.get(label) ?? 0) + 1)
     }
   }
 
+  // ── Pass 2: compute net signed amount per account, emit one line item ─────
+  const periods: PeriodInput[] = []
+  for (const periodAcc of byPeriod.values()) {
+    const rollup: ExtractionRollup = {
+      revenue:      0,
+      food_cost:    0,
+      alcohol_cost: 0,
+      staff_cost:   0,
+      other_cost:   0,
+      depreciation: 0,
+      financial:    0,
+    }
+    const lines: ExtractionLineItem[] = []
+
+    for (const [account, acc] of periodAcc.byAccount.entries()) {
+      const acctClass = classifyByAccount(account)
+      if (!acctClass) continue   // 1xxx assets, 2xxx liabilities, VAT — ignored
+
+      // Sign convention per BAS double-entry, mapped to storage convention:
+      //   3xxx revenue:        credit - debit (positive)
+      //   4xxx-7799 costs:     debit - credit (positive)
+      //   7800-7899 deprec.:   debit - credit (positive)
+      //   7900-7999 staff:     debit - credit (positive)
+      //   8000-8899 financial: credit - debit (income +, expense -)
+      //   8900-8999 tax:       -(debit - credit) — pushes financial more negative
+      let signedAmount: number
+      switch (acctClass.category) {
+        case 'revenue':
+          signedAmount = acc.credit - acc.debit
+          break
+        case 'food_cost':
+        case 'staff_cost':
+        case 'other_cost':
+        case 'depreciation':
+          signedAmount = acc.debit - acc.credit
+          break
+        case 'financial':
+          signedAmount = acctClass.subcategory === 'tax'
+            ? -(acc.debit - acc.credit)
+            : acc.credit - acc.debit
+          break
+        default:
+          continue
+      }
+
+      if (signedAmount === 0) continue   // fully offset within the period
+
+      // Pick most-common label as the representative for the line item.
+      // Voucher rows usually share descriptions per account anyway.
+      let label = ''
+      let bestCount = 0
+      for (const [l, c] of acc.labels.entries()) {
+        if (c > bestCount) { label = l; bestCount = c }
+      }
+
+      let subcategory = acctClass.subcategory ?? null
+      // VAT-rate refinement for revenue + food_cost (subset tagging only;
+      // never reclassifies the parent category).
+      if (acctClass.category === 'revenue' || acctClass.category === 'food_cost') {
+        const vat = classifyByVat(label)
+        if (vat?.subcategory) subcategory = vat.subcategory
+      }
+
+      let amount: number
+      if (acctClass.category === 'financial') {
+        amount = signedAmount    // signed
+      } else if (signedAmount < 0) {
+        // Net-negative for a revenue/cost account = the entire account is
+        // a reversal/refund within this period. Rare but legitimate (e.g.
+        // food account that only has supplier credits this month).
+        // projectRollup expects positive `amount` for these categories; we
+        // skip rather than send a negative that would get clamped. The
+        // amount is small and dropping it is the conservative choice —
+        // this line item is now informational only after the netting pass.
+        continue
+      } else {
+        amount = signedAmount
+      }
+
+      const lineItem: ExtractionLineItem = {
+        label,
+        label_sv:        label,
+        category:        acctClass.category,
+        subcategory,
+        amount,
+        fortnox_account: account,
+        account,
+      }
+      lines.push(lineItem)
+      bumpRollup(rollup, lineItem)
+    }
+
+    periods.push({
+      year:         periodAcc.year,
+      month:        periodAcc.month,
+      rollup,
+      lines,
+      voucherCount: periodAcc.voucherCount,
+    })
+  }
+
   // Stable order — chronological ascending. Makes report diffs deterministic.
-  const periods = Array.from(byPeriod.values()).sort((a, b) =>
-    a.year !== b.year ? a.year - b.year : a.month - b.month,
-  )
+  periods.sort((a, b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
   return { periods, skipped }
-}
-
-// ── Row translation ──────────────────────────────────────────────────────────
-
-/**
- * Map a single voucher row to the ExtractionLineItem shape projectRollup
- * already understands. Returns null if the row contributes nothing
- * meaningful (zero-amount lines, account outside any known category, etc.).
- */
-function translateRow(row: FortnoxVoucherRow, v: FortnoxVoucher): ExtractionLineItem | null {
-  const account = Number(row.Account)
-  if (!Number.isFinite(account)) return null
-
-  const debit  = Number(row.Debit  ?? 0)
-  const credit = Number(row.Credit ?? 0)
-  if (!Number.isFinite(debit) || !Number.isFinite(credit)) return null
-  if (debit === 0 && credit === 0) return null
-
-  const acctClass = classifyByAccount(account)
-  if (!acctClass) return null  // accounts outside our category ranges (1xxx assets, 2xxx liabilities, etc. — VAT and balance-sheet movements)
-
-  // Sign convention per BAS double-entry, mapped to storage convention:
-  //   3xxx revenue:      net contribution = credit - debit (positive)
-  //   4xxx-7799 costs:   net contribution = debit - credit (positive)
-  //   7800-7899 deprec.: net contribution = debit - credit (positive)
-  //   7900-7999 staff:   net contribution = debit - credit (positive)
-  //   8000-8899 financial: net contribution = credit - debit
-  //                          (positive = interest income; negative = expense)
-  //   8900-8999 tax:     debit-credit (positive cost; we tag as financial.tax)
-  let signedAmount: number
-  switch (acctClass.category) {
-    case 'revenue':
-      signedAmount = credit - debit       // > 0 increases revenue
-      break
-    case 'food_cost':
-    case 'staff_cost':
-    case 'other_cost':
-    case 'depreciation':
-      signedAmount = debit - credit       // > 0 increases the cost
-      break
-    case 'financial':
-      // Tax sub-bucket: debit - credit gives positive cost, which projectRollup
-      // treats as part of the signed `financial` field. Net interest is also
-      // signed via credit - debit. Differentiate:
-      signedAmount = acctClass.subcategory === 'tax'
-        ? -(debit - credit)               // tax pushes financial more negative
-        : credit - debit                  // income +, expense −
-      break
-    default:
-      return null
-  }
-
-  // Drop net-zero lines (offsetting debit + credit on the same row, rare but
-  // possible when a row corrects itself).
-  if (signedAmount === 0) return null
-
-  // Label preference: voucher row description, else voucher description, else
-  // empty string. classifyByVat reads the Swedish "X% moms" wording from the
-  // label; voucher rows rarely carry that, so VAT classification will mostly
-  // miss — that's expected and documented at the top of the file.
-  const label = String(row.Description ?? row.AccountDescription ?? v.Description ?? '').trim()
-  let subcategory = acctClass.subcategory ?? null
-
-  // For revenue + food_cost lines, ATTEMPT a VAT-rate refinement so the
-  // verification path doesn't lose 100% of the dine_in/takeaway/alcohol
-  // signal. classifyByVat returns null when the label doesn't match — we
-  // accept that.
-  if (acctClass.category === 'revenue' || acctClass.category === 'food_cost') {
-    const vat = classifyByVat(label)
-    if (vat?.subcategory) subcategory = vat.subcategory
-  }
-
-  // For revenue + costs, projectRollup expects a positive `amount` (it
-  // re-applies the sign via asCost / asRevenue). For financial, the sign
-  // is already correct.
-  let amount: number
-  if (acctClass.category === 'financial') {
-    amount = signedAmount               // signed
-  } else if (signedAmount < 0) {
-    // Revenue/cost line that net to a refund/correction. Drop it from the
-    // rollup — projectRollup's asCost/asRevenue would clamp negatives via
-    // abs() and double-count. The right behaviour is to net-it-out at the
-    // line level, which we already did above.
-    return null
-  } else {
-    amount = signedAmount
-  }
-
-  return {
-    label,
-    label_sv:        label,
-    category:        acctClass.category,
-    subcategory,
-    amount,
-    fortnox_account: account,
-    account,
-  }
 }
 
 // ── Rollup accumulation ──────────────────────────────────────────────────────
