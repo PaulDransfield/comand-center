@@ -21,6 +21,7 @@
 // (PDF-apply rows are protected by the worker's idempotency check).
 
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil }                  from '@vercel/functions'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
@@ -92,18 +93,25 @@ export async function POST(req: NextRequest) {
   }
 
   // Fire the worker once so the customer doesn't wait for the cron.
+  // Wrap in waitUntil so Vercel keeps the function alive long enough for
+  // the outbound POST to actually leave — bare `.catch(() => {})` works
+  // sometimes but Vercel can shut the function down as soon as the
+  // response is sent, dropping the worker trigger and leaving the row
+  // sitting at backfill_status='pending' forever (until daily cron tick).
   const base =
     process.env.NEXT_PUBLIC_APP_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
   if (base && process.env.CRON_SECRET) {
-    fetch(`${base}/api/cron/fortnox-backfill-worker`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
-      },
-      body: JSON.stringify({ trigger: 'owner_button' }),
-    }).catch(() => {})  // fire-and-forget; worker will also be picked up by daily cron
+    waitUntil(
+      fetch(`${base}/api/cron/fortnox-backfill-worker`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+        },
+        body: JSON.stringify({ trigger: 'owner_button' }),
+      }).catch(() => {}),  // worker will also be picked up by daily cron as backstop
+    )
   }
 
   return NextResponse.json({
