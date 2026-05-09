@@ -22,6 +22,7 @@ import { decrypt }                    from '@/lib/integrations/encryption'
 import { getWorkPeriods }              from '@/lib/pos/personalkollen'
 import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
 import { weightedAvg, thisWeekScaler, RECENCY } from '@/lib/forecast/recency'
+import { captureForecastOutcomes }              from '@/lib/forecast/audit'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -402,6 +403,44 @@ export async function GET(req: NextRequest) {
       reasoning:     rationale,
     })
   }
+
+  // ── Audit ledger capture (Piece 1, M059) ──────────────────────────────────
+  // Phase A "shadow mode" — we log every revenue prediction this endpoint
+  // emits to daily_forecast_outcomes. The reconciler at 10:00 UTC pairs each
+  // row against actual revenue once daily_metrics catches up. Soft-fails;
+  // never blocks the response. Backtest write guard inside captureForecastOutcomes
+  // skips past dates so dashboard back-test calls don't pollute MAPE-by-horizon.
+  await captureForecastOutcomes(
+    suggested
+      .filter((s: any) => s.est_revenue > 0)
+      .map((s: any) => ({
+        org_id:           biz.org_id,
+        business_id:      bizId,
+        forecast_date:    s.date,
+        surface:          'scheduling_ai_revenue' as const,
+        predicted_revenue: s.est_revenue,
+        baseline_revenue:  null,            // legacy forecaster doesn't separate baseline from final prediction
+        model_version:    'scheduling_ai_v1.0',
+        snapshot_version: 'legacy_v1' as const,
+        inputs_snapshot: {
+          snapshot_version:                  'legacy_scheduling_ai_v1',
+          weekday:                            s.weekday,
+          weather_bucket:                     s.weather?.bucket ?? null,
+          weather_summary:                    s.weather?.summary ?? null,
+          bucket_days_seen:                   s.bucket_days_seen ?? 0,
+          this_week_scaler_applied:           Math.round(thisWeekScale * 100) / 100,
+          this_week_scaler_raw:               Math.round(thisWeekRaw   * 100) / 100,
+          this_week_scaler_samples:           thisWeekSamples,
+          recency_weighted:                   true,
+          recency_window_days:                RECENCY.RECENT_WINDOW_DAYS,
+          recency_multiplier:                 RECENCY.RECENCY_MULTIPLIER,
+          model_target_hours:                 s.model_target_hours,
+          chosen_target_hours:                s.hours,
+          under_staffed_note:                 !!s.under_staffed_note,
+          data_quality_flags:                 [],
+        },
+      })),
+  )
 
   const curHours = Object.values(currentByDate).reduce((s: number, r: any) => s + r.hours, 0)
   const sugHours = suggested.reduce((s: number, r: any) => s + r.hours, 0)

@@ -22,6 +22,7 @@
 import { getForecast, weatherBucket, coordsFor, type DailyWeather } from './forecast'
 import { getUpcomingHolidays }                                       from '@/lib/holidays'
 import { weightedAvg, thisWeekScaler, RECENCY }                      from '@/lib/forecast/recency'
+import { captureForecastOutcomes }                                   from '@/lib/forecast/audit'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,46 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
       }),
     })
   }
+
+  // ── Audit ledger capture (Piece 1, M059) ──────────────────────────────────
+  // Phase A "shadow mode" — log every weather-demand prediction so the daily
+  // reconciler can grade it against actual revenue. Skips holidays (their
+  // pattern is structurally different and the architecture excludes them
+  // from baseline contamination too) and zero-baseline days. Confidence
+  // enum collapses 'unavailable' to null per the architecture's allowed
+  // CHECK values ('high' | 'medium' | 'low'). Soft-fails inside the helper.
+  await captureForecastOutcomes(
+    out
+      .filter(d => !d.is_holiday && d.predicted_revenue > 0)
+      .map(d => ({
+        org_id:           biz.org_id,
+        business_id:      biz.id,
+        forecast_date:    d.date,
+        surface:          'weather_demand' as const,
+        predicted_revenue: d.predicted_revenue,
+        baseline_revenue:  d.baseline_revenue,
+        model_version:    'weather_demand_v1.0',
+        snapshot_version: 'legacy_v1' as const,
+        inputs_snapshot: {
+          snapshot_version:                  'legacy_weather_demand_v1',
+          weekday:                            d.weekday,
+          weather_bucket:                     d.weather.bucket,
+          weather_summary:                    d.weather.summary,
+          temp_min_c:                         d.weather.temp_min,
+          temp_max_c:                         d.weather.temp_max,
+          precip_mm:                          d.weather.precip_mm,
+          baseline_revenue:                   d.baseline_revenue,
+          delta_pct:                          d.delta_pct,
+          sample_size:                        d.sample_size,
+          recency_weighted:                   true,
+          recency_window_days:                RECENCY.RECENT_WINDOW_DAYS,
+          recency_multiplier:                 RECENCY.RECENCY_MULTIPLIER,
+          data_quality_flags:                 [],
+        },
+        confidence: d.confidence === 'unavailable' ? null : d.confidence,
+      })),
+    { db: opts.db },
+  )
 
   return {
     business_id:    biz.id,

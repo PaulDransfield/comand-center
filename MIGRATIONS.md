@@ -1,10 +1,22 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-07 | M022–M047 applied · M048 pending (Phase 1 harness only)
+> Last updated: 2026-05-09 | M022–M047 applied · M048 pending · M052–M058 applied · M059 pending (Piece 1)
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M059 — Daily forecast outcomes audit ledger (Piece 1) ⏳ pending application
+**File:** `sql/M059-DAILY-FORECAST-OUTCOMES.sql`
+**Purpose:** new `daily_forecast_outcomes` table — the audit ledger for every revenue prediction the two legacy forecasters (`/api/scheduling/ai-suggestion`, `lib/weather/demand.ts`) emit, plus future surfaces (`consolidated_daily`, `llm_adjusted`). Captured row carries `predicted_revenue`, `inputs_snapshot` (the exact signals the model used), `model_version`, `snapshot_version`, `prediction_horizon_days` (generated column = `forecast_date - first_predicted_at::date`). UNIQUE `(business_id, forecast_date, surface)` makes capture idempotent — re-firing the dashboard 5x produces one row per (business, date, surface) with the latest prediction winning. RLS read policy via `organisation_members` matches M020 / M053 / M057 verbatim. Retention RPC `prune_daily_forecast_outcomes()` mirrors the M020 3-year sweep.
+**Companion code (in same commit):**
+  - `lib/forecast/audit.ts` — `captureForecastOutcome()` / `captureForecastOutcomes()` helpers with backtest write guard (skips `forecast_date < today` unless `backfillMode: true`) and soft-fail on errors so audit logging never breaks the parent forecast response.
+  - `app/api/scheduling/ai-suggestion/route.ts` — Phase A "shadow mode" capture; logs every `suggested[]` entry with `surface='scheduling_ai_revenue'`, `snapshot_version='legacy_v1'` carrying weekday + weather_bucket + this_week_scaler + bucket_days_seen.
+  - `lib/weather/demand.ts` — same capture pattern in `computeDemandForecast()`; logs every non-holiday `out[]` entry with `surface='weather_demand'`. Confidence enum `'unavailable'` collapses to `null` per the table's CHECK (high|medium|low).
+  - `app/api/cron/daily-forecast-reconciler/route.ts` — daily cron at 10:00 UTC. Walks pending rows, pairs against `daily_metrics.revenue`, applies the four resolution paths (defer < 7d / unresolvable_no_actual ≥ 7d / unresolvable_data_quality on confirmed anomaly / unresolvable_zero_actual on closed days / resolved with `error_pct = (predicted - actual) / actual`). Anomaly contamination filter: `alert_type IN ('revenue_drop','revenue_spike') AND confirmation_status = 'confirmed'`. Calls `prune_daily_forecast_outcomes()` at the end.
+  - `vercel.json` — adds `/api/cron/daily-forecast-reconciler` at `0 10 * * *`. Slot picked because the post-Piece-0 stagger occupies 04:00-09:30 and `today-data-sentinel` is at 14:00; 10:00 is clean. Architecture v3 §5 originally proposed 07:30 but that's now `onboarding-success`.
+**Apply order:** M059 must apply before the code deploys, else the cron fires and sees an undefined table. Idempotent — safe to re-run.
+**Phase A intent:** capture only. No behaviour change to either forecaster's response. Pieces 2-5 build on the ledger to ship the consolidated forecaster + new signals + LLM adjustment.
 
 ### M058 — Vero OB-supplement step-change auto-resolve backfill ⏳ pending application
 **File:** `sql/M058-VERO-OB-AUTO-RESOLVE-BACKFILL.sql`
