@@ -489,6 +489,45 @@ export async function POST(req: NextRequest) {
       }).eq('integration_id', integrationId)
     }
 
+    // ── API-priority enforcement: clear out-of-API non-API rows in range ──
+    // Per project_api_priority_strategy memory: API is the canonical truth.
+    // If a period is INSIDE the backfill date range AND we didn't write a
+    // tracker_data row for it (because Fortnox returned no vouchers for
+    // that period), the API has effectively said "no data for this month."
+    // Any non-API row sitting there from a prior PDF apply is now stale by
+    // definition and gets deleted. Without this cleanup, periods like
+    // Vero's 2025-12 (where the API returned 0 vouchers) would keep a
+    // pre-Session-13 PDF row that no longer reflects reality.
+    //
+    // Scope: only periods strictly inside [from_date, to_date]. Out-of-
+    // range PDF rows are untouched (a 12-month backfill doesn't claim
+    // authority over months it didn't fetch).
+    const expectedPeriods = enumerateMonths(fromIso, toIso)
+    let monthsClearedOrphan = 0
+    for (const periodKey of expectedPeriods) {
+      if (writtenPeriods.has(periodKey)) continue
+      const [yStr, mStr] = periodKey.split('-')
+      const year  = Number(yStr)
+      const month = Number(mStr)
+      const { data: existing } = await db
+        .from('tracker_data')
+        .select('id, source')
+        .eq('business_id', businessId)
+        .eq('period_year', year)
+        .eq('period_month', month)
+        .maybeSingle()
+      if (existing && existing.source !== 'fortnox_api') {
+        await db.from('tracker_data').delete().eq('id', existing.id)
+        monthsClearedOrphan++
+        log.info('fortnox-backfill cleared orphan non-api row', {
+          route:           'cron/fortnox-backfill-worker',
+          integration_id:  integrationId,
+          period:          periodKey,
+          previous_source: existing.source,
+        })
+      }
+    }
+
     // ── All done. Mark completed + delete state row ─────────────────
     await db
       .from('integrations')
@@ -501,6 +540,7 @@ export async function POST(req: NextRequest) {
           months_written_total:      writtenPeriods.size,
           months_written_this_run:   monthsWrittenThisRun,
           months_overwritten_pdf:    monthsOverwrittenPdfThis,
+          months_cleared_orphan:     monthsClearedOrphan,
           months_skipped_validation: monthsSkippedValidation,
           validation_failures:       validationFailures,
           duration_ms_this_run:      Date.now() - startedAt,
@@ -520,6 +560,7 @@ export async function POST(req: NextRequest) {
       months_written_total:      writtenPeriods.size,
       months_written_this_run:   monthsWrittenThisRun,
       months_overwritten_pdf:    monthsOverwrittenPdfThis,
+      months_cleared_orphan:     monthsClearedOrphan,
       months_skipped_validation: monthsSkippedValidation,
       total_vouchers:            summaries.length,
       duration_ms_this_run:      Date.now() - startedAt,
@@ -536,6 +577,7 @@ export async function POST(req: NextRequest) {
       months_written_total:      writtenPeriods.size,
       months_written_this_run:   monthsWrittenThisRun,
       months_overwritten_pdf:    monthsOverwrittenPdfThis,
+      months_cleared_orphan:     monthsClearedOrphan,
       months_skipped_validation: monthsSkippedValidation,
       validation_failures:       validationFailures,
       total_vouchers:            summaries.length,
@@ -579,6 +621,24 @@ export async function GET(req: NextRequest) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Enumerate all "YYYY-MM" months that overlap the [fromIso, toIso] range,
+ *  inclusive on both ends. Used by the API-priority cleanup pass to find
+ *  periods inside the backfill range that we didn't write (so any pre-API
+ *  row for them can be deleted). */
+function enumerateMonths(fromIso: string, toIso: string): string[] {
+  const from = new Date(fromIso + 'T00:00:00Z')
+  const to   = new Date(toIso   + 'T00:00:00Z')
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return []
+  const out: string[] = []
+  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1))
+  const stop   = new Date(Date.UTC(to.getUTCFullYear(),   to.getUTCMonth(),   1))
+  while (cursor <= stop) {
+    out.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}`)
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+  }
+  return out
+}
 
 async function markProgress(db: any, id: string, progress: Record<string, any>) {
   try {
