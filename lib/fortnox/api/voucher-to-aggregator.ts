@@ -212,15 +212,41 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
 
       let amount: number
       if (acctClass.category === 'financial') {
-        amount = signedAmount    // signed
+        amount = signedAmount    // signed (negative = expense; positive = income)
       } else if (signedAmount < 0) {
         // Net-negative for a revenue/cost account = the entire account is
-        // a reversal/refund within this period. Rare but legitimate (e.g.
-        // food account that only has supplier credits this month).
-        // projectRollup expects positive `amount` for these categories; we
-        // skip rather than send a negative that would get clamped. The
-        // amount is small and dropping it is the conservative choice —
-        // this line item is now informational only after the netting pass.
+        // a reversal/refund within this period (e.g. account 7090 vacation
+        // accrual reversal, account 4990 inventory adjustment, account 4011
+        // entirely-credited supplier returns).
+        //
+        // We MUST subtract this from the rollup — the PDF Resultatrapport
+        // reports net category values, and ignoring reversals inflates the
+        // API's costs vs the PDF baseline (Vero 2026-03 saw +49k staff, +212k
+        // food). We can't emit a line item with a negative amount because
+        // projectRollup's asCost() abs()es it (would double-count); apply
+        // directly to the rollup field instead.
+        switch (acctClass.category) {
+          case 'revenue':
+            rollup.revenue      = (Number(rollup.revenue)      || 0) + signedAmount
+            break
+          case 'food_cost':
+            rollup.food_cost    = (Number(rollup.food_cost)    || 0) + signedAmount
+            // Subset bookkeeping: if a fully-credited 4xxx account was
+            // tagged as alcohol via classifyByVat, also reduce alcohol_cost.
+            if (subcategory === 'alcohol') {
+              rollup.alcohol_cost = (Number(rollup.alcohol_cost) || 0) + signedAmount
+            }
+            break
+          case 'staff_cost':
+            rollup.staff_cost   = (Number(rollup.staff_cost)   || 0) + signedAmount
+            break
+          case 'other_cost':
+            rollup.other_cost   = (Number(rollup.other_cost)   || 0) + signedAmount
+            break
+          case 'depreciation':
+            rollup.depreciation = (Number(rollup.depreciation) || 0) + signedAmount
+            break
+        }
         continue
       } else {
         amount = signedAmount
