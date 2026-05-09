@@ -35,7 +35,11 @@ import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+// Voucher fetch + supplier invoice fetch for a single (period, category)
+// can take 60-120s on a busy month (Vero's March 2026: 115s for the
+// voucher detail loop). 60s wasn't enough; bump to 300 (Vercel Pro default).
+// Owner sees "Loading invoices…" while we grind through; cache hits are instant.
+export const maxDuration = 300
 
 const CACHE_TTL_MS = 5 * 60 * 1000
 
