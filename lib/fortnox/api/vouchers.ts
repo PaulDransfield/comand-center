@@ -84,6 +84,10 @@ export interface VoucherFetchOptions {
   toDate:      string
   /** Optional: log progress to stdout each N requests. Default 25. */
   progressEvery?: number
+  /** Optional: called every `progressEvery` detail GETs so the caller
+   *  can write live progress to its own store (e.g. the worker writes
+   *  to integrations.backfill_progress so the admin UI sees movement). */
+  onProgress?: (state: { phase: 'fetching_list' | 'fetching_detail'; vouchersFetched: number; vouchersTotal: number; listRequests: number; detailRequests: number }) => Promise<void> | void
 }
 
 export interface VoucherFetchResult {
@@ -219,6 +223,17 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
 
     if (detailRequests % progressEvery === 0) {
       process.stdout.write(`[fortnox-fetch] detail ${detailRequests}/${summaries.length} (${vouchers.length} captured)\n`)
+      if (opts.onProgress) {
+        try {
+          await opts.onProgress({
+            phase:           'fetching_detail',
+            vouchersFetched: vouchers.length,
+            vouchersTotal:   summaries.length,
+            listRequests,
+            detailRequests,
+          })
+        } catch { /* progress writes are best-effort */ }
+      }
     }
   }
 

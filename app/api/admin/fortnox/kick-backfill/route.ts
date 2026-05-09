@@ -25,7 +25,7 @@ import { createAdminClient }           from '@/lib/supabase/server'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 300  // worker can take up to ~5 min for a busy restaurant
+export const maxDuration = 600  // worker can take up to ~10 min; we await its full response
 
 export async function POST(req: NextRequest) {
   noStore()

@@ -43,15 +43,14 @@ import { projectRollup }                 from '@/lib/finance/projectRollup'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-// 12 months of vouchers + per-voucher detail can take 5-10 minutes for a
-// busy restaurant under Fortnox's 25-req-per-5-sec rate limit. Vercel Pro
-// allows up to 300s on a function; we cap our work to that and rely on
-// the worker re-firing itself (status stays 'pending' until completion)
-// if it didn't finish in one slice. v1 doesn't implement resumption — if
-// a single restaurant exceeds 300s the row is left in 'running' and the
-// cron's daily backstop will re-claim it once we add resume logic. For
-// Vero's voucher volume (~30/day) the full 12-month fetch is well under 5min.
-export const maxDuration = 300
+// 12 months of vouchers + per-voucher detail can take 5-15 minutes for a
+// busy restaurant under Fortnox's rate limit (real-world ~18 req/5sec
+// before 429s). Vercel Pro allows up to 800s on Fluid Compute; we cap at
+// 600s to leave headroom. v1 doesn't implement resumption — if a single
+// restaurant exceeds 600s the row is left in 'running' and the cron's
+// daily backstop will re-claim it once we add resume logic. For Vero's
+// voucher volume (~30/day) the full 12-month fetch is well under 10min.
+export const maxDuration = 600
 
 const PROVIDER       = 'fortnox'
 const DEFAULT_MONTHS = 12
@@ -132,12 +131,27 @@ export async function POST(req: NextRequest) {
     await markProgress(db, integrationId, { phase: 'fetching', from_date: fromIso, to_date: toIso, months_requested: MONTHS, months_done: 0 })
 
     // ── 3. Fetch vouchers ──────────────────────────────────────────────────
+    // onProgress is called every 25 detail GETs (configurable via
+    // progressEvery) so the admin UI sees live movement during the long
+    // detail-fetch loop instead of the row sitting silently at 'fetching'.
     const fetchResult = await fetchVouchersForRange({
       db,
       orgId,
       businessId: businessId ?? undefined,
       fromDate:   fromIso,
       toDate:     toIso,
+      onProgress: async (state) => {
+        await markProgress(db, integrationId, {
+          phase:             'fetching',
+          from_date:         fromIso,
+          to_date:           toIso,
+          months_requested:  MONTHS,
+          vouchers_fetched:  state.vouchersFetched,
+          vouchers_total:    state.vouchersTotal,
+          list_requests:     state.listRequests,
+          detail_requests:   state.detailRequests,
+        })
+      },
     })
 
     log.info('fortnox-backfill fetched', {
