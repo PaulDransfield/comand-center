@@ -42,20 +42,44 @@ export default function AlertsPage() {
   const [confirmFilter, setConfirmFilter] = useState<ConfirmationFilter>('all')
 
   // Per-business flag check — Piece 0 (D.4). The confirm/reject UI is
-  // gated behind PREDICTION_V2_ANOMALY_CONFIRM_UI; default OFF. We
-  // resolve it once on mount for the currently-selected business in the
-  // sidebar, then show/hide the workflow accordingly.
-  const [confirmFlagOn, setConfirmFlagOn] = useState(false)
+  // gated behind PREDICTION_V2_ANOMALY_CONFIRM_UI per business. Alerts
+  // span MULTIPLE businesses so we resolve the flag for EVERY business
+  // the user owns, then check each alert's own business_id at render
+  // time. Two side benefits: (a) avoids the localStorage race where the
+  // alerts page mounts before the sidebar has populated cc_selected_biz
+  // (worst-case: incognito open, navigate directly to /alerts), and
+  // (b) fixes the multi-business case (Vero Italiano flag on, Rosali
+  // Deli flag off → buttons show only on Vero alerts even when Rosali
+  // is the sidebar selection).
+  const [flaggedBusinesses, setFlaggedBusinesses] = useState<Set<string>>(new Set())
   useEffect(() => {
-    const bizId = typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null
-    if (!bizId) return
-    fetch(`/api/feature-flags/prediction-v2?business_id=${bizId}`, { cache: 'no-store' })
+    let cancelled = false
+    fetch('/api/businesses', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : null)
-      .then(j => {
-        if (j?.flags?.includes?.('PREDICTION_V2_ANOMALY_CONFIRM_UI')) setConfirmFlagOn(true)
+      .then(async (bizList: any[] | null) => {
+        if (!Array.isArray(bizList) || bizList.length === 0 || cancelled) return
+        const checks = await Promise.all(
+          bizList.map((b: any) =>
+            fetch(`/api/feature-flags/prediction-v2?business_id=${b.id}`, { cache: 'no-store' })
+              .then(r => r.ok ? r.json() : null)
+              .then(j => ({ id: b.id as string, flags: (j?.flags as string[]) ?? [] }))
+              .catch(() => ({ id: b.id as string, flags: [] as string[] }))
+          ),
+        )
+        if (cancelled) return
+        const next = new Set<string>()
+        for (const { id, flags } of checks) {
+          if (flags.includes('PREDICTION_V2_ANOMALY_CONFIRM_UI')) next.add(id)
+        }
+        setFlaggedBusinesses(next)
       })
-      .catch(() => { /* fail closed — leave the flag off */ })
+      .catch(() => { /* fail closed */ })
+    return () => { cancelled = true }
   }, [])
+  // Convenience: at least one business has the flag → show the filter
+  // dropdown header. Per-alert button rendering still gates on the
+  // alert's own business_id below.
+  const confirmFlagOn = flaggedBusinesses.size > 0
 
   // Notes modal state for confirm/reject
   const [decisionModal, setDecisionModal] = useState<{ id: string; action: 'confirm' | 'reject' } | null>(null)
