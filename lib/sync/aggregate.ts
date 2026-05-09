@@ -213,10 +213,17 @@ export async function aggregateMetrics(
       // (FIXES.md §0o). All read here so downstream consumers (memo,
       // budget, scheduling AI prompts) can reach them through monthly_metrics
       // without re-summing line items.
-      .select('period_year, period_month, revenue, dine_in_revenue, takeaway_revenue, alcohol_revenue, food_cost, alcohol_cost, staff_cost, rent_cost, other_cost, depreciation, financial, net_profit, source')
+      // is_provisional filter (M062): exclude not-yet-closed periods so
+      // monthly_metrics — and everything downstream — sees only committed
+      // P&L data. The current month + prior-month-before-15th are flagged
+      // by the writer; including them would muddy YoY trends and AI prompts
+      // with partial data (revenue=0 because Z-reports not booked yet,
+      // staff_cost=0 because salary books on the 25th).
+      .select('period_year, period_month, revenue, dine_in_revenue, takeaway_revenue, alcohol_revenue, food_cost, alcohol_cost, staff_cost, rent_cost, other_cost, depreciation, financial, net_profit, source, is_provisional')
       .eq('business_id', businessId)
       .gte('period_year', parseInt(fromDate.slice(0, 4)))
-      .lte('period_year', parseInt(toDate.slice(0, 4))),
+      .lte('period_year', parseInt(toDate.slice(0, 4)))
+      .or('is_provisional.is.null,is_provisional.eq.false'),
   ])
 
   const trackerRows = trackerRes.data ?? []

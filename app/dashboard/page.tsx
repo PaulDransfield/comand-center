@@ -24,6 +24,7 @@ import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import WeatherDemandWidget from '@/components/dashboard/WeatherDemandWidget'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import DemandOutlook from '@/components/dashboard/DemandOutlook'
+import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1040,6 +1041,14 @@ function DashboardInner() {
                 return map
               })()}
             />
+
+            {/* Recent invoices — operational view of supplier costs landing
+                in Fortnox day-by-day. Independent of period closure status,
+                so this stays useful even when April/May 2026 P&L numbers
+                aren't yet booked. Pairs with the M062 provisional flag:
+                P&L pages hide partial months; this widget shows what's
+                actually flowing in. */}
+            <RecentInvoicesFeed businessId={bizId} days={14} maxRows={20} />
 
             {/* Compact horizontal attention strip — was a right-rail card,
                 now a single-row footer with horizontally-scrolling items.

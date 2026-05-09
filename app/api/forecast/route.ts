@@ -50,10 +50,13 @@ export async function GET(req: NextRequest) {
       .order('year')
       .order('month'),
     db.from('tracker_data')
+      // is_provisional filter (M062): forecast baselines should anchor
+      // on closed-book actuals, not partial current-month figures.
       .select('period_year, period_month, revenue, staff_cost, food_cost, net_profit, margin_pct')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .in('period_year', [year - 1, year, year + 1])
+      .or('is_provisional.is.null,is_provisional.eq.false')
       .order('period_year')
       .order('period_month'),
   ])

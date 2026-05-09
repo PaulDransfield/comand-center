@@ -6,6 +6,20 @@
 
 ## Pending — apply when ready
 
+### M062 — tracker_data.is_provisional flag ⏳ pending application
+**File:** `sql/M062-TRACKER-IS-PROVISIONAL.sql`
+**Purpose:** marks tracker_data rows whose books aren't closed yet (current calendar month + prior month before the 15th — the typical Swedish accountant closure window). Without the flag, partial-month data corrupts trend lines and AI prompts: April 2026 showing revenue=85k vs April 2025=625k looks like a 86% revenue collapse when reality is just "books still open."
+**Schema:** `is_provisional BOOLEAN NOT NULL DEFAULT FALSE` plus a partial index on `(business_id, period_year, period_month) WHERE is_provisional = TRUE` for cheap inverse-filter queries.
+**Backfill at apply time:** the migration UPDATEs any existing rows in the current/prior-month-before-15th period to flag them.
+**Companion code:**
+- `lib/finance/period-closure.ts` — `isProvisional(year, month, now?)` heuristic. Stockholm-time anchored.
+- `app/api/cron/fortnox-backfill-worker/route.ts` — sets the flag on every tracker_data write.
+- `lib/sync/aggregate.ts` — filters provisional rows out of the monthly_metrics roll-up so downstream consumers (memo, scheduling AI, dashboards) see only closed P&L.
+- `app/api/forecast/route.ts` — same filter on the forecast baseline.
+- `app/api/budgets/generate/route.ts` — same filter on YTD trajectory anchor (avoids "this year is collapsing!" hallucinations from the budget AI).
+**Not filtered (intentional):** `app/api/tracker/route.ts`, `app/api/budgets/analyse/route.ts`, `app/api/budgets/route.ts` — these surface specific selected periods to the user. If they pick April 2026 explicitly, they want to see what's there.
+**Architecture note:** companion to the API-priority strategy (`project_api_priority_strategy` memory). Phase D' — partial-data tagging.
+
 ### M061 — Add 'paused' to backfill_status CHECK constraint ⏳ pending application
 **File:** `sql/M061-BACKFILL-STATUS-PAUSED.sql`
 **Purpose:** companion to M060 — the resumable worker uses a new `backfill_status='paused'` value to signal "state saved, ready to resume". The original M050 CHECK constraint enumerated only `idle/pending/running/completed/failed`, so any UPDATE setting `'paused'` failed with `integrations_backfill_status_chk` violation. This migration drops + re-creates the constraint to include `'paused'`.

@@ -46,6 +46,7 @@ import {
 import { translateVouchersToPeriods }    from '@/lib/fortnox/api/voucher-to-aggregator'
 import { projectRollup }                 from '@/lib/finance/projectRollup'
 import { validateApiBackfillBatch }      from '@/lib/fortnox/api/validate-backfill'
+import { isProvisional }                 from '@/lib/finance/period-closure'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -454,6 +455,11 @@ export async function POST(req: NextRequest) {
             margin_pct:       projected.margin_pct,
             source:           'fortnox_api',
             created_via:      'fortnox_backfill',
+            // Tag the row as provisional if the books for this period
+            // aren't closed yet (current month, or prior month before 15th).
+            // P&L readers filter `is_provisional = false` to keep historical
+            // averages clean; live operational views can opt in.
+            is_provisional:   isProvisional(periodOutput.year, periodOutput.month),
             updated_at:       new Date().toISOString(),
           }
 

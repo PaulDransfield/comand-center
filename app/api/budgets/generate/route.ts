@@ -60,11 +60,14 @@ export async function POST(req: NextRequest) {
       .eq('year', year - 1)
       .order('month'),
     db.from('tracker_data')
+      // is_provisional filter (M062): historical year is fully closed,
+      // so the filter is a no-op for year-1 but kept for consistency.
       .select('period_month, revenue, staff_cost, food_cost, other_cost, net_profit, margin_pct')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('period_year', year - 1)
       .gt('period_month', 0)
+      .or('is_provisional.is.null,is_provisional.eq.false')
       .order('period_month'),
     db.from('forecasts')
       .select('period_month, revenue_forecast, staff_cost_forecast, food_cost_forecast, net_profit_forecast, margin_forecast')
@@ -79,11 +82,15 @@ export async function POST(req: NextRequest) {
       .eq('year', year)
       .order('month'),
     db.from('tracker_data')
+      // is_provisional filter (M062): excludes the current/prior month
+      // when their books haven't closed yet — partial revenue + zero
+      // staff cost would skew the budget AI's "YTD trajectory" anchor.
       .select('period_month, revenue, staff_cost, food_cost, other_cost, net_profit, margin_pct')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .eq('period_year', year)
       .gt('period_month', 0)
+      .or('is_provisional.is.null,is_provisional.eq.false')
       .order('period_month'),
     db.from('businesses').select('name, city, business_stage').eq('org_id', auth.orgId).eq('id', businessId).maybeSingle(),
     // Annual-summary fallback — older uploads stored a single annual
