@@ -180,22 +180,53 @@ export default function ToolsPage() {
   const [opsRunning,  setOpsRunning]  = useState<boolean>(false)
   const [opsResult,   setOpsResult]   = useState<any>(null)
   const [opsError,    setOpsError]    = useState<string | null>(null)
+  // Poll loop state — when set, we re-query the integrations row every 4s
+  // and overlay the latest status/progress on top of the kick response.
+  const [opsPollSnapshot, setOpsPollSnapshot] = useState<any>(null)
 
   async function kickFortnoxBackfill() {
     if (opsRunning || !opsBizId.trim()) return
     setOpsRunning(true)
     setOpsResult(null)
     setOpsError(null)
+    setOpsPollSnapshot(null)
     try {
       const r = await adminFetch<any>('/api/admin/fortnox/kick-backfill', {
         method: 'POST',
         body:   JSON.stringify({ business_id: opsBizId.trim(), months: opsMonths }),
       })
       setOpsResult(r)
+      // Kick endpoint returns instantly now (waitUntil fires the worker
+      // in the background). Poll the integrations row so the admin sees
+      // live phase + voucher counts as the worker grinds. Stops when the
+      // row reaches a terminal state (completed / failed) or after 12 min.
+      pollBackfill(opsBizId.trim())
     } catch (e: any) {
       setOpsError(e?.message ?? 'Kick failed')
     } finally {
       setOpsRunning(false)
+    }
+  }
+
+  async function pollBackfill(bizId: string) {
+    const startedAt = Date.now()
+    const MAX_MS    = 12 * 60_000   // 12-min ceiling matches worker timeout headroom
+    while (Date.now() - startedAt < MAX_MS) {
+      try {
+        const r = await adminFetch<SqlSuccess>('/api/admin/v2/tools/sql', {
+          method: 'POST',
+          body:   JSON.stringify({
+            query: `SELECT backfill_status, backfill_progress, backfill_error, backfill_finished_at FROM integrations WHERE business_id = '${bizId}' AND provider = 'fortnox'`,
+            limit: 1,
+          }),
+        })
+        const row = r.rows?.[0]
+        if (row) {
+          setOpsPollSnapshot(row)
+          if (row.backfill_status === 'completed' || row.backfill_status === 'failed') break
+        }
+      } catch { /* transient — keep polling */ }
+      await new Promise(res => setTimeout(res, 4000))
     }
   }
 
@@ -263,8 +294,8 @@ export default function ToolsPage() {
         {(opsResult || opsError) && (
           <div style={{
             marginTop: 10, padding: 10,
-            background: opsError ? '#fef2f2' : (opsResult?.ok ? '#f0fdf4' : '#fef3c7'),
-            border:     `1px solid ${opsError ? '#fecaca' : (opsResult?.ok ? '#bbf7d0' : '#fde68a')}`,
+            background: opsError ? '#fef2f2' : (opsPollSnapshot?.backfill_status === 'failed' ? '#fef2f2' : opsPollSnapshot?.backfill_status === 'completed' ? '#f0fdf4' : '#eff6ff'),
+            border:     `1px solid ${opsError ? '#fecaca' : (opsPollSnapshot?.backfill_status === 'failed' ? '#fecaca' : opsPollSnapshot?.backfill_status === 'completed' ? '#bbf7d0' : '#bfdbfe')}`,
             borderRadius: 6,
             fontSize: 11, fontFamily: 'ui-monospace, monospace',
             color:    opsError ? '#991b1b' : '#111',
@@ -273,7 +304,12 @@ export default function ToolsPage() {
           }}>
             {opsError
               ? opsError
-              : JSON.stringify(opsResult, null, 2)}
+              : opsPollSnapshot
+                ? `Status: ${opsPollSnapshot.backfill_status}\n` +
+                  (opsPollSnapshot.backfill_finished_at ? `Finished: ${opsPollSnapshot.backfill_finished_at}\n` : '') +
+                  (opsPollSnapshot.backfill_error ? `Error: ${opsPollSnapshot.backfill_error}\n` : '') +
+                  `Progress: ${JSON.stringify(opsPollSnapshot.backfill_progress, null, 2)}`
+                : JSON.stringify(opsResult, null, 2)}
           </div>
         )}
       </div>

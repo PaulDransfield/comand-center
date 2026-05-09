@@ -3,8 +3,16 @@
 // Admin one-click "kick Fortnox backfill" endpoint. Bypasses the
 // owner-side run-backfill button's gates and the fire-and-forget
 // trigger reliability issues — admin presents ADMIN_SECRET, we reset
-// the integration row to backfill_status='pending', then AWAIT a
-// direct call to the worker so the admin sees what actually happened.
+// the integration row to backfill_status='pending', then fire the
+// worker via `waitUntil()` and return IMMEDIATELY.
+//
+// Why not await the worker?
+//   The worker can take 5-15 min for a busy restaurant. Vercel's edge
+//   proxy times out long before that (~60-120s typical), returning HTTP
+//   504 to the admin even though the worker is actually still running
+//   in the background. Synchronous "wait for completion" is the wrong
+//   shape — admins watch progress via the SQL query / integrations
+//   table while the worker grinds in the background.
 //
 // Use cases:
 //   - Owner-side button stuck (fire-and-forget POST didn't reach worker)
@@ -20,12 +28,15 @@
 
 import { NextRequest, NextResponse }   from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
+import { waitUntil }                   from '@vercel/functions'
 import { requireAdmin }                from '@/lib/admin/require-admin'
 import { createAdminClient }           from '@/lib/supabase/server'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 600  // worker can take up to ~10 min; we await its full response
+// We return immediately — worker runs in background via waitUntil. No need
+// for a long timeout on this endpoint.
+export const maxDuration = 30
 
 export async function POST(req: NextRequest) {
   noStore()
@@ -80,9 +91,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Failed to enqueue backfill: ${resetErr.message}` }, { status: 500 })
   }
 
-  // Directly call the worker and AWAIT — admin endpoint isn't customer-
-  // facing so we can hold the connection open until the worker reports
-  // back. Returns the worker's response verbatim.
+  // Fire the worker via waitUntil and return immediately. waitUntil keeps
+  // Vercel's runtime alive long enough for the outbound POST to actually
+  // reach the worker (a bare fire-and-forget can be killed when the
+  // response is sent), but the admin caller doesn't wait for the worker
+  // to finish. Watch progress via the integrations table:
+  //   SELECT backfill_status, backfill_progress, backfill_error
+  //   FROM integrations WHERE business_id = '...' AND provider = 'fortnox';
   const base =
     process.env.NEXT_PUBLIC_APP_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
@@ -93,31 +108,23 @@ export async function POST(req: NextRequest) {
     }, { status: 500 })
   }
 
-  let workerResponse: any = null
-  let workerStatus       = 0
-  try {
-    const r = await fetch(`${base}/api/cron/fortnox-backfill-worker`, {
+  waitUntil(
+    fetch(`${base}/api/cron/fortnox-backfill-worker`, {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
         'Authorization': `Bearer ${process.env.CRON_SECRET}`,
       },
       body: JSON.stringify({ trigger: 'admin_kick', business_id: businessId, months }),
-    })
-    workerStatus = r.status
-    workerResponse = await r.json().catch(() => ({ raw: 'non-json response' }))
-  } catch (err: any) {
-    return NextResponse.json({
-      error: `Worker fetch failed: ${err?.message ?? String(err)}`,
-      integration_id: integ.id,
-    }, { status: 502 })
-  }
+    }).catch(() => {}),  // worker errors are surfaced via integrations.backfill_error
+  )
 
   return NextResponse.json({
-    ok:             workerStatus >= 200 && workerStatus < 300,
+    ok:             true,
     integration_id: integ.id,
     business_id:    businessId,
-    worker_status:  workerStatus,
-    worker_response: workerResponse,
+    months:         months ?? null,
+    status:         'enqueued',
+    message:        'Worker started in background. Watch backfill_status / backfill_progress in the integrations table — refresh every 15-30s.',
   })
 }
