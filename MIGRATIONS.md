@@ -6,6 +6,11 @@
 
 ## Pending — apply when ready
 
+### M061 — Add 'paused' to backfill_status CHECK constraint ⏳ pending application
+**File:** `sql/M061-BACKFILL-STATUS-PAUSED.sql`
+**Purpose:** companion to M060 — the resumable worker uses a new `backfill_status='paused'` value to signal "state saved, ready to resume". The original M050 CHECK constraint enumerated only `idle/pending/running/completed/failed`, so any UPDATE setting `'paused'` failed with `integrations_backfill_status_chk` violation. This migration drops + re-creates the constraint to include `'paused'`.
+**Apply order:** AFTER M060 (M060 doesn't actually use the value at table-definition time, but the resume admin endpoint hits the constraint). Idempotent.
+
 ### M060 — Fortnox backfill resumability state ⏳ pending application
 **File:** `sql/M060-FORTNOX-BACKFILL-STATE.sql`
 **Purpose:** new `fortnox_backfill_state` table — persists work-in-progress so the backfill worker can checkpoint before the Vercel function timeout (600-800s) kills it. Without this, any backfill of >~10 minutes (Vero alone has ~17 minutes of work for 12 months) dies mid-flight with the row stuck at `running`.
