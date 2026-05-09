@@ -208,6 +208,34 @@ export default function ToolsPage() {
     }
   }
 
+  // ── Operations: voucher diagnostic ─────────────────────────────────────
+  // Read-only — fetches one month of vouchers, runs the translator, returns
+  // bucket totals + comparison vs PDF baseline. Use BEFORE re-running the
+  // API backfill on a customer to verify the translator math.
+  const [diagYear,    setDiagYear]    = useState<number>(2026)
+  const [diagMonth,   setDiagMonth]   = useState<number>(3)
+  const [diagRunning, setDiagRunning] = useState<boolean>(false)
+  const [diagResult,  setDiagResult]  = useState<any>(null)
+  const [diagError,   setDiagError]   = useState<string | null>(null)
+
+  async function diagnoseVouchers() {
+    if (diagRunning || !opsBizId.trim()) return
+    setDiagRunning(true)
+    setDiagResult(null)
+    setDiagError(null)
+    try {
+      const r = await adminFetch<any>('/api/admin/fortnox/diagnose-vouchers', {
+        method: 'POST',
+        body:   JSON.stringify({ business_id: opsBizId.trim(), year: diagYear, month: diagMonth }),
+      })
+      setDiagResult(r)
+    } catch (e: any) {
+      setDiagError(e?.message ?? 'Diagnose failed')
+    } finally {
+      setDiagRunning(false)
+    }
+  }
+
   async function pollBackfill(bizId: string) {
     const startedAt = Date.now()
     const MAX_MS    = 12 * 60_000   // 12-min ceiling matches worker timeout headroom
@@ -310,6 +338,59 @@ export default function ToolsPage() {
                   (opsPollSnapshot.backfill_error ? `Error: ${opsPollSnapshot.backfill_error}\n` : '') +
                   `Progress: ${JSON.stringify(opsPollSnapshot.backfill_progress, null, 2)}`
                 : JSON.stringify(opsResult, null, 2)}
+          </div>
+        )}
+
+        {/* ── Diagnose vouchers row (read-only translator check) ────────── */}
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12, color: '#374151', minWidth: 220 }}>
+            Diagnose vouchers (one month):
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            Year
+            <input
+              type="number"
+              value={diagYear}
+              onChange={e => setDiagYear(Math.max(2020, Math.min(2099, parseInt(e.target.value || '2026', 10) || 2026)))}
+              min={2020}
+              max={2099}
+              style={{ width: 70, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            Month
+            <input
+              type="number"
+              value={diagMonth}
+              onChange={e => setDiagMonth(Math.max(1, Math.min(12, parseInt(e.target.value || '3', 10) || 3)))}
+              min={1}
+              max={12}
+              style={{ width: 50, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </label>
+          <button
+            onClick={diagnoseVouchers}
+            disabled={diagRunning || !opsBizId.trim()}
+            style={btnSecondary(diagRunning || !opsBizId.trim())}
+            title="Read-only. Fetches one month of vouchers, runs the translator, returns bucket totals + diff vs PDF baseline."
+          >
+            {diagRunning ? 'Running…' : 'Diagnose'}
+          </button>
+        </div>
+
+        {(diagResult || diagError) && (
+          <div style={{
+            marginTop: 10, padding: 10,
+            background:  diagError ? '#fef2f2' : '#f9fafb',
+            border:      `1px solid ${diagError ? '#fecaca' : '#e5e7eb'}`,
+            borderRadius: 6,
+            fontSize:    11, fontFamily: 'ui-monospace, monospace',
+            color:       diagError ? '#991b1b' : '#111',
+            whiteSpace:  'pre-wrap' as const,
+            wordBreak:   'break-word' as const,
+            maxHeight:   500, overflowY: 'auto' as const,
+          }}>
+            {diagError ? diagError : JSON.stringify(diagResult, null, 2)}
           </div>
         )}
       </div>
