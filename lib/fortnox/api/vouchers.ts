@@ -25,6 +25,7 @@
 // should make 429s unreachable; if they occur we fail loudly.
 
 import { decrypt } from '@/lib/integrations/encryption'
+import { fetchFinancialYears, clampRangeToFiscalYears } from './financial-years'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,36 +121,59 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
   let detailRequests = 0
   let tokenRefreshed = false
 
-  // ── Phase 1: list all vouchers in the date range, paginating ──────────────
-  const summaries: FortnoxVoucherSummary[] = []
-  let page = 1
-  while (true) {
-    await throttle.acquire()
-    const url =
-      `${FORTNOX_API}/vouchers?fromdate=${opts.fromDate}&todate=${opts.toDate}` +
-      `&limit=${PAGE_SIZE}&page=${page}`
-    const res = await authedFetch(url, creds.access_token)
-    listRequests++
+  // ── Phase 0: enumerate fiscal years and clamp the requested range ─────────
+  // Fortnox's /vouchers endpoint refuses any date range that crosses a
+  // räkenskapsår boundary (HTTP 400, code 2002363). The fix is to do one
+  // /vouchers call per fiscal year that overlaps the requested range, with
+  // the Fortnox-Financial-Year-Date header pinning each call's context.
+  await throttle.acquire()
+  const { years: allYears } = await fetchFinancialYears(creds.access_token)
+  if (allYears.length === 0) {
+    throw new Error('Fortnox /financialyears returned no years — customer has no fiscal year configured')
+  }
+  const yearSlices = clampRangeToFiscalYears(opts.fromDate, opts.toDate, allYears)
+  if (yearSlices.length === 0) {
+    throw new Error(
+      `Fortnox: requested range ${opts.fromDate}..${opts.toDate} does not overlap any fiscal year on file ` +
+      `(years: ${allYears.map(y => `${y.FromDate}..${y.ToDate}`).join(', ')})`,
+    )
+  }
 
-    if (res.status === 401) {
-      // Token expired mid-fetch. Refresh and retry once.
-      creds = await ensureFreshToken(db, integ, /*force*/ true)
-      tokenRefreshed = true
-      const retry = await authedFetch(url, creds.access_token)
-      if (!retry.ok) throw new Error(`Fortnox /vouchers list failed after refresh: HTTP ${retry.status}`)
-      const body = await retry.json()
-      collectListPage(body, summaries)
-      if (isLastPage(body, page)) break
-    } else if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(`Fortnox /vouchers list failed: HTTP ${res.status} — ${text.slice(0, 200)}`)
-    } else {
-      const body = await res.json()
-      collectListPage(body, summaries)
-      if (isLastPage(body, page)) break
+  // ── Phase 1: list vouchers per fiscal year, paginating each year ──────────
+  // Track the source fiscal-year date for each summary so the detail GET in
+  // Phase 2 can set the same year header.
+  const summaries: Array<FortnoxVoucherSummary & { __fyDate: string }> = []
+  for (const slice of yearSlices) {
+    const fyHeaderDate = slice.year.FromDate
+    let page = 1
+    while (true) {
+      await throttle.acquire()
+      const url =
+        `${FORTNOX_API}/vouchers?fromdate=${slice.fromDate}&todate=${slice.toDate}` +
+        `&limit=${PAGE_SIZE}&page=${page}`
+      const res = await authedFetch(url, creds.access_token, fyHeaderDate)
+      listRequests++
+
+      if (res.status === 401) {
+        // Token expired mid-fetch. Refresh and retry once.
+        creds = await ensureFreshToken(db, integ, /*force*/ true)
+        tokenRefreshed = true
+        const retry = await authedFetch(url, creds.access_token, fyHeaderDate)
+        if (!retry.ok) throw new Error(`Fortnox /vouchers list failed after refresh: HTTP ${retry.status}`)
+        const body = await retry.json()
+        collectListPage(body, summaries, fyHeaderDate)
+        if (isLastPage(body, page)) break
+      } else if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(`Fortnox /vouchers list failed (year ${slice.year.FromDate}..${slice.year.ToDate}): HTTP ${res.status} — ${text.slice(0, 200)}`)
+      } else {
+        const body = await res.json()
+        collectListPage(body, summaries, fyHeaderDate)
+        if (isLastPage(body, page)) break
+      }
+      page++
+      if (page > 1000) throw new Error('Fortnox /vouchers list pagination exceeded 1000 pages — aborting (likely runaway)')
     }
-    page++
-    if (page > 1000) throw new Error('Fortnox /vouchers list pagination exceeded 1000 pages — aborting (likely runaway)')
   }
 
   const progressEvery = opts.progressEvery ?? 25
@@ -164,7 +188,10 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
       tokenRefreshed = true
     }
     const url = `${FORTNOX_API}/vouchers/${encodeURIComponent(sum.VoucherSeries)}/${sum.VoucherNumber}`
-    const res = await authedFetch(url, creds.access_token)
+    // Detail GET also requires the fiscal-year context header — vouchers
+    // are scoped to a year, and asking for {series}/{number} without the
+    // header lookups in the *active* year and 404s for older entries.
+    const res = await authedFetch(url, creds.access_token, sum.__fyDate)
     detailRequests++
     if (!res.ok) {
       const text = await res.text().catch(() => '')
@@ -293,19 +320,39 @@ function normaliseCreds(raw: any): DecryptedCreds {
   }
 }
 
-async function authedFetch(url: string, accessToken: string): Promise<Response> {
-  return fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Accept':        'application/json',
-    },
-  })
+/**
+ * Fetch with the customer's bearer token. When `financialYearDate` is set,
+ * we also send the `Fortnox-Financial-Year-Date` header — Fortnox uses any
+ * date inside a fiscal year to resolve which year context applies. Required
+ * for /vouchers list + detail calls; harmless on other endpoints.
+ */
+async function authedFetch(
+  url: string,
+  accessToken: string,
+  financialYearDate?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Accept':        'application/json',
+  }
+  if (financialYearDate) {
+    headers['Fortnox-Financial-Year-Date'] = financialYearDate
+  }
+  return fetch(url, { headers })
 }
 
-/** Append voucher summaries from a list-page body to the running array. */
-function collectListPage(body: any, into: FortnoxVoucherSummary[]): void {
+/**
+ * Append voucher summaries from a list-page body to the running array,
+ * tagging each summary with the fiscal-year date that was used so the
+ * later detail GET can reuse the same context header.
+ */
+function collectListPage(
+  body: any,
+  into: Array<FortnoxVoucherSummary & { __fyDate: string }>,
+  fyDate: string,
+): void {
   const list: FortnoxVoucherSummary[] = body?.Vouchers ?? []
-  for (const v of list) into.push(v)
+  for (const v of list) into.push({ ...v, __fyDate: fyDate })
 }
 
 /** Detect last page via Fortnox's `MetaInformation` envelope. */
