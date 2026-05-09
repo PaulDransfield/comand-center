@@ -245,18 +245,23 @@ interface DecryptedCreds {
 }
 
 async function loadIntegration(db: any, orgId: string, businessId?: string): Promise<IntegrationRow> {
+  // Accept status IN ('connected', 'error', 'warning'). The credentials are
+  // valid in any of those states — only 'disconnected' / 'not_connected'
+  // means we genuinely have nothing. A previous backfill failure flips the
+  // row to 'error' but the OAuth tokens are intact, so the retry path must
+  // be able to load the row without requiring a manual status reset first.
   let q = db
     .from('integrations')
     .select('id, org_id, business_id, credentials_enc')
     .eq('org_id', orgId)
     .eq('provider', 'fortnox')
-    .eq('status', 'connected')
+    .in('status', ['connected', 'error', 'warning'])
 
   if (businessId) q = q.eq('business_id', businessId)
 
   const { data, error } = await q.limit(1).maybeSingle()
   if (error) throw new Error(`Failed to load Fortnox integration: ${error.message}`)
-  if (!data) throw new Error(`No connected Fortnox integration for org ${orgId}${businessId ? ` business ${businessId}` : ''}`)
+  if (!data) throw new Error(`No active Fortnox integration for org ${orgId}${businessId ? ` business ${businessId}` : ''} (need status connected/error/warning)`)
   if (!data.credentials_enc) throw new Error('Fortnox integration row has no credentials')
   return data as IntegrationRow
 }
