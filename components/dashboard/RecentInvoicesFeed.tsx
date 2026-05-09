@@ -57,7 +57,14 @@ export default function RecentInvoicesFeed({ businessId, days = 14, maxRows = 25
     })
       .then(async r => {
         const json = await r.json().catch(() => null)
-        if (!r.ok) throw new Error(json?.message ?? json?.error ?? `HTTP ${r.status}`)
+        if (!r.ok) {
+          // Surface Fortnox's actual error detail when it propagates through
+          // — makes 400-class issues debuggable from the UI without grepping
+          // server logs.
+          const baseMsg = json?.message ?? json?.error ?? `HTTP ${r.status}`
+          const detail  = json?.detail ? ` — ${String(json.detail).slice(0, 200)}` : ''
+          throw new Error(baseMsg + detail)
+        }
         return json as RecentInvoicesPayload
       })
       .then(payload => { if (!cancelled) setData(payload) })

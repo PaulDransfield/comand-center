@@ -343,7 +343,9 @@ async function fetchSupplierInvoices(db: any, integrationId: string, fromDate: s
 
   // Single list call. Pagination would be needed for high-volume customers
   // (>500 supplier invoices in a month) but not for typical restaurant scale.
-  const url = `https://api.fortnox.se/3/supplierinvoices?fromdate=${fromDate}&todate=${toDate}&filter=all&limit=500`
+  // No `filter=` param — Fortnox returns all non-cancelled invoices by
+  // default. `filter=all` is NOT a valid value (caused HTTP 400 on /supplierinvoices).
+  const url = `https://api.fortnox.se/3/supplierinvoices?fromdate=${fromDate}&todate=${toDate}&limit=500`
   const res = await fetch(url, {
     headers: {
       'Authorization': `Bearer ${accessToken}`,

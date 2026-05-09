@@ -173,7 +173,11 @@ export async function GET(req: NextRequest) {
   // Defensive: bail out at page 5 to avoid runaways.
   const collected: FortnoxSupplierInvoice[] = []
   for (let page = 1; page <= 5; page++) {
-    const url = `${FORTNOX_API}/supplierinvoices?fromdate=${fromIso}&todate=${toIso}&filter=all&limit=500&page=${page}`
+    // No `filter=` param — Fortnox returns all non-cancelled invoices by
+    // default. `filter=all` is NOT a valid value (valid options: cancelled,
+    // fullypaid, unpaid, unpaidoverdue, unbooked, bookkept). Sending an
+    // invalid filter value triggers HTTP 400 from /supplierinvoices.
+    const url = `${FORTNOX_API}/supplierinvoices?fromdate=${fromIso}&todate=${toIso}&limit=500&page=${page}`
     const res = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
