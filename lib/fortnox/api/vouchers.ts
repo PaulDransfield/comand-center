@@ -140,35 +140,43 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
   }
 
   // ── Phase 1: list vouchers per fiscal year, paginating each year ──────────
-  // Track the source fiscal-year date for each summary so the detail GET in
-  // Phase 2 can set the same year header.
-  const summaries: Array<FortnoxVoucherSummary & { __fyDate: string }> = []
+  // Pin the fiscal-year context per call. Fortnox accepts the year ID via
+  // EITHER the `Fortnox-Financial-Year` header OR the `?financialyear=<id>`
+  // query param — we send both as belt-and-braces because different
+  // documented examples differ on which one is authoritative for /vouchers.
+  // The previous attempt used `Fortnox-Financial-Year-Date` which the
+  // /vouchers list endpoint ignores → it falls back to the *current* year
+  // and rejects any from-date outside it (error code 2002363).
+  // Track the source fiscal-year context for each summary so the detail
+  // GET in Phase 2 can reuse the same year.
+  const summaries: Array<FortnoxVoucherSummary & { __fyId: number; __fyDate: string }> = []
   for (const slice of yearSlices) {
-    const fyHeaderDate = slice.year.FromDate
+    const fyId   = slice.year.Id
+    const fyDate = slice.year.FromDate
     let page = 1
     while (true) {
       await throttle.acquire()
       const url =
         `${FORTNOX_API}/vouchers?fromdate=${slice.fromDate}&todate=${slice.toDate}` +
-        `&limit=${PAGE_SIZE}&page=${page}`
-      const res = await authedFetch(url, creds.access_token, fyHeaderDate)
+        `&financialyear=${fyId}&limit=${PAGE_SIZE}&page=${page}`
+      const res = await authedFetch(url, creds.access_token, fyId, fyDate)
       listRequests++
 
       if (res.status === 401) {
         // Token expired mid-fetch. Refresh and retry once.
         creds = await ensureFreshToken(db, integ, /*force*/ true)
         tokenRefreshed = true
-        const retry = await authedFetch(url, creds.access_token, fyHeaderDate)
+        const retry = await authedFetch(url, creds.access_token, fyId, fyDate)
         if (!retry.ok) throw new Error(`Fortnox /vouchers list failed after refresh: HTTP ${retry.status}`)
         const body = await retry.json()
-        collectListPage(body, summaries, fyHeaderDate)
+        collectListPage(body, summaries, fyId, fyDate)
         if (isLastPage(body, page)) break
       } else if (!res.ok) {
         const text = await res.text().catch(() => '')
-        throw new Error(`Fortnox /vouchers list failed (year ${slice.year.FromDate}..${slice.year.ToDate}): HTTP ${res.status} — ${text.slice(0, 200)}`)
+        throw new Error(`Fortnox /vouchers list failed (year ${slice.year.FromDate}..${slice.year.ToDate}, id=${fyId}): HTTP ${res.status} — ${text.slice(0, 200)}`)
       } else {
         const body = await res.json()
-        collectListPage(body, summaries, fyHeaderDate)
+        collectListPage(body, summaries, fyId, fyDate)
         if (isLastPage(body, page)) break
       }
       page++
@@ -187,11 +195,14 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
       creds = await ensureFreshToken(db, integ, /*force*/ true)
       tokenRefreshed = true
     }
-    const url = `${FORTNOX_API}/vouchers/${encodeURIComponent(sum.VoucherSeries)}/${sum.VoucherNumber}`
-    // Detail GET also requires the fiscal-year context header — vouchers
-    // are scoped to a year, and asking for {series}/{number} without the
-    // header lookups in the *active* year and 404s for older entries.
-    const res = await authedFetch(url, creds.access_token, sum.__fyDate)
+    // Detail GET also requires the fiscal-year context — vouchers are
+    // scoped to a year, and asking for {series}/{number} without it
+    // looks up in the *active* year and 404s for older entries.
+    // Same belt-and-braces: query param + headers.
+    const url =
+      `${FORTNOX_API}/vouchers/${encodeURIComponent(sum.VoucherSeries)}/${sum.VoucherNumber}` +
+      `?financialyear=${sum.__fyId}`
+    const res = await authedFetch(url, creds.access_token, sum.__fyId, sum.__fyDate)
     detailRequests++
     if (!res.ok) {
       const text = await res.text().catch(() => '')
@@ -321,38 +332,41 @@ function normaliseCreds(raw: any): DecryptedCreds {
 }
 
 /**
- * Fetch with the customer's bearer token. When `financialYearDate` is set,
- * we also send the `Fortnox-Financial-Year-Date` header — Fortnox uses any
- * date inside a fiscal year to resolve which year context applies. Required
- * for /vouchers list + detail calls; harmless on other endpoints.
+ * Fetch with the customer's bearer token. When `financialYearId` is set,
+ * we send both `Fortnox-Financial-Year` (integer id) and
+ * `Fortnox-Financial-Year-Date` (any date inside that year) headers —
+ * Fortnox documentation differs across endpoints on which one wins for
+ * /vouchers, so we send both. The query parameter `?financialyear=<id>`
+ * is added at the call site as a third belt-and-braces layer.
  */
 async function authedFetch(
   url: string,
   accessToken: string,
+  financialYearId?: number,
   financialYearDate?: string,
 ): Promise<Response> {
   const headers: Record<string, string> = {
     'Authorization': `Bearer ${accessToken}`,
     'Accept':        'application/json',
   }
-  if (financialYearDate) {
-    headers['Fortnox-Financial-Year-Date'] = financialYearDate
-  }
+  if (financialYearId)   headers['Fortnox-Financial-Year']      = String(financialYearId)
+  if (financialYearDate) headers['Fortnox-Financial-Year-Date'] = financialYearDate
   return fetch(url, { headers })
 }
 
 /**
  * Append voucher summaries from a list-page body to the running array,
- * tagging each summary with the fiscal-year date that was used so the
- * later detail GET can reuse the same context header.
+ * tagging each summary with the fiscal-year context that was used so the
+ * later detail GET can reuse the same year.
  */
 function collectListPage(
   body: any,
-  into: Array<FortnoxVoucherSummary & { __fyDate: string }>,
+  into: Array<FortnoxVoucherSummary & { __fyId: number; __fyDate: string }>,
+  fyId: number,
   fyDate: string,
 ): void {
   const list: FortnoxVoucherSummary[] = body?.Vouchers ?? []
-  for (const v of list) into.push({ ...v, __fyDate: fyDate })
+  for (const v of list) into.push({ ...v, __fyId: fyId, __fyDate: fyDate })
 }
 
 /** Detect last page via Fortnox's `MetaInformation` envelope. */
