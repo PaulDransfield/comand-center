@@ -25,6 +25,7 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import TopBar from '@/components/ui/TopBar'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
+import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
 
@@ -398,6 +399,13 @@ export default function OverheadsPage() {
                 />
               </div>
             )}
+
+            {/* Live operational view — recent supplier invoices arriving in
+                Fortnox. Independent of the year filter / monthly P&L slicing
+                above; shows raw activity day-to-day with PDF links per row. */}
+            <div style={{ marginTop: 12 }}>
+              <RecentInvoicesFeed businessId={bizId} days={30} maxRows={50} />
+            </div>
 
             {/* Full line-item table */}
             <div style={{ marginTop: 12 }}>
