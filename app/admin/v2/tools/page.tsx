@@ -217,6 +217,19 @@ export default function ToolsPage() {
   const [diagRunning, setDiagRunning] = useState<boolean>(false)
   const [diagResult,  setDiagResult]  = useState<any>(null)
   const [diagError,   setDiagError]   = useState<string | null>(null)
+  const [diagElapsed, setDiagElapsed] = useState<number>(0)
+
+  // Tick the elapsed-seconds counter while the diagnose call is in flight.
+  // The actual fetch is server-side and we can't stream progress from it
+  // (no Server-Sent Events here yet), but at least the user sees the page
+  // is alive and roughly how long they've been waiting.
+  useEffect(() => {
+    if (!diagRunning) return
+    setDiagElapsed(0)
+    const start = Date.now()
+    const id = setInterval(() => setDiagElapsed(Math.floor((Date.now() - start) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [diagRunning])
 
   async function diagnoseVouchers() {
     if (diagRunning || !opsBizId.trim()) return
@@ -374,9 +387,27 @@ export default function ToolsPage() {
             style={btnSecondary(diagRunning || !opsBizId.trim())}
             title="Read-only. Fetches one month of vouchers, runs the translator, returns bucket totals + diff vs PDF baseline."
           >
-            {diagRunning ? 'Running…' : 'Diagnose'}
+            {diagRunning ? `Running… ${diagElapsed}s` : 'Diagnose'}
           </button>
+          {diagRunning && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 11, color: '#6b7280', fontFamily: 'ui-monospace, monospace',
+            }}>
+              <span style={{
+                display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
+                background: '#3b82f6', animation: 'pulse 1s infinite',
+              }} />
+              fetching ~250-400 vouchers · throttled at 18 req / 5s · expect 60-120s
+            </span>
+          )}
         </div>
+        <style jsx>{`
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50%      { opacity: 0.3; }
+          }
+        `}</style>
 
         {(diagResult || diagError) && (
           <div style={{
