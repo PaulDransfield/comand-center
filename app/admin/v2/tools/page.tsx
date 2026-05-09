@@ -199,10 +199,33 @@ export default function ToolsPage() {
       // Kick endpoint returns instantly now (waitUntil fires the worker
       // in the background). Poll the integrations row so the admin sees
       // live phase + voucher counts as the worker grinds. Stops when the
-      // row reaches a terminal state (completed / failed) or after 12 min.
+      // row reaches a terminal state (completed / failed) or after 60 min.
       pollBackfill(opsBizId.trim())
     } catch (e: any) {
       setOpsError(e?.message ?? 'Kick failed')
+    } finally {
+      setOpsRunning(false)
+    }
+  }
+
+  // Resume button — for stuck 'running' rows where the previous worker
+  // died without checkpointing (Vercel killed it mid-iteration). Preserves
+  // the fortnox_backfill_state row and re-fires the worker.
+  async function resumeFortnoxBackfill() {
+    if (opsRunning || !opsBizId.trim()) return
+    setOpsRunning(true)
+    setOpsResult(null)
+    setOpsError(null)
+    setOpsPollSnapshot(null)
+    try {
+      const r = await adminFetch<any>('/api/admin/fortnox/resume-backfill', {
+        method: 'POST',
+        body:   JSON.stringify({ business_id: opsBizId.trim() }),
+      })
+      setOpsResult(r)
+      pollBackfill(opsBizId.trim())
+    } catch (e: any) {
+      setOpsError(e?.message ?? 'Resume failed')
     } finally {
       setOpsRunning(false)
     }
@@ -331,9 +354,17 @@ export default function ToolsPage() {
             onClick={kickFortnoxBackfill}
             disabled={opsRunning || !opsBizId.trim()}
             style={btnPrimary(opsRunning || !opsBizId.trim())}
-            title="Resets backfill_status to pending and synchronously calls the worker. Returns the worker's response."
+            title="Fresh start: clears state row, re-fetches all summaries, runs through full backfill. Use when a backfill needs to redo from scratch."
           >
             {opsRunning ? 'Running…' : 'Kick worker'}
+          </button>
+          <button
+            onClick={resumeFortnoxBackfill}
+            disabled={opsRunning || !opsBizId.trim()}
+            style={btnSecondary(opsRunning || !opsBizId.trim())}
+            title="Resume from the existing fortnox_backfill_state row. Use when a previous run timed out without checkpointing (status stuck at 'running')."
+          >
+            {opsRunning ? '' : 'Resume'}
           </button>
         </div>
 
