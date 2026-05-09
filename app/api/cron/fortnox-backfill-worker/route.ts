@@ -279,6 +279,19 @@ export async function POST(req: NextRequest) {
     const validationFailures: Array<{ period: string; codes: string[] }> = []
     let detailRequestsThisRun    = 0
 
+    // Two-set period tracking:
+    //   writtenPeriods    = "processed; don't re-do on resume" (resume gate)
+    //   apiWrittenPeriods = "we actually wrote API data here"  (cleanup gate)
+    //
+    // Pre-fix the worker added every processed period to writtenPeriods
+    // regardless of whether tracker_data was actually written, then the
+    // orphan cleanup used writtenPeriods to skip — meaning periods where
+    // translation produced no output (e.g. Vero's Dec 2025: vouchers exist
+    // but they translate to nothing useful) had their pre-existing PDF
+    // rows preserved. That's wrong: API truth says "no data here", PDF
+    // shouldn't survive. Splitting the two sets fixes the cleanup gate.
+    const apiWrittenPeriods = new Set<string>()
+
     // ── Per-period detail loop with deadline-aware checkpointing ─────────
     // Each iteration fetches ALL of one period's vouchers in a single
     // fetchVoucherDetailsForSummaries call. That call shares its throttle +
@@ -480,7 +493,19 @@ export async function POST(req: NextRequest) {
             if (error) throw new Error(`insert ${yyyymm}: ${error.message}`)
           }
           monthsWrittenThisRun++
+          apiWrittenPeriods.add(yyyymm)
         }
+      } else {
+        // Period had summaries but translateVouchersToPeriods produced no
+        // output — likely all vouchers had empty VoucherRows or no valid
+        // dates. Log it so we know; don't add to apiWrittenPeriods so the
+        // orphan cleanup deletes any pre-existing non-API row for this period.
+        log.info('fortnox-backfill no period output', {
+          route:           'cron/fortnox-backfill-worker',
+          integration_id:  integrationId,
+          period:          yyyymm,
+          voucher_count:   detailBatch.vouchers.length,
+        })
       }
 
       writtenPeriods.add(yyyymm)
@@ -508,30 +533,39 @@ export async function POST(req: NextRequest) {
     // Scope: only periods strictly inside [from_date, to_date]. Out-of-
     // range PDF rows are untouched (a 12-month backfill doesn't claim
     // authority over months it didn't fetch).
+    // Source-of-truth gate: query tracker_data directly to find which
+    // periods have current API rows. Resilient across paused/resumed
+    // chains (apiWrittenPeriods set is local to one invocation).
     const expectedPeriods = enumerateMonths(fromIso, toIso)
+    const minYear = Math.min(...expectedPeriods.map(p => Number(p.split('-')[0])))
+    const maxYear = Math.max(...expectedPeriods.map(p => Number(p.split('-')[0])))
+    const { data: existingRows } = await db
+      .from('tracker_data')
+      .select('id, period_year, period_month, source')
+      .eq('business_id', businessId)
+      .gte('period_year', minYear)
+      .lte('period_year', maxYear)
+    const existingByPeriod = new Map<string, { id: string; source: string | null }>()
+    for (const row of existingRows ?? []) {
+      const key = `${row.period_year}-${String(row.period_month).padStart(2, '0')}`
+      existingByPeriod.set(key, { id: row.id, source: row.source })
+    }
+
     let monthsClearedOrphan = 0
     for (const periodKey of expectedPeriods) {
-      if (writtenPeriods.has(periodKey)) continue
-      const [yStr, mStr] = periodKey.split('-')
-      const year  = Number(yStr)
-      const month = Number(mStr)
-      const { data: existing } = await db
-        .from('tracker_data')
-        .select('id, source')
-        .eq('business_id', businessId)
-        .eq('period_year', year)
-        .eq('period_month', month)
-        .maybeSingle()
-      if (existing && existing.source !== 'fortnox_api') {
-        await db.from('tracker_data').delete().eq('id', existing.id)
-        monthsClearedOrphan++
-        log.info('fortnox-backfill cleared orphan non-api row', {
-          route:           'cron/fortnox-backfill-worker',
-          integration_id:  integrationId,
-          period:          periodKey,
-          previous_source: existing.source,
-        })
-      }
+      const existing = existingByPeriod.get(periodKey)
+      if (!existing) continue                      // nothing to clean
+      if (existing.source === 'fortnox_api') continue  // already API — skip
+      // Non-API row inside the backfill range that we don't have API
+      // data for. Per the API-priority strategy, delete it.
+      await db.from('tracker_data').delete().eq('id', existing.id)
+      monthsClearedOrphan++
+      log.info('fortnox-backfill cleared orphan non-api row', {
+        route:           'cron/fortnox-backfill-worker',
+        integration_id:  integrationId,
+        period:          periodKey,
+        previous_source: existing.source,
+      })
     }
 
     // ── All done. Mark completed + delete state row ─────────────────
