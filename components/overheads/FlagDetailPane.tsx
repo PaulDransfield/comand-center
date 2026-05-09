@@ -454,9 +454,11 @@ function InvoiceRow({ invoice, bizId, monthsShort }: {
             {t('invoicePdf')}
           </a>
         )}
-        <a href={invoice.fortnox_url} target="_blank" rel="noopener noreferrer" style={invoiceActionStyle}>
-          {t('invoiceFortnox')}
-        </a>
+        {/* "Open in Fortnox" link removed — Fortnox's web UI URL pattern
+            isn't reliably deep-linkable (their /supplierinvoice/{N} path
+            returns 404 in the modern app). PDF view is the actually-
+            useful affordance; if owner needs Fortnox, they navigate there
+            themselves. */}
       </div>
     </li>
   )

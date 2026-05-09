@@ -160,14 +160,15 @@ function InvoiceRow({ invoice, businessId }: { invoice: RecentInvoice; businessI
         )}
       </div>
       <div style={ROW_ACTIONS_STYLE}>
-        {pdfUrl && (
+        {pdfUrl ? (
           <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={LINK_STYLE} title="View invoice PDF">
-            View
+            View PDF
           </a>
+        ) : (
+          <span style={{ ...LINK_STYLE, color: '#9ca3af', cursor: 'default' }} title="No PDF attached to this invoice in Fortnox">
+            No PDF
+          </span>
         )}
-        <a href={invoice.fortnox_url} target="_blank" rel="noopener noreferrer" style={LINK_STYLE} title="Open in Fortnox">
-          Open
-        </a>
       </div>
     </div>
   )
