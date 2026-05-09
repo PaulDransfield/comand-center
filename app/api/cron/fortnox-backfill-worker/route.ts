@@ -53,8 +53,10 @@ export const dynamic     = 'force-dynamic'
 // Vero's voucher volume (~30/day) the full 12-month fetch is well under 5min.
 export const maxDuration = 300
 
-const PROVIDER  = 'fortnox'
-const MONTHS    = 12
+const PROVIDER       = 'fortnox'
+const DEFAULT_MONTHS = 12
+const MIN_MONTHS     = 1
+const MAX_MONTHS     = 24
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get('authorization') ?? ''
@@ -64,6 +66,14 @@ export async function POST(req: NextRequest) {
 
   const db = createAdminClient()
   const startedAt = Date.now()
+
+  // Optional `months` override (1..24) — admin kick endpoint passes this so
+  // we can bisect issues by running a smaller backfill first. Defaults to 12.
+  const overrideBody = await req.json().catch(() => ({} as any))
+  const requestedMonths = Number(overrideBody?.months)
+  const MONTHS = Number.isFinite(requestedMonths) && requestedMonths >= MIN_MONTHS && requestedMonths <= MAX_MONTHS
+    ? Math.floor(requestedMonths)
+    : DEFAULT_MONTHS
 
   // ── 1. Atomic claim ──────────────────────────────────────────────────────
   // Find one pending Fortnox integration. If two workers fire at the same
@@ -119,7 +129,7 @@ export async function POST(req: NextRequest) {
     const fromIso  = fromDate.toISOString().slice(0, 10)
     const toIso    = toDate.toISOString().slice(0, 10)
 
-    await markProgress(db, integrationId, { phase: 'fetching', from_date: fromIso, to_date: toIso, months_total: MONTHS, months_done: 0 })
+    await markProgress(db, integrationId, { phase: 'fetching', from_date: fromIso, to_date: toIso, months_requested: MONTHS, months_done: 0 })
 
     // ── 3. Fetch vouchers ──────────────────────────────────────────────────
     const fetchResult = await fetchVouchersForRange({

@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({} as any))
   const businessId: string | undefined = body?.business_id
+  const months: number | undefined = Number.isFinite(Number(body?.months)) ? Number(body.months) : undefined
 
   if (!businessId) {
     return NextResponse.json({ error: 'business_id required' }, { status: 400 })
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
         'Content-Type':  'application/json',
         'Authorization': `Bearer ${process.env.CRON_SECRET}`,
       },
-      body: JSON.stringify({ trigger: 'admin_kick', business_id: businessId }),
+      body: JSON.stringify({ trigger: 'admin_kick', business_id: businessId, months }),
     })
     workerStatus = r.status
     workerResponse = await r.json().catch(() => ({ raw: 'non-json response' }))

@@ -176,6 +176,7 @@ export default function ToolsPage() {
   // exact result (months_written / error). Posts to:
   //   /api/admin/fortnox/kick-backfill { business_id }
   const [opsBizId,    setOpsBizId]    = useState<string>('')
+  const [opsMonths,   setOpsMonths]   = useState<number>(12)
   const [opsRunning,  setOpsRunning]  = useState<boolean>(false)
   const [opsResult,   setOpsResult]   = useState<any>(null)
   const [opsError,    setOpsError]    = useState<string | null>(null)
@@ -188,7 +189,7 @@ export default function ToolsPage() {
     try {
       const r = await adminFetch<any>('/api/admin/fortnox/kick-backfill', {
         method: 'POST',
-        body:   JSON.stringify({ business_id: opsBizId.trim() }),
+        body:   JSON.stringify({ business_id: opsBizId.trim(), months: opsMonths }),
       })
       setOpsResult(r)
     } catch (e: any) {
@@ -232,11 +233,23 @@ export default function ToolsPage() {
             onChange={e => setOpsBizId(e.target.value)}
             placeholder="0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99 (Vero Italiano)"
             style={{
-              flex: 1, minWidth: 360, padding: '6px 10px',
+              flex: 1, minWidth: 320, padding: '6px 10px',
               border: '1px solid #d1d5db', borderRadius: 6,
               fontSize: 12, fontFamily: 'ui-monospace, monospace',
             }}
           />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            Months
+            <input
+              type="number"
+              value={opsMonths}
+              onChange={e => setOpsMonths(Math.max(1, Math.min(24, parseInt(e.target.value || '12', 10) || 12)))}
+              min={1}
+              max={24}
+              style={{ width: 60, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+              title="1-24. Bisect issues by trying a smaller window first (e.g. 5 = current fiscal year only for Vero)."
+            />
+          </label>
           <button
             onClick={kickFortnoxBackfill}
             disabled={opsRunning || !opsBizId.trim()}

@@ -104,7 +104,11 @@ const FORTNOX_API   = 'https://api.fortnox.se/3'
 const FORTNOX_TOKEN = 'https://apps.fortnox.se/oauth-v1/token'
 const PAGE_SIZE     = 500       // Fortnox max
 const RATE_WINDOW_MS = 5_000
-const RATE_MAX      = 25        // 25 req per 5 sec
+// Documented limit is 25 req per 5 sec per token. Real-world bursts trigger
+// 429 well below that — likely a stricter sliding-window backend. Drop to
+// 18 to leave headroom; the 429 retry-with-backoff in authedFetch covers
+// the residual case.
+const RATE_MAX      = 18
 const REFRESH_THRESHOLD_MS = 5 * 60 * 1000  // refresh if <5min to expiry
 
 // ── Public entry point ───────────────────────────────────────────────────────
@@ -343,7 +347,18 @@ function normaliseCreds(raw: any): DecryptedCreds {
  * Fortnox documentation differs across endpoints on which one wins for
  * /vouchers, so we send both. The query parameter `?financialyear=<id>`
  * is added at the call site as a third belt-and-braces layer.
+ *
+ * Auto-retries on HTTP 429 (rate limit) with exponential backoff. Fortnox's
+ * documented limit is 25 req per 5 sec per token, but real-world bursts
+ * trigger 429s well below that — likely a sliding-window enforcement that's
+ * stricter than the marketing copy. When we hit one, sleep for the
+ * Retry-After header value (or escalating defaults) and retry. After
+ * MAX_RETRIES we give up so a genuinely broken upstream doesn't stall
+ * the whole worker.
  */
+const MAX_RETRIES        = 4
+const BACKOFF_DEFAULTS_MS = [2000, 4000, 8000, 16000]   // total ~30s worst case
+
 async function authedFetch(
   url: string,
   accessToken: string,
@@ -356,7 +371,32 @@ async function authedFetch(
   }
   if (financialYearId)   headers['Fortnox-Financial-Year']      = String(financialYearId)
   if (financialYearDate) headers['Fortnox-Financial-Year-Date'] = financialYearDate
-  return fetch(url, { headers })
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, { headers })
+    if (res.status !== 429) return res
+    if (attempt === MAX_RETRIES) return res   // give up; caller will throw
+
+    // Honor Retry-After if Fortnox sends one (seconds or HTTP-date).
+    // Otherwise escalate via BACKOFF_DEFAULTS_MS.
+    const retryAfterRaw = res.headers.get('Retry-After')
+    let waitMs = BACKOFF_DEFAULTS_MS[attempt]
+    if (retryAfterRaw) {
+      const asSeconds = Number(retryAfterRaw)
+      if (Number.isFinite(asSeconds)) {
+        waitMs = Math.max(waitMs, asSeconds * 1000)
+      } else {
+        const asDate = Date.parse(retryAfterRaw)
+        if (Number.isFinite(asDate)) {
+          waitMs = Math.max(waitMs, asDate - Date.now())
+        }
+      }
+    }
+    process.stdout.write(`[fortnox-fetch] 429 on ${url} — backing off ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES})\n`)
+    await sleep(waitMs)
+  }
+  // Unreachable — loop returns or gives up before falling through.
+  throw new Error('authedFetch: retry loop exhausted unexpectedly')
 }
 
 /**
