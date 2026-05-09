@@ -119,52 +119,72 @@ export default function FlagDetailPane({
   }, [bizId, f.supplier_name_normalised, f.category])
 
   // ── Per-period drilldown ──────────────────────────────────────────────
-  const [drilldown, setDrilldown] = useState<DrilldownPayload | null>(null)
+  // Pre-2026-05-09 this called /api/integrations/fortnox/drilldown which
+  // does TWO Fortnox calls (vouchers + supplierinvoices) and joins them
+  // for amount-by-category precision. That endpoint timed out on busy
+  // months and produced "drilldown_failed" UX. For owner intent ("show me
+  // the supplier invoices for this flag"), we don't need voucher math —
+  // a flat supplier-invoice list scoped to (period, supplier_name) is
+  // simpler and more reliable. The /recent-invoices endpoint with
+  // year_month + supplier_filter does exactly that.
+  const [flagInvoices, setFlagInvoices] = useState<{ invoices: any[] } | null>(null)
   const [drilldownLoading, setDrilldownLoading] = useState(false)
   const [drilldownError, setDrilldownError] = useState<string | null>(null)
   useEffect(() => {
     let abort = false
     setDrilldownLoading(true)
     setDrilldownError(null)
-    setDrilldown(null)
-    fetch('/api/integrations/fortnox/drilldown', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache:   'no-store',
-      body:    JSON.stringify({
-        business_id: bizId,
-        year:        selectedPeriod.year,
-        month:       selectedPeriod.month,
-        category:    f.category,
-      }),
-    })
+    setFlagInvoices(null)
+    const yearMonth = `${selectedPeriod.year}-${String(selectedPeriod.month).padStart(2, '0')}`
+    const url =
+      `/api/integrations/fortnox/recent-invoices?business_id=${encodeURIComponent(bizId)}` +
+      `&year_month=${encodeURIComponent(yearMonth)}` +
+      `&supplier_filter=${encodeURIComponent(f.supplier_name_normalised ?? f.supplier_name ?? '')}`
+    fetch(url, { cache: 'no-store' })
       .then(async r => {
         const j = await r.json().catch(() => null) as any
         if (abort) return
         if (!r.ok) {
           if (j?.error === 'no_fortnox_connection') setDrilldownError(t('drilldownNoConnection'))
-          else setDrilldownError(j?.error ?? 'drilldown_failed')
+          else setDrilldownError(j?.error ?? j?.message ?? 'drilldown_failed')
           return
         }
-        setDrilldown(j as DrilldownPayload)
+        setFlagInvoices({ invoices: Array.isArray(j?.invoices) ? j.invoices : [] })
       })
       .catch(e => { if (!abort) setDrilldownError(e?.message ?? 'drilldown_failed') })
       .finally(() => { if (!abort) setDrilldownLoading(false) })
     return () => { abort = true }
-  }, [bizId, selectedPeriod.year, selectedPeriod.month, f.category, t])
+  }, [bizId, selectedPeriod.year, selectedPeriod.month, f.supplier_name_normalised, f.supplier_name, t])
 
-  // Match the Fortnox drilldown's supplier groups to OUR supplier — same
-  // defensive matching as the legacy InvoiceDrilldown.
+  // Adapt flag-invoices into the shape the existing renderer expects, so the
+  // surrounding JSX needs minimal changes. Map flat invoices → single group.
   const matchedGroup = useMemo<SupplierGroup | null>(() => {
-    if (!drilldown) return null
-    const target = String(f.supplier_name_normalised ?? '').toLowerCase().trim()
-    const exact  = drilldown.suppliers.find(s => s.supplier_name_normalised === target)
-    if (exact) return exact
-    const fuzzy = drilldown.suppliers.find(s =>
-      s.supplier_name.toLowerCase().includes(f.supplier_name.toLowerCase()) ||
-      f.supplier_name.toLowerCase().includes(s.supplier_name.toLowerCase()))
-    return fuzzy ?? null
-  }, [drilldown, f])
+    if (!flagInvoices || flagInvoices.invoices.length === 0) return null
+    return {
+      supplier_name:            f.supplier_name,
+      supplier_name_normalised: f.supplier_name_normalised ?? f.supplier_name?.toLowerCase() ?? '',
+      total:                    flagInvoices.invoices.reduce((s: number, i: any) => s + (Number(i.total) || 0), 0),
+      invoice_count:            flagInvoices.invoices.length,
+      first_date:               flagInvoices.invoices[flagInvoices.invoices.length - 1]?.invoice_date ?? '',
+      last_date:                flagInvoices.invoices[0]?.invoice_date ?? '',
+      invoices:                 flagInvoices.invoices.map((i: any) => ({
+        source_type:         'supplier_invoice' as const,
+        source_id:           String(i.given_number ?? ''),
+        fortnox_url:         '',  // unused — "Open in Fortnox" link removed
+        file_id:             null, // populated lazily via /invoice-pdf
+        date:                String(i.invoice_date ?? ''),
+        invoice_number:      String(i.invoice_number ?? i.given_number ?? '—'),
+        supplier_name:       String(i.supplier_name ?? '—'),
+        amount:              Number(i.total ?? 0),
+        full_total:          Number(i.total ?? 0),
+        account:             0,
+        account_description: null,
+        description:         i.comments ? String(i.comments) : null,
+        voucher_series:      i.voucher_series ?? '',
+        voucher_number:      typeof i.voucher_number === 'number' ? i.voucher_number : 0,
+      })),
+    }
+  }, [flagInvoices, f])
 
   // Flag's badge tone + label for the header.
   let badgeTone: 'red' | 'amber' | 'info' | 'purple' | 'gray' = 'info'

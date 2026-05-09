@@ -77,10 +77,12 @@ export interface RecentInvoice {
 }
 
 export interface RecentInvoicesPayload {
-  invoices:     RecentInvoice[]
-  fetched_at:   string
-  days_window:  number
-  cache?:       'hit' | 'miss'
+  invoices:        RecentInvoice[]
+  fetched_at:      string
+  days_window:     number               // 0 when year_month-mode active
+  year_month?:     string | null        // 'YYYY-MM' if year_month-mode, else null
+  supplier_filter?: string | null
+  cache?:          'hit' | 'miss'
 }
 
 export async function GET(req: NextRequest) {
@@ -91,6 +93,12 @@ export async function GET(req: NextRequest) {
   const businessId = (req.nextUrl.searchParams.get('business_id') ?? '').trim()
   const daysParam  = Number(req.nextUrl.searchParams.get('days') ?? 14)
   const days       = Math.max(1, Math.min(90, Number.isFinite(daysParam) ? daysParam : 14))
+  // Optional calendar-month window — used by the Overheads flag detail
+  // pane so a flag for "March 2026 / supplier X" can show a flat list
+  // of supplier-X invoices in March 2026 without doing the full
+  // voucher-aware drilldown (which is slow + flaky).
+  const yearMonth      = (req.nextUrl.searchParams.get('year_month') ?? '').trim()
+  const supplierFilter = (req.nextUrl.searchParams.get('supplier_filter') ?? '').trim().toLowerCase()
   if (!businessId) {
     return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   }
@@ -108,11 +116,18 @@ export async function GET(req: NextRequest) {
 
   // Cache check (synthetic key for "recent invoices" — re-uses the
   // overhead_drilldown_cache table which is the right shape for this).
+  // Different cache keys for days-mode vs year_month-mode so they don't
+  // collide. supplier_filter goes into the key too — different supplier
+  // filters return different result sets.
+  const yearMonthValid = /^\d{4}-\d{2}$/.test(yearMonth)
+  const cacheCategory = yearMonthValid
+    ? `__flag_invoices_${yearMonth}_${supplierFilter || 'all'}__`
+    : `__recent_invoices_${days}d__`
   const cacheKey = {
     business_id:  businessId,
     period_year:  0,
     period_month: 0,
-    category:     `__recent_invoices_${days}d__`,
+    category:     cacheCategory,
   }
   const { data: cached } = await db
     .from('overhead_drilldown_cache')
@@ -162,12 +177,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'No Fortnox access token' }, { status: 500 })
   }
 
-  // Range: last N days, in Stockholm-local YYYY-MM-DD
-  const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
-  const todayDate  = new Date(todayLocal + 'T00:00:00Z')
-  const fromDate   = new Date(todayDate.getTime() - days * 86_400_000)
-  const fromIso    = fromDate.toISOString().slice(0, 10)
-  const toIso      = todayLocal
+  // Range: either calendar-month window (year_month=YYYY-MM mode) or
+  // last-N-days. Stockholm-local YYYY-MM-DD.
+  let fromIso: string
+  let toIso:   string
+  if (yearMonthValid) {
+    const [y, m] = yearMonth.split('-').map(Number)
+    const lastDay = new Date(y!, m!, 0).getDate()
+    fromIso = `${y}-${String(m).padStart(2, '0')}-01`
+    toIso   = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  } else {
+    const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
+    const todayDate  = new Date(todayLocal + 'T00:00:00Z')
+    const fromDate   = new Date(todayDate.getTime() - days * 86_400_000)
+    fromIso = fromDate.toISOString().slice(0, 10)
+    toIso   = todayLocal
+  }
 
   // /supplierinvoices is paginated with limit=500. For 90 days × restaurant
   // volume (~30 invoices/month) we max at ~90 — single page is enough.
@@ -194,8 +219,19 @@ export async function GET(req: NextRequest) {
     if (page >= totalPages) break
   }
 
+  // Optional supplier filter — used by the Overheads flag detail pane.
+  // Match is case-insensitive substring. Normalisation matches what the
+  // drilldown route does (strips Swedish company-form suffixes).
+  const filtered = supplierFilter
+    ? collected.filter(inv => {
+        const name = String(inv.SupplierName ?? '').toLowerCase()
+        const norm = name.replace(/\b(ab|aktiebolag|hb|kb|enskild firma|as)\b/g, '').trim()
+        return name.includes(supplierFilter) || norm.includes(supplierFilter)
+      })
+    : collected
+
   // Map to display shape, sort newest first
-  const invoices: RecentInvoice[] = collected
+  const invoices: RecentInvoice[] = filtered
     .map(inv => {
       const date = String(inv.InvoiceDate ?? inv.BookKeepingDate ?? '').slice(0, 10)
       const total = parseAmount(inv.Total)
@@ -219,7 +255,9 @@ export async function GET(req: NextRequest) {
   const payload: RecentInvoicesPayload = {
     invoices,
     fetched_at:  new Date().toISOString(),
-    days_window: days,
+    days_window: yearMonthValid ? 0 : days,
+    year_month:  yearMonthValid ? yearMonth : null,
+    supplier_filter: supplierFilter || null,
   }
 
   await db
