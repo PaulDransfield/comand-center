@@ -100,26 +100,32 @@ async function main() {
       // pre-resolved row (with actual_revenue + error_pct populated).
       // ON CONFLICT DO NOTHING preserves first_predicted_at if the row
       // was somehow already inserted (e.g. partial prior run).
+      // Backfill MUST override first_predicted_at + first_predicted_date
+      // to the asOfDate, otherwise prediction_horizon_days = forecast_date
+      // - first_predicted_date goes negative (months in the past) and the
+      // v_forecast_mape_by_surface view excludes the row (filters horizon
+      // BETWEEN 0 AND 14). Setting both to asOf gives horizon=1, matching
+      // what a live capture would produce when called the day before.
+      const asOfIso = ymd(asOf)
       const { error: insErr } = await db.from('daily_forecast_outcomes').upsert({
-        org_id:            VERO_ORG_ID,
-        business_id:       VERO_BUSINESS_ID,
-        forecast_date:     dateIso,
-        surface:           'consolidated_daily',
-        predicted_revenue: forecast.predicted_revenue,
-        baseline_revenue:  forecast.baseline_revenue,
-        // first_predicted_at + first_predicted_date intentionally omitted —
-        // the column defaults are NOW()/CURRENT_DATE which is fine for backfill;
-        // the data_quality_flags tag warns analyses about the time-shift.
-        predicted_at:      new Date().toISOString(),
-        model_version:     forecast.model_version,
-        snapshot_version:  forecast.snapshot_version,
-        inputs_snapshot:   snapshot,
-        confidence:        forecast.confidence,
-        actual_revenue:    Math.round(actual),
-        error_pct:         errorPct == null ? null : Math.round(errorPct * 10000) / 10000,
-        resolution_status: 'resolved',
-        resolved_at:       new Date().toISOString(),
-      }, { onConflict: 'business_id,forecast_date,surface', ignoreDuplicates: true })
+        org_id:               VERO_ORG_ID,
+        business_id:          VERO_BUSINESS_ID,
+        forecast_date:        dateIso,
+        surface:              'consolidated_daily',
+        predicted_revenue:    forecast.predicted_revenue,
+        baseline_revenue:     forecast.baseline_revenue,
+        first_predicted_at:   asOf.toISOString(),
+        first_predicted_date: asOfIso,
+        predicted_at:         asOf.toISOString(),
+        model_version:        forecast.model_version,
+        snapshot_version:     forecast.snapshot_version,
+        inputs_snapshot:      snapshot,
+        confidence:           forecast.confidence,
+        actual_revenue:       Math.round(actual),
+        error_pct:            errorPct == null ? null : Math.round(errorPct * 10000) / 10000,
+        resolution_status:    'resolved',
+        resolved_at:          new Date().toISOString(),
+      }, { onConflict: 'business_id,forecast_date,surface', ignoreDuplicates: false })
 
       if (insErr) {
         errored++
