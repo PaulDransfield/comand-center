@@ -84,7 +84,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'No access token' }, { status: 500 })
   }
 
-  // Fetch invoice detail (with 429 retry baked in)
+  // Fetch invoice detail (with 429 retry baked in). The file connections
+  // field is sometimes embedded in the detail response, sometimes empty
+  // even when files exist — Fortnox's behaviour here is inconsistent.
   const detailUrl = `${FORTNOX_API}/supplierinvoices/${encodeURIComponent(givenNumber)}`
   const res = await fortnoxFetch(detailUrl, accessToken)
   if (!res.ok) {
@@ -95,9 +97,30 @@ export async function GET(req: NextRequest) {
     }, { status: 502 })
   }
   const body: any = await res.json().catch(() => null)
-  const fileConnections = body?.SupplierInvoice?.SupplierInvoiceFileConnections
-                       ?? body?.SupplierInvoiceFileConnections
-                       ?? []
+  let fileConnections = body?.SupplierInvoice?.SupplierInvoiceFileConnections
+                     ?? body?.SupplierInvoiceFileConnections
+                     ?? []
+
+  // Fallback: if the inline connections array is empty, try the dedicated
+  // `/3/supplierinvoicefileconnections` resource. Fortnox separates these
+  // into their own endpoint — the detail response only sometimes embeds
+  // them. Requires `connectfile` scope (which we have post-2026-05-10).
+  let fallbackDiag: { tried: boolean; status?: number; body_preview?: string } = { tried: false }
+  if (!Array.isArray(fileConnections) || fileConnections.length === 0) {
+    fallbackDiag.tried = true
+    const fcUrl = `${FORTNOX_API}/supplierinvoicefileconnections/?supplierinvoicenumber=${encodeURIComponent(givenNumber)}`
+    const fcRes = await fortnoxFetch(fcUrl, accessToken)
+    fallbackDiag.status = fcRes.status
+    if (fcRes.ok) {
+      const fcBody: any = await fcRes.json().catch(() => null)
+      fileConnections = fcBody?.SupplierInvoiceFileConnections ?? []
+    } else {
+      // Capture body for diagnostics — most likely 401 (scope) or 400 (param shape)
+      const text = await fcRes.text().catch(() => '')
+      fallbackDiag.body_preview = text.slice(0, 200)
+    }
+  }
+
   const fileId = Array.isArray(fileConnections) && fileConnections.length > 0
     ? String(fileConnections[0]?.FileId ?? '')
     : ''
@@ -106,6 +129,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       error:   'no_pdf_attached',
       message: 'This supplier invoice has no PDF attached in Fortnox.',
+      diag:    {
+        inline_connections: Array.isArray(body?.SupplierInvoice?.SupplierInvoiceFileConnections)
+                              ? body.SupplierInvoice.SupplierInvoiceFileConnections.length
+                              : 'absent',
+        fallback:           fallbackDiag,
+      },
     }, { status: 404 })
   }
 
