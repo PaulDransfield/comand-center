@@ -6,6 +6,15 @@
 
 ## Pending — apply when ready
 
+### M067 — Swedish school holidays seed (Piece 3) ⏳ pending application
+**File:** `sql/M067-SCHOOL-HOLIDAYS-SE-SEED.sql`
+**Purpose:** populate the M056 `school_holidays` table with manual data for Sweden's largest kommuns (Stockholm 0180, Göteborg 1480, Malmö 1280, Uppsala 0380) covering 2025-2027 across all five restaurant-relevant break types (höstlov / jullov / sportlov / påsklov / sommarlov). Skolverket doesn't publish a uniformly-machine-readable per-kommun calendar, so the seed is hand-curated. Idempotent (UNIQUE constraint + ON CONFLICT DO NOTHING).
+**Companion code:**
+- `lib/forecast/school-holidays.ts` — `getActiveSchoolHoliday()` lookup
+- `lib/forecast/daily.ts` — Piece 3 wiring: school_holiday signal now reads real data, klamdag uses prior-occurrence median, yoy_same_weekday activates at 365+ days history, weather_change_vs_seasonal uses 3 prior years' same-week temperatures
+- model_version bumped to `consolidated_v1.1.0`
+**Architecture:** PIECE-3-IMPLEMENTATION-PROMPT.md Stream A.
+
 ### M065 — Forecast MAPE comparison view (Piece 2) ⏳ pending application
 **File:** `sql/M065-FORECAST-MAPE-VIEW.sql`
 **Purpose:** `v_forecast_mape_by_surface` view aggregating MAPE / bias / sample counts by `(business_id, surface, prediction_horizon_days)` from `daily_forecast_outcomes` resolved rows. Powers Phase A acceptance gate for Piece 2 — side-by-side comparison of consolidated_daily vs the two legacy surfaces. Phase B cutover criterion: consolidated within 2pp of better legacy AND no horizon shows >20% divergence.

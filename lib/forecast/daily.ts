@@ -24,6 +24,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { weightedAvg, thisWeekScaler, RECENCY } from '@/lib/forecast/recency'
 import { captureForecastOutcome } from '@/lib/forecast/audit'
 import { getHolidaysForCountry, getUpcomingHolidays, type Holiday } from '@/lib/holidays'
+import { getActiveSchoolHoliday } from '@/lib/forecast/school-holidays'
 
 // ── Public types ────────────────────────────────────────────────────────────
 
@@ -180,7 +181,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.0.1'   // bumped for short-history mode (2026-05-10)
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.1.0'   // Piece 3 — school holidays + klamdag history + yoy_same_weekday + weather_change activated (2026-05-10)
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -277,7 +278,7 @@ export async function dailyForecast(
   const dailyMetrics    = dailyMetricsRes.data ?? []
   const monthlyMetrics  = monthlyMetricsRes.data ?? []
   const weatherDaily    = weatherDailyRes.data ?? []
-  const contaminatedSet = new Set((confirmedAnomaliesRes.data ?? []).map((a: any) => a.period_date as string))
+  const contaminatedSet: Set<string> = new Set((confirmedAnomaliesRes.data ?? []).map((a: any) => a.period_date as string))
 
   // ── Detect short-history mode (cold-start protection) ──────────────
   // Vero (2026-05-10 diagnostic) showed +88% bias on Jan-Mar 2026 because
@@ -330,11 +331,18 @@ export async function dailyForecast(
     const last12Sum  = sumLastN(monthlyMetrics, 12)
     const prior12Sum = sumLastN(monthlyMetrics, 12, 12)
     trailing12mGrowth = prior12Sum > 0 ? Math.max(0.5, Math.min(1.5, last12Sum / prior12Sum)) : 1.0
-    // YoY anchor itself isn't applied as a multiplicative factor here —
-    // it's reported in the snapshot for transparency. Future: weighted
-    // blend with weekday baseline. For Piece 2 we keep weekday baseline
-    // as the primary anchor and surface yoy as informational signal.
   }
+
+  // ── 2b. YoY same-weekday (Piece 3 — activates at 365+ days history) ─
+  // For a forecast on (e.g.) 2026-05-15 Friday, look up 2025-05-16 Friday
+  // (52 weeks back, same weekday). When available, blend 30% with the
+  // weekday baseline. Vero won't activate this until 2026-11-24; Chicce
+  // hits 1 year mid-May 2026 so this engages for her.
+  const yoyTarget = subtractDays(date, 364)
+  const yoyTargetIso = ymd(yoyTarget)
+  const yoyDailyRow = dailyMetrics.find((r: any) => r.date === yoyTargetIso && Number(r.revenue ?? 0) > 0)
+  const yoySameWeekdayAvailable = !!yoyDailyRow
+  const yoySameWeekdayValue = yoySameWeekdayAvailable ? Number(yoyDailyRow.revenue) : 0
 
   // ── 3. Weather + bucket lift ────────────────────────────────────────
   const weatherForecastRow = weatherDaily.find((w: any) => w.date === forecastIso)
@@ -372,6 +380,57 @@ export async function dailyForecast(
   const weatherLiftAvailable = bucketSubset.length >= MIN_SAMPLES.weather_lift && overallAvgRev > 0
   const weatherLiftFactor = weatherLiftAvailable ? bucketAvgRev / overallAvgRev : 1.0
 
+  // ── 3b. Weather change vs seasonal norm (Piece 3) ──────────────────
+  // For a forecast date, compare its temperature to the same calendar
+  // week in prior years. Unusually warm = revenue lift (terrace traffic);
+  // unusually cold/wet = small dampening. Asymmetric — heat boosts more
+  // than cold dampens (restaurant industry pattern). Default 1.0 when
+  // history is too thin.
+  let weatherChangeFactor = 1.0
+  let weatherChangeAvailable = false
+  let weatherChangeReason: string | undefined = 'piece_3_seasonal_norms_pending'
+  let weatherChangeDetail: { current_temp: number | null; seasonal_norm: number | null; deviation_c: number | null; samples_used: number } = {
+    current_temp: null, seasonal_norm: null, deviation_c: null, samples_used: 0,
+  }
+  if (weatherForecastRow) {
+    const currentTemp = Number(weatherForecastRow.temp_max ?? weatherForecastRow.temp_avg ?? 0) || null
+    if (currentTemp != null) {
+      const sameWeekSamples: number[] = []
+      for (let yearsBack = 1; yearsBack <= 3; yearsBack++) {
+        const targetDate = subtractDays(date, yearsBack * 365)
+        for (let offset = -3; offset <= 3; offset++) {
+          const probeIso = ymd(subtractDays(targetDate, -offset))
+          const w = histWeather.get(probeIso)
+          if (!w) continue
+          const t = Number(w.temp_max ?? w.temp_avg ?? 0)
+          if (Number.isFinite(t) && t !== 0) sameWeekSamples.push(t)
+        }
+      }
+      if (sameWeekSamples.length >= 3) {
+        const seasonalNorm = sameWeekSamples.reduce((s, v) => s + v, 0) / sameWeekSamples.length
+        const deviation = currentTemp - seasonalNorm
+        let factor = 1.0
+        if (deviation > 0)      factor = 1.0 + Math.min(deviation * 0.01, 0.10)
+        else if (deviation < 0) factor = 1.0 + Math.max(deviation * 0.006, -0.08)
+        weatherChangeFactor = Math.round(factor * 100) / 100
+        weatherChangeAvailable = true
+        weatherChangeReason = undefined
+        weatherChangeDetail = {
+          current_temp:  Math.round(currentTemp * 10) / 10,
+          seasonal_norm: Math.round(seasonalNorm * 10) / 10,
+          deviation_c:   Math.round(deviation * 10) / 10,
+          samples_used:  sameWeekSamples.length,
+        }
+      } else {
+        weatherChangeReason = `insufficient_history_${sameWeekSamples.length}_samples_need_3`
+      }
+    } else {
+      weatherChangeReason = 'forecast_temp_missing'
+    }
+  } else {
+    weatherChangeReason = 'no_weather_forecast_for_date'
+  }
+
   // ── 4. Holiday detection ───────────────────────────────────────────
   const country = (biz.country ?? 'SE') as string
   const yearHolidays  = getHolidaysForCountry(country, date.getUTCFullYear())
@@ -381,19 +440,34 @@ export async function dailyForecast(
                           : 1.0
 
   // ── 5. Klämdag (bridge day adjacent to holiday) ────────────────────
-  // Look for a holiday within ±1 day of the forecast date that we're NOT
-  // ON. If today is Mon and Tue is a holiday, we're a klämdag if Mon
-  // is itself a workday (Mon-Fri).
-  const klamdagInfo = computeKlamdag(date, yearHolidays)
+  // Look for a holiday within ±1 day of the forecast date. Then for the
+  // factor: query history for prior klämdag observations (≥2 needed) and
+  // use the median ratio vs same-weekday non-klämdag baseline. Falls back
+  // to KLAMDAG_NATIONAL_DEFAULT (0.90) when history is too thin.
+  // Pass prior 2 years of holidays so we can detect historical klämdag dates.
+  const priorYearHolidays = [
+    ...getHolidaysForCountry(country, date.getUTCFullYear() - 1),
+    ...getHolidaysForCountry(country, date.getUTCFullYear() - 2),
+  ]
+  const allHolidays = [...yearHolidays, ...priorYearHolidays]
+  const klamdagInfo = computeKlamdag(date, allHolidays, dailyMetrics, contaminatedSet)
 
-  // ── 6. School holiday (deferred to Piece 3) ─────────────────────────
-  // school_holidays table exists (M056 DDL) but isn't populated yet.
-  // For Piece 2: always 1.0, mark as deferred.
-  const schoolHolidayInfo = {
-    active:         false as boolean,
-    name:           null as string | null,
-    applied_factor: 1.0,
-  }
+  // ── 6. School holiday (Piece 3 — populated from M056 + M067 seed) ───
+  // Lookup against school_holidays table for the business's kommun. If
+  // no kommun is set OR the business is outside our seed coverage, we
+  // get a null result and fall back to the neutral 1.0 factor.
+  const schoolHolidayMatch = await getActiveSchoolHoliday(db, biz.kommun ?? null, date)
+  const schoolHolidayInfo = schoolHolidayMatch
+    ? {
+        active:         true,
+        name:           schoolHolidayMatch.name,
+        applied_factor: schoolHolidayMatch.applied_factor,
+      }
+    : {
+        active:         false,
+        name:           null as string | null,
+        applied_factor: 1.0,
+      }
 
   // ── 7. Salary cycle ────────────────────────────────────────────────
   const dayOfMonth = date.getUTCDate()
@@ -456,15 +530,23 @@ export async function dailyForecast(
   const scalerResult = thisWeekScaler(scalerPairs)
 
   // ── 9. Compose ─────────────────────────────────────────────────────
-  let predicted = weekdayBaseline
-  // Apply yoy-blended trend factor if available (architecture §3 step 4 —
-  // current implementation: use trailing_12m_growth on the weekday baseline)
+  // Step 1: apply YoY same-weekday blend (when 1+ year history). 30% YoY +
+  // 70% weekday-baseline. This catches seasonal transitions that the
+  // weekday baseline alone misses (post-holiday dips, summer drops, etc.)
+  // — exactly the architecture's self-healing path for Vero's January
+  // problem once she hits 2026-11-24.
+  let blendedBaseline = weekdayBaseline
+  if (yoySameWeekdayAvailable && yoySameWeekdayValue > 0) {
+    blendedBaseline = weekdayBaseline * 0.7 + yoySameWeekdayValue * 0.3
+  }
+  let predicted = blendedBaseline
+  // Step 2: apply yoy-monthly trailing growth multiplier
   if (yoyAvailable) {
     yoyAnchorMultiplier = trailing12mGrowth
     predicted *= yoyAnchorMultiplier
   }
   predicted *= weatherLiftFactor
-  predicted *= 1.0   // weather_change_vs_seasonal — placeholder until Piece 3 ships seasonal norms
+  predicted *= weatherChangeFactor   // Piece 3 — multi-year seasonal weather norm comparison
   predicted *= holidayLiftFactor
   predicted *= klamdagInfo.factor
   predicted *= schoolHolidayInfo.applied_factor
@@ -512,10 +594,17 @@ export async function dailyForecast(
       ).length,
     },
 
-    yoy_same_weekday: {
-      available: false,
-      reason:    'piece_2_uses_yoy_same_month_only — yoy_same_weekday lands in Piece 3 once Vero passes 2026-11-24',
-    },
+    yoy_same_weekday: yoySameWeekdayAvailable
+      ? {
+          available: true as const,
+          weekday,
+          revenue:   Math.round(yoySameWeekdayValue),
+          samples:   1,
+        } as any
+      : {
+          available: false,
+          reason:    `no_revenue_for_${yoyTargetIso}_in_history — needs 365+ days for this signal`,
+        },
 
     yoy_same_month: yoyAvailable
       ? {
@@ -555,10 +644,11 @@ export async function dailyForecast(
     },
 
     weather_change_vs_seasonal: {
-      available:      false,
-      reason:         'piece_3_seasonal_norms_pending',
-      applied_factor: 1.0,
-    },
+      available:      weatherChangeAvailable,
+      reason:         weatherChangeReason,
+      applied_factor: weatherChangeFactor,
+      ...(weatherChangeAvailable ? weatherChangeDetail : {}),
+    } as any,
 
     holiday: {
       is_holiday:  holidayMatch !== null,
@@ -636,7 +726,7 @@ export async function dailyForecast(
       weekday_baseline:      Math.round(weekdayBaseline),
       yoy_same_month_anchor: yoyAvailable ? yoyAnchorMultiplier : null,
       weather_lift_pct:      Math.round(weatherLiftFactor * 100) / 100,
-      weather_change_pct:    1.0,
+      weather_change_pct:    weatherChangeFactor,
       holiday_lift_pct:      holidayLiftFactor,
       klamdag_pct:           klamdagInfo.factor,
       school_holiday_pct:    schoolHolidayInfo.applied_factor,
@@ -706,7 +796,12 @@ function bucketFromWeather(w: any): string {
   return 'mild'
 }
 
-function computeKlamdag(date: Date, holidays: Holiday[]): {
+function computeKlamdag(
+  date:            Date,
+  holidays:        Holiday[],
+  dailyMetrics:    any[],
+  contaminatedSet: Set<string>,
+): {
   is_klamdag:            boolean
   adjacent_holiday_date: string | null
   adjacent_holiday_name: string | null
@@ -731,13 +826,81 @@ function computeKlamdag(date: Date, holidays: Holiday[]): {
   if (!adj) {
     return { is_klamdag: false, adjacent_holiday_date: null, adjacent_holiday_name: null, samples_used: 0, factor: 1.0 }
   }
-  // Klämdag detected. Without prior klämdag history (Piece 3 will track
-  // these properly), fall back to the national default factor.
+
+  // Klämdag detected. Look at history (Piece 3) — for every PRIOR date
+  // in dailyMetrics that was ALSO a klämdag (workday adjacent to a
+  // holiday in our holidays list), compute its actual revenue ratio
+  // against the same-weekday baseline. Median of ≥2 samples = our
+  // klamdag factor; fewer samples = national default.
+  const holidayDateSet = new Set(holidays.map(h => h.date))
+  const isWorkday = (d: Date) => {
+    const dd = d.getUTCDay()
+    return dd >= 1 && dd <= 5
+  }
+  const isKlamdagHistoric = (d: Date): boolean => {
+    if (!isWorkday(d)) return false
+    const isoD = ymd(d)
+    if (holidayDateSet.has(isoD)) return false
+    const yIso = ymd(subtractDays(d, 1))
+    const tIso = ymd(subtractDays(d, -1))
+    return holidayDateSet.has(yIso) || holidayDateSet.has(tIso)
+  }
+
+  // Build per-weekday baseline from non-klämdag, non-contaminated days
+  // so we can compute "actual / baseline" ratios for each prior klämdag.
+  const baselineByWeekday: Record<number, number[]> = {}
+  for (const r of dailyMetrics) {
+    const rev = Number(r.revenue ?? 0)
+    if (rev <= 0) continue
+    if (contaminatedSet.has(r.date)) continue
+    const rd = new Date(r.date + 'T12:00:00Z')
+    if (isKlamdagHistoric(rd)) continue   // exclude klämdag from baseline
+    const dw = rd.getUTCDay()
+    if (!baselineByWeekday[dw]) baselineByWeekday[dw] = []
+    baselineByWeekday[dw].push(rev)
+  }
+  const baselineMedian = (dw: number): number | null => {
+    const arr = baselineByWeekday[dw]
+    if (!arr || arr.length === 0) return null
+    const sorted = [...arr].sort((a, b) => a - b)
+    return sorted[Math.floor(sorted.length / 2)]
+  }
+
+  // Collect klämdag observations and their ratios
+  const ratios: number[] = []
+  for (const r of dailyMetrics) {
+    const rev = Number(r.revenue ?? 0)
+    if (rev <= 0) continue
+    if (contaminatedSet.has(r.date)) continue
+    const rd = new Date(r.date + 'T12:00:00Z')
+    if (!isKlamdagHistoric(rd)) continue
+    const baseline = baselineMedian(rd.getUTCDay())
+    if (!baseline || baseline <= 0) continue
+    ratios.push(rev / baseline)
+  }
+
+  if (ratios.length >= 2) {
+    const sorted = [...ratios].sort((a, b) => a - b)
+    const median = sorted[Math.floor(sorted.length / 2)]
+    // Sanity-clamp: factor should be between 0.5 and 1.5. If history is
+    // wild, fall back to the national default — extreme historical
+    // ratios usually indicate noise (single anomalous day) not signal.
+    const clamped = Math.max(0.5, Math.min(1.5, median))
+    return {
+      is_klamdag:            true,
+      adjacent_holiday_date: adj.date,
+      adjacent_holiday_name: adj.name_sv,
+      samples_used:          ratios.length,
+      factor:                Math.round(clamped * 1000) / 1000,
+    }
+  }
+
+  // Insufficient history — national default
   return {
     is_klamdag:            true,
     adjacent_holiday_date: adj.date,
     adjacent_holiday_name: adj.name_sv,
-    samples_used:          0,
+    samples_used:          ratios.length,
     factor:                KLAMDAG_NATIONAL_DEFAULT,
     fallback_used:         `national_default_${KLAMDAG_NATIONAL_DEFAULT}`,
   }
