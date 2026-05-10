@@ -885,9 +885,10 @@ function DashboardInner() {
                             </div>
                           </div>
 
-                          <button type="button" style={{ ...pillarCtaStyle, background: UX.greenInk }} onClick={(e) => e.preventDefault()}>
+                          {/* Cosmetic CTA — parent anchor handles navigation. */}
+                          <span style={{ ...pillarCtaStyle, background: UX.greenInk }}>
                             {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
-                          </button>
+                          </span>
                         </div>
                       </a>
                     )
@@ -949,9 +950,10 @@ function DashboardInner() {
                             </div>
                           </div>
 
-                          <button type="button" style={{ ...pillarCtaStyle, background: UX.ink1 }} onClick={(e) => e.preventDefault()}>
+                          {/* Cosmetic CTA — parent anchor handles navigation. */}
+                          <span style={{ ...pillarCtaStyle, background: UX.ink1 }}>
                             {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
-                          </button>
+                          </span>
                         </div>
                       </a>
                     )

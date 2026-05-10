@@ -69,11 +69,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'invalid year/month' }, { status: 400 })
     }
   } else {
+    // Latest CLOSED period — exclude provisional months (M062). Vero's
+    // latest tracker_data is May 2026 with is_provisional=true and
+    // revenue=0 because POS sales aren't booked for the open month yet.
+    // Pre-2026-05-10 the projection picked May → revenue=0 → margin=0%
+    // → "0% → 0% net margin" on the dashboard card. Filter to closed
+    // months so the card reflects the most recent canonical P&L.
     const { data: latest, error: lErr } = await db
       .from('tracker_data')
       .select('period_year, period_month')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
+      .or('is_provisional.is.null,is_provisional.eq.false')
       .order('period_year',  { ascending: false })
       .order('period_month', { ascending: false })
       .limit(1)
@@ -83,7 +90,7 @@ export async function GET(req: NextRequest) {
       year  = Number(latest.period_year)
       month = Number(latest.period_month)
     } else {
-      // No data at all — fall back to current calendar month so the
+      // No closed data at all — fall back to current calendar month so the
       // empty-state numbers (zeros) still render in a sensible period.
       const now = new Date()
       year  = now.getFullYear()

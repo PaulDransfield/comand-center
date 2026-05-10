@@ -81,9 +81,11 @@ export function OverheadReviewCard({ data }: { data: ProjectionData }) {
           </div>
         </div>
 
-        <button type="button" style={pillarCta} onClick={(e) => { e.preventDefault() }}>
+        {/* No onClick handler — the parent anchor handles navigation. The
+            button is purely cosmetic (visual CTA) and shouldn't trap clicks. */}
+        <span style={pillarCta as React.CSSProperties}>
           Review overheads <span aria-hidden style={{ fontSize: 14 }}>→</span>
-        </button>
+        </span>
       </div>
     </a>
   )
