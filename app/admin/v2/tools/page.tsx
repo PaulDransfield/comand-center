@@ -231,6 +231,28 @@ export default function ToolsPage() {
     }
   }
 
+  // Forecast backfill (Piece 2) — walks every positive-revenue day through
+  // dailyForecast() retrospectively and populates daily_forecast_outcomes
+  // with pre-resolved rows so Phase A MAPE comparison has data on day 1.
+  async function runForecastBackfill() {
+    if (opsRunning || !opsBizId.trim()) return
+    setOpsRunning(true)
+    setOpsResult(null)
+    setOpsError(null)
+    setOpsPollSnapshot(null)
+    try {
+      const r = await adminFetch<any>('/api/admin/forecast/run-backfill', {
+        method: 'POST',
+        body:   JSON.stringify({ business_id: opsBizId.trim() }),
+      })
+      setOpsResult(r)
+    } catch (e: any) {
+      setOpsError(e?.message ?? 'Forecast backfill failed')
+    } finally {
+      setOpsRunning(false)
+    }
+  }
+
   // ── Operations: voucher diagnostic ─────────────────────────────────────
   // Read-only — fetches one month of vouchers, runs the translator, returns
   // bucket totals + comparison vs PDF baseline. Use BEFORE re-running the
@@ -424,6 +446,14 @@ export default function ToolsPage() {
             title="Read-only. Fetches one month of vouchers, runs the translator, returns bucket totals + diff vs PDF baseline."
           >
             {diagRunning ? `Running… ${diagElapsed}s` : 'Diagnose'}
+          </button>
+          <button
+            onClick={runForecastBackfill}
+            disabled={opsRunning || !opsBizId.trim()}
+            style={btnSecondary(opsRunning || !opsBizId.trim())}
+            title="Piece 2 forecast backfill — walks every positive-revenue day through dailyForecast() and populates daily_forecast_outcomes with pre-resolved rows. ~2 min for 150 days."
+          >
+            {opsRunning ? 'Running…' : 'Forecast backfill'}
           </button>
           {diagRunning && (
             <span style={{
