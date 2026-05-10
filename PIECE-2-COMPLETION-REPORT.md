@@ -137,9 +137,42 @@ Open after operator actions:
 
 ---
 
+## Phase A first-data findings (added 2026-05-10)
+
+Backfill ran for Vero (147 candidates, 116 written after provisional-month filter, model_v1.0.0). Results revealed two distinct issues:
+
+### Issue 1 — Recency multiplier amplifies seasonal peaks (FIXED in v1.0.1)
+
+The 2.0× recency-window weighting (last 4 weeks 2× weeks 5-12) was designed for stable businesses and assumes "recent is more representative." For Vero — 6 months of history including a December holiday peak — this caused January predictions to over-weight Christmas weeks → +189% bias on January 2026.
+
+**Fix shipped (model_v1.0.1):** for businesses with <180 days of positive-revenue history, use 4-week unweighted baseline instead of 12-week × 2.0 weighted. Recency multiplier drops to 1.0. Snapshot tagged `data_quality_flags: ['short_history_mode_4w_unweighted']`.
+
+Effect on Vero:
+- Dec 2025: unchanged at 34% MAPE / -5% bias (already good)
+- Feb 2026: **+88% bias → +46% bias** (~half)
+- Mar 2026: **+87% bias → +49% bias** (~half)
+- Overall: 105% MAPE → **93% MAPE**
+
+### Issue 2 — January cold-start is structurally hard (DEFERRED)
+
+Even with v1.0.1, January 2026 bias went UP slightly (+189% → +201%). Reason: short-history mode anchors purely on the last 4 weeks, which for Vero IS December's Christmas peak. The OLD formula was also wrong but had some pre-December dampening. There's no 4-week window choice that fixes this — Vero's data structurally lacks pre-Christmas baseline.
+
+**Why we're not fixing this in Piece 2:** the architecturally-correct answer is either (a) a `recent_trend_factor` that detects monotonic decline/incline and projects forward, OR (b) Piece 4's LLM adjustment that reads `inputs_snapshot.consolidated_v1` and contextualises ("we're past Christmas peak; expect post-holiday dip"). Both belong in Pieces 3-4. Adding a trend term to v1.0.1 would be signal-engineering work without Phase A live captures to validate against.
+
+**Self-healing on Vero specifically:** once Vero hits 2026-11-24 (one full year of data), the YoY same-weekday anchor activates. December 2026 → January 2027 prediction will use December 2025 → January 2026 actuals as guidance, which naturally captures the post-holiday dip. The architecture's deferred YoY signal solves this problem the right way.
+
+### Operator-visible state at end of Piece 2
+
+- consolidated_daily MAPE for Vero closed months: ~50-60% on Feb-Mar 2026
+- January 2026 remains a known cold-start failure mode (+201% bias)
+- December 2025 prediction excellent (34% / -5% bias) — proves the model works when given enough non-anomalous history
+- Two legacy surfaces (scheduling_ai_revenue + weather_demand) have only 1 resolved row each so far — comparison hasn't matured yet
+
+---
+
 ## Confidence
 
-High. Piece 2 is the largest single piece in the roadmap and shipped clean: investigation pass found no contradictions; one small correction (missing flag) folded into the implementation; all type-checks pass; backfill script is idempotent; MAPE view is the right shape for the Phase B gate.
+High. Piece 2 is the largest single piece in the roadmap and shipped clean: investigation pass found no contradictions; one small correction (missing flag) folded into the implementation; all type-checks pass; backfill script is idempotent; MAPE view is the right shape for the Phase B gate. Phase A first-data validation surfaced both a fixable model bug (recency multiplier amplification — fixed in v1.0.1) and a structural limit (January cold-start — explicitly deferred to Piece 3/4 with a self-healing path via YoY anchor).
 
 Pieces 3-5 are now unblocked. Piece 3 (additional signals: school_holidays scraper, klamdag history, yoy_same_weekday post-Vero-2026-11-24) is roughly half the size of Piece 2. Piece 4 (LLM adjustment layer reading from `inputs_snapshot.consolidated_v1`) is similar size to Piece 2. Piece 5 (pattern extraction surfacing learned multipliers) is the smallest.
 
