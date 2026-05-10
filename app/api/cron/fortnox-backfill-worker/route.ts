@@ -492,6 +492,36 @@ export async function POST(req: NextRequest) {
             const { error } = await db.from('tracker_data').insert(payload)
             if (error) throw new Error(`insert ${yyyymm}: ${error.message}`)
           }
+
+          // Persist line items to tracker_line_items so /overheads can
+          // render the per-account breakdown. Mirrors what /api/fortnox/apply
+          // does for PDF uploads. Period-scoped replacement (delete + insert)
+          // so re-running the backfill is idempotent.
+          await db.from('tracker_line_items')
+            .delete()
+            .eq('org_id', orgId)
+            .eq('business_id', businessId)
+            .eq('period_year', periodOutput.year)
+            .eq('period_month', periodOutput.month)
+
+          if (Array.isArray(periodOutput.lines) && periodOutput.lines.length > 0) {
+            const lineRows = periodOutput.lines.map((l: any) => ({
+              org_id:           orgId,
+              business_id:      businessId,
+              period_year:      periodOutput.year,
+              period_month:     periodOutput.month,
+              label_sv:         l.label_sv ?? l.label ?? '',
+              label_en:         l.label_en ?? null,
+              category:         l.category ?? 'other_cost',
+              subcategory:      l.subcategory ?? null,
+              amount:           Number(l.amount) || 0,
+              fortnox_account:  l.fortnox_account ?? l.account ?? null,
+              source_upload_id: null,   // no upload — API path
+            }))
+            const { error: liErr } = await db.from('tracker_line_items').insert(lineRows)
+            if (liErr) throw new Error(`line items ${yyyymm}: ${liErr.message}`)
+          }
+
           monthsWrittenThisRun++
           apiWrittenPeriods.add(yyyymm)
         }
@@ -557,7 +587,14 @@ export async function POST(req: NextRequest) {
       if (!existing) continue                      // nothing to clean
       if (existing.source === 'fortnox_api') continue  // already API — skip
       // Non-API row inside the backfill range that we don't have API
-      // data for. Per the API-priority strategy, delete it.
+      // data for. Per the API-priority strategy, delete it AND the
+      // orphan line items so /overheads doesn't surface the stale data.
+      const [yStr, mStr] = periodKey.split('-')
+      await db.from('tracker_line_items')
+        .delete()
+        .eq('business_id', businessId)
+        .eq('period_year', Number(yStr))
+        .eq('period_month', Number(mStr))
       await db.from('tracker_data').delete().eq('id', existing.id)
       monthsClearedOrphan++
       log.info('fortnox-backfill cleared orphan non-api row', {
