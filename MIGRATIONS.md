@@ -6,6 +6,10 @@
 
 ## Pending — apply when ready
 
+### M064 — Extend integrations.status CHECK constraint ⏳ pending application
+**File:** `sql/M064-INTEGRATIONS-STATUS-CONSTRAINT.sql`
+**Purpose:** same pattern as M061 (paused) and M063 (plan values). The TypeScript union for `integrations.status` includes `disconnected`, `needs_reauth`, `pending` etc. but the DB CHECK constraint only allowed the original handful. The new `/api/integrations/disconnect` endpoint failed on first use with `integrations_status_canonical_chk` violation when setting `status='disconnected'`. Fourth instance of constraint drift in 24h — see `feedback_check_constraint_drift` memory.
+
 ### M063 — Extend organisations.plan CHECK constraint ⏳ pending application
 **File:** `sql/M063-ORGANISATIONS-PLAN-CONSTRAINT.sql`
 **Purpose:** the 2026-04-23 pricing overhaul (`project_pricing_2026_04` memory) added four new plan values — `founding`, `solo`, `group`, `chain` — to `lib/stripe/config.ts`'s PLANS map and to every UI surface, but the DB CHECK constraint still enumerated the old set (trial / starter / pro / enterprise / past_due). Any admin UPDATE setting a new plan value failed with `organisations_plan_check` violation. Drops + re-creates the constraint with all current values. Idempotent.
