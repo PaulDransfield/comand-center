@@ -80,8 +80,11 @@ const FORTNOX_SCOPES  = [
   'archive',            // /3/archive/{id} — long-term file archive
   'inbox',              // /3/inbox/{id} — newly-uploaded supplier invoice PDFs (separate from archive)
   'connectfile',        // file<->resource connection metadata — required for SupplierInvoiceFileConnections to populate
-  'payments',           // /3/customerpayments + /3/supplierpayments — cash-flow reconciliation (memo: project_fortnox_bank_data_idea)
-  'settings',           // misc housekeeping reads (fiscal-year config etc.)
+  // 'payments' + 'settings' temporarily removed 2026-05-10 — caused
+  // OAuth flow to return "fortnox denied" on the second business
+  // connection. Most likely the literal scope identifier differs from
+  // the Fortnox UI label (e.g. 'payment' singular, or 'companysettings').
+  // Re-add once we confirm the exact identifier strings.
 ].join(' ')
 
 // ── CONNECT: start the OAuth flow ────────────────────────────────
@@ -162,8 +165,16 @@ async function handleCallback(req: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL
 
   if (error) {
-    console.error('Fortnox OAuth error:', error, searchParams.get('error_description'))
-    return NextResponse.redirect(`${appUrl}/integrations?error=fortnox_denied`)
+    const errorDesc = searchParams.get('error_description') ?? ''
+    console.error('Fortnox OAuth error:', error, errorDesc)
+    // Surface the actual error code + description so the integrations
+    // page can render something useful (was always showing "fortnox_denied"
+    // even when the real cause was invalid_scope, server_error, etc.).
+    const params = new URLSearchParams()
+    params.set('error',      'fortnox_oauth_failed')
+    params.set('fortnox_err', error)
+    if (errorDesc) params.set('fortnox_msg', errorDesc.slice(0, 300))
+    return NextResponse.redirect(`${appUrl}/integrations?${params.toString()}`)
   }
 
   if (!code || !state) {

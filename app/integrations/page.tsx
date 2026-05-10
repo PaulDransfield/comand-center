@@ -330,7 +330,18 @@ export default function IntegrationsPage() {
       )}
       {connectError && (
         <div style={{ background:'#fef2f2', border:'1px solid #fecaca', borderRadius:10, padding:'12px 16px', fontSize:13, color:'#dc2626', marginBottom:20 }}>
-           {t('banners.connectionError', { error: connectError.replace(/_/g,' ') })}
+          {t('banners.connectionError', { error: connectError.replace(/_/g,' ') })}
+          {/* Surface the actual upstream OAuth error so denied/scope/server
+              issues are diagnosable from the page without checking server
+              logs. fortnox_err = the OAuth standard error code. */}
+          {searchParams.get('fortnox_err') && (
+            <div style={{ marginTop: 6, fontSize: 11, fontFamily: 'ui-monospace, monospace', color: '#7f1d1d' }}>
+              Fortnox: <strong>{searchParams.get('fortnox_err')}</strong>
+              {searchParams.get('fortnox_msg') && (
+                <> — {searchParams.get('fortnox_msg')}</>
+              )}
+            </div>
+          )}
         </div>
       )}
 
