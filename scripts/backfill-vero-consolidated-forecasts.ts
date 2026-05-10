@@ -30,6 +30,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { dailyForecast } from '../lib/forecast/daily'
+import { isProvisional } from '../lib/finance/period-closure'
 
 const VERO_ORG_ID      = 'e917d4b8-635e-4be6-8af0-afc48c3c7450'
 const VERO_BUSINESS_ID = '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99'
@@ -78,6 +79,12 @@ async function main() {
     const date    = new Date(dateIso + 'T12:00:00Z')
     const asOf    = addDays(date, -1)
     const actual  = Number(row.revenue)
+
+    // Skip provisional months — see admin endpoint for rationale.
+    if (isProvisional(date.getUTCFullYear(), date.getUTCMonth() + 1)) {
+      skipped++
+      continue
+    }
 
     try {
       const forecast = await dailyForecast(VERO_BUSINESS_ID, date, {

@@ -20,6 +20,7 @@ import { unstable_noStore as noStore }  from 'next/cache'
 import { requireAdmin }                 from '@/lib/admin/require-admin'
 import { createAdminClient }            from '@/lib/supabase/server'
 import { dailyForecast }                from '@/lib/forecast/daily'
+import { isProvisional }                from '@/lib/finance/period-closure'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -78,15 +79,27 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  let written = 0
-  let errored = 0
-  let totalAbsErr = 0
+  let written            = 0
+  let errored            = 0
+  let skippedProvisional = 0
+  let totalAbsErr        = 0
 
   for (const row of actualsList) {
     const dateIso = row.date as string
     const date    = new Date(dateIso + 'T12:00:00Z')
     const asOf    = addDays(date, -1)
     const actual  = Number(row.revenue)
+
+    // Skip provisional months — actuals for current/prior-pre-15th month
+    // are partial (POS Z-reports not yet booked, salary not yet posted).
+    // Including them inflates MAPE artificially: model predicts a normal
+    // 50k day, actual shows 5k because operator hasn't booked the day's
+    // sales yet → 1000% error that's purely an accounting-cycle artefact.
+    // Same heuristic as M062's tracker_data.is_provisional flag.
+    if (isProvisional(date.getUTCFullYear(), date.getUTCMonth() + 1)) {
+      skippedProvisional++
+      continue
+    }
 
     try {
       const forecast = await dailyForecast(businessId, date, {
@@ -150,17 +163,18 @@ export async function POST(req: NextRequest) {
   const mapePct = written > 0 ? (totalAbsErr / written) * 100 : 0
 
   return NextResponse.json({
-    ok:            true,
-    business_id:   businessId,
-    business_name: biz.name,
-    earliest_date: earliestDate,
-    yesterday:     yesterdayIso,
-    candidates:    actualsList.length,
+    ok:                  true,
+    business_id:         businessId,
+    business_name:       biz.name,
+    earliest_date:       earliestDate,
+    yesterday:           yesterdayIso,
+    candidates:          actualsList.length,
     written,
+    skipped_provisional: skippedProvisional,
     errored,
-    mape_pct:      Math.round(mapePct * 10) / 10,
-    duration_ms:   Date.now() - startedAt,
-    note:          'MAPE here is optimistically biased — backfill uses observed weather as if it were forecast. Live captures going forward will give true Phase A signal.',
+    mape_pct:            Math.round(mapePct * 10) / 10,
+    duration_ms:         Date.now() - startedAt,
+    note:                'Provisional months (current + prior-pre-15th) excluded — POS/books not yet closed for those periods. MAPE is on closed-month actuals only.',
   })
 }
 
