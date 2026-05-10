@@ -181,7 +181,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.1.0'   // Piece 3 — school holidays + klamdag history + yoy_same_weekday + weather_change activated (2026-05-10)
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.2.0'   // Piece 4 fix — disable trailing_12m_growth_multiplier in short-history mode; was clamping at 1.5× and inflating cold-start baselines (2026-05-10)
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -327,10 +327,25 @@ export async function dailyForecast(
   let yoyAnchorMultiplier = 1.0
   let trailing12mGrowth = 1.0
   if (yoyAvailable) {
-    // Trailing-12m growth: compare last 12 months sum vs prior 12 months sum
+    // Trailing-12m growth: compare last 12 months sum vs prior 12 months sum.
+    // COLD-START GUARD (v1.2.0): when prior12Sum is missing or trivial (the
+    // business simply has no real prior-year comparable), the ratio explodes
+    // and the clamp pins it at 1.5× — silently inflating every cold-start
+    // forecast by 50%. The Piece 4 backtest (2026-05-10) showed this was the
+    // dominant cause of Vero's +200% January bias: she has Jan 2025 revenue
+    // (so yoyAvailable=true) but no real Feb-Dec 2024 history, so last12Sum
+    // dwarfs prior12Sum and the multiplier hits ceiling. The deterministic
+    // forecaster cannot extrapolate growth from non-comparable history —
+    // skip the multiplier in short-history mode AND when prior12Sum is less
+    // than 50% of last12Sum (indicating partial-year baseline).
     const last12Sum  = sumLastN(monthlyMetrics, 12)
     const prior12Sum = sumLastN(monthlyMetrics, 12, 12)
-    trailing12mGrowth = prior12Sum > 0 ? Math.max(0.5, Math.min(1.5, last12Sum / prior12Sum)) : 1.0
+    const priorIsComparable = prior12Sum > 0 && prior12Sum >= last12Sum * 0.5
+    if (!shortHistoryMode && priorIsComparable) {
+      trailing12mGrowth = Math.max(0.5, Math.min(1.5, last12Sum / prior12Sum))
+    } else {
+      trailing12mGrowth = 1.0   // cold-start: no inflation
+    }
   }
 
   // ── 2b. YoY same-weekday (Piece 3 — activates at 365+ days history) ─

@@ -90,7 +90,7 @@ export interface LlmAdjustInput {
 
 // ── Constants ─────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT = 'llm_adjust_v1.0.0'
+const MODEL_VERSION_DEFAULT = 'llm_adjust_v1.1.0'   // 2026-05-10: added Example D for clamped-at-floor cases; prevents uniform-dampening of under-prediction days
 const MIN_FACTOR = 0.5
 const MAX_FACTOR = 1.5
 const TIMEOUT_MS = 30_000
@@ -156,6 +156,7 @@ WHEN NOT TO ADJUST (return factor = 1.0):
 - You do not have specific contextual evidence that overrides a signal — speculation is worse than unchanged.
 - The deterministic forecast is already aware of and applying the same lift you would propose (e.g. holiday is detected and already lifted — do not double-count).
 - ALWAYS prefer 1.0 over a small adjustment. Adjustments below 0.95 or above 1.05 should be rare and well-justified.
+- ASYMMETRIC GUARDRAIL: if this_week_scaler is clamped at FLOOR (clamped_at_min=true) AND the weekday_baseline has thin samples (recent_28d_samples ≤ 4), do NOT pile additional dampening on top — the deterministic has already hit its dampening guardrail and additional dampening compounds noise. Default to 1.0 in that case unless you have a specific reason to lift (e.g. named event the baseline can't see). Same in reverse: if this_week_scaler is clamped at CEIL with thin baseline, default to 1.0 unless you have a specific reason to lift further.
 
 CLAMP RULES:
 - adjustment_factor MUST be in [0.5, 1.5]. The runtime will clamp regardless, so values outside that range are wasted output.
@@ -208,7 +209,16 @@ WORKED EXAMPLES (do not echo, just for calibration):
     Input: scaler.applied=1.10, scaler.clamped_at_max=true, salary phase 'around_payday'
     Output: adjustment_factor=1.05, confidence='medium'
     Reason: this-week-scaler hit ceiling 1.10 — deterministic capped its own lift. Combined
-            with payday Friday, modest additional lift to 1.05× is supported.`
+            with payday Friday, modest additional lift to 1.05× is supported.
+
+  Example D — this_week_scaler clamped at FLOOR (0.75) with thin baseline:
+    Input: scaler.applied=0.75, scaler.clamped_at_min=true, weekday_baseline.recent_28d_samples=3
+    Output: adjustment_factor=1.0, confidence='medium'
+    Reason: deterministic has already capped its own dampening at the floor 0.75. Piling
+            additional dampening on top of a 3-sample baseline compounds noise — the floor
+            exists precisely because thin-history weekday averages are unreliable, not
+            because the day is genuinely depressed. Prefer 1.0 unless a specific signal
+            justifies further movement. (Inverse of Example C — symmetric rule.)`
 
 // ── Main entry ────────────────────────────────────────────────────────────
 
