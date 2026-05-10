@@ -21,7 +21,7 @@
 
 import { getForecast, weatherBucket, coordsFor, type DailyWeather } from './forecast'
 import { getUpcomingHolidays }                                       from '@/lib/holidays'
-import { weightedAvg, thisWeekScaler, RECENCY }                      from '@/lib/forecast/recency'
+import { weightedAvg, thisWeekScaler, RECENCY, adaptiveRecencyParams } from '@/lib/forecast/recency'
 import { captureForecastOutcomes }                                   from '@/lib/forecast/audit'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -363,11 +363,16 @@ async function fetchBucketLifts(db: any, businessId: string): Promise<Correlatio
   // Pre-2026-05-08 this was a flat mean which lagged 2-4 weeks behind any
   // sustained trend.
   const ref = now
+  // Adaptive recency — same fix as scheduling-AI route + dailyForecast() for
+  // short-history customers. Without this, demand forecasts on /dashboard
+  // over-predict weekend revenue for businesses still in their first 6
+  // months because the recency multiplier amplifies declining trends.
+  const adaptive = adaptiveRecencyParams(joined.length)
   const overallAvg = weightedAvg(
     joined.map((d: { revenue: number }) => d.revenue),
     joined.map((d: { date: string }) => d.date),
     ref,
-    { recentWindowDays: RECENCY.RECENT_WINDOW_DAYS, recencyMultiplier: RECENCY.RECENCY_MULTIPLIER },
+    { recentWindowDays: adaptive.recentWindowDays, recencyMultiplier: adaptive.recencyMultiplier },
   )
 
   const byBucketRows: Record<string, { revenues: number[]; dates: string[] }> = {}
@@ -380,7 +385,7 @@ async function fetchBucketLifts(db: any, businessId: string): Promise<Correlatio
   const byBucket = new Map<string, BucketLift>()
   for (const [bucket, info] of Object.entries(byBucketRows)) {
     const avg = info.revenues.length > 0
-      ? weightedAvg(info.revenues, info.dates, ref, { recentWindowDays: RECENCY.RECENT_WINDOW_DAYS, recencyMultiplier: RECENCY.RECENCY_MULTIPLIER })
+      ? weightedAvg(info.revenues, info.dates, ref, { recentWindowDays: adaptive.recentWindowDays, recencyMultiplier: adaptive.recencyMultiplier })
       : 0
     const factor = overallAvg > 0 ? avg / overallAvg : 1
     byBucket.set(bucket, {
@@ -408,7 +413,18 @@ async function fetchBucketLifts(db: any, businessId: string): Promise<Correlatio
  * days (closed days, missing data) so the baseline reflects actual operations.
  */
 async function fetchBaselineByWeekday(db: any, businessId: string): Promise<Map<string, number>> {
-  const fromDate = new Date(Date.now() - 12 * 7 * 86400_000).toISOString().slice(0, 10)
+  // Probe history depth first so short-history customers get the tighter
+  // 4-week window. Without this, /dashboard for Vero-style cold-start
+  // customers shows 90k+ weekend forecasts while actual recent weekends
+  // are 30k — December's holiday peak weeks dominate the 12-week mean.
+  const probeStartIso = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10)
+  const { count: historyDays } = await db.from('daily_metrics')
+    .select('*', { count: 'exact', head: true })
+    .eq('business_id', businessId)
+    .gt('revenue', 0)
+    .gte('date', probeStartIso)
+  const adaptive = adaptiveRecencyParams(Number(historyDays ?? 0))
+  const fromDate = new Date(Date.now() - adaptive.baselineWindowWeeks * 7 * 86400_000).toISOString().slice(0, 10)
 
   const { data } = await db
     .from('daily_metrics')
@@ -430,12 +446,14 @@ async function fetchBaselineByWeekday(db: any, businessId: string): Promise<Map<
   }
 
   const ref = new Date()
+  // adaptive is already in scope from the fetch-window decision above —
+  // reuse it rather than re-querying.
   const out = new Map<string, number>()
   for (const [wd, info] of Object.entries(byWeekday)) {
     if (info.revenues.length > 0) {
       out.set(wd, weightedAvg(info.revenues, info.dates, ref, {
-        recentWindowDays:  RECENCY.RECENT_WINDOW_DAYS,
-        recencyMultiplier: RECENCY.RECENCY_MULTIPLIER,
+        recentWindowDays:  adaptive.recentWindowDays,
+        recencyMultiplier: adaptive.recencyMultiplier,
       }))
     }
   }

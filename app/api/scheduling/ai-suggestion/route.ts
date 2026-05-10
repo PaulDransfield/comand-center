@@ -21,7 +21,7 @@ import { fetchAllPaged } from '@/lib/supabase/page'
 import { decrypt }                    from '@/lib/integrations/encryption'
 import { getWorkPeriods }              from '@/lib/pos/personalkollen'
 import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
-import { weightedAvg, thisWeekScaler, RECENCY } from '@/lib/forecast/recency'
+import { weightedAvg, thisWeekScaler, RECENCY, adaptiveRecencyParams } from '@/lib/forecast/recency'
 import { captureForecastOutcomes }              from '@/lib/forecast/audit'
 
 export const runtime     = 'nodejs'
@@ -159,11 +159,26 @@ export async function GET(req: NextRequest) {
     row.dept_breakdown[dept].cost  += cost
   }
 
-  // ── Historical pattern: last 12 complete weeks of daily_metrics + weather ─
+  // ── Historical pattern: 12 weeks (mature) or 4 weeks (short-history) ──
   // The history window ends the day before the target range starts, so a
   // prediction never peeks at data from within the period it's predicting.
+  //
+  // Short-history mode (Vero-style cold-start protection, 2026-05-10):
+  // for businesses with <180 days of positive revenue, the standard 12-week
+  // window + 2.0× recency multiplier amplifies whichever direction the
+  // most-recent month happened to go. Use a 4-week flat-mean window
+  // instead. Helper at lib/forecast/recency.ts encapsulates the rule.
+  // We need a quick history-day count BEFORE deciding the window — fetch
+  // a probe count first.
+  const probeStartIso = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10)
+  const { count: historyDayCount } = await db.from('daily_metrics')
+    .select('*', { count: 'exact', head: true })
+    .eq('business_id', bizId)
+    .gt('revenue', 0)
+    .gte('date', probeStartIso)
+  const adaptive = adaptiveRecencyParams(Number(historyDayCount ?? 0))
   const histEnd = new Date(rangeStart); histEnd.setDate(rangeStart.getDate() - 1)
-  const histStart = new Date(histEnd); histStart.setDate(histEnd.getDate() - 7 * 12)
+  const histStart = new Date(histEnd); histStart.setDate(histEnd.getDate() - 7 * adaptive.baselineWindowWeeks)
   const histStartIso = histStart.toISOString().slice(0, 10)
   const histEndIso   = histEnd.toISOString().slice(0, 10)
   // Historical weather comes from weather_daily (populated by the one-shot
@@ -249,8 +264,8 @@ export async function GET(req: NextRequest) {
   const refDate = new Date()
   const wAvg = (vals: number[], dates: string[]) =>
     weightedAvg(vals, dates, refDate, {
-      recentWindowDays:  RECENCY.RECENT_WINDOW_DAYS,
-      recencyMultiplier: RECENCY.RECENCY_MULTIPLIER,
+      recentWindowDays:  adaptive.recentWindowDays,
+      recencyMultiplier: adaptive.recencyMultiplier,
     })
 
   // ── This-week pull-forward scaler ──────────────────────────────────────────

@@ -101,4 +101,44 @@ export const RECENCY = {
   /** Min and max scaler values — prevents one weird day blowing up the rest of the week. */
   SCALER_FLOOR:        0.75,
   SCALER_CEIL:         1.25,
+  /** History threshold below which short-history mode kicks in.
+   *  Below this, the recency multiplier amplifies seasonal peaks instead
+   *  of capturing trend (Vero diagnostic 2026-05-10 showed +88% bias on
+   *  Jan-Mar 2026 because December's Christmas weeks dominated the
+   *  recency window). Use 4-week unweighted baseline instead. */
+  SHORT_HISTORY_THRESHOLD_DAYS: 180,
 } as const
+
+/**
+ * Adaptive recency parameters based on history maturity.
+ *
+ * Mature businesses (≥180 days of positive revenue):
+ *   - 28-day recency window, 2.0× multiplier
+ *   - The full 12-week baseline gets used; recent 4 weeks weighted 2×
+ *
+ * Short-history businesses (<180 days):
+ *   - 28-day recency window, 1.0× multiplier (flat mean)
+ *   - Caller should ALSO reduce the baseline data fetch window from
+ *     12 weeks to 4 weeks; weighting is moot when data is thin.
+ *
+ * Why: with limited data and an active seasonal trend, "weight recent 2×"
+ * just amplifies whatever direction the most recent month went (post-
+ * Christmas dip → over-prediction; rapid growth → under-prediction).
+ * Flat-mean over a tighter window is less confidently wrong.
+ *
+ * @param historyDays Count of distinct days with positive revenue
+ */
+export function adaptiveRecencyParams(historyDays: number): {
+  recentWindowDays:  number
+  recencyMultiplier: number
+  baselineWindowWeeks: number
+  shortHistoryMode:  boolean
+} {
+  const shortHistoryMode = historyDays < RECENCY.SHORT_HISTORY_THRESHOLD_DAYS
+  return {
+    recentWindowDays:    RECENCY.RECENT_WINDOW_DAYS,
+    recencyMultiplier:   shortHistoryMode ? 1.0 : RECENCY.RECENCY_MULTIPLIER,
+    baselineWindowWeeks: shortHistoryMode ? 4   : 12,
+    shortHistoryMode,
+  }
+}
