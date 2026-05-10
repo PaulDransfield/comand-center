@@ -6,6 +6,11 @@
 
 ## Pending — apply when ready
 
+### M063 — Extend organisations.plan CHECK constraint ⏳ pending application
+**File:** `sql/M063-ORGANISATIONS-PLAN-CONSTRAINT.sql`
+**Purpose:** the 2026-04-23 pricing overhaul (`project_pricing_2026_04` memory) added four new plan values — `founding`, `solo`, `group`, `chain` — to `lib/stripe/config.ts`'s PLANS map and to every UI surface, but the DB CHECK constraint still enumerated the old set (trial / starter / pro / enterprise / past_due). Any admin UPDATE setting a new plan value failed with `organisations_plan_check` violation. Drops + re-creates the constraint with all current values. Idempotent.
+**Companion code:** none — code already uses the new values; this just unblocks them at the DB level.
+
 ### M062 — tracker_data.is_provisional flag ⏳ pending application
 **File:** `sql/M062-TRACKER-IS-PROVISIONAL.sql`
 **Purpose:** marks tracker_data rows whose books aren't closed yet (current calendar month + prior month before the 15th — the typical Swedish accountant closure window). Without the flag, partial-month data corrupts trend lines and AI prompts: April 2026 showing revenue=85k vs April 2025=625k looks like a 86% revenue collapse when reality is just "books still open."
