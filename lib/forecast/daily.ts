@@ -180,9 +180,11 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.0.0'
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.0.1'   // bumped for short-history mode (2026-05-10)
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
-const BASELINE_WINDOW_WEEKS  = 12
+const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
+const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
+const SHORT_HISTORY_THRESHOLD_DAYS = 180
 const HISTORY_DAYS_FOR_HIGH  = 180
 const HISTORY_DAYS_FOR_MED   = 60
 
@@ -277,17 +279,37 @@ export async function dailyForecast(
   const weatherDaily    = weatherDailyRes.data ?? []
   const contaminatedSet = new Set((confirmedAnomaliesRes.data ?? []).map((a: any) => a.period_date as string))
 
+  // ── Detect short-history mode (cold-start protection) ──────────────
+  // Vero (2026-05-10 diagnostic) showed +88% bias on Jan-Mar 2026 because
+  // December's holiday peak got 2× weight in the recency window and
+  // dominated the post-holiday months. For businesses with <180 days of
+  // positive-revenue history we DON'T have enough data for the recency
+  // weighting to be informative — it just amplifies whatever the most
+  // recent month's pattern happened to be. Use a tighter unweighted
+  // window in that case (last 28 days, multiplier=1.0).
+  const totalHistoryDays = dailyMetrics.filter((r: any) => Number(r.revenue ?? 0) > 0).length
+  const shortHistoryMode = totalHistoryDays < SHORT_HISTORY_THRESHOLD_DAYS
+
+  // Effective baseline window + recency settings (per maturity)
+  const effectiveBaselineWeeks = shortHistoryMode ? SHORT_HISTORY_WEEKS : BASELINE_WINDOW_WEEKS
+  const effectiveRecencyMul    = shortHistoryMode ? 1.0 : RECENCY.RECENCY_MULTIPLIER
+  const effectiveRecentWindow  = shortHistoryMode ? (SHORT_HISTORY_WEEKS * 7) : RECENCY.RECENT_WINDOW_DAYS
+  const baselineCutoffMs       = asOfDate.getTime() - (effectiveBaselineWeeks * 7 * 86_400_000)
+
   // ── 1. Weekday baseline (recency-weighted, anomaly-filtered) ────────
   const weekdayMatches = dailyMetrics
     .filter((r: any) => Number(r.revenue ?? 0) > 0)
     .filter((r: any) => new Date(r.date + 'T12:00:00Z').getUTCDay() === weekday)
     .filter((r: any) => !contaminatedSet.has(r.date))
+    // Short-history mode: tighter window (4 weeks instead of 12) so we
+    // don't anchor on stale months that no longer represent the customer.
+    .filter((r: any) => new Date(r.date + 'T12:00:00Z').getTime() >= baselineCutoffMs)
 
   const weekdayValues = weekdayMatches.map((r: any) => Number(r.revenue))
   const weekdayDates  = weekdayMatches.map((r: any) => r.date as string)
   const weekdayBaseline = weightedAvg(weekdayValues, weekdayDates, asOfDate, {
-    recentWindowDays:  RECENCY.RECENT_WINDOW_DAYS,
-    recencyMultiplier: RECENCY.RECENCY_MULTIPLIER,
+    recentWindowDays:  effectiveRecentWindow,
+    recencyMultiplier: effectiveRecencyMul,
   })
 
   const recent28Cutoff = asOfDate.getTime() - RECENCY.RECENT_WINDOW_DAYS * 86_400_000
@@ -470,8 +492,9 @@ export async function dailyForecast(
 
   // ── Build inputs_snapshot ──────────────────────────────────────────
   const dataQualityFlags: string[] = []
-  if (totalDaysOfHistory < 60) dataQualityFlags.push('low_history')
+  if (totalDaysOfHistory < 60)  dataQualityFlags.push('low_history')
   if (contaminatedSet.size > 0) dataQualityFlags.push('anomaly_window_uncertain')
+  if (shortHistoryMode)         dataQualityFlags.push('short_history_mode_4w_unweighted')
 
   const snapshot: ConsolidatedV1Snapshot = {
     snapshot_version: SNAPSHOT_VERSION,
@@ -482,7 +505,7 @@ export async function dailyForecast(
       recency_weighted_avg:       Math.round(weekdayBaseline),
       recent_28d_samples:         recent28Count,
       older_samples:              olderCount,
-      recency_multiplier_applied: RECENCY.RECENCY_MULTIPLIER,
+      recency_multiplier_applied: effectiveRecencyMul,
       stddev:                     Math.round(stddev),
       anomaly_days_excluded:      [...contaminatedSet].filter(d =>
         new Date(d + 'T12:00:00Z').getUTCDay() === weekday,
