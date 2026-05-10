@@ -253,6 +253,37 @@ export default function ToolsPage() {
     }
   }
 
+  // LLM backtest (Piece 4) — same loop as Forecast backfill but ALSO calls
+  // llmAdjustForecast() per date and writes surface='llm_adjusted'. Returns
+  // side-by-side MAPE so we can immediately see whether Haiku helped on
+  // (e.g.) Vero's January over-prediction. Each call is real Haiku spend
+  // (~$0.001 each), so default window is small and capped server-side at 90.
+  const [llmFromDate, setLlmFromDate] = useState<string>('2026-01-01')
+  const [llmMaxDays,  setLlmMaxDays]  = useState<number>(30)
+
+  async function runLlmBacktest() {
+    if (opsRunning || !opsBizId.trim()) return
+    setOpsRunning(true)
+    setOpsResult(null)
+    setOpsError(null)
+    setOpsPollSnapshot(null)
+    try {
+      const r = await adminFetch<any>('/api/admin/forecast/run-llm-backtest', {
+        method: 'POST',
+        body:   JSON.stringify({
+          business_id:   opsBizId.trim(),
+          earliest_date: llmFromDate,
+          max_days:      llmMaxDays,
+        }),
+      })
+      setOpsResult(r)
+    } catch (e: any) {
+      setOpsError(e?.message ?? 'LLM backtest failed')
+    } finally {
+      setOpsRunning(false)
+    }
+  }
+
   // ── Operations: voucher diagnostic ─────────────────────────────────────
   // Read-only — fetches one month of vouchers, runs the translator, returns
   // bucket totals + comparison vs PDF baseline. Use BEFORE re-running the
@@ -454,6 +485,34 @@ export default function ToolsPage() {
             title="Piece 2 forecast backfill — walks every positive-revenue day through dailyForecast() and populates daily_forecast_outcomes with pre-resolved rows. ~2 min for 150 days."
           >
             {opsRunning ? 'Running…' : 'Forecast backfill'}
+          </button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            From
+            <input
+              type="date"
+              value={llmFromDate}
+              onChange={e => setLlmFromDate(e.target.value)}
+              style={{ padding: '4px 6px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            Days
+            <input
+              type="number"
+              value={llmMaxDays}
+              onChange={e => setLlmMaxDays(Math.max(1, Math.min(90, parseInt(e.target.value || '30', 10) || 30)))}
+              min={1}
+              max={90}
+              style={{ width: 60, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </label>
+          <button
+            onClick={runLlmBacktest}
+            disabled={opsRunning || !opsBizId.trim()}
+            style={btnSecondary(opsRunning || !opsBizId.trim())}
+            title="Piece 4 LLM backtest — runs deterministic + Haiku adjustment for each closed-day actual in the window. Writes surface='llm_adjusted'. Returns side-by-side MAPE. Hard cap 90 days (~$0.09 max)."
+          >
+            {opsRunning ? 'Running…' : 'LLM backtest'}
           </button>
           {diagRunning && (
             <span style={{
