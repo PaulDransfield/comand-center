@@ -6,6 +6,12 @@
 
 ## Pending — apply when ready
 
+### M065 — Forecast MAPE comparison view (Piece 2) ⏳ pending application
+**File:** `sql/M065-FORECAST-MAPE-VIEW.sql`
+**Purpose:** `v_forecast_mape_by_surface` view aggregating MAPE / bias / sample counts by `(business_id, surface, prediction_horizon_days)` from `daily_forecast_outcomes` resolved rows. Powers Phase A acceptance gate for Piece 2 — side-by-side comparison of consolidated_daily vs the two legacy surfaces. Phase B cutover criterion: consolidated within 2pp of better legacy AND no horizon shows >20% divergence.
+**Companion code:** `app/api/admin/forecast-mape/route.ts` exposes the view as JSON (admin-authed). Pairs with the Vero backfill script `scripts/backfill-vero-consolidated-forecasts.ts` which populates 145+ retrospective rows for instant Phase A signal instead of waiting two weeks of shadow capture.
+**Companion architecture:** Piece 2 implementation prompt at `PIECE-2-IMPLEMENTATION-PROMPT.md`. Idempotent CREATE OR REPLACE.
+
 ### M064 — Extend integrations.status CHECK constraint ⏳ pending application
 **File:** `sql/M064-INTEGRATIONS-STATUS-CONSTRAINT.sql`
 **Purpose:** same pattern as M061 (paused) and M063 (plan values). The TypeScript union for `integrations.status` includes `disconnected`, `needs_reauth`, `pending` etc. but the DB CHECK constraint only allowed the original handful. The new `/api/integrations/disconnect` endpoint failed on first use with `integrations_status_canonical_chk` violation when setting `status='disconnected'`. Fourth instance of constraint drift in 24h — see `feedback_check_constraint_drift` memory.

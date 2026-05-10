@@ -30,6 +30,10 @@ export const PREDICTION_V2_FLAGS = [
   'PREDICTION_V2_EXPORTS',
   'PREDICTION_V2_LLM_ADJUSTMENT',
   'PREDICTION_V2_ACCURACY_VIEW',
+  // Piece 2 — gates the public /api/forecast/daily endpoint. Function
+  // itself is callable from anywhere (other server-side code, future
+  // pieces, scripts); the endpoint is the rollout-gated public surface.
+  'PREDICTION_V2_FORECAST_API',
 ] as const
 
 export type PredictionV2Flag = typeof PREDICTION_V2_FLAGS[number]
