@@ -80,6 +80,8 @@ const FORTNOX_SCOPES  = [
   'archive',            // /3/archive/{id} — long-term file archive
   'inbox',              // /3/inbox/{id} — newly-uploaded supplier invoice PDFs (separate from archive)
   'connectfile',        // file<->resource connection metadata — required for SupplierInvoiceFileConnections to populate
+  'payments',           // /3/customerpayments + /3/supplierpayments — cash-flow reconciliation (memo: project_fortnox_bank_data_idea)
+  'settings',           // misc housekeeping reads (fiscal-year config etc.)
 ].join(' ')
 
 // ── CONNECT: start the OAuth flow ────────────────────────────────
