@@ -65,6 +65,52 @@ export function CustomerUsers({ orgId }: { orgId: string }) {
     }
   }
 
+  async function sendPasswordReset(user: UserRow) {
+    const reason = prompt(
+      `Send password reset email to ${user.email}?\n\nWhy are you doing this? (audit log; min 10 chars)`,
+      'User reported being locked out',
+    )
+    if (!reason || reason.trim().length < 10) {
+      if (reason !== null) alert('Reason must be at least 10 characters.')
+      return
+    }
+    try {
+      const r: any = await adminFetch(`/api/admin/v2/customers/${orgId}/users/${user.user_id}/reset-password`, {
+        method: 'POST',
+        body:   JSON.stringify({ reason: reason.trim() }),
+      })
+      alert(`Reset email sent to ${r.email}.\nMessage id: ${r.message_id ?? '—'}`)
+    } catch (e: any) {
+      alert(`Send failed: ${e?.message ?? 'unknown'}`)
+    }
+  }
+
+  async function setPasswordDirect(user: UserRow) {
+    const reason = prompt(
+      `Set a new password directly on ${user.email}?\n\nThis bypasses the email reset flow. Communicate the new password to the user via a SECURE channel (phone, in-person) — NOT email.\n\nWhy? (audit log; min 10 chars)`,
+      'Email reset link not arriving; manual reset',
+    )
+    if (!reason || reason.trim().length < 10) {
+      if (reason !== null) alert('Reason must be at least 10 characters.')
+      return
+    }
+    const pw = prompt(`New password for ${user.email}? (min 8 chars)`)
+    if (!pw || pw.length < 8) {
+      if (pw !== null) alert('Password must be at least 8 characters.')
+      return
+    }
+    if (!confirm(`Confirm: set ${user.email}'s password to the value you just entered?\n\nThis is logged in admin_audit_log.`)) return
+    try {
+      const r: any = await adminFetch(`/api/admin/v2/customers/${orgId}/users/${user.user_id}/set-password`, {
+        method: 'POST',
+        body:   JSON.stringify({ reason: reason.trim(), new_password: pw }),
+      })
+      alert(`Password set on ${r.email}. Communicate it to the user securely.`)
+    } catch (e: any) {
+      alert(`Set failed: ${e?.message ?? 'unknown'}`)
+    }
+  }
+
   if (loading && !data) return <div style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 12 }}>Loading users…</div>
 
   return (
@@ -128,6 +174,22 @@ export function CustomerUsers({ orgId }: { orgId: string }) {
                   </Td>
                   <Td align="right">
                     <button onClick={() => setEditing(u)} style={btnInline}>Edit</button>
+                    <button
+                      onClick={() => sendPasswordReset(u)}
+                      style={{ ...btnInline, marginLeft: 6 }}
+                      disabled={!u.email}
+                      title={!u.email ? 'No email on file' : 'Send branded password-reset email via Resend'}
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={() => setPasswordDirect(u)}
+                      style={{ ...btnInline, marginLeft: 6, color: '#92400e' }}
+                      disabled={!u.email}
+                      title="Admin override — set the password directly. Audit-logged with reason."
+                    >
+                      Set pw
+                    </button>
                     {u.role !== 'owner' && (
                       <button onClick={() => removeMember(u.user_id)} style={{ ...btnInline, color: '#b91c1c', marginLeft: 6 }}>Remove</button>
                     )}

@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin }              from '@/lib/admin/require-admin'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { recordAdminAction, ADMIN_ACTIONS } from '@/lib/admin/audit'
+import { sendInviteEmail }           from '@/lib/email/sendInviteEmail'
 
 export const dynamic = 'force-dynamic'
 
@@ -142,20 +143,35 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
     return NextResponse.json({ error: memberErr.message }, { status: 500 })
   }
 
-  // Send the password-reset email so the user can set their own password.
-  // generateLink() produces the recovery URL; we'd email it via Resend.
-  // For simplicity at v1, use Supabase's built-in password reset which
-  // emails directly using the project's SMTP config.
+  // Send the BRANDED invite email via Resend (not Supabase's default
+  // SMTP which sends from "noreply@mail.app.supabase.io" with generic
+  // templates — looks like phishing to first-time recipients).
+  // Type='invite' is the right link shape for fresh users — takes them to
+  // a set-password page first, then signs them in. The previous
+  // resetPasswordForEmail() path sent the user to a login page they
+  // couldn't pass (no password yet).
   let resetSent = false
+  let inviteError: string | null = null
   try {
+    // Look up org name for the email body
+    const { data: orgRow } = await db.from('organisations').select('name').eq('id', orgId).maybeSingle()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://comandcenter.se'
-    const { error: resetErr } = await db.auth.resetPasswordForEmail(email, {
-      redirectTo: `${appUrl}/reset-password`,
+    const result = await sendInviteEmail({
+      supabaseAdmin: db,
+      email,
+      orgName:       orgRow?.name ?? null,
+      inviterName:   null,                // admin invocation; no specific user
+      appOrigin:     appUrl,
     })
-    if (!resetErr) resetSent = true
-    else console.warn('[admin/users] reset email failed:', resetErr.message)
+    if (result.ok) {
+      resetSent = true
+    } else {
+      inviteError = result.error ?? 'unknown'
+      console.warn('[admin/users] invite email failed:', result.error, 'link:', result.actionLink)
+    }
   } catch (e: any) {
-    console.warn('[admin/users] reset email threw:', e?.message)
+    inviteError = e?.message ?? 'threw'
+    console.warn('[admin/users] invite email threw:', e?.message)
   }
 
   await recordAdminAction(db as any, {
@@ -180,6 +196,7 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
     role,
     business_ids:     businessIds,
     can_view_finances: canViewFinances,
-    reset_email_sent: resetSent,
+    invite_email_sent: resetSent,
+    invite_error:      inviteError,
   }, { status: 201 })
 }
