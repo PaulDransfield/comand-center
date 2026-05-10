@@ -1317,11 +1317,20 @@ function TooltipSection({ color, label, actualText, fcast, fmt, compareMode, com
 function buildScale(days: DayRow[]) {
   let maxRev = 0, maxLab = 0
   for (const d of days) {
-    maxRev = Math.max(maxRev, shownRev(d))
-    maxLab = Math.max(maxLab, shownLabour(d))
+    // Include both the SHOWN value (actual-or-predicted bar) AND the AI
+    // prediction (which plots as a separate line on past days when in
+    // AI-compare mode). If the AI prediction is higher than the actual on
+    // a past day, the axis must reserve space for it — otherwise the
+    // dashed forecast line clips above the chart.
+    const predRev = Number(d.pred?.est_revenue ?? 0)
+    const predLab = Number(d.pred?.planned_cost ?? 0)
+    maxRev = Math.max(maxRev, shownRev(d), predRev)
+    maxLab = Math.max(maxLab, shownLabour(d), predLab)
   }
-  const yMax = Math.max(10000, Math.ceil(maxRev / 10000) * 10000)
-  const yMin = -Math.max(5000, Math.ceil(maxLab / 5000) * 5000)
+  // Add 8% headroom so the AI line doesn't crowd the top edge — keeps the
+  // peak readable instead of grazing the gridline.
+  const yMax = Math.max(10000, Math.ceil(maxRev * 1.08 / 10000) * 10000)
+  const yMin = -Math.max(5000, Math.ceil(maxLab * 1.08 / 5000) * 5000)
   const plotY = PAD_T
   const plotH = PLOT_H
   const zeroY = plotY + plotH * (yMax / (yMax - yMin))
