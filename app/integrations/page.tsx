@@ -281,10 +281,28 @@ export default function IntegrationsPage() {
   async function disconnect(provider: string) {
     if (!confirm(t('confirms.disconnect', { provider }))) return
 
-    const supabase = createClient()
-    await supabase.from('integrations')
-      .update({ status: 'disconnected', credentials_enc: null })
-      .eq('provider', provider)
+    // Pre-2026-05-10: this used the user's RLS-bound supabase client to
+    // UPDATE integrations directly. RLS blocked the write silently, so
+    // "I clicked disconnect but nothing happened." Use the proper
+    // server-side endpoint that scopes by business_id + provider, runs
+    // service-role, and surfaces errors. Per-business if a sidebar
+    // selection is active so we don't accidentally disconnect every
+    // business's instance of the provider in the same org.
+    try {
+      const r = await fetch('/api/integrations/disconnect', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ provider, business_id: selectedBiz ?? undefined }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => null)
+        alert(j?.error ?? `Disconnect failed: HTTP ${r.status}`)
+        return
+      }
+    } catch (e: any) {
+      alert(`Disconnect failed: ${e?.message ?? 'unknown'}`)
+      return
+    }
 
     fetchIntegrations()
   }
