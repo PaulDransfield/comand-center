@@ -6,6 +6,10 @@
 
 ## Pending — apply when ready
 
+### M068 — Add Örebro to school_holidays seed + set Chicce's kommun ⏳ pending application
+**File:** `sql/M068-SCHOOL-HOLIDAYS-OREBRO-SEED.sql`
+**Purpose:** Chicce Slotsgatan is in Örebro (kommun 1880, län 18) which wasn't in the M067 seed. Extends seed coverage with 10 holiday rows for Örebro 2025-2027 + sets `businesses.kommun='1880'` for Chicce. Without this, the school_holiday signal returns null for Chicce → factor stays neutral 1.0 → no school-holiday signal contribution to her forecasts. Idempotent.
+
 ### M067 — Swedish school holidays seed (Piece 3) ⏳ pending application
 **File:** `sql/M067-SCHOOL-HOLIDAYS-SE-SEED.sql`
 **Purpose:** populate the M056 `school_holidays` table with manual data for Sweden's largest kommuns (Stockholm 0180, Göteborg 1480, Malmö 1280, Uppsala 0380) covering 2025-2027 across all five restaurant-relevant break types (höstlov / jullov / sportlov / påsklov / sommarlov). Skolverket doesn't publish a uniformly-machine-readable per-kommun calendar, so the seed is hand-curated. Idempotent (UNIQUE constraint + ON CONFLICT DO NOTHING).
