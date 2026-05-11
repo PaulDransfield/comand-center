@@ -328,10 +328,10 @@ export async function llmAdjustForecast(
         // caches system + tools as one big chunk. Belt-and-braces with
         // the system-side marker — if either lands a cache chunk over
         // the minimum threshold, we get a hit.
-        tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral' } }],
+        tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral', ttl: '5m' } }],
         tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
         system: [
-          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral', ttl: '5m' } },
         ],
         messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
       }),
