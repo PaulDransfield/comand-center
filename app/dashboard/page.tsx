@@ -26,6 +26,7 @@ import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import DemandOutlook from '@/components/dashboard/DemandOutlook'
 import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
 import CashPositionTile from '@/components/dashboard/CashPositionTile'
+import CashFlowProjectionTile from '@/components/dashboard/CashFlowProjectionTile'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1051,8 +1052,9 @@ function DashboardInner() {
                 throwing away). Honest about not being an absolute balance.
                 Soft-fails when Fortnox isn't bank-linked. */}
             {bizId && (
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
                 <CashPositionTile businessId={bizId} />
+                <CashFlowProjectionTile businessId={bizId} />
               </div>
             )}
 
