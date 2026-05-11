@@ -1039,6 +1039,43 @@ async function generateForecasts(db: any, orgId: string, businessId: string | nu
     }
   }
 
+  // ── Piece 5 cutover: per-business flag-gated forecaster swap ─────────
+  // When PREDICTION_V2_BUDGETING is enabled for this business, route every
+  // month through the consolidated monthly forecaster (lib/forecast/monthly.ts)
+  // instead of the legacy rolling-avg × hardcoded-seasonal-factor math
+  // below. Three paths inside that function (YoY-anchored / daily-aggregate /
+  // weekday-extrapolation) replace the legacy two-branch logic. Cost ratios
+  // derive from per-business closed-month history with memory-driven floors
+  // (food ≥28%, staff ≤ target+5pp).
+  const { isPredictionV2FlagEnabled } = await import('@/lib/featureFlags/prediction-v2')
+  const v2BudgetingFlagOn = await isPredictionV2FlagEnabled(businessId, 'PREDICTION_V2_BUDGETING', db)
+  if (v2BudgetingFlagOn) {
+    const { monthlyForecast } = await import('@/lib/forecast/monthly')
+    for (const { year: fYear, month: fMonth } of monthsToForecast) {
+      try {
+        const mf = await monthlyForecast(businessId, fYear, fMonth, { db, asOfDate: now })
+        await db.from('forecasts').upsert({
+          org_id:              orgId,
+          business_id:         businessId,
+          period_year:         fYear,
+          period_month:        fMonth,
+          revenue_forecast:    mf.revenue_forecast,
+          staff_cost_forecast: mf.staff_cost_forecast,
+          food_cost_forecast:  mf.food_cost_forecast,
+          net_profit_forecast: mf.net_profit_forecast,
+          margin_forecast:     mf.margin_forecast,
+          confidence:          mf.confidence,
+          method:              mf.method,
+          based_on_months:     mf.based_on_months,
+          updated_at:          new Date().toISOString(),
+        }, { onConflict: 'org_id,business_id,period_year,period_month' })
+      } catch (e: any) {
+        console.warn(`[generateForecasts:v2] ${fYear}-${fMonth} failed for ${businessId}: ${e?.message}`)
+      }
+    }
+    return   // skip legacy path entirely
+  }
+
   for (const { year: fYear, month: fMonth } of monthsToForecast) {
     // Method 1: same month last year
     const sameMonthLY = history.find(r => r.period_year === fYear - 1 && r.period_month === fMonth)

@@ -111,7 +111,25 @@ Two findings:
 | DemandOutlook day cards | `lib/weather/demand.ts` | ✅ v2 (Vero) |
 | WeatherDemandWidget | Same as DemandOutlook | ✅ v2 (Vero) |
 | Monday Memo AI prompt | `lib/ai/weekly-manager.ts` calls `computeDemandForecast()` | ✅ v2 indirectly (cascades from DemandOutlook wire) |
-| `/forecast` page (monthly) | `/api/forecast` | ⏳ legacy — different problem space, separate decision |
+| `/forecast` page (monthly) | reads `forecasts` table | ✅ v2 (Piece 5, Vero only) |
+| `/budgets` page | reads `forecasts` table | ✅ v2 (Piece 5, Vero only) |
+| `/api/budgets/generate` | reads `forecasts` table | ✅ v2 (Piece 5, Vero only) |
+
+**Piece 5 SHIPPED 2026-05-11 — monthly consolidated forecaster.**
+
+New file `lib/forecast/monthly.ts` (`consolidated_monthly_v1.0`). Three computation paths picked in priority order:
+
+- **`yoy_anchored`** — same-month-last-year exists + prior 12m ≥50% of last 12m (comparable). Anchor on YoY revenue × clamped trailing-12m growth multiplier (bounded [0.85, 1.15] per memory `feedback_budget_ai_historical_anchor.md`). Blocked when `coldStartMode = true` (Vero has partial 2025 data that would mislead).
+- **`daily_aggregate`** — cold-start near-horizon (≤ 90 days). Sums `dailyForecast()` predictions across every day of the month. Inherits Piece 2's full signal stack including the Dec 20-Jan 6 holiday filter. Validated against Vero's May 2026: predicted 698k, extrapolated actual 746k → 6.5% error vs legacy's ~80% error.
+- **`weekday_extrapolation`** — cold-start far-horizon (> 90 days). Per-weekday baselines × weekday-counts-in-target-month. Cold-start mode applies the same Dec 20-Jan 6 holiday filter to exclude Christmas peak Fridays from anchoring summer months.
+
+**Costs** derived from last 6 closed months' median ratios (staff/revenue, food/revenue, other/revenue). Floors per memory `feedback_budget_ai_extras.md`: food ≥ 28%, staff capped at business's `target_staff_pct + 5pp`. Falls back to business targets when no cost history exists.
+
+**Wired via flag** `PREDICTION_V2_BUDGETING` in `lib/sync/engine.ts::generateForecasts`. When on, every month routes through `monthlyForecast()` and writes to the existing `forecasts` table with `method='consolidated_monthly_v1.0:<path>'`. When off, legacy rolling-avg × hardcoded-seasonal-factor math runs unchanged.
+
+**Flag flipped for Vero 2026-05-11** via `scripts/flip-vero-v2-budgeting-flag.mjs`. Backfill of her 15 future-month forecasts run via `scripts/run-vero-monthly-forecasts.ts`. Total compute: ~7 seconds. Each future month tagged with its computation path for audit.
+
+**Coverage now**: every customer-facing predictive surface in CommandCenter — daily revenue chart, scheduling AI hours, DemandOutlook day cards, Monday Memo, `/forecast` prognosis page, `/budgets` budget AI generator — runs on v2 forecasters for Vero. End-to-end consolidated_v1.3.0 (daily) + consolidated_monthly_v1.0 (monthly).
 
 **Remaining issues observed in samples:**
 

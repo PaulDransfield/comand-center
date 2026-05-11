@@ -34,6 +34,12 @@ export const PREDICTION_V2_FLAGS = [
   // itself is callable from anywhere (other server-side code, future
   // pieces, scripts); the endpoint is the rollout-gated public surface.
   'PREDICTION_V2_FORECAST_API',
+  // Piece 5 — gates the monthly forecaster (lib/forecast/monthly.ts). When
+  // on, lib/sync/engine.ts::generateForecasts writes consolidated_monthly_v1.0
+  // rows to the `forecasts` table instead of the legacy rolling-avg×
+  // hardcoded-seasonal-factor math. Feeds /forecast page, /budgets page,
+  // /api/budgets/generate, and lib/ai/contextBuilder.
+  'PREDICTION_V2_BUDGETING',
 ] as const
 
 export type PredictionV2Flag = typeof PREDICTION_V2_FLAGS[number]
