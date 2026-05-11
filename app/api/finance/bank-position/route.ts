@@ -137,31 +137,34 @@ export async function GET(req: NextRequest) {
 
   let absoluteBalance: number | null = null
   let openingBalancesByAccount: Record<number, number> = {}
+  let currentBalancesByAccount: Record<number, { description: string; current: number; opening: number }> = {}
   let fiscalYearFrom: string | null = null
   let fiscalYearTo: string | null = null
-  let openingFetchOk = false
+  let balanceFetchOk = false
 
   if (accountsSeen.size > 0) {
     const result = await fetchBankAccountBalances(db, auth.orgId, businessId, Array.from(accountsSeen))
     if (Object.keys(result.balances).length > 0) {
-      openingFetchOk = true
+      balanceFetchOk = true
       fiscalYearFrom = result.fiscal_year_from
       fiscalYearTo   = result.fiscal_year_to
 
-      // Sum opening balances + sum net changes in this fiscal year
-      let openingSum = 0
+      // Sum current balances directly — Fortnox's BalanceCarriedForward
+      // IS the live closing balance through the latest booked voucher.
+      // Do NOT add YTD net change on top: that's already inside the
+      // current_balance figure (the earlier code did this and double-counted).
+      let currentSum = 0
       for (const [acc, bal] of Object.entries(result.balances)) {
-        openingBalancesByAccount[Number(acc)] = bal.opening_balance
-        openingSum += bal.opening_balance
+        const a = Number(acc)
+        openingBalancesByAccount[a] = bal.opening_balance
+        currentBalancesByAccount[a] = {
+          description: bal.description,
+          current:     bal.current_balance,
+          opening:     bal.opening_balance,
+        }
+        currentSum += bal.current_balance
       }
-
-      const fyStart = result.fiscal_year_from
-      const ytdRows = allMonths.filter(m => {
-        const periodIso = `${m.year}-${String(m.month).padStart(2, '0')}-01`
-        return periodIso >= fyStart.slice(0, 7) + '-01'
-      })
-      const ytdNetChange = ytdRows.reduce((s, m) => s + m.net_change, 0)
-      absoluteBalance = Math.round(openingSum + ytdNetChange)
+      absoluteBalance = Math.round(currentSum)
     }
   }
 
@@ -176,10 +179,15 @@ export async function GET(req: NextRequest) {
       last_12m_change:   last12.length > 0 ? Math.round(last12Change) : null,
       months_with_data:  allMonths.length,
 
-      // Absolute balance — populated when we can reach Fortnox's
-      // /3/accounts endpoint. Null = fall back to cumulative-since-tracking.
+      // Absolute balance — sum of Fortnox's `BalanceCarriedForward` across
+      // bank accounts. Reflects what Fortnox has BOOKED through the latest
+      // voucher, NOT necessarily the live bank balance: if the customer's
+      // accountant is behind on entering bank movements, this lags reality.
+      // Null = Fortnox's /3/accounts endpoint unreachable (then UI falls
+      // back to "since tracking began" net change).
       absolute_balance:           absoluteBalance,
-      opening_balance_by_account: openingFetchOk ? openingBalancesByAccount : null,
+      opening_balance_by_account: balanceFetchOk ? openingBalancesByAccount : null,
+      current_balance_by_account: balanceFetchOk ? currentBalancesByAccount : null,
       fiscal_year_from:           fiscalYearFrom,
       fiscal_year_to:             fiscalYearTo,
     },

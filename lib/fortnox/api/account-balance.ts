@@ -27,7 +27,12 @@ import { fetchFinancialYears } from './financial-years'
 import { getFreshFortnoxAccessToken } from './auth'
 
 const FORTNOX_API   = 'https://api.fortnox.se/3'
-const CACHE_TTL_MS  = 24 * 60 * 60 * 1000   // 24h — opening balance for current FY is stable
+// Two fields come from the same API call but have different volatility:
+//   - opening_balance (BalanceBroughtForward): year-start, stable
+//   - current_balance (BalanceCarriedForward): live, updates with every voucher
+// Cache TTL bounded by the volatile one. 15 min is a reasonable balance
+// between freshness and Fortnox rate-limit kindness.
+const CACHE_TTL_MS  = 15 * 60 * 1000
 
 export interface AccountBalance {
   account:                  number
@@ -35,7 +40,13 @@ export interface AccountBalance {
   fiscal_year_id:           number
   fiscal_year_from:         string
   fiscal_year_to:           string
-  opening_balance:          number          // BalanceCarriedForward
+  /** Ingående balans (IB) — opening balance at the start of this fiscal year,
+   *  carried in from prior year close. Fortnox field: BalanceBroughtForward. */
+  opening_balance:          number
+  /** Utgående balans (UB) — current closing balance, updates with every
+   *  voucher booked. THIS is the live "what's in the account now per Fortnox"
+   *  number. Fortnox field: BalanceCarriedForward. */
+  current_balance:          number
   fetched_at:               string
 }
 
@@ -109,7 +120,9 @@ export async function fetchBankAccountBalances(
   let calls = 0
 
   for (const account of accounts) {
-    const cacheCategory = `__bank_opening_${account}_fy${fyId}__`
+    // v2 cache key — invalidates the pre-2026-05-11 entries that stored
+    // BalanceCarriedForward under `opening_balance` (wrong field).
+    const cacheCategory = `__bank_balance_v2_${account}_fy${fyId}__`
     const cacheKey = { business_id: businessId, period_year: fyId, period_month: 0, category: cacheCategory }
 
     // Cache check
@@ -143,8 +156,16 @@ export async function fetchBankAccountBalances(
       const acc = body?.Account
       if (!acc) continue
 
-      const openingBalance = Number(acc.BalanceCarriedForward ?? 0)
-      if (!Number.isFinite(openingBalance)) continue
+      // Fortnox field names (terms verified empirically 2026-05-11):
+      //   BalanceBroughtForward = opening balance (Ingående balans, IB) —
+      //     year-start position carried in from prior year close
+      //   BalanceCarriedForward = current closing balance (Utgående balans, UB) —
+      //     live running balance through latest booked voucher
+      // Earlier (pre-2026-05-11) we had these swapped and double-counted YTD
+      // net change on top of "opening_balance" — gave nonsense numbers.
+      const openingBalance = Number(acc.BalanceBroughtForward ?? 0)
+      const currentBalance = Number(acc.BalanceCarriedForward ?? 0)
+      if (!Number.isFinite(openingBalance) || !Number.isFinite(currentBalance)) continue
 
       const balance: AccountBalance = {
         account,
@@ -153,6 +174,7 @@ export async function fetchBankAccountBalances(
         fiscal_year_from: currentYear.FromDate,
         fiscal_year_to:   currentYear.ToDate,
         opening_balance:  Math.round(openingBalance),
+        current_balance:  Math.round(currentBalance),
         fetched_at:       new Date().toISOString(),
       }
       balances[account] = balance

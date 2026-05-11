@@ -37,6 +37,7 @@ interface BankPositionResponse {
     months_with_data:  number
     absolute_balance:           number | null
     opening_balance_by_account: Record<string, number> | null
+    current_balance_by_account: Record<string, { description: string; current: number; opening: number }> | null
     fiscal_year_from:           string | null
     fiscal_year_to:             string | null
   }
@@ -174,9 +175,26 @@ export default function CashPositionTile({ businessId }: Props) {
       </div>
       <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6, lineHeight: 1.4 }}>
         {showAbsolute
-          ? `Opening balance ${summary.fiscal_year_from?.slice(0, 7) ?? '—'} + net bank movement (BAS 1910-1979) since.`
+          ? `As booked in Fortnox (sum of BAS 1910-1979). May lag real bank balance if bookkeeping is behind.`
           : 'Net bank movement (BAS 1910-1979). Not an absolute balance — opening balance unknown.'}
       </div>
+
+      {/* Per-account breakdown when available — helps the owner see which
+          account is in deficit. Only renders if we got the absolute path. */}
+      {showAbsolute && summary.current_balance_by_account && Object.keys(summary.current_balance_by_account).length > 1 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #f3f4f6', fontSize: 11, color: '#374151' }}>
+          {Object.entries(summary.current_balance_by_account)
+            .sort((a, b) => b[1].current - a[1].current)
+            .map(([acc, info]) => (
+              <div key={acc} style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                <span style={{ color: '#6b7280' }}>{acc} · {info.description}</span>
+                <span style={{ color: info.current >= 0 ? '#1a1f2e' : '#b91c1c', fontVariantNumeric: 'tabular-nums' }}>
+                  {info.current.toLocaleString('sv-SE')}
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   )
 }
