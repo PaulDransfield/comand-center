@@ -27,8 +27,8 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { decrypt }                      from '@/lib/integrations/encryption'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
+import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -60,28 +60,18 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'Business not found in your org' }, { status: 404 })
 
-  // Connected (or recoverable-state) Fortnox integration
-  const { data: integ } = await db
-    .from('integrations')
-    .select('credentials_enc')
-    .eq('org_id', auth.orgId)
-    .eq('business_id', businessId)
-    .eq('provider', 'fortnox')
-    .in('status', ['connected', 'error', 'warning'])
-    .limit(1)
-    .maybeSingle()
-
-  if (!integ?.credentials_enc) {
-    return NextResponse.json({ error: 'No Fortnox integration' }, { status: 404 })
+  // Resolve a live Fortnox access token (auto-refresh when near expiry).
+  let accessToken: string | null
+  try {
+    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+  } catch (err: any) {
+    return NextResponse.json({
+      error:   'fortnox_token_refresh_failed',
+      message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
+    }, { status: 401 })
   }
-
-  let creds: any
-  try { creds = JSON.parse(decrypt(integ.credentials_enc) ?? '{}') } catch {
-    return NextResponse.json({ error: 'Failed to decrypt credentials' }, { status: 500 })
-  }
-  const accessToken = String(creds?.access_token ?? '')
   if (!accessToken) {
-    return NextResponse.json({ error: 'No access token' }, { status: 500 })
+    return NextResponse.json({ error: 'No Fortnox integration' }, { status: 404 })
   }
 
   // Fetch invoice detail (with 429 retry baked in). The file connections

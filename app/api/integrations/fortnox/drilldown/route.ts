@@ -30,8 +30,8 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fetchVouchersForRange }        from '@/lib/fortnox/api/vouchers'
-import { decrypt }                      from '@/lib/integrations/encryption'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
+import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
       fromDate:   fromIso,
       toDate:     toIso,
     }),
-    fetchSupplierInvoices(db, integ.id, fromIso, toIso),
+    fetchSupplierInvoices(db, auth.orgId, businessId, fromIso, toIso),
   ])
 
   // Join vouchers to their parent supplier invoice via VoucherSeries+VoucherNumber.
@@ -333,17 +333,17 @@ interface FortnoxSupplierInvoice {
   SupplierInvoiceFileConnections?: Array<{ FileId: string }>
 }
 
-async function fetchSupplierInvoices(db: any, integrationId: string, fromDate: string, toDate: string): Promise<FortnoxSupplierInvoice[]> {
-  const { data: integ } = await db
-    .from('integrations')
-    .select('credentials_enc')
-    .eq('id', integrationId)
-    .maybeSingle()
-  if (!integ?.credentials_enc) return []
-
-  let creds: any
-  try { creds = JSON.parse(decrypt(integ.credentials_enc) ?? '{}') } catch { return [] }
-  const accessToken = String(creds?.access_token ?? '')
+async function fetchSupplierInvoices(db: any, orgId: string, businessId: string, fromDate: string, toDate: string): Promise<FortnoxSupplierInvoice[]> {
+  // getFreshFortnoxAccessToken auto-refreshes the access_token when within
+  // 5min of its 60-min expiry. Pre-fix this function read the stored
+  // access_token directly and silently returned [] on 401, hiding the bug.
+  let accessToken: string | null = null
+  try {
+    accessToken = await getFreshFortnoxAccessToken(db, orgId, businessId)
+  } catch (err: any) {
+    console.warn('[drilldown] Fortnox token refresh failed:', err?.message)
+    return []
+  }
   if (!accessToken) return []
 
   // Single list call. Pagination would be needed for high-volume customers

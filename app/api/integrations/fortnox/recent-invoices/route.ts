@@ -34,8 +34,8 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { decrypt }                      from '@/lib/integrations/encryption'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
+import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -148,33 +148,24 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Connected Fortnox integration
-  const { data: integ } = await db
-    .from('integrations')
-    .select('credentials_enc, status')
-    .eq('org_id', auth.orgId)
-    .eq('business_id', businessId)
-    .eq('provider', 'fortnox')
-    .in('status', ['connected', 'error', 'warning'])
-    .limit(1)
-    .maybeSingle()
-
-  if (!integ?.credentials_enc) {
+  // Resolve a live Fortnox access token. Refreshes via refresh_token if
+  // the stored access_token is within 5min of its 60-min expiry. Without
+  // this, a dashboard mount more than an hour after OAuth would 401 — the
+  // bug Vero hit on 2026-05-11, exactly one day after onboarding.
+  let accessToken: string | null
+  try {
+    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+  } catch (err: any) {
+    return NextResponse.json({
+      error:   'fortnox_token_refresh_failed',
+      message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
+    }, { status: 401 })
+  }
+  if (!accessToken) {
     return NextResponse.json({
       error:   'no_fortnox_connection',
       message: 'Connect Fortnox to see recent invoices.',
     }, { status: 404 })
-  }
-
-  let creds: any
-  try {
-    creds = JSON.parse(decrypt(integ.credentials_enc) ?? '{}')
-  } catch {
-    return NextResponse.json({ error: 'Failed to decrypt Fortnox credentials' }, { status: 500 })
-  }
-  const accessToken = String(creds?.access_token ?? '')
-  if (!accessToken) {
-    return NextResponse.json({ error: 'No Fortnox access token' }, { status: 500 })
   }
 
   // Range: either calendar-month window (year_month=YYYY-MM mode) or
