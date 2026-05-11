@@ -40,6 +40,19 @@ import type {
 } from '@/lib/finance/projectRollup'
 import type { FortnoxVoucher } from './vouchers'
 
+export interface BankAccountDelta {
+  debit:  number
+  credit: number
+  net:    number   // debit - credit (positive = bank received money, e.g. revenue deposit)
+}
+
+export interface BankSummary {
+  /** Net movement across all BAS bank accounts 1910-1979 for this period. */
+  net_change: number
+  /** Per-account breakdown, keyed by BAS account number as string. */
+  accounts: Record<string, BankAccountDelta>
+}
+
 export interface PeriodInput {
   year:    number
   month:   number          // 1-12
@@ -47,6 +60,19 @@ export interface PeriodInput {
   lines:   ExtractionLineItem[]
   /** Number of vouchers contributing to this period. */
   voucherCount: number
+  /** Phase 5: bank/cash position movement during the period. Computed from
+   *  1xxx asset-account voucher rows that the legacy translator threw away.
+   *  No new Fortnox scope needed — same vouchers, just retained data. */
+  bank: BankSummary
+}
+
+// Bank accounts in scope for cash-position tracking (Swedish BAS chart).
+// Inclusive range. EXCLUDES 1980-1989 (investments / securities — not liquid cash).
+const BANK_ACCOUNT_MIN = 1910
+const BANK_ACCOUNT_MAX = 1979
+
+function isBankAccount(account: number): boolean {
+  return account >= BANK_ACCOUNT_MIN && account <= BANK_ACCOUNT_MAX
 }
 
 export interface TranslationResult {
@@ -85,11 +111,16 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
     /** label → count, so we can pick the most common label as the line's representative */
     labels: Map<string, number>
   }
+  type BankAccumulator = {
+    debit:  number
+    credit: number
+  }
   type PeriodAccumulator = {
-    year:         number
-    month:        number
-    voucherCount: number
-    byAccount:    Map<number, AccountAccumulator>
+    year:           number
+    month:          number
+    voucherCount:   number
+    byAccount:      Map<number, AccountAccumulator>
+    bankByAccount:  Map<number, BankAccumulator>
   }
 
   const byPeriod = new Map<string, PeriodAccumulator>()
@@ -120,7 +151,7 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
     const periodKey = `${year}-${String(month).padStart(2, '0')}`
     let period = byPeriod.get(periodKey)
     if (!period) {
-      period = { year, month, voucherCount: 0, byAccount: new Map() }
+      period = { year, month, voucherCount: 0, byAccount: new Map(), bankByAccount: new Map() }
       byPeriod.set(periodKey, period)
     }
     period.voucherCount++
@@ -133,6 +164,20 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
       const credit = Number(row.Credit ?? 0)
       if (!Number.isFinite(debit) || !Number.isFinite(credit)) continue
       if (debit === 0 && credit === 0) continue
+
+      // Bank accounts (1910-1979) go into a separate accumulator. They are
+      // NOT P&L accounts — debit-credit nets to the period's CASH movement,
+      // not a cost or revenue. Phase 5 cash-visibility.
+      if (isBankAccount(account)) {
+        let bank = period.bankByAccount.get(account)
+        if (!bank) {
+          bank = { debit: 0, credit: 0 }
+          period.bankByAccount.set(account, bank)
+        }
+        bank.debit  += debit
+        bank.credit += credit
+        continue   // do NOT also process as a P&L account
+      }
 
       let acc = period.byAccount.get(account)
       if (!acc) {
@@ -265,12 +310,31 @@ export function translateVouchersToPeriods(vouchers: FortnoxVoucher[]): Translat
       bumpRollup(rollup, lineItem)
     }
 
+    // Bank summary — separate from P&L. Debit minus credit per BAS bank
+    // account; positive net means the bank balance grew during the period.
+    const bankAccounts: Record<string, BankAccountDelta> = {}
+    let bankNetChange = 0
+    for (const [account, bank] of periodAcc.bankByAccount.entries()) {
+      const net = Math.round(bank.debit - bank.credit)
+      if (bank.debit === 0 && bank.credit === 0) continue
+      bankAccounts[String(account)] = {
+        debit:  Math.round(bank.debit),
+        credit: Math.round(bank.credit),
+        net,
+      }
+      bankNetChange += net
+    }
+
     periods.push({
       year:         periodAcc.year,
       month:        periodAcc.month,
       rollup,
       lines,
       voucherCount: periodAcc.voucherCount,
+      bank: {
+        net_change: bankNetChange,
+        accounts:   bankAccounts,
+      },
     })
   }
 

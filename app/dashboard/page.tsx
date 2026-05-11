@@ -25,6 +25,7 @@ import WeatherDemandWidget from '@/components/dashboard/WeatherDemandWidget'
 import DashboardHeader from '@/components/dashboard/DashboardHeader'
 import DemandOutlook from '@/components/dashboard/DemandOutlook'
 import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
+import CashPositionTile from '@/components/dashboard/CashPositionTile'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1044,6 +1045,16 @@ function DashboardInner() {
                 }
               `}</style>
             </div>
+
+            {/* Phase 5 cash visibility — net bank movement derived from
+                BAS 1910-1979 voucher activity (data we already had but were
+                throwing away). Honest about not being an absolute balance.
+                Soft-fails when Fortnox isn't bank-linked. */}
+            {bizId && (
+              <div style={{ marginTop: 8 }}>
+                <CashPositionTile businessId={bizId} />
+              </div>
+            )}
 
             {/* Recent invoices — operational view of supplier costs landing
                 in Fortnox day-by-day. Independent of period closure status,

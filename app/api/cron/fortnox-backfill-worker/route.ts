@@ -468,6 +468,13 @@ export async function POST(req: NextRequest) {
             margin_pct:       projected.margin_pct,
             source:           'fortnox_api',
             created_via:      'fortnox_backfill',
+            // Phase 5 cash visibility — net bank movement (BAS 1910-1979)
+            // for this period. Sourced from the same vouchers the P&L came
+            // from; no new Fortnox scope required.
+            bank_net_change:  periodOutput.bank?.net_change ?? null,
+            bank_accounts:    periodOutput.bank?.accounts && Object.keys(periodOutput.bank.accounts).length > 0
+              ? periodOutput.bank.accounts
+              : null,
             // Tag the row as provisional if the books for this period
             // aren't closed yet (current month, or prior month before 15th).
             // P&L readers filter `is_provisional = false` to keep historical
