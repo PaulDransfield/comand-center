@@ -46,7 +46,32 @@ But two issues surfaced:
 1. **Prompt cache 0/0 hit rate.** `cache_creation.ephemeral_5m_input_tokens=0` across all 30 calls. Root cause: explicit `ttl: '5m'` requires `anthropic-beta: extended-cache-ttl-2025-04-11` header; without it the API silently drops the entire `cache_control`. Fix: removed `ttl: '5m'`, default 5-min TTL is implicit. New memory: `feedback_anthropic_cache_control_ttl.md`.
 2. **Cold-start clamp inflation** (memory: `feedback_cold_start_clamp_inflation.md`). Both surfaces 100%+ off in January because the `this_week_scaler` floor of 0.75 forbid dampening below 75% even when raw scaler was 0.29-0.52. Floor exists to protect mature baselines from one weird day; in short-history mode the baseline ITSELF is suspect. Fix: relaxed scaler floor to 0.50 / ceil to 1.50 when `shortHistoryMode=true`. `thisWeekScaler()` signature extended with `opts.shortHistoryMode` (other callers in `lib/weather/demand.ts` + `app/api/scheduling/ai-suggestion/route.ts` unchanged — they default to mature-mode clamps). Snapshot's `clamped_at_min/max` + `scaler_floor/ceil` now reflect the per-call values.
 
-**Pending re-run** — backtest with both fixes applied. Expectations: cache token columns >0 on first call, ≥2000 on subsequent calls; consolidated MAPE drops materially as deterministic system can now apply the corrections the LLM was doing; LLM MAPE may converge with consolidated and potentially fail the ≥3pp cutover criterion (which is correct and fine — LLM is enrichment, not load-bearing).
+**Re-run 2026-05-11 09:42 — clamp REVERTED, cache fix didn't fire.**
+
+| Run | MAPE cons. | MAPE LLM | Bias cons. | Bias LLM | Cache |
+|---|---|---|---|---|---|
+| Baseline (orig clamp + ttl:'5m') | 143.3 | 114.8 | +104.2 | +69.6 | 0/0 |
+| Relaxed clamp + ttl removed | 151.5 | 122.8 | +100.4 | +65.1 | 0/0 |
+
+Two findings:
+
+1. **Relaxed clamp regressed MAPE +8pp.** Vero's January is bimodal (low Mon-Wed, high Sat-Sun). `this_week_scaler` is flat-across-the-week — early-week weakness dampens the WHOLE week's predictions proportionally. With floor=0.5, Wed-Sun predictions cranked to ~50% of baseline, but Sat-Sun actuals were HIGH (01-23 actual 129k → predicted dropped 53k→44k; 01-28 actual 48k → 10k→7k). Floor relaxation traded over-prediction wins for under-prediction losses, net negative. **Reverted in `lib/forecast/recency.ts` — back to flat [0.75, 1.25] clamp.**
+
+2. **Cache fix didn't fire either.** Removing `ttl: '5m'` from cache_control should have made the default 5-minute TTL fire, but `cache_creation_input_tokens=0` again. System prompt is ~2,700 tokens (above Haiku 4.5's 2048 minimum) and the deploy IS live (LLM reasoning explicitly references the new floor before revert). Either the prefix is borderline-below threshold and my token estimate is wrong, or something else is dropping the cache_control. Cost impact at production volume is negligible (~$0.005/call), so deferred. Open question logged in ROADMAP follow-ups; not blocking.
+
+**Real architectural problem surfaced — cold-start over-prediction is not a clamp problem.** The deterministic forecaster's `weekday_baseline` is anchored on a 4-week unweighted window that includes December peaks when forecasting January. The LLM is correctly identifying this in every single sample reasoning, dampening to 0.78-0.85, and recovering ~28pp of MAPE. But the LLM is enrichment, not load-bearing — the right fix is at the deterministic layer:
+
+- **Option A: weekday-aware this_week_scaler.** Don't dampen Sat-Sun based on Mon-Wed actuals; compute separate scalers for weekday-group vs weekend-group.
+- **Option B: post-holiday decay term.** When `shortHistoryMode && forecast_date in [Jan 1 - Feb 14] && country='SE'`, apply a structural 0.85× factor. Hardcoded country-specific magic but addresses the actual signal the LLM is reacting to.
+- **Option C: exclude December samples from baseline when forecasting January in short-history mode.** Slice the 4-week window to start from Jan 1 once we're past the year boundary.
+
+Likely (C) is the cleanest fix; (B) is a fallback when (C) leaves too few samples. Save for Session 19.
+
+**Cache investigation follow-ups:**
+- Validate token count of cacheable prefix using Anthropic's count_tokens endpoint
+- If genuinely below 2048: bulk up SYSTEM_PROMPT with more worked examples (E, F)
+- If above 2048: check whether @anthropic-ai/sdk's outdated TLS / encoding is interfering (we use direct fetch, but headers might still matter)
+- Alternative: switch Piece 4 to Sonnet 4.6 just for the surface that needs caching (1024-token minimum). Costs more per call but cache would actually fire. Trade-off needs measuring.
 
 ---
 
