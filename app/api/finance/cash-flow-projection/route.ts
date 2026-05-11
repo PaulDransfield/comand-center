@@ -148,18 +148,96 @@ export async function GET(req: NextRequest) {
   const estimatedFskattMonthly = Math.round(estimatedMonthlySalary * 0.25)
   const fskattDate = estimatedFskattMonthly > 0 ? nextDayOfMonth(today, daysAhead, 12) : null
 
+  // ── VAT (Mervärdesskatt) settlement ─────────────────────────────────
+  // Skatteverket payment dates assume QUARTERLY reporting (default for
+  // SE businesses under ~40M SEK turnover — covers virtually all
+  // restaurants in our segment):
+  //   Q1 (Jan-Mar): due 12 May
+  //   Q2 (Apr-Jun): due 26 Aug
+  //   Q3 (Jul-Sep): due 26 Nov
+  //   Q4 (Oct-Dec): due 27 Feb
+  //
+  // Net VAT estimate from per-quarter monthly_metrics: output VAT on
+  // revenue (12% dine-in, 6% takeaway, 25% alcohol, 25% on other
+  // revenue components) minus a rough input VAT credit (~12% on food
+  // cost, 25% on other cost). Net is typically positive (restaurant
+  // owes Skatteverket).
+  //
+  // Magnitude is rough (±20%) but useful — owners forget VAT entirely,
+  // so even a directional projection is a step up. Phase 5+ could
+  // pull the precise VAT-account voucher data once the translator
+  // captures 2611/2614/2640/2641.
+  type VatQuarter = { quarter: 1 | 2 | 3 | 4; year: number; due: string }
+  function nextVatSettlement(from: Date, days: number): VatQuarter | null {
+    const candidates: VatQuarter[] = [
+      { quarter: 1, year: 0, due: '__-05-12' },
+      { quarter: 2, year: 0, due: '__-08-26' },
+      { quarter: 3, year: 0, due: '__-11-26' },
+      { quarter: 4, year: 0, due: '__-02-27' },   // due in following year
+    ]
+    for (let i = 0; i <= days; i++) {
+      const d   = new Date(from.getTime() + i * 86_400_000)
+      const iso = d.toISOString().slice(0, 10)
+      for (const c of candidates) {
+        const dueDay   = c.due.slice(-5)   // MM-DD
+        const isoTail  = iso.slice(-5)
+        if (dueDay !== isoTail) continue
+        const year  = d.getUTCFullYear()
+        // For Q4 (Feb settlement), Q4 belongs to prior year
+        const quarterYear = c.quarter === 4 ? year - 1 : year
+        return { quarter: c.quarter, year: quarterYear, due: iso }
+      }
+    }
+    return null
+  }
+  const vatSettlement = nextVatSettlement(today, daysAhead)
+  let estimatedVatAmount = 0
+  if (vatSettlement) {
+    const months = vatSettlement.quarter === 1 ? [1, 2, 3]
+                 : vatSettlement.quarter === 2 ? [4, 5, 6]
+                 : vatSettlement.quarter === 3 ? [7, 8, 9]
+                 : [10, 11, 12]
+    const { data: quarterRows } = await db
+      .from('monthly_metrics')
+      .select('year, month, revenue, dine_in_revenue, takeaway_revenue, alcohol_revenue, food_cost, other_cost')
+      .eq('business_id', businessId)
+      .eq('year', vatSettlement.year)
+      .in('month', months)
+    const q = quarterRows ?? []
+    if (q.length > 0) {
+      const sum = (k: string) => q.reduce((s, r: any) => s + Number(r[k] ?? 0), 0)
+      const dineIn   = sum('dine_in_revenue')
+      const takeaway = sum('takeaway_revenue')
+      const alcohol  = sum('alcohol_revenue')
+      const totalRev = sum('revenue')
+      const otherRev = Math.max(0, totalRev - dineIn - takeaway - alcohol)
+      const foodCost = sum('food_cost')
+      const otherCost = sum('other_cost')
+
+      // Output VAT (revenue figures are ex-VAT in BAS; apply rate directly)
+      const outputVat = dineIn   * 0.12
+                      + takeaway * 0.06
+                      + alcohol  * 0.25
+                      + otherRev * 0.25
+      // Input VAT (rough — most food at 12%, other at 25%)
+      const inputVat = foodCost * 0.12 + otherCost * 0.25
+      estimatedVatAmount = Math.max(0, Math.round(outputVat - inputVat))
+    }
+  }
+  const vatDate = vatSettlement && estimatedVatAmount > 0 ? vatSettlement.due : null
+
   // ── Build day-by-day projection ──────────────────────────────────────
   interface ProjectionDay {
     date:         string
     balance:      number          // running balance at end of day
-    events:       Array<{ type: 'supplier_due' | 'customer_due' | 'salary' | 'fskatt'; amount: number; label: string }>
+    events:       Array<{ type: 'supplier_due' | 'customer_due' | 'salary' | 'fskatt' | 'vat'; amount: number; label: string }>
   }
   const projection: ProjectionDay[] = []
   let running = startingBalance ?? 0
 
   // Index outflows / inflows by date
   const byDate: Record<string, ProjectionDay['events']> = {}
-  function addEvent(date: string, type: 'supplier_due' | 'customer_due' | 'salary' | 'fskatt', amount: number, label: string) {
+  function addEvent(date: string, type: 'supplier_due' | 'customer_due' | 'salary' | 'fskatt' | 'vat', amount: number, label: string) {
     if (!byDate[date]) byDate[date] = []
     byDate[date].push({ type, amount, label })
   }
@@ -176,6 +254,9 @@ export async function GET(req: NextRequest) {
   }
   if (fskattDate && estimatedFskattMonthly > 0) {
     addEvent(fskattDate, 'fskatt', -estimatedFskattMonthly, `Estimated F-skatt / employer tax (≈ 25% of staff cost)`)
+  }
+  if (vatDate && vatSettlement && estimatedVatAmount > 0) {
+    addEvent(vatDate, 'vat', -estimatedVatAmount, `Estimated VAT settlement (Q${vatSettlement.quarter} ${vatSettlement.year})`)
   }
 
   for (let i = 0; i <= daysAhead; i++) {
@@ -202,9 +283,9 @@ export async function GET(req: NextRequest) {
       cash_trough_date:   trough.date,
       cash_trough_amount: trough.balance,
       ending_balance:     projection[projection.length - 1]?.balance ?? null,
-      total_outflows_30d: Math.round(supplierResult.total + estimatedMonthlySalary + estimatedFskattMonthly),
+      total_outflows_30d: Math.round(supplierResult.total + estimatedMonthlySalary + estimatedFskattMonthly + estimatedVatAmount),
       total_inflows_30d:  Math.round(customerResult.total),
-      net_30d:            Math.round(customerResult.total - supplierResult.total - estimatedMonthlySalary - estimatedFskattMonthly),
+      net_30d:            Math.round(customerResult.total - supplierResult.total - estimatedMonthlySalary - estimatedFskattMonthly - estimatedVatAmount),
     },
     sources: {
       supplier_invoices: {
@@ -226,6 +307,13 @@ export async function GET(req: NextRequest) {
         next_due:        fskattDate,
         monthly_amount:  estimatedFskattMonthly,
         source:          estimatedFskattMonthly > 0 ? 'approx_25pct_of_staff_cost' : 'unavailable',
+      },
+      vat_estimate: {
+        next_due:        vatDate,
+        quarter:         vatSettlement?.quarter ?? null,
+        quarter_year:    vatSettlement?.year    ?? null,
+        amount:          estimatedVatAmount,
+        source:          estimatedVatAmount > 0 ? 'approx_from_monthly_metrics_revenue_costs' : 'unavailable',
       },
     },
     projection,

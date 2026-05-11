@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 
 interface ProjectionEvent {
-  type:   'supplier_due' | 'customer_due' | 'salary' | 'fskatt'
+  type:   'supplier_due' | 'customer_due' | 'salary' | 'fskatt' | 'vat'
   amount: number
   label:  string
 }
@@ -42,6 +42,7 @@ interface CashFlowResponse {
     customer_invoices: { count: number; total: number; error: string | null }
     salary_estimate:   { next_payday: string | null; monthly_amount: number; source: string }
     fskatt_estimate:   { next_due:    string | null; monthly_amount: number; source: string }
+    vat_estimate:      { next_due:    string | null; quarter: number | null; quarter_year: number | null; amount: number; source: string }
   }
   projection: ProjectionDay[]
 }
@@ -221,7 +222,7 @@ export default function CashFlowProjectionTile({ businessId }: Props) {
       )}
 
       <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 8, lineHeight: 1.4 }}>
-        Starting from booked Fortnox bank balance. Outflows = unpaid supplier invoices ({sources.supplier_invoices.count}) + estimated salary on next 25th + estimated F-skatt on next 12th (~25% of staff cost). Inflows = unpaid customer invoices ({sources.customer_invoices.count}). POS revenue and VAT settlement not projected.
+        Starting from booked Fortnox bank balance. Outflows = unpaid supplier invoices ({sources.supplier_invoices.count}) + estimated salary on next 25th + estimated F-skatt on next 12th (≈ 25 % of staff cost){sources.vat_estimate.amount > 0 ? ` + estimated VAT settlement for Q${sources.vat_estimate.quarter} ${sources.vat_estimate.quarter_year}` : ''}. Inflows = unpaid customer invoices ({sources.customer_invoices.count}). Quarterly VAT (assumed). POS revenue not projected.
       </div>
     </div>
   )
