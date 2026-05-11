@@ -1,7 +1,52 @@
 # ROADMAP.md — CommandCenter
-> Version 8.8 | Updated: 2026-05-07 | Session 17 ✅ (Fortnox OAuth chain unblocked + 12-month backfill + overhead drilldown)
-> Active focus: Vero owner onboarding scheduled Saturday 2026-05-09. Stripe price IDs still pending. i18n coverage of /scheduling, /notebook, /overheads/* still pending.
+> Version 8.9 | Updated: 2026-05-11 | Session 17 ✅ (Fortnox OAuth chain unblocked + 12-month backfill + overhead drilldown)
+> Active focus: Piece 4 LLM-adjust + cold-start clamp re-run, then add-second-business flow. Stripe price IDs still pending. i18n coverage of /scheduling, /notebook, /overheads/* still pending.
 > Read alongside CLAUDE.md and FIXES.md
+
+---
+
+## Upcoming — Add-second-business flow
+
+See `ADD-SECOND-BUSINESS-PLAN.md` for full write-up.
+
+Surfaced 2026-05-11 while inspecting how an existing customer (e.g. Vero) would add another location post-onboarding. The bare insert path works (`/settings` → "Add location" → 3-field modal → `/api/businesses/add`) but the surrounding policy + data-capture story doesn't:
+
+- **No plan-limit enforcement.** Solo=1, Group=5, Chain=∞ defined in `lib/stripe/config.ts`, never read by the API or UI. Only the 20/hour anti-abuse rate limit catches a Solo customer adding their second business.
+- **Stripped data capture.** Modal collects name/city/type only. Onboarding collects address, validated org-nr, business_stage (M046), opening_days (M046), country, cost targets, optional last-year P&L PDF. Budget AI + scheduling AI + holiday routing all key off the M046 fields — a second business added today runs predictive models on defaults.
+- **No integration onboarding.** Owner is dropped back on settings; has to discover `/integrations`, switch sidebar, connect PK + Fortnox per business themselves.
+
+**Proposed flow** (~½ day work):
+1. `/api/businesses/add` plan-limit check returning 402 with `{ error, upgrade_to }` (15 min)
+2. Settings UI disables button at limit + upgrade CTA (30 min)
+3. "Add location" routes into `/onboarding?append=1` reusing the existing wizard (1-2h)
+4. Replace bare modal with wizard redirect (15 min)
+5. Verify Fortnox/PK steps work in append mode (30 min)
+
+**Open policy questions before shipping:**
+- Downgrade behaviour (Group with 4 businesses → Solo limit 1: hide? read-only? block downgrade?)
+- Founding tier (limit 3) interaction with 24-month price-lock
+- Org-nr collision detection: same org-nr = department of existing business, not a new business?
+
+Worth doing before the second-location customer lands; onboarding the first multi-location group with a half-finished flow burns trust.
+
+---
+
+## Session 18 (in-flight) — 2026-05-11 (Piece 4 + cold-start clamp + Fortnox token-refresh)
+
+**A. Fortnox token refresh** — Vero's dashboard started 401-ing the day after her OAuth onboarding because `recent-invoices` / `drilldown` / `invoice-pdf` were reading `creds.access_token` raw with no expiry check. New shared helper `lib/fortnox/api/auth.ts` (`getFreshFortnoxAccessToken()`) loads the integration, checks `access_token_expires_at`, refreshes via the standard OAuth refresh-token flow if expired, persists new tokens + new expiry, returns a guaranteed-fresh bearer. All three customer-facing Fortnox endpoints now route through it.
+
+**B. Piece 4 LLM-adjust backtest run + two fixes** — Backtest endpoint ran 30 days for Vero (Jan 2026 – early May 2026):
+
+- MAPE delta: −28.5pp (consolidated 143.3% → llm_adjusted 114.8%)
+- Bias: +104.2% → +69.6% — over-prediction halved
+- 30/30 written, 0 nulls, 0 errors, 0 skipped → soft-fail + clamp + write paths all work end-to-end
+
+But two issues surfaced:
+
+1. **Prompt cache 0/0 hit rate.** `cache_creation.ephemeral_5m_input_tokens=0` across all 30 calls. Root cause: explicit `ttl: '5m'` requires `anthropic-beta: extended-cache-ttl-2025-04-11` header; without it the API silently drops the entire `cache_control`. Fix: removed `ttl: '5m'`, default 5-min TTL is implicit. New memory: `feedback_anthropic_cache_control_ttl.md`.
+2. **Cold-start clamp inflation** (memory: `feedback_cold_start_clamp_inflation.md`). Both surfaces 100%+ off in January because the `this_week_scaler` floor of 0.75 forbid dampening below 75% even when raw scaler was 0.29-0.52. Floor exists to protect mature baselines from one weird day; in short-history mode the baseline ITSELF is suspect. Fix: relaxed scaler floor to 0.50 / ceil to 1.50 when `shortHistoryMode=true`. `thisWeekScaler()` signature extended with `opts.shortHistoryMode` (other callers in `lib/weather/demand.ts` + `app/api/scheduling/ai-suggestion/route.ts` unchanged — they default to mature-mode clamps). Snapshot's `clamped_at_min/max` + `scaler_floor/ceil` now reflect the per-call values.
+
+**Pending re-run** — backtest with both fixes applied. Expectations: cache token columns >0 on first call, ≥2000 on subsequent calls; consolidated MAPE drops materially as deterministic system can now apply the corrections the LLM was doing; LLM MAPE may converge with consolidated and potentially fail the ≥3pp cutover criterion (which is correct and fine — LLM is enrichment, not load-bearing).
 
 ---
 
