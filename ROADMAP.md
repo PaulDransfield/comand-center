@@ -84,6 +84,19 @@ Two findings:
 - 3 null LLM returns on Feb 1-3 — looks like an Anthropic API transient at the tail of the run (skipQuotaGate=true so not quota; 3 consecutive at end suggests rate-limit or service blip). Add a single-shot retry with 1s backoff in `llm-adjust.ts` before next run.
 - The ≥3pp cutover criterion FAILED in the LLM's direction — deterministic is now BETTER than LLM-adjusted. Architecturally the right call: surface deterministic to UI by default. LLM enrichment remains as an opt-in / explain-mode surface.
 
+**Cutover wired 2026-05-11 (Session 18 continued):**
+
+- **Backfill refreshed to `consolidated_v1.3.0`** — re-ran `scripts/backfill-vero-consolidated-forecasts.ts`. New numbers across 116 days:
+  - MAPE **64.6 %** (was 71.0% on v1.2.0 — Option C delivered 6.4pp improvement on the full window)
+  - Bias **+13.9 %** (was +35.5% — 21.6pp bias reduction; system is now essentially unbiased)
+  - Legacy `scheduling_ai_revenue`: n=1 only, can't statistically compare. Even on that single day legacy hit 74.9% MAPE; consolidated 64.6% over 116 days is the clear winner.
+
+- **Cutover code wired in `/api/scheduling/ai-suggestion`** — surgical change. When `PREDICTION_V2_DASHBOARD_CHART` flag is on for a business: pre-fetches consolidated forecasts in parallel for future dates in the range, swaps `avgRev` source from the legacy `rawAvgRev * thisWeekScale` to the consolidated `predicted_revenue`. Everything downstream (scheduling math, P75 rev/hour, hour targets, owner UI) consumes the same `avgRev` variable — swap is invisible to other consumers. Legacy `scheduling_ai_revenue` capture is bypassed when flag is on (consolidated capture handles the audit ledger). Soft-fails to legacy math if any `dailyForecast()` call throws.
+
+- **Flag flip script ready** — `scripts/flip-prediction-v2-dashboard-chart-vero.sql`. One-line SQL to activate cutover for Vero. Idempotent. Rollback is `enabled = false`.
+
+**To activate cutover for Vero:** run the SQL in Supabase SQL Editor against production. Then open her dashboard — the revenue prediction line will source from `consolidated_v1.3.0` (with holiday filter, klamdag, salary cycle, school holiday, weather-bucket lift). No other code change needed.
+
 **Remaining issues observed in samples:**
 
 - **Per-day variance is still wide.** Saturday 01-09 went UP after filter (105k → 140k) because removing Christmas peaks left Vero's *opening-week* Dec 12 / Dec 19 samples — those are also non-representative (launch-week revenue). Filter is binary "Christmas peak vs not"; doesn't see "opening week" as a separate regime. Acceptable for now — once Vero accumulates more post-Christmas history, the 4-week window slides past the launch period naturally.

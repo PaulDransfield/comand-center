@@ -23,6 +23,8 @@ import { getWorkPeriods }              from '@/lib/pos/personalkollen'
 import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
 import { weightedAvg, thisWeekScaler, RECENCY, adaptiveRecencyParams } from '@/lib/forecast/recency'
 import { captureForecastOutcomes }              from '@/lib/forecast/audit'
+import { dailyForecast }                        from '@/lib/forecast/daily'
+import { isPredictionV2FlagEnabled }            from '@/lib/featureFlags/prediction-v2'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -300,6 +302,45 @@ export async function GET(req: NextRequest) {
   }
   const { scaler: thisWeekScale, samples: thisWeekSamples, raw: thisWeekRaw } = thisWeekScaler(scalerInput)
 
+  // ── Piece 2 / v2 cutover: per-business flag-gated revenue source ─────────
+  // When PREDICTION_V2_DASHBOARD_CHART is enabled for this business, we
+  // replace the legacy "weekday-weighted-avg × this-week-scaler" revenue
+  // prediction with the consolidated forecaster's output (lib/forecast/
+  // daily.ts → dailyForecast). Everything downstream (scheduling math,
+  // P75 rev/hour, hour targets, owner UI) continues to consume the same
+  // `avgRev` variable — the swap is invisible to the rest of the route.
+  //
+  // Off (default): legacy math, no behavioural change.
+  // On:            consolidated_v1.3.0 — holiday-period filter, klamdag,
+  //                school-holiday, salary-cycle, weather-bucket lift,
+  //                yoy-anchor, this-week scaler. MAPE 64.6% / bias +13.9 %
+  //                on 116 Vero days (2026-05-11 backtest).
+  //
+  // We pre-fetch one consolidated prediction per future date in the
+  // range so the inner loop is sync. Past days fall back to actuals
+  // regardless of flag.
+  const v2ChartFlagOn = await isPredictionV2FlagEnabled(bizId, 'PREDICTION_V2_DASHBOARD_CHART', db)
+  const consolidatedRevByDate: Record<string, number> = {}
+  if (v2ChartFlagOn) {
+    const futureDates = Object.keys(currentByDate)
+      .filter(d => (actualByDateInRange[d] ?? 0) <= 0)
+      .sort()
+    // Parallel — dailyForecast is read-only (skipLogging=true keeps it
+    // from writing capture rows on dashboard re-renders; the daily
+    // capture cron handles the production audit ledger separately).
+    const results = await Promise.allSettled(
+      futureDates.map(async d => {
+        const fc = await dailyForecast(bizId, new Date(d + 'T12:00:00Z'), { db, skipLogging: true })
+        return { date: d, predicted: fc.predicted_revenue }
+      }),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.predicted > 0) {
+        consolidatedRevByDate[r.value.date] = r.value.predicted
+      }
+    }
+  }
+
   // ── Suggested schedule: target rev-per-hour at 75th percentile of history ─
   // If last 8 weeks Mon averaged 25k rev at 40h (= 625 kr/h), and the best Mons
   // ran 800 kr/h with 32h, target 32h next Monday on a 25k forecast = "8h less
@@ -347,7 +388,16 @@ export async function GET(req: NextRequest) {
     // days within the period keep their actual value as the prediction
     // (no scaling needed; the truth IS the actual).
     const dayHasActual = (actualByDateInRange[date] ?? 0) > 0
-    const avgRev      = Math.round(dayHasActual ? rawAvgRev : rawAvgRev * thisWeekScale)
+    // V2 cutover: if PREDICTION_V2_DASHBOARD_CHART is on for this business
+    // AND we have a consolidated prediction for this date, use it. Falls
+    // back to legacy math if the consolidated call failed for any reason
+    // (soft-fail: never block the dashboard).
+    const consolidatedRev = v2ChartFlagOn ? consolidatedRevByDate[date] : undefined
+    const avgRev = Math.round(
+      dayHasActual
+        ? rawAvgRev
+        : (consolidatedRev != null ? consolidatedRev : rawAvgRev * thisWeekScale),
+    )
     const avgHours    = Math.round(wAvg(sourceHours, sourceHoursDates) * 10) / 10
     const sortedRph   = [...sourceRph].sort((a, b) => a - b)
     const p75Rph      = sortedRph.length ? sortedRph[Math.floor(sortedRph.length * 0.75)] : 0
@@ -425,7 +475,13 @@ export async function GET(req: NextRequest) {
   // row against actual revenue once daily_metrics catches up. Soft-fails;
   // never blocks the response. Backtest write guard inside captureForecastOutcomes
   // skips past dates so dashboard back-test calls don't pollute MAPE-by-horizon.
-  await captureForecastOutcomes(
+  //
+  // V2 cutover: when PREDICTION_V2_DASHBOARD_CHART is on, the revenue values
+  // in `suggested[]` already come from dailyForecast(), and the consolidated
+  // capture path is the canonical record. Skip the legacy 'scheduling_ai_revenue'
+  // surface capture so we don't write rows tagged as legacy that actually
+  // came from the v2 forecaster — that would corrupt MAPE-by-surface.
+  if (!v2ChartFlagOn) await captureForecastOutcomes(
     suggested
       .filter((s: any) => s.est_revenue > 0)
       .map((s: any) => ({
