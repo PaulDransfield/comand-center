@@ -298,11 +298,17 @@ export async function llmAdjustForecast(
       return null
     }
 
-    // System prompt: two cache-friendly blocks. ROLE_AND_RULES is the
-    // bulk-static piece. SCHEMA_AND_EXAMPLES is also stable but separated
-    // so a future change to the worked-examples doesn't bust the rules
-    // cache. cache_control: {type:'ephemeral'} on the LAST cacheable
-    // block — the API caches up to and including that block.
+    // System prompt as a single text block with cache_control. Earlier
+    // (2026-05-11) we split into two blocks for "future change to the
+    // worked-examples doesn't bust the rules cache" — but the diagnostic
+    // run showed Anthropic responded with cache_creation.ephemeral_5m=0,
+    // suggesting the second-block-only cached chunk fell below the 2048
+    // token minimum for Haiku 4.5. Collapsing into one block gives a
+    // single ~2700-token cached prefix that comfortably clears the
+    // threshold. Granular cache invalidation isn't worth the cost of
+    // 0/0 hit rate.
+    const SYSTEM_PROMPT = ROLE_AND_RULES + '\n\n' + SCHEMA_AND_EXAMPLES
+
     const httpResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       signal: abort.signal,
@@ -316,11 +322,16 @@ export async function llmAdjustForecast(
       body: JSON.stringify({
         model:       AI_MODELS.AGENT,
         max_tokens:  MAX_TOKENS.AGENT_RECOMMENDATION,
-        tools:       [submitAdjustmentTool],
+        // cache_control on the tool definition too — system + tools are
+        // both static across calls, and tools come AFTER system in the
+        // cache-key order. Marking the last static thing (the tool)
+        // caches system + tools as one big chunk. Belt-and-braces with
+        // the system-side marker — if either lands a cache chunk over
+        // the minimum threshold, we get a hit.
+        tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral' } }],
         tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
         system: [
-          { type: 'text', text: ROLE_AND_RULES },
-          { type: 'text', text: SCHEMA_AND_EXAMPLES, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
         ],
         messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
       }),
