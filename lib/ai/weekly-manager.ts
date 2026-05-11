@@ -435,7 +435,7 @@ ${ctx.nextWeekAnalogues.length ? `NEXT WEEK ANALOGUES (forecast matched to your 
 ${ctx.nextWeekAnalogues.map(a => `  ${a.date} ${a.weekday}: forecast ${a.forecast_summary} → bucket=${a.bucket}. ${a.analogue_days >= 2 ? `Matching historicals: ${a.analogue_days} days, avg rev ${fmt(a.analogue_avg_rev ?? 0)} (vs all-${a.weekday} avg ${fmt(a.all_weather_avg_rev)})` : `Only ${a.analogue_days} matching historicals — not enough to be confident.`}`).join('\n')}` : ''}
 
 ${ctx.demandForecast?.days?.length ? `WEATHER-DRIVEN DEMAND FORECAST (next 7 days, this business)
-Model: predicted_revenue = baseline_for_weekday × bucket_lift_for_this_business. Baseline = trailing 12-week per-weekday average. Bucket lift = (avg revenue in this bucket) / (overall avg) for this business specifically. Confidence reflects historical sample size in the matched bucket.
+Model: a multi-signal daily revenue forecaster anchored on a per-weekday baseline for this business, adjusted for weather bucket (historical revenue at this weather pattern vs overall), national holidays, klämdag effects, school-holiday periods, salary-cycle phase (Swedish 25th payday), and a this-week pull-forward scaler from completed days. Confidence reflects signal sample sizes overall. Treat predicted_revenue as the model's best estimate and delta_pct as the deviation from a typical day of the same weekday.
 ${ctx.demandForecast.days.map(d => {
   const tag = d.is_holiday ? `HOLIDAY: ${d.holiday_name}` : `${d.confidence.toUpperCase()} confidence (${d.sample_size} historical days in bucket)`
   const delta = d.is_holiday ? '' : ` (${d.delta_pct >= 0 ? '+' : ''}${d.delta_pct}% vs typical ${d.weekday})`
