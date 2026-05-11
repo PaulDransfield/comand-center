@@ -79,6 +79,15 @@ export interface ConsolidatedV1Snapshot {
     recency_multiplier_applied:    number
     stddev:                        number
     anomaly_days_excluded:         number
+    /** Count of baseline candidates that were inside the Christmas
+     *  holiday window (Dec 20 - Jan 6) and got dropped because the
+     *  forecast date was outside that window in short-history mode.
+     *  0 when the filter wasn't eligible or didn't fire. */
+    holiday_samples_excluded:      number
+    /** True when at least one sample was actually filtered (i.e. the
+     *  filter was eligible AND the post-filter sample count cleared
+     *  the minimum-samples safety threshold). */
+    holiday_filter_active:         boolean
   }
 
   yoy_same_weekday: {
@@ -181,13 +190,47 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.2.0'   // Piece 4 fix — disable trailing_12m_growth_multiplier in short-history mode; was clamping at 1.5× and inflating cold-start baselines (2026-05-10)
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.3.0'   // 2026-05-11: cold-start holiday-period exclusion — when forecasting outside Dec 20-Jan 6 in short-history mode, exclude same-period samples from the weekday baseline so December Christmas-week peaks don't anchor January regular-trading predictions
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
 const SHORT_HISTORY_THRESHOLD_DAYS = 180
 const HISTORY_DAYS_FOR_HIGH  = 180
 const HISTORY_DAYS_FOR_MED   = 60
+
+// Cold-start holiday-period exclusion window. Swedish restaurant revenue
+// in late December is a different regime (Christmas / New Year peaks +
+// klamdag squeeze days + Jullov school break) that doesn't continue into
+// regular January trading. When the 4-week short-history baseline window
+// straddles the year boundary, December samples dominate the average and
+// inflate January predictions by 2-5×.
+//
+// Solution: when forecasting OUTSIDE this window in short-history mode,
+// drop any baseline samples that fall INSIDE it. Forecasts that are
+// themselves inside the window (e.g. forecasting Dec 27 from a Dec 6
+// start) keep the holiday samples as peer evidence.
+//
+// Window: Dec 20 - Jan 6 inclusive. Captures the lead-up to Christmas
+// (last shopping Saturdays, Lucia work-do peaks), Christmas week itself,
+// New Year, and Trettondedag jul (Jan 6).
+//
+// Filter only applies in short-history mode (≤ 180 days history). Once
+// the business has a full year, the 12-week mature window doesn't reach
+// back to the prior December anyway, AND yoy_same_weekday + the proper
+// recency-weighted average handle seasonal transitions correctly.
+const HOLIDAY_PERIOD_START_MONTH = 11   // December (0-indexed)
+const HOLIDAY_PERIOD_START_DAY   = 20
+const HOLIDAY_PERIOD_END_MONTH   = 0    // January
+const HOLIDAY_PERIOD_END_DAY     = 6
+const HOLIDAY_FILTER_MIN_SAMPLES = 2    // below this, fall back to unfiltered to avoid 1-sample noise
+
+function isInHolidayPeriod(d: Date): boolean {
+  const month = d.getUTCMonth()
+  const day   = d.getUTCDate()
+  if (month === HOLIDAY_PERIOD_START_MONTH && day >= HOLIDAY_PERIOD_START_DAY) return true
+  if (month === HOLIDAY_PERIOD_END_MONTH   && day <= HOLIDAY_PERIOD_END_DAY)   return true
+  return false
+}
 
 // Sample-size guardrails from architecture §3
 const MIN_SAMPLES = {
@@ -298,13 +341,34 @@ export async function dailyForecast(
   const baselineCutoffMs       = asOfDate.getTime() - (effectiveBaselineWeeks * 7 * 86_400_000)
 
   // ── 1. Weekday baseline (recency-weighted, anomaly-filtered) ────────
-  const weekdayMatches = dailyMetrics
+  const baseWeekdayMatches = dailyMetrics
     .filter((r: any) => Number(r.revenue ?? 0) > 0)
     .filter((r: any) => new Date(r.date + 'T12:00:00Z').getUTCDay() === weekday)
     .filter((r: any) => !contaminatedSet.has(r.date))
     // Short-history mode: tighter window (4 weeks instead of 12) so we
     // don't anchor on stale months that no longer represent the customer.
     .filter((r: any) => new Date(r.date + 'T12:00:00Z').getTime() >= baselineCutoffMs)
+
+  // Cold-start holiday-period exclusion (only matters in short-history
+  // mode for forecasts in early Jan / late Dec). When the forecast date
+  // is OUTSIDE the Christmas holiday window but the baseline would
+  // include samples that ARE inside it, those samples represent a
+  // different revenue regime and inflate the average. Drop them.
+  const forecastInHolidayPeriod = isInHolidayPeriod(date)
+  const holidayFilterEligible   = shortHistoryMode && !forecastInHolidayPeriod
+  const filteredCandidates      = holidayFilterEligible
+    ? baseWeekdayMatches.filter((r: any) => !isInHolidayPeriod(new Date(r.date + 'T12:00:00Z')))
+    : baseWeekdayMatches
+
+  // Safety: if the filter removes too much, fall back to the unfiltered
+  // set. 1-sample baselines are worse than a holiday-contaminated 4-sample
+  // baseline because a single weekday observation has no variance signal.
+  const holidayFilterApplied = holidayFilterEligible && filteredCandidates.length >= HOLIDAY_FILTER_MIN_SAMPLES
+  const weekdayMatches       = holidayFilterApplied ? filteredCandidates : baseWeekdayMatches
+  const holidayFilterFellBack = holidayFilterEligible && !holidayFilterApplied
+  const holidaySamplesExcluded = holidayFilterApplied
+    ? baseWeekdayMatches.length - filteredCandidates.length
+    : 0
 
   const weekdayValues = weekdayMatches.map((r: any) => Number(r.revenue))
   const weekdayDates  = weekdayMatches.map((r: any) => r.date as string)
@@ -589,9 +653,11 @@ export async function dailyForecast(
 
   // ── Build inputs_snapshot ──────────────────────────────────────────
   const dataQualityFlags: string[] = []
-  if (totalDaysOfHistory < 60)  dataQualityFlags.push('low_history')
-  if (contaminatedSet.size > 0) dataQualityFlags.push('anomaly_window_uncertain')
-  if (shortHistoryMode)         dataQualityFlags.push('short_history_mode_4w_unweighted')
+  if (totalDaysOfHistory < 60)   dataQualityFlags.push('low_history')
+  if (contaminatedSet.size > 0)  dataQualityFlags.push('anomaly_window_uncertain')
+  if (shortHistoryMode)          dataQualityFlags.push('short_history_mode_4w_unweighted')
+  if (holidayFilterApplied)      dataQualityFlags.push('cold_start_holiday_samples_excluded')
+  if (holidayFilterFellBack)     dataQualityFlags.push('cold_start_holiday_filter_fellback_too_few_samples')
 
   const snapshot: ConsolidatedV1Snapshot = {
     snapshot_version: SNAPSHOT_VERSION,
@@ -607,6 +673,8 @@ export async function dailyForecast(
       anomaly_days_excluded:      [...contaminatedSet].filter(d =>
         new Date(d + 'T12:00:00Z').getUTCDay() === weekday,
       ).length,
+      holiday_samples_excluded:   holidaySamplesExcluded,
+      holiday_filter_active:      holidayFilterApplied,
     },
 
     yoy_same_weekday: yoySameWeekdayAvailable

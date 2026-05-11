@@ -59,13 +59,21 @@ Two findings:
 
 2. **Cache fix didn't fire either.** Removing `ttl: '5m'` from cache_control should have made the default 5-minute TTL fire, but `cache_creation_input_tokens=0` again. System prompt is ~2,700 tokens (above Haiku 4.5's 2048 minimum) and the deploy IS live (LLM reasoning explicitly references the new floor before revert). Either the prefix is borderline-below threshold and my token estimate is wrong, or something else is dropping the cache_control. Cost impact at production volume is negligible (~$0.005/call), so deferred. Open question logged in ROADMAP follow-ups; not blocking.
 
-**Real architectural problem surfaced — cold-start over-prediction is not a clamp problem.** The deterministic forecaster's `weekday_baseline` is anchored on a 4-week unweighted window that includes December peaks when forecasting January. The LLM is correctly identifying this in every single sample reasoning, dampening to 0.78-0.85, and recovering ~28pp of MAPE. But the LLM is enrichment, not load-bearing — the right fix is at the deterministic layer:
+**Real architectural problem surfaced — cold-start over-prediction is not a clamp problem.** The deterministic forecaster's `weekday_baseline` is anchored on a 4-week unweighted window that includes December peaks when forecasting January. The LLM is correctly identifying this in every single sample reasoning, dampening to 0.78-0.85, and recovering ~28pp of MAPE. But the LLM is enrichment, not load-bearing — the right fix is at the deterministic layer.
 
-- **Option A: weekday-aware this_week_scaler.** Don't dampen Sat-Sun based on Mon-Wed actuals; compute separate scalers for weekday-group vs weekend-group.
-- **Option B: post-holiday decay term.** When `shortHistoryMode && forecast_date in [Jan 1 - Feb 14] && country='SE'`, apply a structural 0.85× factor. Hardcoded country-specific magic but addresses the actual signal the LLM is reacting to.
-- **Option C: exclude December samples from baseline when forecasting January in short-history mode.** Slice the 4-week window to start from Jan 1 once we're past the year boundary.
+**Option C SHIPPED 2026-05-11** — cold-start holiday-period exclusion (`consolidated_v1.3.0`):
 
-Likely (C) is the cleanest fix; (B) is a fallback when (C) leaves too few samples. Save for Session 19.
+- New helper `isInHolidayPeriod(date)` in `lib/forecast/daily.ts` — returns true for Dec 20-31 and Jan 1-6 (the Swedish restaurant Christmas/New Year regime).
+- When `shortHistoryMode && !forecastInHolidayPeriod`, the weekday-baseline filter drops same-weekday samples that fall inside the holiday window. December peaks no longer anchor January predictions.
+- Safety fallback: if filtering would leave < 2 surviving samples, revert to unfiltered. Surfaced as the `cold_start_holiday_filter_fellback_too_few_samples` flag so the LLM can apply soft dampening in that case.
+- Two new dataQualityFlags: `cold_start_holiday_samples_excluded` (filter fired) and `cold_start_holiday_filter_fellback_too_few_samples` (filter wanted to fire but couldn't).
+- Snapshot `weekday_baseline` now carries `holiday_samples_excluded` (count) and `holiday_filter_active` (bool).
+- LLM prompt updated: Example A is now "filter active → defer to deterministic, factor=1.0"; new Example A2 is "filter fell back → ~15% dampening still warranted". The "HOLIDAY-FILTER GUARDRAIL" rule explicitly stops the LLM from double-counting the correction.
+- Filter is only relevant in short-history mode — once the business has ≥180 days history, the 12-week mature window doesn't reach back to the prior December anyway, AND yoy_same_weekday + recency-weighted average handle seasonal transitions correctly. Self-removing scaffolding.
+
+**Deferred:**
+- Option A (weekday-aware scaler) — worth revisiting if Sat-Sun under-prediction persists post-Option-C.
+- Option B (structural post-holiday decay term) — country-specific magic; rejected in favor of C's data-driven approach.
 
 **Cache investigation follow-ups:**
 - Validate token count of cacheable prefix using Anthropic's count_tokens endpoint
