@@ -195,6 +195,65 @@ const SCHEMA_AND_EXAMPLES = `INPUT SHAPE — every call you receive a JSON paylo
 
 You should focus on inputs_snapshot.data_quality_flags and the .available=false branches first — that's where the deterministic forecaster admits its gaps. The components object is what got applied; if any factor is at its clamp boundary (this_week_scaler at floor/ceil, salary_cycle at 0.7 or 1.3) the deterministic logic has already hit a guardrail and may be partially wrong.
 
+SIGNAL REFERENCE — what each input means and how the deterministic forecaster uses it:
+
+  weekday_baseline      Recency-weighted average revenue for this weekday over the last 12 weeks
+                        (or 4 weeks if shortHistoryMode). Recent 28 days count 2× older days.
+                        Filters out confirmed-anomaly dates and (in shortHistoryMode + Jan/early-Feb)
+                        excludes Dec 20-Jan 6 Christmas-period samples. The .recent_28d_samples
+                        count is the most important field — when it's ≤ 4, the average is fragile
+                        and one outlier (good or bad) materially shifts the prediction.
+
+  yoy_same_month        Trailing-12-month growth rate applied as a multiplier. Disabled in
+                        shortHistoryMode and when the prior-12 sum is < 50% of last-12 (Vero
+                        cold-start guard). When applied, value is between 0.5× and 1.5×.
+
+  yoy_same_weekday      Activates at 365+ days history. 30% weight blended with weekday_baseline.
+                        Captures seasonal transitions the 12-week window misses. Currently
+                        unavailable for Vero (opened Dec 2025); will activate Nov 2026.
+
+  weather_lift          Multiplier from historical revenue at this weather bucket vs overall.
+                        Available only when ≥ 10 prior days in the same bucket. Range 0.6-1.3.
+
+  weather_change_vs_seasonal  Piece 3 — multi-year seasonal weather norm comparison. Compares
+                        forecast-day weather against same-week-of-year historical norm. Available
+                        only with ≥ 1 prior-year same-week observation.
+
+  holiday               Binary detection from country-specific holiday module. lift_factor is
+                        baked into the prediction; we do NOT override holidays the deterministic
+                        already detected.
+
+  klamdag               "Squeeze day" between a public holiday and a weekend. Lift of 1.5× by
+                        default in Sweden (high coffee + lunch traffic). klamdag_pct in components
+                        is what got applied.
+
+  school_holiday        Active when kommun-aware Swedish school break overlaps. Lift varies by
+                        break (Jullov, Sportlov, Höstlov). Region-resolved when business has kommun
+                        and lan set; falls back to national if not.
+
+  salary_cycle          Phase based on Swedish 25th-of-month payday convention. Lifts revenue
+                        around_payday (~1.3×), dampens end_month (~0.9×). Applied as a
+                        multiplicative factor before this_week_scaler.
+
+  this_week_scaler      Median ratio of actual / predicted for completed days of the current week.
+                        Clamped to [0.75, 1.25] to keep one weird day from doubling the rest of the
+                        week. clamped_at_min=true means actuals are running below model and the
+                        cap is being hit (deterministic has already dampened by 25%). clamped_at_max
+                        is the opposite.
+
+  anomaly_contamination Confirmed revenue anomalies in the baseline window. The deterministic
+                        forecaster has already excluded these from weekday_baseline; you do not
+                        need to second-guess.
+
+  data_quality_flags    The most important field for your job. Each flag indicates a structural
+                        problem the deterministic forecaster has admitted but cannot fully
+                        correct. Known flags and their interpretation:
+                          'low_history'                                     < 60 days history
+                          'short_history_mode_4w_unweighted'                < 180 days history
+                          'anomaly_window_uncertain'                        owner-confirmed anomalies in baseline
+                          'cold_start_holiday_samples_excluded'             Dec 20-Jan 6 samples dropped from baseline
+                          'cold_start_holiday_filter_fellback_too_few_samples'  filter wanted to drop, couldn't
+
 WORKED EXAMPLES (do not echo, just for calibration):
 
   Example A — January, short_history_mode + holiday filter ACTIVE:
@@ -218,10 +277,10 @@ WORKED EXAMPLES (do not echo, just for calibration):
     Reason: Deterministic signals look complete — weekday baseline, weather, salary cycle
             all available with healthy sample counts. No override.
 
-  Example C — this_week_scaler clamped at 1.10 (max), salary phase 'around_payday':
-    Input: scaler.applied=1.10, scaler.clamped_at_max=true, salary phase 'around_payday'
+  Example C — this_week_scaler clamped at 1.25 (max), salary phase 'around_payday':
+    Input: scaler.applied=1.25, scaler.clamped_at_max=true, salary phase 'around_payday'
     Output: adjustment_factor=1.05, confidence='medium'
-    Reason: this-week-scaler hit ceiling 1.10 — deterministic capped its own lift. Combined
+    Reason: this-week-scaler hit ceiling 1.25 — deterministic capped its own lift. Combined
             with payday Friday, modest additional lift to 1.05× is supported.
 
   Example D — this_week_scaler clamped at FLOOR (0.75) with thin baseline:
@@ -231,7 +290,31 @@ WORKED EXAMPLES (do not echo, just for calibration):
             additional dampening on top of a 3-sample baseline compounds noise — the floor
             exists precisely because thin-history weekday averages are unreliable, not
             because the day is genuinely depressed. Prefer 1.0 unless a specific signal
-            justifies further movement. (Inverse of Example C — symmetric rule.)`
+            justifies further movement. (Inverse of Example C — symmetric rule.)
+
+  Example E — weather_lift unavailable + harsh weather forecast:
+    Input: weather_lift.available=false, reason='insufficient_bucket_samples',
+           weather_forecast.bucket='heavy_snow', weather_forecast.temp_max=-8,
+           weekday_name='Saturday', is_weekend=true
+    Output: adjustment_factor=0.90, confidence='medium'
+    Reason: weather_lift cannot quantify the heavy-snow effect (no prior samples in this bucket),
+            but a -8°C heavy-snow Saturday systematically depresses Stockholm restaurant revenue
+            10-20%. Modest dampening is warranted as a "signal-the-model-cannot-see" override.
+
+  Example F — yoy_same_weekday available but disagrees with weekday_baseline:
+    Input: yoy_same_weekday.available=true, yoy_same_weekday.revenue=180000,
+           weekday_baseline.recency_weighted_avg=90000, predicted_revenue 117k
+    Output: adjustment_factor=1.0, confidence='high'
+    Reason: deterministic already blends YoY same-weekday at 30% weight with the weekday baseline
+            (the 117k prediction is the 70/30 blend). The divergence is captured in the model.
+            Do not double-count by lifting further toward the YoY signal.
+
+  Example G — confidence='low' from a thin baseline, no specific override signal:
+    Input: confidence='low', weekday_baseline.recent_28d_samples=2, no data_quality_flags
+    Output: adjustment_factor=1.0, confidence='low'
+    Reason: deterministic confidence is honestly low — that itself is the right output. Adjusting
+            on a thin baseline without a specific contextual override (named event, weather
+            anomaly, payday near-miss) compounds noise. Mirror the confidence; don't paper over it.`
 
 // ── Main entry ────────────────────────────────────────────────────────────
 
