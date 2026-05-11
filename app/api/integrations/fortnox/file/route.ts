@@ -20,8 +20,8 @@
 
 import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
-import { decrypt }                      from '@/lib/integrations/encryption'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
+import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -51,30 +51,23 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'Business not found in your org' }, { status: 404 })
 
-  // Find the connected Fortnox integration for this business.
-  const { data: integ } = await db
-    .from('integrations')
-    .select('credentials_enc')
-    .eq('org_id', auth.orgId)
-    .eq('business_id', businessId)
-    .eq('provider', 'fortnox')
-    .eq('status', 'connected')
-    .limit(1)
-    .maybeSingle()
-
-  if (!integ?.credentials_enc) {
-    return NextResponse.json({ error: 'No connected Fortnox integration for this business' }, { status: 404 })
-  }
-
-  let creds: any
+  // Resolve a live Fortnox access token via the shared helper. Refreshes
+  // via refresh_token when the stored access_token is within 5min of its
+  // 60-min expiry. This route was missed in the 2026-05-11 token-refresh
+  // fix that covered recent-invoices / drilldown / invoice-pdf — after
+  // the morning's OAuth tokens expired (10h after onboarding), this
+  // endpoint started 401-ing while the other three auto-refreshed.
+  let accessToken: string | null
   try {
-    creds = JSON.parse(decrypt(integ.credentials_enc) ?? '{}')
-  } catch {
-    return NextResponse.json({ error: 'Failed to decrypt Fortnox credentials' }, { status: 500 })
+    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+  } catch (err: any) {
+    return NextResponse.json({
+      error:   'fortnox_token_refresh_failed',
+      message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
+    }, { status: 401 })
   }
-  const accessToken = String(creds?.access_token ?? '')
   if (!accessToken) {
-    return NextResponse.json({ error: 'No Fortnox access token' }, { status: 500 })
+    return NextResponse.json({ error: 'No connected Fortnox integration for this business' }, { status: 404 })
   }
 
   // Try inbox first (where uploaded supplier-invoice files live before being
