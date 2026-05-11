@@ -97,6 +97,22 @@ Two findings:
 
 **To activate cutover for Vero:** run the SQL in Supabase SQL Editor against production. Then open her dashboard — the revenue prediction line will source from `consolidated_v1.3.0` (with holiday filter, klamdag, salary cycle, school holiday, weather-bucket lift). No other code change needed.
 
+**Flag flipped 2026-05-11 (Vero only):** `PREDICTION_V2_DASHBOARD_CHART = true` via `scripts/flip-vero-v2-flag.mjs`. Visual verification on Vero's dashboard confirmed predictions look much better post-flip.
+
+**DemandOutlook cutover wired 2026-05-11:** `lib/weather/demand.ts::computeDemandForecast()` now follows the same flag-gated pattern. When `PREDICTION_V2_DASHBOARD_CHART` is on, the per-day `predicted_revenue` and `baseline_revenue` come from `dailyForecast()` instead of the legacy `baseline × bucket_lift × weekScale` math. Holiday flag, weather summary, sample-size confidence, and recommendation logic all preserved. The legacy this-week scaler is skipped on the v2 path (consolidated applies its own internally — would double-correct). Legacy `weather_demand` capture bypassed when flag is on. Since Vero's flag is already flipped, DemandOutlook activates automatically on next deploy.
+
+**Coverage map after 2026-05-11:**
+
+| UI surface | Backend | v2 status |
+|---|---|---|
+| Dashboard revenue chart | `/api/scheduling/ai-suggestion` | ✅ v2 (Vero) |
+| Dashboard labour predictive | `/api/scheduling/ai-suggestion` | ✅ v2 indirectly (via avgRev) |
+| Scheduling page | `/api/scheduling/ai-suggestion` | ✅ v2 (Vero) |
+| DemandOutlook day cards | `lib/weather/demand.ts` | ✅ v2 (Vero) |
+| WeatherDemandWidget | Same as DemandOutlook | ✅ v2 (Vero) |
+| Monday Memo AI prompt | `lib/ai/weekly-manager.ts` calls `computeDemandForecast()` | ✅ v2 indirectly (cascades from DemandOutlook wire) |
+| `/forecast` page (monthly) | `/api/forecast` | ⏳ legacy — different problem space, separate decision |
+
 **Remaining issues observed in samples:**
 
 - **Per-day variance is still wide.** Saturday 01-09 went UP after filter (105k → 140k) because removing Christmas peaks left Vero's *opening-week* Dec 12 / Dec 19 samples — those are also non-representative (launch-week revenue). Filter is binary "Christmas peak vs not"; doesn't see "opening week" as a separate regime. Acceptable for now — once Vero accumulates more post-Christmas history, the 4-week window slides past the launch period naturally.

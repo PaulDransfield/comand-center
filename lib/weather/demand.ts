@@ -23,6 +23,8 @@ import { getForecast, weatherBucket, coordsFor, type DailyWeather } from './fore
 import { getUpcomingHolidays }                                       from '@/lib/holidays'
 import { weightedAvg, thisWeekScaler, RECENCY, adaptiveRecencyParams } from '@/lib/forecast/recency'
 import { captureForecastOutcomes }                                   from '@/lib/forecast/audit'
+import { dailyForecast }                                              from '@/lib/forecast/daily'
+import { isPredictionV2FlagEnabled }                                  from '@/lib/featureFlags/prediction-v2'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -173,12 +175,46 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
   }
   const { scaler: weekScale } = thisWeekScaler(scalerInput)
 
+  // ── Piece 2 / v2 cutover: per-business flag-gated revenue source ─────────
+  // When PREDICTION_V2_DASHBOARD_CHART is enabled for this business, swap
+  // the (legacy baseline × bucket_lift × weekScale) math for the
+  // consolidated forecaster's output on a per-date basis. The legacy
+  // weather summary, holiday flag, sample-size confidence, and
+  // recommendation logic continue to wrap the prediction — only the
+  // revenue number changes.
+  //
+  // Pre-fetched in parallel so the loop below stays sync. Soft-fails to
+  // legacy math if any dailyForecast() call throws — never breaks the
+  // demand widget.
+  const v2ChartFlagOn = await isPredictionV2FlagEnabled(opts.businessId, 'PREDICTION_V2_DASHBOARD_CHART', opts.db)
+  const consolidatedByDate: Record<string, { predicted: number; baseline: number; confidence: 'high' | 'medium' | 'low' }> = {}
+  if (v2ChartFlagOn) {
+    const futureDates = forecast.slice(0, days)
+      .map(f => f.date)
+      .filter(d => (actualByDate[d] ?? 0) <= 0)
+    const results = await Promise.allSettled(
+      futureDates.map(async d => {
+        const fc = await dailyForecast(opts.businessId, new Date(d + 'T12:00:00Z'), { db: opts.db, skipLogging: true })
+        return { date: d, fc }
+      }),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.fc.predicted_revenue > 0) {
+        consolidatedByDate[r.value.date] = {
+          predicted:  r.value.fc.predicted_revenue,
+          baseline:   r.value.fc.baseline_revenue,
+          confidence: r.value.fc.confidence,
+        }
+      }
+    }
+  }
+
   const out: DemandDay[] = []
   for (const f of forecast.slice(0, days)) {
     const weekdayIdx = (new Date(f.date).getUTCDay() + 6) % 7
     const weekday    = WEEKDAY_LABELS[weekdayIdx]
     const raw        = rawByDate[f.date]
-    const baseline   = raw.baseline
+    const legacyBaseline = raw.baseline
     const bucket     = raw.bucket
     const lift       = raw.lift
     const sampleSize = lift?.sampleSize ?? 0
@@ -186,11 +222,22 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
     const holidayName = raw.holidayName
     const dateInThisWeek = f.date >= thisWeekStart && f.date <= thisWeekEnd
     const dayHasActual = (actualByDate[f.date] ?? 0) > 0
+    const v2Override   = v2ChartFlagOn ? consolidatedByDate[f.date] : undefined
+
+    // Baseline source: consolidated when flag on, legacy otherwise.
+    const baseline = v2Override?.baseline ?? legacyBaseline
 
     let predicted = baseline
     let confidence: Confidence = 'unavailable'
 
-    if (isHoliday) {
+    if (v2Override) {
+      // v2 path — consolidated already integrates weather lift, holiday
+      // detection, klamdag, school holiday, salary cycle, and this-week
+      // scaler. Use its output verbatim; legacy bucket-lift and
+      // weekScale do NOT apply on top.
+      predicted  = v2Override.predicted
+      confidence = isHoliday ? 'low' : v2Override.confidence
+    } else if (isHoliday) {
       // Holiday breaks the baseline pattern — return baseline for shape but
       // flag clearly. The widget renders these in a distinct style.
       predicted  = baseline
@@ -210,8 +257,10 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
     // Apply this-week pull-forward scaler — only to days that are inside
     // the current calendar week AND don't already have a logged actual.
     // Holidays are excluded because their pattern is already structurally
-    // different from a normal weekday.
-    if (dateInThisWeek && !dayHasActual && !isHoliday && weekScale !== 1) {
+    // different from a normal weekday. v2 path SKIPS this — the
+    // consolidated forecaster already applies its own this-week scaler
+    // internally, so re-multiplying here would double-correct.
+    if (!v2Override && dateInThisWeek && !dayHasActual && !isHoliday && weekScale !== 1) {
       predicted = predicted * weekScale
     }
 
@@ -253,7 +302,13 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
   // from baseline contamination too) and zero-baseline days. Confidence
   // enum collapses 'unavailable' to null per the architecture's allowed
   // CHECK values ('high' | 'medium' | 'low'). Soft-fails inside the helper.
-  await captureForecastOutcomes(
+  //
+  // V2 cutover: when PREDICTION_V2_DASHBOARD_CHART is on, the revenue values
+  // in `out[]` already come from dailyForecast(), and the consolidated
+  // capture path is the canonical record. Skip the legacy 'weather_demand'
+  // surface capture so we don't write rows tagged as legacy that actually
+  // came from the v2 forecaster — that would corrupt MAPE-by-surface.
+  if (!v2ChartFlagOn) await captureForecastOutcomes(
     out
       .filter(d => !d.is_holiday && d.predicted_revenue > 0)
       .map(d => ({
