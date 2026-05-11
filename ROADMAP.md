@@ -90,6 +90,18 @@ Two findings:
 - **LLM is inconsistent on `cold_start_holiday_filter_fellback_too_few_samples`.** It applied Example A2 correctly on 01-19 (factor 0.9) and 01-20 (0.95) but defaulted to 1.0 on 01-12, 01-13, 01-25 despite the same flag. Could strengthen the prompt rule. Low priority — net contribution from the LLM layer is small now that deterministic is better.
 - **~~Cache still 0/0~~ FIXED 2026-05-11.** Diagnostic scripts (`scripts/diag-llm-cache-*.mjs` + `diag-llm-cache-size.ts`) ran controlled tests against the Anthropic API: count_tokens confirmed our prefix was 2,532 tokens (above docs-stated 2,048 minimum), but real calls still showed 0/0. Variant testing on Sonnet 4.6 (1024 min) worked; Haiku 4.5 at the same size didn't. Pushed Haiku 4.5 prompts to ~6,000 tokens — caching fired. **Empirical conclusion: Haiku 4.5's real cacheable minimum is ~4,096 tokens, NOT the 2,048 the docs imply.** Bulked Piece 4 system prompt to 5,048 tokens (added SIGNAL REFERENCE section + Examples E/F/G). Live test now shows `cache_creation=4732` call 1, `cache_read=4732` call 2. Memory: `feedback_anthropic_cache_control_ttl.md` (renamed to "Anthropic prompt caching gotchas").
 
+**Backtest 2026-05-11 — full stack of fixes:**
+
+| Run | MAPE cons. | MAPE LLM | Bias cons. | Bias LLM | Cache |
+|---|---|---|---|---|---|
+| Baseline | 143.3 | 114.8 | +104.2 | +69.6 | 0/0 |
+| Option C only | 127.7 | 133.6 | +87.3 | +96.7 | 0/0 |
+| **Option C + cache + prompt bulk** | **127.7** | **124.0** | +87.3 | +83.6 | **WORKS** |
+
+- Cache verified live: `cache_creation=4824`, `cache_read=139896` across 30 calls. Cost ~$0.082 for 30 calls, ~46% lower than pre-cache.
+- LLM MAPE recovered 9.6pp with the bulked prompt — the SIGNAL REFERENCE + Examples E/F/G gave the LLM better calibration. 0 null returns (was 3); non-1.0 adjustments correctly target `cold_start_holiday_filter_fellback_too_few_samples` cases.
+- **Cutover boundary:** LLM is 3.7pp better than deterministic — meets the ≥3pp threshold but barely on a noisy 30-day sample. Decision: **keep deterministic as default surface, offer LLM-adjusted as opt-in enrichment.** The remaining 127% MAPE is structural to Vero's cold-start (bimodal weeks, opening-week samples); not a one-more-clamp problem.
+
 **Deferred:**
 - Option A (weekday-aware scaler) — worth revisiting if Sat-Sun under-prediction persists post-Option-C.
 - Option B (structural post-holiday decay term) — country-specific magic; rejected in favor of C's data-driven approach.
