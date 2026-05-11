@@ -298,15 +298,17 @@ export async function llmAdjustForecast(
       return null
     }
 
-    // System prompt as a single text block with cache_control. Earlier
-    // (2026-05-11) we split into two blocks for "future change to the
-    // worked-examples doesn't bust the rules cache" — but the diagnostic
-    // run showed Anthropic responded with cache_creation.ephemeral_5m=0,
-    // suggesting the second-block-only cached chunk fell below the 2048
-    // token minimum for Haiku 4.5. Collapsing into one block gives a
-    // single ~2700-token cached prefix that comfortably clears the
-    // threshold. Granular cache invalidation isn't worth the cost of
-    // 0/0 hit rate.
+    // System prompt as a single text block with cache_control. The
+    // 2026-05-11 backtest showed cache_creation.ephemeral_5m_input_tokens=0
+    // across 30 calls — the cache was never created. Two issues fixed:
+    //   1. The explicit `ttl: '5m'` field requires the
+    //      `anthropic-beta: extended-cache-ttl-2025-04-11` header. Without
+    //      it the API silently drops the entire cache_control object. The
+    //      5-minute TTL is the default — omit ttl to get it implicitly.
+    //   2. Collapsed system into ONE block to comfortably clear Haiku 4.5's
+    //      2048-token minimum-cacheable-prefix threshold. The previous
+    //      two-block split risked the second-block chunk being below
+    //      threshold on its own.
     const SYSTEM_PROMPT = ROLE_AND_RULES + '\n\n' + SCHEMA_AND_EXAMPLES
 
     const httpResp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -316,7 +318,8 @@ export async function llmAdjustForecast(
         'content-type':      'application/json',
         'x-api-key':         apiKey,
         // 2023-06-01 is the stable Messages API version; prompt caching
-        // went GA on this version and needs no beta header anymore.
+        // went GA on this version and needs no beta header for the
+        // default 5-minute TTL.
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -325,13 +328,11 @@ export async function llmAdjustForecast(
         // cache_control on the tool definition too — system + tools are
         // both static across calls, and tools come AFTER system in the
         // cache-key order. Marking the last static thing (the tool)
-        // caches system + tools as one big chunk. Belt-and-braces with
-        // the system-side marker — if either lands a cache chunk over
-        // the minimum threshold, we get a hit.
-        tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral', ttl: '5m' } }],
+        // caches system + tools as one big chunk.
+        tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral' } }],
         tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
         system: [
-          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral', ttl: '5m' } },
+          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
         ],
         messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
       }),

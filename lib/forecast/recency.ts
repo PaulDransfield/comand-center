@@ -62,18 +62,32 @@ export function weightedAvg(
  * insufficient signal (< 2 days have both actual and predicted with
  * positive revenue).
  *
- * The scaler is clamped to [0.75, 1.25] — wider than a single noisy day
- * but tight enough that one weird day can't double the rest of the
- * week's forecast. Apply by multiplying remaining-day predictions.
+ * The scaler is clamped to a per-mode range:
+ *   - Mature history (default):   [0.75, 1.25]
+ *   - Short-history mode:         [0.50, 1.50]
+ *
+ * Floor exists so one weird day in a mature baseline can't double the
+ * rest of the week's forecast. In short-history mode the baseline ITSELF
+ * is suspect (4-week unweighted average can be anchored on a single
+ * seasonal peak), so trusting observed-this-week data more heavily is
+ * the right call. Backtest 2026-05-10 showed January cold-start
+ * predictions running 30-50% of actuals (raw scaler 0.29-0.52) but
+ * the 0.75 floor forbid the deterministic forecaster from correcting
+ * to the observed regime. Relaxing to 0.50 in short-history mode lets
+ * the deterministic system self-correct off real data the moment it
+ * arrives.
  */
 export function thisWeekScaler(
   pairs: Array<{ actual: number; predicted: number }>,
-): { scaler: number; samples: number; raw: number } {
+  opts: { shortHistoryMode?: boolean } = {},
+): { scaler: number; samples: number; raw: number; floor: number; ceil: number } {
   const valid = pairs.filter(p =>
     Number.isFinite(p.actual) && Number.isFinite(p.predicted) &&
     p.actual > 0 && p.predicted > 0,
   )
-  if (valid.length < 2) return { scaler: 1, samples: valid.length, raw: 1 }
+  const floor = opts.shortHistoryMode ? RECENCY.SCALER_FLOOR_SHORT : RECENCY.SCALER_FLOOR
+  const ceil  = opts.shortHistoryMode ? RECENCY.SCALER_CEIL_SHORT  : RECENCY.SCALER_CEIL
+  if (valid.length < 2) return { scaler: 1, samples: valid.length, raw: 1, floor, ceil }
 
   // Median of per-day ratios — robust against one outlier (e.g. a
   // holiday or burst-promotion day in the middle of the week).
@@ -82,8 +96,8 @@ export function thisWeekScaler(
     ? ratios[Math.floor(ratios.length / 2)]
     : (ratios[ratios.length / 2 - 1] + ratios[ratios.length / 2]) / 2
 
-  const clamped = Math.max(0.75, Math.min(1.25, mid))
-  return { scaler: clamped, samples: valid.length, raw: mid }
+  const clamped = Math.max(floor, Math.min(ceil, mid))
+  return { scaler: clamped, samples: valid.length, raw: mid, floor, ceil }
 }
 
 /**
@@ -101,6 +115,13 @@ export const RECENCY = {
   /** Min and max scaler values — prevents one weird day blowing up the rest of the week. */
   SCALER_FLOOR:        0.75,
   SCALER_CEIL:         1.25,
+  /** Wider clamp used in short-history mode. The 4-week unweighted baseline
+   *  can be anchored on a single seasonal peak (e.g. Vero's January 2026
+   *  baseline is anchored on December Christmas weeks), so the deterministic
+   *  forecaster needs more headroom to self-correct from observed-this-week
+   *  data once it arrives. */
+  SCALER_FLOOR_SHORT:  0.50,
+  SCALER_CEIL_SHORT:   1.50,
   /** History threshold below which short-history mode kicks in.
    *  Below this, the recency multiplier amplifies seasonal peaks instead
    *  of capturing trend (Vero diagnostic 2026-05-10 showed +88% bias on

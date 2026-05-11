@@ -542,7 +542,7 @@ export async function dailyForecast(
     )
     scalerPairs.push({ actual: Number(a.revenue), predicted: pred })
   }
-  const scalerResult = thisWeekScaler(scalerPairs)
+  const scalerResult = thisWeekScaler(scalerPairs, { shortHistoryMode })
 
   // ── 9. Compose ─────────────────────────────────────────────────────
   // Step 1: apply YoY same-weekday blend (when 1+ year history). 30% YoY +
@@ -702,10 +702,10 @@ export async function dailyForecast(
     this_week_scaler: {
       raw:              Math.round(scalerResult.raw * 100) / 100,
       applied:          Math.round(scalerResult.scaler * 100) / 100,
-      clamped_at_max:   scalerResult.scaler === RECENCY.SCALER_CEIL,
-      clamped_at_min:   scalerResult.scaler === RECENCY.SCALER_FLOOR,
-      scaler_floor:     RECENCY.SCALER_FLOOR,
-      scaler_ceil:      RECENCY.SCALER_CEIL,
+      clamped_at_max:   scalerResult.scaler === scalerResult.ceil,
+      clamped_at_min:   scalerResult.scaler === scalerResult.floor,
+      scaler_floor:     scalerResult.floor,
+      scaler_ceil:      scalerResult.ceil,
     },
 
     anomaly_contamination: {
