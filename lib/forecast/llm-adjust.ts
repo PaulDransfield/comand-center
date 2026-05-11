@@ -276,30 +276,58 @@ export async function llmAdjustForecast(
   }
 
   // ── Call Haiku 4.5 ────────────────────────────────────────────────────
+  // Direct fetch to the Messages API instead of the SDK because the
+  // installed SDK (@anthropic-ai/sdk@0.24.3, Aug 2024) predates GA prompt
+  // caching and silently drops the `cache_control` field. Sending the
+  // request via fetch lets us pin the API version, log raw usage, and
+  // confirm caching is active via cache_read_input_tokens > 0.
+  // Backtest 2026-05-10 showed 0/0 cache tokens through the SDK; this
+  // path should show creation on the first call and reads after.
   const started = Date.now()
   const abort   = new AbortController()
   const timer   = setTimeout(() => abort.abort(), TIMEOUT_MS)
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const client    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      console.warn('[llm-adjust] ANTHROPIC_API_KEY not set, soft-failing')
+      return null
+    }
 
     // System prompt: two cache-friendly blocks. ROLE_AND_RULES is the
     // bulk-static piece. SCHEMA_AND_EXAMPLES is also stable but separated
     // so a future change to the worked-examples doesn't bust the rules
     // cache. cache_control: {type:'ephemeral'} on the LAST cacheable
-    // block — the SDK caches up to and including that block.
-    const response = await (client as any).messages.create({
-      model:      AI_MODELS.AGENT,
-      max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
-      tools:       [submitAdjustmentTool],
-      tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
-      system: [
-        { type: 'text', text: ROLE_AND_RULES },
-        { type: 'text', text: SCHEMA_AND_EXAMPLES, cache_control: { type: 'ephemeral' } },
-      ],
-      messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
-    }, { signal: abort.signal as any })
+    // block — the API caches up to and including that block.
+    const httpResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      signal: abort.signal,
+      headers: {
+        'content-type':      'application/json',
+        'x-api-key':         apiKey,
+        // 2023-06-01 is the stable Messages API version; prompt caching
+        // went GA on this version and needs no beta header anymore.
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model:       AI_MODELS.AGENT,
+        max_tokens:  MAX_TOKENS.AGENT_RECOMMENDATION,
+        tools:       [submitAdjustmentTool],
+        tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
+        system: [
+          { type: 'text', text: ROLE_AND_RULES },
+          { type: 'text', text: SCHEMA_AND_EXAMPLES, cache_control: { type: 'ephemeral' } },
+        ],
+        messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
+      }),
+    })
 
+    if (!httpResp.ok) {
+      const errText = await httpResp.text().catch(() => '')
+      console.warn(`[llm-adjust] Anthropic API ${httpResp.status}:`, errText.slice(0, 300))
+      return null
+    }
+
+    const response: any = await httpResp.json()
     const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
     const parsed: any = toolUse?.input
     if (!parsed) {
