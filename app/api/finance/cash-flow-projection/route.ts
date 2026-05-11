@@ -123,28 +123,43 @@ export async function GET(req: NextRequest) {
     estimatedMonthlySalary = Math.round(totalCost / monthsCovered)
   }
 
-  // Find next 25th in the window
-  function nextSalaryDate(from: Date, days: number): string | null {
+  // Find next occurrence of a specific day-of-month in the window
+  function nextDayOfMonth(from: Date, days: number, dom: number): string | null {
     for (let i = 0; i <= days; i++) {
       const d = new Date(from.getTime() + i * 86_400_000)
-      if (d.getUTCDate() === 25) return d.toISOString().slice(0, 10)
+      if (d.getUTCDate() === dom) return d.toISOString().slice(0, 10)
     }
     return null
   }
-  const salaryDate = estimatedMonthlySalary > 0 ? nextSalaryDate(today, daysAhead) : null
+  const salaryDate = estimatedMonthlySalary > 0 ? nextDayOfMonth(today, daysAhead, 25) : null
+
+  // ── F-skatt (employer tax + preliminary income tax) ──────────────────
+  // Skatteverket payment due 12th of each month for previous month's
+  // PAYE (källskatt) + employer fees (arbetsgivaravgift) + own preliminary
+  // income tax (F-skatt). Approximation: ~25% of monthly staff_cost
+  // captures most of it (arbetsgivaravgift ≈ 31.42% of gross salary,
+  // PAYE varies but ~28% of staff_cost on average for SE restaurants;
+  // we use 25% as a conservative single-number proxy).
+  //
+  // This is rough but useful. Owners forget the 12th hit and a rough
+  // projection beats none. Phase 4+ could replace with voucher-derived
+  // account 2510 debit history once the translator captures liability
+  // accounts.
+  const estimatedFskattMonthly = Math.round(estimatedMonthlySalary * 0.25)
+  const fskattDate = estimatedFskattMonthly > 0 ? nextDayOfMonth(today, daysAhead, 12) : null
 
   // ── Build day-by-day projection ──────────────────────────────────────
   interface ProjectionDay {
     date:         string
     balance:      number          // running balance at end of day
-    events:       Array<{ type: 'supplier_due' | 'customer_due' | 'salary'; amount: number; label: string }>
+    events:       Array<{ type: 'supplier_due' | 'customer_due' | 'salary' | 'fskatt'; amount: number; label: string }>
   }
   const projection: ProjectionDay[] = []
   let running = startingBalance ?? 0
 
   // Index outflows / inflows by date
   const byDate: Record<string, ProjectionDay['events']> = {}
-  function addEvent(date: string, type: 'supplier_due' | 'customer_due' | 'salary', amount: number, label: string) {
+  function addEvent(date: string, type: 'supplier_due' | 'customer_due' | 'salary' | 'fskatt', amount: number, label: string) {
     if (!byDate[date]) byDate[date] = []
     byDate[date].push({ type, amount, label })
   }
@@ -158,6 +173,9 @@ export async function GET(req: NextRequest) {
   }
   if (salaryDate && estimatedMonthlySalary > 0) {
     addEvent(salaryDate, 'salary', -estimatedMonthlySalary, `Estimated salary payment (3-month average)`)
+  }
+  if (fskattDate && estimatedFskattMonthly > 0) {
+    addEvent(fskattDate, 'fskatt', -estimatedFskattMonthly, `Estimated F-skatt / employer tax (≈ 25% of staff cost)`)
   }
 
   for (let i = 0; i <= daysAhead; i++) {
@@ -184,9 +202,9 @@ export async function GET(req: NextRequest) {
       cash_trough_date:   trough.date,
       cash_trough_amount: trough.balance,
       ending_balance:     projection[projection.length - 1]?.balance ?? null,
-      total_outflows_30d: Math.round(supplierResult.total + estimatedMonthlySalary),
+      total_outflows_30d: Math.round(supplierResult.total + estimatedMonthlySalary + estimatedFskattMonthly),
       total_inflows_30d:  Math.round(customerResult.total),
-      net_30d:            Math.round(customerResult.total - supplierResult.total - estimatedMonthlySalary),
+      net_30d:            Math.round(customerResult.total - supplierResult.total - estimatedMonthlySalary - estimatedFskattMonthly),
     },
     sources: {
       supplier_invoices: {
@@ -203,6 +221,11 @@ export async function GET(req: NextRequest) {
         next_payday:     salaryDate,
         monthly_amount:  estimatedMonthlySalary,
         source:          estimatedMonthlySalary > 0 ? 'staff_logs_3m_avg' : 'unavailable',
+      },
+      fskatt_estimate: {
+        next_due:        fskattDate,
+        monthly_amount:  estimatedFskattMonthly,
+        source:          estimatedFskattMonthly > 0 ? 'approx_25pct_of_staff_cost' : 'unavailable',
       },
     },
     projection,

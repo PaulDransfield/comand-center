@@ -46,6 +46,13 @@ interface BankPositionResponse {
     latest_period:   string | null
     is_provisional_latest: boolean
   }
+  bookkeeping_lag: {
+    detected:              boolean
+    severity:              'none' | 'low' | 'high'
+    last_inflow_period:    string | null
+    outflow_only_months:   number
+    message:               string
+  } | null
 }
 
 interface Props {
@@ -173,6 +180,26 @@ export default function CashPositionTile({ businessId }: Props) {
         {' · '}
         Last month: <strong style={{ color: '#1a1f2e' }}>{fmtKr(summary.last_month_change, currency)}</strong>
       </div>
+      {/* Lag chip — only when bookkeeping is detectably behind. Honest
+          warning that the headline number lags real bank reality. */}
+      {data.bookkeeping_lag?.detected && (
+        <div style={{
+          marginTop: 10,
+          padding: '8px 10px',
+          background: data.bookkeeping_lag.severity === 'high' ? '#fee2e2' : '#fef3c7',
+          borderLeft: `3px solid ${data.bookkeeping_lag.severity === 'high' ? '#dc2626' : '#d97706'}`,
+          borderRadius: 4,
+          fontSize: 11,
+          color: data.bookkeeping_lag.severity === 'high' ? '#7f1d1d' : '#78350f',
+          lineHeight: 1.5,
+        }}>
+          <strong>{data.bookkeeping_lag.message}</strong>
+          {data.bookkeeping_lag.outflow_only_months > 0 && (
+            <> Your real bank balance is likely higher than the figure above. Ask your accountant to enter the most recent deposits.</>
+          )}
+        </div>
+      )}
+
       <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6, lineHeight: 1.4 }}>
         {showAbsolute
           ? `As booked in Fortnox (sum of BAS 1910-1979). May lag real bank balance if bookkeeping is behind.`

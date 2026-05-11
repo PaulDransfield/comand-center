@@ -38,6 +38,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fetchBankAccountBalances } from '@/lib/fortnox/api/account-balance'
+import { detectBookkeepingLag }     from '@/lib/finance/bookkeeping-lag'
 
 export const runtime         = 'nodejs'
 export const dynamic         = 'force-dynamic'
@@ -168,6 +169,35 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Bookkeeping-lag detection ────────────────────────────────────────
+  // Cross-reference recent bank activity against POS revenue presence:
+  // a credits-only month on the primary checking account during a
+  // demonstrably operating period = deposits not yet booked.
+  let lagSignal = null as ReturnType<typeof detectBookkeepingLag> | null
+  if (allMonths.length > 0) {
+    // Look back 6 months for the signal — enough to spot a 2-3 month lag
+    // without picking up old structural gaps.
+    const recentMonthsForLag = allMonths.slice(-6)
+    const periodFilter = recentMonthsForLag.map(m => `(year.eq.${m.year},month.eq.${m.month})`).join(',')
+    const { data: mmRows } = await db
+      .from('monthly_metrics')
+      .select('year, month, revenue')
+      .eq('business_id', businessId)
+      .or(recentMonthsForLag.map(m => `and(year.eq.${m.year},month.eq.${m.month})`).join(','))
+    const revenueByPeriod = new Map<string, number>()
+    for (const r of (mmRows ?? [])) {
+      revenueByPeriod.set(`${(r as any).year}-${(r as any).month}`, Number((r as any).revenue ?? 0))
+    }
+    lagSignal = detectBookkeepingLag({
+      rows: recentMonthsForLag.map(m => ({
+        period_year:   m.year,
+        period_month:  m.month,
+        bank_accounts: (m.accounts as any) ?? null,
+        had_revenue:   (revenueByPeriod.get(`${m.year}-${m.month}`) ?? 0) > 0,
+      })).reverse(),  // newest first for the helper's loop
+    })
+  }
+
   return NextResponse.json({
     business_id: businessId,
     currency:    biz.currency ?? 'SEK',
@@ -196,5 +226,6 @@ export async function GET(req: NextRequest) {
       latest_period:         last ? `${last.year}-${String(last.month).padStart(2,'0')}` : null,
       is_provisional_latest: last?.is_provisional ?? false,
     },
+    bookkeeping_lag: lagSignal,
   }, { headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=120' } })
 }
