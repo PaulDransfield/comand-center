@@ -130,6 +130,7 @@ export async function POST(req: NextRequest) {
     llm_err_pct: number | null
     llm_reasoning: string | null
     llm_confidence: 'high' | 'medium' | 'low' | null
+    raw_usage?: Record<string, unknown> | null
   }> = []
 
   for (const row of actualsList) {
@@ -273,6 +274,9 @@ export async function POST(req: NextRequest) {
         llm_err_pct: llmErrPct == null ? null : Math.round(llmErrPct * 1000) / 1000,
         llm_reasoning: llmResult.reasoning,
         llm_confidence: llmResult.confidence,
+        // Include only on the first call to keep response payload small —
+        // diagnostic for cache miss investigation.
+        raw_usage:    samples.length === 0 ? llmResult.usage.raw ?? null : null,
       })
     } catch (e: any) {
       errored++
@@ -309,6 +313,9 @@ export async function POST(req: NextRequest) {
       cache_read_tokens:      totalCacheReadTokens,
       cache_creation_tokens:  totalCacheCreateTokens,
     },
+    // First sample's raw Anthropic usage object — diagnostic for cache
+    // miss investigation. Tells us exactly what fields the API returned.
+    first_call_raw_usage:        (samples.find(s => s.llm != null) as any)?.raw_usage ?? null,
     samples,
     note: 'Provisional months excluded. Both surfaces written with horizon=1 (asOfDate = forecast_date - 1) so v_forecast_mape_by_surface picks them up. Re-runnable — upsert key is (business_id, forecast_date, surface).',
   })

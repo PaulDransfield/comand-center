@@ -72,6 +72,11 @@ export interface LlmAdjustResult {
     cache_read_tokens?:  number
     cache_creation_tokens?: number
     duration_ms:         number
+    /** Raw `usage` object from Anthropic — preserved for diagnostics so
+     *  we can see EVERY field the API returns (cache, server tools, etc.)
+     *  without re-deploying. The structured fields above mirror common
+     *  ones; this is the full source of truth. */
+    raw?:                Record<string, unknown>
   }
 }
 
@@ -328,6 +333,16 @@ export async function llmAdjustForecast(
     }
 
     const response: any = await httpResp.json()
+
+    // Diagnostic: log the full usage object on the first call per cold-start
+    // so we can see exactly what Anthropic returns. The cache miss
+    // investigation (2026-05-11) needs to know whether cache_*_input_tokens
+    // fields are present at all, vs being returned as 0, vs being absent.
+    if (!(globalThis as any).__llmAdjustUsageLogged) {
+      console.log('[llm-adjust] raw usage from Anthropic:', JSON.stringify(response.usage ?? {}))
+      ;(globalThis as any).__llmAdjustUsageLogged = true
+    }
+
     const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')
     const parsed: any = toolUse?.input
     if (!parsed) {
@@ -376,6 +391,7 @@ export async function llmAdjustForecast(
         cache_read_tokens:      Number(usage.cache_read_input_tokens ?? 0) || undefined,
         cache_creation_tokens:  Number(usage.cache_creation_input_tokens ?? 0) || undefined,
         duration_ms:            Date.now() - started,
+        raw:                    usage,
       },
     }
   } catch (e: any) {
