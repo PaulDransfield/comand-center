@@ -762,6 +762,24 @@ function DashboardInner() {
           <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{tCommon('state.loading')}</div>
         ) : (
           <>
+            {/* Demand outlook — moved to top of dashboard so the 7-day
+                forward view (weather × holidays × AI sales pattern) sets
+                context BEFORE the retrospective week/month numbers. The
+                widget fetches its own data so it can render before
+                anything else is computed. */}
+            <DemandOutlook
+              bizId={bizId}
+              cutHoursByDate={(() => {
+                const map: Record<string, number> = {}
+                if (aiSched?.suggested) {
+                  for (const s of aiSched.suggested) {
+                    if (typeof s.delta_hours === 'number') map[s.date] = s.delta_hours
+                  }
+                }
+                return map
+              })()}
+            />
+
             {/*
               FIXES §0tt (2026-04-28): top-of-dashboard split — week summary
               (left) sits next to AI scheduling savings card (right).
@@ -1026,23 +1044,6 @@ function DashboardInner() {
                 }
               `}</style>
             </div>
-
-            {/* Demand outlook — replaces the old WeatherDemandWidget. Same
-                endpoint (`/api/weather/demand-forecast`), restructured as a
-                7-day day-card grid combining weather, holidays, and AI
-                cut-hour deltas. */}
-            <DemandOutlook
-              bizId={bizId}
-              cutHoursByDate={(() => {
-                const map: Record<string, number> = {}
-                if (aiSched?.suggested) {
-                  for (const s of aiSched.suggested) {
-                    if (typeof s.delta_hours === 'number') map[s.date] = s.delta_hours
-                  }
-                }
-                return map
-              })()}
-            />
 
             {/* Recent invoices — operational view of supplier costs landing
                 in Fortnox day-by-day. Independent of period closure status,
