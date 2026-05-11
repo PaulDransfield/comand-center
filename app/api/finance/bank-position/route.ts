@@ -37,6 +37,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
+import { fetchBankAccountBalances } from '@/lib/fortnox/api/account-balance'
 
 export const runtime         = 'nodejs'
 export const dynamic         = 'force-dynamic'
@@ -115,6 +116,55 @@ export async function GET(req: NextRequest) {
   const last12 = allMonths.slice(-12)
   const last12Change = last12.reduce((s, m) => s + m.net_change, 0)
 
+  // ── Option 3: ABSOLUTE current balance ──────────────────────────────
+  // Fortnox's /3/vouchers doesn't return the Ingående Balans (year-opening)
+  // voucher, so summing `bank_net_change` only gives net change since
+  // tracking began — not the actual cash balance. Fetch the opening balance
+  // for each known bank account via /3/accounts/{n}?financialyear={fyId}
+  // and combine with the current fiscal year's net change for an absolute
+  // figure.
+  //
+  // Soft-fails: if Fortnox is unreachable or the helper returns no balances
+  // (e.g. customer hasn't connected Fortnox at all), the response still
+  // includes the cumulative-since-tracking number. The tile decides which
+  // to surface.
+  const accountsSeen = new Set<number>()
+  for (const m of allMonths) {
+    if (m.accounts) {
+      for (const a of Object.keys(m.accounts)) accountsSeen.add(Number(a))
+    }
+  }
+
+  let absoluteBalance: number | null = null
+  let openingBalancesByAccount: Record<number, number> = {}
+  let fiscalYearFrom: string | null = null
+  let fiscalYearTo: string | null = null
+  let openingFetchOk = false
+
+  if (accountsSeen.size > 0) {
+    const result = await fetchBankAccountBalances(db, auth.orgId, businessId, Array.from(accountsSeen))
+    if (Object.keys(result.balances).length > 0) {
+      openingFetchOk = true
+      fiscalYearFrom = result.fiscal_year_from
+      fiscalYearTo   = result.fiscal_year_to
+
+      // Sum opening balances + sum net changes in this fiscal year
+      let openingSum = 0
+      for (const [acc, bal] of Object.entries(result.balances)) {
+        openingBalancesByAccount[Number(acc)] = bal.opening_balance
+        openingSum += bal.opening_balance
+      }
+
+      const fyStart = result.fiscal_year_from
+      const ytdRows = allMonths.filter(m => {
+        const periodIso = `${m.year}-${String(m.month).padStart(2, '0')}-01`
+        return periodIso >= fyStart.slice(0, 7) + '-01'
+      })
+      const ytdNetChange = ytdRows.reduce((s, m) => s + m.net_change, 0)
+      absoluteBalance = Math.round(openingSum + ytdNetChange)
+    }
+  }
+
   return NextResponse.json({
     business_id: businessId,
     currency:    biz.currency ?? 'SEK',
@@ -125,6 +175,13 @@ export async function GET(req: NextRequest) {
       last_month_change: prev?.net_change ?? null,
       last_12m_change:   last12.length > 0 ? Math.round(last12Change) : null,
       months_with_data:  allMonths.length,
+
+      // Absolute balance — populated when we can reach Fortnox's
+      // /3/accounts endpoint. Null = fall back to cumulative-since-tracking.
+      absolute_balance:           absoluteBalance,
+      opening_balance_by_account: openingFetchOk ? openingBalancesByAccount : null,
+      fiscal_year_from:           fiscalYearFrom,
+      fiscal_year_to:             fiscalYearTo,
     },
     coverage: {
       earliest_period:       allMonths[0] ? `${allMonths[0].year}-${String(allMonths[0].month).padStart(2,'0')}` : null,

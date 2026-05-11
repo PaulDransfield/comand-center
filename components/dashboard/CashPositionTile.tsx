@@ -35,6 +35,10 @@ interface BankPositionResponse {
     last_month_change: number | null
     last_12m_change:   number | null
     months_with_data:  number
+    absolute_balance:           number | null
+    opening_balance_by_account: Record<string, number> | null
+    fiscal_year_from:           string | null
+    fiscal_year_to:             string | null
   }
   coverage: {
     earliest_period: string | null
@@ -129,19 +133,35 @@ export default function CashPositionTile({ businessId }: Props) {
   const last12    = summary.last_12m_change
   const provisional = data.coverage.is_provisional_latest
   const sparkValues = monthly.map(m => m.cumulative)
+  const absoluteBalance = summary.absolute_balance
 
-  // Primary display value: 12-month net change. Most honest single-number
-  // summary we can produce without an absolute opening balance.
+  // Two display modes:
+  //   - When we have absolute_balance from Fortnox's /3/accounts call →
+  //     show it as the headline. Honest absolute figure.
+  //   - Otherwise → fall back to 12-month net change with the "not an
+  //     absolute balance" footnote (Phase 1 behaviour).
+  const showAbsolute = absoluteBalance != null
+
+  // Format fmtKr without leading + for positive balances (we want
+  // "187,450 kr" not "+187,450 kr" when it's an absolute number).
+  const fmtAbs = (n: number | null | undefined): string => {
+    if (n == null || !Number.isFinite(n)) return '—'
+    return `${Math.round(n).toLocaleString('sv-SE')} ${currency.toLowerCase() === 'sek' ? 'kr' : currency}`
+  }
+
   return (
     <div style={tileStyle}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <div style={labelStyle}>Cash position</div>
         <div style={{ fontSize: 10, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-          last 12 months
+          {showAbsolute ? `as of ${data.coverage.latest_period ?? '—'}` : 'last 12 months'}
         </div>
       </div>
-      <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6, color: last12 != null && last12 >= 0 ? '#15803d' : '#b91c1c' }}>
-        {fmtKr(last12, currency)}
+      <div style={{ fontSize: 26, fontWeight: 700, marginTop: 6,
+                    color: showAbsolute
+                      ? (absoluteBalance >= 0 ? '#1a1f2e' : '#b91c1c')
+                      : (last12 != null && last12 >= 0 ? '#15803d' : '#b91c1c') }}>
+        {showAbsolute ? fmtAbs(absoluteBalance) : fmtKr(last12, currency)}
       </div>
       <div style={{ marginTop: 10 }}>
         <Sparkline values={sparkValues} />
@@ -153,7 +173,9 @@ export default function CashPositionTile({ businessId }: Props) {
         Last month: <strong style={{ color: '#1a1f2e' }}>{fmtKr(summary.last_month_change, currency)}</strong>
       </div>
       <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6, lineHeight: 1.4 }}>
-        Net bank movement (BAS 1910-1979). Not an absolute balance — opening balance unknown.
+        {showAbsolute
+          ? `Opening balance ${summary.fiscal_year_from?.slice(0, 7) ?? '—'} + net bank movement (BAS 1910-1979) since.`
+          : 'Net bank movement (BAS 1910-1979). Not an absolute balance — opening balance unknown.'}
       </div>
     </div>
   )
