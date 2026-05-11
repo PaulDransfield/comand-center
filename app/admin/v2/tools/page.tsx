@@ -44,6 +44,46 @@ interface SavedListResponse {
   note?:         string
 }
 
+// Tiny in-page Copy button. Writes `text` to the clipboard and flashes
+// "Copied" for 1.5 s so the operator can grab a JSON result without
+// select-all-then-Ctrl-C. Soft-fails on clipboard API rejection (e.g.
+// permission denied in older browsers) — falls back to a transient
+// "Copy failed" so the user knows.
+function CopyTextButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const [status, setStatus] = useState<'idle' | 'ok' | 'fail'>('idle')
+  async function onClick() {
+    try {
+      await navigator.clipboard.writeText(text)
+      setStatus('ok')
+    } catch {
+      setStatus('fail')
+    }
+    setTimeout(() => setStatus('idle'), 1500)
+  }
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        position:   'absolute' as const,
+        top:        6, right: 8,
+        padding:    '3px 8px',
+        fontSize:   10, fontWeight: 600,
+        background: status === 'ok' ? '#d1fae5' : status === 'fail' ? '#fee2e2' : '#fff',
+        color:      status === 'ok' ? '#065f46' : status === 'fail' ? '#991b1b' : '#374151',
+        border:     `1px solid ${status === 'ok' ? '#a7f3d0' : status === 'fail' ? '#fecaca' : '#d1d5db'}`,
+        borderRadius: 4,
+        cursor:     'pointer' as const,
+        fontFamily: 'ui-monospace, monospace',
+        letterSpacing: '.03em',
+        textTransform: 'uppercase' as const,
+      }}
+      title="Copy to clipboard"
+    >
+      {status === 'ok' ? 'Copied' : status === 'fail' ? 'Failed' : label}
+    </button>
+  )
+}
+
 const HISTORY_KEY   = 'admin_v2_tools_sql_history'
 const HISTORY_MAX   = 10
 const DEFAULT_QUERY = `SELECT
@@ -421,27 +461,33 @@ export default function ToolsPage() {
           </button>
         </div>
 
-        {(opsResult || opsError) && (
-          <div style={{
-            marginTop: 10, padding: 10,
-            background: opsError ? '#fef2f2' : (opsPollSnapshot?.backfill_status === 'failed' ? '#fef2f2' : opsPollSnapshot?.backfill_status === 'completed' ? '#f0fdf4' : '#eff6ff'),
-            border:     `1px solid ${opsError ? '#fecaca' : (opsPollSnapshot?.backfill_status === 'failed' ? '#fecaca' : opsPollSnapshot?.backfill_status === 'completed' ? '#bbf7d0' : '#bfdbfe')}`,
-            borderRadius: 6,
-            fontSize: 11, fontFamily: 'ui-monospace, monospace',
-            color:    opsError ? '#991b1b' : '#111',
-            whiteSpace: 'pre-wrap' as const,
-            wordBreak: 'break-word' as const,
-          }}>
-            {opsError
-              ? opsError
-              : opsPollSnapshot
-                ? `Status: ${opsPollSnapshot.backfill_status}\n` +
-                  (opsPollSnapshot.backfill_finished_at ? `Finished: ${opsPollSnapshot.backfill_finished_at}\n` : '') +
-                  (opsPollSnapshot.backfill_error ? `Error: ${opsPollSnapshot.backfill_error}\n` : '') +
-                  `Progress: ${JSON.stringify(opsPollSnapshot.backfill_progress, null, 2)}`
-                : JSON.stringify(opsResult, null, 2)}
-          </div>
-        )}
+        {(opsResult || opsError) && (() => {
+          const bodyText = opsError
+            ? opsError
+            : opsPollSnapshot
+              ? `Status: ${opsPollSnapshot.backfill_status}\n` +
+                (opsPollSnapshot.backfill_finished_at ? `Finished: ${opsPollSnapshot.backfill_finished_at}\n` : '') +
+                (opsPollSnapshot.backfill_error ? `Error: ${opsPollSnapshot.backfill_error}\n` : '') +
+                `Progress: ${JSON.stringify(opsPollSnapshot.backfill_progress, null, 2)}`
+              : JSON.stringify(opsResult, null, 2)
+          return (
+            <div style={{
+              position:   'relative' as const,
+              marginTop: 10, padding: 10, paddingRight: 70,
+              background: opsError ? '#fef2f2' : (opsPollSnapshot?.backfill_status === 'failed' ? '#fef2f2' : opsPollSnapshot?.backfill_status === 'completed' ? '#f0fdf4' : '#eff6ff'),
+              border:     `1px solid ${opsError ? '#fecaca' : (opsPollSnapshot?.backfill_status === 'failed' ? '#fecaca' : opsPollSnapshot?.backfill_status === 'completed' ? '#bbf7d0' : '#bfdbfe')}`,
+              borderRadius: 6,
+              fontSize: 11, fontFamily: 'ui-monospace, monospace',
+              color:    opsError ? '#991b1b' : '#111',
+              whiteSpace: 'pre-wrap' as const,
+              wordBreak: 'break-word' as const,
+              maxHeight: 600, overflowY: 'auto' as const,
+            }}>
+              <CopyTextButton text={bodyText} />
+              {bodyText}
+            </div>
+          )
+        })()}
 
         {/* ── Diagnose vouchers row (read-only translator check) ────────── */}
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -534,21 +580,26 @@ export default function ToolsPage() {
           }
         `}</style>
 
-        {(diagResult || diagError) && (
-          <div style={{
-            marginTop: 10, padding: 10,
-            background:  diagError ? '#fef2f2' : '#f9fafb',
-            border:      `1px solid ${diagError ? '#fecaca' : '#e5e7eb'}`,
-            borderRadius: 6,
-            fontSize:    11, fontFamily: 'ui-monospace, monospace',
-            color:       diagError ? '#991b1b' : '#111',
-            whiteSpace:  'pre-wrap' as const,
-            wordBreak:   'break-word' as const,
-            maxHeight:   500, overflowY: 'auto' as const,
-          }}>
-            {diagError ? diagError : JSON.stringify(diagResult, null, 2)}
-          </div>
-        )}
+        {(diagResult || diagError) && (() => {
+          const bodyText = diagError ? diagError : JSON.stringify(diagResult, null, 2)
+          return (
+            <div style={{
+              position:    'relative' as const,
+              marginTop: 10, padding: 10, paddingRight: 70,
+              background:  diagError ? '#fef2f2' : '#f9fafb',
+              border:      `1px solid ${diagError ? '#fecaca' : '#e5e7eb'}`,
+              borderRadius: 6,
+              fontSize:    11, fontFamily: 'ui-monospace, monospace',
+              color:       diagError ? '#991b1b' : '#111',
+              whiteSpace:  'pre-wrap' as const,
+              wordBreak:   'break-word' as const,
+              maxHeight:   500, overflowY: 'auto' as const,
+            }}>
+              <CopyTextButton text={bodyText} />
+              {bodyText}
+            </div>
+          )
+        })()}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 280px', gap: 14 }}>
