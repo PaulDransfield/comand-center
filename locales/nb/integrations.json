@@ -65,6 +65,16 @@
     "saving":            "Lagrer…",
     "save":              "Lagre og koble til"
   },
+  "oauthConfirm": {
+    "title":             "Koble til {name} — bekreft restaurant",
+    "subtitle":          "Velg hvilken restaurant denne tilkoblingen tilhører. Påloggingsinformasjonen du autoriserer knyttes kun til den valgte restauranten — pass på at du velger riktig.",
+    "restaurantLabel":   "Restaurant å koble til",
+    "restaurantPlaceholder": "Velg restaurant…",
+    "warningHeader":     "Dobbeltsjekk før du fortsetter",
+    "warningBody":       "Du er i ferd med å koble {provider} til {business}. I neste trinn må du logge inn med {provider}-kontoen som tilhører denne restauranten. Hvis du logger inn med en annen konto, vil den andre restaurantens data vises her.",
+    "tickLabel":         "Jeg bekrefter at jeg vil logge inn med {provider}-kontoen for restauranten ovenfor.",
+    "confirm":           "Fortsett til {provider}"
+  },
   "oauthBadge": "OAuth 2.0",
   "providers": {
     "fortnox": {

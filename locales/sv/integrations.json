@@ -65,6 +65,16 @@
     "saving":            "Sparar…",
     "save":              "Spara och anslut"
   },
+  "oauthConfirm": {
+    "title":             "Anslut {name} — bekräfta restaurang",
+    "subtitle":          "Välj vilken restaurang den här anslutningen tillhör. De inloggningsuppgifter du godkänner kopplas endast till den valda restaurangen — se till att du väljer rätt.",
+    "restaurantLabel":   "Restaurang att ansluta",
+    "restaurantPlaceholder": "Välj restaurang…",
+    "warningHeader":     "Dubbelkolla innan du fortsätter",
+    "warningBody":       "Du är på väg att ansluta {provider} till {business}. I nästa steg, logga in med det {provider}-konto som tillhör denna restaurang. Om du loggar in med ett annat konto kommer den andra restaurangens data att visas här.",
+    "tickLabel":         "Jag bekräftar att jag kommer att logga in med {provider}-kontot för restaurangen ovan.",
+    "confirm":           "Fortsätt till {provider}"
+  },
   "oauthBadge": "OAuth 2.0",
   "providers": {
     "fortnox": {

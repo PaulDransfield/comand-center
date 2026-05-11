@@ -79,6 +79,13 @@ export default function IntegrationsPage() {
   const [selectedBiz,  setSelectedBiz]  = useState<string>(
     typeof window !== 'undefined' ? (localStorage.getItem('cc_selected_biz') ?? '') : ''
   )
+  // OAuth confirmation modal — prevents the "wrong business selected in sidebar"
+  // class of error that mis-binds Fortnox credentials. Owner must explicitly
+  // confirm which business they're connecting before the OAuth flow starts.
+  // 2026-05-11 incident: Vero's Fortnox credentials got stored under Rosali's
+  // business_id because Rosali was active in the sidebar during the re-auth.
+  const [oauthConfirm,    setOauthConfirm]    = useState<{ providerKey: string; bizId: string } | null>(null)
+  const [oauthConfirmTick, setOauthConfirmTick] = useState(false)   // explicit checkbox for the warning
 
   const justConnected = searchParams.get('connected')
   const connectError  = searchParams.get('error')
@@ -490,7 +497,13 @@ export default function IntegrationsPage() {
                       className="btn btn-primary btn-sm"
                       disabled={!selectedBiz}
                       title={!selectedBiz ? t('actions.connectDisabledNoBusiness') : undefined}
-                      onClick={() => connectFortnox(selectedBiz)}
+                      onClick={() => {
+                        // Open confirmation modal instead of starting OAuth immediately.
+                        // Pre-selects the sidebar's current business; owner can change
+                        // it (and MUST tick the warning) before proceeding.
+                        setOauthConfirm({ providerKey: provider.key, bizId: selectedBiz })
+                        setOauthConfirmTick(false)
+                      }}
                     >
                       {t('actions.connect')}
                     </button>
@@ -543,6 +556,92 @@ export default function IntegrationsPage() {
           )
         })}
       </div>
+
+      {/* OAuth confirmation modal — prevents wrong-business mis-binding */}
+      {oauthConfirm && (() => {
+        const provider     = PROVIDERS.find(p => p.key === oauthConfirm.providerKey)
+        const selectedBizRow = businesses.find((b: any) => b.id === oauthConfirm.bizId)
+        const providerName = provider?.name ?? oauthConfirm.providerKey
+        return (
+          <>
+            <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:199 }} onClick={() => setOauthConfirm(null)} />
+            <div style={{ position:'fixed', top:'50%', left:'50%', transform:'translate(-50%,-50%)', background:'#ffffff', borderRadius:14, width:480, maxWidth:'94vw', zIndex:200, padding:'28px', boxShadow:'0 25px 60px rgba(0,0,0,0.3)', border:'1px solid #e5e7eb' }}>
+              <h2 style={{ fontFamily:'Georgia, serif', fontSize:18, fontStyle:'italic', color:'#1a1f2e', marginBottom:6 }}>
+                {t('oauthConfirm.title', { name: providerName })}
+              </h2>
+              <p style={{ fontSize:13, color:'#6b7280', marginBottom:18, lineHeight:1.5 }}>
+                {t('oauthConfirm.subtitle')}
+              </p>
+
+              {/* Business selector — explicit choice independent of sidebar */}
+              <div style={{ marginBottom:14 }}>
+                <label style={{ display:'block', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#9ca3af', marginBottom:5 }}>
+                  {t('oauthConfirm.restaurantLabel')}
+                </label>
+                <select
+                  className="input"
+                  value={oauthConfirm.bizId}
+                  onChange={e => {
+                    setOauthConfirm({ ...oauthConfirm, bizId: e.target.value })
+                    setOauthConfirmTick(false)   // re-tick required if business changes
+                  }}
+                >
+                  <option value="">{t('oauthConfirm.restaurantPlaceholder')}</option>
+                  {businesses.map((b:any) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}{b.city ? ` (${b.city})` : ''}{b.org_number ? ` · ${b.org_number}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Big visible "you are about to connect X to Y" panel */}
+              {selectedBizRow && (
+                <div style={{ background:'#fef3c7', border:'1px solid #fbbf24', borderRadius:8, padding:'14px 16px', marginBottom:14 }}>
+                  <div style={{ fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', color:'#92400e', marginBottom:6 }}>
+                    {t('oauthConfirm.warningHeader')}
+                  </div>
+                  <div style={{ fontSize:13, color:'#78350f', lineHeight:1.5 }}>
+                    {t('oauthConfirm.warningBody', {
+                      provider: providerName,
+                      business: selectedBizRow.name + (selectedBizRow.org_number ? ` (${selectedBizRow.org_number})` : ''),
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Required tick-box to confirm — prevents single-click-through */}
+              <label style={{ display:'flex', alignItems:'flex-start', gap:10, cursor:'pointer', fontSize:13, color:'#1a1f2e', marginBottom:18, lineHeight:1.5 }}>
+                <input
+                  type="checkbox"
+                  checked={oauthConfirmTick}
+                  onChange={e => setOauthConfirmTick(e.target.checked)}
+                  style={{ marginTop:3, accentColor:'#1a1f2e' }}
+                />
+                <span>{t('oauthConfirm.tickLabel', { provider: providerName })}</span>
+              </label>
+
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                <button className="btn btn-sm" onClick={() => setOauthConfirm(null)}>
+                  {t('modal.cancel')}
+                </button>
+                <button
+                  className="btn btn-sm btn-primary"
+                  disabled={!oauthConfirm.bizId || !oauthConfirmTick}
+                  onClick={() => {
+                    const bizToConnect = oauthConfirm.bizId
+                    setOauthConfirm(null)
+                    setOauthConfirmTick(false)
+                    connectFortnox(bizToConnect)
+                  }}
+                >
+                  {t('oauthConfirm.confirm', { provider: providerName })}
+                </button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
 
       {/* API Key modal */}
       {modal && (

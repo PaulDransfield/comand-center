@@ -65,6 +65,16 @@
     "saving":            "Saving…",
     "save":              "Save & connect"
   },
+  "oauthConfirm": {
+    "title":             "Connect {name} — confirm restaurant",
+    "subtitle":          "Pick the restaurant this connection belongs to. The credentials you authorise will be bound to this restaurant only — make sure you pick the right one.",
+    "restaurantLabel":   "Restaurant to connect",
+    "restaurantPlaceholder": "Select restaurant…",
+    "warningHeader":     "Double-check before continuing",
+    "warningBody":       "You are about to connect {provider} to {business}. In the next step, sign in with the {provider} account that belongs to this restaurant. If you sign in with a different account, that other restaurant's data will appear here.",
+    "tickLabel":         "I confirm I will sign in with the {provider} account for the restaurant above.",
+    "confirm":           "Continue to {provider}"
+  },
   "oauthBadge": "OAuth 2.0",
   "providers": {
     "fortnox": {
