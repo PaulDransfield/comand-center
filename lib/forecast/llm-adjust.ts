@@ -100,6 +100,8 @@ const MIN_FACTOR = 0.5
 const MAX_FACTOR = 1.5
 const TIMEOUT_MS = 30_000
 const MAX_REASONING_LEN = 400
+const RETRY_BACKOFF_MS = 1_000
+const MAX_ATTEMPTS = 2              // 1 initial + 1 retry on transient failures
 
 // ── Tool schema (strict — no fluff) ───────────────────────────────────────
 
@@ -316,6 +318,94 @@ WORKED EXAMPLES (do not echo, just for calibration):
             on a thin baseline without a specific contextual override (named event, weather
             anomaly, payday near-miss) compounds noise. Mirror the confidence; don't paper over it.`
 
+// ── Transient-failure retry helper ────────────────────────────────────────
+//
+// Backtest 2026-05-11 surfaced 3 null returns on consecutive Feb 1-3 calls
+// at the tail of a 30-day run (skipQuotaGate=true so quota wasn't the cause).
+// Three consecutive nulls at the tail of a long run point at a brief
+// Anthropic service blip or per-minute rate-limit — exactly the class of
+// failure a single retry solves.
+//
+// Retry policy:
+//   - Single retry with 1s fixed backoff (no exponential — we don't want
+//     to compound latency, and a second blip after a 1s window is rare).
+//   - Retry on: 429 (rate-limited), 408 (request timeout), 5xx (service
+//     error), network exception, AbortError from the 30s timeout.
+//   - DO NOT retry on: 400 (malformed body — won't fix itself), 401/403
+//     (auth — won't fix itself), 404 (endpoint gone), 2xx with bad payload
+//     (the parser handles those upstream).
+//   - Each attempt gets its own AbortController + timer so the timeout
+//     resets cleanly across retries.
+//   - Quota gate fires ONCE in the caller — retry doesn't double-count
+//     against the org's daily AI budget. Anthropic doesn't bill failed
+//     5xx/timeout requests, so we're not paying for the retry trigger.
+async function callAnthropicWithRetry(
+  apiKey: string,
+  reqBody: string,
+): Promise<any | null> {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const abort = new AbortController()
+    const timer = setTimeout(() => abort.abort(), TIMEOUT_MS)
+    let shouldRetry = false
+    let retryReason = ''
+
+    try {
+      const httpResp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        signal: abort.signal,
+        headers: {
+          'content-type':      'application/json',
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: reqBody,
+      })
+
+      if (httpResp.ok) {
+        clearTimeout(timer)
+        return await httpResp.json()
+      }
+
+      const errText = await httpResp.text().catch(() => '')
+      const transient =
+        httpResp.status === 429 ||
+        httpResp.status === 408 ||
+        httpResp.status >= 500
+
+      if (transient && attempt < MAX_ATTEMPTS) {
+        shouldRetry = true
+        retryReason = `HTTP ${httpResp.status} ${errText.slice(0, 180)}`
+      } else {
+        console.warn(`[llm-adjust] Anthropic API ${httpResp.status}:`, errText.slice(0, 300))
+        clearTimeout(timer)
+        return null
+      }
+    } catch (e: any) {
+      const reason = abort.signal.aborted ? 'aborted (30s timeout)' : e?.message
+      if (attempt < MAX_ATTEMPTS) {
+        shouldRetry = true
+        retryReason = String(reason)
+      } else {
+        console.warn('[llm-adjust] Haiku call failed:', reason)
+        clearTimeout(timer)
+        return null
+      }
+    }
+
+    clearTimeout(timer)
+
+    if (shouldRetry) {
+      console.warn(
+        `[llm-adjust] transient failure attempt ${attempt}/${MAX_ATTEMPTS}, retrying in ${RETRY_BACKOFF_MS}ms:`,
+        retryReason,
+      )
+      await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS))
+    }
+  }
+
+  return null
+}
+
 // ── Main entry ────────────────────────────────────────────────────────────
 
 /**
@@ -380,8 +470,6 @@ export async function llmAdjustForecast(
   // Backtest 2026-05-10 showed 0/0 cache tokens through the SDK; this
   // path should show creation on the first call and reads after.
   const started = Date.now()
-  const abort   = new AbortController()
-  const timer   = setTimeout(() => abort.abort(), TIMEOUT_MS)
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) {
@@ -402,40 +490,26 @@ export async function llmAdjustForecast(
     //      threshold on its own.
     const SYSTEM_PROMPT = ROLE_AND_RULES + '\n\n' + SCHEMA_AND_EXAMPLES
 
-    const httpResp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: abort.signal,
-      headers: {
-        'content-type':      'application/json',
-        'x-api-key':         apiKey,
-        // 2023-06-01 is the stable Messages API version; prompt caching
-        // went GA on this version and needs no beta header for the
-        // default 5-minute TTL.
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model:       AI_MODELS.AGENT,
-        max_tokens:  MAX_TOKENS.AGENT_RECOMMENDATION,
-        // cache_control on the tool definition too — system + tools are
-        // both static across calls, and tools come AFTER system in the
-        // cache-key order. Marking the last static thing (the tool)
-        // caches system + tools as one big chunk.
-        tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral' } }],
-        tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
-        system: [
-          { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
-        ],
-        messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
-      }),
+    const reqBody = JSON.stringify({
+      model:       AI_MODELS.AGENT,
+      max_tokens:  MAX_TOKENS.AGENT_RECOMMENDATION,
+      // cache_control on the tool definition too — system + tools are
+      // both static across calls, and tools come AFTER system in the
+      // cache-key order. Marking the last static thing (the tool)
+      // caches system + tools as one big chunk.
+      tools:       [{ ...submitAdjustmentTool, cache_control: { type: 'ephemeral' } }],
+      tool_choice: { type: 'tool', name: 'submit_revenue_adjustment' },
+      system: [
+        { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+      ],
+      messages: [{ role: 'user', content: JSON.stringify(userPayload) }],
     })
 
-    if (!httpResp.ok) {
-      const errText = await httpResp.text().catch(() => '')
-      console.warn(`[llm-adjust] Anthropic API ${httpResp.status}:`, errText.slice(0, 300))
-      return null
-    }
-
-    const response: any = await httpResp.json()
+    // Retry helper handles transient 429 / 408 / 5xx / network / timeout
+    // with a single 1s-backoff retry. Returns parsed JSON on success or
+    // null on permanent error / retry-exhausted.
+    const response: any = await callAnthropicWithRetry(apiKey, reqBody)
+    if (!response) return null
 
     // Diagnostic: log the full usage object on the first call per cold-start
     // so we can see exactly what Anthropic returns. The cache miss
@@ -498,11 +572,11 @@ export async function llmAdjustForecast(
       },
     }
   } catch (e: any) {
-    const aborted = abort.signal.aborted
-    console.warn('[llm-adjust] Haiku call failed:', aborted ? 'aborted (30s timeout)' : e?.message)
+    // Reached only if the parse / log / validate block throws unexpectedly —
+    // the HTTP layer's own failures are absorbed inside callAnthropicWithRetry
+    // and return null up here.
+    console.warn('[llm-adjust] post-fetch failure:', e?.message)
     return null
-  } finally {
-    clearTimeout(timer)
   }
 }
 
