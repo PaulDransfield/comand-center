@@ -255,6 +255,7 @@ SIGNAL REFERENCE — what each input means and how the deterministic forecaster 
                           'anomaly_window_uncertain'                        owner-confirmed anomalies in baseline
                           'cold_start_holiday_samples_excluded'             Dec 20-Jan 6 samples dropped from baseline
                           'cold_start_holiday_filter_fellback_too_few_samples'  filter wanted to drop, couldn't
+                          'weekday_baseline_zero_fallback_overall_mean'     no rows for this weekday in window — baseline is the mean across ALL weekdays. Crude anchor; magnitude is approximate. Prefer factor=1.0 unless you have a SPECIFIC contextual signal — additional adjustment on an already-approximate base compounds noise.
 
 WORKED EXAMPLES (do not echo, just for calibration):
 

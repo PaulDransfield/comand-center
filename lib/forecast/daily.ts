@@ -88,6 +88,14 @@ export interface ConsolidatedV1Snapshot {
      *  filter was eligible AND the post-filter sample count cleared
      *  the minimum-samples safety threshold). */
     holiday_filter_active:         boolean
+    /** True when the weekday-specific baseline was 0 (no rows for this
+     *  weekday in the recency window) and we fell back to the weighted
+     *  average across ALL weekdays in the window. Prevents the "first
+     *  appearance of each weekday returns 0" failure mode. */
+    zero_fallback_active:          boolean
+    /** Sample count of the all-weekday fallback when zero_fallback_active
+     *  is true. 0 when the fallback didn't fire. */
+    zero_fallback_overall_samples: number
   }
 
   yoy_same_weekday: {
@@ -190,7 +198,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.3.0'   // 2026-05-11: cold-start holiday-period exclusion — when forecasting outside Dec 20-Jan 6 in short-history mode, exclude same-period samples from the weekday baseline so December Christmas-week peaks don't anchor January regular-trading predictions
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.4.0'   // 2026-05-15: zero-baseline fallback — when weekday baseline is 0 (no rows for this weekday in window) but business has revenue history, fall back to the weighted average across all weekdays in the window. Without this, the first appearance of each weekday returns predicted_revenue=0 (Rosali Apr 20-26 case)
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -372,10 +380,46 @@ export async function dailyForecast(
 
   const weekdayValues = weekdayMatches.map((r: any) => Number(r.revenue))
   const weekdayDates  = weekdayMatches.map((r: any) => r.date as string)
-  const weekdayBaseline = weightedAvg(weekdayValues, weekdayDates, asOfDate, {
+  let weekdayBaseline = weightedAvg(weekdayValues, weekdayDates, asOfDate, {
     recentWindowDays:  effectiveRecentWindow,
     recencyMultiplier: effectiveRecencyMul,
   })
+
+  // Zero-baseline fallback. When the recency window has no rows for THIS
+  // weekday (e.g. Rosali's first Tuesday after she started trading), the
+  // weighted average above returns 0, every downstream factor multiplies
+  // through, and predicted_revenue=0 — a worse prediction than "guess the
+  // overall average". Detected 2026-05-15 on Rosali's Apr 20-26 window:
+  // every weekday's first appearance in the recency window returned 0.
+  //
+  // Fix: when weekday-specific baseline is 0, fall back to the weighted
+  // average across ALL positive-revenue days in the window (any weekday).
+  // Crude but strictly better than 0 — turns the cold-start gap from
+  // "catastrophic" into "directionally correct, magnitude approximate".
+  // The this-week scaler then corrects as data fills in week-over-week.
+  //
+  // Only fires when business has SOME positive-revenue history. A truly
+  // brand-new business with zero revenue rows still returns 0 (correct —
+  // we have no signal to anchor on).
+  let zeroFallbackActive = false
+  let zeroFallbackSamples = 0
+  if (weekdayBaseline <= 0) {
+    const allPositiveInWindow = dailyMetrics.filter((r: any) =>
+      Number(r.revenue ?? 0) > 0 &&
+      !contaminatedSet.has(r.date) &&
+      new Date(r.date + 'T12:00:00Z').getTime() >= baselineCutoffMs,
+    )
+    if (allPositiveInWindow.length > 0) {
+      const fallbackValues = allPositiveInWindow.map((r: any) => Number(r.revenue))
+      const fallbackDates  = allPositiveInWindow.map((r: any) => r.date as string)
+      weekdayBaseline = weightedAvg(fallbackValues, fallbackDates, asOfDate, {
+        recentWindowDays:  effectiveRecentWindow,
+        recencyMultiplier: effectiveRecencyMul,
+      })
+      zeroFallbackActive  = weekdayBaseline > 0
+      zeroFallbackSamples = allPositiveInWindow.length
+    }
+  }
 
   const recent28Cutoff = asOfDate.getTime() - RECENCY.RECENT_WINDOW_DAYS * 86_400_000
   const recent28Count  = weekdayDates.filter((d: string) => new Date(d + 'T12:00:00Z').getTime() >= recent28Cutoff).length
@@ -658,6 +702,7 @@ export async function dailyForecast(
   if (shortHistoryMode)          dataQualityFlags.push('short_history_mode_4w_unweighted')
   if (holidayFilterApplied)      dataQualityFlags.push('cold_start_holiday_samples_excluded')
   if (holidayFilterFellBack)     dataQualityFlags.push('cold_start_holiday_filter_fellback_too_few_samples')
+  if (zeroFallbackActive)        dataQualityFlags.push('weekday_baseline_zero_fallback_overall_mean')
 
   const snapshot: ConsolidatedV1Snapshot = {
     snapshot_version: SNAPSHOT_VERSION,
@@ -675,6 +720,8 @@ export async function dailyForecast(
       ).length,
       holiday_samples_excluded:   holidaySamplesExcluded,
       holiday_filter_active:      holidayFilterApplied,
+      zero_fallback_active:       zeroFallbackActive,
+      zero_fallback_overall_samples: zeroFallbackSamples,
     },
 
     yoy_same_weekday: yoySameWeekdayAvailable
