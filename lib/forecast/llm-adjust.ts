@@ -256,6 +256,7 @@ SIGNAL REFERENCE — what each input means and how the deterministic forecaster 
                           'cold_start_holiday_samples_excluded'             Dec 20-Jan 6 samples dropped from baseline
                           'cold_start_holiday_filter_fellback_too_few_samples'  filter wanted to drop, couldn't
                           'weekday_baseline_zero_fallback_overall_mean'     no rows for this weekday in window — baseline is the mean across ALL weekdays. Crude anchor; magnitude is approximate. Prefer factor=1.0 unless you have a SPECIFIC contextual signal — additional adjustment on an already-approximate base compounds noise.
+                          'business_closed_for_weekday'                     business is structurally closed (opening_days says no) — predicted_revenue is and MUST stay 0. You shouldn't see this in production (the caller short-circuits before invoking you); if you do, return factor=1.0 with confidence='high'.
 
 WORKED EXAMPLES (do not echo, just for calibration):
 
@@ -427,6 +428,18 @@ async function callAnthropicWithRetry(
 export async function llmAdjustForecast(
   input: LlmAdjustInput,
 ): Promise<LlmAdjustResult | null> {
+  // ── Zero-prediction short-circuit ─────────────────────────────────────
+  // When the deterministic forecaster returns predicted_revenue=0, the
+  // multiplicative adjustment_factor cannot move the number — anything
+  // clamped to [0.5, 1.5] times 0 is still 0. The most common cause is
+  // a business_closed_for_weekday short-circuit upstream (opening_days
+  // says the business is closed). Skip the API call: saves tokens, keeps
+  // the audit ledger free of meaningless llm_adjusted=0 rows, and the
+  // caller already has the deterministic 0 as the right answer.
+  if (input.forecast.predicted_revenue === 0) {
+    return null
+  }
+
   // ── Quota gate (atomic, decrements on reject) ────────────────────────
   // The user-facing endpoint owns the per-business daily cap; this is the
   // org-wide AI quota that catches runaway scripts and prompt-injection.

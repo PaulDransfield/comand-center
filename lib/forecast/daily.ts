@@ -198,7 +198,7 @@ export interface ConsolidatedV1Snapshot {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const MODEL_VERSION_DEFAULT  = 'consolidated_v1.4.0'   // 2026-05-15: zero-baseline fallback — when weekday baseline is 0 (no rows for this weekday in window) but business has revenue history, fall back to the weighted average across all weekdays in the window. Without this, the first appearance of each weekday returns predicted_revenue=0 (Rosali Apr 20-26 case)
+const MODEL_VERSION_DEFAULT  = 'consolidated_v1.5.0'   // 2026-05-16: opening_days short-circuit — when the business is closed on the forecast weekday (businesses.opening_days[mon..sun]=false), return predicted_revenue=0 immediately. Required after v1.4.0 because the zero-fallback otherwise produces overall-mean predictions for closed days (Vero is closed Sundays, was predicting non-zero Sunday revenue)
 const SNAPSHOT_VERSION       = 'consolidated_v1' as const
 const BASELINE_WINDOW_WEEKS  = 12   // mature businesses (≥180 days history)
 const SHORT_HISTORY_WEEKS    = 4    // Vero-style cold-start adjustment
@@ -275,10 +275,37 @@ export async function dailyForecast(
   // ── Load business + history range ──────────────────────────────────
   const { data: biz } = await db
     .from('businesses')
-    .select('id, org_id, name, country, kommun')
+    .select('id, org_id, name, country, kommun, opening_days')
     .eq('id', businessId)
     .maybeSingle()
   if (!biz) throw new Error(`Business ${businessId} not found`)
+
+  // ── Opening-days short-circuit ─────────────────────────────────────
+  // businesses.opening_days is JSONB: { mon, tue, wed, thu, fri, sat, sun: bool }.
+  // Default is all-true (column default). When the business is structurally
+  // closed on this weekday, predicted revenue MUST be 0 — anything else is
+  // a model bug, not a calibration issue.
+  //
+  // This is load-bearing AFTER v1.4.0's zero-baseline fallback: for closed
+  // weekdays there are no rows for that weekday in the recency window, so
+  // the fallback fires and produces an overall-mean prediction (~30k SEK)
+  // for a day the business doesn't trade. Vero's Sundays surfaced this
+  // 2026-05-16.
+  //
+  // Short-circuit BEFORE the parallel data loads — saves 4 DB round-trips
+  // per closed-day forecast. Capture write still happens so the audit
+  // ledger sees these days as structural zeros (high confidence; no MAPE
+  // noise — actual revenue on a closed day is also 0, so error is 0).
+  const OPENING_KEYS = ['sun','mon','tue','wed','thu','fri','sat'] as const
+  const openingKey  = OPENING_KEYS[weekday]
+  const openingDays = (biz as any).opening_days as Record<string, boolean> | null | undefined
+  const businessClosed = openingDays != null && openingDays[openingKey] === false
+
+  if (businessClosed) {
+    return buildClosedDayForecast({
+      biz, businessId, forecastIso, weekday, dayOfMonth: date.getUTCDate(), options, db,
+    })
+  }
 
   // Window for weekday baseline + this-week scaler
   const baselineFromDate = subtractDays(date, BASELINE_WINDOW_WEEKS * 7)
@@ -924,6 +951,106 @@ function bucketFromWeather(w: any): string {
   if (tempMax <= 8)             return 'cold_dry'
   if (tempMax >= 18)            return 'clear'
   return 'mild'
+}
+
+/**
+ * Build a closed-day forecast: predicted_revenue=0, all factors neutral,
+ * data_quality_flag='business_closed_for_weekday'. Confidence is 'high' —
+ * closed days are deterministic, not uncertain. Capture write still fires
+ * so the daily reconciler grades these as 0-vs-0 (zero MAPE contribution).
+ */
+async function buildClosedDayForecast(args: {
+  biz:          any
+  businessId:   string
+  forecastIso:  string
+  weekday:      number
+  dayOfMonth:   number
+  options:      DailyForecastOptions
+  db:           any
+}): Promise<DailyForecast> {
+  const { biz, businessId, forecastIso, weekday, dayOfMonth, options, db } = args
+  const modelVersion = options.overrideModelVersion ?? MODEL_VERSION_DEFAULT
+
+  const snapshot: ConsolidatedV1Snapshot = {
+    snapshot_version: SNAPSHOT_VERSION,
+    model_version:    modelVersion,
+    weekday_baseline: {
+      weekday,
+      recency_weighted_avg:           0,
+      recent_28d_samples:             0,
+      older_samples:                  0,
+      recency_multiplier_applied:     1,
+      stddev:                         0,
+      anomaly_days_excluded:          0,
+      holiday_samples_excluded:       0,
+      holiday_filter_active:          false,
+      zero_fallback_active:           false,
+      zero_fallback_overall_samples:  0,
+    },
+    yoy_same_weekday: { available: false, reason: 'business_closed_for_weekday' },
+    yoy_same_month:   { available: false, reason: 'business_closed_for_weekday' },
+    weather_forecast: {
+      temp_max_c: null, temp_min_c: null, precip_mm: null, condition: null, bucket: null,
+      source: 'unavailable', fetched_at: null,
+    },
+    weather_lift: { factor: 1, samples_used: 0, min_samples_met: false, available: false, reason: 'business_closed_for_weekday' },
+    weather_change_vs_seasonal: { available: false, reason: 'business_closed_for_weekday', applied_factor: 1 } as any,
+    holiday:        { is_holiday: false, name: null, kind: null, impact: null, lift_factor: 1 },
+    klamdag:        { is_klamdag: false, adjacent_holiday_date: null, adjacent_holiday_name: null, samples_used: 0, applied_factor: 1 },
+    school_holiday: { active: false, name: null, kommun: biz.kommun ?? null, lan: null, applied_factor: 1 },
+    salary_cycle: {
+      day_of_month:    dayOfMonth,
+      days_since_25th: dayOfMonth >= 25 ? dayOfMonth - 25 : (dayOfMonth + 30 - 25),
+      days_until_25th: dayOfMonth <= 25 ? 25 - dayOfMonth : (25 + 30 - dayOfMonth),
+      phase:           salaryPhase(dayOfMonth),
+      samples_used:    0,
+      applied_factor:  1,
+    },
+    this_week_scaler: {
+      raw: 1, applied: 1, clamped_at_max: false, clamped_at_min: false,
+      scaler_floor: RECENCY.SCALER_FLOOR, scaler_ceil: RECENCY.SCALER_CEIL,
+    },
+    anomaly_contamination: {
+      checked: false, contaminated_dates_in_baseline_window: [], owner_confirmed_count: 0,
+      filter_predicate: 'skipped_business_closed_for_weekday',
+    },
+    data_quality_flags: ['business_closed_for_weekday'],
+  }
+
+  if (!options.skipLogging) {
+    await captureForecastOutcome({
+      org_id:            biz.org_id,
+      business_id:       businessId,
+      forecast_date:     forecastIso,
+      surface:           'consolidated_daily',
+      predicted_revenue: 0,
+      baseline_revenue:  0,
+      model_version:     modelVersion,
+      snapshot_version:  SNAPSHOT_VERSION,
+      inputs_snapshot:   snapshot as unknown as Record<string, unknown>,
+      confidence:        'high',
+    }, { backfillMode: options.backfillMode, db })
+  }
+
+  return {
+    predicted_revenue: 0,
+    baseline_revenue:  0,
+    components: {
+      weekday_baseline:      0,
+      yoy_same_month_anchor: null,
+      weather_lift_pct:      1,
+      weather_change_pct:    1,
+      holiday_lift_pct:      1,
+      klamdag_pct:           1,
+      school_holiday_pct:    1,
+      salary_cycle_pct:      1,
+      this_week_scaler:      1,
+    },
+    confidence:        'high',
+    inputs_snapshot:   snapshot,
+    model_version:     modelVersion,
+    snapshot_version:  SNAPSHOT_VERSION,
+  }
 }
 
 function computeKlamdag(
