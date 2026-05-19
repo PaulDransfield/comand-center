@@ -196,6 +196,28 @@ export default function SettingsPage() {
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
         </div>
 
+        {/* Team & access — link card */}
+        <a
+          href="/settings/team"
+          style={{
+            ...S.card,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            textDecoration: 'none',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <div>
+            <div style={S.title}>Team &amp; access</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              Invite managers or your revisor. Managers see operations; revisors see read-only month-end data per business.
+            </div>
+          </div>
+          <span style={{ fontSize: 13, color: '#4338ca', fontWeight: 500 }}>Manage →</span>
+        </a>
+
         {/* AI agents — link card to /settings/ai-agents */}
         <a
           href="/settings/ai-agents"

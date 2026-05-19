@@ -27,6 +27,10 @@ interface SendInviteEmailArgs {
   orgName?:      string | null
   inviterName?:  string | null
   appOrigin:     string
+  /** Where to send the user after they've set their password. Defaults to
+   *  '/dashboard' for regular members; revisor invites pass '/revisor'
+   *  so the accountant lands on the close-cycle view immediately. */
+  redirectNext?: string
 }
 
 export interface SendInviteEmailResult {
@@ -38,6 +42,7 @@ export interface SendInviteEmailResult {
 
 export async function sendInviteEmail(args: SendInviteEmailArgs): Promise<SendInviteEmailResult> {
   const { supabaseAdmin, email, orgName, inviterName, appOrigin } = args
+  const next = args.redirectNext ?? '/dashboard'
 
   // generateLink with type='invite' returns a single-use URL that takes
   // the user to a Supabase-hosted password-set page first, then redirects
@@ -47,7 +52,7 @@ export async function sendInviteEmail(args: SendInviteEmailArgs): Promise<SendIn
     type:    'invite',
     email,
     options: {
-      redirectTo: `${appOrigin}/auth/handle?next=/dashboard`,
+      redirectTo: `${appOrigin}/auth/handle?next=${encodeURIComponent(next)}`,
     },
   })
   if (error || !data?.properties?.action_link) {
