@@ -138,6 +138,8 @@ export default function AiHoursReductionMap(props: Props) {
         // shifts:       per-staff shifts with Stockholm-local start/end
         hourlyDemand: (s.hourly_demand as any[] | undefined) ?? [],
         shifts:       (c.shift_list    as any[] | undefined) ?? [],
+        // Phase B — attribution drivers for the "why this day" line.
+        attribution:  s.attribution ?? null,
       }
     })
   }, [current, suggested, acceptances])
@@ -542,6 +544,7 @@ function DayRow({ row, fmt, fmtHrs, onDecide, t, dayLabel }: {
         hourlyDemand={row.hourlyDemand}
         shifts={row.shifts}
         mealPeriods={row.mealPeriods}
+        attribution={row.attribution}
         fmt={fmt}
         fmtHrs={fmtHrs}
       />

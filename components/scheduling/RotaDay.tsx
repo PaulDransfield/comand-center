@@ -50,10 +50,32 @@ interface MealPeriod {
   target_rev_per_hour?: number | null
 }
 
+interface Attribution {
+  weekday_name:              string
+  baseline_kr:               number
+  baseline_sample_n:         number
+  weather_summary:           string | null
+  weather_bucket:            string | null
+  weather_lift_pct:          number
+  weather_used_subset:       boolean
+  bucket_samples:            number
+  salary_phase:              'around_payday' | 'mid_month' | 'end_month'
+  salary_label:              string
+  salary_effect_pct:         number
+  holiday_name:              string | null
+  holiday_impact:            string | null
+  klamdag:                   boolean
+  klamdag_adjacent:          string | null
+  recent_trend_pct:          number
+  this_week_scaler:          number
+  this_week_scaler_clamped:  boolean
+}
+
 interface Props {
   hourlyDemand: HourlyDemand[]
   shifts:       Shift[]
   mealPeriods:  MealPeriod[]
+  attribution?: Attribution | null
   fmt:          (n: number) => string
   fmtHrs:       (h: number) => string
 }
@@ -102,9 +124,124 @@ function labelForPeriod(s: string): string {
   return m[s] ?? s
 }
 
+// ── Attribution line ────────────────────────────────────────────────
+// Operator-readable breakdown of WHY this day's demand looks the way
+// it does. Only surfaces non-neutral drivers — boring days stay quiet.
+
+function AttributionLine({ attribution: a, fmt }: { attribution: Attribution; fmt: (n: number) => string }) {
+  const drivers: Array<{ label: string; effect: string | null; tone: 'good' | 'warn' | 'bad' | 'neutral' }> = []
+
+  // Baseline — always shown as the anchor
+  drivers.push({
+    label:  `${a.weekday_name} baseline (${a.baseline_sample_n} samples)`,
+    effect: fmt(a.baseline_kr),
+    tone:   'neutral',
+  })
+
+  // Holiday
+  if (a.holiday_name) {
+    const tone: 'good' | 'bad' | 'neutral' = a.holiday_impact === 'high' ? 'good' : a.holiday_impact === 'low' ? 'bad' : 'neutral'
+    const effectLabel = a.holiday_impact === 'high' ? '+15%' : a.holiday_impact === 'low' ? '−60%' : null
+    drivers.push({ label: a.holiday_name, effect: effectLabel, tone })
+  }
+
+  // Klämdag
+  if (a.klamdag) {
+    drivers.push({
+      label:  `Klämdag (next to ${a.klamdag_adjacent ?? 'a holiday'})`,
+      effect: '−10%',
+      tone:   'bad',
+    })
+  }
+
+  // Salary cycle — skip when neutral mid_month
+  if (a.salary_phase !== 'mid_month' && a.salary_effect_pct !== 0) {
+    drivers.push({
+      label:  a.salary_label,
+      effect: (a.salary_effect_pct > 0 ? '+' : '') + a.salary_effect_pct + '%',
+      tone:   a.salary_effect_pct > 0 ? 'good' : 'bad',
+    })
+  }
+
+  // Weather lift — only when subset substitution fired AND lift is meaningful
+  if (a.weather_used_subset && Math.abs(a.weather_lift_pct) >= 3) {
+    drivers.push({
+      label:  `${a.weather_summary ?? 'Weather'} (${a.bucket_samples} similar days)`,
+      effect: (a.weather_lift_pct > 0 ? '+' : '') + a.weather_lift_pct.toFixed(0) + '%',
+      tone:   a.weather_lift_pct > 0 ? 'good' : 'bad',
+    })
+  }
+
+  // Recent trend — only if meaningful
+  if (Math.abs(a.recent_trend_pct) >= 5) {
+    drivers.push({
+      label:  'Recent 4 weeks vs longer-term',
+      effect: (a.recent_trend_pct > 0 ? '+' : '') + a.recent_trend_pct.toFixed(0) + '%',
+      tone:   a.recent_trend_pct > 0 ? 'good' : 'bad',
+    })
+  }
+
+  // This-week scaler clamped — surfaces "we're running hot/cold this week"
+  if (a.this_week_scaler_clamped) {
+    const isHigh = a.this_week_scaler >= 1.24
+    drivers.push({
+      label:  isHigh ? 'This week running above pattern (capped)' : 'This week running below pattern (capped)',
+      effect: isHigh ? '+25% max' : '−25% min',
+      tone:   isHigh ? 'good' : 'bad',
+    })
+  }
+
+  if (drivers.length === 1) {
+    // Only baseline — no story to tell. Skip the panel entirely.
+    return null
+  }
+
+  const TONE_COLOUR: Record<string, string> = {
+    good:    C.green,
+    bad:     C.red,
+    warn:    C.amber,
+    neutral: C.ink2,
+  }
+
+  return (
+    <div style={{
+      marginTop:    6,
+      padding:      '6px 10px',
+      background:   C.bgCard,
+      border:       `0.5px solid ${C.border}`,
+      borderRadius: 4,
+      fontSize:     11,
+    }}>
+      <div style={{
+        fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+        color: C.ink4, textTransform: 'uppercase' as const,
+        marginBottom: 4,
+      }}>
+        Why this day
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: '4px 12px' }}>
+        {drivers.map((dr, i) => (
+          <span key={i} style={{ color: C.ink3 }}>
+            <span style={{ color: C.ink2 }}>{dr.label}</span>
+            {dr.effect && (
+              <span style={{
+                marginLeft: 6,
+                fontWeight: 600,
+                color:      TONE_COLOUR[dr.tone],
+              }}>
+                {dr.effect}
+              </span>
+            )}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Component ────────────────────────────────────────────────────────
 
-export function RotaDay({ hourlyDemand, shifts, mealPeriods, fmt, fmtHrs }: Props) {
+export function RotaDay({ hourlyDemand, shifts, mealPeriods, attribution, fmt, fmtHrs }: Props) {
   // ── Visible hour range — collapse to active hours with 1-h padding ─
   const openHours = hourlyDemand
     .filter(h => !h.is_closed && h.predicted_revenue > 0)
@@ -316,6 +453,13 @@ export function RotaDay({ hourlyDemand, shifts, mealPeriods, fmt, fmtHrs }: Prop
           stroke={C.borderSoft} strokeWidth="0.5"
         />
       </svg>
+
+      {/* Phase B — "Why this day" attribution. Only renders non-neutral
+         drivers; a boring weekday with no payday/holiday/weather lift
+         shows nothing here. Operator-readable language, no jargon. */}
+      {attribution && (
+        <AttributionLine attribution={attribution} fmt={fmt} />
+      )}
 
       {/* Cut summary line */}
       {cutPeriods.length > 0 && (

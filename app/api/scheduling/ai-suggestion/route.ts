@@ -26,6 +26,7 @@ import { captureForecastOutcomes }              from '@/lib/forecast/audit'
 import { dailyForecast }                        from '@/lib/forecast/daily'
 import { hourlyForecast, detectMealPeriods, type MealPeriodCluster, type MealPeriodLabel } from '@/lib/forecast/hourly'
 import { isPredictionV2FlagEnabled }            from '@/lib/featureFlags/prediction-v2'
+import { getHolidaysForCountry }                from '@/lib/holidays'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
 
   // Confirm the caller owns this business. Pulling `city` here so we can
   // drive the live weather fetch off the business's location.
-  const { data: biz } = await db.from('businesses').select('id,org_id,name,city').eq('id', bizId).maybeSingle()
+  const { data: biz } = await db.from('businesses').select('id,org_id,name,city,country').eq('id', bizId).maybeSingle()
   if (!biz || biz.org_id !== auth.orgId) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   // Target range — defaults to "next calendar Monday → Sunday" but callers
@@ -590,6 +591,48 @@ export async function GET(req: NextRequest) {
   // only to trim, never to pad. Where the model *would* have added, we emit
   // an informational note ("your schedule looks lighter than the 12-week
   // pattern — no recommendation, judgment call") instead of a numeric delta.
+  // ── Per-day attribution data (Phase B — attribution-first UX) ───────────
+  // Decompose the prediction into operator-readable drivers. These are
+  // INDEPENDENT of the active forecaster: we surface natural signals
+  // (weekday baseline, weather, salary cycle, nearby holidays, recent
+  // trend) regardless of whether legacy or consolidated is producing the
+  // headline number. The UI renders only the non-neutral drivers, so a
+  // boring Tuesday with no holidays / no payday / mild weather shows
+  // little; a Friday-Valborg-payday-sunny day shows several.
+  const country = (biz.country ?? 'SE') as string
+  const forecastYears = Array.from(new Set(
+    Object.keys(currentByDate).map(d => parseInt(d.slice(0, 4), 10)),
+  ))
+  const allHolidays = forecastYears.flatMap(y => {
+    try { return getHolidaysForCountry(country, y) } catch { return [] }
+  })
+  const holidayByDate: Record<string, { name: string; impact: string | null }> = {}
+  const holidayDateSet = new Set<string>()
+  for (const h of allHolidays) {
+    holidayByDate[h.date] = { name: h.name_sv ?? (h as any).name ?? 'Holiday', impact: h.impact ?? null }
+    holidayDateSet.add(h.date)
+  }
+  function ymd(d: Date): string {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+  }
+  function isKlamdagDate(iso: string): { ok: boolean; adjacent?: string } {
+    const d = new Date(iso + 'T12:00:00Z')
+    const wd = d.getUTCDay()
+    if (wd === 0 || wd === 6) return { ok: false }   // weekends never klämdag
+    if (holidayDateSet.has(iso)) return { ok: false } // holiday itself
+    const yest = new Date(d); yest.setUTCDate(d.getUTCDate() - 1)
+    const tom  = new Date(d); tom.setUTCDate(d.getUTCDate() + 1)
+    const yIso = ymd(yest), tIso = ymd(tom)
+    if (holidayDateSet.has(yIso)) return { ok: true, adjacent: yIso }
+    if (holidayDateSet.has(tIso)) return { ok: true, adjacent: tIso }
+    return { ok: false }
+  }
+  function salaryPhaseDescr(dayOfMonth: number): { phase: 'around_payday' | 'mid_month' | 'end_month'; effect_pct: number; label: string } {
+    if (dayOfMonth >= 23 && dayOfMonth <= 27) return { phase: 'around_payday', effect_pct:  8, label: 'Around payday (25th)' }
+    if (dayOfMonth >= 28 || dayOfMonth <=  5) return { phase: 'end_month',     effect_pct: -3, label: 'End of month (post-payday dip)' }
+    return                                          { phase: 'mid_month',     effect_pct:  0, label: 'Mid-month' }
+  }
+
   const suggested: any[] = []
   for (const date of Object.keys(currentByDate).sort()) {
     const dow = (new Date(date).getUTCDay() + 6) % 7
@@ -706,6 +749,51 @@ export async function GET(req: NextRequest) {
       // visualization. 24-element array; downstream renders the open
       // hours and overlays scheduled shifts from current[i].shift_list.
       hourly_demand: hourlyDemandByDate[date] ?? [],
+      // Phase B: attribution-first UX. Decompose the prediction into
+      // operator-readable drivers. UI only renders non-neutral entries.
+      attribution: ((): any => {
+        const dateObj = new Date(date + 'T12:00:00Z')
+        const dom = dateObj.getUTCDate()
+        const weekdayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dateObj.getUTCDay()]
+        const baselineKr  = Math.round(rawAvgRev)
+        // Recent trend: last 4 historical samples for this weekday vs older 8.
+        const sortedDates = [...sourceRevDates].map((s, i) => ({ s, v: sourceRev[i] })).sort((a, b) => (a.s > b.s ? -1 : 1))
+        const recent4 = sortedDates.slice(0, 4).map(x => x.v)
+        const older   = sortedDates.slice(4).map(x => x.v)
+        const recent4Avg = recent4.length ? recent4.reduce((a, b) => a + b, 0) / recent4.length : 0
+        const olderAvg   = older.length   ? older.reduce((a, b) => a + b, 0) / older.length     : 0
+        const trendPct = olderAvg > 0 ? ((recent4Avg / olderAvg) - 1) * 100 : 0
+        // Weather lift: bucket subset mean vs all-weather mean
+        const allRevAvg = d.rev.length ? d.rev.reduce((a, b) => a + b, 0) / d.rev.length : 0
+        const bucketRevAvg = bucketData && bucketData.rev.length ? bucketData.rev.reduce((a, b) => a + b, 0) / bucketData.rev.length : allRevAvg
+        const weatherLiftPct = useBucket && allRevAvg > 0 ? ((bucketRevAvg / allRevAvg) - 1) * 100 : 0
+        // Holiday + klämdag
+        const holiday = holidayByDate[date]
+        const klam = isKlamdagDate(date)
+        const klamAdjName = klam.ok && klam.adjacent ? holidayByDate[klam.adjacent]?.name ?? 'a holiday' : null
+        // Salary cycle
+        const sal = salaryPhaseDescr(dom)
+        return {
+          weekday_name:        weekdayName,
+          baseline_kr:         baselineKr,
+          baseline_sample_n:   sourceRev.length,
+          weather_summary:     fcast?.summary ?? null,
+          weather_bucket:      bucket,
+          weather_lift_pct:    Math.round(weatherLiftPct * 10) / 10,
+          weather_used_subset: useBucket,
+          bucket_samples:      useBucket ? bucketData!.rev.length : 0,
+          salary_phase:        sal.phase,
+          salary_label:        sal.label,
+          salary_effect_pct:   sal.effect_pct,
+          holiday_name:        holiday?.name ?? null,
+          holiday_impact:      holiday?.impact ?? null,
+          klamdag:             klam.ok,
+          klamdag_adjacent:    klamAdjName,
+          recent_trend_pct:    Math.round(trendPct * 10) / 10,
+          this_week_scaler:    Math.round(thisWeekScale * 100) / 100,
+          this_week_scaler_clamped: thisWeekScale <= 0.75 + 1e-6 || thisWeekScale >= 1.25 - 1e-6,
+        }
+      })(),
     })
   }
 
