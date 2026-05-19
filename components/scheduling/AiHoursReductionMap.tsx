@@ -128,6 +128,10 @@ export default function AiHoursReductionMap(props: Props) {
         reasoning: String(s.reasoning ?? ''),
         status,
         isAccepted,
+        // Phase A week 3 — per-meal-period predictions + scheduled hours.
+        // Empty array for businesses without hourly_metrics yet (legacy
+        // POS integrations, pre-backfill, etc.) — UI renders no extra row.
+        mealPeriods: (s.meal_periods as any[] | undefined) ?? [],
       }
     })
   }, [current, suggested, acceptances])
@@ -414,17 +418,19 @@ function DayRow({ row, fmt, fmtHrs, onDecide, t, dayLabel }: {
 
   return (
     <div style={{
-      display:        'grid',
-      gridTemplateColumns: '110px 1fr 110px 90px',
-      gap:            14,
-      alignItems:     'center',
       background:     C.bgCard,
       borderTop:      `0.5px solid ${C.border}`,
       borderRight:    `0.5px solid ${C.border}`,
       borderBottom:   `0.5px solid ${C.border}`,
       borderLeft:     `3px solid ${borderColor}`,
-      padding:        '14px 14px 14px 12px',
       opacity,
+    }}>
+    <div style={{
+      display:        'grid',
+      gridTemplateColumns: '110px 1fr 110px 90px',
+      gap:            14,
+      alignItems:     'center',
+      padding:        '14px 14px 14px 12px',
     }}>
       {/* Col 1 — Day label */}
       <div>
@@ -519,6 +525,85 @@ function DayRow({ row, fmt, fmtHrs, onDecide, t, dayLabel }: {
         {(row.status === 'gray-closed' || row.status === 'gray-nochange') && (
           <span style={{ fontSize: 14, color: C.gray }}>—</span>
         )}
+      </div>
+    </div>
+    {/* Phase A week 3 — per-meal-period breakdown. Renders only when the
+       /api/scheduling/ai-suggestion payload includes meal_periods (i.e. the
+       business has hourly_metrics ingested). Subtle styling so it doesn't
+       compete with the day-level row above. */}
+    {row.mealPeriods && row.mealPeriods.length > 0 && row.status !== 'gray-closed' && (
+      <MealPeriodBreakdown periods={row.mealPeriods} fmt={fmt} fmtHrs={fmtHrs} />
+    )}
+    </div>
+  )
+}
+
+// ─── Meal-period breakdown sub-row ─────────────────────────────────────────
+
+function MealPeriodBreakdown({ periods, fmt, fmtHrs }: {
+  periods: any[]
+  fmt:     (n: number) => string
+  fmtHrs:  (h: number) => string
+}) {
+  // Label translations (English defaults; the API surfaces the underlying
+  // enum directly, so we map here rather than pushing translation work into
+  // the route handler).
+  const LABEL: Record<string, string> = {
+    breakfast: 'Breakfast',
+    brunch:    'Brunch',
+    lunch:     'Lunch',
+    afternoon: 'Afternoon',
+    dinner:    'Dinner',
+    late:      'Late',
+    overnight: 'Overnight',
+  }
+  return (
+    <div style={{
+      padding:    '8px 14px 10px 18px',
+      borderTop:  `0.5px dashed ${C.border}`,
+      background: C.bgPage,
+    }}>
+      <div style={{
+        fontSize:      9,
+        fontWeight:    700,
+        letterSpacing: '0.07em',
+        color:         C.ink4,
+        textTransform: 'uppercase' as const,
+        marginBottom:  6,
+      }}>
+        Service period breakdown
+      </div>
+      <div style={{
+        display:    'grid',
+        gridTemplateColumns: `repeat(${Math.min(periods.length, 5)}, minmax(0, 1fr))`,
+        gap:        10,
+      }}>
+        {periods.map((p: any) => {
+          const sched = Number(p.scheduled_hours ?? 0)
+          const rev   = Number(p.predicted_revenue ?? 0)
+          const rph   = p.rev_per_hour == null ? null : Number(p.rev_per_hour)
+          return (
+            <div key={p.label} style={{
+              padding:      '8px 10px',
+              borderRadius: 6,
+              background:   C.bgCard,
+              border:       `0.5px solid ${C.border}`,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 500, color: C.ink2, marginBottom: 4 }}>
+                {LABEL[p.label] ?? p.label}
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: C.ink, marginBottom: 2 }}>
+                {rev > 0 ? fmt(rev) : '—'}
+              </div>
+              <div style={{ fontSize: 11, color: C.ink3 }}>
+                {sched > 0 ? `${fmtHrs(sched)} scheduled` : 'no shifts'}
+                {rph != null && rph > 0 && (
+                  <span style={{ color: C.ink4 }}> · {fmt(rph)}/h</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
