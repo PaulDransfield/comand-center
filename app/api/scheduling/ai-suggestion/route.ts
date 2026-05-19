@@ -152,6 +152,16 @@ export async function GET(req: NextRequest) {
       hours:           0,
       est_cost:        0,
       dept_breakdown:  {} as Record<string, { hours: number; cost: number }>,
+      // Phase A week 3.5 — per-shift detail for the rota timeline view.
+      // Empty when PK fell back to staff_logs (which lacks shift times).
+      shift_list:      [] as Array<{
+        staff_name:      string | null
+        staff_group:     string | null
+        shift_start_iso: string | null
+        shift_end_iso:   string | null
+        hours_worked:    number
+        estimated_cost:  number
+      }>,
     }
   }
   for (const s of scheduledRows) {
@@ -166,6 +176,17 @@ export async function GET(req: NextRequest) {
     if (!row.dept_breakdown[dept]) row.dept_breakdown[dept] = { hours: 0, cost: 0 }
     row.dept_breakdown[dept].hours += hours
     row.dept_breakdown[dept].cost  += cost
+    // Push shift detail. Only useful when we got start/end from PK live.
+    if (s.shift_start_iso && s.shift_end_iso) {
+      row.shift_list.push({
+        staff_name:      s.staff_name ?? null,
+        staff_group:     s.staff_group ?? null,
+        shift_start_iso: s.shift_start_iso,
+        shift_end_iso:   s.shift_end_iso,
+        hours_worked:    hours,
+        estimated_cost:  Math.round(cost),
+      })
+    }
   }
 
   // ── Historical pattern: 12 weeks (mature) or 4 weeks (short-history) ──
@@ -465,23 +486,43 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Per-date meal-period predictions — parallel within each date.
-  // mealPredictionsByDate[date] is an array of meal-period slots ready for
-  // the API response.
+  // Per-date hourly + meal-period predictions.
+  // hourlyDemandByDate[date] = full 24-hour array for the rota view's
+  //                            demand curve overlay
+  // mealPredictionsByDate[date] = aggregated per-meal-period for cards/cuts
   const mealPredictionsByDate: Record<string, any[]> = {}
+  const hourlyDemandByDate:    Record<string, Array<{
+    hour:              number
+    predicted_revenue: number
+    predicted_covers:  number
+    is_closed:         boolean
+    confidence:        'high' | 'medium' | 'low'
+  }>> = {}
   if (detectedMealPeriods.length > 0 && hourlyHistory.length > 0) {
     const futureDates = Object.keys(currentByDate).filter(d => (actualByDateInRange[d] ?? 0) <= 0)
     await Promise.all(futureDates.map(async dateIso => {
       const forecastDate = new Date(dateIso + 'T12:00:00Z')
-      const perPeriod = await Promise.all(detectedMealPeriods.map(async cluster => {
-        // Predict each hour in the cluster; sum within the cluster.
-        const hourly = await Promise.all(cluster.hours.map(h =>
-          hourlyForecast(bizId, forecastDate, h, {
-            db,
-            preloadedHistory:  hourlyHistory,
-            preloadedThisWeek: hourlyThisWeek,
-          }),
-        ))
+      // Predict every hour 0-23 in parallel — preloaded history makes
+      // this cheap (no DB roundtrips inside the helper).
+      const allHourPreds = await Promise.all(Array.from({ length: 24 }, (_, h) =>
+        hourlyForecast(bizId, forecastDate, h, {
+          db,
+          preloadedHistory:  hourlyHistory,
+          preloadedThisWeek: hourlyThisWeek,
+        }),
+      ))
+      const hourLookup: Record<number, any> = {}
+      for (const fc of allHourPreds) hourLookup[fc.hour] = fc
+      hourlyDemandByDate[dateIso] = allHourPreds.map(fc => ({
+        hour:              fc.hour,
+        predicted_revenue: fc.predicted_revenue,
+        predicted_covers:  fc.predicted_covers,
+        is_closed:         fc.is_closed_hour,
+        confidence:        fc.confidence,
+      }))
+
+      const perPeriod = detectedMealPeriods.map(cluster => {
+        const hourly = cluster.hours.map(h => hourLookup[h])
         const predictedRev    = hourly.reduce((s, r) => s + r.predicted_revenue, 0)
         const predictedCovers = hourly.reduce((s, r) => s + r.predicted_covers,  0)
         // Confidence = worst of constituent hours.
@@ -526,7 +567,7 @@ export async function GET(req: NextRequest) {
           delta_hours:         deltaHours,    // ≤ 0, negative = cut
           delta_cost:          deltaCost,     // ≤ 0, negative = saving
         }
-      }))
+      })
       mealPredictionsByDate[dateIso] = perPeriod
     }))
   }
@@ -661,6 +702,10 @@ export async function GET(req: NextRequest) {
       //   - business has no hourly_metrics yet (backfill not run)
       //   - the day is in the past and consumed actuals instead
       meal_periods:  mealPredictionsByDate[date] ?? [],
+      // Phase A week 3.5: full-day demand curve for the Nory-style rota
+      // visualization. 24-element array; downstream renders the open
+      // hours and overlays scheduled shifts from current[i].shift_list.
+      hourly_demand: hourlyDemandByDate[date] ?? [],
     })
   }
 

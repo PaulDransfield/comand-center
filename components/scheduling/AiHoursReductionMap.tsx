@@ -26,6 +26,7 @@
 import { useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { UX } from '@/lib/constants/tokens'
+import { RotaDay } from '@/components/scheduling/RotaDay'
 
 interface AcceptRow {
   date:            string
@@ -131,7 +132,12 @@ export default function AiHoursReductionMap(props: Props) {
         // Phase A week 3 — per-meal-period predictions + scheduled hours.
         // Empty array for businesses without hourly_metrics yet (legacy
         // POS integrations, pre-backfill, etc.) — UI renders no extra row.
-        mealPeriods: (s.meal_periods as any[] | undefined) ?? [],
+        mealPeriods:  (s.meal_periods  as any[] | undefined) ?? [],
+        // Phase A week 3.5 — Nory-style rota visualisation inputs.
+        // hourlyDemand: 24-element predicted-revenue curve
+        // shifts:       per-staff shifts with Stockholm-local start/end
+        hourlyDemand: (s.hourly_demand as any[] | undefined) ?? [],
+        shifts:       (c.shift_list    as any[] | undefined) ?? [],
       }
     })
   }, [current, suggested, acceptances])
@@ -527,12 +533,18 @@ function DayRow({ row, fmt, fmtHrs, onDecide, t, dayLabel }: {
         )}
       </div>
     </div>
-    {/* Phase A week 3 — per-meal-period breakdown. Renders only when the
-       /api/scheduling/ai-suggestion payload includes meal_periods (i.e. the
-       business has hourly_metrics ingested). Subtle styling so it doesn't
-       compete with the day-level row above. */}
-    {row.mealPeriods && row.mealPeriods.length > 0 && row.status !== 'gray-closed' && (
-      <MealPeriodBreakdown periods={row.mealPeriods} fmt={fmt} fmtHrs={fmtHrs} />
+    {/* Phase A week 3.5 — Nory-style rota visualisation: predicted
+       demand curve at top, scheduled shift bars per staff member below.
+       Renders only when the business has hourly_metrics ingested AND
+       the day isn't structurally closed. */}
+    {row.hourlyDemand && row.hourlyDemand.length > 0 && row.status !== 'gray-closed' && (
+      <RotaDay
+        hourlyDemand={row.hourlyDemand}
+        shifts={row.shifts}
+        mealPeriods={row.mealPeriods}
+        fmt={fmt}
+        fmtHrs={fmtHrs}
+      />
     )}
     </div>
   )
