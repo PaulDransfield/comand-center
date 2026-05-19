@@ -2,23 +2,24 @@
 // components/scheduling/RotaDay.tsx
 //
 // Nory-style per-day rota visualisation: predicted demand curve at the
-// top, scheduled shift bars below, time axis between them. Each staff
-// member gets one row in the grid; each shift renders as a coloured bar
-// positioned by Stockholm-local start/end time.
+// top with staff coverage bars below it, sharing one hour axis. Mismatch
+// between demand and staffing is visible at a glance — no scrolling
+// through per-staff rows.
 //
-// Goal of the visual: an operator looking at one day should see at a
-// glance where demand peaks DON'T match staffing density. That's where
-// the over- and under-staffing lives. Cards (per-meal-period totals)
-// are a summary; this is the working layout.
+// Bars are colour-coded by demand-vs-staffing ratio:
+//   green  — staff ≈ ideal coverage for that hour
+//   amber  — overstaffed (staff > 130 % of ideal)
+//   red    — understaffed (staff < 70 % of ideal)
+//   gray   — closed or no data
 //
-// Inputs (per day):
-//   hourlyDemand[]   — full 24h array of predicted_revenue / is_closed
-//   shifts[]         — staff_name + shift_start_iso + shift_end_iso + cost
-//   mealPeriods[]    — for the cut-recommendation summary line below
+// Ideal staff per hour = predicted_revenue / target_rev_per_hour. The
+// target rph comes from the meal_periods response (P75 of historical
+// rev/hour for the containing meal period). Hours without a target rph
+// default to green tone (no recommendation).
 //
-// The time axis collapses to the business's active hours (min open hour
-// minus 1 → max open hour plus 1) so we don't waste 9 hours of empty
-// strip on every day. Vero ends up with 10:00-00:00, Rosali 09:00-22:00.
+// Total height ≈ 110 px per day (vs ~400 px for the per-staff-row
+// version). Designed to fit ~5 days on a 1080-tall screen without
+// scrolling.
 
 import { UX } from '@/lib/constants/tokens'
 
@@ -46,6 +47,7 @@ interface MealPeriod {
   scheduled_hours:     number
   delta_hours:         number
   delta_cost:          number
+  target_rev_per_hour?: number | null
 }
 
 interface Props {
@@ -72,30 +74,13 @@ const C = {
   amberBg:    UX.amberBg,
   red:        '#b91c1c',
   redBg:      '#fef2f2',
-  // Demand-curve palette — blue family so it reads as forecast data
-  demandFill: 'rgba(37, 99, 235, 0.18)',
+  demandFill: 'rgba(37, 99, 235, 0.16)',
   demandLine: '#2563eb',
-  closed:     UX.borderSoft,
-}
-
-// Group staff colour palette — keeps similar shifts grouped visually
-// without depending on a per-business taxonomy. Deterministic hash so
-// the same staff member gets the same colour across re-renders.
-const STAFF_PALETTE = [
-  '#1e40af', '#7c3aed', '#0891b2', '#15803d', '#a16207',
-  '#9f1239', '#0f766e', '#7c2d12', '#3730a3', '#831843',
-]
-function staffColour(name: string | null): string {
-  if (!name) return STAFF_PALETTE[0]
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
-  return STAFF_PALETTE[h % STAFF_PALETTE.length]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
 function stockholmLocalHourFloat(iso: string): number {
-  // Stockholm-local hour with fractional minutes (so 13:30 = 13.5).
   try {
     const d = new Date(iso)
     if (Number.isNaN(d.getTime())) return NaN
@@ -109,274 +94,269 @@ function stockholmLocalHourFloat(iso: string): number {
   }
 }
 
+function labelForPeriod(s: string): string {
+  const m: Record<string, string> = {
+    breakfast: 'Breakfast', brunch: 'Brunch', lunch: 'Lunch',
+    afternoon: 'Afternoon', dinner: 'Dinner', late: 'Late', overnight: 'Overnight',
+  }
+  return m[s] ?? s
+}
+
 // ── Component ────────────────────────────────────────────────────────
 
 export function RotaDay({ hourlyDemand, shifts, mealPeriods, fmt, fmtHrs }: Props) {
-  // ── Determine visible hour range ───────────────────────────────────
-  // Open hours = hours with predicted_revenue > 0 OR not closed.
-  // Pad with 1 hour either side so the curve has visual breathing room.
+  // ── Visible hour range — collapse to active hours with 1-h padding ─
   const openHours = hourlyDemand
     .filter(h => !h.is_closed && h.predicted_revenue > 0)
     .map(h => h.hour)
   if (openHours.length === 0) {
     return (
-      <div style={{ padding: '12px 14px', fontSize: 12, color: C.ink4, fontStyle: 'italic' as const, background: C.bgPage }}>
+      <div style={{ padding: '10px 14px', fontSize: 12, color: C.ink4, fontStyle: 'italic' as const, background: C.bgPage }}>
         No predicted trading hours for this day.
       </div>
     )
   }
-  const minHour = Math.max(0,  Math.min(...openHours) - 1)
+  const minHour = Math.max(0, Math.min(...openHours) - 1)
   const maxHour = Math.min(23, Math.max(...openHours) + 1)
-  const hourCount = maxHour - minHour + 1   // inclusive
+  const hourCount = maxHour - minHour + 1
 
-  // Max predicted revenue across visible hours — drives the demand curve y-scale
-  const visibleDemand = hourlyDemand.filter(h => h.hour >= minHour && h.hour <= maxHour)
-  const maxRev = Math.max(...visibleDemand.map(h => h.predicted_revenue), 1)
+  const demandByHour: Record<number, number> = {}
+  for (const h of hourlyDemand) demandByHour[h.hour] = h.predicted_revenue
+  const maxRev = Math.max(...Object.values(demandByHour), 1)
 
-  // ── Group shifts by staff name ─────────────────────────────────────
-  const byStaff = new Map<string, Shift[]>()
-  for (const s of shifts) {
-    if (!s.shift_start_iso || !s.shift_end_iso) continue
-    const key = s.staff_name ?? '(unknown)'
-    if (!byStaff.has(key)) byStaff.set(key, [])
-    byStaff.get(key)!.push(s)
+  // ── Staff coverage: count shifts overlapping each hour ─────────────
+  const staffPerHour: number[] = new Array(24).fill(0)
+  for (const shift of shifts) {
+    if (!shift.shift_start_iso || !shift.shift_end_iso) continue
+    const start = stockholmLocalHourFloat(shift.shift_start_iso)
+    const end   = stockholmLocalHourFloat(shift.shift_end_iso)
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue
+    for (let h = Math.floor(start); h < Math.ceil(end); h++) {
+      if (h >= 0 && h <= 23) staffPerHour[h] += 1
+    }
   }
-  // Sort staff by their earliest shift start — gives a natural top-to-bottom
-  // reading order (morning prep → late dinner).
-  const staffEntries = Array.from(byStaff.entries()).sort((a, b) => {
-    const aStart = Math.min(...a[1].map(s => stockholmLocalHourFloat(s.shift_start_iso!)))
-    const bStart = Math.min(...b[1].map(s => stockholmLocalHourFloat(s.shift_start_iso!)))
-    return aStart - bStart
-  })
+  const maxStaff = Math.max(...staffPerHour, 1)
+  const totalStaffPeak = maxStaff
+  const totalShiftCount = new Set(
+    shifts.map(s => s.staff_name).filter(Boolean),
+  ).size
+
+  // Target rev/hour per hour (from the containing meal period)
+  function targetRphFor(hour: number): number | null {
+    for (const mp of mealPeriods) {
+      if (mp.hours_in_period.includes(hour)) {
+        return mp.target_rev_per_hour ?? null
+      }
+    }
+    return null
+  }
+
+  // Ratio colour for a given hour's staffing
+  function staffColour(hour: number): string {
+    const rev = demandByHour[hour] ?? 0
+    const staff = staffPerHour[hour]
+    if (rev <= 0 || staff <= 0) return C.borderSoft
+    const target = targetRphFor(hour)
+    if (target == null || target <= 0) return C.demandLine
+    const idealStaff = rev / target
+    const ratio = staff / idealStaff
+    if (ratio < 0.7)  return C.red
+    if (ratio > 1.3)  return C.amber
+    return C.green
+  }
 
   // ── Geometry ──────────────────────────────────────────────────────
-  const TRACK_HEIGHT     = 18    // px per staff row
-  const TRACK_GAP        = 2
-  const STAFF_LABEL_COL  = 90    // px reserved for staff name column
-  const DEMAND_HEIGHT    = 60    // px — height of the demand-curve area
-  const AXIS_HEIGHT      = 16
-  const containerHeight  = DEMAND_HEIGHT + AXIS_HEIGHT + Math.max(staffEntries.length, 1) * (TRACK_HEIGHT + TRACK_GAP) + 12
+  const DEMAND_H = 50
+  const STAFF_H  = 26
+  const AXIS_H   = 14
+  const TOTAL_H  = DEMAND_H + STAFF_H + AXIS_H + 4
 
-  // SVG inner geometry — uses 0..hourCount on the x-axis.
-  // We render in a flex container with a fixed-px label column on the left
-  // and an SVG taking the remainder; the SVG uses a preserveAspectRatio
-  // 'none' viewBox so x-coordinates map directly to hour fractions.
-
-  function hourToX(hour: number): number {
-    // hour can be fractional. 0..hourCount mapped to 0..1000 internal viewbox.
-    return ((hour - minHour) / hourCount) * 1000
+  function hourToX(h: number): number {
+    return ((h - minHour) / hourCount) * 1000
   }
 
-  // Demand curve path — area chart with smooth steps per hour.
-  const demandPathPoints: string[] = []
+  // ── Demand area path ──────────────────────────────────────────────
+  // Stepped: each hour cell is a flat plateau at its predicted value.
+  const points: string[] = [`M${hourToX(minHour).toFixed(2)},${DEMAND_H}`]
   for (let i = 0; i <= hourCount; i++) {
     const h = minHour + i
-    const cell = visibleDemand.find(d => d.hour === h)
-    const rev = cell?.predicted_revenue ?? 0
-    const xLeft  = hourToX(h)
-    const xRight = hourToX(h + 1)
-    const y      = DEMAND_HEIGHT - (rev / maxRev) * (DEMAND_HEIGHT - 4) - 2
-    if (i === 0) demandPathPoints.push(`M${xLeft.toFixed(2)},${DEMAND_HEIGHT}`)
-    demandPathPoints.push(`L${xLeft.toFixed(2)},${y.toFixed(2)}`)
-    demandPathPoints.push(`L${xRight.toFixed(2)},${y.toFixed(2)}`)
+    const rev = demandByHour[h] ?? 0
+    const y = DEMAND_H - (rev / maxRev) * (DEMAND_H - 6) - 3
+    points.push(`L${hourToX(h).toFixed(2)},${y.toFixed(2)}`)
+    points.push(`L${hourToX(h + 1).toFixed(2)},${y.toFixed(2)}`)
   }
-  demandPathPoints.push(`L${hourToX(maxHour + 1).toFixed(2)},${DEMAND_HEIGHT}`)
-  demandPathPoints.push('Z')
-  const demandPath = demandPathPoints.join(' ')
+  points.push(`L${hourToX(maxHour + 1).toFixed(2)},${DEMAND_H}`)
+  points.push('Z')
+  const demandPath = points.join(' ')
+
+  // Peak hour label
+  let peakHour = minHour
+  for (let h = minHour; h <= maxHour; h++) {
+    if ((demandByHour[h] ?? 0) > (demandByHour[peakHour] ?? 0)) peakHour = h
+  }
+  const peakRev = demandByHour[peakHour] ?? 0
 
   // Cut summary
   const cutPeriods = mealPeriods.filter(mp => mp.delta_hours <= -0.5)
-  const totalCutHours = cutPeriods.reduce((s, m) => s + Math.abs(m.delta_hours), 0)
   const totalCutCost  = cutPeriods.reduce((s, m) => s + Math.abs(m.delta_cost), 0)
 
   return (
     <div style={{
-      padding:    '10px 14px 14px',
+      padding:    '8px 14px 12px',
       background: C.bgPage,
       borderTop:  `0.5px dashed ${C.border}`,
     }}>
       <div style={{
-        fontSize:      9,
-        fontWeight:    700,
-        letterSpacing: '0.07em',
-        color:         C.ink4,
-        textTransform: 'uppercase' as const,
-        marginBottom:  6,
+        display:       'flex',
+        justifyContent: 'space-between',
+        alignItems:    'baseline',
+        marginBottom:  4,
       }}>
-        Demand · Shifts
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
-        {/* Staff label column */}
         <div style={{
-          width:         STAFF_LABEL_COL,
-          paddingTop:    DEMAND_HEIGHT + AXIS_HEIGHT,
-          fontSize:      11,
-          color:         C.ink3,
+          fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+          color: C.ink4, textTransform: 'uppercase' as const,
         }}>
-          {staffEntries.map(([name]) => (
-            <div key={name} style={{
-              height:       TRACK_HEIGHT,
-              marginBottom: TRACK_GAP,
-              display:      'flex',
-              alignItems:   'center',
-              whiteSpace:   'nowrap' as const,
-              overflow:     'hidden',
-              textOverflow: 'ellipsis',
-            }}>
-              <span style={{
-                width:        4,
-                height:       12,
-                borderRadius: 2,
-                background:   staffColour(name),
-                marginRight:  6,
-                flexShrink:   0,
-              }} />
-              {name}
-            </div>
-          ))}
-          {staffEntries.length === 0 && (
-            <div style={{ fontStyle: 'italic' as const, color: C.ink4 }}>no shifts</div>
+          Demand × Staffing
+        </div>
+        <div style={{ fontSize: 11, color: C.ink3 }}>
+          Peak <strong style={{ color: C.demandLine }}>{fmt(peakRev)}</strong> at {String(peakHour).padStart(2, '0')}:00
+          {totalShiftCount > 0 && (
+            <>{' · '}<strong style={{ color: C.ink2 }}>{totalShiftCount}</strong> staff · peak <strong style={{ color: C.ink2 }}>{totalStaffPeak}</strong> on shift</>
           )}
         </div>
-
-        {/* Grid SVG */}
-        <svg
-          viewBox={`0 0 1000 ${containerHeight}`}
-          preserveAspectRatio="none"
-          style={{
-            flex:    1,
-            height:  containerHeight,
-            background: C.bgCard,
-            border:  `0.5px solid ${C.border}`,
-            borderRadius: 4,
-          }}
-        >
-          {/* Demand curve area */}
-          <path d={demandPath} fill={C.demandFill} stroke={C.demandLine} strokeWidth="1" />
-
-          {/* Demand peak hour label */}
-          {(() => {
-            const peak = visibleDemand.reduce((b, c) => c.predicted_revenue > b.predicted_revenue ? c : b, visibleDemand[0])
-            if (!peak || peak.predicted_revenue <= 0) return null
-            const xCenter = hourToX(peak.hour + 0.5)
-            const y = DEMAND_HEIGHT - (peak.predicted_revenue / maxRev) * (DEMAND_HEIGHT - 4) - 6
-            return (
-              <text
-                x={xCenter} y={Math.max(y, 10)}
-                fontSize="9"
-                fill={C.demandLine}
-                textAnchor="middle"
-                style={{ fontWeight: 600 } as any}
-              >
-                {fmt(peak.predicted_revenue)}
-              </text>
-            )
-          })()}
-
-          {/* Hour grid lines */}
-          {Array.from({ length: hourCount + 1 }, (_, i) => {
-            const x = hourToX(minHour + i)
-            return (
-              <line
-                key={`gl-${i}`}
-                x1={x} y1={DEMAND_HEIGHT}
-                x2={x} y2={containerHeight - 4}
-                stroke={C.borderSoft}
-                strokeWidth="0.5"
-                strokeDasharray={i % 3 === 0 ? undefined : '2,3'}
-              />
-            )
-          })}
-
-          {/* Hour axis labels */}
-          {Array.from({ length: hourCount + 1 }, (_, i) => {
-            const h = minHour + i
-            if (i % 2 !== 0 && hourCount > 8) return null   // skip every-other when dense
-            const x = hourToX(h)
-            return (
-              <text
-                key={`ax-${i}`}
-                x={x} y={DEMAND_HEIGHT + AXIS_HEIGHT - 4}
-                fontSize="9"
-                fill={C.ink4}
-                textAnchor="middle"
-              >
-                {String(h).padStart(2, '0')}
-              </text>
-            )
-          })}
-
-          {/* Staff shift bars */}
-          {staffEntries.map(([name, staffShifts], rowIdx) => {
-            const y = DEMAND_HEIGHT + AXIS_HEIGHT + rowIdx * (TRACK_HEIGHT + TRACK_GAP)
-            const colour = staffColour(name)
-            return (
-              <g key={name}>
-                {/* Row background */}
-                <rect
-                  x={0} y={y}
-                  width={1000} height={TRACK_HEIGHT}
-                  fill={rowIdx % 2 === 0 ? C.bgPage : 'transparent'}
-                  opacity={0.4}
-                />
-                {/* Shift bars */}
-                {staffShifts.map((s, sIdx) => {
-                  const startH = stockholmLocalHourFloat(s.shift_start_iso!)
-                  const endH   = stockholmLocalHourFloat(s.shift_end_iso!)
-                  if (!Number.isFinite(startH) || !Number.isFinite(endH)) return null
-                  // Clip to visible range
-                  const sH = Math.max(startH, minHour)
-                  const eH = Math.min(endH,   maxHour + 1)
-                  if (eH <= sH) return null
-                  const x  = hourToX(sH)
-                  const x2 = hourToX(eH)
-                  return (
-                    <g key={sIdx}>
-                      <rect
-                        x={x} y={y + 2}
-                        width={Math.max(2, x2 - x)} height={TRACK_HEIGHT - 4}
-                        fill={colour}
-                        fillOpacity={0.85}
-                        rx={2}
-                      />
-                      <title>{`${s.staff_name ?? '?'} · ${startH.toFixed(1)}–${endH.toFixed(1)} · ${fmtHrs(s.hours_worked)} · ${fmt(s.estimated_cost)}`}</title>
-                    </g>
-                  )
-                })}
-              </g>
-            )
-          })}
-        </svg>
       </div>
 
-      {/* Cut summary line — keeps the actionable recommendation explicit */}
+      <svg
+        viewBox={`0 0 1000 ${TOTAL_H}`}
+        preserveAspectRatio="none"
+        style={{
+          width:        '100%',
+          height:       TOTAL_H,
+          background:   C.bgCard,
+          border:       `0.5px solid ${C.border}`,
+          borderRadius: 4,
+          display:      'block',
+        }}
+      >
+        {/* Demand curve area */}
+        <path d={demandPath} fill={C.demandFill} stroke={C.demandLine} strokeWidth="1" />
+
+        {/* Hour grid lines (light) */}
+        {Array.from({ length: hourCount + 1 }, (_, i) => {
+          const x = hourToX(minHour + i)
+          return (
+            <line
+              key={`gl-${i}`}
+              x1={x} y1={0}
+              x2={x} y2={DEMAND_H + AXIS_H + STAFF_H}
+              stroke={C.borderSoft}
+              strokeWidth="0.5"
+            />
+          )
+        })}
+
+        {/* Hour axis labels — under demand curve */}
+        {Array.from({ length: hourCount }, (_, i) => {
+          const h = minHour + i
+          // Skip every other label when very dense (>12 visible hours)
+          if (hourCount > 12 && i % 2 !== 0 && i !== hourCount - 1) return null
+          const x = hourToX(h) + (hourToX(h + 1) - hourToX(h)) / 2  // centre of cell
+          return (
+            <text
+              key={`ax-${i}`}
+              x={x} y={DEMAND_H + AXIS_H - 4}
+              fontSize="9"
+              fill={C.ink4}
+              textAnchor="middle"
+            >
+              {String(h).padStart(2, '0')}
+            </text>
+          )
+        })}
+
+        {/* Staff coverage bars — one per hour */}
+        {Array.from({ length: hourCount }, (_, i) => {
+          const h = minHour + i
+          const count = staffPerHour[h]
+          if (count === 0) return null
+          const x = hourToX(h)
+          const w = hourToX(h + 1) - x - 1   // 1px gap
+          const barH = (count / maxStaff) * (STAFF_H - 6)
+          const y = DEMAND_H + AXIS_H + (STAFF_H - barH - 2)
+          const color = staffColour(h)
+          return (
+            <g key={`sb-${i}`}>
+              <rect
+                x={x + 0.5} y={y}
+                width={Math.max(1, w)} height={barH}
+                fill={color}
+                fillOpacity={0.85}
+                rx={1.5}
+              />
+              {/* Staff count label inside bar when tall enough */}
+              {barH > 10 && (
+                <text
+                  x={x + w / 2} y={y + barH / 2 + 3}
+                  fontSize="8" fontWeight="600"
+                  fill="white"
+                  textAnchor="middle"
+                >
+                  {count}
+                </text>
+              )}
+              <title>{`${String(h).padStart(2, '0')}:00 — ${fmt(demandByHour[h] ?? 0)} predicted · ${count} staff`}</title>
+            </g>
+          )
+        })}
+
+        {/* Baseline under staff bars */}
+        <line
+          x1={0} y1={DEMAND_H + AXIS_H + STAFF_H - 1}
+          x2={1000} y2={DEMAND_H + AXIS_H + STAFF_H - 1}
+          stroke={C.borderSoft} strokeWidth="0.5"
+        />
+      </svg>
+
+      {/* Cut summary line */}
       {cutPeriods.length > 0 && (
         <div style={{
-          marginTop:    8,
-          padding:      '6px 10px',
+          marginTop:    6,
+          padding:      '5px 10px',
           background:   C.greenBg,
           border:       `0.5px solid ${C.green}`,
           borderRadius: 4,
-          fontSize:     12,
+          fontSize:     11,
           color:        C.green,
           fontWeight:   500,
         }}>
-          {cutPeriods.map(p => `${labelForPeriod(p.label)} ${fmtHrs(Math.abs(p.delta_hours))}`).join(' · ')}
+          {cutPeriods.map(p => `${labelForPeriod(p.label)} cut ${fmtHrs(Math.abs(p.delta_hours))}`).join(' · ')}
           {' → '}
           <span style={{ fontWeight: 600 }}>save {fmt(Math.round(totalCutCost))}</span>
-          <span style={{ color: C.ink3, fontWeight: 400 }}>{' '}({fmtHrs(totalCutHours)} total)</span>
         </div>
       )}
+
+      {/* Legend */}
+      <div style={{
+        marginTop: 6,
+        fontSize: 10, color: C.ink4,
+        display: 'flex', gap: 12, alignItems: 'center',
+      }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: C.green }} />
+          matched
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: C.amber }} />
+          overstaffed
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 2, background: C.red }} />
+          understaffed
+        </span>
+        <span style={{ marginLeft: 'auto', color: C.demandLine }}>
+          ▬ predicted demand
+        </span>
+      </div>
     </div>
   )
-}
-
-function labelForPeriod(s: string): string {
-  const m: Record<string, string> = {
-    breakfast: 'Breakfast cut', brunch: 'Brunch cut', lunch: 'Lunch cut',
-    afternoon: 'Afternoon cut', dinner: 'Dinner cut', late: 'Late cut',
-    overnight: 'Overnight cut',
-  }
-  return m[s] ?? `${s} cut`
 }
