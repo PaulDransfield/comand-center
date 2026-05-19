@@ -24,6 +24,7 @@ import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
 import { weightedAvg, thisWeekScaler, RECENCY, adaptiveRecencyParams } from '@/lib/forecast/recency'
 import { captureForecastOutcomes }              from '@/lib/forecast/audit'
 import { dailyForecast }                        from '@/lib/forecast/daily'
+import { hourlyForecast, detectMealPeriods, type MealPeriodCluster, type MealPeriodLabel } from '@/lib/forecast/hourly'
 import { isPredictionV2FlagEnabled }            from '@/lib/featureFlags/prediction-v2'
 
 export const runtime     = 'nodejs'
@@ -109,6 +110,12 @@ export async function GET(req: NextRequest) {
             staff_group:       p.costgroup ?? null,
             hours_worked:      hours,
             estimated_salary:  p.estimated_cost ?? 0,
+            // Preserved for meal-period splitting (Phase A week 3).
+            // ISO timestamps; downstream we convert to Stockholm-local
+            // hour-of-day and intersect with detected meal-period hours.
+            shift_start_iso:   p.start ?? null,
+            shift_end_iso:     p.end   ?? null,
+            breaks_duration:   p.breaks_duration ?? 0,
           }
         }).filter((r: any) => r.shift_date && r.shift_date >= weekFrom && r.shift_date <= weekTo)
       }
@@ -352,6 +359,107 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Meal-period predictions (Nordic Plan Phase A week 3) ───────────────
+  // Pre-load 12 weeks of hourly_metrics once + this-week-so-far rows once,
+  // then call hourlyForecast() per (date, meal_period, hour) with the
+  // preloaded data so we don't burn 400+ queries on the per-cell math.
+  // Detected meal periods are intersected with the business's universal
+  // Swedish meal-period map (lunch / afternoon / dinner / late).
+  const HOURLY_HISTORY_WEEKS = 12
+  const historyFromIso = (() => {
+    const d = new Date(rangeStart)
+    d.setDate(d.getDate() - HOURLY_HISTORY_WEEKS * 7)
+    return d.toISOString().slice(0, 10)
+  })()
+  const weekStartIsoForHourly = (() => {
+    const d = new Date(rangeStart)
+    // mondayOf semantics: rangeStart should already be Monday for next-week
+    // mode, but for arbitrary from/to it may not be. Walk back to Monday.
+    const wd = d.getUTCDay() || 7
+    d.setUTCDate(d.getUTCDate() - (wd - 1))
+    return d.toISOString().slice(0, 10)
+  })()
+  const [hourlyHistoryRes, hourlyThisWeekRes] = await Promise.all([
+    db.from('hourly_metrics')
+      .select('business_date, hour, revenue, covers')
+      .eq('business_id', bizId)
+      .gte('business_date', historyFromIso)
+      .lt('business_date',  weekFrom),
+    db.from('hourly_metrics')
+      .select('business_date, hour, revenue, covers')
+      .eq('business_id', bizId)
+      .gte('business_date', weekStartIsoForHourly)
+      .lt('business_date',  weekFrom),
+  ])
+  const hourlyHistory  = (hourlyHistoryRes.data  ?? []) as any[]
+  const hourlyThisWeek = (hourlyThisWeekRes.data ?? []) as any[]
+  const detectedMealPeriods = detectMealPeriods(hourlyHistory)
+
+  // Distribute each scheduled shift's hours across the detected meal periods
+  // by intersecting Stockholm-local shift hours with meal-period buckets.
+  // Map: `${date}|${meal_label}` → { hours, cost }
+  type ShiftSlot = { hours: number; cost: number }
+  const scheduledByDateMeal: Record<string, ShiftSlot> = {}
+  for (const shift of scheduledRows) {
+    if (!shift.shift_start_iso || !shift.shift_end_iso) continue
+    const distribution = distributeShiftHoursAcrossMealPeriods(
+      shift.shift_start_iso,
+      shift.shift_end_iso,
+      Number(shift.breaks_duration ?? 0),
+      detectedMealPeriods,
+    )
+    const costPerHour = Number(shift.hours_worked) > 0
+      ? Number(shift.estimated_salary ?? 0) / Number(shift.hours_worked)
+      : 0
+    for (const { label, hours } of distribution) {
+      const key = `${shift.shift_date}|${label}`
+      if (!scheduledByDateMeal[key]) scheduledByDateMeal[key] = { hours: 0, cost: 0 }
+      scheduledByDateMeal[key].hours += hours
+      scheduledByDateMeal[key].cost  += hours * costPerHour
+    }
+  }
+
+  // Per-date meal-period predictions — parallel within each date.
+  // mealPredictionsByDate[date] is an array of meal-period slots ready for
+  // the API response.
+  const mealPredictionsByDate: Record<string, any[]> = {}
+  if (detectedMealPeriods.length > 0 && hourlyHistory.length > 0) {
+    const futureDates = Object.keys(currentByDate).filter(d => (actualByDateInRange[d] ?? 0) <= 0)
+    await Promise.all(futureDates.map(async dateIso => {
+      const forecastDate = new Date(dateIso + 'T12:00:00Z')
+      const perPeriod = await Promise.all(detectedMealPeriods.map(async cluster => {
+        // Predict each hour in the cluster; sum within the cluster.
+        const hourly = await Promise.all(cluster.hours.map(h =>
+          hourlyForecast(bizId, forecastDate, h, {
+            db,
+            preloadedHistory:  hourlyHistory,
+            preloadedThisWeek: hourlyThisWeek,
+          }),
+        ))
+        const predictedRev    = hourly.reduce((s, r) => s + r.predicted_revenue, 0)
+        const predictedCovers = hourly.reduce((s, r) => s + r.predicted_covers,  0)
+        // Confidence = worst of constituent hours.
+        const conf: 'high' | 'medium' | 'low' =
+          hourly.some(h => h.confidence === 'low')    ? 'low'
+          : hourly.some(h => h.confidence === 'medium') ? 'medium'
+          : 'high'
+        const scheduled = scheduledByDateMeal[`${dateIso}|${cluster.label}`] ?? { hours: 0, cost: 0 }
+        const revPerHour = scheduled.hours > 0 ? Math.round(predictedRev / scheduled.hours) : null
+        return {
+          label:             cluster.label,
+          hours_in_period:   cluster.hours,
+          predicted_revenue: Math.round(predictedRev),
+          predicted_covers:  Math.round(predictedCovers),
+          scheduled_hours:   Math.round(scheduled.hours * 10) / 10,
+          scheduled_cost:    Math.round(scheduled.cost),
+          rev_per_hour:      revPerHour,
+          confidence:        conf,
+        }
+      }))
+      mealPredictionsByDate[dateIso] = perPeriod
+    }))
+  }
+
   // ── Suggested schedule: target rev-per-hour at 75th percentile of history ─
   // If last 8 weeks Mon averaged 25k rev at 40h (= 625 kr/h), and the best Mons
   // ran 800 kr/h with 32h, target 32h next Monday on a 25k forecast = "8h less
@@ -477,6 +585,11 @@ export async function GET(req: NextRequest) {
       } : null,
       bucket_days_seen: useBucket ? bucketData!.rev.length : 0,
       reasoning:     rationale,
+      // Phase A week 3: per-meal-period predictions + scheduled hours.
+      // Empty array when:
+      //   - business has no hourly_metrics yet (backfill not run)
+      //   - the day is in the past and consumed actuals instead
+      meal_periods:  mealPredictionsByDate[date] ?? [],
     })
   }
 
@@ -564,6 +677,72 @@ export async function GET(req: NextRequest) {
       rationale:        'Cuts only — we never recommend adding hours. Adding exposes the business to labour cost on days where the extra demand may not show up; trimming only risks slightly more savings than projected. Target rev-per-hour is the 75th-percentile of your last 12 weeks (recency-weighted: last 4 weeks count 2× the older 8); where the forecast matches ≥3 days of the same weekday+weather combination (e.g. rainy Friday), that subset drives the target. When this week is running materially above or below pattern, remaining-day forecasts are scaled by the same ratio (clamped 0.75-1.25). Days where the model would have added are shown with an informational note — a judgment call for you, not a recommendation from us.',
     },
   }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
+}
+
+// ── Shift / meal-period hour distribution ────────────────────────────────────
+// Each scheduled shift spans some Stockholm-local hours. The hourly
+// forecaster reasons in (weekday × hour) cells. To make per-meal-period
+// scheduled-vs-predicted comparisons, we need to know how many of each
+// shift's hours fall inside each detected meal-period bucket.
+//
+// Method: walk the shift hour-by-hour, classify each hour by its
+// Stockholm-local position, and bucket it into the meal-period cluster
+// that owns that hour (if any). Fractional hour at start/end is
+// preserved. Break minutes are distributed across the bucketed hours
+// proportionally (no PK signal for WHICH hours a break falls in).
+function distributeShiftHoursAcrossMealPeriods(
+  startIso:  string,
+  endIso:    string,
+  breakSec:  number,
+  periods:   MealPeriodCluster[],
+): Array<{ label: MealPeriodLabel; hours: number }> {
+  const result = new Map<MealPeriodLabel, number>()
+  for (const p of periods) result.set(p.label, 0)
+
+  const start = new Date(startIso)
+  const end   = new Date(endIso)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return []
+  if (end <= start) return []
+
+  // Iterate the shift in 5-minute slices — small enough to handle a
+  // 10:55-11:05 boundary correctly (5 min lands in pre-lunch, 5 in lunch),
+  // big enough to keep the inner loop cheap (~120 slices for a 10-hour shift).
+  const SLICE_MIN = 5
+  const SLICE_MS  = SLICE_MIN * 60_000
+  for (let t = start.getTime(); t < end.getTime(); t += SLICE_MS) {
+    const sliceEnd = Math.min(end.getTime(), t + SLICE_MS)
+    const sliceHrs = (sliceEnd - t) / 3_600_000
+    const localHour = stockholmLocalHourOf(new Date(t))
+    const period = periods.find(p => p.hours.includes(localHour))
+    if (period) {
+      result.set(period.label, (result.get(period.label) ?? 0) + sliceHrs)
+    }
+  }
+
+  // Distribute breaks proportionally across the meal periods that received hours.
+  const totalHrs = Array.from(result.values()).reduce((s, h) => s + h, 0)
+  if (totalHrs > 0 && breakSec > 0) {
+    const breakHrs = breakSec / 3600
+    for (const [label, hours] of Array.from(result)) {
+      const share = hours / totalHrs
+      const adjusted = Math.max(0, hours - breakHrs * share)
+      result.set(label, adjusted)
+    }
+  }
+
+  return Array.from(result, ([label, hours]) => ({ label, hours }))
+    .filter(slot => slot.hours > 0)
+}
+
+function stockholmLocalHourOf(d: Date): number {
+  try {
+    const hourStr = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Stockholm', hour: '2-digit', hour12: false,
+    }).format(d)
+    return parseInt(hourStr, 10)
+  } catch {
+    return d.getUTCHours()  // best-effort fallback
+  }
 }
 
 function fmtKr(n: number): string {

@@ -271,7 +271,17 @@ export async function hourlyForecast(
   businessId: string,
   date:       Date,
   hour:       number,
-  options:    { db?: any } = {},
+  options:    {
+    db?: any
+    /** Preloaded hourly_metrics rows covering at least 12 weeks back from
+     *  `date`. When provided, skip the DB load + cold-start probe. Used by
+     *  the scheduling AI route to avoid N×400 query amplification on
+     *  per-meal-period predictions. */
+    preloadedHistory?: HourlyRow[]
+    /** Preloaded this-week-so-far hourly_metrics rows (for the this-week
+     *  scaler). When provided, skip that query too. */
+    preloadedThisWeek?: HourlyRow[]
+  } = {},
 ): Promise<HourlyForecast> {
   const db = options.db ?? createAdminClient()
   const forecastDate = ymd(date)
@@ -279,15 +289,22 @@ export async function hourlyForecast(
 
   // Cold-start check: count distinct dates with positive hourly data.
   // Below 180 days → short-history mode (tighter window, no recency multiplier).
-  const probe = await db
-    .from('hourly_metrics')
-    .select('business_date', { count: 'exact', head: true })
-    .eq('business_id', businessId)
-    .gt('revenue', 0)
-  const totalDays = Number(probe.count ?? 0)
+  let totalDays: number
+  let rows: HourlyRow[]
+  if (options.preloadedHistory) {
+    rows = options.preloadedHistory.filter(r => r.business_date <= forecastDate)
+    totalDays = new Set(rows.filter(r => r.revenue > 0).map(r => r.business_date)).size
+  } else {
+    const probe = await db
+      .from('hourly_metrics')
+      .select('business_date', { count: 'exact', head: true })
+      .eq('business_id', businessId)
+      .gt('revenue', 0)
+    totalDays = Number(probe.count ?? 0)
+    const adaptiveTmp = adaptiveRecencyParams(totalDays)
+    rows = await loadHourlyHistory(db, businessId, date, adaptiveTmp.baselineWindowWeeks)
+  }
   const adaptive  = adaptiveRecencyParams(totalDays)
-
-  const rows = await loadHourlyHistory(db, businessId, date, adaptive.baselineWindowWeeks)
 
   // ── Closed-hour short-circuit ────────────────────────────────────
   const closedKeys = detectClosedHours(rows)
@@ -367,7 +384,7 @@ export async function hourlyForecast(
   const mealPeriods = detectMealPeriods(rows)
   const mealForThisHour = mealPeriods.find(mp => mp.hours.includes(hour))
   const scalerResult = mealForThisHour
-    ? await computeMealPeriodScaler(db, businessId, date, mealForThisHour, rows)
+    ? await computeMealPeriodScaler(db, businessId, date, mealForThisHour, rows, options.preloadedThisWeek)
     : { scaler: 1, samples: 0, raw: 1 }
 
   const predicted = baselineRev * scalerResult.scaler
@@ -428,19 +445,29 @@ async function computeMealPeriodScaler(
   forecastDate: Date,
   cluster: MealPeriodCluster,
   history: HourlyRow[],
+  preloadedThisWeek?: HourlyRow[],
 ): Promise<{ scaler: number; samples: number; raw: number }> {
   // This-week-so-far: pull all hourly rows since Monday of this week.
   const weekStart = mondayOf(forecastDate)
   const weekStartIso = ymd(weekStart)
   const forecastIso  = ymd(forecastDate)
-  const { data: thisWeek } = await db
-    .from('hourly_metrics')
-    .select('business_date, hour, revenue')
-    .eq('business_id', businessId)
-    .gte('business_date', weekStartIso)
-    .lt('business_date', forecastIso)
-    .in('hour', cluster.hours)
-  const completed = (thisWeek ?? []) as HourlyRow[]
+  let completed: HourlyRow[]
+  if (preloadedThisWeek) {
+    completed = preloadedThisWeek.filter(r =>
+      r.business_date >= weekStartIso &&
+      r.business_date <  forecastIso &&
+      cluster.hours.includes(r.hour),
+    )
+  } else {
+    const { data: thisWeek } = await db
+      .from('hourly_metrics')
+      .select('business_date, hour, revenue')
+      .eq('business_id', businessId)
+      .gte('business_date', weekStartIso)
+      .lt('business_date', forecastIso)
+      .in('hour', cluster.hours)
+    completed = (thisWeek ?? []) as HourlyRow[]
+  }
 
   const pairs: Array<{ actual: number; predicted: number }> = []
   for (const a of completed) {
