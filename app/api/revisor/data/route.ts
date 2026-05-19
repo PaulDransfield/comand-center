@@ -29,9 +29,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  // getRequestAuth returns `businessIds` (camelCase). The permission helper
+  // expects `business_ids` (snake_case) per its AuthSubject interface. Map
+  // here so the revisor's scoping carries through correctly.
   const subject = {
     role:              auth.role as any,
-    business_ids:      (auth as any).business_ids ?? null,
+    business_ids:      (auth as any).businessIds ?? null,
     can_view_finances: true,
   }
 

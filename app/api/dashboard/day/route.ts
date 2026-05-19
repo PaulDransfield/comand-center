@@ -35,10 +35,12 @@ export async function GET(req: NextRequest) {
   if (!bizId)             return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   if (!date || !ISO_DATE.test(date)) return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 })
 
+  // getRequestAuth returns `businessIds` / `canViewFinances` (camelCase).
+  // canAccessBusiness expects snake_case on its AuthSubject param.
   const subject = {
     role:              auth.role as any,
-    business_ids:      (auth as any).business_ids ?? null,
-    can_view_finances: (auth as any).can_view_finances === true,
+    business_ids:      (auth as any).businessIds ?? null,
+    can_view_finances: (auth as any).canViewFinances === true,
   }
   if (!canAccessBusiness(subject, bizId)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
