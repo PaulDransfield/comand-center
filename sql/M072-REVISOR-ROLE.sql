@@ -14,14 +14,25 @@
 
 BEGIN;
 
+-- Drop any existing CHECK constraint on `role` regardless of name. M043
+-- created `_role_chk`; Postgres' auto-generated default may have been
+-- `_role_check` (depending on how the original column-level CHECK was
+-- specified). Walk pg_constraint to find any CHECK on this table that
+-- references the `role` column and drop it before re-adding ours.
 DO $$
+DECLARE
+  c_name TEXT;
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'organisation_members_role_chk'
-  ) THEN
-    ALTER TABLE organisation_members
-      DROP CONSTRAINT organisation_members_role_chk;
-  END IF;
+  FOR c_name IN
+    SELECT con.conname
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+     WHERE rel.relname = 'organisation_members'
+       AND con.contype = 'c'
+       AND pg_get_constraintdef(con.oid) ILIKE '%role%'
+  LOOP
+    EXECUTE format('ALTER TABLE organisation_members DROP CONSTRAINT %I', c_name);
+  END LOOP;
 
   ALTER TABLE organisation_members
     ADD CONSTRAINT organisation_members_role_chk
