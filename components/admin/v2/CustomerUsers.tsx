@@ -234,7 +234,7 @@ function AddModal({ orgId, businesses, onClose, onAdded }: {
   onAdded: () => void
 }) {
   const [email,            setEmail]            = useState('')
-  const [role,             setRole]             = useState<'owner' | 'manager'>('manager')
+  const [role,             setRole]             = useState<'owner' | 'manager' | 'revisor'>('manager')
   const [scopeAll,         setScopeAll]         = useState<boolean>(true)
   const [scopeIds,         setScopeIds]         = useState<string[]>([])
   const [canViewFinances,  setCanViewFinances]  = useState<boolean>(false)
@@ -281,6 +281,7 @@ function AddModal({ orgId, businesses, onClose, onAdded }: {
         <select value={role} onChange={e => setRole(e.target.value as any)} style={inputStyle}>
           <option value="manager">manager — operations only</option>
           <option value="owner">owner — full access</option>
+          <option value="revisor">revisor — read-only month-end view (must scope to specific businesses)</option>
         </select>
       </Field>
       {role === 'manager' && (

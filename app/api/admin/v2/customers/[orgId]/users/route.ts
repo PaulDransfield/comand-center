@@ -16,7 +16,7 @@ import { sendInviteEmail }           from '@/lib/email/sendInviteEmail'
 
 export const dynamic = 'force-dynamic'
 
-const VALID_ROLES = new Set(['owner', 'manager', 'viewer'])
+const VALID_ROLES = new Set(['owner', 'manager', 'viewer', 'revisor'])
 
 export async function GET(req: NextRequest, { params }: { params: { orgId: string } }) {
   const { orgId } = params
