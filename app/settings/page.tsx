@@ -196,6 +196,28 @@ export default function SettingsPage() {
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
         </div>
 
+        {/* AI agents — link card to /settings/ai-agents */}
+        <a
+          href="/settings/ai-agents"
+          style={{
+            ...S.card,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            textDecoration: 'none',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <div>
+            <div style={S.title}>AI agents</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              Six AI agents work in the background on your data. View status, last run, cost, and toggle any of them on or off.
+            </div>
+          </div>
+          <span style={{ fontSize: 13, color: '#4338ca', fontWeight: 500 }}>Manage →</span>
+        </a>
+
         {/* Restaurants */}
         <div style={S.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
