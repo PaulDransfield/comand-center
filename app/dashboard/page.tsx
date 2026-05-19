@@ -28,6 +28,7 @@ import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
 import CashPositionTile from '@/components/dashboard/CashPositionTile'
 import CashFlowProjectionTile from '@/components/dashboard/CashFlowProjectionTile'
 import WhyThisWeekCard from '@/components/dashboard/WhyThisWeekCard'
+import WeekScorecardCard from '@/components/dashboard/WeekScorecardCard'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1054,6 +1055,12 @@ function DashboardInner() {
                 Hidden when no day has unusual drivers OR when aiSched
                 hasn't loaded yet. */}
             <WhyThisWeekCard aiSched={aiSched} fmtKr={fmtKr} />
+
+            {/* Per-week scorecard — Nory's "X of Y days on target" framing.
+                Reuses aiSched.suggested + dailyRows that the chart already
+                loads; no new API call. Hidden when the whole week is
+                pending or closed (nothing to score yet). */}
+            <WeekScorecardCard aiSched={aiSched} dailyRows={dailyRows} fmtKr={fmtKr} />
 
             {/* Phase 5 cash visibility — net bank movement derived from
                 BAS 1910-1979 voucher activity (data we already had but were
