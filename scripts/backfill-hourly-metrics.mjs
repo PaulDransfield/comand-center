@@ -26,8 +26,15 @@ if (!businessId) {
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+console.log('── Environment check ──')
+console.log('NEXT_PUBLIC_SUPABASE_URL:    ', url ? `${url.slice(0, 50)}...` : '(missing!)')
+console.log('SUPABASE_SERVICE_ROLE_KEY:   ', key ? `${key.slice(0, 12)}... (${key.length} chars)` : '(missing!)')
+console.log('ENCRYPTION_KEY:              ', process.env.ENCRYPTION_KEY ? `present (${process.env.ENCRYPTION_KEY.length} chars)` : '(missing!)')
+console.log()
+
 if (!url || !key) {
-  console.error('Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY')
+  console.error('FATAL: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing from .env.local')
   process.exit(1)
 }
 const db = createClient(url, key)
@@ -40,10 +47,19 @@ const { data: integ, error: integErr } = await db
   .eq('provider', 'personalkollen')
   .maybeSingle()
 
-if (integErr || !integ) {
-  console.error('PK integration not found for business:', businessId, integErr?.message)
+if (integErr) {
+  console.error('FATAL: Supabase query failed.')
+  console.error('  Error message:', integErr.message)
+  console.error('  Error details:', JSON.stringify(integErr, null, 2))
+  console.error('  This is usually a network/auth issue, NOT a "missing integration" — verify .env.local URL + key are correct for the right Supabase project.')
   process.exit(1)
 }
+if (!integ) {
+  console.error(`FATAL: No PK integration row for business_id=${businessId}`)
+  console.error('  Confirm the business has Personalkollen connected via /integrations in the app.')
+  process.exit(1)
+}
+console.log(`✓ Found PK integration: id=${integ.id}, org=${integ.org_id}`)
 
 // ── Decrypt token (mirrors lib/integrations/encryption.ts) ──────────
 // Inline import via the Next-server runtime so we don't replicate the
