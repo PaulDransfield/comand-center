@@ -165,8 +165,7 @@ This is the build that closes the Nory feature gap on the Swedish market. Everyt
 
 - Hourly + attribution UX as the lead sales pitch
 - Founder-led sales — Paul opens 5 owner conversations / month through industry network
-- Founding-tier price lock (995 SEK / month / 24 months) to incentivize early adopters as case studies
-- One quarterly customer-success review per customer; document labour-cost-reduction outcomes
+- Quarterly customer-success review per customer; document labour-cost-reduction outcomes used as future case studies
 
 ### Norway expansion (3-month sprint, weeks 13-24)
 
@@ -268,10 +267,9 @@ These look tempting and we will say no to them, in order to stay focused.
 ## 10. Decisions to make before next session
 
 1. **Phase A start week:** Hourly POS ingestion (3-week sprint). Confirm green light.
-2. **Founding-tier offer:** how many 995 SEK 24-month spots to offer, in what window. Currently set at 10 in the pricing memory.
-3. **Norway expansion ordering:** start NO holidays + Tripletex integration in parallel with SE customer growth, OR sequence (SE-saturation-then-NO)? My vote: parallel, since holiday module + accounting integration is < 4 weeks of work and lets us pitch NO restaurants from Q4.
-4. **PredictHQ licensing decision:** ~$10-30k/year SMB tier for global event data vs ~2 weeks of build for Stockholm-only ingestion. Build-our-own for now; license at customer 20.
-5. **GBM model deferral:** confirm we wait until any business crosses 365 days (Nov 2026 earliest for Vero) before any ML work.
+2. **Norway expansion ordering:** start NO holidays + Tripletex integration in parallel with SE customer growth, OR sequence (SE-saturation-then-NO)? My vote: parallel, since holiday module + accounting integration is < 4 weeks of work and lets us pitch NO restaurants from Q4.
+3. **PredictHQ licensing decision:** ~$10-30k/year SMB tier for global event data vs ~2 weeks of build for Stockholm-only ingestion. Build-our-own for now; license at customer 20.
+4. **GBM model deferral:** confirm we wait until any business crosses 365 days (Nov 2026 earliest for Vero) before any ML work.
 
 ---
 

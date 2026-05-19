@@ -16,7 +16,7 @@ For honesty and continuity. Where the first roadmap was wrong:
 |---|---|---|
 | Build Inventory v1 (Phase 3, 16 weeks) | Nordic Plan §9.3: "Don't build payroll or inventory; integrate." | **Drop inventory build.** Position the Fortnox-derived COGS view as our intelligence layer; let operators keep their existing stock tools. |
 | Build Workforce v2 / löneunderlag flow (Phase 4) | Nordic Plan: same — don't build payroll, integrate. | **Drop the payroll build.** Pull approved-shifts → Fortnox export is fine as a thin helper; full payroll is out. |
-| Pricing 1 995 / 4 995 / 9 995 SEK | ROADMAP.md: 499 / 799 / 1 499 SEK per business | **Use your existing pricing.** Mine was Nory-tier; yours is operator-tier. The 24-month founding lock at 995 (from Nordic Plan §10.2) is the right hook. |
+| Pricing 1 995 / 4 995 / 9 995 SEK + Founding 995 SEK | Reconciled 2026-05-19 | **Confirmed at 1 995 / 4 995 / 9 995 SEK per business.** No founding tier — case-study customers get the standard rate and a quarterly review relationship in exchange for logo + numbers rights. |
 | "Phase 0 unblockers" (register AB, sign Fortnox) | Already past this — Vero OAuth live, 12-month backfill working, 6 agents shipped | **Skip phase 0.** |
 | Frame as "Swedish answer to Nory" | Nordic Plan is SE → NO → DK → FI | **Frame as Nordic-native** throughout. Sweden is the launchpad, not the ceiling. |
 | Build a benchmark tool in Phase 6 | Implicit — you don't have one yet, and it's a high-value lead-gen asset | **Keep this**, but explicitly link it to your real anonymised customer data once n≥10. |
@@ -116,7 +116,7 @@ Updated with the Nordic Plan in hand.
 - **Calm copy, not transformation copy.** Swedish operators are sceptical of hype. "Profitability's secret ingredient" doesn't translate — `Marginaler, inte mirakel` does.
 - **Founder-as-operator credibility everywhere.** "Paul ran Vero and Rosali before building this" is your strongest sales line. Use it on the about page, on every blog post, on every demo intro.
 - **Show how we sit on top of the existing stack.** Operators in Örebro know Caspeco, Personalkollen, Fortnox. Don't replace — augment.
-- **Pricing as a moat.** 499/799/1499 is so much cheaper than Nory's enterprise pricing that for a 3-location group, the math is "20× cheaper, 80% of the value, native to my stack." That's the pitch.
+- **Pricing as a moat.** 1 995 / 4 995 / 9 995 SEK is materially cheaper than Nory's enterprise pricing while still positioning as professional restaurant intelligence (not a budget tool). For a 3-location group on Group tier (~5 k SEK/month) the math is "fraction of Nory's annual cost, deeper into the Swedish stack." Avoid pricing below 1 000 SEK/month — sceptical Nordic operators read sub-1 000 as "hobby software".
 - **Cash-side intelligence as the second pillar.** Nory doesn't have it. The Fortnox-booked cash position + 30-day projection + (eventually) live bank feeds is uniquely ours. Promote it.
 
 ---
@@ -216,10 +216,9 @@ These are the GTM-adjacent product changes that aren't in the Nordic Plan but ma
 Not a build phase, but it has to be sequenced because moving from "paying candidate" to "paying customer" is the next gate.
 
 **C.1 — Publish pricing publicly at /priser**
-- Solo 499 / Pro 799 / Group 1499 SEK per business (per ROADMAP.md).
-- AI add-on +299 SEK.
+- Solo 1 995 / Group 4 995 / Chain 9 995 SEK per business per month.
 - Annual billing: 2 months free (push to every conversation).
-- Founding-tier offer: 10 spots at 995 SEK/month locked for 24 months in exchange for case-study rights, named on the logo wall, and a quarterly review. Already in Nordic Plan §10.2.
+- Case-study customers get the standard rate and a quarterly customer-success review in exchange for logo + numbers usage rights — no special discount. No founding-tier price lock. Discount-first positioning attracts the wrong customers (price-shoppers, not committed operators).
 
 **C.2 — Sales collateral**
 - Three-slide pitch deck PDF (problem / solution / proof) in Swedish.
@@ -239,7 +238,7 @@ Not a build phase, but it has to be sequenced because moving from "paying candid
 - Caspeco — alternative scheduling/POS; coverage move.
 - Novax (Personalkollen's owner) — strategic-investor precedent given their portfolio.
 
-**Exit criterion (Phase C):** 5+ paying customers, MRR > SEK 5 000 (= 5 customers × ~999 founding rate).
+**Exit criterion (Phase C):** 5+ paying customers, MRR > SEK 10 000 (= 5 customers averaging ~2 000 SEK/month across Solo + Group mix).
 
 ### Phase D — Differentiation moat (Q4 2026, after Nordic Plan weeks 1–12 complete)
 
@@ -401,7 +400,7 @@ Combining their product metrics with GTM metrics.
 
 **Forecasting accuracy gap.** Vero h=1 MAPE is 39% medium-confidence; Nory claims <10%. The Nordic Plan's Q3 sprint closes some of this gap but not all. **The GTM layer has to be honest about this.** The pitch isn't "more accurate than Nory" — it's "credible accuracy with attribution that makes the variance explainable, plus deeper integration into the stack you actually use." If marketing copy overpromises accuracy, the first demo where the forecast misses by 25% kills the deal.
 
-**The case-study extraction risk.** Vero and Rosali need to be willing to share numbers publicly. If they refuse, Phase A.4 stalls. Mitigate: bring this up explicitly in the next conversation with each owner, frame as part of the founding-customer deal.
+**The case-study extraction risk.** Vero and Rosali need to be willing to share numbers publicly. If they refuse, Phase A.4 stalls. Mitigate: bring this up explicitly in the next conversation with each owner, frame as part of the customer-success quarterly review relationship in exchange for logo + numbers rights on the public site.
 
 **Nory in Sweden.** The Nordic Plan's 18-24-month window is realistic but not infinite. Once Nory completes US expansion (probably 2027), they look at the Nordics. The defence: be deeper into Fortnox/BAS than they'll bother going, build the revisor relationship they don't have, price below what they can match.
 
@@ -413,13 +412,12 @@ Combining their product metrics with GTM metrics.
 
 The previous roadmap had a "this week" list that included tasks already done. The corrected version:
 
-1. **Decide on case study extraction.** Schedule a 30-minute conversation with each of Vero and Rosali owners about case-study rights, founding-tier pricing lock, and quarterly review participation. Frame as the founding-customer offer per Nordic Plan §10.2.
+1. **Decide on case study extraction.** Schedule a 30-minute conversation with each of Vero and Rosali owners about case-study rights and quarterly review participation. Standard rate; the deal is logo + numbers in exchange for a public success story and a quarterly review touchpoint.
 2. **Write LANDING-PROMPT.md.** Same format as PERFORMANCE-PROMPT.md, using the comandcenter.se mockup from the previous session as reference. Hand to Claude Code.
 3. **Draft three launch blog post outlines.** Per Phase A.7.
 4. **Buy comandcenter.se if not owned** and point a Vercel project at it ready for the landing-page deploy.
 5. **Open Cal.com or Calendly** for `/boka-demo`. Set up three qualifying questions.
-6. **Decide founding-tier window.** Per Nordic Plan §10.2: how many spots, what closing date. My vote: 10 spots, close September 2026 so the urgency is real.
-7. **Codify the 4-milestone implementation playbook.** One internal doc, version 0.1, captures what worked for Vero/Rosali. Publish externally as Phase B.1 deliverable in 4 weeks.
+6. **Codify the 4-milestone implementation playbook.** One internal doc, version 0.1, captures what worked for Vero/Rosali. Publish externally as Phase B.1 deliverable in 4 weeks. *Shipped as `IMPLEMENTATION-PLAYBOOK.md` on 2026-05-19.*
 
 ---
 
