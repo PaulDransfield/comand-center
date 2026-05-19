@@ -65,16 +65,22 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // All three view reads + the business-name lookup, in parallel.
-  const [allTimeRes, rolling28Res, confidenceRes] = await Promise.all([
+  // All four view reads + the business-name lookup, in parallel.
+  const [allTimeRes, rolling28Res, confidenceRes, horizonConfRes] = await Promise.all([
     db.from('v_forecast_mape_by_horizon_bucket').select('*'),
     db.from('v_forecast_mape_rolling_28d').select('*'),
     db.from('v_forecast_confidence_calibration').select('*'),
+    db.from('v_forecast_horizon_confidence_breakdown').select('*'),
   ])
 
   // Pull the businesses we have data for, batch-resolved to names.
   const businessIds = new Set<string>()
-  for (const row of [...(allTimeRes.data ?? []), ...(rolling28Res.data ?? []), ...(confidenceRes.data ?? [])]) {
+  for (const row of [
+    ...(allTimeRes.data ?? []),
+    ...(rolling28Res.data ?? []),
+    ...(confidenceRes.data ?? []),
+    ...(horizonConfRes.data ?? []),
+  ]) {
     if (row?.business_id) businessIds.add(row.business_id)
   }
 
@@ -90,15 +96,17 @@ export async function GET(req: NextRequest) {
   }
 
   const errors: string[] = []
-  if (allTimeRes.error)    errors.push(`mape_by_horizon: ${allTimeRes.error.message}`)
-  if (rolling28Res.error)  errors.push(`rolling_28d: ${rolling28Res.error.message}`)
-  if (confidenceRes.error) errors.push(`confidence_calibration: ${confidenceRes.error.message}`)
+  if (allTimeRes.error)     errors.push(`mape_by_horizon: ${allTimeRes.error.message}`)
+  if (rolling28Res.error)   errors.push(`rolling_28d: ${rolling28Res.error.message}`)
+  if (confidenceRes.error)  errors.push(`confidence_calibration: ${confidenceRes.error.message}`)
+  if (horizonConfRes.error) errors.push(`horizon_confidence: ${horizonConfRes.error.message}`)
 
   const payload = {
-    all_time:    (allTimeRes.data    ?? []) as MapeRow[],
-    rolling_28d: (rolling28Res.data  ?? []) as MapeRow[],
-    confidence:  (confidenceRes.data ?? []) as ConfidenceRow[],
-    businesses:  businessMap,
+    all_time:           (allTimeRes.data     ?? []) as MapeRow[],
+    rolling_28d:        (rolling28Res.data   ?? []) as MapeRow[],
+    confidence:         (confidenceRes.data  ?? []) as ConfidenceRow[],
+    horizon_confidence: (horizonConfRes.data ?? []) as Array<ConfidenceRow & { horizon_bucket_days: number }>,
+    businesses:         businessMap,
     errors,
     generated_at: new Date().toISOString(),
   }

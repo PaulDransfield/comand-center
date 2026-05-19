@@ -125,6 +125,52 @@ GROUP BY business_id, surface, horizon_bucket_days;
 
 GRANT SELECT ON public.v_forecast_mape_rolling_28d TO service_role;
 
+-- ── 4. Horizon × confidence breakdown ────────────────────────────────
+-- Surfaces the question "are the rows in this MAPE bucket all short-horizon
+-- (h=1) or spread across the forecasting window (h=1..28)?" — used to rule
+-- out horizon-distribution artifacts when comparing surfaces.
+--
+-- Example: Phase 0 measurement showed Rosali weather_demand at 16.8% MAPE
+-- (8 rows) vs consolidated_daily at 26.4% (11 rows). Likely artifact: legacy
+-- weather_demand only captures h=1 ("today's revenue"), while the new
+-- consolidated_daily captures h=1..7. This view confirms or refutes.
+CREATE OR REPLACE VIEW public.v_forecast_horizon_confidence_breakdown AS
+WITH bucketed AS (
+  SELECT
+    business_id,
+    surface,
+    confidence,
+    CASE
+      WHEN prediction_horizon_days <= 1  THEN 1
+      WHEN prediction_horizon_days <= 7  THEN 7
+      WHEN prediction_horizon_days <= 14 THEN 14
+      WHEN prediction_horizon_days <= 28 THEN 28
+      ELSE 999
+    END AS horizon_bucket_days,
+    error_pct,
+    forecast_date
+  FROM public.daily_forecast_outcomes
+  WHERE resolution_status = 'resolved'
+    AND prediction_horizon_days >= 0
+    AND error_pct IS NOT NULL
+    AND confidence IS NOT NULL
+)
+SELECT
+  business_id,
+  surface,
+  confidence,
+  horizon_bucket_days,
+  COUNT(*)                                       AS resolved_rows,
+  ROUND((AVG(ABS(error_pct)) * 100)::numeric, 1) AS mape_pct,
+  ROUND((AVG(error_pct)      * 100)::numeric, 1) AS bias_pct,
+  MIN(forecast_date)                             AS earliest_forecast,
+  MAX(forecast_date)                             AS latest_forecast
+FROM bucketed
+WHERE horizon_bucket_days < 999
+GROUP BY business_id, surface, confidence, horizon_bucket_days;
+
+GRANT SELECT ON public.v_forecast_horizon_confidence_breakdown TO service_role;
+
 -- ── Verification queries ─────────────────────────────────────────────
 SELECT
   business_id,
@@ -147,3 +193,15 @@ SELECT
 FROM public.v_forecast_confidence_calibration
 ORDER BY business_id, surface, confidence
 LIMIT 30;
+
+SELECT
+  business_id,
+  surface,
+  confidence,
+  horizon_bucket_days,
+  resolved_rows,
+  mape_pct,
+  bias_pct
+FROM public.v_forecast_horizon_confidence_breakdown
+ORDER BY business_id, surface, confidence, horizon_bucket_days
+LIMIT 50;

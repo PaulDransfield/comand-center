@@ -440,6 +440,24 @@ export async function llmAdjustForecast(
     return null
   }
 
+  // ── Low-confidence short-circuit (Phase 0 finding 2026-05-19) ─────────
+  // Audit ledger MAPE table showed the LLM layer is *actively harmful*
+  // on low-confidence deterministic predictions:
+  //   Vero consolidated_daily low conf:   88.2% MAPE / +31.6% bias
+  //   Vero llm_adjusted     low conf:  141.4% MAPE / +107.1% bias
+  // Root cause: on low-confidence days the snapshot is mostly "we don't
+  // know" flags. The LLM has nothing to anchor on, returns directional
+  // guesses, and those guesses are systematically biased upward (LLMs
+  // default to "things are probably higher than baseline" under uncertainty
+  // — well-documented).
+  // Fix: skip the LLM call entirely when the deterministic forecaster's
+  // own confidence is 'low'. Save tokens, preserve deterministic accuracy.
+  // The LLM's job is to ENRICH well-anchored predictions, not to invent
+  // signal where none exists.
+  if (input.forecast.confidence === 'low') {
+    return null
+  }
+
   // ── Quota gate (atomic, decrements on reject) ────────────────────────
   // The user-facing endpoint owns the per-business daily cap; this is the
   // org-wide AI quota that catches runaway scripts and prompt-injection.

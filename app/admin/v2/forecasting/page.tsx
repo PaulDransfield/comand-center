@@ -40,15 +40,20 @@ interface ConfidenceRow {
   bias_pct:       number
 }
 
+interface HorizonConfidenceRow extends ConfidenceRow {
+  horizon_bucket_days: number
+}
+
 interface ForecastingResponse {
-  all_time:    MapeRow[]
-  rolling_28d: MapeRow[]
-  confidence:  ConfidenceRow[]
-  businesses:  Record<string, { id: string; name: string; org_id: string }>
-  errors:      string[]
-  generated_at: string
-  cached?:     boolean
-  age_ms?:     number
+  all_time:           MapeRow[]
+  rolling_28d:        MapeRow[]
+  confidence:         ConfidenceRow[]
+  horizon_confidence: HorizonConfidenceRow[]
+  businesses:         Record<string, { id: string; name: string; org_id: string }>
+  errors:             string[]
+  generated_at:       string
+  cached?:            boolean
+  age_ms?:            number
 }
 
 const HORIZON_BUCKETS = [1, 7, 14, 28] as const
@@ -71,6 +76,7 @@ export default function ForecastingPage() {
           <Headline data={data} />
           <MapeByHorizonCard data={data} />
           <ConfidenceCard data={data} />
+          <HorizonConfidenceCard data={data} />
           <LegendCard />
         </div>
       )}
@@ -302,6 +308,81 @@ function ConfidenceCard({ data }: { data: ForecastingResponse }) {
             })}
           </tbody>
         </table>
+      </div>
+    </Card>
+  )
+}
+
+// ─── Horizon × confidence card ───────────────────────────────────────
+
+function HorizonConfidenceCard({ data }: { data: ForecastingResponse }) {
+  if (!data.horizon_confidence.length) {
+    return (
+      <Card title="Horizon × confidence breakdown" subtitle="Used to rule out horizon-distribution artifacts when comparing surfaces.">
+        <Empty text="No data" />
+      </Card>
+    )
+  }
+
+  // Group: business → surface → confidence → { horizon_bucket: row }
+  const grouped: Record<string, Record<string, Record<string, Record<number, HorizonConfidenceRow>>>> = {}
+  for (const r of data.horizon_confidence) {
+    grouped[r.business_id]                                                 ??= {}
+    grouped[r.business_id][r.surface]                                      ??= {}
+    grouped[r.business_id][r.surface][r.confidence]                        ??= {}
+    grouped[r.business_id][r.surface][r.confidence][r.horizon_bucket_days] = r
+  }
+
+  return (
+    <Card title="Horizon × confidence breakdown" subtitle="For each (business × surface × confidence) cell, row count + MAPE split across horizon buckets. A surface showing all its rows in h=1 isn't really being tested at h=7+.">
+      <div style={{ padding: '4px 0 12px' }}>
+        {Object.entries(grouped).map(([businessId, bySurface]) => (
+          <div key={businessId} style={{ borderTop: '1px solid #f3f4f6', padding: '12px 16px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 8 }}>
+              {data.businesses[businessId]?.name ?? businessId.slice(0, 8)}
+            </div>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' as const }}>
+              <thead>
+                <tr style={{ color: '#6b7280', textAlign: 'left' as const, borderBottom: '1px solid #f3f4f6' }}>
+                  <th style={th()}>Surface</th>
+                  <th style={th()}>Confidence</th>
+                  {HORIZON_BUCKETS.map(h => (
+                    <th key={h} style={th()}>{h === 1 ? '1d' : `${h}d`}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.keys(bySurface).sort(surfaceSortKey).flatMap(surface => (
+                  CONFIDENCE_LEVELS.filter(c => bySurface[surface][c]).map(c => {
+                    const byHorizon = bySurface[surface][c]
+                    return (
+                      <tr key={`${surface}-${c}`} style={{ borderBottom: '1px solid #fafafa' }}>
+                        <td style={td()}><span style={{ color: '#374151', fontWeight: 500 }}>{surfaceLabel(surface)}</span></td>
+                        <td style={td()}><span style={{ color: '#6b7280' }}>{c}</span></td>
+                        {HORIZON_BUCKETS.map(h => {
+                          const cell = byHorizon[h]
+                          if (!cell) return <td key={h} style={td()}><span style={{ color: '#d1d5db' }}>—</span></td>
+                          return (
+                            <td key={h} style={td()}>
+                              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 1 }}>
+                                <div style={{ color: mapeColor(cell.mape_pct), fontWeight: 500 }}>
+                                  {cell.mape_pct}% <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }}>n={cell.resolved_rows}</span>
+                                </div>
+                                <div style={{ fontSize: 10, color: '#9ca3af' }}>
+                                  bias {cell.bias_pct > 0 ? '+' : ''}{cell.bias_pct}%
+                                </div>
+                              </div>
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
     </Card>
   )
