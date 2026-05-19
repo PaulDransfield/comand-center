@@ -37,6 +37,8 @@ function daysAgo(n: number): Date {
   return d
 }
 
+async function main() {
+
 // ── Load full hourly history ───────────────────────────────────────
 const { data: historyRows } = await db
   .from('hourly_metrics')
@@ -165,3 +167,7 @@ for (const r of lastDayBreakdown) {
     `${r.scaler.toFixed(2)}`,
   )
 }
+
+}
+
+main().catch(e => { console.error(e); process.exit(1) })
