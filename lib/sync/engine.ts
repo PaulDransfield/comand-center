@@ -32,6 +32,39 @@ async function pkFetch<T>(label: string, fn: () => Promise<T>): Promise<T> {
   throw lastErr
 }
 
+// ── Stockholm local-time helper (M071 / hourly_metrics) ──────────────────────
+// PK timestamps are UTC-tagged ISO strings ('…Z'). Operators reason in
+// Stockholm local time — lunch is 12-14, dinner 17-22 — so the hour bucket
+// in hourly_metrics must be Stockholm-local, not UTC. business_date is the
+// matching Stockholm-local calendar date for that hour.
+//
+// Returns { date, hour } in Stockholm time, or { date: null, hour: null }
+// if the input isn't parseable.
+function stockholmLocalParts(iso: string): { date: string | null; hour: number | null } {
+  if (!iso) return { date: null, hour: null }
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return { date: null, hour: null }
+    // en-CA gives YYYY-MM-DD; en-GB gives the 2-digit 24h hour. Combine.
+    const dateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Stockholm',
+      year:     'numeric',
+      month:    '2-digit',
+      day:      '2-digit',
+    }).format(d)
+    const hourStr = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Stockholm',
+      hour:     '2-digit',
+      hour12:   false,
+    }).format(d)
+    const hour = parseInt(hourStr, 10)
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return { date: null, hour: null }
+    return { date: dateStr, hour }
+  } catch {
+    return { date: null, hour: null }
+  }
+}
+
 // ── Personalkollen sync ───────────────────────────────────────────────────────
 async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate: string) {
   const pk = await import('@/lib/pos/personalkollen')
@@ -386,6 +419,80 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
     await db.from('revenue_logs').upsert(revRows, { onConflict: 'org_id,business_id,provider,revenue_date' })
     revenueUpserted = revRows.length
   }
+
+  // ── Hourly aggregation (M071 / Nordic Plan Phase A week 1) ───────────────
+  // PK's /sales/ already returns per-transaction sale_time timestamps;
+  // we previously aggregated only to daily. The hourly_metrics table
+  // preserves the within-day signal so we can predict by service period
+  // (lunch / dinner / late) instead of by calendar day.
+  //
+  // Stockholm-local hour extraction: operators think in shifts, not UTC.
+  // A 01:30 sale at the bar is the *previous* evening's service from
+  // their perspective. business_date here is the Stockholm calendar date
+  // of the hour bucket; that gives clean rollups when the hourly
+  // forecaster filters WHERE hour BETWEEN 18 AND 22 for dinner.
+  let hourlyUpserted = 0
+  if (integ.business_id) {
+    const byHour: Record<string, any> = {}
+    for (const sale of sales) {
+      if (!sale.sale_time) continue
+      const { date: hourDate, hour } = stockholmLocalParts(sale.sale_time)
+      if (hourDate == null || hour == null) continue
+      const key = `${hourDate}|${hour}`
+      if (!byHour[key]) {
+        byHour[key] = {
+          business_date: hourDate,
+          hour,
+          revenue: 0, covers: 0, transactions: 0, tip: 0,
+          food: 0, drink: 0, takeaway: 0, dine_in: 0,
+          cogs: 0, cogs_coverage: 0,
+        }
+      }
+      const row = byHour[key]
+      row.revenue       += sale.amount
+      row.covers        += sale.covers ?? 0
+      row.transactions  += 1
+      row.tip           += sale.tip ?? 0
+      row.food          += sale.food_revenue     ?? 0
+      row.drink         += sale.drink_revenue    ?? 0
+      row.takeaway      += sale.takeaway_revenue ?? 0
+      row.dine_in       += sale.dine_in_revenue  ?? 0
+      row.cogs          += sale.cogs_amount      ?? 0
+      row.cogs_coverage += sale.cogs_coverage    ?? 0
+    }
+
+    const hourlyRows = Object.values(byHour)
+      .filter((r: any) => r.revenue > 0)
+      .map((r: any) => ({
+        org_id:           integ.org_id,
+        business_id:      integ.business_id,
+        business_date:    r.business_date,
+        hour:             r.hour,
+        revenue:          Math.round(r.revenue       * 100) / 100,
+        covers:           r.covers,
+        transactions:     r.transactions,
+        food_revenue:     Math.round(r.food          * 100) / 100,
+        bev_revenue:      Math.round(r.drink         * 100) / 100,
+        takeaway_revenue: Math.round(r.takeaway      * 100) / 100,
+        dine_in_revenue:  Math.round(r.dine_in       * 100) / 100,
+        tip_revenue:      Math.round(r.tip           * 100) / 100,
+        cogs_amount:      Math.round(r.cogs          * 100) / 100,
+        cogs_coverage:    Math.round(r.cogs_coverage * 100) / 100,
+        provider:         'personalkollen',
+      }))
+
+    if (hourlyRows.length) {
+      const { error: hourlyErr } = await db
+        .from('hourly_metrics')
+        .upsert(hourlyRows, { onConflict: 'business_id,business_date,hour,provider' })
+      if (hourlyErr) {
+        console.warn('[sync:pk] hourly_metrics upsert error:', hourlyErr.message)
+      } else {
+        hourlyUpserted = hourlyRows.length
+      }
+    }
+  }
+  console.log(`PK hourly metrics: ${hourlyUpserted} rows`)
 
   // Also sync to covers table for backward compat
   if (integ.business_id) {
