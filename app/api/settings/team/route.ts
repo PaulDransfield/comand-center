@@ -161,15 +161,42 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Mirror into public.users (always, not just on create) ──────────
-  // FK on organisation_members.user_id points here. Without this we
-  // get the FK violation we hit during admin v2 user invite.
-  const { error: usersErr } = await db
+  // FK on organisation_members.user_id points here. We have to handle
+  // an edge case: legacy accounts where auth.users.id ≠ public.users.id
+  // for the same email (early-signup data drift before the mirror was
+  // wired). For those, upsert-by-id tries to INSERT (id doesn't exist)
+  // and hits the email unique constraint.
+  //
+  // Detect this case up-front via email lookup, then either:
+  //   a) row exists with matching id → already mirrored, no-op
+  //   b) row exists with DIFFERENT id → return a specific error explaining
+  //      the mismatch (admin needs to repair, see /docs/runbook)
+  //   c) no row → safe to insert
+  const { data: existingByEmail } = await db
     .from('users')
-    .upsert({ id: userId, email }, { onConflict: 'id', ignoreDuplicates: false })
-  if (usersErr) {
-    return NextResponse.json({
-      error: `Could not mirror auth user into public.users: ${usersErr.message}`,
-    }, { status: 500 })
+    .select('id')
+    .eq('email', email)
+    .maybeSingle()
+
+  if (existingByEmail) {
+    if (existingByEmail.id !== userId) {
+      return NextResponse.json({
+        error:
+          `This email is associated with a different user record in our database (data drift). ` +
+          `Use a different email for this invite, OR ask an admin to repair the mismatch ` +
+          `(public.users.id=${existingByEmail.id} vs auth.users.id=${userId} for ${email}).`,
+      }, { status: 409 })
+    }
+    // Matching id — already mirrored, skip the upsert.
+  } else {
+    const { error: usersErr } = await db
+      .from('users')
+      .insert({ id: userId, email })
+    if (usersErr) {
+      return NextResponse.json({
+        error: `Could not mirror auth user into public.users: ${usersErr.message}`,
+      }, { status: 500 })
+    }
   }
 
   // ── Insert membership ─────────────────────────────────────────────
