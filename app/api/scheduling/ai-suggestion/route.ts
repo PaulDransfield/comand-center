@@ -321,19 +321,30 @@ export async function GET(req: NextRequest) {
   // regardless of flag.
   const v2ChartFlagOn = await isPredictionV2FlagEnabled(bizId, 'PREDICTION_V2_DASHBOARD_CHART', db)
   const consolidatedRevByDate: Record<string, number> = {}
+
+  // ── Shadow-mode capture (2026-05-19 forward-horizon fix) ──────────────
+  // Phase 0 measurement surfaced that we have ZERO h>1 resolved rows on
+  // consolidated_daily. Root cause: this branch only ran when v2 was ON,
+  // and even then it called dailyForecast with skipLogging:true. So the
+  // capture path never fired from real-user dashboard hits.
+  //
+  // New rule: ALWAYS run dailyForecast for every future date in the
+  // requested range, with skipLogging:false so capture rows land in
+  // daily_forecast_outcomes at their actual horizon (forecast_date -
+  // today). Whether we USE the consolidated value downstream depends on
+  // the flag (consolidatedRevByDate is only populated when v2 is on),
+  // but the capture happens unconditionally. After 1-2 weeks of shadow
+  // capture we'll finally have apples-to-apples h=1..14 comparison data.
+  const futureDates = Object.keys(currentByDate)
+    .filter(d => (actualByDateInRange[d] ?? 0) <= 0)
+    .sort()
+  const results = await Promise.allSettled(
+    futureDates.map(async d => {
+      const fc = await dailyForecast(bizId, new Date(d + 'T12:00:00Z'), { db, skipLogging: false })
+      return { date: d, predicted: fc.predicted_revenue }
+    }),
+  )
   if (v2ChartFlagOn) {
-    const futureDates = Object.keys(currentByDate)
-      .filter(d => (actualByDateInRange[d] ?? 0) <= 0)
-      .sort()
-    // Parallel — dailyForecast is read-only (skipLogging=true keeps it
-    // from writing capture rows on dashboard re-renders; the daily
-    // capture cron handles the production audit ledger separately).
-    const results = await Promise.allSettled(
-      futureDates.map(async d => {
-        const fc = await dailyForecast(bizId, new Date(d + 'T12:00:00Z'), { db, skipLogging: true })
-        return { date: d, predicted: fc.predicted_revenue }
-      }),
-    )
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value.predicted > 0) {
         consolidatedRevByDate[r.value.date] = r.value.predicted
@@ -476,11 +487,12 @@ export async function GET(req: NextRequest) {
   // never blocks the response. Backtest write guard inside captureForecastOutcomes
   // skips past dates so dashboard back-test calls don't pollute MAPE-by-horizon.
   //
-  // V2 cutover: when PREDICTION_V2_DASHBOARD_CHART is on, the revenue values
-  // in `suggested[]` already come from dailyForecast(), and the consolidated
-  // capture path is the canonical record. Skip the legacy 'scheduling_ai_revenue'
-  // surface capture so we don't write rows tagged as legacy that actually
-  // came from the v2 forecaster — that would corrupt MAPE-by-surface.
+  // 2026-05-19 update: write BOTH captures regardless of v2 flag. When v2 is
+  // on, suggested[].est_revenue is the consolidated value — capture it as
+  // scheduling_ai_revenue ONLY when the legacy math produced it (v2 flag
+  // off). The consolidated_daily capture is handled by dailyForecast itself
+  // (skipLogging:false above). This way we get apples-to-apples h=1..14
+  // comparison data from both surfaces emitted by the same dashboard hit.
   if (!v2ChartFlagOn) await captureForecastOutcomes(
     suggested
       .filter((s: any) => s.est_revenue > 0)

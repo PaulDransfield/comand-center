@@ -188,16 +188,24 @@ export async function computeDemandForecast(opts: ComputeDemandOpts): Promise<De
   // demand widget.
   const v2ChartFlagOn = await isPredictionV2FlagEnabled(opts.businessId, 'PREDICTION_V2_DASHBOARD_CHART', opts.db)
   const consolidatedByDate: Record<string, { predicted: number; baseline: number; confidence: 'high' | 'medium' | 'low' }> = {}
+
+  // ── Shadow-mode capture (2026-05-19 forward-horizon fix) ──────────────
+  // Always run dailyForecast for every future date so capture rows land
+  // in daily_forecast_outcomes at their actual horizon (forecast_date -
+  // today). Without this, real-user dashboard hits produced zero h>1
+  // consolidated_daily rows — we couldn't compare against the legacy
+  // weather_demand at h=7. The consolidated value is only USED downstream
+  // when v2 flag is on; capture is unconditional.
+  const futureDates = forecast.slice(0, days)
+    .map(f => f.date)
+    .filter(d => (actualByDate[d] ?? 0) <= 0)
+  const results = await Promise.allSettled(
+    futureDates.map(async d => {
+      const fc = await dailyForecast(opts.businessId, new Date(d + 'T12:00:00Z'), { db: opts.db, skipLogging: false })
+      return { date: d, fc }
+    }),
+  )
   if (v2ChartFlagOn) {
-    const futureDates = forecast.slice(0, days)
-      .map(f => f.date)
-      .filter(d => (actualByDate[d] ?? 0) <= 0)
-    const results = await Promise.allSettled(
-      futureDates.map(async d => {
-        const fc = await dailyForecast(opts.businessId, new Date(d + 'T12:00:00Z'), { db: opts.db, skipLogging: true })
-        return { date: d, fc }
-      }),
-    )
     for (const r of results) {
       if (r.status === 'fulfilled' && r.value.fc.predicted_revenue > 0) {
         consolidatedByDate[r.value.date] = {
