@@ -179,24 +179,57 @@ export function detectClosedHours(rows: HourlyRow[]): Set<string> {
 
 // ── Meal-period auto-detection ───────────────────────────────────────
 
+/** Universal Swedish meal-period definitions (label → hours).
+ *
+ *  Detected meal periods for a business are: this universal map, intersected
+ *  with the hours where the business actually trades (revenue share ≥ 1 %
+ *  of daily total). A continuous-trade restaurant like Vero hits lunch +
+ *  tea + dinner + late; a deli like Rosali hits lunch + (small) dinner;
+ *  a brunch café would hit breakfast + brunch.
+ *
+ *  Why hardcoded boundaries rather than auto-clustering:
+ *    - Vero trades CONTINUOUSLY from 12:00 to 00:00. There's no zero-
+ *      revenue gap between lunch and dinner. A cluster-by-gap algorithm
+ *      collapses everything into one giant "evening" cluster, defeating
+ *      the per-meal-period staffing recommendation the whole feature
+ *      exists for.
+ *    - Local-minima detection at "between-service trough" (hour 16 for
+ *      Vero) is fragile — the trough is shallow on the lunch side
+ *      (15 → 16 dropped only 10 %) but deep on the dinner side (16 → 17
+ *      rose 51 %). Threshold-tuning here is a calibration rabbit hole.
+ *    - Swedish service conventions are stable and well-known. Owners
+ *      think in these terms. Auto-detecting away from them produces
+ *      labels that confuse customers ("why is my 11am cluster called
+ *      'brunch'?") for no accuracy gain.
+ *
+ *  When we hit a non-Swedish business OR a customer with materially
+ *  different hours, we'll add per-business overrides (e.g. a column on
+ *  `businesses` that stores their actual meal-period boundaries). For
+ *  now, hardcoded + per-business active-hour intersection covers Vero
+ *  and Rosali correctly.
+ */
+const UNIVERSAL_MEAL_PERIODS: Array<{ label: MealPeriodLabel; hours: number[] }> = [
+  { label: 'breakfast', hours: [6, 7, 8, 9] },
+  { label: 'brunch',    hours: [10] },
+  { label: 'lunch',     hours: [11, 12, 13, 14, 15] },
+  { label: 'afternoon', hours: [16] },
+  { label: 'dinner',    hours: [17, 18, 19, 20, 21] },
+  { label: 'late',      hours: [22, 23] },
+  // Hours 0-1 belong to the PREVIOUS business_date's "late" tail in
+  // operator mental model (Saturday night extends into Sunday 01:00).
+  // Storing them on the post-midnight business_date is right for
+  // hourly_metrics but they're not part of THIS business_date's late
+  // period from a staffing-prediction perspective. We skip them in v1.
+]
+
 /**
- * Cluster the business's revenue into contiguous "meal periods" based on
- * historical hour-of-day density. Returns a list of clusters in
- * chronological order.
+ * Detect this business's active meal periods by intersecting the universal
+ * meal-period map with hours that have revenue share >= MEAL_PERIOD_MIN_HOUR_SHARE.
  *
- * Method:
- *   1. Compute per-hour revenue share (sum across all dates, normalize)
- *   2. Walk hours 0-23 (then wrap 0-3 for late-night businesses)
- *   3. Contiguous active hours (share >= MEAL_PERIOD_MIN_HOUR_SHARE) form
- *      a cluster; a gap of 1+ inactive hours ends the cluster
- *   4. Label each cluster by where its peak hour falls
- *   5. Special "late" handling: a cluster ending at 22-23 with a hot 23-00
- *      bridge or independent post-midnight activity gets merged
- *
- * Vero: returns [{lunch:[11-15]}, {dinner:[17-22], late includes [23,0,1]}]
- * Rosali: returns [{lunch:[12-15]}, {dinner:[18-21]}]
- *
- * Empty rows → no clusters. Caller falls back to a wide default if needed.
+ * Returns clusters in chronological order with the original labels. Empty
+ * meal periods (zero matching active hours) are omitted entirely — Rosali
+ * has no breakfast/brunch/afternoon clusters because her early morning
+ * and mid-afternoon shares are too thin.
  */
 export function detectMealPeriods(rows: HourlyRow[]): MealPeriodCluster[] {
   if (rows.length === 0) return []
@@ -213,60 +246,23 @@ export function detectMealPeriods(rows: HourlyRow[]): MealPeriodCluster[] {
   const hourShare = hourTotal.map(v => v / dailyTotal)
   const isActive  = hourShare.map(s => s >= MEAL_PERIOD_MIN_HOUR_SHARE)
 
-  // Walk 0-23 looking for contiguous runs of active hours. If the run
-  // wraps past midnight (active at 23 AND active at 0/1/2), merge them.
   const clusters: MealPeriodCluster[] = []
-  let current: number[] = []
-
-  function flush() {
-    if (current.length === 0) return
-    const hours = [...current]
-    const peakHour = hours.reduce((best, h) => hourShare[h] > hourShare[best] ? h : best, hours[0])
+  for (const { label, hours } of UNIVERSAL_MEAL_PERIODS) {
+    const activeHours = hours.filter(h => isActive[h])
+    if (activeHours.length === 0) continue
+    const peakHour = activeHours.reduce(
+      (best, h) => hourShare[h] > hourShare[best] ? h : best,
+      activeHours[0],
+    )
     clusters.push({
-      label:       labelMealPeriod(peakHour),
-      hours,
+      label,
+      hours:       activeHours,
       peak_hour:   peakHour,
       peak_share:  Math.round(hourShare[peakHour] * 1000) / 1000,
-      total_share: Math.round(hours.reduce((s, h) => s + hourShare[h], 0) * 1000) / 1000,
+      total_share: Math.round(activeHours.reduce((s, h) => s + hourShare[h], 0) * 1000) / 1000,
     })
-    current = []
-  }
-
-  for (let h = 0; h < 24; h++) {
-    if (isActive[h]) current.push(h)
-    else flush()
-  }
-  flush()
-
-  // Late-night wrap: if last cluster ends at 23 and first cluster starts
-  // at 0, merge them under a 'late' label.
-  if (clusters.length >= 2) {
-    const last  = clusters[clusters.length - 1]
-    const first = clusters[0]
-    if (last.hours[last.hours.length - 1] === 23 && first.hours[0] === 0) {
-      const mergedHours = [...last.hours, ...first.hours]
-      const mergedPeak  = mergedHours.reduce((best, h) => hourShare[h] > hourShare[best] ? h : best, mergedHours[0])
-      const merged: MealPeriodCluster = {
-        label:       'late',
-        hours:       mergedHours,
-        peak_hour:   mergedPeak,
-        peak_share:  Math.round(hourShare[mergedPeak] * 1000) / 1000,
-        total_share: Math.round(mergedHours.reduce((s, h) => s + hourShare[h], 0) * 1000) / 1000,
-      }
-      return [merged, ...clusters.slice(1, -1)]
-    }
   }
   return clusters
-}
-
-function labelMealPeriod(peakHour: number): MealPeriodLabel {
-  if (peakHour >= 5  && peakHour <= 8)  return 'breakfast'
-  if (peakHour >= 9  && peakHour <= 11) return 'brunch'
-  if (peakHour >= 12 && peakHour <= 15) return 'lunch'
-  if (peakHour === 16)                  return 'afternoon'
-  if (peakHour >= 17 && peakHour <= 21) return 'dinner'
-  if (peakHour >= 22 || peakHour <= 2)  return 'late'
-  return 'overnight'
 }
 
 // ── Main entry: single-hour forecast ─────────────────────────────────
