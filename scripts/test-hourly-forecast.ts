@@ -94,9 +94,14 @@ const { data: actuals } = await db
 const actualByKey: Record<string, any> = {}
 for (const r of (actuals ?? []) as any[]) actualByKey[`${r.business_date}|${r.hour}`] = r
 
-// MAPE accumulator per meal period
+// MAPE accumulator per meal period — per-hour grain
 const errorsByMeal: Record<string, { sumAbsErr: number; sumErr: number; n: number }> = {}
 for (const mp of mealPeriods) errorsByMeal[mp.label] = { sumAbsErr: 0, sumErr: 0, n: 0 }
+
+// Per-(day, meal_period) accumulator — operators care about this grain,
+// not single-hour errors. A single $74 hour with $1000 predicted blows
+// per-hour MAPE up but cancels against the rest of the meal period.
+const periodDayTotals: Record<string, { predicted: number; actual: number }> = {}
 
 let predictedCount = 0
 const lastDay = ymd(windowEnd)
@@ -122,6 +127,12 @@ for (let d = 0; d < days; d++) {
         errorsByMeal[mp.label].sumErr    += err
         errorsByMeal[mp.label].n         += 1
 
+        // Roll into per-(day, meal_period) totals
+        const pdKey = `${dayIso}|${mp.label}`
+        if (!periodDayTotals[pdKey]) periodDayTotals[pdKey] = { predicted: 0, actual: 0 }
+        periodDayTotals[pdKey].predicted += fc.predicted_revenue
+        periodDayTotals[pdKey].actual    += Number(actual)
+
         if (dayIso === lastDay) {
           lastDayBreakdown.push({
             label: mp.label, hour, predicted: fc.predicted_revenue, actual: Number(actual), err_pct: err * 100,
@@ -137,8 +148,8 @@ for (let d = 0; d < days; d++) {
 
 console.log(`\nForecasts run: ${predictedCount}`)
 
-// MAPE per meal period
-console.log(`\nMAPE per meal period (across ${days}-day window):`)
+// ── Per-hour MAPE (noisy — included for debugging) ─────────────────
+console.log(`\nPer-hour MAPE (each hour graded individually):`)
 console.log('  Period        n    MAPE       Bias')
 console.log('  ─────────────────────────────────────')
 for (const mp of mealPeriods) {
@@ -150,6 +161,53 @@ for (const mp of mealPeriods) {
     const bias = (e.sumErr    / e.n) * 100
     console.log(`  ${mp.label.padEnd(12)}  ${String(e.n).padStart(3)}  ${mape.toFixed(1).padStart(5)}%   ${(bias > 0 ? '+' : '') + bias.toFixed(1).padStart(6)}%`)
   }
+}
+
+// ── Per-(day, meal-period) MAPE — the operator-grade metric ─────────
+// Sum hours within each meal period per day, compute one error per
+// (day, period). This is what the dashboard chart and scheduling AI
+// actually use. Single noisy hour can't blow it up — it cancels with
+// strong hours in the same service.
+console.log(`\nPer-(day × meal-period) MAPE (operator-grade — sums hours within each service):`)
+console.log('  Period        n    MAPE       Bias')
+console.log('  ─────────────────────────────────────')
+const periodAgg: Record<string, { sumAbsErr: number; sumErr: number; n: number }> = {}
+for (const mp of mealPeriods) periodAgg[mp.label] = { sumAbsErr: 0, sumErr: 0, n: 0 }
+for (const [pdKey, totals] of Object.entries(periodDayTotals)) {
+  if (totals.actual <= 0) continue
+  const label = pdKey.split('|')[1]
+  const err   = (totals.predicted - totals.actual) / totals.actual
+  periodAgg[label].sumAbsErr += Math.abs(err)
+  periodAgg[label].sumErr    += err
+  periodAgg[label].n         += 1
+}
+for (const mp of mealPeriods) {
+  const e = periodAgg[mp.label]
+  if (e.n === 0) {
+    console.log(`  ${mp.label.padEnd(12)}  ${String(e.n).padStart(3)}  (no resolved days)`)
+  } else {
+    const mape = (e.sumAbsErr / e.n) * 100
+    const bias = (e.sumErr    / e.n) * 100
+    console.log(`  ${mp.label.padEnd(12)}  ${String(e.n).padStart(3)}  ${mape.toFixed(1).padStart(5)}%   ${(bias > 0 ? '+' : '') + bias.toFixed(1).padStart(6)}%`)
+  }
+}
+
+// Top 5 worst (day × period) cells — spot the data-quality outliers
+const worst = Object.entries(periodDayTotals)
+  .filter(([_, t]) => t.actual > 0)
+  .map(([k, t]) => {
+    const [date, label] = k.split('|')
+    const err = (t.predicted - t.actual) / t.actual
+    return { date, label, predicted: t.predicted, actual: t.actual, err_pct: err * 100 }
+  })
+  .sort((a, b) => Math.abs(b.err_pct) - Math.abs(a.err_pct))
+  .slice(0, 5)
+console.log(`\nTop 5 worst-prediction (date × meal-period) cells:`)
+console.log('  Date         Period        Predicted    Actual       Err')
+console.log('  ─────────────────────────────────────────────────────────')
+for (const w of worst) {
+  const sign = w.err_pct > 0 ? '+' : ''
+  console.log(`  ${w.date}   ${w.label.padEnd(12)}  ${String(w.predicted).padStart(8)}  ${String(w.actual).padStart(8)}   ${(sign + w.err_pct.toFixed(1) + '%').padStart(8)}`)
 }
 
 // Last-day breakdown
