@@ -27,6 +27,7 @@ import DemandOutlook from '@/components/dashboard/DemandOutlook'
 import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
 import CashPositionTile from '@/components/dashboard/CashPositionTile'
 import CashFlowProjectionTile from '@/components/dashboard/CashFlowProjectionTile'
+import WhyThisWeekCard from '@/components/dashboard/WhyThisWeekCard'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1046,6 +1047,13 @@ function DashboardInner() {
                 }
               `}</style>
             </div>
+
+            {/* Phase B attribution UX — "Why this week's numbers" card.
+                Reads the attribution payload from the same aiSched response
+                the chart and AttentionPanel already use; no new API call.
+                Hidden when no day has unusual drivers OR when aiSched
+                hasn't loaded yet. */}
+            <WhyThisWeekCard aiSched={aiSched} fmtKr={fmtKr} />
 
             {/* Phase 5 cash visibility — net bank movement derived from
                 BAS 1910-1979 voucher activity (data we already had but were
