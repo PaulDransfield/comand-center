@@ -579,18 +579,35 @@ function MealPeriodBreakdown({ periods, fmt, fmtHrs }: {
         gap:        10,
       }}>
         {periods.map((p: any) => {
-          const sched = Number(p.scheduled_hours ?? 0)
-          const rev   = Number(p.predicted_revenue ?? 0)
-          const rph   = p.rev_per_hour == null ? null : Number(p.rev_per_hour)
+          const sched     = Number(p.scheduled_hours ?? 0)
+          const rev       = Number(p.predicted_revenue ?? 0)
+          const rph       = p.rev_per_hour == null ? null : Number(p.rev_per_hour)
+          const deltaH    = Number(p.delta_hours ?? 0)   // ≤ 0
+          const deltaCost = Number(p.delta_cost  ?? 0)   // ≤ 0
+          const targetRph = p.target_rev_per_hour == null ? null : Number(p.target_rev_per_hour)
+          const showCut   = deltaH <= -0.5    // half-hour threshold — below this it's noise
+          // Border colour signals cut opportunity per period
+          const periodBorder = showCut ? C.green : C.border
+          const periodBg     = showCut ? C.greenBg : C.bgCard
           return (
             <div key={p.label} style={{
               padding:      '8px 10px',
               borderRadius: 6,
-              background:   C.bgCard,
-              border:       `0.5px solid ${C.border}`,
+              background:   periodBg,
+              border:       `0.5px solid ${periodBorder}`,
             }}>
-              <div style={{ fontSize: 11, fontWeight: 500, color: C.ink2, marginBottom: 4 }}>
-                {LABEL[p.label] ?? p.label}
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                marginBottom: 4,
+              }}>
+                <span style={{ fontSize: 11, fontWeight: 500, color: C.ink2 }}>
+                  {LABEL[p.label] ?? p.label}
+                </span>
+                {showCut && (
+                  <span style={{ fontSize: 10, fontWeight: 600, color: C.green }}>
+                    −{fmtHrs(Math.abs(deltaH))}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 14, fontWeight: 500, color: C.ink, marginBottom: 2 }}>
                 {rev > 0 ? fmt(rev) : '—'}
@@ -601,6 +618,23 @@ function MealPeriodBreakdown({ periods, fmt, fmtHrs }: {
                   <span style={{ color: C.ink4 }}> · {fmt(rph)}/h</span>
                 )}
               </div>
+              {showCut && (
+                <div style={{
+                  marginTop:    6,
+                  paddingTop:   6,
+                  borderTop:    `0.5px dashed ${C.green}`,
+                  fontSize:     10,
+                  color:        C.green,
+                  fontWeight:   500,
+                }}>
+                  Trim {fmtHrs(Math.abs(deltaH))} → save {fmt(Math.abs(deltaCost))}
+                  {targetRph != null && (
+                    <span style={{ color: C.ink4, fontWeight: 400 }}>
+                      {' '}(target {fmt(targetRph)}/h)
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}

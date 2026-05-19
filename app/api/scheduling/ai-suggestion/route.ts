@@ -395,6 +395,52 @@ export async function GET(req: NextRequest) {
   const hourlyThisWeek = (hourlyThisWeekRes.data ?? []) as any[]
   const detectedMealPeriods = detectMealPeriods(hourlyHistory)
 
+  // Per-meal-period historical P75 rev/hour. We DON'T have shift-level
+  // start/end times in staff_logs, so we proxy meal-period hours by
+  // distributing daily_metrics.hours_worked proportionally to that day's
+  // revenue share within the meal period:
+  //   lunch_hours[day] ≈ total_hours[day] × (lunch_rev[day] / daily_rev[day])
+  //
+  // Crude — lunch typically uses ~50 % more staff per revenue krona than
+  // dinner (prep-heavy, lower covers-per-hour) — but the directional
+  // signal holds. When customer #N's PK pull includes hourly staff
+  // attribution (or we add it), swap the proxy for actuals.
+  //
+  // Output: p75RphByMeal[label] = 75th percentile rev/hour across days
+  // with sufficient signal. Used as the model's target rev/hour when
+  // computing per-meal-period cut recommendations below.
+  const hourlyHistoryByDate: Record<string, Record<number, number>> = {}
+  for (const r of hourlyHistory) {
+    if (!hourlyHistoryByDate[r.business_date]) hourlyHistoryByDate[r.business_date] = {}
+    hourlyHistoryByDate[r.business_date][r.hour] = Number(r.revenue ?? 0)
+  }
+  const dailyByDate: Record<string, { revenue: number; hours: number }> = {}
+  for (const r of (daily ?? []) as any[]) {
+    if (Number(r.revenue ?? 0) > 0 && Number(r.hours_worked ?? 0) > 0) {
+      dailyByDate[r.date] = { revenue: Number(r.revenue), hours: Number(r.hours_worked) }
+    }
+  }
+  const p75RphByMeal: Record<string, number> = {}
+  for (const cluster of detectedMealPeriods) {
+    const rphSamples: number[] = []
+    for (const [date, d] of Object.entries(dailyByDate)) {
+      const dayHourly = hourlyHistoryByDate[date]
+      if (!dayHourly) continue
+      const mealRev = cluster.hours.reduce((s, h) => s + (dayHourly[h] ?? 0), 0)
+      if (mealRev <= 0 || d.revenue <= 0) continue
+      const mealHoursProxy = d.hours * (mealRev / d.revenue)
+      if (mealHoursProxy >= 0.5) {
+        rphSamples.push(mealRev / mealHoursProxy)
+      }
+    }
+    if (rphSamples.length >= 3) {
+      rphSamples.sort((a, b) => a - b)
+      p75RphByMeal[cluster.label] = rphSamples[Math.floor(rphSamples.length * 0.75)]
+    } else {
+      p75RphByMeal[cluster.label] = 0  // insufficient data → no recommendation
+    }
+  }
+
   // Distribute each scheduled shift's hours across the detected meal periods
   // by intersecting Stockholm-local shift hours with meal-period buckets.
   // Map: `${date}|${meal_label}` → { hours, cost }
@@ -445,15 +491,40 @@ export async function GET(req: NextRequest) {
           : 'high'
         const scheduled = scheduledByDateMeal[`${dateIso}|${cluster.label}`] ?? { hours: 0, cost: 0 }
         const revPerHour = scheduled.hours > 0 ? Math.round(predictedRev / scheduled.hours) : null
+
+        // Cut recommendation (cuts-only, same asymmetric policy as daily).
+        // Skip when:
+        //   - p75 unavailable (insufficient history per the proxy)
+        //   - no shifts scheduled for this period (nothing to cut)
+        //   - confidence is 'low' (don't drive ops decisions on noise)
+        const targetRph = p75RphByMeal[cluster.label] ?? 0
+        const costPerHour = scheduled.hours > 0 ? scheduled.cost / scheduled.hours : 0
+        let modelTargetHours: number | null = null
+        let targetHours:      number | null = null
+        let deltaHours = 0
+        let deltaCost  = 0
+        if (targetRph > 0 && scheduled.hours > 0 && conf !== 'low') {
+          modelTargetHours = predictedRev / targetRph
+          // Cuts only — never recommend adding hours per the existing policy.
+          targetHours = Math.min(scheduled.hours, modelTargetHours)
+          deltaHours = Math.round((targetHours - scheduled.hours) * 10) / 10  // ≤ 0
+          deltaCost  = Math.round(deltaHours * costPerHour)                    // ≤ 0
+        }
         return {
-          label:             cluster.label,
-          hours_in_period:   cluster.hours,
-          predicted_revenue: Math.round(predictedRev),
-          predicted_covers:  Math.round(predictedCovers),
-          scheduled_hours:   Math.round(scheduled.hours * 10) / 10,
-          scheduled_cost:    Math.round(scheduled.cost),
-          rev_per_hour:      revPerHour,
-          confidence:        conf,
+          label:               cluster.label,
+          hours_in_period:     cluster.hours,
+          predicted_revenue:   Math.round(predictedRev),
+          predicted_covers:    Math.round(predictedCovers),
+          scheduled_hours:     Math.round(scheduled.hours * 10) / 10,
+          scheduled_cost:      Math.round(scheduled.cost),
+          rev_per_hour:        revPerHour,
+          confidence:          conf,
+          // Phase A week 3 (continued) — cut recommendations per period.
+          target_rev_per_hour: targetRph > 0 ? Math.round(targetRph) : null,
+          model_target_hours:  modelTargetHours != null ? Math.round(modelTargetHours * 10) / 10 : null,
+          target_hours:        targetHours != null ? Math.round(targetHours * 10) / 10 : null,
+          delta_hours:         deltaHours,    // ≤ 0, negative = cut
+          delta_cost:          deltaCost,     // ≤ 0, negative = saving
         }
       }))
       mealPredictionsByDate[dateIso] = perPeriod
