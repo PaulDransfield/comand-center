@@ -68,16 +68,33 @@ export function RoleGate({
 
   // Explicit "owner only" override.
   if (require === 'owner' && me.role !== 'owner') {
+    // Revisor on an owner-only page → redirect to their landing.
+    if (me.role === 'revisor' && !pathname.startsWith('/revisor')) {
+      router.replace('/revisor')
+      return null
+    }
     return <NoAccessFallback role={me.role} />
   }
 
   if (canAccessPath(subject, pathname)) return <>{children}</>
+
+  // Revisor landed on a page they can't access. Their entire app universe
+  // is /revisor; rather than showing an access-restricted message with a
+  // "back to dashboard" button (which loops), auto-redirect them there.
+  if (me.role === 'revisor' && !pathname.startsWith('/revisor')) {
+    router.replace('/revisor')
+    return null
+  }
 
   return <NoAccessFallback role={me.role} />
 }
 
 function NoAccessFallback({ role }: { role: string }) {
   const t = useTranslations('misc.roleGate')
+  // Revisor's "home" is /revisor, not /dashboard. Don't link them back to a
+  // page they can't access.
+  const backHref  = role === 'revisor' ? '/revisor' : '/dashboard'
+  const backLabel = role === 'revisor' ? 'Back to your monthly view' : t('backToDash')
   return (
     <div style={{
       minHeight: '60vh',
@@ -107,7 +124,7 @@ function NoAccessFallback({ role }: { role: string }) {
           {t('body', { role })}
         </p>
         <a
-          href="/dashboard"
+          href={backHref}
           style={{
             display: 'inline-block',
             padding: '8px 16px',
@@ -118,7 +135,7 @@ function NoAccessFallback({ role }: { role: string }) {
             fontSize: 13, fontWeight: 500,
           }}
         >
-          {t('backToDash')}
+          {backLabel}
         </a>
       </div>
     </div>
