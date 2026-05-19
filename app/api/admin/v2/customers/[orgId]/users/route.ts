@@ -118,26 +118,24 @@ export async function POST(req: NextRequest, { params }: { params: { orgId: stri
       }, { status: 500 })
     }
     userId = created.user.id
+  }
 
-    // Make sure a row exists in `public.users` so the
-    // organisation_members.user_id FK is satisfied. Previous version silently
-    // swallowed errors here; now we surface them so a schema mismatch
-    // (missing column, etc.) doesn't produce the confusing downstream FK
-    // violation on organisation_members insert.
-    //
-    // Use minimal columns (id + email only). full_name + auth_methods are
-    // not required by every schema variant; older deployments may not have
-    // them.
-    const { error: usersErr } = await db
-      .from('users')
-      .upsert({ id: userId, email }, { onConflict: 'id', ignoreDuplicates: false })
-    if (usersErr) {
-      console.error('[admin/users] public.users upsert failed:', usersErr.message)
-      return NextResponse.json({
-        error: `Could not mirror auth user into public.users: ${usersErr.message}. ` +
-               `Check the public.users schema and the organisation_members.user_id FK target.`,
-      }, { status: 500 })
-    }
+  // Make sure a row exists in `public.users` REGARDLESS of whether the
+  // auth user was just created OR found via listUsers. The FK on
+  // organisation_members.user_id points to public.users(id), so if an
+  // older auth user exists in auth.users without a matching public.users
+  // row, the membership insert below fails with a confusing FK violation.
+  // This previously sat inside the if-not-userId branch; moved out so it
+  // runs every time. Upsert is idempotent.
+  const { error: usersErr } = await db
+    .from('users')
+    .upsert({ id: userId, email }, { onConflict: 'id', ignoreDuplicates: false })
+  if (usersErr) {
+    console.error('[admin/users] public.users upsert failed:', usersErr.message)
+    return NextResponse.json({
+      error: `Could not mirror auth user into public.users: ${usersErr.message}. ` +
+             `Check the public.users schema and the organisation_members.user_id FK target.`,
+    }, { status: 500 })
   }
 
   // Insert the membership. Use upsert so re-adding an already-removed user
