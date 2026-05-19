@@ -29,6 +29,7 @@ import CashPositionTile from '@/components/dashboard/CashPositionTile'
 import CashFlowProjectionTile from '@/components/dashboard/CashFlowProjectionTile'
 import WhyThisWeekCard from '@/components/dashboard/WhyThisWeekCard'
 import WeekScorecardCard from '@/components/dashboard/WeekScorecardCard'
+import WhatHappenedCard from '@/components/dashboard/WhatHappenedCard'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1061,6 +1062,12 @@ function DashboardInner() {
                 loads; no new API call. Hidden when the whole week is
                 pending or closed (nothing to score yet). */}
             <WeekScorecardCard aiSched={aiSched} dailyRows={dailyRows} fmtKr={fmtKr} />
+
+            {/* Variance attribution — picks the past day with biggest
+                absolute |actual − predicted| variance and decomposes it
+                using the same attribution drivers as WhyThisWeekCard.
+                Hidden when no past day diverged > 10%. */}
+            <WhatHappenedCard aiSched={aiSched} dailyRows={dailyRows} fmtKr={fmtKr} />
 
             {/* Phase 5 cash visibility — net bank movement derived from
                 BAS 1910-1979 voucher activity (data we already had but were
