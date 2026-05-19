@@ -17,6 +17,15 @@
 
 import { UX } from '@/lib/constants/tokens'
 
+interface AttributionEvent {
+  name:        string | null
+  category:    string
+  venue_name:  string | null
+  start_at:    string
+  days_until:  number
+  distance_km: number
+  lift_pct:    number
+}
 interface Attribution {
   weekday_name:              string
   baseline_kr:               number
@@ -36,6 +45,8 @@ interface Attribution {
   recent_trend_pct:          number
   this_week_scaler:          number
   this_week_scaler_clamped:  boolean
+  events?:                   AttributionEvent[]
+  events_aggregate_lift_pct?: number
 }
 
 interface SuggestedDay {
@@ -142,7 +153,29 @@ function extractDrivers(a: Attribution): Driver[] {
     })
   }
 
+  // Events nearby — top 2 to keep chip-strip tidy
+  if (a.events && a.events.length > 0) {
+    for (const ev of a.events.slice(0, 2)) {
+      drivers.push({
+        label:  eventChipLabel(ev),
+        effect: `+${ev.lift_pct.toFixed(0)}%`,
+        tone:   'good',
+      })
+    }
+  }
+
   return drivers
+}
+
+function eventChipLabel(ev: AttributionEvent): string {
+  const venue = ev.venue_name ?? 'venue'
+  const name = ev.name ? (ev.name.length > 30 ? ev.name.slice(0, 28) + '…' : ev.name) : 'event'
+  let when = ''
+  if (ev.days_until === 0)       when = ' tonight'
+  else if (ev.days_until === 1)  when = ' tomorrow'
+  else if (ev.days_until === 2)  when = ' in 2 days'
+  else if (ev.days_until === -1) when = ' (yesterday)'
+  return `${name} · ${venue}${when}`
 }
 
 // Pick the next N future days (skip past dates by relying on backend filter)

@@ -27,6 +27,7 @@ import { dailyForecast }                        from '@/lib/forecast/daily'
 import { hourlyForecast, detectMealPeriods, type MealPeriodCluster, type MealPeriodLabel } from '@/lib/forecast/hourly'
 import { isPredictionV2FlagEnabled }            from '@/lib/featureFlags/prediction-v2'
 import { getHolidaysForCountry }                from '@/lib/holidays'
+import { computeEventImpacts, aggregateDayLiftPct, type EventRecord } from '@/lib/events/impact'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -633,6 +634,59 @@ export async function GET(req: NextRequest) {
     return                                          { phase: 'mid_month',     effect_pct:  0, label: 'Mid-month' }
   }
 
+  // ── Events: load nearby events once for the entire date range ────────
+  // We then compute per-(date) impact lists in-memory during the suggested
+  // loop. v1 surfaces events in attribution but does NOT change predicted
+  // revenue — we want 2-3 weeks of post-deploy data to validate lift
+  // factors before letting them influence the numbers.
+  //
+  // Filter at DB level: city-matched + within the date window. Geographic
+  // filtering (<5 km) happens in computeEventImpacts (memory-side).
+  // Soft-fails when the events table doesn't exist (legacy envs) or is
+  // empty (Ticketmaster API key not set yet).
+  const businessCity = (biz as any).city ?? null
+  let nearbyEvents: EventRecord[] = []
+  try {
+    const eventsFromIso = (() => {
+      const d = new Date(rangeStart); d.setDate(d.getDate() - 2); return d.toISOString()
+    })()
+    const eventsToIso = (() => {
+      const d = new Date(rangeEnd); d.setDate(d.getDate() + 2); return d.toISOString()
+    })()
+    const eventsQuery = db
+      .from('events')
+      .select('id, source, source_id, name, category, start_at, end_at, venue_name, venue_city, venue_lat, venue_lng, venue_capacity, expected_attendance, url')
+      .gte('start_at', eventsFromIso)
+      .lte('start_at', eventsToIso)
+      .not('venue_lat', 'is', null)
+      .limit(500)
+    if (businessCity) {
+      // Try city match first — narrows the working set significantly
+      const { data: cityEvents } = await eventsQuery.eq('venue_city', businessCity)
+      nearbyEvents = (cityEvents ?? []) as EventRecord[]
+      // If city match was empty (perhaps venue_city normalization differs),
+      // fall back to ALL events in window — computeEventImpacts will filter
+      // by geography anyway.
+      if (nearbyEvents.length === 0) {
+        const { data: anyEvents } = await db
+          .from('events')
+          .select('id, source, source_id, name, category, start_at, end_at, venue_name, venue_city, venue_lat, venue_lng, venue_capacity, expected_attendance, url')
+          .gte('start_at', eventsFromIso)
+          .lte('start_at', eventsToIso)
+          .not('venue_lat', 'is', null)
+          .limit(500)
+        nearbyEvents = (anyEvents ?? []) as EventRecord[]
+      }
+    }
+  } catch { /* events table missing or query failed — proceed without events */ }
+
+  // Resolve business lat/lng from coordsFor (Stockholm-centred default
+  // if city is unset, which keeps Vero/Rosali working without explicit
+  // coords on the businesses table).
+  const bizCoords = coordsFor(businessCity)
+  const businessLat = bizCoords.lat
+  const businessLng = bizCoords.lon
+
   const suggested: any[] = []
   for (const date of Object.keys(currentByDate).sort()) {
     const dow = (new Date(date).getUTCDay() + 6) % 7
@@ -773,6 +827,24 @@ export async function GET(req: NextRequest) {
         const klamAdjName = klam.ok && klam.adjacent ? holidayByDate[klam.adjacent]?.name ?? 'a holiday' : null
         // Salary cycle
         const sal = salaryPhaseDescr(dom)
+        // Events near the business — filtered + temporal-curve-weighted
+        // by computeEventImpacts. Cap aggregate at MAX_DAY_LIFT_PCT.
+        const eventImpacts = computeEventImpacts({
+          businessLat,
+          businessLng,
+          forecastDate: dateObj,
+          events:       nearbyEvents,
+        })
+        const eventsAggregateLiftPct = aggregateDayLiftPct(eventImpacts)
+        const eventsTopN = eventImpacts.slice(0, 3).map(ei => ({
+          name:         ei.event.name,
+          category:     ei.event.category,
+          venue_name:   ei.event.venue_name,
+          start_at:     ei.event.start_at,
+          days_until:   ei.days_until,
+          distance_km:  ei.distance_km,
+          lift_pct:     ei.lift_pct,
+        }))
         return {
           weekday_name:        weekdayName,
           baseline_kr:         baselineKr,
@@ -792,6 +864,10 @@ export async function GET(req: NextRequest) {
           recent_trend_pct:    Math.round(trendPct * 10) / 10,
           this_week_scaler:    Math.round(thisWeekScale * 100) / 100,
           this_week_scaler_clamped: thisWeekScale <= 0.75 + 1e-6 || thisWeekScale >= 1.25 - 1e-6,
+          // Events nearby — top 3 most-impactful, with aggregate lift %.
+          // v1: pure visibility (prediction unchanged); v2 will multiply.
+          events:              eventsTopN,
+          events_aggregate_lift_pct: Math.round(eventsAggregateLiftPct * 10) / 10,
         }
       })(),
     })

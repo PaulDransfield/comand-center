@@ -50,6 +50,15 @@ interface MealPeriod {
   target_rev_per_hour?: number | null
 }
 
+interface AttributionEvent {
+  name:        string | null
+  category:    string
+  venue_name:  string | null
+  start_at:    string
+  days_until:  number
+  distance_km: number
+  lift_pct:    number
+}
 interface Attribution {
   weekday_name:              string
   baseline_kr:               number
@@ -69,6 +78,8 @@ interface Attribution {
   recent_trend_pct:          number
   this_week_scaler:          number
   this_week_scaler_clamped:  boolean
+  events?:                   AttributionEvent[]
+  events_aggregate_lift_pct?: number
 }
 
 interface Props {
@@ -122,6 +133,18 @@ function labelForPeriod(s: string): string {
     afternoon: 'Afternoon', dinner: 'Dinner', late: 'Late', overnight: 'Overnight',
   }
   return m[s] ?? s
+}
+
+// Compact label for an event chip — venue + leading/lagging hint
+function eventChipLabel(ev: AttributionEvent): string {
+  const venue = ev.venue_name ? ev.venue_name.replace(/\s*(Stockholm|Arena|Theatre|Hall).*$/i, m => m.trimEnd()) : 'venue'
+  const name = ev.name ? (ev.name.length > 32 ? ev.name.slice(0, 30) + '…' : ev.name) : 'event'
+  let when = ''
+  if (ev.days_until === 0)       when = ' tonight'
+  else if (ev.days_until === 1)  when = ' tomorrow'
+  else if (ev.days_until === 2)  when = ' in 2 days'
+  else if (ev.days_until === -1) when = ' (yesterday)'
+  return `${name} · ${venue}${when}`
 }
 
 // ── Attribution line ────────────────────────────────────────────────
@@ -189,6 +212,17 @@ function AttributionLine({ attribution: a, fmt }: { attribution: Attribution; fm
       effect: isHigh ? '+25% max' : '−25% min',
       tone:   isHigh ? 'good' : 'bad',
     })
+  }
+
+  // Events nearby — show top-impact events (max 2 chips so we don't clutter)
+  if (a.events && a.events.length > 0) {
+    for (const ev of a.events.slice(0, 2)) {
+      drivers.push({
+        label:  eventChipLabel(ev),
+        effect: `+${ev.lift_pct.toFixed(0)}%`,
+        tone:   'good',
+      })
+    }
   }
 
   if (drivers.length === 1) {
