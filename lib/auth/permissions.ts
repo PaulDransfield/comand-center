@@ -38,6 +38,7 @@ export interface AuthSubject {
 // finance page should default to "managers can't see this" — fail-closed.
 const MANAGER_ALLOW_PATHS: string[] = [
   '/dashboard',
+  '/dashboard/day',      // per-day drill-down (more specific covered by prefix; explicit for clarity)
   '/scheduling',
   '/staff',
   '/revenue',
@@ -97,6 +98,7 @@ const MANAGER_ALLOW_API_PATHS: string[] = [
   '/api/weather/',
   '/api/settings/profile',
   '/api/health',
+  '/api/dashboard/day',           // per-day drill-down (read-only by definition)
 ]
 
 const FINANCE_API_PATHS: string[] = [

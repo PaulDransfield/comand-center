@@ -664,10 +664,14 @@ function DashboardInner() {
     setSelectedDates(next)
     writeUrl({ days: next })
   }
-  // Scaffold for future click-to-drill — route doesn't exist yet, so no-op
-  // until /dashboard/day/[date] ships.
+  // Click a day on the OverviewChart → opens its drill-down. The day
+  // detail page reuses the attribution + hourly data from the same
+  // /api/scheduling/ai-suggestion + /api/metrics/daily endpoints, plus
+  // hourly_metrics for the per-hour breakdown.
   function handleDayClick(day: any) {
-    // router.push(`/dashboard/day/${day.date}`)  // enable when route exists
+    if (day?.date && bizId) {
+      router.push(`/dashboard/day/${day.date}?business_id=${bizId}`)
+    }
   }
 
   const selectedBiz = businesses.find(b => b.id === bizId)
