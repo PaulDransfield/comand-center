@@ -14,7 +14,12 @@
 
 import { createClient } from '@supabase/supabase-js'
 import dotenv from 'dotenv'
+// Load both env files — production.local OVERRIDES local. Matches the pattern
+// flip-vero-v2-flag.mjs and other scripts in this repo use. .env.local often
+// holds placeholders for fresh dev setups; .env.production.local has the
+// real Supabase URL + service role + encryption key.
 dotenv.config({ path: '.env.local' })
+dotenv.config({ path: '.env.production.local', override: true })
 
 const businessId = process.argv[2]
 const days       = parseInt(process.argv[3] ?? '90', 10)
