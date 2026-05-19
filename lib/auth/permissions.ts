@@ -6,20 +6,26 @@
 //   - Page-level <RoleGate> wrapper (redirects to /no-access)
 //   - Server route guards (returns 403 on forbidden API calls)
 //
-// Role vocabulary (M043):
+// Role vocabulary (M043, extended M072):
 //   owner   — full access
 //   manager — operations + dept-level views, NO finance/billing/settings
 //   viewer  — read-only across owner-permitted pages (reserved for v2)
+//   revisor — external accountant, read-only access to /revisor/* ONLY.
+//             Never sees the operational app (dashboard, scheduling, etc.).
+//             The /revisor surface composes month-end P&L + BAS line items
+//             + overhead drilldown into a print-friendly close-cycle view.
+//             Unique to the Nordic market — UK ops don't have this relationship.
 //
 // Permission overrides:
 //   can_view_finances=true → allows a manager to see finance pages too.
 //                            Useful for trusted finance-savvy managers.
+//                            Ignored for revisor (they see finance by definition).
 //
 // Path matching is prefix-based ("/tracker" → also covers "/tracker/foo").
 // Order doesn't matter — we check all rules and OR the results within a
 // rule type.
 
-export type Role = 'owner' | 'manager' | 'viewer'
+export type Role = 'owner' | 'manager' | 'viewer' | 'revisor'
 
 export interface AuthSubject {
   role:               Role
@@ -116,6 +122,33 @@ const OWNER_ONLY_API_PATHS: string[] = [
   '/api/admin/',                     // admin surface
 ]
 
+// ── Revisor allow-list ───────────────────────────────────────────────────────
+// Revisor sees ONLY the close-cycle view. Never sees /dashboard, /scheduling,
+// settings, integrations, or anything operational. Owner explicitly opted to
+// give the accountant month-end visibility; everything else is out of scope.
+const REVISOR_ALLOW_PATHS: string[] = [
+  '/revisor',
+  '/no-access',
+  '/login',
+  '/reset-password',
+  '/terms',
+  '/privacy',
+  '/security',
+  '/settings/profile',     // own user profile is fine
+]
+const REVISOR_ALLOW_API_PATHS: string[] = [
+  '/api/auth/',
+  '/api/revisor/',
+  '/api/businesses',       // for the business selector in the revisor landing
+  '/api/me/',              // own-user data (profile, locale)
+  '/api/health',
+  '/api/settings/profile',
+  // PDF download for source invoices — drilldown is part of close-cycle
+  '/api/integrations/fortnox/file',
+  // Cost-flag drilldown for variance review
+  '/api/integrations/fortnox/drilldown',
+]
+
 function pathMatches(path: string, prefixes: string[]): boolean {
   return prefixes.some(p => path === p || path.startsWith(p + '/') || (p.endsWith('/') && path.startsWith(p)))
 }
@@ -129,7 +162,16 @@ export function canAccessPath(subject: AuthSubject | null | undefined, path: str
   if (!subject) return false
   if (subject.role === 'owner') return true
 
-  const isApi    = path.startsWith('/api/')
+  const isApi = path.startsWith('/api/')
+
+  // Revisor: pure allow-list. Nothing else is reachable. Fail-closed by
+  // default so any future addition to the app stays invisible to the
+  // accountant until we explicitly add it here.
+  if (subject.role === 'revisor') {
+    const allowedRevisor = isApi ? REVISOR_ALLOW_API_PATHS : REVISOR_ALLOW_PATHS
+    return pathMatches(path, allowedRevisor)
+  }
+
   const allowed  = isApi ? MANAGER_ALLOW_API_PATHS : MANAGER_ALLOW_PATHS
   const finance  = isApi ? FINANCE_API_PATHS       : FINANCE_PATHS
   const ownerOnly = isApi ? OWNER_ONLY_API_PATHS    : OWNER_ONLY_PATHS
@@ -158,6 +200,13 @@ export function canAccessPath(subject: AuthSubject | null | undefined, path: str
 export function canAccessBusiness(subject: AuthSubject | null | undefined, businessId: string | null | undefined): boolean {
   if (!subject || !businessId) return false
   if (subject.role === 'owner')        return true
+  // Revisor MUST be explicitly scoped to specific businesses. An accountant
+  // who has access to "all businesses in the org" is a security smell — if
+  // they serve multiple unrelated clients in the org somehow, the owner
+  // should be deliberate about which one.
+  if (subject.role === 'revisor') {
+    return subject.business_ids != null && subject.business_ids.includes(businessId)
+  }
   if (subject.business_ids == null)    return true   // unscoped manager sees all
   return subject.business_ids.includes(businessId)
 }
