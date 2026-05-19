@@ -35,7 +35,7 @@ const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 console.log('── Environment check ──')
 console.log('NEXT_PUBLIC_SUPABASE_URL:    ', url ? `${url.slice(0, 50)}...` : '(missing!)')
 console.log('SUPABASE_SERVICE_ROLE_KEY:   ', key ? `${key.slice(0, 12)}... (${key.length} chars)` : '(missing!)')
-console.log('ENCRYPTION_KEY:              ', process.env.ENCRYPTION_KEY ? `present (${process.env.ENCRYPTION_KEY.length} chars)` : '(missing!)')
+console.log('CREDENTIAL_ENCRYPTION_KEY:   ', process.env.CREDENTIAL_ENCRYPTION_KEY ? `present (${process.env.CREDENTIAL_ENCRYPTION_KEY.length} chars)` : '(missing!)')
 console.log()
 
 if (!url || !key) {
@@ -66,27 +66,35 @@ if (!integ) {
 }
 console.log(`✓ Found PK integration: id=${integ.id}, org=${integ.org_id}`)
 
-// ── Decrypt token (mirrors lib/integrations/encryption.ts) ──────────
-// Inline import via the Next-server runtime so we don't replicate the
-// encryption logic. We use a tiny shim: read ENCRYPTION_KEY and decrypt.
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
-if (!ENCRYPTION_KEY) {
-  console.error('ENCRYPTION_KEY missing — needed to decrypt PK credentials.')
+// ── Decrypt token (mirrors lib/integrations/encryption.ts exactly) ──
+// Production format: base64(iv + ciphertext + authTag) — one concatenated
+// base64 string. Key is 64 hex chars (32 bytes). AES-256-GCM with 12-byte
+// IV + 16-byte auth tag. Don't drift from this — any deviation produces
+// the unhelpful "data may be corrupted" error and burns debugging time.
+const CREDENTIAL_ENCRYPTION_KEY = process.env.CREDENTIAL_ENCRYPTION_KEY
+if (!CREDENTIAL_ENCRYPTION_KEY) {
+  console.error('CREDENTIAL_ENCRYPTION_KEY missing from .env.production.local')
+  process.exit(1)
+}
+if (CREDENTIAL_ENCRYPTION_KEY.length !== 64) {
+  console.error(`CREDENTIAL_ENCRYPTION_KEY must be 64 hex chars (got ${CREDENTIAL_ENCRYPTION_KEY.length})`)
   process.exit(1)
 }
 
-// Use crypto subtle directly — matches lib/integrations/encryption.ts
 import crypto from 'node:crypto'
-function decrypt(encrypted) {
-  // Format: base64(iv).base64(authTag).base64(ciphertext)
-  const [ivB64, tagB64, cipherB64] = encrypted.split('.')
-  const iv     = Buffer.from(ivB64, 'base64')
-  const tag    = Buffer.from(tagB64, 'base64')
-  const cipher = Buffer.from(cipherB64, 'base64')
-  const key    = Buffer.from(ENCRYPTION_KEY, 'base64')
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
-  decipher.setAuthTag(tag)
-  return Buffer.concat([decipher.update(cipher), decipher.final()]).toString('utf8')
+const IV_LENGTH  = 12
+const TAG_LENGTH = 16
+
+function decrypt(encryptedBase64) {
+  if (!encryptedBase64) return null
+  const key    = Buffer.from(CREDENTIAL_ENCRYPTION_KEY, 'hex')
+  const packed = Buffer.from(encryptedBase64, 'base64')
+  const iv         = packed.subarray(0, IV_LENGTH)
+  const authTag    = packed.subarray(packed.length - TAG_LENGTH)
+  const ciphertext = packed.subarray(IV_LENGTH, packed.length - TAG_LENGTH)
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_LENGTH })
+  decipher.setAuthTag(authTag)
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8')
 }
 
 const token = decrypt(integ.credentials_enc)
