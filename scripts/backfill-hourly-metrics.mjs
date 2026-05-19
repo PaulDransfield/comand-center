@@ -117,8 +117,10 @@ const toDate   = todayStockholm()
 console.log(`Backfill window: ${fromDate} → ${toDate} (${days} days)`)
 
 // ── Fetch all PK sales for the window ───────────────────────────────
-// PK paginates with `?next=` URLs; loop until none. Mirrors fetchAll().
-const PK_BASE = 'https://api.personalkollen.se/api/v1'
+// Real PK base URL is https://personalkollen.se/api (NOT api.personalkollen.se,
+// NOT /api/v1). Auth header: "Authorization: Token <token>". Mirrors
+// fetchAll() in lib/pos/personalkollen.ts.
+const PK_BASE = 'https://personalkollen.se/api'
 
 function startOfDay(d) { return `${d}T00:00:00Z` }
 function endOfDay(d)   { return `${d}T23:59:59Z` }
@@ -127,7 +129,9 @@ async function fetchAll(path) {
   let next = `${PK_BASE}${path}`
   const out = []
   while (next) {
-    const r = await fetch(next, { headers: { Authorization: `Token ${token}` } })
+    const r = await fetch(next, {
+      headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
+    })
     if (!r.ok) {
       const body = await r.text().catch(() => '')
       throw new Error(`PK ${r.status} ${body.slice(0, 200)}`)
