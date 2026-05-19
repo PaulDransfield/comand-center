@@ -109,14 +109,27 @@ export async function POST(req: NextRequest) {
       error: `role must be one of: ${Array.from(VALID_INVITE_ROLES).join(', ')}`,
     }, { status: 400 })
   }
+
+  // Self-invite guard. Owner invites are upserts keyed on (org_id, user_id),
+  // so inviting yourself as a manager/revisor would DOWNGRADE your own
+  // membership in place — locking you out of owner-only surfaces.
+  const db = createAdminClient()  // need this earlier than before to look up self
+  try {
+    const { data: selfRow } = await db.from('users').select('email').eq('id', auth.userId).maybeSingle()
+    if (selfRow?.email && selfRow.email.toLowerCase() === email) {
+      return NextResponse.json({
+        error:
+          'You can\'t invite yourself as a manager or revisor — that would downgrade your owner access. ' +
+          'Use a different email (e.g. paul+test@comandcenter.se) to test the flow.',
+      }, { status: 400 })
+    }
+  } catch { /* best-effort guard; if lookup fails we proceed */ }
   // Revisor MUST be scoped — the permissions module rejects unscoped revisors anyway.
   if (role === 'revisor' && (!businessIds || businessIds.length === 0)) {
     return NextResponse.json({
       error: 'Revisor invites require at least one business in scope.',
     }, { status: 400 })
   }
-
-  const db = createAdminClient()
 
   // Validate that the businessIds (if any) actually belong to this org
   if (businessIds && businessIds.length > 0) {
