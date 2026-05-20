@@ -17,6 +17,7 @@
 // AppShell role gate.
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import AppShell from '@/components/AppShell'
 import { UX } from '@/lib/constants/tokens'
 
@@ -178,6 +179,25 @@ function AgentCard({ agent: a, saving, onToggle }: { agent: Agent; saving: boole
             </span>
             <span>·</span>
             <span><strong style={{ color: UX.ink3 }}>Cost (30d):</strong> {fmtCost(a.cost_usd_30d)}</span>
+          </div>
+
+          <div style={{ marginTop: 10 }}>
+            <Link
+              href={`/settings/ai-agents/${a.key}`}
+              style={{
+                fontSize:       11,
+                fontWeight:     500,
+                color:          UX.ink2,
+                textDecoration: 'none',
+                padding:        '4px 10px',
+                background:     UX.pageBg,
+                border:         `1px solid ${UX.border}`,
+                borderRadius:   999,
+                display:        'inline-block',
+              }}
+            >
+              View activity →
+            </Link>
           </div>
         </div>
 
