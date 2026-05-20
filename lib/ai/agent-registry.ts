@@ -84,6 +84,15 @@ export const AGENTS: AgentMeta[] = [
     plan_required:   'group',
     request_types:   ['scheduling_optimization'],
   },
+  {
+    key:             'review_intelligence',
+    name:            'Review intelligence',
+    description:     'Daily fetch of new Google Maps reviews. Each is classified into themes (food / service / atmosphere / value / wait / cleanliness / noise / booking / staff) with sentiment. Top issues + example quotes surface on the Reviews page.',
+    cron_name:       'reviews-sync',
+    schedule_human:  'Daily 04:20 UTC',
+    plan_required:   null,
+    request_types:   ['review_classify'],
+  },
 ]
 
 // Map cron_name → agent key for reverse lookup

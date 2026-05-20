@@ -42,7 +42,7 @@ type IconName =
   | 'overview' | 'group' | 'financials' | 'operations'
   | 'pnl' | 'budget' | 'forecast'
   | 'revenue' | 'staff' | 'scheduling' | 'departments'
-  | 'invoices' | 'alerts' | 'settings' | 'plan'
+  | 'invoices' | 'alerts' | 'reviews' | 'settings' | 'plan'
 
 // Spec § Sidebar — 6 primary items + Invoices + Alerts + Settings.
 // `tKey` maps into locales/<locale>/sidebar.json — `nav.<tKey>` for links,
@@ -61,6 +61,7 @@ const NAV: NavItem[] = [
   { kind: 'link',    key: 'operations/staff',        tKey: 'staff',        href: '/staff',                  icon: 'staff',       sub: true },
   { kind: 'link',    key: 'operations/scheduling',   tKey: 'scheduling',   href: '/scheduling',             icon: 'scheduling',  sub: true },
   { kind: 'link',    key: 'operations/departments',  tKey: 'departments',  href: '/departments',            icon: 'departments', sub: true },
+  { kind: 'link',    key: 'operations/reviews',      tKey: 'reviews',      href: '/reviews',                icon: 'reviews',     sub: true },
   { kind: 'link',    key: 'invoices',                tKey: 'invoices',     href: '/invoices',               icon: 'invoices' },
   { kind: 'link',    key: 'alerts',                  tKey: 'alerts',       href: '/alerts',                 icon: 'alerts',      alertBadge: true },
 ]
@@ -559,6 +560,7 @@ function SidebarIcon({ name, size = 14, color = 'currentColor' }: { name: IconNa
     case 'departments': return <svg {...common}><rect x="3" y="3"  width="8" height="8" rx="1.5"/><rect x="13" y="3"  width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
     case 'invoices':    return <svg {...common}><path d="M6 3h9l3 3v15l-3-2-3 2-3-2-3 2V3z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg>
     case 'alerts':      return <svg {...common}><path d="M6 9a6 6 0 1112 0c0 4 2 5 2 7H4c0-2 2-3 2-7z"/><path d="M10 20a2 2 0 004 0"/></svg>
+    case 'reviews':     return <svg {...common}><path d="M12 17.3l-5.4 3.1 1-6.2L3 9.9l6.2-.9L12 3.5l2.8 5.5 6.2.9-4.6 4.3 1 6.2z"/></svg>
     case 'settings':    return <svg {...common}><circle cx="12" cy="12" r="2.4"/><path d="M19.4 12.9a7.5 7.5 0 000-1.8l2-1.5-2-3.4-2.3.8a7.5 7.5 0 00-1.6-.9l-.3-2.4h-4l-.3 2.4a7.5 7.5 0 00-1.6.9l-2.3-.8-2 3.4 2 1.5a7.5 7.5 0 000 1.8l-2 1.5 2 3.4 2.3-.8a7.5 7.5 0 001.6.9l.3 2.4h4l.3-2.4a7.5 7.5 0 001.6-.9l2.3.8 2-3.4z"/></svg>
     case 'plan':        return <svg {...common}><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><path d="M7 15h3"/></svg>
   }

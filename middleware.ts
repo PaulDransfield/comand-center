@@ -70,6 +70,7 @@ function isProtectedPath(pathname: string): boolean {
     '/financials',
     '/scheduling',
     '/departments',
+    '/reviews',
     '/invoices',
     '/integrations',
     '/notebook',

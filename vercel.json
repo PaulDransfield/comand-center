@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/master-sync",                     "schedule": "0 4 * * *" },
     { "path": "/api/cron/events-sync",                     "schedule": "15 4 * * *" },
+    { "path": "/api/cron/reviews-sync",                    "schedule": "20 4 * * *" },
     { "path": "/api/cron/anomaly-check",                   "schedule": "30 4 * * *" },
     { "path": "/api/cron/health-check",                    "schedule": "0 5 * * *" },
     { "path": "/api/cron/data-source-disagreements-alert", "schedule": "30 5 * * *" },
