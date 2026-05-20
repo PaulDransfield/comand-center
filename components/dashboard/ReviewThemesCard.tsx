@@ -55,23 +55,28 @@ export default function ReviewThemesCard({ businessId }: { businessId: string | 
     if (!businessId) { setData(null); setLoaded(true); return }
     let cancelled = false
     setLoaded(false)
-    fetch(`/api/reviews/themes?business_id=${businessId}&window=90`, { cache: 'no-store' })
-      .then(async r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(j => {
-        if (!cancelled) {
-          setData(j)
-          setLoaded(true)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setData(null)
-          setLoaded(true)
-        }
-      })
+
+    // Walk 90 → 365 → 1095 days (3 years) until we find reviews. Low-
+    // velocity restaurants might only have a handful in the last year;
+    // we'd rather show 6-month-old signal than hide the card entirely.
+    async function fetchWithFallback() {
+      for (const win of [90, 365, 1095]) {
+        try {
+          const r = await fetch(`/api/reviews/themes?business_id=${businessId}&window=${win}`, { cache: 'no-store' })
+          if (!r.ok) continue
+          const j = await r.json()
+          if (j.sample_size > 0) return j as ThemesResp
+        } catch { /* try next window */ }
+      }
+      return null
+    }
+
+    fetchWithFallback().then(j => {
+      if (cancelled) return
+      setData(j)
+      setLoaded(true)
+    })
+
     return () => { cancelled = true }
   }, [businessId])
 
@@ -106,7 +111,7 @@ export default function ReviewThemesCard({ businessId }: { businessId: string | 
             What guests are saying
           </h2>
           <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>
-            {data.sample_size} review{data.sample_size === 1 ? '' : 's'} · last 90 days
+            {data.sample_size} review{data.sample_size === 1 ? '' : 's'} · {windowLabel(data.window_days)}
             {data.avg_rating != null && (
               <span> · avg {data.avg_rating.toFixed(1)}★</span>
             )}
@@ -133,6 +138,12 @@ export default function ReviewThemesCard({ businessId }: { businessId: string | 
       </div>
     </div>
   )
+}
+
+function windowLabel(days: number): string {
+  if (days <= 90)   return `last ${days} days`
+  if (days <= 365)  return 'last 12 months'
+  return `last ${Math.round(days / 365)} years`
 }
 
 function ThemeRow({ theme: t }: { theme: ThemeAgg }) {
