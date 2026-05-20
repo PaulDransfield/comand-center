@@ -687,6 +687,41 @@ export async function GET(req: NextRequest) {
   const businessLat = bizCoords.lat
   const businessLng = bizCoords.lon
 
+  // ── Prediction band — compute from past-28d audit-ledger residuals ──
+  // We pull resolved daily_forecast_outcomes for this business in the
+  // last 28 days, take the absolute error %, and use it to derive a
+  // ±band around each future prediction. Honest-forecasting UX:
+  // operators see "47k expected (range 39-55k)" instead of a brittle
+  // point estimate that feels falsely precise.
+  //
+  // Method: use mean-absolute-error% as the half-width of the band.
+  // (Symmetric around the prediction. Stddev would be tighter but
+  // assumes Gaussian residuals — restaurant errors are skewed.) Floor
+  // at 10% so cold-start businesses with thin history still show a
+  // sensible range; cap at 50% so the band stays useful even when
+  // the forecaster is wildly inaccurate.
+  let bandHalfWidthPct = 15  // sensible default for businesses with no audit history
+  let bandSampleN      = 0
+  try {
+    const since28d = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - 28); return d.toISOString().slice(0, 10) })()
+    const { data: resolved } = await db
+      .from('daily_forecast_outcomes')
+      .select('error_pct, surface')
+      .eq('business_id', bizId)
+      .eq('resolution_status', 'resolved')
+      .gte('forecast_date', since28d)
+      .not('error_pct', 'is', null)
+      .limit(500)
+    const errs = (resolved ?? [])
+      .map((r: any) => Math.abs(Number(r.error_pct ?? 0)) * 100)
+      .filter((n: number) => Number.isFinite(n) && n > 0)
+    if (errs.length >= 5) {
+      const mae = errs.reduce((s: number, x: number) => s + x, 0) / errs.length
+      bandHalfWidthPct = Math.max(10, Math.min(50, mae))
+      bandSampleN = errs.length
+    }
+  } catch { /* audit table missing or query failed — use the 15% default */ }
+
   const suggested: any[] = []
   for (const date of Object.keys(currentByDate).sort()) {
     const dow = (new Date(date).getUTCDay() + 6) % 7
@@ -794,6 +829,15 @@ export async function GET(req: NextRequest) {
       } : null,
       bucket_days_seen: useBucket ? bucketData!.rev.length : 0,
       reasoning:     rationale,
+      // Phase B target band — symmetric around the prediction, half-width
+      // = past-28d MAE %. Used by WhyThisWeekCard + WeekScorecardCard to
+      // surface "range X-Y kr" and grade actuals as within/outside band.
+      band: avgRev > 0 ? {
+        lower:           Math.max(0, Math.round(avgRev * (1 - bandHalfWidthPct / 100))),
+        upper:           Math.round(avgRev * (1 + bandHalfWidthPct / 100)),
+        half_width_pct:  Math.round(bandHalfWidthPct * 10) / 10,
+        sample_n:        bandSampleN,
+      } : null,
       // Phase A week 3: per-meal-period predictions + scheduled hours.
       // Empty array when:
       //   - business has no hourly_metrics yet (backfill not run)

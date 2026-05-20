@@ -19,10 +19,17 @@
 
 import { UX } from '@/lib/constants/tokens'
 
+interface PredictionBand {
+  lower:          number
+  upper:          number
+  half_width_pct: number
+  sample_n:       number
+}
 interface SuggestedDay {
   date:        string
   weekday:     string
   est_revenue: number
+  band?:       PredictionBand | null
 }
 interface DailyRow {
   date:    string
@@ -34,7 +41,8 @@ interface Props {
   fmtKr:     (n: number) => string
 }
 
-const TARGET_BAND_PCT = 15   // ±15% = "on target". Tunable per-business in v2.
+// Fallback band when the API hasn't supplied one (no audit history yet).
+const FALLBACK_BAND_PCT = 15
 
 // Status per day
 type Status = 'on_target' | 'high' | 'low' | 'pending' | 'closed'
@@ -67,6 +75,8 @@ export default function WeekScorecardCard({ aiSched, dailyRows, fmtKr }: Props) 
     const actual = dailyRows.find(d => d.date === s.date)
     const predicted = Number(s.est_revenue ?? 0)
     const actualKr  = actual ? Number(actual.revenue ?? 0) : null
+    // Use API-supplied band when present; else fall back to ±15%
+    const bandHalfPct = s.band?.half_width_pct ?? FALLBACK_BAND_PCT
 
     let status: Status
     let errPct: number | null = null
@@ -80,7 +90,7 @@ export default function WeekScorecardCard({ aiSched, dailyRows, fmtKr }: Props) 
     } else {
       errPct = ((actualKr - predicted) / predicted) * 100
       const abs = Math.abs(errPct)
-      if (abs <= TARGET_BAND_PCT)       status = 'on_target'
+      if (abs <= bandHalfPct)           status = 'on_target'
       else if (errPct > 0)              status = 'high'
       else                              status = 'low'
     }
@@ -91,6 +101,7 @@ export default function WeekScorecardCard({ aiSched, dailyRows, fmtKr }: Props) 
       predicted,
       actual:    actualKr,
       err_pct:   errPct,
+      band:      s.band ?? null,
       status,
     }
   })
@@ -138,7 +149,7 @@ export default function WeekScorecardCard({ aiSched, dailyRows, fmtKr }: Props) 
             This week's scorecard
           </h2>
           <div style={{ fontSize: 11, color: C.ink4, marginTop: 2 }}>
-            Did the team hit target each day? Within {TARGET_BAND_PCT}% of predicted = on target.
+            Did the team hit target each day? Within the prediction band = on target. Band width derived from your business's recent forecast accuracy.
           </div>
         </div>
         <div style={{
@@ -199,7 +210,7 @@ function DayRow({ row, fmtKr }: { row: any; fmtKr: (n: number) => string }) {
       </div>
 
       <div style={{
-        color:      row.err_pct == null ? C.ink4 : Math.abs(row.err_pct) <= TARGET_BAND_PCT ? C.green : row.err_pct > 0 ? C.amber : C.red,
+        color:      row.err_pct == null ? C.ink4 : Math.abs(row.err_pct) <= (row.band?.half_width_pct ?? FALLBACK_BAND_PCT) ? C.green : row.err_pct > 0 ? C.amber : C.red,
         fontWeight: 500,
         textAlign:  'right' as const,
       }}>

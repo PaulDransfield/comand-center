@@ -49,11 +49,18 @@ interface Attribution {
   events_aggregate_lift_pct?: number
 }
 
+interface PredictionBand {
+  lower:          number
+  upper:          number
+  half_width_pct: number
+  sample_n:       number
+}
 interface SuggestedDay {
   date:        string
   weekday:     string
   est_revenue: number
   attribution: Attribution | null
+  band?:       PredictionBand | null
 }
 
 interface Props {
@@ -196,6 +203,7 @@ export default function WhyThisWeekCard({ aiSched, fmtKr }: Props) {
       drivers: a ? extractDrivers(a) : [],
       baseline_kr: a?.baseline_kr ?? 0,
       sample_n:    a?.baseline_sample_n ?? 0,
+      band:        s.band ?? null,
     }
   })
 
@@ -263,14 +271,21 @@ function DayRow({ row, fmtKr }: { row: any; fmtKr: (n: number) => string }) {
         </div>
       </div>
 
-      {/* Predicted revenue */}
+      {/* Predicted revenue + uncertainty band */}
       <div>
         <div style={{ fontSize: 14, fontWeight: 500, color: C.demand }}>
           {fmtKr(row.rev)}
         </div>
-        <div style={{ fontSize: 10, color: C.ink4, marginTop: 1 }}>
-          baseline {fmtKr(row.baseline_kr)}
-        </div>
+        {row.band ? (
+          <div style={{ fontSize: 10, color: C.ink4, marginTop: 1 }}>
+            range {fmtKr(row.band.lower)}–{fmtKr(row.band.upper)}
+            <span style={{ color: C.ink4, opacity: 0.7 }}> (±{row.band.half_width_pct.toFixed(0)}%)</span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: C.ink4, marginTop: 1 }}>
+            baseline {fmtKr(row.baseline_kr)}
+          </div>
+        )}
       </div>
 
       {/* Drivers */}
