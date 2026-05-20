@@ -30,6 +30,7 @@ import CashFlowProjectionTile from '@/components/dashboard/CashFlowProjectionTil
 import WhyThisWeekCard from '@/components/dashboard/WhyThisWeekCard'
 import WeekScorecardCard from '@/components/dashboard/WeekScorecardCard'
 import WhatHappenedCard from '@/components/dashboard/WhatHappenedCard'
+import ReviewThemesCard from '@/components/dashboard/ReviewThemesCard'
 import Sparkline from '@/components/ui/Sparkline'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
@@ -1076,6 +1077,12 @@ function DashboardInner() {
                 using the same attribution drivers as WhyThisWeekCard.
                 Hidden when no past day diverged > 10%. */}
             <WhatHappenedCard aiSched={aiSched} dailyRows={dailyRows} fmtKr={fmtKr} />
+
+            {/* Review intelligence — top guest-feedback themes from
+                Google Maps, rolling 90 days. Hidden when no place is
+                linked or no reviews are on file. Self-fetches, so no
+                blocking on dashboard's other data. */}
+            <ReviewThemesCard businessId={bizId ?? null} />
 
             {/* Phase 5 cash visibility — net bank movement derived from
                 BAS 1910-1979 voucher activity (data we already had but were
