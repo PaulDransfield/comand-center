@@ -150,15 +150,9 @@ function extractDrivers(a: Attribution): Driver[] {
     })
   }
 
-  // This-week scaler clamped at ceiling/floor — only if extreme
-  if (a.this_week_scaler_clamped) {
-    const isHigh = a.this_week_scaler >= 1.24
-    drivers.push({
-      label:  isHigh ? 'This week running above pattern (capped)' : 'This week running below pattern (capped)',
-      effect: isHigh ? '+25% max' : '−25% min',
-      tone:   isHigh ? 'good' : 'bad',
-    })
-  }
+  // NOTE: this-week-scaler is a WEEK-level signal — rendered once at the
+  // card header (see weekScalerNote below), not as a per-day driver chip.
+  // Otherwise it duplicates on every row.
 
   // Events nearby — top 2 to keep chip-strip tidy
   if (a.events && a.events.length > 0) {
@@ -211,6 +205,18 @@ export default function WhyThisWeekCard({ aiSched, fmtKr }: Props) {
   const anyStoryDay = allRows.some(r => r.drivers.length > 0)
   if (!anyStoryDay) return null
 
+  // Week-level note about the this-week-scaler. All days in a week share
+  // the same scaler value, so show ONCE here instead of duplicating on
+  // every day row.
+  const firstAttribution = aiSched.suggested[0]?.attribution ?? null
+  const weekScalerClamped = firstAttribution?.this_week_scaler_clamped ?? false
+  const weekScalerHigh    = (firstAttribution?.this_week_scaler ?? 1) >= 1.24
+  const weekScalerNote = weekScalerClamped
+    ? (weekScalerHigh
+        ? 'Heads up: this week is running above pattern — the prediction is already capped at +25%; actual could exceed.'
+        : 'Heads up: this week is running below pattern — the prediction is already dampened by 25% (the lowest the model will go).')
+    : null
+
   return (
     <div style={{
       background:   C.bgCard,
@@ -235,6 +241,20 @@ export default function WhyThisWeekCard({ aiSched, fmtKr }: Props) {
         </div>
         <Legend />
       </div>
+
+      {weekScalerNote && (
+        <div style={{
+          marginBottom: 10,
+          padding:      '6px 10px',
+          background:   weekScalerHigh ? C.greenBg : '#fef3c7',
+          border:       `0.5px solid ${weekScalerHigh ? C.green : '#fde68a'}`,
+          borderRadius: 6,
+          fontSize:     11,
+          color:        weekScalerHigh ? C.green : '#92400e',
+        }}>
+          {weekScalerNote}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gap: 6 }}>
         {allRows.map(row => (

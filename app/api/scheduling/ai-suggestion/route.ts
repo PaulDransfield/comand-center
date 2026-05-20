@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
 
   // Confirm the caller owns this business. Pulling `city` here so we can
   // drive the live weather fetch off the business's location.
-  const { data: biz } = await db.from('businesses').select('id,org_id,name,city,country').eq('id', bizId).maybeSingle()
+  const { data: biz } = await db.from('businesses').select('id,org_id,name,city,country,opening_days').eq('id', bizId).maybeSingle()
   if (!biz || biz.org_id !== auth.orgId) return NextResponse.json({ error: 'forbidden' }, { status: 403 })
 
   // Target range — defaults to "next calendar Monday → Sunday" but callers
@@ -628,6 +628,18 @@ export async function GET(req: NextRequest) {
     if (holidayDateSet.has(tIso)) return { ok: true, adjacent: tIso }
     return { ok: false }
   }
+  // Opening-days check. Vero is closed Sundays — predicting non-zero
+  // revenue on a structurally-closed day is a model bug.
+  // Mirrors lib/forecast/daily.ts business_closed_for_weekday short-circuit.
+  const OPENING_KEYS = ['sun','mon','tue','wed','thu','fri','sat'] as const
+  const openingDays = (biz as any).opening_days as Record<string, boolean> | null | undefined
+  function isBusinessClosedOn(dateIso: string): boolean {
+    if (!openingDays) return false
+    const wd = new Date(dateIso + 'T12:00:00Z').getUTCDay()
+    const key = OPENING_KEYS[wd]
+    return openingDays[key] === false
+  }
+
   function salaryPhaseDescr(dayOfMonth: number): { phase: 'around_payday' | 'mid_month' | 'end_month'; effect_pct: number; label: string } {
     if (dayOfMonth >= 23 && dayOfMonth <= 27) return { phase: 'around_payday', effect_pct:  8, label: 'Around payday (25th)' }
     if (dayOfMonth >= 28 || dayOfMonth <=  5) return { phase: 'end_month',     effect_pct: -3, label: 'End of month (post-payday dip)' }
@@ -756,7 +768,11 @@ export async function GET(req: NextRequest) {
     // back to legacy math if the consolidated call failed for any reason
     // (soft-fail: never block the dashboard).
     const consolidatedRev = v2ChartFlagOn ? consolidatedRevByDate[date] : undefined
-    const avgRev = Math.round(
+    // Opening-days short-circuit. Predicting revenue on a structurally-
+    // closed day (Vero's Sundays) was producing nonsense numbers like
+    // 28k expected on a closed day. Match lib/forecast/daily.ts behavior.
+    const dayIsClosed = isBusinessClosedOn(date)
+    const avgRev = dayIsClosed ? 0 : Math.round(
       dayHasActual
         ? rawAvgRev
         : (consolidatedRev != null ? consolidatedRev : rawAvgRev * thisWeekScale),
