@@ -70,6 +70,8 @@ export default function ReviewsPage() {
   const [windowDays, setWindowDays] = useState(30)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
+  const [syncing, setSyncing] = useState(false)
+  const [syncMsg, setSyncMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
 
   // Read selected business id from the same key the sidebar uses
   useEffect(() => {
@@ -111,6 +113,33 @@ export default function ReviewsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bizId, windowDays])
 
+  async function syncNow() {
+    if (!bizId || syncing) return
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const r = await fetch('/api/reviews/sync', {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      // Refresh data and surface a one-line summary
+      await loadData(bizId, windowDays)
+      const msg = j.classified > 0
+        ? `Synced — ${j.classified} new review${j.classified === 1 ? '' : 's'} analysed.`
+        : j.fetched_reviews > 0
+          ? `Synced — no new reviews since last fetch (${j.fetched_reviews} already in cache).`
+          : 'Synced — Google returned no reviews for this Place ID.'
+      setSyncMsg({ tone: 'good', text: msg })
+    } catch (e: any) {
+      setSyncMsg({ tone: 'bad', text: e.message })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '20px 24px 60px' }}>
@@ -131,12 +160,17 @@ export default function ReviewsPage() {
 
         {bizId && placeId && (
           <>
-            <WindowToggle value={windowDays} onChange={setWindowDays} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' as const }}>
+              <WindowToggle value={windowDays} onChange={setWindowDays} />
+              <SyncButton onClick={syncNow} busy={syncing} />
+            </div>
+
+            {syncMsg && <Banner tone={syncMsg.tone} text={syncMsg.text} />}
 
             {loading && <Empty text="Loading review analysis…" />}
 
             {!loading && themes && themes.sample_size === 0 && (
-              <Empty text="No reviews analysed yet. The daily sync runs at 04:30 UTC; new reviews appear here within 24 hours of being posted." />
+              <Empty text="No reviews analysed yet. Hit “Sync now” above to fetch the latest from Google, or wait for the daily 04:20 UTC sync." />
             )}
 
             {!loading && themes && themes.sample_size > 0 && (
@@ -287,7 +321,7 @@ function ConnectCard({ businessId, businessName, onLinked }: { businessId: strin
 function WindowToggle({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   const opts = [{ k: 30, lab: '30 days' }, { k: 90, lab: '90 days' }, { k: 365, lab: '12 months' }]
   return (
-    <div style={{ display: 'inline-flex', gap: 2, background: UX.pageBg, padding: 3, borderRadius: 6, marginBottom: 14, border: `1px solid ${UX.border}` }}>
+    <div style={{ display: 'inline-flex', gap: 2, background: UX.pageBg, padding: 3, borderRadius: 6, border: `1px solid ${UX.border}` }}>
       {opts.map(o => (
         <button
           key={o.k}
@@ -304,6 +338,57 @@ function WindowToggle({ value, onChange }: { value: number; onChange: (n: number
         </button>
       ))}
     </div>
+  )
+}
+
+// ─── Sync button ─────────────────────────────────────────────────────
+
+function SyncButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      style={{
+        padding:      '7px 14px',
+        fontSize:     12,
+        fontWeight:   500,
+        background:   busy ? '#94a3b8' : UX.ink1,
+        color:        'white',
+        border:       'none',
+        borderRadius: 6,
+        cursor:       busy ? 'not-allowed' : 'pointer',
+        display:      'inline-flex',
+        alignItems:   'center',
+        gap:          6,
+        opacity:      busy ? 0.7 : 1,
+        transition:   'opacity 0.15s',
+      }}
+    >
+      {busy ? (
+        <>
+          <Spinner />
+          Syncing…
+        </>
+      ) : (
+        <>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 12a9 9 0 11-3-6.7"/>
+            <path d="M21 4v5h-5"/>
+          </svg>
+          Sync now
+        </>
+      )}
+    </button>
+  )
+}
+
+function Spinner() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'spin 1s linear infinite' }}>
+      <path d="M21 12a9 9 0 11-9-9"/>
+      <style>{'@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}'}</style>
+    </svg>
   )
 }
 
