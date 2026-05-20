@@ -60,13 +60,19 @@ export default function ReviewThemesCard({ businessId }: { businessId: string | 
     // velocity restaurants might only have a handful in the last year;
     // we'd rather show 6-month-old signal than hide the card entirely.
     async function fetchWithFallback() {
-      for (const win of [90, 365, 1095]) {
+      for (const win of [90, 365, 1825, 3650]) {
         try {
           const r = await fetch(`/api/reviews/themes?business_id=${businessId}&window=${win}`, { cache: 'no-store' })
-          if (!r.ok) continue
+          if (!r.ok) {
+            console.log('[ReviewThemesCard]', win, 'HTTP', r.status)
+            continue
+          }
           const j = await r.json()
+          console.log('[ReviewThemesCard]', win, 'sample_size:', j.sample_size, 'top_themes:', j.top_themes?.length)
           if (j.sample_size > 0) return j as ThemesResp
-        } catch { /* try next window */ }
+        } catch (e) {
+          console.log('[ReviewThemesCard]', win, 'error:', e)
+        }
       }
       return null
     }
