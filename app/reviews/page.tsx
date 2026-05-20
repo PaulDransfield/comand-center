@@ -67,7 +67,7 @@ export default function ReviewsPage() {
   const [placeId, setPlaceId] = useState<string | null>(null)
   const [themes,  setThemes]  = useState<ThemesResp | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
-  const [windowDays, setWindowDays] = useState(30)
+  const [windowDays, setWindowDays] = useState(90)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState('')
   const [syncing, setSyncing] = useState(false)
@@ -169,16 +169,26 @@ export default function ReviewsPage() {
 
             {loading && <Empty text="Loading review analysis…" />}
 
-            {!loading && themes && themes.sample_size === 0 && (
+            {!loading && themes && themes.sample_size === 0 && reviews.length === 0 && (
               <Empty text="No reviews analysed yet. Hit “Sync now” above to fetch the latest from Google, or wait for the daily 04:20 UTC sync." />
+            )}
+
+            {!loading && themes && themes.sample_size === 0 && reviews.length > 0 && (
+              <Banner
+                tone="warn"
+                text={`No reviews in the last ${windowDays} days, but ${reviews.length} older one${reviews.length === 1 ? '' : 's'} ${reviews.length === 1 ? 'is' : 'are'} on file. Switch to 12 months above to see themes, or scroll for the full list.`}
+              />
             )}
 
             {!loading && themes && themes.sample_size > 0 && (
               <>
                 <SummaryStrip themes={themes} />
                 <ThemesPanel themes={themes.top_themes} />
-                <RecentReviewsPanel reviews={reviews} />
               </>
+            )}
+
+            {!loading && reviews.length > 0 && (
+              <RecentReviewsPanel reviews={reviews} />
             )}
           </>
         )}
