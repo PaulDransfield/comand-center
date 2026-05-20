@@ -39,6 +39,16 @@ interface DayRow {
     weather?: any
     bucket_days:  number
     under_staffed_note: boolean
+    // Per-day prediction band. half_width_pct comes from the past-28-day
+    // mean absolute residual; sample_n is how many graded days fed it.
+    // null when the audit ledger hasn't accumulated enough data yet —
+    // in that case the chart falls back to ±15 % around est_revenue.
+    band?: {
+      lower:          number
+      upper:          number
+      half_width_pct: number
+      sample_n:       number
+    } | null
   } | null
   // Optional — parent may supply matching day from the previous period so
   // compare=Prev can draw whiskers + deltas. Missing → no per-day prev data.
@@ -696,6 +706,77 @@ export default function OverviewChart({
             )
           })}
 
+          {/* Prediction band — soft ribbon between band.lower and band.upper
+              around the est_revenue line. Width comes from the past-28-day
+              mean absolute residual on the audit ledger; falls back to ±15%
+              when the API hasn't supplied a band yet. Drawn BEFORE the
+              forecast line so the line sits on top of the fill. Skips days
+              with no prediction; segments break across gaps so we don't draw
+              a phantom ribbon across closed days. */}
+          {(() => {
+            const FALLBACK_HALF_PCT = 0.15
+            type Pt = { x: number; lower: number; upper: number; idx: number }
+            const segments: Pt[][] = []
+            let current: Pt[] = []
+            days.forEach((d, i) => {
+              const est = d.pred?.est_revenue ?? 0
+              if (est <= 0) {
+                if (current.length > 0) { segments.push(current); current = [] }
+                return
+              }
+              let lower: number
+              let upper: number
+              if (d.pred?.band && d.pred.band.lower >= 0 && d.pred.band.upper > d.pred.band.lower) {
+                lower = d.pred.band.lower
+                upper = d.pred.band.upper
+              } else {
+                // Fallback: ±15 % around the point estimate
+                lower = est * (1 - FALLBACK_HALF_PCT)
+                upper = est * (1 + FALLBACK_HALF_PCT)
+              }
+              current.push({ x: xAt(i), lower, upper, idx: i })
+            })
+            if (current.length > 0) segments.push(current)
+            if (segments.length === 0) return null
+            return (
+              <g>
+                {segments.map((seg, si) => {
+                  if (seg.length === 0) return null
+                  // Solo point — render a thin vertical whisker so the
+                  // uncertainty isn't invisible for single-day segments.
+                  if (seg.length === 1) {
+                    const p = seg[0]
+                    return (
+                      <line
+                        key={`band-w-${si}`}
+                        x1={p.x} x2={p.x}
+                        y1={yAt(p.lower)} y2={yAt(p.upper)}
+                        stroke={C.marAi}
+                        strokeWidth={1.4}
+                        strokeLinecap="round"
+                        opacity={0.22}
+                      />
+                    )
+                  }
+                  // Closed ribbon path: upper-line left→right, then
+                  // lower-line right→left, then close.
+                  const upperPath = seg.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${yAt(p.upper)}`).join(' ')
+                  const lowerPath = [...seg].reverse().map(p => `L ${p.x} ${yAt(p.lower)}`).join(' ')
+                  const d = `${upperPath} ${lowerPath} Z`
+                  return (
+                    <path
+                      key={`band-${si}`}
+                      d={d}
+                      fill={C.marAi}
+                      opacity={0.10}
+                      stroke="none"
+                    />
+                  )
+                })}
+              </g>
+            )
+          })()}
+
           {/* AI forecast line — connects the est_revenue / shownRev
               points across days. Drawn AFTER bars so it sits on top.
               Today's marker gets a soft halo + white-ringed circle for
@@ -940,6 +1021,17 @@ export default function OverviewChart({
         </span>
         <span><LegendBar color={C.mar} />Gross margin</span>
         <span><LegendBar color={C.marAi} dashed />AI forecast</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{
+            display:      'inline-block',
+            width:        14,
+            height:       8,
+            background:   C.marAi,
+            opacity:      0.18,
+            borderRadius: 1,
+          }} />
+          <span>Likely range</span>
+        </span>
       </div>
     </div>
   )
@@ -1223,6 +1315,36 @@ function ChartTooltip({ day, dayIndex, totalDays, compareMode, compareLabel, fmt
           {Number(day.pred.weather.precip_mm) > 0.5 && <span>· {day.pred.weather.precip_mm}mm</span>}
         </div>
       )}
+
+      {/* Likely range — pulled from past-28-day forecast residuals on the
+          audit ledger. Falls back to ±15% when the API hasn't returned a
+          band. Shown for predicted days only; actual days have a real
+          number, not a range. */}
+      {hasPred && (() => {
+        const est = day.pred?.est_revenue ?? 0
+        if (est <= 0) return null
+        const band = day.pred?.band
+        const lower = band && band.lower >= 0 ? band.lower : est * 0.85
+        const upper = band && band.upper > band.lower ? band.upper : est * 1.15
+        const halfPct = band?.half_width_pct ?? 15
+        const sampleN = band?.sample_n ?? 0
+        return (
+          <div style={{
+            fontSize: 11, color: C.ttMute, marginBottom: 8,
+            display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'baseline',
+          }}>
+            <span style={{ letterSpacing: '.02em' }}>
+              Likely range
+              {sampleN > 0 && (
+                <span style={{ marginLeft: 4, opacity: 0.7 }}>· ±{Math.round(halfPct)}%</span>
+              )}
+            </span>
+            <span style={{ color: 'white', fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const }}>
+              {fmtKr(lower)}–{fmtKr(upper)}
+            </span>
+          </div>
+        )
+      })()}
 
       {/* v8 prominent labour-% row — tier colour matches the bar; pp delta
           tells the operator whether they're at, near, or over target. */}

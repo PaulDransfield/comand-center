@@ -534,6 +534,10 @@ function DashboardInner() {
         weather:      s.weather,
         bucket_days:  s.bucket_days_seen,
         under_staffed_note: s.under_staffed_note,
+        // P25/P75-style prediction band from /api/scheduling/ai-suggestion.
+        // null when the API hasn't accumulated enough audit-ledger residuals
+        // to compute one (default fallback ±15% is applied in the chart).
+        band:         s.band ?? null,
       }
     }
   }
