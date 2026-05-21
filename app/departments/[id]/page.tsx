@@ -1,23 +1,43 @@
 'use client'
 // @ts-nocheck
-// app/departments/[id]/page.tsx — Single department detail with W/M navigator
+// app/departments/[id]/page.tsx — full rebuild on the new system
+//
+// Single-department drill-down. Same treatment as the rest of the
+// rebuilds — UXP tokens, KpiCardUX / PairedBarChart / BreakdownTable
+// replace the legacy navy/white inline-styled grid. Period nav wires
+// into the AppShell toolbar's date stepper.
+//
+// Data unchanged: /api/departments/{name}?from&to&business_id
+// Deep-link preserved: ?year=YYYY&month=M&view=week|month routes from
+// /forecast and other parents land directly on a specific period.
+
 export const dynamic = 'force-dynamic'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
+import dynamicImport from 'next/dynamic'
+
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+
 import AppShell from '@/components/AppShell'
-import { deptColor } from '@/lib/constants/colors'
-import OverviewChart from '@/components/dashboard/OverviewChart'
+import KpiCardUX from '@/components/ux/KpiCard'
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
-const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-const fmtH   = (n: number) => (Math.round(n * 10) / 10).toLocaleString('en-GB') + 'h'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
+import { deptColor } from '@/lib/constants/colors'
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const fmtH = (n: number) => (Math.round((n ?? 0) * 10) / 10).toLocaleString('en-GB') + 'h'
 
 function getISOWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-  const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - day)
+  const day  = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - day)
   return Math.ceil(((date.getTime() - new Date(Date.UTC(date.getUTCFullYear(), 0, 1)).getTime()) / 86400000 + 1) / 7)
 }
 function getWeekBounds(offset = 0) {
@@ -25,34 +45,41 @@ function getWeekBounds(offset = 0) {
   const mon = new Date(today); mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7); mon.setHours(0,0,0,0)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
   const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
-  return { from: localDate(mon), to: localDate(sun), weekNum: getISOWeek(mon), label: mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}`, mon }
+  return {
+    from: localDate(mon), to: localDate(sun),
+    weekNum: getISOWeek(mon),
+    label: mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}`,
+    mon,
+  }
 }
 function getMonthBounds(offset = 0) {
   const now = new Date(), d = new Date(now.getFullYear(), now.getMonth() + offset, 1), last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, firstDay: d, daysInMonth: last.getDate() }
+  return {
+    from: localDate(d), to: localDate(last),
+    label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+    firstDay: d, daysInMonth: last.getDate(),
+  }
 }
 
-// Next 14 requires client components using useSearchParams to be inside a
-// <Suspense> boundary or the static prerender bails out (FIXES.md §0d).
-export default function DepartmentDetailPageWrapper() {
+// Suspense boundary required for useSearchParams in Next 14.
+export default function DepartmentDetailWrapper() {
   return (
-    <Suspense fallback={<AppShell><div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>…</div></AppShell>}>
-      <DepartmentDetailPage />
+    <Suspense fallback={
+      <AppShell>
+        <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>…</div>
+      </AppShell>
+    }>
+      <DepartmentDetail />
     </Suspense>
   )
 }
 
-function DepartmentDetailPage() {
+function DepartmentDetail() {
   const params   = useParams()
   const router   = useRouter()
   const search   = useSearchParams()
-  const t        = useTranslations('operations.departments.detail')
   const deptName = decodeURIComponent(params.id as string)
 
-  // Initial period — if `?year=YYYY&month=M` is passed (e.g. from the
-  // forecast page's dept drill-down), we compute the matching monthOffset
-  // so the user lands on the period they clicked from. Otherwise default to
-  // current month. Week param is accepted too for future deep-links.
   const qYear  = Number(search?.get('year')  ?? 0)
   const qMonth = Number(search?.get('month') ?? 0)
   const qView  = search?.get('view') as 'week' | 'month' | null
@@ -65,14 +92,9 @@ function DepartmentDetailPage() {
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(initialMonthOffset)
-  // Default to month — week view lands on the current week which, early in
-  // the week, has no synced revenue/labour data yet and shows all dashes.
-  // Month matches the dept list's default and gives the user useful numbers
-  // on first load. They can flip to week once they're exploring.
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>(initialView)
+  const [viewMode,    setViewMode]    = useState<'week' | 'month'>(initialView)
   const [data,        setData]        = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
-  const [tooltip,     setTooltip]     = useState<any>(null)
 
   useEffect(() => {
     const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
@@ -88,211 +110,377 @@ function DepartmentDetailPage() {
       .then(r => r.json()).then(setData).catch(() => {}).finally(() => setLoading(false))
   }, [bizId, deptName, weekOffset, monthOffset, viewMode])
 
-  const now = new Date()
+  const now  = new Date()
   const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? t('weekLabel', { num: (curr as any).weekNum }) : curr.label
+  const periodLabel = viewMode === 'week'
+    ? `Week ${(curr as any).weekNum} · ${curr.label}`
+    : curr.label
 
   const summary = data?.summary ?? {}
   const trend   = data?.trend ?? []
   const staff   = data?.staff ?? []
   const color   = data?.color ?? deptColor(deptName)
 
-  // Chart data — shaped for the shared OverviewChart so /departments/[id]
-  // has the same visual treatment as /dashboard (bars + gross-margin line).
-  // Dept-level AI predictions don't exist yet (the scheduling AI is business-
-  // level), so `pred` is always null here — the chart handles that cleanly.
+  // Chart day grid
   const dayCount = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
-  const chartDays = Array.from({ length: dayCount }, (_, i) => {
-    const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
-    d.setDate(d.getDate() + i)
-    const ds = localDate(d)
-    const row = trend.find((t: any) => t.date === ds)
-    const dayIdx = (d.getDay() + 6) % 7
-    const labourPct = row?.revenue > 0 && row?.staff_cost > 0 ? (row.staff_cost / row.revenue) * 100 : null
-    return {
-      date:       ds,
-      dateStr:    ds,
-      revenue:    row?.revenue ?? 0,
-      staff_cost: row?.staff_cost ?? 0,
-      staff_pct:  labourPct,
-      covers:     row?.covers ?? 0,
-      dayName:    viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
-      isToday:    ds === localDate(now),
-      isFuture:   d > now,
-      dayIdx,
-      pred:       null,
-      prevDay:    null,
-    }
-  })
+  const chartDays = useMemo(() => {
+    return Array.from({ length: dayCount }, (_, i) => {
+      const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
+      d.setDate(d.getDate() + i)
+      const ds  = localDate(d)
+      const row = trend.find((t: any) => t.date === ds)
+      const dayIdx = (d.getDay() + 6) % 7
+      return {
+        date:    ds,
+        dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
+        revenue: row?.revenue    ?? 0,
+        cost:    row?.staff_cost ?? 0,
+        isToday: ds === localDate(now),
+        isFuture: d > now,
+      }
+    })
+  }, [viewMode, weekOffset, monthOffset, trend, dayCount])
+
+  // Period stepper
+  const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
+  function step(dir: -1 | 1) {
+    if (viewMode === 'week') setWeekOffset(o => o + dir)
+    else                     setMonthOffset(o => o + dir)
+  }
+
+  const hasData = (summary.revenue ?? 0) > 0 || (summary.staff_cost ?? 0) > 0
+  const tier    = labourTier(summary.labour_pct ?? null)
+  const tierLabel = tier === 'no-data' ? 'No data' : tier.replace('-', ' ')
 
   return (
-    <AppShell>
-      <div className="page-wrap">
-
-        {/* Breadcrumb */}
-        <button onClick={() => router.push('/departments')} style={{ background: 'none', border: 'none', fontSize: 12, color: '#9ca3af', cursor: 'pointer', padding: 0, marginBottom: 8 }}>{t('back')}</button>
+    <AppShell
+      dateLabel={periodLabel}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
+    >
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 14, height: 14, borderRadius: '50%', background: color }} />
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#111' }}>{deptName}</h1>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {viewMode === 'week' ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setWeekOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{t('weekLabel', { num: (curr as any).weekNum })}</div>
-                  <div style={{ fontSize: 11, color: '#9ca3af' }}>{curr.label}</div>
-                </div>
-                <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: weekOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: weekOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button onClick={() => setMonthOffset(o => o - 1)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#374151' }}>‹</button>
-                <div style={{ minWidth: 140, textAlign: 'center' }}><div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{curr.label}</div></div>
-                <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e5e7eb', background: 'white', cursor: monthOffset === 0 ? 'not-allowed' : 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: monthOffset === 0 ? '#d1d5db' : '#374151' }}>›</button>
-              </div>
-            )}
-            <div style={{ display: 'flex', background: '#f3f4f6', borderRadius: 8, padding: 3, gap: 2 }}>
-              {(['week', 'month'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)} style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600, background: viewMode === m ? 'white' : 'transparent', color: viewMode === m ? '#111' : '#9ca3af', boxShadow: viewMode === m ? '0 1px 3px rgba(0,0,0,.1)' : 'none' }}>{m === 'week' ? t('view.week') : t('view.month')}</button>
-              ))}
+        <div style={{
+          display:         'flex',
+          alignItems:      'center',
+          justifyContent:  'space-between',
+          gap:             12,
+          flexWrap:        'wrap' as const,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
+            <button
+              type="button"
+              onClick={() => router.push('/departments')}
+              style={{
+                background: 'none', border: 'none',
+                fontSize: 11, color: UXP.ink3,
+                cursor: 'pointer', padding: 0, fontFamily: 'inherit',
+              }}
+            >← All departments</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 12, height: 12, borderRadius: '50%', background: color }} />
+              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 500, color: UXP.ink1, fontFamily: 'var(--font-display, inherit)', letterSpacing: '-0.01em' }}>
+                {deptName}
+              </h1>
             </div>
           </div>
+          <ViewModeToggle value={viewMode} onChange={setViewMode} />
         </div>
 
-        {loading ? (
-          <div style={{ padding: 80, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}>{t('loadingInline')}</div>
-        ) : (summary.revenue ?? 0) === 0 && (summary.staff_cost ?? 0) === 0 ? (
-          <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '40px 24px', textAlign: 'center' as const }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 6 }}>
-              {t('empty.title', { dept: deptName, period: periodLabel })}
-            </div>
-            <div style={{ fontSize: 13, color: '#6b7280', maxWidth: 420, margin: '0 auto 14px' }}>
-              {viewMode === 'week' && weekOffset === 0
-                ? t('empty.bodyWeekToday')
-                : t('empty.bodyDefault')}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
-              {viewMode === 'week' ? (
-                <>
-                  <button onClick={() => setWeekOffset(o => o - 1)} style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-                    {t('empty.prevWeek')}
-                  </button>
-                  <button onClick={() => setViewMode('month')} style={{ padding: '8px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                    {t('empty.viewMonth')}
-                  </button>
-                </>
-              ) : (
-                <button onClick={() => setMonthOffset(o => o - 1)} style={{ padding: '8px 14px', background: 'white', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-                  {t('empty.prevMonth')}
-                </button>
-              )}
-            </div>
+        {/* Loading + empty states */}
+        {loading && (
+          <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>
+            Loading {deptName} for {periodLabel}…
           </div>
-        ) : (
+        )}
+
+        {!loading && !hasData && (
+          <EmptyCard
+            title={`No ${deptName} activity in ${periodLabel}`}
+            body={viewMode === 'week' && weekOffset === 0
+              ? "Week's still warming up. Try the previous week or switch to month."
+              : "No revenue or labour data for this period. Try a different range."}
+            onPrev={() => step(-1)}
+            onView={viewMode === 'week' ? () => setViewMode('month') : null}
+          />
+        )}
+
+        {!loading && hasData && (
           <>
-            {/* KPI cards */}
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-              {[
-                { label: t('kpi.revenue'),    value: summary.revenue > 0 ? fmtKr(summary.revenue) : '—', sub: summary.covers > 0 ? t('kpi.covers', { covers: summary.covers, avg: fmtKr(summary.avg_spend) }) : '', accent: color },
-                { label: t('kpi.labourCost'), value: summary.staff_cost > 0 ? fmtKr(summary.staff_cost) : '—', sub: t('kpi.hoursShifts', { hours: fmtH(summary.hours ?? 0), shifts: summary.shifts ?? 0 }), accent: null },
-                { label: t('kpi.labourPct'),  value: fmtPct(summary.labour_pct), sub: t('kpi.ofRevenue'), accent: summary.labour_pct > 40 ? '#dc2626' : summary.labour_pct > 30 ? '#d97706' : '#10b981' },
-                { label: t('kpi.gpPct'),      value: fmtPct(summary.gp_pct), sub: summary.rev_per_hour > 0 ? t('kpi.perHour', { amount: fmtKr(summary.rev_per_hour) }) : '', accent: summary.gp_pct >= 50 ? '#10b981' : summary.gp_pct >= 30 ? '#d97706' : '#dc2626' },
-              ].map(k => (
-                <div key={k.label} style={{ flex: 1, background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '18px 20px', borderTop: k.accent ? `3px solid ${k.accent}` : undefined }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{k.label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#111', marginBottom: 4 }}>{k.value}</div>
-                  <div style={{ fontSize: 12, color: '#9ca3af' }}>{k.sub}</div>
-                </div>
-              ))}
+            {/* KPI strip */}
+            <div style={{
+              display:             'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap:                 12,
+            }}>
+              <KpiCardUX
+                title="Revenue"
+                value={summary.revenue > 0 ? fmtKr(summary.revenue) : '—'}
+                microLabel={summary.covers > 0
+                  ? `${summary.covers} covers · ${summary.avg_spend > 0 ? fmtKr(summary.avg_spend) : '—'} per cover`
+                  : ''}
+              />
+              <KpiCardUX
+                title="Labour cost"
+                value={summary.staff_cost > 0 ? fmtKr(summary.staff_cost) : '—'}
+                microLabel={`${fmtH(summary.hours ?? 0)} · ${summary.shifts ?? 0} shift${summary.shifts === 1 ? '' : 's'}`}
+              />
+              <KpiCardUX
+                title="Labour %"
+                value={fmtPct(summary.labour_pct)}
+                deltaGood={false}
+                variant="targetBand"
+                targetBand={summary.labour_pct != null ? {
+                  actualPct:    Math.min(100, Number(summary.labour_pct)),
+                  targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+                  targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+                } : undefined}
+                microLabel={tierLabel}
+              />
+              <KpiCardUX
+                title="GP %"
+                value={fmtPct(summary.gp_pct)}
+                deltaGood
+                microLabel={summary.rev_per_hour > 0 ? `${fmtKr(summary.rev_per_hour)} per hour` : ''}
+              />
             </div>
 
-            {/* OB + Late row */}
+            {/* OB / late strip — when applicable */}
             {(summary.ob_supplement > 0 || summary.late_shifts > 0) && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap:                 12,
+              }}>
                 {summary.ob_supplement > 0 && (
-                  <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>{t('ob.title')}</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#111' }}>{fmtKr(summary.ob_supplement)}</div>
+                  <div style={cardStyle()}>
+                    <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                      OB supplements
+                    </div>
+                    <div style={{
+                      fontSize:           20,
+                      fontWeight:         500,
+                      color:              UXP.ink1,
+                      fontFamily:         'var(--font-display, inherit)',
+                      letterSpacing:      '-0.02em',
+                      fontVariantNumeric: 'tabular-nums' as const,
+                    }}>{fmtKr(summary.ob_supplement)}</div>
                     {summary.ob_type_breakdown?.length > 0 && (
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' as const, marginTop: 8 }}>
                         {summary.ob_type_breakdown.map((ob: any) => (
-                          <span key={ob.type} style={{ fontSize: 11, background: '#eff6ff', color: '#3b82f6', borderRadius: 4, padding: '2px 6px' }}>{ob.type}: {fmtKr(ob.kr)}</span>
+                          <span key={ob.type} style={{
+                            fontSize:     10,
+                            background:   UXP.lavFill,
+                            color:        UXP.lavText,
+                            borderRadius: 6,
+                            padding:      '2px 7px',
+                          }}>{ob.type}: {fmtKr(ob.kr)}</span>
                         ))}
                       </div>
                     )}
                   </div>
                 )}
                 {summary.late_shifts > 0 && (
-                  <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '14px 16px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 4 }}>{t('late.title')}</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#d97706' }}>{t('late.shifts', { count: summary.late_shifts })}</div>
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{t('late.avgMinutes', { minutes: summary.avg_late_minutes })}</div>
+                  <div style={cardStyle()}>
+                    <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                      Late shifts
+                    </div>
+                    <div style={{
+                      fontSize:           20,
+                      fontWeight:         500,
+                      color:              UXP.coral,
+                      fontFamily:         'var(--font-display, inherit)',
+                      letterSpacing:      '-0.02em',
+                      fontVariantNumeric: 'tabular-nums' as const,
+                    }}>{summary.late_shifts}</div>
+                    <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>
+                      Avg {summary.avg_late_minutes} min late
+                    </div>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Daily revenue + labour + gross-margin line — same treatment as
-                the dashboard overview chart, scoped to this department. */}
-            <OverviewChart
-              days={chartDays}
-              viewMode={viewMode}
-              periodLabel={`${deptName} — ${periodLabel}`}
-              businessName={deptName}
-              targetLabourPct={40}
-              fmtKr={fmtKr}
-              fmtPct={(n: any) => n == null ? '—' : (Math.round(n * 10) / 10).toFixed(1) + '%'}
-            />
+            {/* Daily chart */}
+            <div style={cardStyle()}>
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Daily revenue &amp; labour</div>
+                <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                  {deptName} · {periodLabel}
+                </div>
+              </div>
+              <PairedBarChart
+                groups={chartDays.map(d => d.dayName)}
+                series={[
+                  { label: 'Revenue', data: chartDays.map(d => Number(d.revenue ?? 0)), color: color || UXP.lav   },
+                  { label: 'Labour',  data: chartDays.map(d => Number(d.cost    ?? 0)), color: UXP.lavMid },
+                ]}
+                lines={[{
+                  label:  'Labour %',
+                  data:   chartDays.map(d => {
+                    const r = Number(d.revenue ?? 0)
+                    return r > 0 ? (Number(d.cost ?? 0) / r) * 100 : null
+                  }),
+                  color:  UXP.coral,
+                  dashed: false,
+                }]}
+                rightMax={100}
+                width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 1200) : 1100}
+                height={240}
+              />
+            </div>
 
             {/* Staff table */}
             {staff.length > 0 && (
-              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>{t('staffTable.title', { dept: deptName })}</div>
-                  <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('staffTable.summary', { count: staff.length, hours: fmtH(summary.hours ?? 0) })}</div>
+              <div>
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Staff in {deptName}</div>
+                  <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                    {staff.length} {staff.length === 1 ? 'person' : 'people'} · {fmtH(summary.hours ?? 0)} total
+                  </div>
                 </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#f9fafb' }}>
-                      {[
-                        { key: 'name',      label: t('staffTable.cols.name'),      align: 'left'  as const },
-                        { key: 'hours',     label: t('staffTable.cols.hours'),     align: 'right' as const },
-                        { key: 'cost',      label: t('staffTable.cols.cost'),      align: 'right' as const },
-                        { key: 'costPerHr', label: t('staffTable.cols.costPerHr'), align: 'right' as const },
-                        { key: 'shifts',    label: t('staffTable.cols.shifts'),    align: 'right' as const },
-                        { key: 'late',      label: t('staffTable.cols.late'),      align: 'right' as const },
-                      ].map(h => (
-                        <th key={h.key} style={{ padding: '9px 14px', textAlign: h.align, fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.05em' }}>{h.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staff.map((s: any) => (
-                      <tr key={s.name} style={{ borderBottom: '1px solid #f9fafb' }}>
-                        <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500, color: '#111' }}>
-                          {s.name}
-                          {summary.staff_cost > 0 && <div style={{ height: 3, background: '#f3f4f6', borderRadius: 2, width: 60, marginTop: 3 }}><div style={{ height: '100%', background: color, borderRadius: 2, width: `${(s.cost / summary.staff_cost) * 100}%` }} /></div>}
-                        </td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#374151' }}>{fmtH(s.hours)}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#111' }}>{fmtKr(s.cost)}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>{s.cost_per_hour > 0 ? fmtKr(s.cost_per_hour) : '—'}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right', fontSize: 13, color: '#6b7280' }}>{s.shifts}</td>
-                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                          {s.late_shifts > 0 ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fef3c7', color: '#d97706' }}>{s.late_shifts}</span> : <span style={{ color: '#d1d5db' }}>—</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <BreakdownTable
+                  columns={[
+                    { key: 'name', header: 'Name', align: 'left', render: (s: any) => (
+                      <span>
+                        <span style={{ color: UXP.ink1, fontWeight: 500 }}>{s.name}</span>
+                        {summary.staff_cost > 0 && (
+                          <span style={{
+                            display: 'block', height: 3, background: UXP.lavFill,
+                            borderRadius: 2, width: 70, marginTop: 3, overflow: 'hidden',
+                          }}>
+                            <span style={{
+                              display: 'block', height: '100%',
+                              width: `${Math.min(100, (s.cost / summary.staff_cost) * 100)}%`,
+                              background: color,
+                            }} />
+                          </span>
+                        )}
+                      </span>
+                    ) },
+                    { key: 'hours',     header: 'Hours',   align: 'right', render: (s: any) => fmtH(s.hours) },
+                    { key: 'cost',      header: 'Cost',    align: 'right', render: (s: any) => fmtKr(s.cost) },
+                    { key: 'costPerHr', header: 'Cost/hr', align: 'right', render: (s: any) => s.cost_per_hour > 0 ? fmtKr(s.cost_per_hour) : <span style={{ color: UXP.ink4 }}>—</span> },
+                    { key: 'shifts',    header: 'Shifts',  align: 'right', render: (s: any) => s.shifts },
+                    { key: 'late',      header: 'Late',    align: 'right', render: (s: any) => {
+                      if (!s.late_shifts) return <span style={{ color: UXP.ink4 }}>—</span>
+                      return <DeltaChip value={`${s.late_shifts}×`} positiveIsGood={false} />
+                    } },
+                  ]}
+                  sections={[{ rows: staff }]}
+                  footer={{
+                    label: 'Total',
+                    cells: {
+                      hours:     fmtH(summary.hours ?? 0),
+                      cost:      fmtKr(summary.staff_cost ?? 0),
+                      costPerHr: summary.hours > 0 ? fmtKr(Math.round((summary.staff_cost ?? 0) / summary.hours)) : '',
+                      shifts:    String(summary.shifts ?? ''),
+                      late:      '',
+                    },
+                  }}
+                  rowKey={(row: any) => row.name}
+                />
               </div>
             )}
           </>
         )}
       </div>
+
+      <AskAI
+        page="departments"
+        context={hasData ? [
+          `Department: ${deptName} · ${periodLabel}`,
+          `Revenue ${fmtKr(summary.revenue ?? 0)} · Labour ${fmtKr(summary.staff_cost ?? 0)} (${fmtPct(summary.labour_pct ?? 0)}) · GP ${fmtPct(summary.gp_pct ?? 0)}`,
+          summary.late_shifts > 0 ? `${summary.late_shifts} late shifts (avg ${summary.avg_late_minutes} min).` : null,
+        ].filter(Boolean).join('\n') : `No data for ${deptName} in ${periodLabel}.`}
+      />
     </AppShell>
+  )
+}
+
+// ── Atoms ──────────────────────────────────────────────────────────
+
+function cardStyle(): React.CSSProperties {
+  return {
+    background:    UXP.cardBg,
+    border:        `0.5px solid ${UXP.border}`,
+    borderRadius:  UXP.r_lg,
+    padding:       '14px 16px',
+  }
+}
+
+function ViewModeToggle({ value, onChange }: { value: 'week' | 'month'; onChange: (v: 'week' | 'month') => void }) {
+  return (
+    <div style={{
+      display:      'inline-flex',
+      gap:          2,
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: 7,
+      padding:      2,
+    }}>
+      {(['week', 'month'] as const).map(v => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          style={{
+            padding:       '4px 12px',
+            background:    value === v ? UXP.lavFill : 'transparent',
+            color:         value === v ? UXP.lavText : UXP.ink3,
+            border:        'none',
+            borderRadius:  5,
+            fontSize:      10,
+            fontWeight:    500,
+            fontFamily:    'inherit',
+            cursor:        'pointer',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase' as const,
+          }}
+        >{v === 'week' ? 'W' : 'M'}</button>
+      ))}
+    </div>
+  )
+}
+
+function EmptyCard({ title, body, onPrev, onView }: any) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       40,
+      textAlign:     'center' as const,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 11, color: UXP.ink3, maxWidth: 440, margin: '0 auto 14px', lineHeight: 1.5 }}>{body}</div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+        <button type="button" onClick={onPrev} style={{
+          padding:      '6px 14px',
+          background:   UXP.cardBg,
+          color:        UXP.ink2,
+          border:       `0.5px solid ${UXP.border}`,
+          borderRadius: 999,
+          fontSize:     11,
+          fontWeight:   500,
+          cursor:       'pointer',
+          fontFamily:   'inherit',
+        }}>Previous period</button>
+        {onView && (
+          <button type="button" onClick={onView} style={{
+            padding:      '6px 14px',
+            background:   UXP.lavDeep,
+            color:        '#fff',
+            border:       'none',
+            borderRadius: 999,
+            fontSize:     11,
+            fontWeight:   500,
+            cursor:       'pointer',
+            fontFamily:   'inherit',
+          }}>View month</button>
+        )}
+      </div>
+    </div>
   )
 }
