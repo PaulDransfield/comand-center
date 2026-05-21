@@ -279,9 +279,14 @@ function buildDayRows(aiSched: any, acceptances: Record<string, any>) {
   return cur.map((c: any, i: number) => {
     const s = sug[i] ?? {}
     const dayCost   = Number(c.est_cost ?? 0)
-    const dayHours  = Number(c.est_hours ?? 0)
-    const aiCost    = Number(s.est_cost  ?? dayCost)
-    const aiHours   = Number(s.est_hours ?? dayHours)
+    // API response field is `hours` (defined at currentByDate[iso].hours
+    // and suggested.push({ hours: targetHours }) in ai-suggestion/route.ts),
+    // not est_hours. Mis-typing it as est_hours during the /scheduling
+    // rebuild silently dropped every row to 0h while costs (est_cost,
+    // correctly named) still rendered.
+    const dayHours  = Number(c.hours ?? 0)
+    const aiCost    = Number(s.est_cost ?? dayCost)
+    const aiHours   = Number(s.hours ?? dayHours)
     const date      = String(c.date ?? s.date ?? '')
     const accepted  = !!acceptances[date]
     const deltaH    = dayHours - aiHours
