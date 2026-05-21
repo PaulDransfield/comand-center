@@ -1,10 +1,11 @@
 'use client'
 // @ts-nocheck
-// app/notebook/studio/page.tsx — AI Studio (coming soon)
+// app/notebook/studio/page.tsx — AI Studio placeholder on UXP
 
 import AppShell from '@/components/AppShell'
 import Link from 'next/link'
 import { useTranslations } from 'next-intl'
+import { UXP } from '@/lib/constants/tokens'
 
 export default function StudioPage() {
   const t = useTranslations('notebook.studio')
@@ -17,30 +18,64 @@ export default function StudioPage() {
 
   return (
     <AppShell>
-      <div style={{ padding: '40px 28px', maxWidth: 640 }}>
-        <div style={{ marginBottom: 24 }}>
-          <Link href="/notebook" style={{ fontSize: 13, color: '#6b7280', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ padding: '24px 8px 40px', maxWidth: 640 }}>
+        <div style={{ marginBottom: 16 }}>
+          <Link
+            href="/notebook"
+            style={{ fontSize: 12, color: UXP.ink3, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
             ← {t('backToAssistant')}
           </Link>
         </div>
 
-        <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 16, padding: 40, textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>✦</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: '#111827', marginBottom: 8 }}>{t('title')}</h1>
-          <p style={{ fontSize: 14, color: '#6b7280', lineHeight: 1.6, marginBottom: 24 }}>
+        <div style={{
+          background:    UXP.cardBg,
+          border:        `0.5px solid ${UXP.border}`,
+          borderRadius:  UXP.r_lg,
+          padding:       40,
+          textAlign:     'center',
+        }}>
+          <div style={{ fontSize: 36, marginBottom: 12, color: UXP.lavDeep }}>✦</div>
+          <h1 style={{ fontSize: 20, fontWeight: 500, color: UXP.ink1, margin: '0 0 6px', letterSpacing: '-0.01em' }}>
+            {t('title')}
+          </h1>
+          <p style={{ fontSize: 13, color: UXP.ink3, lineHeight: 1.55, marginBottom: 20, maxWidth: 440, marginLeft: 'auto', marginRight: 'auto' }}>
             {t('subtitle')}
           </p>
-          <div style={{ display: 'inline-flex', padding: '6px 14px', background: '#f3f4f6', borderRadius: 20, fontSize: 12, color: '#6b7280', fontWeight: 600 }}>
+          <div style={{
+            display:       'inline-flex',
+            padding:       '5px 12px',
+            background:    UXP.lavFill,
+            color:         UXP.lavText,
+            border:        `0.5px solid ${UXP.lavMid}`,
+            borderRadius:  999,
+            fontSize:      10,
+            fontWeight:    600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+          }}>
             {t('comingSoon')}
           </div>
         </div>
 
-        <div style={{ marginTop: 20, display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+        <div style={{ marginTop: 16, display: 'grid', gap: 10, gridTemplateColumns: '1fr 1fr' }}>
           {features.map(item => (
-            <div key={item.key} style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: 12, padding: 20 }}>
-              <div style={{ fontSize: 22, marginBottom: 8 }}>{item.icon}</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 4 }}>{t(`features.${item.key}.title`)}</div>
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>{t(`features.${item.key}.desc`)}</div>
+            <div
+              key={item.key}
+              style={{
+                background:    UXP.cardBg,
+                border:        `0.5px solid ${UXP.border}`,
+                borderRadius:  UXP.r_md,
+                padding:       16,
+              }}
+            >
+              <div style={{ fontSize: 20, marginBottom: 6 }}>{item.icon}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: UXP.ink1, marginBottom: 3 }}>
+                {t(`features.${item.key}.title`)}
+              </div>
+              <div style={{ fontSize: 11, color: UXP.ink3, lineHeight: 1.5 }}>
+                {t(`features.${item.key}.desc`)}
+              </div>
             </div>
           ))}
         </div>

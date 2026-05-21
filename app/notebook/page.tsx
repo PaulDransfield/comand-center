@@ -1,11 +1,18 @@
 'use client'
 // @ts-nocheck
-// app/notebook/page.tsx — AI Assistant (full-page chat interface)
+// app/notebook/page.tsx — Ask CC (full-page chat) on UXP
+//
+// The floating <AskAI> button in the rail opens a side panel for quick
+// asks; this page is the dedicated chat surface for longer sessions.
+// Same /api/ask endpoint, same 'light' (Haiku) tier, same compact-context
+// pre-fetch — only the chrome was rebuilt on UXP tokens (lavender user
+// bubbles + lavFill assistant bubbles + sparkle send pill matching the
+// rail toolbar).
 
 import { useState, useRef, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
-import { createClient } from '@/lib/supabase/client'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 
 interface Message {
@@ -15,8 +22,8 @@ interface Message {
 
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-// Compact summary — one line per business per month. Aim for <800 tokens total
-// so the per-query cost on Haiku stays around $0.002.
+// Compact summary — one line per business per month. <800 tokens total
+// keeps per-query Haiku cost around $0.002.
 async function buildContext(): Promise<string> {
   try {
     const bizRes = await fetch('/api/businesses', { cache: 'no-store' })
@@ -56,22 +63,17 @@ async function buildContext(): Promise<string> {
 
 export default function NotebookPage() {
   const t = useTranslations('notebook.assistant')
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input,    setInput]    = useState('')
-  const [loading,  setLoading]  = useState(false)
-  const [bizId,    setBizId]    = useState<string | null>(null)
-  const [ctx,      setCtx]      = useState<string>('')
+  const [messages,   setMessages]   = useState<Message[]>([])
+  const [input,      setInput]      = useState('')
+  const [loading,    setLoading]    = useState(false)
+  const [bizId,      setBizId]      = useState<string | null>(null)
+  const [ctx,        setCtx]        = useState<string>('')
   const [ctxLoading, setCtxLoading] = useState(true)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Get the selected business from sessionStorage (set by sidebar switcher)
     const stored = sessionStorage.getItem('cc_selected_biz')
     if (stored) setBizId(stored)
-
-    // Fetch the compact business-summary context once on mount.
-    // Every question reuses this context — saves re-fetching per query and
-    // keeps input tokens predictable (~500) so Haiku cost stays <$0.003/query.
     buildContext().then(c => { setCtx(c); setCtxLoading(false) })
   }, [])
 
@@ -94,8 +96,6 @@ export default function NotebookPage() {
         body:    JSON.stringify({
           question: q,
           page:     'assistant',
-          // tier 'light' routes through Haiku for ~$0.002/query vs Sonnet's ~$0.012.
-          // Every query still counts against the org's daily AI limit.
           tier:     'light',
           context:  ctx || 'General business intelligence assistant for this restaurant business.',
           ...(bizId ? { business_id: bizId } : {}),
@@ -103,7 +103,6 @@ export default function NotebookPage() {
       })
       const data = await res.json()
       setMessages([...updated, { role: 'assistant', content: data.answer ?? data.error ?? t('noResponse') }])
-      // Poke the sidebar meter so the counter updates immediately.
       if (res.ok) { try { window.dispatchEvent(new Event('cc_ai_used')) } catch {} }
     } catch {
       setMessages([...updated, { role: 'assistant', content: t('genericError') }])
@@ -121,15 +120,34 @@ export default function NotebookPage() {
 
   return (
     <AppShell>
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', maxWidth: 820, margin: '0 auto', padding: '24px 28px 0' }}>
+      <div style={{
+        display:        'flex',
+        flexDirection:  'column',
+        height:         'calc(100vh - 64px)',
+        maxWidth:       820,
+        margin:         '0 auto',
+        padding:        '8px 8px 0',
+      }}>
 
         {/* Header */}
-        <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#111827', margin: 0 }}>{t('title')}</h1>
-          <p style={{ fontSize: 13, color: '#6b7280', marginTop: 4 }}>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{
+            fontSize:      10,
+            fontWeight:    600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color:         UXP.lavText,
+            marginBottom:  4,
+          }}>
+            Ask CC
+          </div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+            {t('title')}
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
             {t('subtitle')}
           </p>
-          <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 6 }}>
+          <p style={{ margin: '6px 0 0', fontSize: 10, color: UXP.ink4 }}>
             {ctxLoading ? t('contextLoading') : t('contextReady')}
           </p>
         </div>
@@ -137,14 +155,26 @@ export default function NotebookPage() {
         {/* Message thread */}
         <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 16 }}>
           {messages.length === 0 ? (
-            <div style={{ padding: '40px 0 20px' }}>
-              <div style={{ textAlign: 'center', marginBottom: 32, color: '#9ca3af', fontSize: 14 }}>
+            <div style={{ padding: '32px 0 12px' }}>
+              <div style={{ textAlign: 'center', marginBottom: 24, color: UXP.ink4, fontSize: 12 }}>
                 {t('startersIntro')}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
                 {STARTERS.map(s => (
-                  <button key={s} onClick={() => { setInput(s); }}
-                    style={{ padding: '8px 14px', background: '#f3f4f6', border: '1px solid #e5e7eb', borderRadius: 20, fontSize: 13, color: '#374151', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <button
+                    key={s}
+                    onClick={() => setInput(s)}
+                    style={{
+                      padding:      '8px 14px',
+                      background:   UXP.cardBg,
+                      border:       `0.5px solid ${UXP.border}`,
+                      borderRadius: 999,
+                      fontSize:     12,
+                      color:        UXP.ink2,
+                      cursor:       'pointer',
+                      fontFamily:   'inherit',
+                    }}
+                  >
                     {s}
                   </button>
                 ))}
@@ -152,16 +182,21 @@ export default function NotebookPage() {
             </div>
           ) : (
             messages.map((m, i) => (
-              <div key={i} style={{ marginBottom: 16, display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              <div key={i} style={{
+                marginBottom:   12,
+                display:        'flex',
+                justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
+              }}>
                 <div style={{
-                  maxWidth: '80%',
-                  padding: '10px 14px',
-                  borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                  background: m.role === 'user' ? '#1a1f2e' : '#f3f4f6',
-                  color: m.role === 'user' ? 'white' : '#111827',
-                  fontSize: 14,
-                  lineHeight: '1.5',
-                  whiteSpace: 'pre-wrap',
+                  maxWidth:     '80%',
+                  padding:      '10px 14px',
+                  borderRadius: m.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                  background:   m.role === 'user' ? UXP.lavDeep : UXP.subtleBg,
+                  color:        m.role === 'user' ? 'white' : UXP.ink1,
+                  border:       m.role === 'user' ? 'none' : `0.5px solid ${UXP.borderSoft}`,
+                  fontSize:     13,
+                  lineHeight:   1.55,
+                  whiteSpace:   'pre-wrap',
                 }}>
                   {m.content}
                 </div>
@@ -169,8 +204,16 @@ export default function NotebookPage() {
             ))
           )}
           {loading && (
-            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 16 }}>
-              <div style={{ padding: '10px 16px', background: '#f3f4f6', borderRadius: '16px 16px 16px 4px', fontSize: 13, color: '#6b7280' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 12 }}>
+              <div style={{
+                padding:      '10px 14px',
+                background:   UXP.subtleBg,
+                border:       `0.5px solid ${UXP.borderSoft}`,
+                borderRadius: '14px 14px 14px 4px',
+                fontSize:     12,
+                color:        UXP.ink3,
+                fontStyle:    'italic',
+              }}>
                 {t('thinking')}
               </div>
             </div>
@@ -179,9 +222,24 @@ export default function NotebookPage() {
         </div>
 
         {/* Input bar */}
-        <div style={{ borderTop: '1px solid #e5e7eb', padding: '16px 0 24px', display: 'flex', gap: 10 }}>
+        <div style={{
+          borderTop:  `0.5px solid ${UXP.border}`,
+          padding:    '14px 0 20px',
+          display:    'flex',
+          gap:        8,
+        }}>
           <input
-            style={{ flex: 1, padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, outline: 'none' }}
+            style={{
+              flex:         1,
+              padding:      '10px 14px',
+              border:       `0.5px solid ${UXP.border}`,
+              borderRadius: 10,
+              fontSize:     13,
+              fontFamily:   'inherit',
+              color:        UXP.ink1,
+              background:   UXP.cardBg,
+              outline:      'none',
+            }}
             placeholder={t('inputPlaceholder')}
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -191,7 +249,23 @@ export default function NotebookPage() {
           <button
             onClick={send}
             disabled={loading || !input.trim()}
-            style={{ padding: '10px 20px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', opacity: loading || !input.trim() ? 0.5 : 1 }}>
+            style={{
+              padding:        '10px 18px',
+              background:     UXP.lavDeep,
+              color:          'white',
+              border:         'none',
+              borderRadius:   10,
+              fontSize:       13,
+              fontWeight:     600,
+              fontFamily:     'inherit',
+              cursor:         loading || !input.trim() ? 'not-allowed' : 'pointer',
+              opacity:        loading || !input.trim() ? 0.5 : 1,
+              display:        'inline-flex',
+              alignItems:     'center',
+              gap:            6,
+            }}
+          >
+            <span aria-hidden style={{ fontSize: 12 }}>✦</span>
             {t('send')}
           </button>
         </div>
