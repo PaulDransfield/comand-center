@@ -13,11 +13,10 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
-import PageHero from '@/components/ui/PageHero'
 import StatusPill from '@/components/ui/StatusPill'
 import TopBar from '@/components/ui/TopBar'
 import AttentionPanel from '@/components/ui/AttentionPanel'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { createClient as createSupabaseBrowser } from '@/lib/supabase/client'
 
@@ -272,30 +271,39 @@ export default function OverheadsPage() {
         <TopBar
           crumbs={[{ label: t('crumbs.financials') }, { label: t('crumbs.overheads'), active: true }]}
           rightSlot={selectedBiz ? (
-            <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>
+            <span style={{ fontSize: 10, color: UXP.ink3 }}>
               {t.rich('forBusiness', {
-                name: () => <span style={{ color: UX.ink1, fontWeight: UX.fwMedium }}>{selectedBiz.name}</span>,
+                name: () => <span style={{ color: UXP.ink1, fontWeight: 500 }}>{selectedBiz.name}</span>,
               })}
             </span>
           ) : null}
         />
 
-        <PageHero
-          eyebrow={t('eyebrow')}
-          headline={
-            uploads.length === 0
+        <div style={{ marginBottom: 14 }}>
+          <div style={{
+            fontSize:      10,
+            fontWeight:    600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color:         UXP.lavText,
+            marginBottom:  4,
+          }}>
+            {t('eyebrow')}
+          </div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+            {uploads.length === 0
               ? t('headlineEmpty')
               : <>
-                  <span style={{ fontWeight: UX.fwMedium }}>{t('headlineCounts.uploads', { count: uploads.length })}</span>
-                  {reviewCount > 0  && <> · <span style={{ color: UX.indigo,  fontWeight: UX.fwMedium }}>{t('headlineCounts.awaitingReview', { count: reviewCount })}</span></>}
-                  {appliedCount > 0 && <> · <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('headlineCounts.applied', { count: appliedCount })}</span></>}
-                  {pendingCount > 0 && <> · <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{t('headlineCounts.processing', { count: pendingCount })}</span></>}
-                </>
-          }
-          context={uploads.length === 0
-            ? t('contextEmpty')
-            : undefined}
-        />
+                  <span>{t('headlineCounts.uploads', { count: uploads.length })}</span>
+                  {reviewCount > 0  && <> · <span style={{ color: UXP.lavDeep   }}>{t('headlineCounts.awaitingReview', { count: reviewCount })}</span></>}
+                  {appliedCount > 0 && <> · <span style={{ color: UXP.greenDeep }}>{t('headlineCounts.applied', { count: appliedCount })}</span></>}
+                  {pendingCount > 0 && <> · <span style={{ color: UXP.coral    }}>{t('headlineCounts.processing', { count: pendingCount })}</span></>}
+                </>}
+          </h1>
+          {uploads.length === 0 && (
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>{t('contextEmpty')}</p>
+          )}
+        </div>
 
         <div
           onDragOver={e => { e.preventDefault(); setDragging(true) }}
@@ -306,9 +314,9 @@ export default function OverheadsPage() {
           }}
           onClick={() => !uploading && fileRef.current?.click()}
           style={{
-            background:    dragging ? UX.indigoBg : UX.cardBg,
-            border:        `1.5px dashed ${dragging ? UX.indigo : UX.border}`,
-            borderRadius:  UX.r_lg,
+            background:    dragging ? UXP.lavFill : UXP.cardBg,
+            border:        `1.5px dashed ${dragging ? UXP.lavDeep : UXP.border}`,
+            borderRadius:  UXP.r_lg,
             padding:       '28px 20px',
             textAlign:     'center' as const,
             cursor:        uploading ? 'wait' : 'pointer',
@@ -324,10 +332,10 @@ export default function OverheadsPage() {
             style={{ display: 'none' }}
             onChange={e => { if (e.target.files) handleFiles(e.target.files); if (fileRef.current) fileRef.current.value = '' }}
           />
-          <div style={{ fontSize: 14, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1, marginBottom: 4 }}>
             {uploading ? t('drop.uploading') : dragging ? t('drop.dragOver') : t('drop.default')}
           </div>
-          <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{t('drop.constraints')}</div>
+          <div style={{ fontSize: 10, color: UXP.ink4 }}>{t('drop.constraints')}</div>
         </div>
 
         {/* Bulk re-extract — useful after AI prompt or schema upgrades.
@@ -337,7 +345,7 @@ export default function OverheadsPage() {
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
             <button
               onClick={(e) => { e.stopPropagation(); reextractAll() }}
-              style={{ background: 'none', border: 'none', color: UX.ink3, fontSize: UX.fsMicro, cursor: 'pointer', textDecoration: 'underline', padding: '4px 6px' }}
+              style={{ background: 'none', border: 'none', color: UXP.ink3, fontSize: 10, cursor: 'pointer', textDecoration: 'underline', padding: '4px 6px' }}
               title={t('reextractAll.title', { count: reextractableCount })}
             >
               {t('reextractAll.button', { count: reextractableCount })}
@@ -347,14 +355,14 @@ export default function OverheadsPage() {
 
         {toast && (
           <div style={{
-            background:   UX.indigoBg, border: `0.5px solid ${UX.indigo}`,
-            borderRadius: UX.r_md, padding: '8px 12px',
-            fontSize:     UX.fsBody, color: UX.indigo, marginBottom: 12,
+            background:   UXP.lavFill, border: `0.5px solid ${UXP.lavDeep}`,
+            borderRadius: UXP.r_md, padding: '8px 12px',
+            fontSize:     12, color: UXP.lavDeep, marginBottom: 12,
           }}>{toast}</div>
         )}
 
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loadingUploads')}</div>
+          <div style={{ padding: 40, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{t('loadingUploads')}</div>
         ) : uploads.length === 0 ? (
           <AttentionPanel
             title={t('emptyAttention.title')}
@@ -374,9 +382,9 @@ export default function OverheadsPage() {
           />
         )}
 
-        <div style={{ marginTop: 10, fontSize: UX.fsMicro, color: UX.ink4 }}>
+        <div style={{ marginTop: 10, fontSize: 10, color: UXP.ink4 }}>
           {t.rich('footerLink', {
-            trackerLink: () => <a href="/tracker" style={{ color: UX.indigo }}>{t('footerTracker')}</a>,
+            trackerLink: () => <a href="/tracker" style={{ color: UXP.lavDeep }}>{t('footerTracker')}</a>,
           })}
         </div>
       </div>
@@ -397,21 +405,21 @@ function UploadsTable({ uploads, nowMs, months, onReview, onRetry, onDelete }: a
   const t = useTranslations('overheads.upload')
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `0.5px solid ${UX.border}`,
-      borderRadius: UX.r_lg,
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: UXP.r_lg,
       overflow:     'hidden' as const,
     }}>
       <div style={{
         padding:      '10px 16px',
-        background:   UX.subtleBg,
-        borderBottom: `0.5px solid ${UX.borderSoft}`,
+        background:   UXP.subtleBg,
+        borderBottom: `0.5px solid ${UXP.borderSoft}`,
         display:      'grid',
         gridTemplateColumns: '1fr 140px 110px 130px 120px 40px',
         gap:          10,
-        fontSize:     UX.fsMicro,
-        fontWeight:   UX.fwMedium,
-        color:        UX.ink4,
+        fontSize:     10,
+        fontWeight:   500,
+        color:        UXP.ink4,
         letterSpacing: '.06em',
         textTransform: 'uppercase' as const,
       }}>
@@ -456,10 +464,10 @@ function UploadsTable({ uploads, nowMs, months, onReview, onRetry, onDelete }: a
             gap: 10,
             alignItems: 'center',
             padding: '10px 16px',
-            borderBottom: `0.5px solid ${UX.borderSoft}`,
-            fontSize: UX.fsBody,
+            borderBottom: `0.5px solid ${UXP.borderSoft}`,
+            fontSize: 12,
           }}>
-            <span style={{ color: UX.ink1, fontWeight: UX.fwMedium, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            <span style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
               {u.pdf_filename}
               {(() => {
                 // Prefer live job progress over the upload's error_message.
@@ -471,16 +479,16 @@ function UploadsTable({ uploads, nowMs, months, onReview, onRetry, onDelete }: a
                 if (!text) return null
                 return (
                   <div style={{
-                    fontSize:  UX.fsMicro,
-                    color:     isExtracting ? UX.indigo : UX.redInk,
+                    fontSize:  10,
+                    color:     isExtracting ? UXP.lavDeep : UXP.roseText,
                     marginTop: 2,
                     whiteSpace: 'normal' as const,
                   }}>{text}</div>
                 )
               })()}
             </span>
-            <span style={{ color: UX.ink3, fontSize: UX.fsMicro }}>{periodLabel}</span>
-            <span style={{ textAlign: 'right' as const, color: UX.ink4, fontSize: UX.fsMicro, fontVariantNumeric: 'tabular-nums' as const }}>
+            <span style={{ color: UXP.ink3, fontSize: 10 }}>{periodLabel}</span>
+            <span style={{ textAlign: 'right' as const, color: UXP.ink4, fontSize: 10, fontVariantNumeric: 'tabular-nums' as const }}>
               {u.pdf_size_bytes ? t('table.size', { kb: (u.pdf_size_bytes / 1024).toFixed(0) }) : t('table.period.missing')}
             </span>
             <span style={{ textAlign: 'center' as const }}>
@@ -497,7 +505,7 @@ function UploadsTable({ uploads, nowMs, months, onReview, onRetry, onDelete }: a
                 <button onClick={() => onRetry(u.id)} style={actionBtn('ghost')}>{t('table.actions.retry')}</button>
               )}
               {(u.status === 'extracting' || u.status === 'pending') && (
-                <button onClick={() => onDelete(u.id)} style={{ ...actionBtn('ghost'), color: UX.redInk }}>{t('table.actions.cancel')}</button>
+                <button onClick={() => onDelete(u.id)} style={{ ...actionBtn('ghost'), color: UXP.roseText }}>{t('table.actions.cancel')}</button>
               )}
             </span>
             <span style={{ textAlign: 'right' as const }}>
@@ -505,7 +513,7 @@ function UploadsTable({ uploads, nowMs, months, onReview, onRetry, onDelete }: a
                 <button
                   onClick={() => onDelete(u.id)}
                   title={t('table.actions.discard')}
-                  style={{ background: 'none', border: 'none', color: UX.ink4, cursor: 'pointer', fontSize: 14, padding: 4 }}
+                  style={{ background: 'none', border: 'none', color: UXP.ink4, cursor: 'pointer', fontSize: 14, padding: 4 }}
                 >×</button>
               )}
             </span>
@@ -520,23 +528,23 @@ function actionBtn(kind: 'primary' | 'ghost') {
   if (kind === 'primary') {
     return {
       padding: '4px 10px',
-      background: UX.indigo,
+      background: UXP.lavDeep,
       color: 'white',
       border: 'none',
-      borderRadius: UX.r_sm,
-      fontSize: UX.fsMicro,
-      fontWeight: UX.fwMedium,
+      borderRadius: UXP.r_sm,
+      fontSize: 10,
+      fontWeight: 500,
       cursor: 'pointer',
     } as any
   }
   return {
     padding: '4px 10px',
     background: 'transparent',
-    color: UX.ink3,
-    border: `0.5px solid ${UX.border}`,
-    borderRadius: UX.r_sm,
-    fontSize: UX.fsMicro,
-    fontWeight: UX.fwMedium,
+    color: UXP.ink3,
+    border: `0.5px solid ${UXP.border}`,
+    borderRadius: UXP.r_sm,
+    fontSize: 10,
+    fontWeight: 500,
     cursor: 'pointer',
   } as any
 }
@@ -667,22 +675,22 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
 
   return (
     <div onClick={onClose} style={{ position: 'fixed' as const, inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: UX.r_lg, width: '100%', maxWidth: 1100, height: '90vh', overflow: 'hidden' as const, display: 'flex', flexDirection: 'column' as const }}>
-        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: UXP.r_lg, width: '100%', maxWidth: 1100, height: '90vh', overflow: 'hidden' as const, display: 'flex', flexDirection: 'column' as const }}>
+        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: UX.fwMedium, color: UX.ink1 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1 }}>
               {t('review.title', { filename: upload?.pdf_filename ?? t('review.loadingTitle') })}
             </div>
-            <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
+            <div style={{ fontSize: 10, color: UXP.ink4 }}>
               {extraction?.doc_type === 'pnl_annual'
                 ? t('review.annualMeta', { year: extraction?.period?.year ?? '' })
                 : extraction
                   ? t('review.monthlyMeta', { month: months[(extraction?.period?.month ?? 1) - 1], year: extraction?.period?.year })
                   : ''}
-              {extraction?.confidence && <> · {t.rich('review.aiConfidence', { value: () => <span style={{ fontWeight: UX.fwMedium }}>{extraction.confidence}</span> })}</>}
+              {extraction?.confidence && <> · {t.rich('review.aiConfidence', { value: () => <span style={{ fontWeight: 500 }}>{extraction.confidence}</span> })}</>}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: UX.ink4 }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: UXP.ink4 }}>×</button>
         </div>
 
         <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 0 }}>
@@ -691,25 +699,25 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
               also always surface an "Open in new tab" link so the owner has
               a fallback path when the inline preview is blocked (some
               browsers or networks refuse to embed cross-origin PDFs). */}
-          <div style={{ background: '#f3f4f6', borderRight: `1px solid ${UX.borderSoft}`, minHeight: 0, display: 'flex', flexDirection: 'column' as const }}>
+          <div style={{ background: UXP.subtleBg, borderRight: `1px solid ${UXP.borderSoft}`, minHeight: 0, display: 'flex', flexDirection: 'column' as const }}>
             {pdfUrl ? (
               <>
-                <div style={{ padding: '6px 10px', background: 'white', borderBottom: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: UX.fsMicro }}>
-                  <span style={{ color: UX.ink4 }}>{t('review.pdf.preview')}</span>
+                <div style={{ padding: '6px 10px', background: 'white', borderBottom: `1px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10 }}>
+                  <span style={{ color: UXP.ink4 }}>{t('review.pdf.preview')}</span>
                   <a
                     href={pdfUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    style={{ color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}
+                    style={{ color: UXP.lavDeep, textDecoration: 'none', fontWeight: 500 }}
                   >
                     {t('review.pdf.openNewTab')}
                   </a>
                 </div>
                 <object data={pdfUrl} type="application/pdf" style={{ flex: 1, width: '100%', border: 0 }}>
                   {/* Fallback when inline PDF rendering is blocked */}
-                  <div style={{ padding: 30, textAlign: 'center' as const, color: UX.ink3, fontSize: UX.fsBody }}>
+                  <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>
                     {t('review.pdf.fallbackPre')}
-                    <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: UX.indigo }}>
+                    <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={{ color: UXP.lavDeep }}>
                       {t('review.pdf.fallbackLink')}
                     </a>
                     {t('review.pdf.fallbackPost')}
@@ -717,14 +725,14 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                 </object>
               </>
             ) : (
-              <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('review.pdf.loading')}</div>
+              <div style={{ padding: 40, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{t('review.pdf.loading')}</div>
             )}
           </div>
 
           {/* Extraction pane */}
           <div style={{ overflowY: 'auto' as const, padding: 20, minHeight: 0 }}>
             {!extraction ? (
-              <div style={{ fontSize: UX.fsBody, color: UX.ink4 }}>{t('review.loadingExtraction')}</div>
+              <div style={{ fontSize: 12, color: UXP.ink4 }}>{t('review.loadingExtraction')}</div>
             ) : (
               <>
                 {extraction.warnings?.length > 0 && (
@@ -754,12 +762,12 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                   />
                 )}
 
-                <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 10, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 10, marginBottom: 8 }}>
                   {t('review.rollupTitle')}
                 </div>
                 <RollupGrid rollup={extraction.rollup} />
 
-                <div style={{ fontSize: 11, fontWeight: UX.fwMedium, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 18, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: '.06em', marginTop: 18, marginBottom: 8 }}>
                   {t('review.lineItemsTitle', { count: extraction.lines?.length ?? 0 })}
                 </div>
                 <LineItemsTable lines={extraction.lines ?? []} />
@@ -769,26 +777,26 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
         </div>
 
         {err && (
-          <div style={{ background: UX.redSoft, border: `0.5px solid ${UX.redBorder}`, color: UX.redInk, padding: '8px 16px', fontSize: UX.fsBody }}>{err}</div>
+          <div style={{ background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`, color: UXP.roseText, padding: '8px 16px', fontSize: 12 }}>{err}</div>
         )}
 
-        <div style={{ padding: '12px 20px', borderTop: `1px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div style={{ padding: '12px 20px', borderTop: `1px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           {/* Re-extract — runs the current AI on the stored PDF. Available
               for any non-pending/non-extracting state since the PDF is
               already in storage. Cheap way to pick up new fields after
               schema or prompt upgrades. */}
           {upload && upload.status !== 'extracting' && upload.status !== 'pending' && (
-            <button onClick={reextract} disabled={reextracting || applying || rejecting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
+            <button onClick={reextract} disabled={reextracting || applying || rejecting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: 12 }}>
               {reextracting ? t('review.actions.reextracting') : t('review.actions.reextract')}
             </button>
           )}
           {upload?.status === 'applied' ? (
-            <button onClick={reject} disabled={rejecting || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody, color: UX.redInk }}>
+            <button onClick={reject} disabled={rejecting || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: 12, color: UXP.roseText }}>
               {rejecting ? t('review.actions.rejecting') : t('review.actions.unapplyReject')}
             </button>
           ) : (
             <>
-              <button onClick={reject} disabled={rejecting || applying || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: UX.fsBody }}>
+              <button onClick={reject} disabled={rejecting || applying || reextracting} style={{ ...actionBtn('ghost'), padding: '7px 14px', fontSize: 12 }}>
                 {rejecting ? t('review.actions.rejecting') : t('review.actions.reject')}
               </button>
               {(() => {
@@ -815,7 +823,7 @@ function ReviewModal({ uploadId, onClose, onDone }: any) {
                         ? t('review.actions.applyOverride')
                         : t('review.actions.apply')
                 return (
-                  <button onClick={apply} disabled={disabled} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: UX.fsBody }}>
+                  <button onClick={apply} disabled={disabled} style={{ ...actionBtn('primary'), padding: '7px 14px', fontSize: 12 }}>
                     {label}
                   </button>
                 )
@@ -853,18 +861,18 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: UXP.ink3, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
         {t('title')}
       </div>
 
       {hardErrors.length > 0 && (
-        <div style={card('#fef2f2', '#fecaca')}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+        <div style={card(UXP.roseFill, UXP.rose)}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: UXP.roseText, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             {t('hardErrors', { count: hardErrors.length })}
           </div>
           {hardErrors.map((f: any) => (
-            <div key={f.code} style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, marginTop: 4 }}>
-              <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{f.code}</code>
+            <div key={f.code} style={{ fontSize: 12, color: UXP.roseText, lineHeight: 1.5, marginTop: 4 }}>
+              <code style={{ background: UXP.roseFill, padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{f.code}</code>
               <span style={{ marginLeft: 6 }}>{f.message}</span>
             </div>
           ))}
@@ -872,39 +880,39 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
       )}
 
       {softErrors.length > 0 && (
-        <div style={card('#fef2f2', '#fecaca')}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#991b1b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+        <div style={card(UXP.roseFill, UXP.rose)}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: UXP.roseText, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             {t('softErrors', { count: softErrors.length })}
           </div>
           {softErrors.map((f: any) => (
-            <div key={f.code} style={{ fontSize: 12, color: '#7f1d1d', lineHeight: 1.5, marginTop: 4 }}>
-              <code style={{ background: '#fee2e2', padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{f.code}</code>
+            <div key={f.code} style={{ fontSize: 12, color: UXP.roseText, lineHeight: 1.5, marginTop: 4 }}>
+              <code style={{ background: UXP.roseFill, padding: '1px 5px', borderRadius: 4, fontSize: 10 }}>{f.code}</code>
               <span style={{ marginLeft: 6 }}>{f.message}</span>
             </div>
           ))}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: '#991b1b', cursor: 'pointer', fontWeight: 600 }}>
-            <input type="checkbox" checked={forceApply} onChange={onForceToggle} style={{ accentColor: '#dc2626' }} />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12, color: UXP.roseText, cursor: 'pointer', fontWeight: 600 }}>
+            <input type="checkbox" checked={forceApply} onChange={onForceToggle} style={{ accentColor: UXP.roseText }} />
             {t('forceLabel', { count: softErrors.length })}
           </label>
         </div>
       )}
 
       {warnings.length > 0 && (
-        <div style={card('#fffbeb', '#fde68a')}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+        <div style={card(UXP.lavFill, UXP.lavMid)}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: UXP.coral, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             {t('warnings', { count: warnings.length })}
           </div>
           {warnings.map((f: any) => {
             const acked = ackedWarnings.has(f.code)
             return (
-              <label key={f.code} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 0', borderTop: '1px solid #fde68a', cursor: 'pointer' }}>
-                <input type="checkbox" checked={acked} onChange={() => onToggle(f.code)} style={{ marginTop: 2, accentColor: '#92400e' }} />
+              <label key={f.code} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 0', borderTop: `0.5px solid ${UXP.lavMid}`, cursor: 'pointer' }}>
+                <input type="checkbox" checked={acked} onChange={() => onToggle(f.code)} style={{ marginTop: 2, accentColor: UXP.coral }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                    <code style={{ background: '#fef3c7', padding: '1px 5px', borderRadius: 4, fontSize: 10, color: '#92400e' }}>{f.code}</code>
-                    {acked && <span style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>{t('acknowledged')}</span>}
+                    <code style={{ background: UXP.lavFill, padding: '1px 5px', borderRadius: 4, fontSize: 10, color: UXP.coral }}>{f.code}</code>
+                    {acked && <span style={{ fontSize: 10, color: UXP.greenDeep, fontWeight: 700 }}>{t('acknowledged')}</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.5 }}>{f.message}</div>
+                  <div style={{ fontSize: 12, color: UXP.coral, lineHeight: 1.5 }}>{f.message}</div>
                 </div>
               </label>
             )
@@ -914,18 +922,18 @@ function ValidationChecklist({ report, ackedWarnings, onToggle, forceApply, onFo
 
       {audit && audit.confidence !== 'unavailable' && (
         <div style={card(
-          audit.confidence === 'high'   ? '#f0fdf4' : audit.confidence === 'medium' ? '#fffbeb' : '#fef2f2',
-          audit.confidence === 'high'   ? '#bbf7d0' : audit.confidence === 'medium' ? '#fde68a' : '#fecaca',
+          audit.confidence === 'high'   ? UXP.greenFill : audit.confidence === 'medium' ? UXP.lavFill : UXP.roseFill,
+          audit.confidence === 'high'   ? UXP.green : audit.confidence === 'medium' ? UXP.lavMid : UXP.rose,
         )}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
             <span style={{ fontSize: 14 }}>🤖</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: UXP.ink2, textTransform: 'uppercase', letterSpacing: '.04em' }}>
               {t('auditor', { confidence: audit.confidence })}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.55 }}>{audit.summary}</div>
+          <div style={{ fontSize: 12, color: UXP.ink2, lineHeight: 1.55 }}>{audit.summary}</div>
           {audit.concerns?.length > 0 && (
-            <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 11, color: '#6b7280', lineHeight: 1.5 }}>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 11, color: UXP.ink3, lineHeight: 1.5 }}>
               {audit.concerns.map((c: string, i: number) => (
                 <li key={i}>{c}</li>
               ))}
@@ -956,24 +964,24 @@ function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) 
   return (
     <div style={{
       marginBottom: 14,
-      background:   '#fffbeb',
-      border:       '1px solid #fde68a',
+      background:   UXP.lavFill,
+      border:       `0.5px solid ${UXP.lavMid}`,
       borderRadius: 10,
       padding:      '12px 14px',
     }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: UXP.coral, letterSpacing: '.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
         {t('title')}
       </div>
-      <div style={{ fontSize: 12, color: '#78350f', marginBottom: 10, lineHeight: 1.55 }}>
+      <div style={{ fontSize: 12, color: UXP.coral, marginBottom: 10, lineHeight: 1.55 }}>
         {t('bodyPre')}{sourceLabel}{t.rich('bodyPost', { code: () => <code>fortnox_upload_id</code> })}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid #fde68a' }}>
-            <th style={{ textAlign: 'left' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.metric')}</th>
-            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.existing')}</th>
-            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.fortnox')}</th>
-            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: '#92400e', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.delta')}</th>
+          <tr style={{ borderBottom: `0.5px solid ${UXP.lavMid}` }}>
+            <th style={{ textAlign: 'left' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: UXP.coral, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.metric')}</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: UXP.coral, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.existing')}</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: UXP.coral, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.fortnox')}</th>
+            <th style={{ textAlign: 'right' as const, padding: '4px 8px', fontSize: 10, fontWeight: 700, color: UXP.coral, textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{t('cols.delta')}</th>
           </tr>
         </thead>
         <tbody>
@@ -982,10 +990,10 @@ function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) 
             const bothZero = r.existing === 0 && r.incoming === 0
             return (
               <tr key={r.label}>
-                <td style={{ padding: '4px 8px', color: '#374151' }}>{r.label}</td>
-                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: '#374151', fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.existing)}</td>
-                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: '#111', fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.incoming)}</td>
-                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: bothZero ? '#9ca3af' : (diff === 0 ? '#6b7280' : (diff > 0 ? '#15803d' : '#b91c1c')), fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>
+                <td style={{ padding: '4px 8px', color: UXP.ink2 }}>{r.label}</td>
+                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.existing)}</td>
+                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: UXP.ink1, fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(r.incoming)}</td>
+                <td style={{ padding: '4px 8px', textAlign: 'right' as const, color: bothZero ? UXP.ink4 : (diff === 0 ? UXP.ink3 : (diff > 0 ? UXP.greenDeep : UXP.roseText)), fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const }}>
                   {bothZero ? t('deltaMissing') : diff === 0 ? t('deltaZero') : `${diff > 0 ? '+' : '−'}${fmtKr(Math.abs(diff))}`}
                 </td>
               </tr>
@@ -993,7 +1001,7 @@ function ConflictPanel({ existing, existingSource, incoming, ack, onAck }: any) 
           })}
         </tbody>
       </table>
-      <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, cursor: 'pointer', fontSize: 12, color: '#78350f' }}>
+      <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, cursor: 'pointer', fontSize: 12, color: UXP.coral }}>
         <input type="checkbox" checked={ack} onChange={e => onAck(e.target.checked)} />
         {t('ack')}
       </label>
@@ -1017,14 +1025,14 @@ function RollupGrid({ rollup }: { rollup: any }) {
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
       {rows.map(r => (
         <div key={r.label} style={{
-          border: `0.5px solid ${UX.borderSoft}`, borderRadius: UX.r_sm,
-          padding: '6px 10px', background: UX.subtleBg,
+          border: `0.5px solid ${UXP.borderSoft}`, borderRadius: UXP.r_sm,
+          padding: '6px 10px', background: UXP.subtleBg,
           display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
         }}>
-          <span style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{r.label}</span>
+          <span style={{ fontSize: 10, color: UXP.ink4 }}>{r.label}</span>
           <span style={{
-            fontSize: UX.fsBody, fontWeight: UX.fwMedium,
-            color: r.tone === 'good' ? UX.greenInk : r.tone === 'bad' ? UX.redInk : UX.ink1,
+            fontSize: 12, fontWeight: 500,
+            color: r.tone === 'good' ? UXP.greenDeep : r.tone === 'bad' ? UXP.roseText : UXP.ink1,
             fontVariantNumeric: 'tabular-nums' as const,
           }}>{fmtKr(Number(r.value) || 0)}</span>
         </div>
@@ -1035,7 +1043,7 @@ function RollupGrid({ rollup }: { rollup: any }) {
 
 function LineItemsTable({ lines }: { lines: any[] }) {
   const t = useTranslations('overheads.upload.lines')
-  if (!lines.length) return <div style={{ fontSize: UX.fsBody, color: UX.ink4 }}>{t('empty')}</div>
+  if (!lines.length) return <div style={{ fontSize: 12, color: UXP.ink4 }}>{t('empty')}</div>
   const cols = [
     { key: 'label',    label: t('cols.label'),    align: 'left'  as const },
     { key: 'category', label: t('cols.category'), align: 'left'  as const },
@@ -1044,22 +1052,22 @@ function LineItemsTable({ lines }: { lines: any[] }) {
     { key: 'amount',   label: t('cols.amount'),   align: 'right' as const },
   ]
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsMicro }}>
+    <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 10 }}>
       <thead>
-        <tr style={{ borderBottom: `1px solid ${UX.borderSoft}` }}>
+        <tr style={{ borderBottom: `1px solid ${UXP.borderSoft}` }}>
           {cols.map(h => (
-            <th key={h.key} style={{ padding: '5px 8px', textAlign: h.align, fontSize: 9, color: UX.ink4, fontWeight: UX.fwMedium, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>{h.label}</th>
+            <th key={h.key} style={{ padding: '5px 8px', textAlign: h.align, fontSize: 9, color: UXP.ink4, fontWeight: 500, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>{h.label}</th>
           ))}
         </tr>
       </thead>
       <tbody>
         {lines.map((l, i) => (
-          <tr key={i} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-            <td style={{ padding: '5px 8px', color: UX.ink1 }}>{l.label_sv ?? l.label}</td>
-            <td style={{ padding: '5px 8px', color: UX.ink3 }}>{l.category}</td>
-            <td style={{ padding: '5px 8px', color: l.subcategory ? UX.ink2 : UX.ink5 }}>{l.subcategory ?? t('missing')}</td>
-            <td style={{ padding: '5px 8px', color: UX.ink4, fontVariantNumeric: 'tabular-nums' as const }}>{l.fortnox_account ?? t('missing')}</td>
-            <td style={{ padding: '5px 8px', textAlign: 'right' as const, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const, fontWeight: UX.fwMedium }}>{fmtKr(Number(l.amount) || 0)}</td>
+          <tr key={i} style={{ borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+            <td style={{ padding: '5px 8px', color: UXP.ink1 }}>{l.label_sv ?? l.label}</td>
+            <td style={{ padding: '5px 8px', color: UXP.ink3 }}>{l.category}</td>
+            <td style={{ padding: '5px 8px', color: l.subcategory ? UXP.ink2 : UXP.ink4 }}>{l.subcategory ?? t('missing')}</td>
+            <td style={{ padding: '5px 8px', color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const }}>{l.fortnox_account ?? t('missing')}</td>
+            <td style={{ padding: '5px 8px', textAlign: 'right' as const, color: UXP.ink1, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500 }}>{fmtKr(Number(l.amount) || 0)}</td>
           </tr>
         ))}
       </tbody>
