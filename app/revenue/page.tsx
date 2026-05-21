@@ -1,30 +1,40 @@
 'use client'
 // @ts-nocheck
-// app/revenue/page.tsx — Revenue, covers, food/bev split
-// Same W/M navigator pattern as dashboard
+// app/revenue/page.tsx — full rebuild on the new system
+//
+// Same treatment as the dashboard + staff rebuilds: every surface is
+// UXP + KpiCardUX / PairedBarChart / BreakdownTable. The legacy
+// PageHero / SupportingStats / SegmentedToggle / TopBar / inline
+// stacked-bar SVG are deleted; period nav lives in the AppShell
+// toolbar's date stepper.
+//
+// Data:
+//   /api/revenue-detail?from&to&business_id   — daily revenue + covers +
+//                                                food/bev + dine-in/takeaway
+//   /api/covers (POST)                         — manual cover-entry form
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
-import { useTranslations } from 'next-intl'
-import AppShell from '@/components/AppShell'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import dynamicImport from 'next/dynamic'
-// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
+
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-// Phase 3 — Insights migration. Period nav moved into the AppShell toolbar's
-// date stepper; the W/M toggle stays inline because the toolbar doesn't have
-// a view-mode pill yet.
+
+import AppShell from '@/components/AppShell'
 import KpiCardUX from '@/components/ux/KpiCard'
-const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
+
+// ── Period helpers ────────────────────────────────────────────────────
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 
-// ── Period helpers ────────────────────────────────────────────────────────────
 function getISOWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const day  = date.getUTCDay() || 7
@@ -32,70 +42,90 @@ function getISOWeek(d: Date): number {
   const y1   = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
   return Math.ceil(((date.getTime() - y1.getTime()) / 86400000 + 1) / 7)
 }
-
 function getWeekBounds(offset = 0) {
-  const today = new Date(), dow = today.getDay()
-  const mon = new Date(today); mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7); mon.setHours(0,0,0,0)
+  const today = new Date()
+  const dow   = today.getDay()
+  const mon   = new Date(today)
+  mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7)
+  mon.setHours(0, 0, 0, 0)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
-  const wk = getISOWeek(mon), mStr = localDate(mon), sStr = localDate(sun)
-  const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
-  const label = mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}`
-  return { from: mStr, to: sStr, weekNum: wk, label, mon }
+  const wk    = getISOWeek(mon)
+  const mMon  = MONTHS[mon.getMonth()]
+  const sMon  = MONTHS[sun.getMonth()]
+  const label = mMon === sMon
+    ? `${mon.getDate()}–${sun.getDate()} ${mMon}`
+    : `${mon.getDate()} ${mMon} – ${sun.getDate()} ${sMon}`
+  return { from: localDate(mon), to: localDate(sun), weekNum: wk, label, mon }
 }
-
 function getMonthBounds(offset = 0) {
-  const now = new Date(), d = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const now  = new Date()
+  const d    = new Date(now.getFullYear(), now.getMonth() + offset, 1)
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, firstDay: d, daysInMonth: last.getDate() }
+  return {
+    from:        localDate(d),
+    to:          localDate(last),
+    label:       `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+    firstDay:    d,
+    daysInMonth: last.getDate(),
+  }
 }
 
-function delta(cur: number, prev: number) {
-  if (!prev) return null
-  const p = ((cur - prev) / prev) * 100
-  return { pct: Math.round(p * 10) / 10, up: p >= 0 }
-}
-
-function KpiCard({ label, value, sub, deltaVal }: any) {
+// ── Page wrapper ──────────────────────────────────────────────────────
+export default function RevenuePage() {
   return (
-    <div style={{ background: 'white', borderRadius: 12, padding: '18px 20px', border: '1px solid #e5e7eb', flex: 1 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: '#111', marginBottom: 6, letterSpacing: '-0.5px' }}>{value}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 18 }}>
-        {deltaVal && <span style={{ fontSize: 12, fontWeight: 700, color: deltaVal.up ? '#16a34a' : '#dc2626' }}>{deltaVal.up ? '↑' : '↓'} {Math.abs(deltaVal.pct)}%</span>}
-        {sub && <span style={{ fontSize: 12, color: '#9ca3af' }}>{sub}</span>}
-      </div>
-    </div>
+    <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>}>
+      <RevenueInner />
+    </Suspense>
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-export default function RevenuePage() {
-  const t       = useTranslations('operations.revenue')
-  const tCrumbs = useTranslations('operations.crumbs')
+function RevenueInner() {
+  const searchParams = useSearchParams()
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
-  // Default to month — week view lands on the current week which early in
-  // the week has no synced data yet and shows blanks. Month matches the
-  // other detail pages and gives something useful on first load.
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
+  // Default to month — week view early in the week is empty.
+  const [viewMode,    setViewMode]    = useState<'week' | 'month'>('month')
   const [revData,     setRevData]     = useState<any>(null)
   const [prevRev,     setPrevRev]     = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
-  const [tooltip,     setTooltip]     = useState<any>(null)
+
+  // Log-covers form state
   const [showForm,    setShowForm]    = useState(false)
   const [form,        setForm]        = useState<any>({ date: localDate(new Date()), total: '', revenue: '' })
   const [saving,      setSaving]      = useState(false)
-  // Table display state — top-5 by default vs chronological (REVENUE-FIX § 5)
-  const [tableMode,   setTableMode]   = useState<'top' | 'chron'>('top')
-  const [tableExpanded, setTableExpanded] = useState(false)
 
+  // URL hydration
+  useEffect(() => {
+    const v   = searchParams?.get('view')   as 'week' | 'month' | null
+    const off = searchParams?.get('offset')
+    if (v === 'week' || v === 'month') setViewMode(v)
+    if (off != null && !Number.isNaN(Number(off))) {
+      if (v === 'month') setMonthOffset(Number(off))
+      else               setWeekOffset(Number(off))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function writeUrl(next: { view?: string; offset?: number }) {
+    const p = new URLSearchParams()
+    const v   = next.view   ?? viewMode
+    const off = next.offset ?? (v === 'month' ? monthOffset : weekOffset)
+    if (v !== 'month') p.set('view', v)
+    if (off !== 0)    p.set('offset', String(off))
+    const qs = p.toString()
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''))
+  }
+
+  // Business sync
   useEffect(() => {
     const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
-    sync(); window.addEventListener('storage', sync)
+    sync()
+    window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
   }, [])
 
+  // Data fetch
   useEffect(() => {
     if (!bizId) return
     setLoading(true)
@@ -113,18 +143,26 @@ export default function RevenuePage() {
     })
   }, [bizId, weekOffset, monthOffset, viewMode])
 
+  // Save covers (manual entry)
   async function saveCovers() {
     setSaving(true)
-    await fetch('/api/covers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...form, business_id: bizId }) })
-    setSaving(false); setShowForm(false)
+    await fetch('/api/covers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, business_id: bizId }),
+    })
+    setSaving(false)
+    setShowForm(false)
+    setForm({ date: localDate(new Date()), total: '', revenue: '' })
     // Trigger refetch
-    setWeekOffset(o => o); setMonthOffset(o => o)
+    if (viewMode === 'week') setWeekOffset(o => o)
+    else                     setMonthOffset(o => o)
   }
 
-  // ── Derived values ─────────────────────────────────────────────────────────
-  const now  = new Date()
-  const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
+  // Derived values
+  const now      = new Date()
+  const curr     = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+  const dayCount = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
 
   const rows    = revData?.rows ?? []
   const sum     = revData?.summary ?? {}
@@ -132,583 +170,574 @@ export default function RevenuePage() {
 
   const totalRev    = sum.total_revenue ?? 0
   const totalCovers = sum.total_covers ?? 0
-  const avgRpc      = sum.avg_rpc ?? 0
+  const avgRpc      = totalCovers > 0 ? totalRev / totalCovers : 0
   const totalTips   = sum.total_tips ?? 0
   const foodRev     = sum.total_food_revenue ?? 0
   const bevRev      = sum.total_bev_revenue ?? 0
   const dineIn      = sum.total_dine_in ?? 0
   const takeaway    = sum.total_takeaway ?? 0
-  const daysWithData = sum.days_with_data ?? 0
 
-  // Surface the single day when that's all we've got — the hero, the chart
-  // state, and the "only day" copy all key off it.
-  const onlyDayRow = (() => {
-    const nonClosed = rows.filter((r: any) => !r.is_closed && Number(r.revenue ?? 0) > 0)
-    return nonClosed.length === 1 ? nonClosed[0] : null
-  })()
-  const foodOnly = foodRev > 0 && bevRev === 0 && totalRev > 0
-  const hasChannelData = dineIn > 0 || takeaway > 0
+  const prevTotalRev    = prevSum.total_revenue ?? 0
+  const prevTotalCovers = prevSum.total_covers  ?? 0
+  const prevAvgRpc      = prevTotalCovers > 0 ? prevTotalRev / prevTotalCovers : 0
 
-  // Chart
-  const dayCount  = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
-  const chartDays = Array.from({ length: dayCount }, (_, i) => {
-    const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
-    d.setDate(d.getDate() + i)
-    const ds  = localDate(d)
-    const row = rows.find((r: any) => r.date === ds)
-    const isToday  = ds === localDate(now)
-    const isFuture = d > now
-    const dayIdx   = (d.getDay() + 6) % 7
-    return {
-      dateStr: ds, isToday, isFuture, dayIdx,
-      dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
-      revenue:  row?.revenue ?? 0,
-      covers:   row?.covers ?? 0,
-      tips:     row?.tip_revenue ?? 0,
-      food:     row?.food_revenue ?? 0,
-      bev:      row?.bev_revenue ?? 0,
-      takeaway: row?.takeaway_revenue ?? 0,
-      dine_in:  row?.dine_in_revenue ?? 0,
-    }
-  })
-  const maxDayRev = Math.max(...chartDays.map(d => d.revenue), 1)
+  // Best / worst day by revenue
+  const best = useMemo(() => {
+    const real = rows.filter((r: any) => Number(r.revenue ?? 0) > 0)
+    if (real.length === 0) return null
+    return [...real].sort((a, b) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))[0]
+  }, [rows])
+  const worst = useMemo(() => {
+    const real = rows.filter((r: any) => Number(r.revenue ?? 0) > 0)
+    if (real.length < 2) return null
+    return [...real].sort((a, b) => Number(a.revenue ?? 0) - Number(b.revenue ?? 0))[0]
+  }, [rows])
 
-  // Phase 3 — date-stepper wiring for the AppShell toolbar.
-  const stepperLabel = viewMode === 'week'
+  // Chart days
+  const chartDays = useMemo(() => {
+    return Array.from({ length: dayCount }, (_, i) => {
+      const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
+      d.setDate(d.getDate() + i)
+      const ds  = localDate(d)
+      const row = rows.find((r: any) => r.date === ds)
+      const dayIdx = (d.getDay() + 6) % 7
+      return {
+        date:    ds,
+        dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
+        revenue: row?.revenue ?? 0,
+        covers:  row?.covers ?? 0,
+        food:    row?.food_revenue ?? 0,
+        bev:     row?.bev_revenue  ?? 0,
+        dine_in: row?.dine_in_revenue  ?? 0,
+        takeaway: row?.takeaway_revenue ?? 0,
+        tips:    row?.tip_revenue ?? 0,
+        isToday:  ds === localDate(now),
+        isFuture: d > now,
+      }
+    })
+  }, [viewMode, weekOffset, monthOffset, rows, dayCount])
+
+  // Period stepper
+  const periodLabel = viewMode === 'week'
     ? `Week ${(curr as any).weekNum} · ${curr.label}`
     : curr.label
   function step(dir: -1 | 1) {
-    if (viewMode === 'week') setWeekOffset(o => o + dir)
-    else                     setMonthOffset(o => o + dir)
+    if (viewMode === 'week') {
+      const next = weekOffset + dir; setWeekOffset(next); writeUrl({ view: 'week', offset: next })
+    } else {
+      const next = monthOffset + dir; setMonthOffset(next); writeUrl({ view: 'month', offset: next })
+    }
   }
   const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
 
   return (
     <AppShell
-      dateLabel={stepperLabel}
+      dateLabel={periodLabel}
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div className="page-wrap">
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        {/* W/M toggle — kept inline because the toolbar doesn't yet have a
-            view-mode pill (Phase 7 or a follow-up will fold it in). */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <SegmentedToggle
-            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'week' | 'month')}
-          />
+        {/* Header row — W/M toggle + Log covers action */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+          <ViewModeToggle value={viewMode} onChange={v => {
+            setViewMode(v)
+            writeUrl({ view: v, offset: v === 'month' ? monthOffset : weekOffset })
+          }} />
+          <button
+            type="button"
+            onClick={() => setShowForm(s => !s)}
+            style={{
+              padding:      '5px 12px',
+              background:   showForm ? UXP.lavFill : UXP.cardBg,
+              color:        showForm ? UXP.lavText : UXP.ink1,
+              border:       `0.5px solid ${UXP.border}`,
+              borderRadius: 999,
+              fontSize:     11,
+              fontWeight:   500,
+              fontFamily:   'inherit',
+              cursor:       'pointer',
+            }}
+          >
+            + Log covers
+          </button>
         </div>
 
-        {/* Phase 3 KPI strip — Revenue (channels) + Per cover + Takeaway.
-            Reads the same /api/revenue-detail summary as the hero below.
-            Channels variant uses dine-in vs takeaway when both are present;
-            falls back to food vs beverage; else a single "Total" channel. */}
-        {!loading && sum && totalRev > 0 && (() => {
-          let channels: { label: string; value: number; share: number; color: string }[]
-          if (dineIn > 0 || takeaway > 0) {
-            channels = [
-              { label: 'Dine-in',  value: dineIn,   share: 0, color: UXP.lav     },
-              { label: 'Takeaway', value: takeaway, share: 0, color: UXP.lavMid  },
-            ].filter(c => c.value > 0)
-          } else if (foodRev > 0 || bevRev > 0) {
-            channels = [
-              { label: 'Food',     value: foodRev, share: 0, color: UXP.lav    },
-              { label: 'Beverage', value: bevRev,  share: 0, color: UXP.lavMid },
-            ].filter(c => c.value > 0)
-          } else {
-            channels = [{ label: 'Total', value: totalRev, share: 1, color: UXP.lav }]
-          }
-          const revDeltaPct = (prevSum.total_revenue ?? 0) > 0
-            ? ((totalRev - prevSum.total_revenue) / prevSum.total_revenue) * 100
-            : null
-          const revDelta = revDeltaPct != null
-            ? `${revDeltaPct >= 0 ? '+' : ''}${revDeltaPct.toFixed(1)}%`
-            : null
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        14,
-              }}
-            >
-              <KpiCardUX
-                title="Revenue"
-                value={fmtKr(totalRev)}
-                delta={revDelta}
-                deltaGood
-                variant="channels"
-                channels={channels}
-                microLabel={stepperLabel}
-              />
-              <KpiCardUX
-                title="Per cover"
-                value={avgRpc > 0 ? fmtKr(avgRpc) : '—'}
-                microLabel={totalCovers > 0 ? `${totalCovers} covers` : 'No cover data'}
-              />
-              <KpiCardUX
-                title="Takeaway share"
-                value={takeaway > 0 && totalRev > 0 ? fmtPct((takeaway / totalRev) * 100) : '—'}
-                microLabel="6% VAT bucket"
-              />
-            </div>
-          )
-        })()}
+        {showForm && (
+          <CoversForm
+            form={form}
+            saving={saving}
+            onChange={setForm}
+            onSave={saveCovers}
+            onCancel={() => setShowForm(false)}
+          />
+        )}
 
-        {/* PageHero */}
-        <PageHero
-          eyebrow={`${curr.label.toUpperCase()} · ${daysWithData} DAY${daysWithData === 1 ? '' : 'S'} OF DATA`}
-          headline={<RevenueHeadline totalRev={totalRev} prevRev={prevSum.total_revenue ?? 0} foodRev={foodRev} bevRev={bevRev} foodOnly={foodOnly} takeaway={takeaway} dineIn={dineIn} viewMode={viewMode} onlyDayRow={onlyDayRow} />}
-          context={buildRevenueContext({ totalRev, totalCovers, takeaway, dineIn, foodRev, bevRev, hasChannelData, foodOnly })}
-          right={
-            <SupportingStats
-              items={[
-                {
-                  label: 'Revenue',
-                  value: totalRev > 0 ? fmtKr(totalRev) : '—',
-                  delta: deltaLabel(totalRev, prevSum.total_revenue ?? 0),
-                  deltaTone: (prevSum.total_revenue ?? 0) > 0 ? (totalRev >= (prevSum.total_revenue ?? 0) ? 'good' : 'bad') : 'neutral',
-                },
-                {
-                  label: 'Per cover',
-                  value: avgRpc > 0 ? fmtKr(avgRpc) : '—',
-                  sub:   totalCovers > 0 ? `${totalCovers} covers` : 'No cover data',
-                },
-                {
-                  label: 'Takeaway',
-                  value: takeaway > 0 ? fmtKr(takeaway) : '—',
-                  sub:   takeaway > 0 && totalRev > 0 ? `${fmtPct((takeaway / totalRev) * 100)} · 6% VAT` : 'No takeaway data',
-                },
-              ]}
-            />
-          }
+        {/* ── KPI strip ───────────────────────────────────────────── */}
+        <KpiStrip
+          totalRev={totalRev}
+          prevTotalRev={prevTotalRev}
+          totalCovers={totalCovers}
+          prevTotalCovers={prevTotalCovers}
+          avgRpc={avgRpc}
+          prevAvgRpc={prevAvgRpc}
+          dineIn={dineIn}
+          takeaway={takeaway}
+          foodRev={foodRev}
+          bevRev={bevRev}
+          totalTips={totalTips}
+          periodLabel={periodLabel}
         />
 
-        {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
-        ) : (
-          <>
-
-            {/* ── Daily revenue chart ────────────────────────────────── */}
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div>
-                  {/* Simplified title — breadcrumb already carries
-                      "Operations · Revenue · {period}" so the card just
-                      names what the bars show (REVENUE-FIX § 10). */}
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Daily revenue</div>
-                  {daysWithData > 0 && daysWithData < Math.max(3, Math.floor(dayCount / 3)) && (
-                    <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>
-                      Only {daysWithData} day{daysWithData === 1 ? '' : 's'} of data in this {viewMode === 'week' ? 'week' : 'month'} — the rest will fill in as they sync.
-                    </div>
-                  )}
-                </div>
-                {(foodRev > 0 && bevRev > 0) && (
-                  <div style={{ display: 'flex', gap: 16 }}>
-                    {/* Legend order matches the bar stack bottom→top:
-                        Food (navy) at the base, Beverage (green) on top. */}
-                    {[{ color: '#1a1f2e', label: 'Food' }, { color: '#10b981', label: 'Beverage' }].map(l => (
-                      <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <div style={{ width: 10, height: 10, borderRadius: 2, background: l.color }} />
-                        <span style={{ fontSize: 11, color: '#9ca3af' }}>{l.label}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: viewMode === 'week' ? 8 : 2, height: 200, alignItems: 'flex-end', position: 'relative' }}>
-                {chartDays.map((day) => {
-                  const revH    = day.revenue > 0 ? Math.max((day.revenue / maxDayRev) * 180, 3) : 0
-                  // Stack order (bottom → top):  Food (navy) → Beverage (green).
-                  // `to top` starts at 0% (bottom), so foodPct% of navy first,
-                  // then the remainder in green. Matches the legend visually
-                  // and the intuition of "main product as the base of the bar".
-                  const foodPct = day.revenue > 0 && day.food > 0 ? (day.food / day.revenue) * 100 : 100
-                  const isHover = tooltip?.dateStr === day.dateStr
-
-                  // Sparse x-axis labels (REVENUE-FIX § 3). Week view labels
-                  // every day. Month view labels every 5th day + today.
-                  const showLabel = viewMode === 'week'
-                    ? true
-                    : (day.isToday || Number(day.dayName) === 1 || Number(day.dayName) % 5 === 0)
-
-                  return (
-                    <div key={day.dateStr} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: day.revenue > 0 ? 'pointer' : 'default' }}
-                      onMouseEnter={() => day.revenue > 0 && setTooltip(day)}
-                      onMouseLeave={() => setTooltip(null)}>
-                      <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        {day.revenue > 0 ? (
-                          <div style={{
-                            height: revH, borderRadius: '4px 4px 0 0',
-                            background: (day.bev > 0 && day.food > 0)
-                              ? `linear-gradient(to top, #1a1f2e 0%, #1a1f2e ${foodPct}%, #10b981 ${foodPct}%, #10b981 100%)`
-                              : '#1a1f2e',
-                            opacity: isHover ? 1 : day.isFuture ? 0.3 : 0.85,
-                            transition: 'opacity 0.15s',
-                            boxShadow: isHover ? '0 0 0 2px #6366f1' : 'none',
-                          }} />
-                        ) : (
-                          <div style={{ height: 2, background: day.isFuture ? '#f3f4f6' : '#e5e7eb', borderRadius: 2 }} />
-                        )}
-                      </div>
-                      <div style={{
-                        fontSize: viewMode === 'week' ? 11 : 9,
-                        fontWeight: day.isToday ? 700 : 400,
-                        color: day.isToday ? '#6366f1' : day.dayIdx >= 5 ? '#d1d5db' : '#9ca3af',
-                        minHeight: 14,
-                      }}>
-                        {showLabel
-                          ? (day.isToday ? `${day.dayName} ↑` : day.dayName)
-                          : ''}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {tooltip && (
-                <div style={{ marginTop: 12, padding: '12px 16px', background: '#1a1f2e', borderRadius: 10, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
-                    {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
-                  </div>
-                  {[
-                    { label: 'Revenue',  value: fmtKr(tooltip.revenue), color: 'white' },
-                    { label: 'Takeaway', value: tooltip.takeaway > 0 ? fmtKr(tooltip.takeaway) : '—', color: '#a5b4fc' },
-                    { label: 'Dine-in',  value: tooltip.dine_in  > 0 ? fmtKr(tooltip.dine_in)  : '—', color: '#e5e7eb' },
-                    { label: 'Covers',   value: tooltip.covers > 0 ? String(tooltip.covers) : '—', color: '#86efac' },
-                    { label: 'Tips',     value: tooltip.tips > 0 ? fmtKr(tooltip.tips) : '—', color: '#10b981' },
-                    { label: 'Food',     value: tooltip.food > 0 ? fmtKr(tooltip.food) : '—', color: '#f59e0b' },
-                    { label: 'Bev',      value: tooltip.bev > 0 ? fmtKr(tooltip.bev) : '—', color: '#06b6d4' },
-                  ].map(col => (
-                    <div key={col.label}>
-                      <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.value}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* ── Revenue splits + table ────────────────────────────────
-                The sidebar column only opens when at least one card inside
-                it will actually render. Channel Split needs dine-in OR
-                takeaway; Food vs Bev needs BOTH food and beverage; Tips
-                needs totalTips > 0. Anything less → single-column layout.
-                Stops an empty sidebar appearing on food-only / single-day
-                states (FIX-PROMPT § Phase 6). */}
-            <div style={{ display: 'grid', gridTemplateColumns: (hasChannelData || (foodRev > 0 && bevRev > 0) || totalTips > 0) ? '3fr 1fr' : '1fr', gap: 12, marginBottom: 16 }}>
-
-              {/* Daily breakdown — REVENUE-FIX §§ 4-8. Column set adjusts to
-                  the data: Covers / Per Cover / Tips only render when at
-                  least half the rows have that field. Source column is
-                  gone (moved to the row title tooltip). Top-5 by default
-                  with a chronological toggle. "+ Log covers" is now a
-                  clearly styled button. */}
-              {(() => {
-                const openRows  = rows.filter((r: any) => !r.is_closed)
-                const total     = openRows.length
-                const withCovers = openRows.filter((r: any) => Number(r.covers ?? 0) > 0).length
-                const withTips   = openRows.filter((r: any) => Number(r.tip_revenue ?? 0) > 0).length
-                const showCovers = total > 0 && withCovers / total >= 0.5
-                const showTips   = total > 0 && withTips   / total >= 0.5
-                const ranked = [...openRows].sort((a: any, b: any) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))
-                const sorted = tableMode === 'top'
-                  ? ranked
-                  : [...openRows].sort((a: any, b: any) => (a.date < b.date ? -1 : 1))
-                const visible = (tableMode === 'top' && !tableExpanded) ? sorted.slice(0, 5) : sorted
-                const hiddenCount = total - visible.length
-                // Header array is dynamic — hide empty columns (§ 7).
-                const headers: string[] = [
-                  'Date', 'Revenue', 'Takeaway', 'Dine-in',
-                  ...(showCovers ? ['Covers', 'Per Cover'] : []),
-                  ...(showTips   ? ['Tips']               : []),
-                ]
-                const colCount = headers.length
-                return (
-                  <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                    <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>Daily breakdown</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {/* Sort toggle — top vs chronological */}
-                        {total > 1 && (
-                          <SegmentedToggle
-                            options={[{ value: 'top', label: 'Top days' }, { value: 'chron', label: 'Chronological' }]}
-                            value={tableMode}
-                            onChange={(v) => { setTableMode(v as 'top' | 'chron'); setTableExpanded(false) }}
-                          />
-                        )}
-                        {/* +Log covers — visibly a button now (REVENUE-FIX § 8) */}
-                        <button
-                          onClick={() => setShowForm(!showForm)}
-                          style={{
-                            padding: '4px 10px',
-                            background: UX.indigoBg,
-                            color: UX.indigo,
-                            border: `0.5px solid ${UX.indigo}`,
-                            borderRadius: 6,
-                            fontSize: 11,
-                            fontWeight: UX.fwMedium,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          + Log covers
-                        </button>
-                      </div>
-                    </div>
-
-                    {showForm && (
-                      <div style={{ padding: '14px 20px', borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }}>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                          <div><label style={{ fontSize: 10, color: '#9ca3af', display: 'block', marginBottom: 3 }}>Date</label>
-                            <input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12 }} /></div>
-                          <div><label style={{ fontSize: 10, color: '#9ca3af', display: 'block', marginBottom: 3 }}>Covers</label>
-                            <input type="number" value={form.total} onChange={e => setForm((f: any) => ({ ...f, total: e.target.value }))} placeholder="0" style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, width: 80 }} /></div>
-                          <div><label style={{ fontSize: 10, color: '#9ca3af', display: 'block', marginBottom: 3 }}>Revenue (kr)</label>
-                            <input type="number" value={form.revenue} onChange={e => setForm((f: any) => ({ ...f, revenue: e.target.value }))} placeholder="0" style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, width: 100 }} /></div>
-                          <button onClick={saveCovers} disabled={saving} style={{ padding: '6px 14px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{saving ? '...' : 'Save'}</button>
-                          <button onClick={() => setShowForm(false)} style={{ padding: '6px 10px', background: '#e5e7eb', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#374151' }}>Cancel</button>
-                        </div>
-                      </div>
-                    )}
-
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ background: '#f9fafb' }}>
-                          {headers.map(h => (
-                            <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Date' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {visible.length === 0 ? (
-                          <tr><td colSpan={colCount} style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>No revenue data for this period</td></tr>
-                        ) : visible.map((r: any) => {
-                          const provenance = r.providers?.length ? r.providers.join(', ') : 'manual'
-                          const revPct  = totalRev > 0 && r.revenue > 0 ? Math.round((r.revenue / totalRev) * 100) : 0
-                          return (
-                            <tr key={r.date} style={{ borderBottom: '1px solid #f9fafb' }} title={`Source: ${provenance}`}>
-                              <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 500, color: '#111' }}>
-                                {new Date(r.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                              </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, fontWeight: 600, color: '#111' }}>
-                                {r.revenue > 0 ? (<>
-                                  {fmtKr(r.revenue)}
-                                  {revPct > 0 && total > 1 && <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400, marginLeft: 5 }}>({revPct}%)</span>}
-                                </>) : '—'}
-                              </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: r.takeaway_revenue > 0 ? '#4338ca' : '#d1d5db' }}>
-                                {r.takeaway_revenue > 0 ? fmtKr(r.takeaway_revenue) : '—'}
-                              </td>
-                              <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: r.dine_in_revenue > 0 ? '#374151' : '#d1d5db' }}>
-                                {r.dine_in_revenue > 0 ? fmtKr(r.dine_in_revenue) : '—'}
-                              </td>
-                              {showCovers && (<>
-                                <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#374151' }}>{r.covers > 0 ? r.covers : '—'}</td>
-                                <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#6b7280' }}>{r.revenue_per_cover > 0 ? fmtKr(r.revenue_per_cover) : '—'}</td>
-                              </>)}
-                              {showTips && (
-                                <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 12, color: r.tip_revenue > 0 ? '#10b981' : '#d1d5db' }}>{r.tip_revenue > 0 ? fmtKr(r.tip_revenue) : '—'}</td>
-                              )}
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-
-                    {/* Expand link — only when top-5 mode hid rows. */}
-                    {tableMode === 'top' && !tableExpanded && hiddenCount > 0 && (
-                      <div style={{ padding: '10px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'center' as const }}>
-                        <button
-                          onClick={() => setTableExpanded(true)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: UX.indigo, fontSize: UX.fsLabel, fontWeight: UX.fwMedium, padding: 0 }}
-                        >
-                          View full breakdown ({total} days) →
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* Breakdown sidebar — same gate as the grid column above. */}
-              {(hasChannelData || (foodRev > 0 && bevRev > 0) || totalTips > 0) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-                  {/* Dine-in vs takeaway — tax-treatment matters: Swedish
-                      takeaway food sits at 6% VAT vs dine-in at 12%, so the
-                      channel mix directly affects how much VAT we owe. */}
-                  {(dineIn > 0 || takeaway > 0) && (
-                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af' }}>Channel Split</div>
-                        <div style={{ fontSize: 10, color: '#9ca3af' }}>VAT-weighted</div>
-                      </div>
-                      <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', marginBottom: 10, background: '#f3f4f6' }}>
-                        {totalRev > 0 && (<>
-                          {dineIn > 0 && <div style={{ width: `${(dineIn / totalRev) * 100}%`, background: '#1a1f2e' }} />}
-                          {takeaway > 0 && <div style={{ width: `${(takeaway / totalRev) * 100}%`, background: '#6366f1' }} />}
-                        </>)}
-                      </div>
-                      {[
-                        { label: 'Dine-in',  value: dineIn,   color: '#1a1f2e', vat: '12%' },
-                        { label: 'Takeaway', value: takeaway, color: '#6366f1', vat: '6%'  },
-                      ].map(r => (
-                        <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '5px 0', fontSize: 12, borderBottom: '1px solid #f3f4f6' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <div style={{ width: 8, height: 8, borderRadius: 2, background: r.color }} />
-                            <span style={{ color: '#6b7280' }}>{r.label}</span>
-                            <span style={{ fontSize: 10, color: '#9ca3af', padding: '1px 5px', background: '#f9fafb', borderRadius: 3 }}>{r.vat} VAT</span>
-                          </div>
-                          <span style={{ fontWeight: 600, color: '#111' }}>
-                            {r.value > 0 ? fmtKr(r.value) : '—'}{' '}
-                            {r.value > 0 && totalRev > 0 && <span style={{ fontSize: 10, color: '#9ca3af', fontWeight: 400 }}>({Math.round((r.value / totalRev) * 100)}%)</span>}
-                          </span>
-                        </div>
-                      ))}
-                      {dineIn === 0 && takeaway > 0 && (
-                        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>
-                          No dine-in flag from POS — all revenue here is tagged takeaway.
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Food vs beverage — hide entirely when it'd just show
-                      "Food 100% · Beverage 0%". That's already called out
-                      in the hero (foodOnly flag), so the card adds noise
-                      rather than signal. FIX-PROMPT § Phase 6. */}
-                  {(foodRev > 0 && bevRev > 0) && (
-                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>Food vs Beverage</div>
-                      <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', marginBottom: 10, background: '#f3f4f6' }}>
-                        {totalRev > 0 && (<>
-                          {foodRev > 0 && <div style={{ width: `${(foodRev / totalRev) * 100}%`, background: '#f59e0b' }} />}
-                          {bevRev > 0 && <div style={{ width: `${(bevRev / totalRev) * 100}%`, background: '#10b981' }} />}
-                        </>)}
-                      </div>
-                      {[
-                        { label: 'Food',     value: fmtKr(foodRev), pct: totalRev > 0 ? Math.round((foodRev / totalRev) * 100) : 0, color: '#f59e0b' },
-                        { label: 'Beverage', value: fmtKr(bevRev),  pct: totalRev > 0 ? Math.round((bevRev / totalRev) * 100) : 0, color: '#10b981' },
-                      ].map(r => (
-                        <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f3f4f6' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <div style={{ width: 8, height: 8, borderRadius: 2, background: r.color }} />
-                            <span style={{ color: '#6b7280' }}>{r.label}</span>
-                          </div>
-                          <span style={{ fontWeight: 600, color: '#111' }}>{r.value} <span style={{ fontSize: 10, color: '#9ca3af' }}>({r.pct}%)</span></span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Tips summary */}
-                  {totalTips > 0 && (
-                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>Tips</div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981', marginBottom: 4 }}>{fmtKr(totalTips)}</div>
-                      <div style={{ fontSize: 12, color: '#9ca3af' }}>{fmtPct((totalTips / totalRev) * 100)} of revenue</div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
+        {/* ── Best / worst day ───────────────────────────────────── */}
+        {best && (
+          <BestWorstStrip best={best} worst={worst} />
         )}
+
+        {/* ── Revenue chart ──────────────────────────────────────── */}
+        <ChartCard days={chartDays} loading={loading} />
+
+        {/* ── Daily breakdown ────────────────────────────────────── */}
+        <DailyBreakdown
+          rows={rows}
+          totalRev={totalRev}
+          totalCovers={totalCovers}
+          totalTips={totalTips}
+          totalDineIn={dineIn}
+          totalTakeaway={takeaway}
+          totalFood={foodRev}
+          totalBev={bevRev}
+        />
       </div>
 
-      <AskAI page="revenue" context={[
-        `Period: ${curr.from} to ${curr.to}`,
-        totalRev > 0 ? `Revenue: ${fmtKr(totalRev)}, Covers: ${totalCovers}, Avg/cover: ${fmtKr(avgRpc)}` : 'No revenue data',
-        takeaway > 0 && totalRev > 0 ? `Takeaway: ${fmtKr(takeaway)} (${fmtPct((takeaway / totalRev) * 100)} of revenue, 6% VAT), Dine-in: ${fmtKr(dineIn)} (12% VAT)` : '',
-        totalTips > 0 ? `Tips: ${fmtKr(totalTips)}` : '',
-        foodRev > 0 ? `Food: ${fmtKr(foodRev)}, Beverage: ${fmtKr(bevRev)}` : '',
-      ].filter(Boolean).join('\n')} />
+      <AskAI
+        page="revenue"
+        context={revData ? [
+          `Period: ${periodLabel}`,
+          `Revenue ${fmtKr(totalRev)}, covers ${totalCovers}, per cover ${fmtKr(Math.round(avgRpc))}.`,
+          (dineIn > 0 || takeaway > 0) ? `Dine-in ${fmtKr(dineIn)}, takeaway ${fmtKr(takeaway)}.` : null,
+          totalTips > 0 ? `Tips ${fmtKr(totalTips)}.` : null,
+        ].filter(Boolean).join('\n') : 'No revenue data'}
+      />
     </AppShell>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Revenue hero headline — prioritises single-day / food-only honesty over a
-// generic delta template. Per FIX-PROMPT § Phase 6 the hero must reflect
-// what's actually in the data, not inject a vague "mix steady" platitude.
-// ─────────────────────────────────────────────────────────────────────────────
-function RevenueHeadline({ totalRev, prevRev, foodRev, bevRev, takeaway, dineIn, foodOnly, viewMode, onlyDayRow }: any) {
-  if (totalRev <= 0) {
-    return <>Waiting on the sync — no revenue data for this {viewMode === 'week' ? 'week' : 'month'} yet.</>
+// ════════════════════════════════════════════════════════════════════
+// Sub-components
+// ════════════════════════════════════════════════════════════════════
+
+function KpiStrip({
+  totalRev, prevTotalRev, totalCovers, prevTotalCovers, avgRpc, prevAvgRpc,
+  dineIn, takeaway, foodRev, bevRev, totalTips, periodLabel,
+}: any) {
+  let channels: { label: string; value: number; share: number; color: string }[]
+  if (dineIn > 0 || takeaway > 0) {
+    channels = [
+      { label: 'Dine-in',  value: dineIn,   share: 0, color: UXP.lav    },
+      { label: 'Takeaway', value: takeaway, share: 0, color: UXP.lavMid },
+    ].filter(c => c.value > 0)
+  } else if (foodRev > 0 || bevRev > 0) {
+    channels = [
+      { label: 'Food',     value: foodRev, share: 0, color: UXP.lav    },
+      { label: 'Beverage', value: bevRev,  share: 0, color: UXP.lavMid },
+    ].filter(c => c.value > 0)
+  } else {
+    channels = [{ label: 'Total', value: totalRev || 1, share: 1, color: UXP.lav }]
   }
-  // Single day with data + food-only is the most specific state the page
-  // typically sees early in a month. Name it explicitly — Paul's exact
-  // copy from FIX-PROMPT.
-  if (onlyDayRow) {
-    const d = new Date(onlyDayRow.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-    const kr = Math.round(Number(onlyDayRow.revenue ?? 0)).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-    if (foodOnly) {
-      return <>Only <span style={{ fontWeight: UX.fwMedium }}>{d}</span> has data — <span style={{ fontWeight: UX.fwMedium }}>{kr}</span>, <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>food-only</span>.</>
-    }
-    return <>Only <span style={{ fontWeight: UX.fwMedium }}>{d}</span> has data — <span style={{ fontWeight: UX.fwMedium }}>{kr}</span>.</>
-  }
-  if (prevRev > 0) {
-    const pct = ((totalRev - prevRev) / prevRev) * 100
-    const delta = (pct >= 0 ? '+' : '−') + (Math.round(Math.abs(pct) * 10) / 10).toFixed(1) + '%'
-    const tone = pct >= 0 ? UX.greenInk : UX.redInk
-    // Describe mix from the actual data, not a template.  Channel shares
-    // are computed against TOTAL revenue so the hero matches the side
-    // card (REVENUE-FIX § 9).  Using takeaway/(takeaway+dineIn) instead
-    // was giving 96.5% dine-in on data the side card already labelled
-    // 37% — two stories from the same bar.
-    let mix: string
-    if (foodOnly) mix = 'food-only'
-    else if (foodRev > bevRev * 2) mix = 'food-heavy'
-    else if (bevRev > foodRev * 2) mix = 'beverage-heavy'
-    else if (takeaway > 0 && dineIn > 0) {
-      const dinePct = Math.round((dineIn   / totalRev) * 100)
-      const takePct = Math.round((takeaway / totalRev) * 100)
-      mix = `dine-in ${dinePct}% / takeaway ${takePct}%`
-    }
-    else if (takeaway > 0) mix = 'takeaway-only'
-    else mix = 'dine-in'
-    return (
-      <>
-        Revenue <span style={{ color: tone, fontWeight: UX.fwMedium }}>{delta}</span> vs last {viewMode === 'week' ? 'week' : 'month'} — {mix}.
-      </>
-    )
-  }
+
+  const revDelta = prevTotalRev > 0
+    ? `${totalRev - prevTotalRev >= 0 ? '+' : ''}${(((totalRev - prevTotalRev) / prevTotalRev) * 100).toFixed(1)}%`
+    : null
+  const coversDelta = prevTotalCovers > 0
+    ? `${totalCovers - prevTotalCovers >= 0 ? '+' : ''}${(((totalCovers - prevTotalCovers) / prevTotalCovers) * 100).toFixed(1)}%`
+    : null
+  const rpcDelta = prevAvgRpc > 0
+    ? `${avgRpc - prevAvgRpc >= 0 ? '+' : ''}${(((avgRpc - prevAvgRpc) / prevAvgRpc) * 100).toFixed(1)}%`
+    : null
+
+  const takeawayPct = (dineIn + takeaway) > 0 ? (takeaway / (dineIn + takeaway)) * 100 : null
+
   return (
-    <>
-      Revenue <span style={{ fontWeight: UX.fwMedium }}>{Math.round(totalRev).toLocaleString('en-GB').replace(/,/g, ' ')} kr</span> this {viewMode === 'week' ? 'week' : 'month'}.
-    </>
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      <KpiCardUX
+        title="Revenue"
+        value={totalRev > 0 ? fmtKr(totalRev) : '—'}
+        delta={revDelta}
+        deltaGood
+        variant="channels"
+        channels={channels}
+        microLabel={periodLabel}
+      />
+      <KpiCardUX
+        title="Covers"
+        value={totalCovers > 0 ? totalCovers.toLocaleString('sv-SE') : '—'}
+        delta={coversDelta}
+        deltaGood
+        microLabel={totalCovers > 0 ? `${totalCovers} guests served` : 'No cover data'}
+      />
+      <KpiCardUX
+        title="Per cover"
+        value={avgRpc > 0 ? fmtKr(Math.round(avgRpc)) : '—'}
+        delta={rpcDelta}
+        deltaGood
+        microLabel={prevAvgRpc > 0 ? `was ${fmtKr(Math.round(prevAvgRpc))}` : ''}
+      />
+      <KpiCardUX
+        title={takeawayPct != null ? 'Takeaway share' : 'Tips'}
+        value={takeawayPct != null
+          ? fmtPct(takeawayPct)
+          : (totalTips > 0 ? fmtKr(totalTips) : '—')}
+        microLabel={takeawayPct != null
+          ? '6% VAT bucket'
+          : (totalTips > 0 ? `${totalRev > 0 ? ((totalTips / totalRev) * 100).toFixed(1) : 0}% of revenue` : 'No tips logged')}
+      />
+    </div>
   )
 }
 
-function buildRevenueContext({ totalRev, totalCovers, takeaway, dineIn, foodRev, bevRev, hasChannelData, foodOnly }: any): string | undefined {
-  const parts: string[] = []
-  // Channel split — surface the same 63/37 that the Channel Split card
-  // shows, so the hero and the card don't contradict each other.
-  if (hasChannelData && totalRev > 0) {
-    const dinePct = Math.round((dineIn / totalRev) * 100)
-    const takePct = Math.round((takeaway / totalRev) * 100)
-    if (dineIn > 0 && takeaway > 0)      parts.push(`dine-in ${dinePct}% / takeaway ${takePct}%`)
-    else if (takeaway > 0)               parts.push(`takeaway only (6% VAT)`)
-    else if (dineIn > 0)                 parts.push(`dine-in only`)
+// ── Best / worst day ─────────────────────────────────────────────────
+function BestWorstStrip({ best, worst }: { best: any; worst: any }) {
+  const cards: Array<{ kind: 'best' | 'worst'; row: any }> = [{ kind: 'best', row: best }]
+  if (worst && worst !== best) cards.push({ kind: 'worst', row: worst })
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))`,
+      gap:                 12,
+    }}>
+      {cards.map(({ kind, row }) => {
+        const palette = kind === 'best'
+          ? { bg: UXP.greenFill, fg: UXP.greenDeep, accent: UXP.green }
+          : { bg: UXP.roseFill,  fg: UXP.roseText,  accent: UXP.rose  }
+        const dateLabel = new Date(row.date).toLocaleDateString('en-GB', {
+          weekday: 'short', day: 'numeric', month: 'short',
+        })
+        const rpc = (row.covers ?? 0) > 0 ? Number(row.revenue) / Number(row.covers) : null
+        return (
+          <div key={kind} style={{
+            background:   UXP.cardBg,
+            border:       `0.5px solid ${UXP.border}`,
+            borderRadius: UXP.r_lg,
+            padding:      '14px 16px',
+            display:      'flex',
+            alignItems:   'center',
+            gap:          12,
+          }}>
+            <span style={{
+              padding:       '4px 10px',
+              background:    palette.bg,
+              color:         palette.fg,
+              borderRadius:  999,
+              fontSize:      9,
+              fontWeight:    600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase' as const,
+            }}>
+              {kind === 'best' ? 'Top day' : 'Quietest'}
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500 }}>{dateLabel}</div>
+              <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1 }}>
+                {row.covers > 0 ? `${row.covers} covers` : '—'}
+                {rpc != null && <span> · {fmtKr(Math.round(rpc))} per cover</span>}
+              </div>
+            </div>
+            <span style={{
+              fontFamily:         'var(--font-display)',
+              fontSize:           22,
+              fontWeight:         500,
+              color:              palette.accent,
+              letterSpacing:      '-0.02em',
+              fontVariantNumeric: 'tabular-nums' as const,
+            }}>
+              {fmtKr(Number(row.revenue ?? 0))}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Chart card ───────────────────────────────────────────────────────
+function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
+  return (
+    <Card title="Daily revenue" subtitle="Bars · covers as a line overlay">
+      {loading ? (
+        <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
+      ) : (
+        <PairedBarChart
+          groups={days.map(d => d.dayName)}
+          series={[
+            { label: 'Revenue', data: days.map(d => Number(d.revenue ?? 0)), color: UXP.lav },
+          ]}
+          lines={[{
+            label:  'Covers',
+            data:   days.map(d => d.covers > 0 ? Number(d.covers) : null),
+            color:  UXP.coral,
+            dashed: false,
+          }]}
+          width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 1200) : 1100}
+          height={260}
+        />
+      )}
+    </Card>
+  )
+}
+
+// ── Daily breakdown ──────────────────────────────────────────────────
+function DailyBreakdown({
+  rows, totalRev, totalCovers, totalTips, totalDineIn, totalTakeaway, totalFood, totalBev,
+}: any) {
+  if (!rows || rows.length === 0) {
+    return (
+      <Card title="Daily breakdown" subtitle="No revenue rows in this period">
+        <Empty>No data logged yet.</Empty>
+      </Card>
+    )
   }
-  if (totalCovers > 0) parts.push(`${totalCovers} covers`)
-  if (foodOnly)        parts.push(`beverage shows 0 kr — check POS sync if this seems wrong`)
-  if (!parts.length) return undefined
-  return parts.join(' · ')
+
+  const sorted = [...rows].sort((a: any, b: any) => a.date.localeCompare(b.date))
+  const showChannels = totalDineIn > 0 || totalTakeaway > 0
+  const showFoodBev  = !showChannels && (totalFood > 0 || totalBev > 0)
+  const showTips     = totalTips > 0
+
+  const columns: any[] = [
+    { key: 'date', header: 'Date', align: 'left', render: (r: any) => (
+      <span>
+        <span style={{ color: UXP.ink1, fontWeight: 500 }}>
+          {new Date(r.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+        </span>
+        {r.is_closed && (
+          <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, marginTop: 1 }}>Closed</span>
+        )}
+      </span>
+    ) },
+    { key: 'revenue', header: 'Revenue', align: 'right', render: (r: any) => fmtKr(Number(r.revenue ?? 0)) },
+    { key: 'covers',  header: 'Covers',  align: 'right', render: (r: any) => (r.covers ?? 0) > 0 ? r.covers : <span style={{ color: UXP.ink4 }}>—</span> },
+    { key: 'rpc',     header: 'Per cover', align: 'right', render: (r: any) => {
+      const rev = Number(r.revenue ?? 0); const cov = Number(r.covers ?? 0)
+      return cov > 0 ? fmtKr(Math.round(rev / cov)) : <span style={{ color: UXP.ink4 }}>—</span>
+    } },
+  ]
+  if (showChannels) {
+    columns.push(
+      { key: 'dine',    header: 'Dine-in',  align: 'right', render: (r: any) =>
+        (r.dine_in_revenue ?? 0) > 0 ? fmtKr(r.dine_in_revenue) : <span style={{ color: UXP.ink4 }}>—</span> },
+      { key: 'takeaway', header: 'Takeaway', align: 'right', render: (r: any) =>
+        (r.takeaway_revenue ?? 0) > 0 ? fmtKr(r.takeaway_revenue) : <span style={{ color: UXP.ink4 }}>—</span> },
+    )
+  } else if (showFoodBev) {
+    columns.push(
+      { key: 'food', header: 'Food',     align: 'right', render: (r: any) =>
+        (r.food_revenue ?? 0) > 0 ? fmtKr(r.food_revenue) : <span style={{ color: UXP.ink4 }}>—</span> },
+      { key: 'bev',  header: 'Beverage', align: 'right', render: (r: any) =>
+        (r.bev_revenue ?? 0)  > 0 ? fmtKr(r.bev_revenue)  : <span style={{ color: UXP.ink4 }}>—</span> },
+    )
+  }
+  if (showTips) {
+    columns.push({ key: 'tips', header: 'Tips', align: 'right', render: (r: any) =>
+      (r.tip_revenue ?? 0) > 0 ? fmtKr(r.tip_revenue) : <span style={{ color: UXP.ink4 }}>—</span> })
+  }
+  columns.push({ key: 'share', header: '% of period', align: 'right', render: (r: any) => {
+    const rev = Number(r.revenue ?? 0)
+    const pct = totalRev > 0 ? (rev / totalRev) * 100 : 0
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+        <span style={{
+          display: 'inline-block', width: 60, height: 3, background: UXP.lavFill,
+          borderRadius: 2, overflow: 'hidden',
+        }}>
+          <span style={{ display: 'block', height: '100%', width: `${Math.min(100, pct)}%`, background: UXP.lav }} />
+        </span>
+        <span style={{ fontSize: 10, color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const, minWidth: 30, textAlign: 'right' as const }}>
+          {pct.toFixed(1)}%
+        </span>
+      </span>
+    )
+  } })
+
+  const footer: any = {
+    revenue: fmtKr(totalRev),
+    covers:  totalCovers > 0 ? totalCovers.toLocaleString('sv-SE') : '—',
+    rpc:     totalCovers > 0 ? fmtKr(Math.round(totalRev / totalCovers)) : '—',
+    share:   '100%',
+  }
+  if (showChannels) {
+    footer.dine     = fmtKr(totalDineIn)
+    footer.takeaway = fmtKr(totalTakeaway)
+  } else if (showFoodBev) {
+    footer.food = fmtKr(totalFood)
+    footer.bev  = fmtKr(totalBev)
+  }
+  if (showTips) footer.tips = fmtKr(totalTips)
+
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Daily breakdown</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {sorted.length} {sorted.length === 1 ? 'day' : 'days'} with data
+        </div>
+      </div>
+      <BreakdownTable
+        columns={columns}
+        sections={[{ rows: sorted }]}
+        footer={{ label: 'Total', cells: footer }}
+        rowKey={(row: any) => row.date}
+      />
+    </div>
+  )
 }
 
-function deltaLabel(cur: number, prev: number): string | undefined {
-  if (!prev) return undefined
-  const pct = ((cur - prev) / prev) * 100
-  return `${pct >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(pct * 10) / 10).toFixed(1)}%`
+// ── Manual covers form ───────────────────────────────────────────────
+function CoversForm({ form, saving, onChange, onSave, onCancel }: any) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '12px 16px',
+    }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' as const }}>
+        <FormField label="Date">
+          <input type="date"
+                 value={form.date}
+                 onChange={e => onChange({ ...form, date: e.target.value })}
+                 style={formInput} />
+        </FormField>
+        <FormField label="Covers">
+          <input type="number"
+                 value={form.total}
+                 onChange={e => onChange({ ...form, total: e.target.value })}
+                 placeholder="0"
+                 style={{ ...formInput, width: 90 }} />
+        </FormField>
+        <FormField label="Revenue (kr)">
+          <input type="number"
+                 value={form.revenue}
+                 onChange={e => onChange({ ...form, revenue: e.target.value })}
+                 placeholder="0"
+                 style={{ ...formInput, width: 120 }} />
+        </FormField>
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving}
+          style={{
+            padding:      '6px 14px',
+            background:   UXP.lavDeep,
+            color:        '#fff',
+            border:       'none',
+            borderRadius: 999,
+            fontSize:     11,
+            fontWeight:   500,
+            cursor:       saving ? 'not-allowed' : 'pointer',
+            opacity:      saving ? 0.6 : 1,
+            fontFamily:   'inherit',
+          }}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          style={{
+            padding:      '6px 12px',
+            background:   'transparent',
+            color:        UXP.ink3,
+            border:       'none',
+            borderRadius: 999,
+            fontSize:     11,
+            cursor:       'pointer',
+            fontFamily:   'inherit',
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
 }
 
-const navBtn = {
-  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
-  background: UX.cardBg, cursor: 'pointer', fontSize: 14,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', color: UX.ink2,
-} as const
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column' as const, gap: 3 }}>
+      <span style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const formInput: React.CSSProperties = {
+  padding:      '6px 10px',
+  background:   UXP.cardBg,
+  color:        UXP.ink1,
+  border:       `0.5px solid ${UXP.border}`,
+  borderRadius: 7,
+  fontSize:     11,
+  fontFamily:   'inherit',
+}
+
+// ── Shared primitives ────────────────────────────────────────────────
+function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+    }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>{children}</div>
+}
+
+function ViewModeToggle({ value, onChange }: { value: 'week' | 'month'; onChange: (v: 'week' | 'month') => void }) {
+  return (
+    <div style={{
+      display:      'inline-flex',
+      gap:          2,
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: 7,
+      padding:      2,
+    }}>
+      {(['week', 'month'] as const).map(v => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          style={{
+            padding:       '4px 12px',
+            background:    value === v ? UXP.lavFill : 'transparent',
+            color:         value === v ? UXP.lavText : UXP.ink3,
+            border:        'none',
+            borderRadius:  5,
+            fontSize:      10,
+            fontWeight:    500,
+            fontFamily:    'inherit',
+            cursor:        'pointer',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase' as const,
+          }}
+        >
+          {v === 'week' ? 'W' : 'M'}
+        </button>
+      ))}
+    </div>
+  )
+}
