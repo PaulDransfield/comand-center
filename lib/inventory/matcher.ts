@@ -24,7 +24,8 @@
 // unique constraints and create duplicate products.
 
 import { normaliseDescription } from './normalise'
-import { categoryForBasAccount, isInventoryAccount } from './categories'
+import { categoryForBasAccount, type InventoryCategory } from './categories'
+import { categoryForSupplier, type SupplierClassification } from './suppliers'
 
 const SAME_SUPPLIER_THRESHOLD  = 0.80
 const CROSS_SUPPLIER_THRESHOLD = 0.85
@@ -69,13 +70,32 @@ export async function matchInvoiceLine(
   db: any,                              // supabase service client
   line: InvoiceLineForMatching,
 ): Promise<MatchOutcome> {
-  // Gate 0 — is this an inventory account at all?
-  if (!isInventoryAccount(line.account_number)) {
+  // Gate 0 — does this line look like inventory at all?
+  //
+  // Two passes, first hit wins:
+  //   (a) BAS account routing (lib/inventory/categories.ts). Most
+  //       reliable when present — Fortnox posts AccountNumber once an
+  //       invoice is bokförd.
+  //   (b) Supplier-name routing (lib/inventory/suppliers.ts). Fallback
+  //       for businesses whose Fortnox setup doesn't post the GL
+  //       account at supplier-invoice receipt time (Chicce's case:
+  //       100% of 3218 rows had account_number = NULL on 2026-05-21).
+  //
+  // categoryForSupplier can also explicitly return 'not_inventory' for
+  // known non-inventory suppliers (Fortnox SaaS, E.ON, accountants) —
+  // those skip the review queue entirely.
+  const basCategory = categoryForBasAccount(line.account_number)
+  const resolved: SupplierClassification | null =
+    basCategory ?? categoryForSupplier(line.supplier_name_snapshot)
+
+  if (!resolved || resolved === 'not_inventory' || resolved === 'other') {
     return {
       status: 'not_inventory', product_id: null, alias_id: null,
       method: null, confidence: null, candidates: [],
     }
   }
+  // From here on `resolved` is a real InventoryCategory.
+  const _resolvedInventory: InventoryCategory = resolved
 
   const normalised = normaliseDescription(line.raw_description)
   if (!normalised) {
