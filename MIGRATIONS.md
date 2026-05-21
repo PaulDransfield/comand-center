@@ -6,6 +6,18 @@
 
 ## Pending — apply when ready
 
+### M075 — Inventory catalogue (Phase A) ⏳ pending application
+**File:** `sql/M075-INVENTORY-CATALOGUE.sql`
+**Purpose:** Phase A of INVENTORY-CATALOGUE-PLAN.md. Adds three tables (`products`, `product_aliases`, `supplier_invoice_lines`) + pg_trgm extension + RLS policies + two helper RPCs (`inventory_trigram_search`, `inventory_touch_alias`). The two unique indexes on `product_aliases` (`(business_id, supplier_fortnox_number, article_number)` partial + `(business_id, supplier_fortnox_number, normalised_description, COALESCE(unit, ''))` partial) are the load-bearing dedup constraints — one product = one row, structurally.
+**Deviation from plan:** no local `suppliers` cache table; Fortnox `SupplierNumber` stored as TEXT directly on each row, with denormalised `supplier_name_snapshot` for display.
+**Companion code:**
+- `lib/inventory/normalise.ts` — bedrock normalisation function (lowercase, åäö→aao, strip punctuation, collapse unit-suffix spacing)
+- `lib/inventory/categories.ts` — BAS account → inventory category routing (4010/4011/4012/4015/4017/4018/5410/5460 → food/alcohol/beverage/disposables/takeaway_material/cleaning)
+- `lib/inventory/matcher.ts` — 5-step matching ladder. Idempotent. Reads/writes via the two RPCs above.
+- `app/api/inventory/lines/backfill` — owner-triggered 12-month backfill endpoint.
+- `app/api/cron/inventory-lines-sync` — daily 06:30 UTC incremental for businesses with ≥1 row in supplier_invoice_lines. 48h lookback.
+**Idempotent.** Re-runs are no-ops via ON CONFLICT.
+
 ### M068 — Add Örebro to school_holidays seed + set Chicce's kommun ⏳ pending application
 **File:** `sql/M068-SCHOOL-HOLIDAYS-OREBRO-SEED.sql`
 **Purpose:** Chicce Slotsgatan is in Örebro (kommun 1880, län 18) which wasn't in the M067 seed. Extends seed coverage with 10 holiday rows for Örebro 2025-2027 + sets `businesses.kommun='1880'` for Chicce. Without this, the school_holiday signal returns null for Chicce → factor stays neutral 1.0 → no school-holiday signal contribution to her forecasts. Idempotent.
