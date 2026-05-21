@@ -19,9 +19,13 @@
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-// Function may live for up to 300s while the background worker grinds —
-// the HTTP response itself returns within seconds.
-export const maxDuration = 300
+// Function may live for up to 800s (Vercel Pro cap) while the background
+// worker grinds. The HTTP response itself returns within seconds. Even
+// 800s isn't enough to walk hundreds of invoices serially via Fortnox's
+// rate-limited API on a cold backfill — the skip-already-ingested
+// optimisation in lib/inventory/backfill-worker.ts is what makes
+// re-runs fast (no Fortnox calls for invoices we already have).
+export const maxDuration = 800
 
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'

@@ -145,6 +145,25 @@ export async function runInventoryBackfill(
     const invoiceNumber = String(givenNumber)
 
     try {
+      // Skip-already-ingested optimisation: if this invoice's rows are
+      // already in supplier_invoice_lines, don't waste a Fortnox call.
+      // Fortnox rate-limits at ~25 req/5sec per token, so each detail
+      // call costs us roughly 30 seconds of wall time on a hot day.
+      // Skipping shaves hours off re-runs. Invoices on Fortnox are
+      // effectively immutable once posted (the daily incremental cron
+      // handles edits via the (business_id, fortnox_invoice_number,
+      // row_number) idempotency key on supplier_invoice_lines).
+      const { count: existingCount } = await db
+        .from('supplier_invoice_lines')
+        .select('id', { count: 'exact', head: true })
+        .eq('business_id',            input.business_id)
+        .eq('fortnox_invoice_number', invoiceNumber)
+      if (existingCount && existingCount > 0) {
+        p.invoices_processed       += 1
+        p.lines_skipped_existing   += existingCount
+        continue
+      }
+
       const detailUrl = `${FORTNOX_API}/supplierinvoices/${encodeURIComponent(invoiceNumber)}`
       const detailRes = await fortnoxFetch(detailUrl, accessToken)
       if (!detailRes.ok) {
