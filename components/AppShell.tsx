@@ -1,43 +1,65 @@
 // components/AppShell.tsx
-// Wraps all authenticated pages with sidebar + mobile nav
-// Usage: wrap page content with <AppShell>{children}</AppShell>
+//
+// Wraps every authenticated page with the new pastel-lavender chrome:
+//   • RailNav (46px icon rail) on the left
+//   • AppShellUX (top toolbar + main column) on the right
+//
+// Phase 2 replaced the navy SidebarV2 import here. The old sidebar lives
+// in-tree at components/ui/SidebarV2.tsx until Phase 7 retires it (final
+// cleanup pass once every page is verified on the new shell).
+//
+// Pages can pass `dateLabel` / `onPrev` / `onNext` / `compareLabel` to
+// wire up the toolbar's date stepper. Section + page dropdowns derive
+// from pathname via lib/nav/areas — pages don't need to opt in for those.
+//
+// Gates + side-effects preserved verbatim from the SidebarV2 era:
+//   RoleGate, OnboardingGate, PlanGate, AiUsageBanner, BackgroundSync,
+//   ConsentBanner, MobileNav.
 
 'use client'
 
-// Phase 1 (ux/phase-1-overview): swapped to the redesigned SidebarV2. Old
-// `components/Sidebar.tsx` is retained in-tree so it can be reinstated by
-// reverting this one line if the redesign ever needs to roll back.
-import Sidebar from './ui/SidebarV2'
-import ConsentBanner from './ConsentBanner'
-import MobileNav from './MobileNav'
-import BackgroundSync from './BackgroundSync'
-import PlanGate from './PlanGate'
-import OnboardingGate from './OnboardingGate'
-import AiUsageBanner from './AiUsageBanner'
-import { RoleGate } from './RoleGate'
+import type { ReactNode } from 'react'
+import RailNav      from './ux/RailNav'
+import AppShellUX   from './ux/AppShellUX'
+import BizPicker    from './ux/BizPicker'
+import UserMenu     from './ux/UserMenu'
+import RailSyncSlot from './ux/RailSyncSlot'
+import ConsentBanner   from './ConsentBanner'
+import MobileNav       from './MobileNav'
+import BackgroundSync  from './BackgroundSync'
+import PlanGate        from './PlanGate'
+import OnboardingGate  from './OnboardingGate'
+import AiUsageBanner   from './AiUsageBanner'
+import { RoleGate }    from './RoleGate'
+import { UXP }         from '@/lib/constants/tokens'
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+export interface AppShellProps {
+  children:      ReactNode
+  /** Optional date stepper label — e.g. "Week 21 · 18–24 May". */
+  dateLabel?:    string
+  onPrev?:       () => void
+  onNext?:       () => void
+  compareLabel?: string | null
+  onAskCc?:      () => void
+}
+
+export default function AppShell({
+  children,
+  dateLabel,
+  onPrev,
+  onNext,
+  compareLabel,
+  onAskCc,
+}: AppShellProps) {
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#f8f9fa' }}>
-      {/* Sidebar — hidden on mobile */}
-      <div style={{ display: 'none' }} className="cc-sidebar-wrapper">
-        <Sidebar />
+    <div style={{ display: 'flex', minHeight: '100vh', background: UXP.pageBg }}>
+      {/* Rail — hidden on mobile; MobileNav takes over below 768px */}
+      <div className="cc-sidebar-wrapper" style={{ display: 'none' }}>
+        <RailNav footer={<RailSyncSlot />} />
       </div>
       <style>{`
         @media (min-width: 768px) {
-          /* Sticky sidebar — pins to the top of the viewport while the
-             page scrolls. align-self:flex-start stops flex from
-             stretching it to the full page height; max-height + overflow
-             give it its own internal scroll if its own content (long
-             nav list on a short viewport) exceeds the viewport. */
-          .cc-sidebar-wrapper {
-            display: block !important;
-            position: sticky;
-            top: 0;
-            align-self: flex-start;
-            max-height: 100vh;
-            overflow-y: auto;
-          }
+          .cc-sidebar-wrapper { display: block !important; }
           .cc-mobile-nav { display: none !important; }
         }
         @media (max-width: 767px) {
@@ -45,40 +67,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         }
       `}</style>
 
-      {/* Main content — flex:1 fills the space next to the sidebar.
-          No margin-left override: the sidebar is a flex sibling, not
-          absolutely positioned, so flex already handles layout. The
-          old 220px margin was leftover from the 220px Sidebar and
-          was doubling the spacing with the 148px SidebarV2. */}
-      <div className="cc-main-content" style={{ flex: 1, minWidth: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* Main column — toolbar + page content */}
+      <div className="cc-main-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <AiUsageBanner />
-        {/* M043: every page wrapped in AppShell goes through the role
-            gate. The gate is path-aware via usePathname() — pages the
-            current role can access render normally; forbidden pages
-            render the "no-access" fallback inline. */}
-        <RoleGate>
-          {children}
-        </RoleGate>
+        <AppShellUX
+          dateLabel={dateLabel}
+          onPrev={onPrev}
+          onNext={onNext}
+          compareLabel={compareLabel}
+          bizPicker={<BizPicker />}
+          userMenu={<UserMenu />}
+          onAskCc={onAskCc}
+        >
+          <RoleGate>{children}</RoleGate>
+        </AppShellUX>
       </div>
 
-      {/* Consent banner */}
       <ConsentBanner />
-
-      {/* Fires /api/sync/today on mount (throttled server-side to 10 min/integration) */}
       <BackgroundSync />
-
-      {/* Onboarding gate — redirects to /onboarding when the wizard
-          isn't finished. MUST render before PlanGate so an unfinished
-          owner gets sent to /onboarding rather than /upgrade. Once
-          onboarding completes, the next page load lets PlanGate take
-          over (which is fine because /upgrade is in OnboardingGate's
-          open-paths list, so the chain doesn't fight itself). */}
       <OnboardingGate />
-
-      {/* Subscription gate — redirects trial/past_due orgs to /upgrade */}
       <PlanGate />
 
-      {/* Mobile bottom nav */}
       <div className="cc-mobile-nav">
         <MobileNav />
       </div>

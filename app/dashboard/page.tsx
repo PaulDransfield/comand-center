@@ -32,8 +32,14 @@ import WeekScorecardCard from '@/components/dashboard/WeekScorecardCard'
 import WhatHappenedCard from '@/components/dashboard/WhatHappenedCard'
 import ReviewThemesCard from '@/components/dashboard/ReviewThemesCard'
 import Sparkline from '@/components/ui/Sparkline'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 2 pilot — new presentational primitives. The 3-card KPI strip and the
+// headline PairedBarChart are the redesigned surfaces; everything else on the
+// dashboard stays on the legacy components until later phases migrate them.
+import KpiCardUX  from '@/components/ux/KpiCard'
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
 
 // ── Formatters ────────────────────────────────────────────────────────────────
 // Format a Date as YYYY-MM-DD using local timezone (NOT UTC — avoids off-by-one in CET/CEST)
@@ -91,30 +97,9 @@ function delta(cur: number, prev: number) {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, deltaVal, ok, href }: any) {
-  const card = (
-    <div style={{
-      background: 'white', borderRadius: 12, padding: '18px 20px',
-      border: `1px solid ${ok === false ? '#fecaca' : '#e5e7eb'}`,
-      cursor: href ? 'pointer' : 'default',
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: '#111', marginBottom: 6, letterSpacing: '-0.5px' }}>{value}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 18 }}>
-        {deltaVal !== null && deltaVal !== undefined && (
-          <span style={{
-            fontSize: 12, fontWeight: 700,
-            color: deltaVal.up ? '#16a34a' : '#dc2626',
-          }}>
-            {deltaVal.up ? '↑' : '↓'} {Math.abs(deltaVal.pct)}%
-          </span>
-        )}
-        {sub && <span style={{ fontSize: 12, color: '#9ca3af' }}>{sub}</span>}
-      </div>
-    </div>
-  )
-  return href ? <a href={href} style={{ textDecoration: 'none' }}>{card}</a> : card
-}
+// (Phase 2: the legacy inline KpiCard helper that lived here was dead code —
+//  no callers remained after Phase 1's PageHero migration. Replaced by the
+//  canonical components/ux/KpiCard imported above.)
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 // Next 14 requires any client component using useSearchParams to sit inside a
@@ -710,8 +695,35 @@ function DashboardInner() {
     return set
   }, [selectedBiz, weekDays, monthDays, curr, currM])
 
+  // ── Top-toolbar date stepper wiring ─────────────────────────────────────
+  // The redesigned AppShell exposes a date stepper in its toolbar; pages
+  // opt-in by passing dateLabel + onPrev/onNext. The dashboard's period
+  // state (weekOffset/monthOffset, viewMode) is the source of truth — the
+  // stepper just decrements/increments whichever offset is active.
+  const periodLabel = viewMode === 'week'
+    ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) })
+    : formatMonthLabel(currM)
+  function stepPeriod(dir: -1 | 1) {
+    if (viewMode === 'week') {
+      const next = weekOffset + dir
+      setWeekOffset(next)
+      writeUrl({ view: 'week', offset: next })
+    } else {
+      const next = monthOffset + dir
+      setMonthOffset(next)
+      writeUrl({ view: 'month', offset: next })
+    }
+  }
+
   return (
-    <AppShell>
+    <AppShell
+      dateLabel={periodLabel}
+      onPrev={() => stepPeriod(-1)}
+      onNext={() => stepPeriod(1)}
+      compareLabel={compareMode === 'none' ? null
+        : compareMode === 'prev' ? 'Previous'
+        : 'AI'}
+    >
       <div className="page-wrap">
 
         {/* ── Upgrade banner ──────────────────────────────────────────────── */}
@@ -758,6 +770,108 @@ function DashboardInner() {
             the sidebar (SidebarV2) and the period navigator + W/M toggle are
             inside OverviewChart's own control row. Keeping both would be the
             exact duplication the redesign is trying to eliminate. */}
+
+        {/* ── Phase 2 KPI strip — the redesigned top-of-page summary.
+              Revenue · Margin · Labour, each a components/ux/KpiCard. Data
+              fetched is unchanged from the legacy strip below; presentation
+              is now on the pastel-lavender system per OVERHAUL-PROMPT-1.
+              Hidden during initial load to avoid flashing "0 kr" cards. */}
+        {!loading && currSummary && (() => {
+          // Channels source: top departments by revenue from /api/departments.
+          // /api/metrics/daily doesn't expose channel splits (lunch / middag /
+          // takeaway), so departments stand in as the meaningful breakdown the
+          // operator can act on. Falls back to a single "Total" channel when
+          // no department data is loaded yet.
+          const deptList: any[] = Array.isArray(depts?.departments) ? depts.departments : []
+          const topDepts = deptList
+            .slice()
+            .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
+            .slice(0, 3)
+          const channels = topDepts.length > 0
+            ? topDepts.map((d, i) => ({
+                label: d.name ?? `Department ${i + 1}`,
+                value: Number(d.revenue ?? 0),
+                share: 0, // KpiCard recomputes share from totals
+                color: [UXP.lav, UXP.lavMid, UXP.lavPale][i] ?? UXP.lav,
+              }))
+            : [{ label: 'Total', value: totalRev, share: 1, color: UXP.lav }]
+
+          // Margin (variant=stacked) — actual net margin vs a 12% target
+          // floor (industry rule-of-thumb for full-service restaurants until
+          // businesses.target_net_pct lands). The two bars compare "current"
+          // to "target" on the same 100% scale so the operator sees the gap
+          // at a glance without doing the maths.
+          const grossMargin = totalRev > 0 ? ((totalRev - totalLabour) / totalRev) * 100 : 0
+          const TARGET_MARGIN = 12
+          const marginCardValue = totalRev > 0 ? fmtPct(grossMargin) : '—'
+          const marginDelta = prevRev > 0 && prevLabour >= 0
+            ? (() => {
+                const prevM = ((prevRev - prevLabour) / prevRev) * 100
+                const diff = grossMargin - prevM
+                return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`
+              })()
+            : null
+
+          // Labour (variant=targetBand) — labourTier() decides target band;
+          // the band stays consistent with /scheduling and /staff so the
+          // owner's mental model is one set of thresholds across the app.
+          const tier = labourTier(totalRev > 0 ? labourPct : null)
+          const labourValue = totalRev > 0 ? fmtPct(labourPct) : '—'
+          const labourDelta = prevLabPct != null
+            ? `${labourPct - prevLabPct >= 0 ? '+' : ''}${(labourPct - prevLabPct).toFixed(1)}pp`
+            : null
+
+          // Revenue delta vs the matched previous period.
+          const revDelta = prevRev > 0
+            ? `${totalRev - prevRev >= 0 ? '+' : ''}${fmtPct(((totalRev - prevRev) / prevRev) * 100)}`
+            : null
+
+          return (
+            <div
+              className="cc-kpi-strip"
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        12,
+              }}
+            >
+              <KpiCardUX
+                title="Revenue"
+                value={fmtKr(totalRev)}
+                delta={revDelta}
+                deltaGood
+                variant="channels"
+                channels={channels}
+                microLabel={periodLabel}
+              />
+              <KpiCardUX
+                title="Margin"
+                value={marginCardValue}
+                delta={marginDelta}
+                deltaGood
+                variant="stacked"
+                stackedBars={[
+                  { label: 'Current', value: grossMargin,   max: 100, color: UXP.lav },
+                  { label: 'Target',  value: TARGET_MARGIN, max: 100, color: UXP.green },
+                ]}
+              />
+              <KpiCardUX
+                title="Labour"
+                value={labourValue}
+                delta={labourDelta}
+                deltaGood={false /* labour-up vs prev = bad */}
+                variant="targetBand"
+                targetBand={{
+                  actualPct:    Math.min(100, labourPct),
+                  targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+                  targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+                }}
+                microLabel={tier === 'no-data' ? 'No data' : tier.replace('-', ' ')}
+              />
+            </div>
+          )
+        })()}
 
         {/* ── Dashboard header — replaces the legacy yellow alert banner.
               Pulses a small anomaly pill linking to /alerts; same filter
@@ -1016,30 +1130,46 @@ function DashboardInner() {
               fmtPct={fmtPct}
             />
 
-            <OverviewChart
-              days={viewMode === 'week' ? weekDays : monthDays}
-              viewMode={viewMode}
-              onViewModeChange={handleViewModeChange}
-              periodLabel={viewMode === 'week'
-                ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) })
-                : formatMonthLabel(currM)}
-              businessName={selectedBiz?.name ?? ''}
-              targetLabourPct={targetPct}
-              availablePeriods={availablePeriods}
-              onPeriodChange={handlePeriodChange}
-              onDayClick={handleDayClick}
-              selectedDates={selectedDates}
-              onSelectedDatesChange={handleSelectedDatesChange}
-              compareMode={compareMode}
-              onCompareChange={handleCompareChange}
-              fmtKr={fmtKr}
-              fmtPct={fmtPct}
-              holidayDates={holidayDateSet}
-              /* v8 cleaner-chart: no inline anomaly callout. The page-
-                 header pill (DashboardHeader above) is the single alert
-                 surface; the chart stays clean for revenue / labour
-                 reading. */
-            />
+            {/* Phase 2 — headline chart on the new system. PairedBarChart
+                is presentational only (no period dropdown / day-click /
+                compare modes); period navigation moves up to the toolbar's
+                date stepper, and W/M view mode + the rich interactions
+                from the legacy OverviewChart will return in a later phase
+                as the new system grows them. OverviewChart itself stays
+                in-tree for the day drill-down + admin diagnostics. */}
+            {(() => {
+              const days = viewMode === 'week' ? weekDays : monthDays
+              const groups = days.map((d: any) => d.dayName ?? d.date.slice(-2))
+              return (
+                <div style={{
+                  background:   UXP.cardBg,
+                  border:       `0.5px solid ${UXP.border}`,
+                  borderRadius: UXP.r_lg,
+                  padding:      '14px 16px',
+                  marginBottom: 12,
+                }}>
+                  <PairedBarChart
+                    groups={groups}
+                    series={[
+                      { label: 'Revenue', data: days.map((d: any) => Number(d.revenue ?? 0)),   color: UXP.lav },
+                      { label: 'Labour',  data: days.map((d: any) => Number(d.staff_cost ?? 0)), color: UXP.lavMid },
+                    ]}
+                    lines={[{
+                      label:  'Labour %',
+                      data:   days.map((d: any) => {
+                        const rev = Number(d.revenue ?? 0)
+                        return rev > 0 ? (Number(d.staff_cost ?? 0) / rev) * 100 : null
+                      }),
+                      color:  UXP.coral,
+                      dashed: false,
+                    }]}
+                    rightMax={100}
+                    width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 100, 900) : 900}
+                    height={240}
+                  />
+                </div>
+              )
+            })()}
 
             {/* Two chart footer notes — honesty about how to read the chart.
                 Stack to single column at <880px. */}

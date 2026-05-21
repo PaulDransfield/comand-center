@@ -16,28 +16,28 @@
 // Auth: none. The page renders only the new presentational components,
 // no live data, so showing it without auth is safe.
 
-import AppShellUX, { NavItem } from '@/components/ux/AppShellUX'
-import KpiCard from '@/components/ux/KpiCard'
+import RailNav    from '@/components/ux/RailNav'
+import AppShellUX from '@/components/ux/AppShellUX'
+import KpiCard    from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { fmtKr, fmtPct } from '@/lib/format'
 import { UXP } from '@/lib/constants/tokens'
 
-const NAV: NavItem[] = [
-  { key: 'overview', label: 'Overview', icon: <Icon shape="square" /> },
-  { key: 'flash',    label: 'Flash P&L', icon: <Icon shape="bars" /> },
-  { key: 'reviews',  label: 'Reviews',   icon: <Icon shape="star" /> },
-]
-
+// Phase 2 — mount the live RailNav + AppShellUX so the preview reflects the
+// real production chrome around the four robustness cases. The toolbar's
+// area/page dropdowns auto-derive from /ux-preview not matching any area in
+// lib/nav/areas (renders the plain fallback label), which is exactly how
+// non-customer surfaces should look.
 export default function UxPreviewPage() {
   return (
-    <AppShellUX
-      section="UX preview"
-      dateLabel="Phase 1 · Foundation"
-      compareLabel="Ugly data"
-      navItems={NAV}
-      activeKey="overview"
-    >
+    <div style={{ display: 'flex', minHeight: '100vh', background: UXP.pageBg }}>
+      <RailNav />
+      <AppShellUX
+        section="UX preview"
+        pageLabel="Phase 1 · Foundation"
+        dateLabel="Ugly data"
+      >
       <div style={{ maxWidth: 1080, margin: '0 auto', display: 'grid', gap: 16 }}>
         <Header />
         <SectionTitle>Case 1 — long names</SectionTitle>
@@ -55,7 +55,8 @@ export default function UxPreviewPage() {
         <SectionTitle>BreakdownTable — all four cases</SectionTitle>
         <TableRow />
       </div>
-    </AppShellUX>
+      </AppShellUX>
+    </div>
   )
 }
 
@@ -224,11 +225,5 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Icon({ shape }: { shape: 'square' | 'bars' | 'star' }) {
-  const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (shape) {
-    case 'square': return <svg {...common}><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
-    case 'bars':   return <svg {...common}><line x1="6"  y1="20" x2="6"  y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/></svg>
-    case 'star':   return <svg {...common}><polygon points="12 2 15 9 22 9 16 14 18 21 12 17 6 21 8 14 2 9 9 9"/></svg>
-  }
-}
+// (Phase 2: the toy Icon component used by the prototype NAV array was
+//  deleted — the live RailNav now ships the real area icons.)
