@@ -6,7 +6,7 @@
 
 'use client'
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import type { ReactNode } from 'react'
 
 export interface TopBarCrumb {
@@ -30,7 +30,7 @@ export default function TopBar({ crumbs, rightSlot }: TopBarProps) {
         gap:            12,
         height:         40,
         marginBottom:   8,
-        fontSize:       UX.fsBody,
+        fontSize:       12,
       }}
     >
       <nav
@@ -48,9 +48,9 @@ export default function TopBar({ crumbs, rightSlot }: TopBarProps) {
           // Active / last crumb = bold ink1.  Parent crumbs = regular ink3.
           const isActive = c.active || isLast
           const style  = {
-            fontSize:   UX.fsBody,
-            fontWeight: isActive ? UX.fwMedium : UX.fwRegular,
-            color:      isActive ? UX.ink1     : UX.ink3,
+            fontSize:   12,
+            fontWeight: isActive ? 500 : 400,
+            color:      isActive ? UXP.ink1     : UXP.ink3,
             textDecoration: 'none' as const,
             whiteSpace: 'nowrap' as const,
           }
@@ -62,7 +62,7 @@ export default function TopBar({ crumbs, rightSlot }: TopBarProps) {
               {/* Separator — bumped to ink3 so the "·" actually reads as
                   a divider rather than a faded artefact. */}
               {!isLast && (
-                <span aria-hidden style={{ color: UX.ink3, fontSize: UX.fsBody, userSelect: 'none' as const }}>·</span>
+                <span aria-hidden style={{ color: UXP.ink3, fontSize: 12, userSelect: 'none' as const }}>·</span>
               )}
             </span>
           )

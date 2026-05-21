@@ -4,7 +4,7 @@
 
 'use client'
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 export type StatTone = 'good' | 'bad' | 'neutral'
 
@@ -21,9 +21,9 @@ export interface SupportingStatsProps {
 }
 
 const DELTA_COLOUR: Record<StatTone, string> = {
-  good:    UX.greenInk,
-  bad:     UX.redInk,
-  neutral: UX.ink3,
+  good:    UXP.greenDeep,
+  bad:     UXP.roseText,
+  neutral: UXP.ink3,
 }
 
 export default function SupportingStats({ items }: SupportingStatsProps) {
@@ -42,8 +42,8 @@ export default function SupportingStats({ items }: SupportingStatsProps) {
       {list.map((it, i) => (
         <div key={`${it.label}-${i}`} style={{ minWidth: 0 }}>
           <div style={{
-            fontSize:     UX.fsMicro,
-            color:        UX.ink4,
+            fontSize:     10,
+            color:        UXP.ink4,
             marginBottom: 2,
             letterSpacing: '0.04em',
             textTransform: 'uppercase' as const,
@@ -52,8 +52,8 @@ export default function SupportingStats({ items }: SupportingStatsProps) {
           </div>
           <div style={{
             fontSize:             14,
-            fontWeight:           UX.fwMedium,
-            color:                UX.ink1,
+            fontWeight:           500,
+            color:                UXP.ink1,
             fontVariantNumeric:   'tabular-nums' as const,
             lineHeight:           1.1,
             whiteSpace:           'nowrap' as const,
@@ -66,19 +66,19 @@ export default function SupportingStats({ items }: SupportingStatsProps) {
               gap:           6,
               alignItems:    'baseline',
               marginTop:     2,
-              fontSize:      UX.fsMicro,
+              fontSize:      10,
               lineHeight:    1.3,
             }}>
               {it.delta && (
                 <span style={{
                   color:      DELTA_COLOUR[it.deltaTone ?? 'neutral'],
-                  fontWeight: UX.fwMedium,
+                  fontWeight: 500,
                 }}>
                   {it.delta}
                 </span>
               )}
               {it.sub && (
-                <span style={{ color: UX.ink3, whiteSpace: 'nowrap' as const }}>{it.sub}</span>
+                <span style={{ color: UXP.ink3, whiteSpace: 'nowrap' as const }}>{it.sub}</span>
               )}
             </div>
           )}

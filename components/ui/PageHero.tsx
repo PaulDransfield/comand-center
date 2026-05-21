@@ -5,7 +5,7 @@
 
 'use client'
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import type { ReactNode } from 'react'
 
 export interface PageHeroProps {
@@ -19,9 +19,9 @@ export default function PageHero({ eyebrow, headline, context, right }: PageHero
   return (
     <div
       style={{
-        background:          UX.cardBg,
-        border:              `0.5px solid ${UX.border}`,
-        borderRadius:        UX.r_lg,
+        background:          UXP.cardBg,
+        border:              `0.5px solid ${UXP.border}`,
+        borderRadius:        UXP.r_lg,
         padding:             '18px 20px',
         marginBottom:        14,
         display:             'grid',
@@ -32,29 +32,29 @@ export default function PageHero({ eyebrow, headline, context, right }: PageHero
     >
       <div style={{ minWidth: 0 }}>
         <div style={{
-          fontSize:      UX.fsMicro,
-          color:         UX.ink4,
+          fontSize:      10,
+          color:         UXP.ink4,
           letterSpacing: '0.06em',
           marginBottom:  5,
-          fontWeight:    UX.fwMedium,
+          fontWeight:    500,
           textTransform: 'uppercase' as const,
         }}>
           {eyebrow}
         </div>
         <h1 style={{
-          fontSize:    UX.fsHero,
-          fontWeight:  UX.fwMedium,
+          fontSize:    22,
+          fontWeight:  500,
           margin:      '0 0 6px',
           lineHeight:  1.35,
-          color:       UX.ink1,
+          color:       UXP.ink1,
           letterSpacing: '-0.01em',
         }}>
           {headline}
         </h1>
         {context && (
           <div style={{
-            fontSize:   UX.fsBody,
-            color:      UX.ink3,
+            fontSize:   12,
+            color:      UXP.ink3,
             lineHeight: 1.5,
           }}>
             {context}
@@ -64,7 +64,7 @@ export default function PageHero({ eyebrow, headline, context, right }: PageHero
       {right && (
         <div style={{
           paddingLeft: 20,
-          borderLeft:  `0.5px solid ${UX.border}`,
+          borderLeft:  `0.5px solid ${UXP.border}`,
         }}>
           {right}
         </div>

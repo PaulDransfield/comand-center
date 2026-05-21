@@ -6,7 +6,7 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import type { ReactNode } from 'react'
 
 export type AttentionTone = 'good' | 'warning' | 'bad'
@@ -26,9 +26,9 @@ export interface AttentionPanelProps {
 }
 
 const DOT_COLOUR: Record<AttentionTone, string> = {
-  good:    UX.greenInk,
-  warning: UX.amberInk,
-  bad:     UX.redInk,
+  good:    UXP.greenDeep,
+  warning: UXP.coral,
+  bad:     UXP.roseText,
 }
 
 export default function AttentionPanel({
@@ -46,9 +46,9 @@ export default function AttentionPanel({
   return (
     <div
       style={{
-        background:   UX.cardBg,
-        border:       `0.5px solid ${UX.border}`,
-        borderRadius: UX.r_lg,
+        background:   UXP.cardBg,
+        border:       `0.5px solid ${UXP.border}`,
+        borderRadius: UXP.r_lg,
         padding:      '12px 14px',
       }}
     >
@@ -59,9 +59,9 @@ export default function AttentionPanel({
         marginBottom:    shown.length ? 8 : 0,
       }}>
         <div style={{
-          fontSize:    UX.fsSection,
-          fontWeight:  UX.fwMedium,
-          color:       UX.ink1,
+          fontSize:    13,
+          fontWeight:  500,
+          color:       UXP.ink1,
         }}>
           {headingTitle}
         </div>
@@ -69,7 +69,7 @@ export default function AttentionPanel({
       </div>
 
       {shown.length === 0 ? (
-        <div style={{ fontSize: UX.fsBody, color: UX.ink4, padding: '8px 0' }}>
+        <div style={{ fontSize: 12, color: UXP.ink4, padding: '8px 0' }}>
           {t('nothingFlagged')}
         </div>
       ) : (
@@ -82,7 +82,7 @@ export default function AttentionPanel({
                 alignItems:   'flex-start',
                 gap:          8,
                 padding:      '7px 0',
-                borderBottom: i === shown.length - 1 ? 'none' : `0.5px solid ${UX.borderSoft}`,
+                borderBottom: i === shown.length - 1 ? 'none' : `0.5px solid ${UXP.borderSoft}`,
               }}
             >
               <span
@@ -96,9 +96,9 @@ export default function AttentionPanel({
                   marginTop:    7,
                 }}
               />
-              <div style={{ minWidth: 0, fontSize: UX.fsBody, lineHeight: 1.5 }}>
-                <span style={{ fontWeight: UX.fwMedium, color: UX.ink1 }}>{it.entity}</span>
-                <span style={{ color: UX.ink2 }}> — {it.message}</span>
+              <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.5 }}>
+                <span style={{ fontWeight: 500, color: UXP.ink1 }}>{it.entity}</span>
+                <span style={{ color: UXP.ink2 }}> — {it.message}</span>
               </div>
             </div>
           ))}
@@ -110,16 +110,16 @@ export default function AttentionPanel({
                 style={{
                   display:        'inline-block',
                   marginTop:      6,
-                  fontSize:       UX.fsLabel,
-                  color:          UX.indigo,
+                  fontSize:       11,
+                  color:          UXP.lavDeep,
                   textDecoration: 'none',
-                  fontWeight:     UX.fwMedium,
+                  fontWeight:     500,
                 }}
               >
                 {t('moreLink', { count: hidden })}
               </a>
             ) : (
-              <div style={{ marginTop: 6, fontSize: UX.fsLabel, color: UX.ink3 }}>
+              <div style={{ marginTop: 6, fontSize: 11, color: UXP.ink3 }}>
                 {t('moreText', { count: hidden })}
               </div>
             )

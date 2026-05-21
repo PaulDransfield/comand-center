@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocale, useTranslations } from 'next-intl'
 import { createClient } from '@/lib/supabase/client'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 export interface SyncIndicatorProps {
   /** business_id — required to actually fire a resync. null disables the click. */
@@ -141,9 +141,9 @@ export default function SyncIndicator({
     setTimeout(() => setToast(''), 8000)   // longer so Paul has time to read
   }
 
-  const dotColour = busy ? UX.indigoLight : fresh ? '#10b981' : UX.amberInk
-  const labelColour = surface === 'dark' ? 'rgba(255,255,255,0.6)' : UX.ink3
-  const borderColour = surface === 'dark' ? '0.5px solid rgba(255,255,255,0.06)' : `0.5px solid ${UX.border}`
+  const dotColour = busy ? UXP.lavMid : fresh ? '#10b981' : UXP.coral
+  const labelColour = surface === 'dark' ? 'rgba(255,255,255,0.6)' : UXP.ink3
+  const borderColour = surface === 'dark' ? '0.5px solid rgba(255,255,255,0.06)' : `0.5px solid ${UXP.border}`
 
   return (
     <>
@@ -163,7 +163,7 @@ export default function SyncIndicator({
           borderBottom:   borderColour,
           cursor:         busy || !businessId ? 'default' : 'pointer',
           color:          labelColour,
-          fontSize:       UX.fsMicro,
+          fontSize:       10,
           fontFamily:     'inherit',       // prevent Windows substitution that was rendering "Spued"
           lineHeight:     1.4,
           textAlign:      'left' as const,
@@ -202,8 +202,8 @@ export default function SyncIndicator({
       )}
       {toast && (
         <div role="status" style={{
-          position: 'fixed' as const, bottom: 24, left: 24, background: UX.navy, color: 'white',
-          padding: '10px 14px', borderRadius: UX.r_md, fontSize: UX.fsBody,
+          position: 'fixed' as const, bottom: 24, left: 24, background: UXP.ink1, color: 'white',
+          padding: '10px 14px', borderRadius: UXP.r_md, fontSize: 12,
           boxShadow: '0 6px 18px rgba(0,0,0,.3)', zIndex: 1000,
         }}>
           {toast}

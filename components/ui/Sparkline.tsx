@@ -5,7 +5,7 @@
 
 'use client'
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 export type SparklineTone = 'good' | 'bad' | 'warning' | 'neutral'
 
@@ -18,10 +18,10 @@ export interface SparklineProps {
 }
 
 const TONE_COLOUR: Record<SparklineTone, string> = {
-  good:    UX.greenInk,
-  bad:     UX.redInk,
-  warning: UX.amberInk,
-  neutral: UX.ink4,
+  good:    UXP.greenDeep,
+  bad:     UXP.roseText,
+  warning: UXP.coral,
+  neutral: UXP.ink4,
 }
 
 export default function Sparkline({
@@ -42,7 +42,7 @@ export default function Sparkline({
           y1={height / 2}
           x2={width}
           y2={height / 2}
-          stroke={UX.ink5}
+          stroke={UXP.ink4}
           strokeWidth={1}
           strokeDasharray="2 2"
         />

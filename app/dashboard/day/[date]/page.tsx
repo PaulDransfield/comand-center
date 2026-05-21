@@ -12,7 +12,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams, useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
 
 interface DayResponse {
@@ -117,7 +117,7 @@ export default function DayDetailPage() {
           onClick={() => router.push('/dashboard')}
           style={{
             background: 'none', border: 'none', padding: 0,
-            fontSize: 12, color: UX.ink3, cursor: 'pointer',
+            fontSize: 12, color: UXP.ink3, cursor: 'pointer',
             marginBottom: 8, display: 'inline-flex', alignItems: 'center', gap: 4,
           }}
         >
@@ -141,10 +141,10 @@ function DayContent({ data }: { data: DayResponse }) {
     <>
       {/* Header */}
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 600, color: UX.ink1, margin: 0 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
           {dayLabel}
         </h1>
-        <div style={{ fontSize: 13, color: UX.ink3, marginTop: 4 }}>
+        <div style={{ fontSize: 13, color: UXP.ink3, marginTop: 4 }}>
           {data.business.name}{data.business.city && ` · ${data.business.city}`}
         </div>
       </div>
@@ -154,7 +154,7 @@ function DayContent({ data }: { data: DayResponse }) {
         <ActualSummary data={data} />
       ) : (
         <Section title="No actuals yet">
-          <div style={{ fontSize: 13, color: UX.ink3, padding: '0 4px' }}>
+          <div style={{ fontSize: 13, color: UXP.ink3, padding: '0 4px' }}>
             This day hasn't been reconciled yet. Check back after the next master-sync cron.
           </div>
         </Section>
@@ -213,8 +213,8 @@ function ActualSummary({ data }: { data: DayResponse }) {
         />
       </div>
       {a.cost_source && (
-        <div style={{ fontSize: 11, color: UX.ink4, padding: '8px 4px 0' }}>
-          Staff cost source: <strong style={{ color: UX.ink3 }}>{a.cost_source}</strong>
+        <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 4px 0' }}>
+          Staff cost source: <strong style={{ color: UXP.ink3 }}>{a.cost_source}</strong>
         </div>
       )}
     </Section>
@@ -269,7 +269,7 @@ function HourlyChart({ hourly }: { hourly: DayResponse['hourly'] }) {
         gap:        2,
         marginTop:  4,
         fontSize:   10,
-        color:      UX.ink4,
+        color:      UXP.ink4,
       }}>
         {Array.from({ length: maxHour - minHour + 1 }, (_, i) => (
           <div key={i} style={{ flex: 1, textAlign: 'center' as const }}>
@@ -334,9 +334,9 @@ function AttributionSection({ attr, weather }: { attr: DayResponse['attribution'
             gap:          5,
             padding:      '3px 10px',
             fontSize:     12,
-            background:   dr.tone === 'good' ? UX.greenBg : dr.tone === 'bad' ? '#fef2f2' : 'white',
-            color:        dr.tone === 'good' ? UX.greenInk : dr.tone === 'bad' ? '#b91c1c' : UX.ink2,
-            border:       `0.5px solid ${dr.tone === 'good' ? UX.greenInk : dr.tone === 'bad' ? '#fecaca' : UX.border}`,
+            background:   dr.tone === 'good' ? UXP.greenFill : dr.tone === 'bad' ? '#fef2f2' : 'white',
+            color:        dr.tone === 'good' ? UXP.greenDeep : dr.tone === 'bad' ? '#b91c1c' : UXP.ink2,
+            border:       `0.5px solid ${dr.tone === 'good' ? UXP.greenDeep : dr.tone === 'bad' ? '#fecaca' : UXP.border}`,
             borderRadius: 999,
           }}>
             <span>{dr.label}</span>
@@ -345,10 +345,10 @@ function AttributionSection({ attr, weather }: { attr: DayResponse['attribution'
         ))}
       </div>
       {weather && (
-        <div style={{ fontSize: 12, color: UX.ink3, padding: '10px 4px 0' }}>
-          <strong style={{ color: UX.ink2 }}>Weather:</strong>{' '}
+        <div style={{ fontSize: 12, color: UXP.ink3, padding: '10px 4px 0' }}>
+          <strong style={{ color: UXP.ink2 }}>Weather:</strong>{' '}
           {weather.summary ?? 'unknown'} · {weather.temp_min.toFixed(0)}°–{weather.temp_max.toFixed(0)}°C · {weather.precip_mm.toFixed(0)} mm precip
-          {weather.is_forecast && <span style={{ marginLeft: 6, color: UX.ink4, fontStyle: 'italic' }}>forecasted</span>}
+          {weather.is_forecast && <span style={{ marginLeft: 6, color: UXP.ink4, fontStyle: 'italic' }}>forecasted</span>}
         </div>
       )}
     </Section>
@@ -365,11 +365,11 @@ function AnomalyCard({ anomaly }: { anomaly: NonNullable<DayResponse['anomaly']>
         border:       `1px solid ${isDrop ? '#fecaca' : '#bbf7d0'}`,
         borderRadius: 8,
         fontSize:     13,
-        color:        isDrop ? '#b91c1c' : UX.greenInk,
+        color:        isDrop ? '#b91c1c' : UXP.greenDeep,
       }}>
         {anomaly.message ?? 'No additional detail.'}
       </div>
-      <div style={{ fontSize: 11, color: UX.ink4, marginTop: 6 }}>
+      <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 6 }}>
         Severity: {anomaly.severity} · Confirmation: {anomaly.confirmation_status ?? 'pending'}
       </div>
     </Section>
@@ -383,7 +383,7 @@ function ShiftsTable({ shifts }: { shifts: DayResponse['shifts'] }) {
     <div style={{ padding: '6px 4px' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
         <thead>
-          <tr style={{ color: UX.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UX.border}` }}>
+          <tr style={{ color: UXP.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UXP.border}` }}>
             <th style={th()}>Staff</th>
             <th style={th()}>Group</th>
             <th style={{ ...th(), textAlign: 'right' as const }}>Hours</th>
@@ -393,23 +393,23 @@ function ShiftsTable({ shifts }: { shifts: DayResponse['shifts'] }) {
         </thead>
         <tbody>
           {shifts.map((s, i) => (
-            <tr key={i} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
+            <tr key={i} style={{ borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
               <td style={td()}>{s.staff_name ?? '—'}</td>
-              <td style={{ ...td(), color: UX.ink3 }}>{s.staff_group ?? '—'}</td>
+              <td style={{ ...td(), color: UXP.ink3 }}>{s.staff_group ?? '—'}</td>
               <td style={{ ...td(), textAlign: 'right' as const }}>{s.hours_worked.toFixed(1)}</td>
               <td style={{ ...td(), textAlign: 'right' as const }}>{fmtKr(s.estimated_cost)}</td>
               <td style={td()}>
                 <span style={{
                   fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 3,
-                  background: s.kind === 'scheduled' ? '#eef2ff' : UX.greenBg,
-                  color:      s.kind === 'scheduled' ? '#4338ca' : UX.greenInk,
+                  background: s.kind === 'scheduled' ? '#eef2ff' : UXP.greenFill,
+                  color:      s.kind === 'scheduled' ? '#4338ca' : UXP.greenDeep,
                 }}>
                   {s.kind}
                 </span>
               </td>
             </tr>
           ))}
-          <tr style={{ borderTop: `1px solid ${UX.border}`, fontWeight: 600 }}>
+          <tr style={{ borderTop: `1px solid ${UXP.border}`, fontWeight: 600 }}>
             <td style={td()}>Total</td>
             <td style={td()}></td>
             <td style={{ ...td(), textAlign: 'right' as const }}>{total.toFixed(1)}</td>
@@ -427,13 +427,13 @@ function ShiftsTable({ shifts }: { shifts: DayResponse['shifts'] }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={{
-      background:   UX.cardBg,
-      border:       `1px solid ${UX.border}`,
+      background:   UXP.cardBg,
+      border:       `1px solid ${UXP.border}`,
       borderRadius: 10,
       padding:      '14px 16px',
       marginBottom: 12,
     }}>
-      <h2 style={{ fontSize: 13, fontWeight: 600, color: UX.ink1, margin: 0, marginBottom: 10 }}>
+      <h2 style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, margin: 0, marginBottom: 10 }}>
         {title}
       </h2>
       {children}
@@ -442,14 +442,14 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Metric({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: 'good' | 'warn' | 'bad' | 'neutral' }) {
-  const TONE: Record<string, string> = { good: UX.greenInk, warn: UX.amberInk, bad: '#b91c1c', neutral: UX.ink1 }
+  const TONE: Record<string, string> = { good: UXP.greenDeep, warn: UXP.coral, bad: '#b91c1c', neutral: UXP.ink1 }
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: UX.ink4, textTransform: 'uppercase' as const, marginBottom: 3 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: UXP.ink4, textTransform: 'uppercase' as const, marginBottom: 3 }}>
         {label}
       </div>
       <div style={{ fontSize: 18, fontWeight: 500, color: TONE[tone] }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
@@ -469,7 +469,7 @@ function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string })
   )
 }
 function Empty({ text }: { text: string }) {
-  return <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: 12 }}>{text}</div>
+  return <div style={{ padding: 40, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{text}</div>
 }
 function th(): React.CSSProperties {
   return { padding: '8px 8px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }

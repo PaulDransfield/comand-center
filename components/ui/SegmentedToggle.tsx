@@ -4,7 +4,7 @@
 
 'use client'
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 export interface SegmentedToggleOption {
   value: string
@@ -30,9 +30,9 @@ export default function SegmentedToggle({
       aria-label={ariaLabel}
       style={{
         display:      'inline-flex',
-        background:   UX.cardBg,
-        border:       `0.5px solid ${UX.border}`,
-        borderRadius: UX.r_md,
+        background:   UXP.cardBg,
+        border:       `0.5px solid ${UXP.border}`,
+        borderRadius: UXP.r_md,
         padding:      2,
         gap:          2,
       }}
@@ -47,14 +47,14 @@ export default function SegmentedToggle({
             onClick={() => onChange(o.value)}
             style={{
               padding:      '5px 12px',
-              borderRadius: UX.r_sm,
+              borderRadius: UXP.r_sm,
               border:       'none',
               cursor:       'pointer',
-              fontSize:     UX.fsBody,
-              fontWeight:   UX.fwMedium,
-              background:   active ? UX.navy       : 'transparent',
-              color:        active ? UX.cardBg     : UX.ink3,
-              boxShadow:    active ? UX.shadowPill : 'none',
+              fontSize:     12,
+              fontWeight:   500,
+              background:   active ? UXP.ink1       : 'transparent',
+              color:        active ? UXP.cardBg     : UXP.ink3,
+              boxShadow:    active ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
               letterSpacing: '0.01em',
             }}
           >
