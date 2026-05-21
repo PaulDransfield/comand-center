@@ -17,28 +17,37 @@ export async function generateMetadata() {
   }
 }
 
-// ── DESIGN TOKENS (matching nextjs/app/globals.css) ───────────
+// ── DESIGN TOKENS — Phase X (2026-05-21): landing migrated to the
+// pastel-lavender system so prospects see the same aesthetic they get
+// inside the app. Names kept (C.navy / C.parchment etc) so the rest of
+// the file's class declarations + inline styles don't need to change —
+// only the colour values move. The "navy" naming is now historical;
+// values map to the UXP lavender palette from lib/constants/tokens.
 const C = {
-  navy:      '#1E2761',
-  navyDeep:  '#161d4e',
-  blue:      '#185FA5',
-  blueLt:    '#EEF4FF',
-  parchment: '#F2EDE8',
-  offWhite:  '#FAFAF8',
-  white:     '#FFFFFF',
-  border:    '#E0DAD2',
-  borderD:   '#C8C1B8',
-  ink:       '#1C1714',
-  ink2:      '#3A3733',
-  ink3:      '#6A6560',
-  ink4:      '#A8A49C',
-  green:     '#2D6A35',
-  greenLt:   '#EAF2E8',
-  amber:     '#7A4800',
-  amberLt:   '#FFF5E5',
+  navy:      '#7d6cc9',  // UXP.lavDeep — primary dark accent (was navy)
+  navyDeep:  '#564a8a',  // UXP.lavText — deeper accent for hover states
+  blue:      '#a99ce6',  // UXP.lav     — accent
+  blueLt:    '#ece8f8',  // UXP.lavFill — light fill for hover/highlights
+  parchment: '#faf9fd',  // UXP.subtleBg — was warm cream, now cool subtle
+  offWhite:  '#f1eff9',  // UXP.pageBg   — page background
+  white:     '#ffffff',
+  border:    'rgba(58,53,80,0.08)',  // UXP.border
+  borderD:   'rgba(58,53,80,0.18)',  // a touch darker for 1.5px borders
+  ink:       '#3a3550',  // UXP.ink1
+  ink2:      'rgba(58,53,80,0.62)',  // UXP.ink2
+  ink3:      'rgba(58,53,80,0.45)',  // UXP.ink3
+  ink4:      'rgba(58,53,80,0.38)',  // UXP.ink4
+  green:     '#477f60',  // UXP.greenDeep
+  greenLt:   '#eef4f0',  // UXP.greenFill
+  amber:     '#c0703a',  // UXP.coral (the pastel system has no amber)
+  amberLt:   '#f7e8db',
 }
 
 const F = {
+  // Body stays DM Sans on the marketing page — it's a deliberate
+  // marketing typeface choice that gives the landing its own voice
+  // distinct from the app's Spline Sans body. Fraunces (display) is
+  // shared with the app.
   body:    `'DM Sans', system-ui, -apple-system, sans-serif`,
   display: `'Fraunces', Georgia, serif`,
   mono:    `'DM Mono', 'Menlo', monospace`,
@@ -83,7 +92,7 @@ export default async function LandingPage() {
           font-size: 15px; font-weight: 600; cursor: pointer; transition: all .15s;
           background: ${C.navy}; color: white; border: none;
         }
-        .btn-navy:hover { background: ${C.navyDeep}; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(30,39,97,.3); }
+        .btn-navy:hover { background: ${C.navyDeep}; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(125,108,201,.35); }
 
         .btn-outline-navy {
           display: inline-flex; align-items: center; gap: 6px;
@@ -200,7 +209,9 @@ export default async function LandingPage() {
           HERO
       ════════════════════════════════════════════════════════ */}
       <section style={{
-        background: `linear-gradient(160deg, ${C.navy} 0%, #2a3580 60%, #1a4a7a 100%)`,
+        // Lavender gradient — UXP.lavDeep → UXP.lav → UXP.lavMid keeps
+        // the hero on-brand with the app's pastel palette.
+        background: `linear-gradient(160deg, ${C.navy} 0%, #a99ce6 60%, #c4b8ec 100%)`,
         padding: '80px 24px 100px',
         position: 'relative', overflow: 'hidden',
       }}>
@@ -417,7 +428,7 @@ export default async function LandingPage() {
             gridTemplateColumns: '1fr auto',
             gap: 24,
             alignItems: 'center',
-            boxShadow: '0 18px 48px -20px rgba(10,18,47,.35)',
+            boxShadow: '0 18px 48px -20px rgba(58,53,80,.18)',
           }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
