@@ -311,6 +311,37 @@ export default function ToolsPage() {
     }
   }
 
+  // Re-match endpoint — re-runs matcher on existing supplier_invoice_lines
+  // rows (in particular `not_inventory` rows, after a categories.ts allowlist
+  // change). No Fortnox API calls; reuses the inventory_backfill_state row
+  // + the same poll loop as the backfill.
+  async function rematchInventory(onlyNotInv: boolean) {
+    if (invKicking || invPolling || !opsBizId.trim()) return
+    setInvKicking(true)
+    setInvError(null)
+    setInvSnapshot(null)
+    try {
+      const res = await fetch('/api/inventory/lines/rematch', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          business_id:         opsBizId.trim(),
+          only_not_inventory:  onlyNotInv,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setInvError(json?.message ?? json?.error ?? `HTTP ${res.status}`)
+        return
+      }
+      pollInventoryStatus(opsBizId.trim())
+    } catch (e: any) {
+      setInvError(e?.message ?? 'Inventory rematch kick failed')
+    } finally {
+      setInvKicking(false)
+    }
+  }
+
   // Poll loop. Stops on terminal status or after the safety cap.
   function pollInventoryStatus(businessId: string) {
     setInvPolling(true)
@@ -579,6 +610,22 @@ export default function ToolsPage() {
             title="POST /api/inventory/lines/backfill — kick + poll for live progress"
           >
             {invKicking ? 'Kicking…' : invPolling ? 'Running…' : 'Kick inventory backfill'}
+          </button>
+          <button
+            onClick={() => rematchInventory(true)}
+            disabled={invKicking || invPolling || !opsBizId.trim()}
+            style={btnSecondary(invKicking || invPolling || !opsBizId.trim())}
+            title="POST /api/inventory/lines/rematch?only_not_inventory=1 — re-runs the matcher on existing not_inventory rows. No Fortnox API calls. Use after a categories.ts allowlist change."
+          >
+            Re-match not-inventory
+          </button>
+          <button
+            onClick={() => rematchInventory(false)}
+            disabled={invKicking || invPolling || !opsBizId.trim()}
+            style={btnSecondary(invKicking || invPolling || !opsBizId.trim())}
+            title="POST /api/inventory/lines/rematch — re-runs the matcher on all not-yet-matched rows. No Fortnox API calls."
+          >
+            Re-match all unmatched
           </button>
         </div>
 
