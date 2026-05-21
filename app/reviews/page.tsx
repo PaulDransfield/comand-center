@@ -13,11 +13,16 @@
 //   - /api/reviews/list    (recent classified reviews)
 //   - /api/integrations/google-places (connect flow)
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UX, UXP } from '@/lib/constants/tokens'
 // Phase 3 — Insights pages onto the new system. SummaryStrip → KpiCardUX row.
+// Phase 7.5 — adds the rating-over-time chart, star-distribution table, and
+// platform filter the original §3 spec called for. Reply / response-time
+// surfaces still defer (need new schema + an /api/reviews/draft-reply route).
 import KpiCardUX from '@/components/ux/KpiCard'
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 
 const CATEGORY_LABEL: Record<string, string> = {
   food:        'Food',
@@ -74,6 +79,10 @@ export default function ReviewsPage() {
   const [error,   setError]   = useState('')
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null)
+  // Phase 7.5 — platform filter. Google is the only live source today;
+  // the other options surface as greyed-out "coming soon" items so the
+  // operator sees where this is going. Selecting them is a no-op.
+  const [platform, setPlatform] = useState<'google'>('google')
 
   // Read selected business id from the same key the sidebar uses
   useEffect(() => {
@@ -163,7 +172,10 @@ export default function ReviewsPage() {
         {bizId && placeId && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' as const }}>
-              <WindowToggle value={windowDays} onChange={setWindowDays} />
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                <WindowToggle value={windowDays} onChange={setWindowDays} />
+                <PlatformFilter value={platform} onChange={setPlatform} />
+              </div>
               <SyncButton onClick={syncNow} busy={syncing} />
             </div>
 
@@ -185,6 +197,8 @@ export default function ReviewsPage() {
             {!loading && themes && themes.sample_size > 0 && (
               <>
                 <SummaryStrip themes={themes} />
+                <RatingTrendChart trend={themes.weekly_trend} />
+                <StarDistribution reviews={reviews} />
                 <ThemesPanel themes={themes.top_themes} />
               </>
             )}
@@ -401,6 +415,251 @@ function Spinner() {
       <path d="M21 12a9 9 0 11-9-9"/>
       <style>{'@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}'}</style>
     </svg>
+  )
+}
+
+// ─── Platform filter ─────────────────────────────────────────────────
+// Phase 7.5 — pill dropdown that lists Google (the live source today)
+// plus the platforms we plan to add as future menu items. Selecting a
+// "coming soon" option keeps the filter on Google so nothing on the
+// page changes; the affordance signals product direction.
+
+type PlatformKey = 'google'
+
+interface PlatformOption {
+  key:      PlatformKey | 'tripadvisor' | 'foodora' | 'ubereats'
+  label:    string
+  enabled:  boolean
+}
+
+const PLATFORM_OPTIONS: PlatformOption[] = [
+  { key: 'google',      label: 'Google Maps', enabled: true  },
+  { key: 'tripadvisor', label: 'TripAdvisor', enabled: false },
+  { key: 'foodora',     label: 'Foodora',     enabled: false },
+  { key: 'ubereats',    label: 'Uber Eats',   enabled: false },
+]
+
+function PlatformFilter({ value, onChange }: { value: PlatformKey; onChange: (v: PlatformKey) => void }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [open, setOpen] = useState(false)
+  const current = PLATFORM_OPTIONS.find(o => o.key === value) ?? PLATFORM_OPTIONS[0]
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as any)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' as const }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{
+          display:        'inline-flex',
+          alignItems:     'center',
+          gap:            6,
+          padding:        '5px 10px',
+          background:     UXP.cardBg,
+          color:          UXP.ink1,
+          border:         `0.5px solid ${UXP.border}`,
+          borderRadius:   7,
+          fontSize:       11,
+          fontFamily:     'inherit',
+          cursor:         'pointer',
+        }}
+      >
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: UXP.green, display: 'inline-block' }} />
+        {current.label}
+        <span aria-hidden style={{ color: UXP.ink3, fontSize: 10 }}>▾</span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position:     'absolute' as const,
+            top:          'calc(100% + 4px)',
+            left:         0,
+            minWidth:     180,
+            background:   UXP.cardBg,
+            border:       `0.5px solid ${UXP.border}`,
+            borderRadius: UXP.r_md,
+            padding:      4,
+            zIndex:       40,
+            boxShadow:    '0 8px 24px rgba(58,53,80,0.12)',
+          }}
+        >
+          {PLATFORM_OPTIONS.map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              disabled={!opt.enabled}
+              onClick={() => {
+                if (!opt.enabled) return
+                onChange(opt.key as PlatformKey)
+                setOpen(false)
+              }}
+              style={{
+                display:      'flex',
+                alignItems:   'center',
+                justifyContent: 'space-between',
+                width:        '100%',
+                textAlign:    'left' as const,
+                padding:      '7px 9px',
+                background:   opt.key === value ? UXP.lavFill : 'transparent',
+                color:        opt.enabled ? (opt.key === value ? UXP.lavText : UXP.ink1) : UXP.ink4,
+                border:       'none',
+                borderRadius: UXP.r_sm,
+                cursor:       opt.enabled ? 'pointer' : 'not-allowed',
+                fontSize:     11,
+                fontFamily:   'inherit',
+              }}
+            >
+              {opt.label}
+              {!opt.enabled && (
+                <span style={{ fontSize: 9, color: UXP.ink4, fontStyle: 'italic' as const }}>
+                  Snart
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Rating trend chart ──────────────────────────────────────────────
+// Phase 7.5 — weekly rating + sample-size line overlay drawn through the
+// canonical PairedBarChart. Uses themes.weekly_trend so no new API call.
+
+function RatingTrendChart({ trend }: { trend: ThemesResp['weekly_trend'] }) {
+  if (!trend || trend.length === 0) return null
+  // Limit to the latest 12 weeks so the chart stays legible.
+  const series = trend.slice(-12)
+  const groups = series.map(w => formatWeekShort(w.week))
+  const ratings = series.map(w => (w.avg_rating != null ? Number(w.avg_rating) : 0))
+  const samples = series.map(w => w.sample_n)
+
+  return (
+    <div style={{
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: UXP.r_lg,
+      padding:      '14px 16px',
+      marginBottom: 14,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, color: UXP.ink3, fontWeight: 500 }}>Betyg över tid</div>
+          <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+            Veckosnitt — senaste {series.length} {series.length === 1 ? 'vecka' : 'veckor'}
+          </div>
+        </div>
+        <span style={{ fontSize: 10, color: UXP.ink4 }}>
+          Skala 0-5
+        </span>
+      </div>
+      <PairedBarChart
+        groups={groups}
+        series={[
+          { label: 'Betyg', data: ratings, color: UXP.lav },
+        ]}
+        lines={[{
+          label:  'Antal recensioner',
+          data:   samples,
+          color:  UXP.coral,
+          dashed: false,
+        }]}
+        leftMax={5}
+        leftAxisUnit="★"
+        width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 900) : 900}
+        height={200}
+      />
+    </div>
+  )
+}
+
+function formatWeekShort(iso: string): string {
+  // Input typically 'YYYY-WW' or 'YYYY-MM-DD'. Render as 'v.<num>' when
+  // we can parse a week, else the last two characters as a fallback.
+  const wMatch = iso.match(/-W?(\d{1,2})$/)
+  if (wMatch) return `v.${wMatch[1]}`
+  const dMatch = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (dMatch) return `${dMatch[3]}/${dMatch[2]}`
+  return iso.slice(-5)
+}
+
+// ─── Star distribution ───────────────────────────────────────────────
+// Phase 7.5 — count of reviews per star (1-5) over the loaded review
+// window. Renders via the canonical BreakdownTable with a horizontal
+// share bar in the count column.
+
+function StarDistribution({ reviews }: { reviews: Review[] }) {
+  const buckets = [5, 4, 3, 2, 1].map(stars => ({
+    stars,
+    count: reviews.filter(r => r.rating === stars).length,
+  }))
+  const total = buckets.reduce((s, b) => s + b.count, 0)
+  if (total === 0) return null
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink3, fontWeight: 500 }}>Stjärnfördelning</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+          {total} klassificerade {total === 1 ? 'recension' : 'recensioner'}
+        </div>
+      </div>
+      <BreakdownTable<{ stars: number; count: number }>
+        columns={[
+          { key: 'stars', header: 'Stjärnor', align: 'left', render: (r) => (
+            <span style={{ color: UXP.ink1, letterSpacing: '0.05em' }}>
+              {'★'.repeat(r.stars)}
+              <span style={{ color: UXP.ink4 }}>{'★'.repeat(5 - r.stars)}</span>
+            </span>
+          ) },
+          { key: 'count', header: 'Antal', align: 'right', render: (r) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end' }}>
+              <span style={{
+                display:      'inline-block',
+                width:        80,
+                height:       4,
+                background:   UXP.lavFill,
+                borderRadius: 2,
+                overflow:     'hidden',
+              }}>
+                <span style={{
+                  display: 'block',
+                  height:  '100%',
+                  width:   `${total > 0 ? (r.count / total) * 100 : 0}%`,
+                  background: r.stars >= 4 ? UXP.green : r.stars === 3 ? UXP.coral : UXP.rose,
+                }} />
+              </span>
+              <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, minWidth: 28, textAlign: 'right' as const }}>
+                {r.count}
+              </span>
+            </span>
+          ) },
+          { key: 'share', header: '%',      align: 'right', render: (r) => (
+            <DeltaChip
+              value={`${total > 0 ? ((r.count / total) * 100).toFixed(0) : 0}%`}
+              positiveIsGood={r.stars >= 4}
+            />
+          ) },
+        ]}
+        sections={[{ rows: buckets }]}
+        footer={{
+          label: 'Total',
+          cells: { count: String(total), share: '100%' },
+        }}
+        rowKey={(row) => String(row.stars)}
+      />
+    </div>
   )
 }
 
