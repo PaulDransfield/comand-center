@@ -6,6 +6,15 @@
 
 ## Pending — apply when ready
 
+### M076 — Inventory backfill state ⏳ pending application
+**File:** `sql/M076-INVENTORY-BACKFILL-STATE.sql`
+**Purpose:** Phase A follow-up. The original /api/inventory/lines/backfill ran synchronously and timed out (HTTP 504) on businesses with >~60 invoices. Adds `inventory_backfill_state` table so the kick endpoint can write progress, fire a `waitUntil` background worker, and return instantly while the admin UI polls for live counts. Same pattern as `fortnox_backfill_state`. One row per business via UNIQUE(business_id); kicks UPSERT.
+**Companion code:**
+- `lib/inventory/backfill-worker.ts` — extracted 12-month walk + matcher loop, writes progress every 5 invoices.
+- `app/api/inventory/lines/backfill` rewritten as a thin kick (fires worker via `@vercel/functions.waitUntil`, returns 200 immediately).
+- `app/api/inventory/lines/backfill/status` — read-side companion for polling.
+- `/admin/v2/tools` — Kick button now non-blocking, with live progress card (phase label, invoice-progress bar, 6-tile counter grid, recent-errors collapsible).
+
 ### M075 — Inventory catalogue (Phase A) ⏳ pending application
 **File:** `sql/M075-INVENTORY-CATALOGUE.sql`
 **Purpose:** Phase A of INVENTORY-CATALOGUE-PLAN.md. Adds three tables (`products`, `product_aliases`, `supplier_invoice_lines`) + pg_trgm extension + RLS policies + two helper RPCs (`inventory_trigram_search`, `inventory_touch_alias`). The two unique indexes on `product_aliases` (`(business_id, supplier_fortnox_number, article_number)` partial + `(business_id, supplier_fortnox_number, normalised_description, COALESCE(unit, ''))` partial) are the load-bearing dedup constraints — one product = one row, structurally.

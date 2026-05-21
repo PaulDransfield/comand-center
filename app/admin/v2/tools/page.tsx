@@ -224,15 +224,14 @@ export default function ToolsPage() {
   // and overlay the latest status/progress on top of the kick response.
   const [opsPollSnapshot, setOpsPollSnapshot] = useState<any>(null)
 
-  // Inventory backfill (Phase A of INVENTORY-CATALOGUE-PLAN.md) — separate
-  // pipeline from Fortnox PDF backfill. POSTs /api/inventory/lines/backfill
-  // which walks supplier invoices, persists rows, runs the matcher.
-  // Uses the same opsBizId/opsRunning to keep the UI simple. Cookies carry
-  // the owner-side auth (Paul is logged in as the customer in the same
-  // browser tab); the endpoint authorises via requireBusinessAccess.
-  const [invRunning, setInvRunning] = useState<boolean>(false)
-  const [invResult,  setInvResult]  = useState<any>(null)
-  const [invError,   setInvError]   = useState<string | null>(null)
+  // Inventory backfill (Phase A of INVENTORY-CATALOGUE-PLAN.md). Background-
+  // worker pattern — the POST returns instantly with status='started',
+  // then we poll /status?business_id=… every 4s and overlay the latest
+  // progress shape on the card below.
+  const [invKicking,    setInvKicking]    = useState<boolean>(false)
+  const [invError,      setInvError]      = useState<string | null>(null)
+  const [invSnapshot,   setInvSnapshot]   = useState<any>(null)
+  const [invPolling,    setInvPolling]    = useState<boolean>(false)
 
   async function kickFortnoxBackfill() {
     if (opsRunning || !opsBizId.trim()) return
@@ -281,16 +280,17 @@ export default function ToolsPage() {
     }
   }
 
-  // Inventory backfill — kicks /api/inventory/lines/backfill which pulls
-  // 12 months of Fortnox supplier invoices, persists every row to
-  // supplier_invoice_lines, and runs the matcher inline. ~2 min for Vero.
-  // Uses plain `fetch` (not adminFetch) because the endpoint authorises
-  // via the owner-side session cookie, not the admin secret.
+  // Inventory backfill — kicks /api/inventory/lines/backfill which now
+  // returns instantly (the work runs in a Vercel `waitUntil` background
+  // task). After a successful kick we start a poll loop that GETs
+  // /api/inventory/lines/backfill/status every 4s and overlays the
+  // live progress payload onto the card. Stops on terminal status
+  // ('completed' | 'failed') or after 30 min as a safety cap.
   async function kickInventoryBackfill() {
-    if (invRunning || !opsBizId.trim()) return
-    setInvRunning(true)
-    setInvResult(null)
+    if (invKicking || invPolling || !opsBizId.trim()) return
+    setInvKicking(true)
     setInvError(null)
+    setInvSnapshot(null)
     try {
       const res = await fetch('/api/inventory/lines/backfill', {
         method:  'POST',
@@ -300,14 +300,48 @@ export default function ToolsPage() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         setInvError(json?.message ?? json?.error ?? `HTTP ${res.status}`)
-      } else {
-        setInvResult(json)
+        return
       }
+      // Worker is now running in the background. Start polling.
+      pollInventoryStatus(opsBizId.trim())
     } catch (e: any) {
-      setInvError(e?.message ?? 'Inventory backfill failed')
+      setInvError(e?.message ?? 'Inventory backfill kick failed')
     } finally {
-      setInvRunning(false)
+      setInvKicking(false)
     }
+  }
+
+  // Poll loop. Stops on terminal status or after the safety cap.
+  function pollInventoryStatus(businessId: string) {
+    setInvPolling(true)
+    const startMs = Date.now()
+    const POLL_MS = 4000
+    const MAX_MS  = 30 * 60 * 1000     // 30 min safety cap
+
+    const tick = async () => {
+      try {
+        const r = await fetch(
+          `/api/inventory/lines/backfill/status?business_id=${encodeURIComponent(businessId)}`,
+          { cache: 'no-store' },
+        )
+        if (r.ok) {
+          const snap = await r.json().catch(() => null)
+          if (snap) setInvSnapshot(snap)
+          const status = snap?.status as string | undefined
+          if (status === 'completed' || status === 'failed') {
+            setInvPolling(false)
+            return
+          }
+        }
+      } catch { /* network blip — keep polling */ }
+
+      if (Date.now() - startMs > MAX_MS) {
+        setInvPolling(false)
+        return
+      }
+      window.setTimeout(tick, POLL_MS)
+    }
+    void tick()
   }
 
   // Forecast backfill (Piece 2) — walks every positive-revenue day through
@@ -540,31 +574,120 @@ export default function ToolsPage() {
           </span>
           <button
             onClick={kickInventoryBackfill}
-            disabled={invRunning || !opsBizId.trim()}
-            style={btnPrimary(invRunning || !opsBizId.trim())}
-            title="POST /api/inventory/lines/backfill — uses owner session cookies"
+            disabled={invKicking || invPolling || !opsBizId.trim()}
+            style={btnPrimary(invKicking || invPolling || !opsBizId.trim())}
+            title="POST /api/inventory/lines/backfill — kick + poll for live progress"
           >
-            {invRunning ? 'Running…' : 'Kick inventory backfill'}
+            {invKicking ? 'Kicking…' : invPolling ? 'Running…' : 'Kick inventory backfill'}
           </button>
         </div>
 
-        {(invResult || invError) && (
-          <div style={{
-            position:   'relative' as const,
-            marginTop: 10, padding: 10, paddingRight: 70,
-            background: invError ? '#fef2f2' : '#f0fdf4',
-            border:     `1px solid ${invError ? '#fecaca' : '#bbf7d0'}`,
-            borderRadius: 6,
-            fontSize: 11, fontFamily: 'ui-monospace, monospace',
-            color:    invError ? '#991b1b' : '#111',
-            whiteSpace: 'pre-wrap' as const,
-            wordBreak:  'break-word' as const,
-            maxHeight:  600, overflowY: 'auto' as const,
-          }}>
-            <CopyTextButton text={invError ?? JSON.stringify(invResult, null, 2)} />
-            {invError ?? JSON.stringify(invResult, null, 2)}
-          </div>
-        )}
+        {(invSnapshot || invError) && (() => {
+          const status = invSnapshot?.status as string | undefined
+          const p      = invSnapshot?.progress ?? {}
+          const phaseLabel = ({
+            enqueued:               'Queued',
+            fetching_invoice_list:  'Fetching invoice list…',
+            fetching_rows:          'Fetching invoice rows…',
+            matching:               'Matching lines to products…',
+            done:                   'Done',
+          } as Record<string, string>)[p.phase] ?? p.phase ?? '—'
+          const isErr = !!invError || status === 'failed'
+          const isOk  = status === 'completed'
+          const bg    = isErr ? '#fef2f2' : isOk ? '#f0fdf4' : '#eff6ff'
+          const bord  = isErr ? '#fecaca' : isOk ? '#bbf7d0' : '#bfdbfe'
+          const fg    = isErr ? '#991b1b' : '#111'
+
+          const totalInvoices = Number(p.invoices_found  ?? 0)
+          const doneInvoices  = Number(p.invoices_processed ?? 0)
+          const pctInvoices   = totalInvoices > 0 ? Math.round((doneInvoices / totalInvoices) * 100) : 0
+
+          return (
+            <div style={{
+              position:   'relative' as const,
+              marginTop:  10, padding: 12, paddingRight: 70,
+              background: bg,
+              border:     `1px solid ${bord}`,
+              borderRadius: 8,
+              fontSize:   12,
+              color:      fg,
+            }}>
+              <CopyTextButton text={invError ?? JSON.stringify(invSnapshot, null, 2)} />
+
+              {/* Header row — status + phase */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' as const }}>
+                <span style={{
+                  display: 'inline-block', fontSize: 10, fontWeight: 700,
+                  padding: '2px 8px', borderRadius: 999,
+                  background: isErr ? '#dc2626' : isOk ? '#16a34a' : '#2563eb',
+                  color: 'white', letterSpacing: '0.04em', textTransform: 'uppercase' as const,
+                }}>
+                  {status ?? (invError ? 'error' : 'running')}
+                </span>
+                <span style={{ fontWeight: 600 }}>{phaseLabel}</span>
+                {invPolling && (
+                  <span style={{ fontSize: 10, color: '#6b7280' }}>polling every 4s…</span>
+                )}
+              </div>
+
+              {invError && (
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, marginBottom: 8 }}>
+                  {invError}
+                </div>
+              )}
+
+              {invSnapshot?.error_message && (
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, marginBottom: 8, color: '#991b1b' }}>
+                  {invSnapshot.error_message}
+                </div>
+              )}
+
+              {/* Progress bar — invoices processed / total */}
+              {totalInvoices > 0 && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3, color: '#374151' }}>
+                    <span>Invoices: {doneInvoices} / {totalInvoices}</span>
+                    <span>{pctInvoices}%</span>
+                  </div>
+                  <div style={{ height: 6, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', width: `${pctInvoices}%`,
+                      background: isErr ? '#dc2626' : isOk ? '#16a34a' : '#2563eb',
+                      transition: 'width 0.4s ease',
+                    }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Counter grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                <Stat label="Lines inserted"     value={p.lines_inserted} />
+                <Stat label="Lines matched"      value={p.lines_matched}  good />
+                <Stat label="Needs review"       value={p.lines_needs_review} warn />
+                <Stat label="Not inventory"      value={p.lines_not_inventory} muted />
+                <Stat label="Skipped (existed)"  value={p.lines_skipped_existing} muted />
+                <Stat label="Errors"             value={p.error_count} danger={Number(p.error_count ?? 0) > 0} />
+              </div>
+
+              {/* Sample errors */}
+              {Array.isArray(p.errors) && p.errors.length > 0 && (
+                <details style={{ marginTop: 10, fontSize: 11 }}>
+                  <summary style={{ cursor: 'pointer', color: '#374151' }}>{p.errors.length} error sample(s)</summary>
+                  <pre style={{ marginTop: 6, padding: 8, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 4, fontSize: 10, overflowX: 'auto' as const }}>
+                    {JSON.stringify(p.errors, null, 2)}
+                  </pre>
+                </details>
+              )}
+
+              {/* Window timing */}
+              <div style={{ marginTop: 10, fontSize: 10, color: '#6b7280' }}>
+                {p.window?.from && p.window?.to && <>Window: {p.window.from} → {p.window.to} · </>}
+                {invSnapshot?.started_at && <>Started {new Date(invSnapshot.started_at).toLocaleTimeString()} </>}
+                {invSnapshot?.finished_at && <>· Finished {new Date(invSnapshot.finished_at).toLocaleTimeString()}</>}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── Diagnose vouchers row (read-only translator check) ────────── */}
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -1091,4 +1214,38 @@ function fmtTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString('sv-SE', { hour12: false })
   } catch { return iso }
+}
+
+// Small KPI cell for the inventory backfill progress card.
+function Stat({
+  label, value, good, warn, danger, muted,
+}: {
+  label:    string
+  value:    number | string | null | undefined
+  good?:    boolean
+  warn?:    boolean
+  danger?:  boolean
+  muted?:   boolean
+}) {
+  const numericValue = value == null ? 0 : Number(value) || 0
+  const display = typeof value === 'number' || value == null
+    ? numericValue.toLocaleString('sv-SE')
+    : String(value)
+  const valueColor =
+    danger ? '#dc2626' :
+    good   ? '#16a34a' :
+    warn   ? '#b45309' :
+    muted  ? '#6b7280' :
+             '#111'
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.6)',
+      border: '1px solid rgba(0,0,0,0.06)',
+      borderRadius: 6,
+      padding: '6px 10px',
+    }}>
+      <div style={{ fontSize: 9, color: '#6b7280', textTransform: 'uppercase' as const, letterSpacing: '0.05em', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: valueColor, fontVariantNumeric: 'tabular-nums' as const, marginTop: 2 }}>{display}</div>
+    </div>
+  )
 }
