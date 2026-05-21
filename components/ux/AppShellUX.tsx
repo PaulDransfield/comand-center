@@ -24,7 +24,6 @@ import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { UXP } from '@/lib/constants/tokens'
 import { AREAS, resolveActiveNav, type Area, type AreaPage } from '@/lib/nav/areas'
-import { RailIcon } from '@/components/RailIcon/RailIcon'
 import type { ReactNode } from 'react'
 
 export interface AppShellUXProps {
@@ -399,7 +398,7 @@ function AskCcPill({ onClick }: { onClick?: () => void }) {
         letterSpacing:  '0.01em',
       }}
     >
-      <RailIcon name="ask" size={18} />
+      <span aria-hidden style={{ fontSize: 11 }}>✦</span>
       Ask CC
     </button>
   )

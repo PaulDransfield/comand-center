@@ -14,7 +14,6 @@ import { useTranslations }              from 'next-intl'
 import { createClient }                from '@/lib/supabase/client'
 import AiLimitReached                  from '@/components/AiLimitReached'
 import { UXP }                         from '@/lib/constants/tokens'
-import { RailIcon }                    from '@/components/RailIcon/RailIcon'
 
 interface Message {
   role:    'user' | 'assistant'
@@ -214,11 +213,10 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
         style={FAB}
         onClick={() => setOpen(o => !o)}
         title={t('fabTitle')}
-        aria-label="Ask CC"
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}
       >
-        <RailIcon name="chat" size={46} />
+        <span aria-hidden style={{ fontSize: 12 }}>✦</span>
         Ask CC
       </button>
 

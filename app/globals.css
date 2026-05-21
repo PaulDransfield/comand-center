@@ -43,16 +43,6 @@ input, button, select, textarea { font-family: inherit; }
   --ink-2:      #374151;
   --ink-3:      #6b7280;
   --ink-4:      #9ca3af;
-
-  /* UXP lavender palette — mirrors lib/constants/tokens.ts. Exposed as CSS
-     vars so the RailIcon component (components/RailIcon/) can use
-     var(--lav-deep) etc. without hard-coding hexes. Inline-style consumers
-     keep reading from the TS token map; this is for CSS-module consumers. */
-  --lav:        #a99ce6;
-  --lav-deep:   #7d6cc9;
-  --lav-fill:   #ece8f8;
-  --coral:      #c0703a;
-  --card:       #ffffff;
 }
 
 /* ── AUTH / FORM COMPONENTS ──────────────────────────────────── */
