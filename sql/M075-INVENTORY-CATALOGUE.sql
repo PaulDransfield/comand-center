@@ -220,15 +220,20 @@ ALTER TABLE public.products              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.product_aliases       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.supplier_invoice_lines ENABLE ROW LEVEL SECURITY;
 
+-- current_user_org_ids() returns uuid[] (an array — see M018), so the
+-- canonical RLS pattern is `org_id = ANY(current_user_org_ids())`, NOT
+-- `IN (SELECT current_user_org_ids())` which compares uuid = uuid[] and
+-- fails with 42883. Six policies, same fix.
+
 -- products: members of org_id see their own org's rows
 DROP POLICY IF EXISTS products_select ON public.products;
 CREATE POLICY products_select ON public.products
-  FOR SELECT USING (org_id IN (SELECT current_user_org_ids()));
+  FOR SELECT USING (org_id = ANY(current_user_org_ids()));
 
 DROP POLICY IF EXISTS products_modify ON public.products;
 CREATE POLICY products_modify ON public.products
-  FOR ALL USING (org_id IN (SELECT current_user_org_ids()))
-  WITH CHECK (org_id IN (SELECT current_user_org_ids()));
+  FOR ALL USING (org_id = ANY(current_user_org_ids()))
+  WITH CHECK (org_id = ANY(current_user_org_ids()));
 
 -- product_aliases: inherit via products.business_id
 DROP POLICY IF EXISTS product_aliases_select ON public.product_aliases;
@@ -236,7 +241,7 @@ CREATE POLICY product_aliases_select ON public.product_aliases
   FOR SELECT USING (
     business_id IN (
       SELECT b.id FROM public.businesses b
-      WHERE b.org_id IN (SELECT current_user_org_ids())
+      WHERE b.org_id = ANY(current_user_org_ids())
     )
   );
 
@@ -245,25 +250,25 @@ CREATE POLICY product_aliases_modify ON public.product_aliases
   FOR ALL USING (
     business_id IN (
       SELECT b.id FROM public.businesses b
-      WHERE b.org_id IN (SELECT current_user_org_ids())
+      WHERE b.org_id = ANY(current_user_org_ids())
     )
   )
   WITH CHECK (
     business_id IN (
       SELECT b.id FROM public.businesses b
-      WHERE b.org_id IN (SELECT current_user_org_ids())
+      WHERE b.org_id = ANY(current_user_org_ids())
     )
   );
 
 -- supplier_invoice_lines: same as products
 DROP POLICY IF EXISTS supplier_invoice_lines_select ON public.supplier_invoice_lines;
 CREATE POLICY supplier_invoice_lines_select ON public.supplier_invoice_lines
-  FOR SELECT USING (org_id IN (SELECT current_user_org_ids()));
+  FOR SELECT USING (org_id = ANY(current_user_org_ids()));
 
 DROP POLICY IF EXISTS supplier_invoice_lines_modify ON public.supplier_invoice_lines;
 CREATE POLICY supplier_invoice_lines_modify ON public.supplier_invoice_lines
-  FOR ALL USING (org_id IN (SELECT current_user_org_ids()))
-  WITH CHECK (org_id IN (SELECT current_user_org_ids()));
+  FOR ALL USING (org_id = ANY(current_user_org_ids()))
+  WITH CHECK (org_id = ANY(current_user_org_ids()));
 
 -- ═══════════════════════════════════════════════════════════════════════
 -- 6. Helper RPCs called from lib/inventory/matcher.ts
