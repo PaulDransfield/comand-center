@@ -1,67 +1,58 @@
 'use client'
 // @ts-nocheck
-// app/dashboard/page.tsx — CommandCenter main dashboard
-// Week-first layout inspired by Personalkollen: KPIs → chart → dept table + P&L
+// app/dashboard/page.tsx — CommandCenter dashboard, full rebuild
+//
+// Phase 8 (the rebuild commit) — every surface on this page is built
+// from `components/ux/*` and `UXP` tokens. The legacy dashboard helpers
+// (DemandOutlook, OverheadReviewCard, WhyThisWeekCard, WeekScorecardCard,
+// WhatHappenedCard, ReviewThemesCard, CashPositionTile,
+// CashFlowProjectionTile, DashboardHeader, WeatherDemandWidget) are
+// deleted; only OverviewChart survives in-tree because /departments/[id]
+// still drill-downs through it.
+//
+// Data sources (all unchanged from the previous revision):
+//   /api/businesses                      — biz list / picker
+//   /api/metrics/daily (curr + prev)     — revenue + labour + covers
+//   /api/departments                     — per-dept rollup
+//   /api/alerts                          — anomaly badges
+//   /api/scheduling/ai-suggestion        — AI labour cuts + per-day forecast
+//   /api/overheads/projection            — review queue + savings
+//   /api/weather/demand-forecast         — 7-day demand outlook
+//   /api/finance/bank-position           — cash position
+//   /api/finance/cash-flow-projection    — 12-week cash projection
+//   /api/integrations/fortnox/recent-inv — recent supplier invoices
+//   /api/reviews/themes                  — review themes
+//
+// Visual contract:
+//   - background: UXP.pageBg, all cards UXP.cardBg + 0.5px UXP.border
+//   - typography: Spline Sans body / Fraunces display (root layout)
+//   - numbers: fontVariantNumeric: 'tabular-nums', letterSpacing -0.02em
+//   - hairlines: 0.5px, never 1px
+//   - colour decisions: labourTier() (never inline thresholds)
+
+export const dynamic = 'force-dynamic'
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useTranslations } from 'next-intl'
-import AppShell from '@/components/AppShell'
-import { OverheadReviewCard } from '@/components/OverheadReviewCard'
-// OrgNumberBanner / OrgNumberGate removed in M046 — onboarding now requires
-// org_number upfront, so the 30-day grace banner + lockout are dead code.
 import dynamicImport from 'next/dynamic'
-// AskAI is a floating button + slide-in panel — only used after the user
-// clicks. Lazy-load it (FIXES §0ll) so its ~30 KB doesn't sit in this
-// page's First Load JS for users who never open it. ssr:false because
-// it reads localStorage at mount.
-const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import OverviewChart, { PeriodOption } from '@/components/dashboard/OverviewChart'
-import { getUpcomingHolidays, getHolidaysForCountry } from '@/lib/holidays'
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import WeatherDemandWidget from '@/components/dashboard/WeatherDemandWidget'
-import DashboardHeader from '@/components/dashboard/DashboardHeader'
-import DemandOutlook from '@/components/dashboard/DemandOutlook'
-import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
-import CashPositionTile from '@/components/dashboard/CashPositionTile'
-import CashFlowProjectionTile from '@/components/dashboard/CashFlowProjectionTile'
-import WhyThisWeekCard from '@/components/dashboard/WhyThisWeekCard'
-import WeekScorecardCard from '@/components/dashboard/WeekScorecardCard'
-import WhatHappenedCard from '@/components/dashboard/WhatHappenedCard'
-import ReviewThemesCard from '@/components/dashboard/ReviewThemesCard'
-import Sparkline from '@/components/ui/Sparkline'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-// Phase 2 pilot — new presentational primitives. The 3-card KPI strip and the
-// headline PairedBarChart are the redesigned surfaces; everything else on the
-// dashboard stays on the legacy components until later phases migrate them.
-import KpiCardUX  from '@/components/ux/KpiCard'
-import PairedBarChart from '@/components/ux/PairedBarChart'
-import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
 
-// ── Formatters ────────────────────────────────────────────────────────────────
-// Format a Date as YYYY-MM-DD using local timezone (NOT UTC — avoids off-by-one in CET/CEST)
-const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+
+import AppShell from '@/components/AppShell'
+import KpiCardUX from '@/components/ux/KpiCard'
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
+import { getHolidaysForCountry } from '@/lib/holidays'
+
+// ── Period helpers ────────────────────────────────────────────────────
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
-
-// ── Week / month helpers ───────────────────────────────────────────────────────
-function getMonthBounds(offset = 0) {
-  const now  = new Date()
-  const d    = new Date(now.getFullYear(), now.getMonth() + offset, 1)
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return {
-    from:        localDate(d),
-    to:          localDate(last),
-    label:       `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
-    year:        d.getFullYear(),
-    month:       d.getMonth() + 1,
-    firstDay:    d,
-    daysInMonth: last.getDate(),
-  }
-}
 
 function getISOWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
@@ -72,9 +63,9 @@ function getISOWeek(d: Date): number {
 }
 
 function getWeekBounds(offset = 0) {
-  const today  = new Date()
-  const dow    = today.getDay()
-  const mon    = new Date(today)
+  const today = new Date()
+  const dow   = today.getDay()
+  const mon   = new Date(today)
   mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7)
   mon.setHours(0, 0, 0, 0)
   const sun = new Date(mon)
@@ -90,272 +81,97 @@ function getWeekBounds(offset = 0) {
   return { from: mStr, to: sStr, weekNum: wk, year: mon.getFullYear(), label, mon }
 }
 
-function delta(cur: number, prev: number) {
-  if (!prev) return null
-  const p = ((cur - prev) / prev) * 100
-  return { pct: Math.round(p * 10) / 10, up: p >= 0 }
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-// (Phase 2: the legacy inline KpiCard helper that lived here was dead code —
-//  no callers remained after Phase 1's PageHero migration. Replaced by the
-//  canonical components/ux/KpiCard imported above.)
-
-// ── Main page ─────────────────────────────────────────────────────────────────
-// Next 14 requires any client component using useSearchParams to sit inside a
-// <Suspense> boundary or the static prerender bails out at build time.
-// Shared styles for the scheduling card (predictive + retrospective modes
-// use the same layout). FIXES §0ww.
-const schedCardLink: React.CSSProperties = {
-  display:        'flex',
-  flexDirection:  'column' as const,
-  justifyContent: 'space-between',
-  background:     UX.cardBg,
-  border:         `1px solid ${UX.border}`,
-  borderLeft:     `4px solid ${UX.greenInk}`,
-  borderRadius:   UX.r_lg,
-  padding:        '18px 20px',
-  textDecoration: 'none',
-  color:          'inherit',
-  cursor:         'pointer',
-  transition:     'box-shadow 0.15s',
-}
-const schedCardEyebrow: React.CSSProperties = {
-  fontSize:      10,
-  fontWeight:    500,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase' as const,
-  color:         UX.ink4,
-}
-const schedCardCta: React.CSSProperties = {
-  marginTop:    14,
-  display:      'inline-flex',
-  alignItems:   'center',
-  gap:          6,
-  color:        UX.greenInk,
-  fontSize:     13,
-  fontWeight:   500,
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pillar card styles — shared between the labour scheduling card (inline)
-// and OverheadReviewCard (separate file imports its own copy). v8 redesign:
-// header strip with status pill, big 38px before/after, context paragraph,
-// 3-cell mini stat row, dark CTA button.
-// ─────────────────────────────────────────────────────────────────────────────
-function pillarCardLink(stripe: 'green' | 'amber' | 'navy'): React.CSSProperties {
-  const stripeColor =
-    stripe === 'amber' ? UX.amberInk :
-    stripe === 'navy'  ? UX.ink1     :
-                         UX.greenInk
+function getMonthBounds(offset = 0) {
+  const now  = new Date()
+  const d    = new Date(now.getFullYear(), now.getMonth() + offset, 1)
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
   return {
-    background:     UX.cardBg,
-    border:         `1px solid ${UX.border}`,
-    borderLeft:     `4px solid ${stripeColor}`,
-    borderRadius:   12,
-    padding:        0,
-    overflow:       'hidden' as const,
-    textDecoration: 'none',
-    color:          'inherit',
-    cursor:         'pointer',
-    transition:     'box-shadow 0.15s',
-    display:        'flex',
-    flexDirection:  'column' as const,
-    minWidth:       0,
+    from:        localDate(d),
+    to:          localDate(last),
+    label:       `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+    year:        d.getFullYear(),
+    month:       d.getMonth() + 1,
+    firstDay:    d,
+    daysInMonth: last.getDate(),
   }
 }
-const pillarHeadStyle: React.CSSProperties = {
-  padding:        '18px 24px 14px',
-  borderBottom:   `1px solid ${UX.borderSoft}`,
-  display:        'flex',
-  justifyContent: 'space-between',
-  alignItems:     'center',
-  gap:            8,
-}
-const pillarHLabelStyle: React.CSSProperties = {
-  fontSize:      11,
-  color:         UX.ink4,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase' as const,
-  fontWeight:    500,
-  whiteSpace:    'nowrap' as const,
-  overflow:      'hidden' as const,
-  textOverflow:  'ellipsis' as const,
-}
-const pillarStatusStyle: React.CSSProperties = {
-  fontSize:      10,
-  padding:       '3px 9px',
-  borderRadius:  999,
-  fontWeight:    600,
-  letterSpacing: '0.04em',
-  whiteSpace:    'nowrap' as const,
-}
-const pillarBodyStyle: React.CSSProperties = {
-  padding:       '18px 24px 22px',
-  flex:          1,
-  display:       'flex',
-  flexDirection: 'column' as const,
-}
-const baRowStyle: React.CSSProperties = {
-  display:    'flex',
-  alignItems: 'baseline',
-  gap:        16,
-  marginBottom: 8,
-  flexWrap:   'wrap' as const,
-}
-const baCurrentStyle: React.CSSProperties = {
-  fontSize:      38,
-  fontWeight:    700,
-  color:         UX.ink1,
-  letterSpacing: '-0.025em',
-  lineHeight:    1,
-}
-const baArrowStyle: React.CSSProperties = {
-  fontSize:   22,
-  color:      UX.ink4,
-  fontWeight: 300,
-}
-const baProjectedStyle: React.CSSProperties = {
-  fontSize:      38,
-  fontWeight:    700,
-  color:         UX.greenInk,
-  letterSpacing: '-0.025em',
-  lineHeight:    1,
-}
-const baSuffixStyle: React.CSSProperties = {
-  fontSize:   14,
-  color:      UX.ink3,
-  fontWeight: 500,
-}
-const pillarContextStyle: React.CSSProperties = {
-  fontSize:    13,
-  color:       UX.ink3,
-  lineHeight:  1.5,
-  margin:      '0 0 16px 0',
-}
-const pillarStrongStyle: React.CSSProperties = {
-  color:      UX.ink1,
-  fontWeight: 700,
-}
-const pillarStatsStyle: React.CSSProperties = {
-  display:             'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)',
-  gap:                 1,
-  background:          UX.borderSoft,
-  border:              `1px solid ${UX.borderSoft}`,
-  borderRadius:        8,
-  overflow:            'hidden' as const,
-  marginBottom:        18,
-}
-const pillarStatCellStyle: React.CSSProperties = {
-  background: UX.cardBg,
-  padding:    '12px 14px',
-  minWidth:   0,
-}
-const pillarStatLabelStyle: React.CSSProperties = {
-  fontSize:      10,
-  color:         UX.ink4,
-  letterSpacing: '0.06em',
-  textTransform: 'uppercase' as const,
-  fontWeight:    500,
-  marginBottom:  4,
-}
-const pillarStatValueStyle: React.CSSProperties = {
-  fontSize:      16,
-  fontWeight:    700,
-  color:         UX.ink1,
-  letterSpacing: '-0.01em',
-  whiteSpace:    'nowrap' as const,
-  overflow:      'hidden' as const,
-  textOverflow:  'ellipsis' as const,
-}
-const pillarCtaStyle: React.CSSProperties = {
-  background:   UX.ink1,
-  color:        'white',
-  border:       'none',
-  padding:      '11px 22px',
-  borderRadius: 999,
-  fontSize:     13,
-  fontWeight:   600,
-  cursor:       'pointer',
-  fontFamily:   'inherit',
-  display:      'inline-flex',
-  alignItems:   'center',
-  gap:          8,
-  alignSelf:    'flex-start',
-  marginTop:    'auto',
+
+// ── Weather emoji map ─────────────────────────────────────────────────
+function weatherIcon(code?: number): string {
+  if (code == null) return ''
+  if (code === 0)              return '☀️'
+  if (code <= 3)               return '⛅'
+  if (code === 45 || code === 48) return '🌫️'
+  if (code >= 51 && code <= 57)   return '🌦️'
+  if (code >= 61 && code <= 67)   return '🌧️'
+  if (code >= 71 && code <= 77)   return '❄️'
+  if (code >= 80 && code <= 82)   return '🌦️'
+  if (code >= 85 && code <= 86)   return '🌨️'
+  if (code >= 95)                 return '⛈️'
+  return ''
 }
 
+// ── Suspense wrapper ──────────────────────────────────────────────────
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<DashboardLoadingFallback />}>
+    <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>}>
       <DashboardInner />
     </Suspense>
   )
 }
 
-function DashboardLoadingFallback() {
-  const tCommon = useTranslations('common')
-  return (
-    <div style={{ padding: 60, textAlign: 'center' as const, color: '#9ca3af' }}>
-      {tCommon('state.loading')}
-    </div>
-  )
-}
-
+// ── Main ──────────────────────────────────────────────────────────────
 function DashboardInner() {
-  const tDash    = useTranslations('dashboard')
-  const tCommon  = useTranslations('common')
-  // Localised short month/day arrays, sourced from common.json.
-  // MONTHS/DAYS at module scope stay in English — they're used by the
-  // bounds helpers to build YYYY-MM-DD strings and labels we recompute
-  // here for display. Anything user-visible passes through these.
-  const monthsLocal = (tCommon.raw('time.monthsShort') as string[]) ?? MONTHS
-  // Build a localised label from a bounds object — week or month — using
-  // the same shape as getWeekBounds/getMonthBounds but with translated
-  // month names.
-  function formatMonthLabel(b: { year: number; month?: number; firstDay?: Date }): string {
-    const idx = b.month ? b.month - 1 : (b.firstDay?.getMonth() ?? 0)
-    return `${monthsLocal[idx]} ${b.year}`
-  }
-  function formatWeekRange(b: { mon: Date; year: number }): string {
-    const sun = new Date(b.mon)
-    sun.setDate(b.mon.getDate() + 6)
-    const mMon = monthsLocal[b.mon.getMonth()]
-    const sMon = monthsLocal[sun.getMonth()]
-    return mMon === sMon
-      ? `${b.mon.getDate()}–${sun.getDate()} ${mMon}`
-      : `${b.mon.getDate()} ${mMon} – ${sun.getDate()} ${sMon}`
-  }
-  const [businesses,  setBusinesses]  = useState<any[]>([])
-  const [bizId,       setBizId]       = useState<string | null>(null)
-  const [dataAsOf,    setDataAsOf]    = useState<string | null>(null)
-  const [weekOffset,  setWeekOffset]  = useState(0)
-  const [monthOffset, setMonthOffset] = useState(0)
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('week')
-  const [dailyRows,   setDailyRows]   = useState<any[]>([])
-  const [currSummary, setCurrSummary] = useState<any>(null)
-  const [prevSummary, setPrevSummary] = useState<any>(null)
-  const [depts,       setDepts]       = useState<any>(null)
-  const [alerts,      setAlerts]      = useState<any[]>([])
-  const [loading,     setLoading]     = useState(true)
-  const [showUpgrade, setShowUpgrade] = useState(false)
-  const [upgradePlan, setUpgradePlan] = useState('')
-  const [aiSched,     setAiSched]     = useState<any>(null)
-  const [overheadProj, setOverheadProj] = useState<any>(null)
-  // Previous-period daily_metrics rows — used for per-day "Prev" whiskers
-  // + per-day deltas in the OverviewChart.
-  const [prevDailyRows, setPrevDailyRows] = useState<any[]>([])
-
-  // URL-param-controlled chart state. OverviewChart reads these and calls
-  // back when the user interacts; we persist into the URL so refreshes and
-  // shared links keep the same view. Kept in state too for instant render.
   const router       = useRouter()
   const searchParams = useSearchParams()
-  const [selectedDates, setSelectedDates] = useState<string[]>([])
-  const [compareMode,   setCompareMode]   = useState<'none'|'prev'|'ai'>('ai')
 
-  // Upgrade banner on Stripe redirect
+  // ── State ────────────────────────────────────────────────────────
+  const [businesses,    setBusinesses]    = useState<any[]>([])
+  const [bizId,         setBizId]         = useState<string | null>(null)
+  const [dataAsOf,      setDataAsOf]      = useState<string | null>(null)
+  const [weekOffset,    setWeekOffset]    = useState(0)
+  const [monthOffset,   setMonthOffset]   = useState(0)
+  const [viewMode,      setViewMode]      = useState<'week' | 'month'>('week')
+  const [dailyRows,     setDailyRows]     = useState<any[]>([])
+  const [prevDailyRows, setPrevDailyRows] = useState<any[]>([])
+  const [currSummary,   setCurrSummary]   = useState<any>(null)
+  const [prevSummary,   setPrevSummary]   = useState<any>(null)
+  const [depts,         setDepts]         = useState<any>(null)
+  const [alerts,        setAlerts]        = useState<any[]>([])
+  const [aiSched,       setAiSched]       = useState<any>(null)
+  const [overheadProj,  setOverheadProj]  = useState<any>(null)
+  const [demand,        setDemand]        = useState<any>(null)
+  const [bankPos,       setBankPos]       = useState<any>(null)
+  const [cashFlow,      setCashFlow]      = useState<any>(null)
+  const [recentInv,     setRecentInv]     = useState<any>(null)
+  const [reviewThemes,  setReviewThemes]  = useState<any>(null)
+  const [loading,       setLoading]       = useState(true)
+  const [showUpgrade,   setShowUpgrade]   = useState(false)
+  const [upgradePlan,   setUpgradePlan]   = useState('')
+
+  // ── URL → state hydration ────────────────────────────────────────
+  useEffect(() => {
+    const v   = searchParams?.get('view')   as 'week' | 'month' | null
+    const off = searchParams?.get('offset')
+    if (v === 'week' || v === 'month') setViewMode(v)
+    if (off != null && !Number.isNaN(Number(off))) {
+      if (v === 'month') setMonthOffset(Number(off))
+      else               setWeekOffset(Number(off))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function writeUrl(next: { view?: string; offset?: number }) {
+    const p = new URLSearchParams()
+    const v   = next.view   ?? viewMode
+    const off = next.offset ?? (v === 'month' ? monthOffset : weekOffset)
+    if (v !== 'week') p.set('view', v)
+    if (off !== 0)    p.set('offset', String(off))
+    const qs = p.toString()
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''))
+  }
+
+  // ── Stripe-redirect upgrade banner ───────────────────────────────
   useEffect(() => {
     const p = new URLSearchParams(window.location.search)
     if (p.get('upgrade') === 'success') {
@@ -365,345 +181,115 @@ function DashboardInner() {
     }
   }, [])
 
-  // ── Hydrate chart controls from URL on first render ──────────────────────
-  useEffect(() => {
-    const v   = searchParams?.get('view')   as 'week' | 'month' | null
-    const off = searchParams?.get('offset')
-    const cmp = searchParams?.get('cmp')    as 'none' | 'prev' | 'ai' | null
-    const d   = searchParams?.get('days')
-    if (v === 'week' || v === 'month') setViewMode(v)
-    if (off != null && !Number.isNaN(Number(off))) {
-      if (v === 'month') setMonthOffset(Number(off))
-      else               setWeekOffset(Number(off))
-    }
-    if (cmp === 'none' || cmp === 'prev' || cmp === 'ai') setCompareMode(cmp)
-    if (d) setSelectedDates(d.split(',').filter(Boolean))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Helper — write the current control set back to the URL without dropping
-  // the user at the top of the page. Uses history.replaceState so the URL
-  // updates but Next.js doesn't trigger a full rerender.
-  function writeUrl(next: { view?: string; offset?: number; cmp?: string; days?: string[] }) {
-    const p = new URLSearchParams()
-    const v   = next.view   ?? viewMode
-    const off = next.offset ?? (v === 'month' ? monthOffset : weekOffset)
-    const cmp = next.cmp    ?? compareMode
-    const d   = next.days   ?? selectedDates
-    if (v !== 'week') p.set('view', v)
-    if (off !== 0)    p.set('offset', String(off))
-    if (cmp !== 'ai') p.set('cmp', cmp)
-    if (d.length)     p.set('days', d.join(','))
-    const qs = p.toString()
-    const path = window.location.pathname + (qs ? `?${qs}` : '')
-    window.history.replaceState(null, '', path)
-  }
-
-  // Load businesses + restore selection
+  // ── Business list + selection ─────────────────────────────────────
   useEffect(() => {
     fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
       if (!Array.isArray(data) || !data.length) return
       setBusinesses(data)
       const saved = localStorage.getItem('cc_selected_biz')
-      const biz   = (saved && data.find((b: any) => b.id === saved)) ? saved : data[0].id
+      const biz   = (saved && data.find(b => b.id === saved)) ? saved : data[0].id
       setBizId(biz)
       localStorage.setItem('cc_selected_biz', biz)
     }).catch(() => {})
-    window.addEventListener('storage', () => {
+    function onStorage() {
       const s = localStorage.getItem('cc_selected_biz')
       if (s) setBizId(s)
-    })
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
-  // AI prediction for the selected period — fills future days on the chart
-  // (this-week remainder, or a future week/month). Skipped entirely for past
-  // periods since we already have actuals for every day.
-  useEffect(() => {
-    if (!bizId) { setAiSched(null); return }
-    const period = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-    const todayIso = localDate(new Date())
-    // No predictions needed if the entire period is in the past.
-    if (period.to < todayIso) { setAiSched(null); return }
-    let cancelled = false
-    const qs = `business_id=${bizId}&from=${period.from}&to=${period.to}`
-    fetch(`/api/scheduling/ai-suggestion?${qs}`, { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : null)
-      .then(j => { if (!cancelled && j && !j.error) setAiSched(j) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [bizId, viewMode, weekOffset, monthOffset])
-
-  // FIXES §0ap: overhead-review projection. Independent of view mode —
-  // always reads current calendar month since flags are tied to Fortnox
-  // upload periods, not the dashboard's week/month nav.
-  useEffect(() => {
-    if (!bizId) { setOverheadProj(null); return }
-    let cancelled = false
-    fetch(`/api/overheads/projection?business_id=${bizId}`, { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : null)
-      .then(j => { if (!cancelled && j && !j.error) setOverheadProj(j) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [bizId])
-
-  // Load data whenever biz, period, or view changes
+  // ── Period-bound fetches ─────────────────────────────────────────
   useEffect(() => {
     if (!bizId) return
     setLoading(true)
-    setDailyRows([])
-    setCurrSummary(null)
-    setPrevSummary(null)
-    setDepts(null)
+    setDailyRows([]); setCurrSummary(null); setPrevSummary(null); setDepts(null)
 
     const biz  = `business_id=${bizId}`
-
     const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
     const prev = viewMode === 'week' ? getWeekBounds(weekOffset - 1) : getMonthBounds(monthOffset - 1)
 
-    // FIXES §0bb (Sprint 1.5): the four endpoints below now return
-    // Cache-Control: private, max-age=15, stale-while-revalidate=60.
-    // Browser handles bounded freshness — back-button + tab-switch are
-    // instant, worst-case staleness window is 15s (shorter than any
-    // aggregator-run cycle). cache: 'no-store' on the client would
-    // override the server header, so it's removed here.
     Promise.all([
-      // Pre-computed daily metrics (reads from summary tables)
       fetch(`/api/metrics/daily?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/metrics/daily?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-      // Departments (still reads from raw tables — has per-dept breakdown)
       fetch(`/api/departments?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
       fetch('/api/alerts').then(r => r.json()).catch(() => []),
-    ]).then(([curr_, prev_, deptRes, alertRes]) => {
-      // Map daily_metrics field names to what the dashboard expects
-      const rows = (curr_.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct }))
+    ]).then(([currRes, prevRes, deptRes, alertRes]) => {
+      const rows = (currRes.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct }))
       setDailyRows(rows)
-      setCurrSummary(curr_.summary ?? null)
-      setPrevSummary(prev_.summary ?? null)
-      setPrevDailyRows(prev_.rows ?? [])
+      setCurrSummary(currRes.summary ?? null)
+      setPrevSummary(prevRes.summary ?? null)
+      setPrevDailyRows(prevRes.rows ?? [])
       setDepts(deptRes ?? null)
       setAlerts(Array.isArray(alertRes) ? alertRes : [])
       setLoading(false)
-      // Track the freshest date in loaded rows for the stale-data banner
       const latest = rows.reduce((m: string, r: any) => r.date > m ? r.date : m, '')
       setDataAsOf(latest || null)
     })
   }, [bizId, weekOffset, monthOffset, viewMode])
 
-  // ── Derived values (week mode) ──────────────────────────────────────────────
-  const curr        = getWeekBounds(weekOffset)
+  // ── Independent fetches ───────────────────────────────────────────
+  useEffect(() => {
+    if (!bizId) return
+    let cancelled = false
+    const today = localDate(new Date())
+    const period = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+    if (period.to >= today) {
+      fetch(`/api/scheduling/ai-suggestion?business_id=${bizId}&from=${period.from}&to=${period.to}`, { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (!cancelled && j && !j.error) setAiSched(j) })
+        .catch(() => {})
+    } else {
+      setAiSched(null)
+    }
+    return () => { cancelled = true }
+  }, [bizId, viewMode, weekOffset, monthOffset])
+
+  useEffect(() => {
+    if (!bizId) return
+    let cancelled = false
+    Promise.all([
+      fetch(`/api/overheads/projection?business_id=${bizId}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/weather/demand-forecast?business_id=${bizId}&days=7`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/finance/bank-position?business_id=${bizId}&months=12`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/finance/cash-flow-projection?business_id=${bizId}&days=30`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/integrations/fortnox/recent-invoices?business_id=${bizId}&days=14`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/reviews/themes?business_id=${bizId}&window=90`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([ov, dm, bp, cf, ri, rt]) => {
+      if (cancelled) return
+      setOverheadProj(ov && !ov.error ? ov : null)
+      setDemand(dm && !dm.error ? dm : null)
+      setBankPos(bp && !bp.error ? bp : null)
+      setCashFlow(cf && !cf.error ? cf : null)
+      setRecentInv(ri && !ri.error ? ri : null)
+      setReviewThemes(rt && !rt.error ? rt : null)
+    })
+    return () => { cancelled = true }
+  }, [bizId])
+
+  // ── Derived numbers ──────────────────────────────────────────────
+  const now      = new Date()
+  const curr     = getWeekBounds(weekOffset)
+  const currM    = getMonthBounds(monthOffset)
+  const period   = viewMode === 'week' ? curr : currM
+  const dayCount = viewMode === 'week' ? 7 : currM.daysInMonth
+
   const totalRev    = dailyRows.reduce((s, r) => s + r.revenue,    0)
   const totalLabour = dailyRows.reduce((s, r) => s + r.staff_cost, 0)
   const labourPct   = totalRev > 0 ? (totalLabour / totalRev) * 100 : 0
   const totalHours  = depts?.summary?.total_hours ?? 0
-  const revPerHour  = totalHours > 0 ? totalRev / totalHours : 0
+  const totalCovers = Number(currSummary?.total_covers ?? 0)
 
-  const prevRev     = prevSummary?.total_revenue    ?? 0
-  const prevLabour  = prevSummary?.total_staff_cost ?? 0
-  const prevLabPct  = prevRev > 0 && prevLabour > 0 ? (prevLabour / prevRev) * 100 : null
+  const prevRev    = prevSummary?.total_revenue    ?? 0
+  const prevLabour = prevSummary?.total_staff_cost ?? 0
+  const prevLabPct = prevRev > 0 && prevLabour > 0 ? (prevLabour / prevRev) * 100 : null
+  const prevCovers = Number(prevSummary?.total_covers ?? 0)
 
-  // ── Derived values (shared) ─────────────────────────────────────────────────
-  const now = new Date()
-  const currM = getMonthBounds(monthOffset)
-
-  // ── AI prediction lookup ────────────────────────────────────────────────────
-  // Keyed by date (YYYY-MM-DD). Populated for next week if the AI suggestion
-  // fetch succeeded. Used to fill future bars on the chart + tooltip.
-  const predByDate: Record<string, any> = {}
-  if (aiSched?.suggested) {
-    for (const s of aiSched.suggested) {
-      const c = aiSched.current?.find((x: any) => x.date === s.date)
-      predByDate[s.date] = {
-        est_revenue:  s.est_revenue,
-        planned_cost: c?.est_cost ?? 0,
-        ai_cost:      s.est_cost,
-        delta_cost:   s.delta_cost,
-        weather:      s.weather,
-        bucket_days:  s.bucket_days_seen,
-        under_staffed_note: s.under_staffed_note,
-        // P25/P75-style prediction band from /api/scheduling/ai-suggestion.
-        // null when the API hasn't accumulated enough audit-ledger residuals
-        // to compute one (default fallback ±15% is applied in the chart).
-        band:         s.band ?? null,
-      }
-    }
-  }
-
-  // Map WMO code → emoji for the bar overlay. Kept terse — owner just needs
-  // "will it rain" at a glance, not a meteorological read.
-  const weatherIcon = (code?: number): string => {
-    if (code == null) return ''
-    if (code === 0)              return '☀️'
-    if (code <= 3)               return '⛅'
-    if (code === 45 || code === 48) return '🌫️'
-    if (code >= 51 && code <= 57)   return '🌦️'
-    if (code >= 61 && code <= 67)   return '🌧️'
-    if (code >= 71 && code <= 77)   return '❄️'
-    if (code >= 80 && code <= 82)   return '🌦️'
-    if (code >= 85 && code <= 86)   return '🌨️'
-    if (code >= 95)                 return '⛈️'
-    return ''
-  }
-
-  // ── Build day grid — 7 days (week) or full month ───────────────────────────
-  // Each day gets a matching `prevDay` — same weekday-index offset in the
-  // previous period. Lets the chart render per-day "Prev" whiskers / deltas
-  // without another fetch.
-  // FIXES §0xx (2026-04-28): track hasActualData + isClosed per day so the
-  // chart can distinguish CLOSED past days from FUTURE days. Both have
-  // revenue=0; without this distinction the gross-margin line falls
-  // through to predicted values for closed days (Apr 3-4 of any month
-  // showed phantom 100k+ gross). Closed = past day with no daily_metrics
-  // row at all (the aggregator only writes rows when there's revenue or
-  // staff_cost > 0). Today gets a grace pass — PK might not have synced
-  // yet — so isClosed = !isFuture && !isToday && !hasActualData.
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d   = new Date(curr.mon)
-    d.setDate(curr.mon.getDate() + i)
-    const ds  = localDate(d)
-    const found = dailyRows.find(r => r.date === ds)
-    const row = found ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
-    const isToday   = ds === localDate(now)
-    const isFuture  = d > now
-    const hasActualData = !!found
-    const isClosed  = !isFuture && !isToday && !hasActualData
-    const pred      = predByDate[ds] ?? null
-    // Matching day one week earlier
-    const prev = getWeekBounds(weekOffset - 1)
-    const pd   = new Date(prev.mon); pd.setDate(prev.mon.getDate() + i)
-    const pds  = localDate(pd)
-    const pRow = prevDailyRows.find(r => r.date === pds)
-    const prevDay = pRow ? { revenue: pRow.revenue ?? 0, staff_cost: pRow.staff_cost ?? 0 } : null
-    return { ...row, dayName: DAYS[i], dateStr: ds, isToday, isFuture, hasActualData, isClosed, pred, prevDay }
-  })
-
-  const monthDays = Array.from({ length: currM.daysInMonth }, (_, i) => {
-    const d   = new Date(currM.firstDay)
-    d.setDate(i + 1)
-    const ds  = localDate(d)
-    const found = dailyRows.find(r => r.date === ds)
-    const row = found ?? { date: ds, revenue: 0, staff_cost: 0, staff_pct: null }
-    const isToday  = ds === localDate(now)
-    const isFuture = d > now
-    const hasActualData = !!found
-    const isClosed  = !isFuture && !isToday && !hasActualData
-    const dayIdx   = (d.getDay() + 6) % 7 // 0=Mon
-    const pred     = predByDate[ds] ?? null
-    // Matching day in previous month (same calendar day; last day if prev is shorter)
-    const prevM  = getMonthBounds(monthOffset - 1)
-    const prevLastDom = new Date(prevM.firstDay.getFullYear(), prevM.firstDay.getMonth() + 1, 0).getDate()
-    const prevDom = Math.min(i + 1, prevLastDom)
-    const prevDate = `${prevM.year}-${String(prevM.month).padStart(2, '0')}-${String(prevDom).padStart(2, '0')}`
-    const pRow = prevDailyRows.find(r => r.date === prevDate)
-    const prevDay = pRow ? { revenue: pRow.revenue ?? 0, staff_cost: pRow.staff_cost ?? 0 } : null
-    return { ...row, dayName: String(i + 1), dateStr: ds, isToday, isFuture, hasActualData, isClosed, dayIdx, pred, prevDay }
-  })
-
-
-  // ── Available periods for the chart's dropdown ──────────────────────────
-  // 6 past + current = 7 weeks, and 6 past + current = 7 months. Offsets
-  // captured in the key so onPeriodChange can restore exact state.
-  const availablePeriods: PeriodOption[] = useMemo(() => {
-    const out: PeriodOption[] = []
-    for (let off = 0; off >= -6; off--) {
-      const w = getWeekBounds(off)
-      out.push({
-        key: `w:${off}`,
-        label: tDash('period.weekLabel', { num: w.weekNum, range: formatWeekRange(w) }),
-        view: 'week',
-        dateFrom: w.from,
-        dateTo: w.to,
-      })
-    }
-    for (let off = 0; off >= -6; off--) {
-      const m = getMonthBounds(off)
-      out.push({
-        key: `m:${off}`,
-        label: formatMonthLabel(m),
-        view: 'month',
-        dateFrom: m.from,
-        dateTo: m.to,
-      })
-    }
-    return out
-  // monthsLocal changes per locale, so include tDash to refresh labels.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tDash])
-
-  function handlePeriodChange(key: string) {
-    const [kind, offStr] = key.split(':')
-    const off = Number(offStr)
-    if (kind === 'w') {
-      setViewMode('week')
-      setWeekOffset(off)
-      writeUrl({ view: 'week', offset: off })
-    } else if (kind === 'm') {
-      setViewMode('month')
-      setMonthOffset(off)
-      writeUrl({ view: 'month', offset: off })
-    }
-  }
-  function handleViewModeChange(v: 'week'|'month') {
-    setViewMode(v)
-    writeUrl({ view: v, offset: v === 'month' ? monthOffset : weekOffset })
-  }
-  function handleCompareChange(m: 'none'|'prev'|'ai') {
-    setCompareMode(m)
-    writeUrl({ cmp: m })
-  }
-  function handleSelectedDatesChange(next: string[]) {
-    setSelectedDates(next)
-    writeUrl({ days: next })
-  }
-  // Click a day on the OverviewChart → opens its drill-down. The day
-  // detail page reuses the attribution + hourly data from the same
-  // /api/scheduling/ai-suggestion + /api/metrics/daily endpoints, plus
-  // hourly_metrics for the per-hour breakdown.
-  function handleDayClick(day: any) {
-    if (day?.date && bizId) {
-      router.push(`/dashboard/day/${day.date}?business_id=${bizId}`)
-    }
-  }
-
-  const selectedBiz = businesses.find(b => b.id === bizId)
-  const targetPct   = (selectedBiz as any)?.target_staff_pct ?? 35
-
-  // Holiday set spanning the visible week + month windows so the chart
-  // can colour the X-axis labels red (alongside Sat/Sun). Cheap pure
-  // compute via lib/holidays — no fetch, no DB. Country comes from the
-  // selected business; defaults to 'SE' if not yet set. Sits below
-  // selectedBiz because the lookup depends on it.
-  const holidayDateSet = useMemo(() => {
-    const set = new Set<string>()
-    try {
-      const country = (selectedBiz as any)?.country ?? 'SE'
-      const wkStart = weekDays[0]?.date ?? curr.from
-      const wkEnd   = weekDays[weekDays.length - 1]?.date ?? curr.to
-      const mStart  = monthDays[0]?.date ?? `${currM.year}-${String(currM.month).padStart(2,'0')}-01`
-      const mEnd    = monthDays[monthDays.length - 1]?.date ?? mStart
-      const earliest = wkStart < mStart ? wkStart : mStart
-      const latest   = wkEnd   > mEnd   ? wkEnd   : mEnd
-      const years = new Set<number>([
-        Number(earliest.slice(0, 4)),
-        Number(latest.slice(0, 4)),
-      ])
-      for (const y of years) {
-        for (const h of getHolidaysForCountry(country, y)) {
-          if (h.date >= earliest && h.date <= latest) set.add(h.date)
-        }
-      }
-    } catch { /* never block chart render on holiday lookup */ }
-    return set
-  }, [selectedBiz, weekDays, monthDays, curr, currM])
-
-  // ── Top-toolbar date stepper wiring ─────────────────────────────────────
-  // The redesigned AppShell exposes a date stepper in its toolbar; pages
-  // opt-in by passing dateLabel + onPrev/onNext. The dashboard's period
-  // state (weekOffset/monthOffset, viewMode) is the source of truth — the
-  // stepper just decrements/increments whichever offset is active.
+  // Period-stepper wiring for the AppShell toolbar
   const periodLabel = viewMode === 'week'
-    ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) })
-    : formatMonthLabel(currM)
-  function stepPeriod(dir: -1 | 1) {
+    ? `Week ${curr.weekNum} · ${curr.label}`
+    : currM.label
+  function step(dir: -1 | 1) {
     if (viewMode === 'week') {
       const next = weekOffset + dir
       setWeekOffset(next)
@@ -714,1105 +300,745 @@ function DashboardInner() {
       writeUrl({ view: 'month', offset: next })
     }
   }
+  const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
 
+  // Day grid for chart
+  const predByDate: Record<string, any> = {}
+  if (aiSched?.suggested) {
+    for (const s of aiSched.suggested) {
+      predByDate[s.date] = s
+    }
+  }
+  const days = useMemo(() => {
+    if (viewMode === 'week') {
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(curr.mon); d.setDate(curr.mon.getDate() + i)
+        const ds  = localDate(d)
+        const row = dailyRows.find(r => r.date === ds)
+        return {
+          date:     ds,
+          dayName:  DAYS[i],
+          revenue:  row?.revenue    ?? 0,
+          staff_cost: row?.staff_cost ?? 0,
+          isToday:  ds === localDate(now),
+          isFuture: d > now,
+          pred:     predByDate[ds] ?? null,
+        }
+      })
+    }
+    return Array.from({ length: currM.daysInMonth }, (_, i) => {
+      const d = new Date(currM.firstDay); d.setDate(i + 1)
+      const ds  = localDate(d)
+      const row = dailyRows.find(r => r.date === ds)
+      return {
+        date:     ds,
+        dayName:  String(i + 1),
+        revenue:  row?.revenue    ?? 0,
+        staff_cost: row?.staff_cost ?? 0,
+        isToday:  ds === localDate(now),
+        isFuture: d > now,
+        pred:     predByDate[ds] ?? null,
+      }
+    })
+  }, [viewMode, weekOffset, monthOffset, dailyRows, aiSched])
+
+  const selectedBiz = businesses.find(b => b.id === bizId)
+
+  // ── Attention items — derived from aiSched + overheadProj + alerts
+  const attentionItems = useMemo(() => buildAttentionItems({
+    aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount,
+  }), [aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount])
+
+  // ── Render ───────────────────────────────────────────────────────
   return (
     <AppShell
       dateLabel={periodLabel}
-      onPrev={() => stepPeriod(-1)}
-      onNext={() => stepPeriod(1)}
-      compareLabel={compareMode === 'none' ? null
-        : compareMode === 'prev' ? 'Previous'
-        : 'AI'}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div className="page-wrap">
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        {/* ── Upgrade banner ──────────────────────────────────────────────── */}
         {showUpgrade && (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '14px 18px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 20 }}>🎉</span>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#15803d' }}>
-                  {upgradePlan
-                    ? tDash('upgrade.title', { plan: upgradePlan })
-                    : tDash('upgrade.titleNoPlan')}
-                </div>
-                <div style={{ fontSize: 12, color: '#4b7c59' }}>{tDash('upgrade.subtitle')}</div>
-              </div>
-            </div>
-            <button onClick={() => setShowUpgrade(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#15803d', fontSize: 20 }}>×</button>
-          </div>
+          <UpgradeBanner plan={upgradePlan} onClose={() => setShowUpgrade(false)} />
         )}
 
-        {/* Stale data warning — shown when the freshest loaded row is before
-            yesterday, meaning the hourly catchup hasn't synced recent sales.
-            FIXES §0vv (2026-04-28): only trigger when viewing the CURRENT
-            period. Without this gate, navigating to last week / last month
-            falsely flags the data as stale because the displayed period's
-            data is legitimately N days old by definition. */}
-        {(() => {
-          if (!dataAsOf || loading) return null
-          const isCurrentPeriod = (viewMode === 'week' && weekOffset === 0) || (viewMode === 'month' && monthOffset === 0)
-          if (!isCurrentPeriod) return null
-          const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-          if (dataAsOf >= yesterday) return null
-          const daysOld = Math.floor((Date.now() - new Date(dataAsOf + 'T23:59:59Z').getTime()) / 86_400_000)
-          return (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ fontSize: 13, color: '#92400e' }}>
-                <strong>{daysOld === 1 ? tDash('stale.yesterday') : tDash('stale.daysAgo', { days: daysOld })}</strong> — {tDash('stale.instruction')}
-              </div>
-            </div>
-          )
-        })()}
+        <StaleDataBanner dataAsOf={dataAsOf} loading={loading} viewMode={viewMode} weekOffset={weekOffset} monthOffset={monthOffset} />
 
-        {/* Outer header removed in Phase 1 — the business selector is now in
-            the sidebar (SidebarV2) and the period navigator + W/M toggle are
-            inside OverviewChart's own control row. Keeping both would be the
-            exact duplication the redesign is trying to eliminate. */}
+        {/* W/M toggle — sits at top right of the page, separate from the
+            toolbar's date stepper. The pastel pills mirror the toolbar style. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <ViewModeToggle value={viewMode} onChange={v => {
+            setViewMode(v)
+            writeUrl({ view: v, offset: v === 'month' ? monthOffset : weekOffset })
+          }} />
+        </div>
 
-        {/* ── Phase 2 KPI strip — the redesigned top-of-page summary.
-              Revenue · Margin · Labour, each a components/ux/KpiCard. Data
-              fetched is unchanged from the legacy strip below; presentation
-              is now on the pastel-lavender system per OVERHAUL-PROMPT-1.
-              Hidden during initial load to avoid flashing "0 kr" cards. */}
-        {!loading && currSummary && (() => {
-          // Channels source: top departments by revenue from /api/departments.
-          // /api/metrics/daily doesn't expose channel splits (lunch / middag /
-          // takeaway), so departments stand in as the meaningful breakdown the
-          // operator can act on. Falls back to a single "Total" channel when
-          // no department data is loaded yet.
-          const deptList: any[] = Array.isArray(depts?.departments) ? depts.departments : []
-          const topDepts = deptList
-            .slice()
-            .sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0))
-            .slice(0, 3)
-          const channels = topDepts.length > 0
-            ? topDepts.map((d, i) => ({
-                label: d.name ?? `Department ${i + 1}`,
-                value: Number(d.revenue ?? 0),
-                share: 0, // KpiCard recomputes share from totals
-                color: [UXP.lav, UXP.lavMid, UXP.lavPale][i] ?? UXP.lav,
-              }))
-            : [{ label: 'Total', value: totalRev, share: 1, color: UXP.lav }]
-
-          // Margin (variant=stacked) — actual net margin vs a 12% target
-          // floor (industry rule-of-thumb for full-service restaurants until
-          // businesses.target_net_pct lands). The two bars compare "current"
-          // to "target" on the same 100% scale so the operator sees the gap
-          // at a glance without doing the maths.
-          const grossMargin = totalRev > 0 ? ((totalRev - totalLabour) / totalRev) * 100 : 0
-          const TARGET_MARGIN = 12
-          const marginCardValue = totalRev > 0 ? fmtPct(grossMargin) : '—'
-          const marginDelta = prevRev > 0 && prevLabour >= 0
-            ? (() => {
-                const prevM = ((prevRev - prevLabour) / prevRev) * 100
-                const diff = grossMargin - prevM
-                return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`
-              })()
-            : null
-
-          // Labour (variant=targetBand) — labourTier() decides target band;
-          // the band stays consistent with /scheduling and /staff so the
-          // owner's mental model is one set of thresholds across the app.
-          const tier = labourTier(totalRev > 0 ? labourPct : null)
-          const labourValue = totalRev > 0 ? fmtPct(labourPct) : '—'
-          const labourDelta = prevLabPct != null
-            ? `${labourPct - prevLabPct >= 0 ? '+' : ''}${(labourPct - prevLabPct).toFixed(1)}pp`
-            : null
-
-          // Revenue delta vs the matched previous period.
-          const revDelta = prevRev > 0
-            ? `${totalRev - prevRev >= 0 ? '+' : ''}${fmtPct(((totalRev - prevRev) / prevRev) * 100)}`
-            : null
-
-          return (
-            <div
-              className="cc-kpi-strip"
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        12,
-              }}
-            >
-              <KpiCardUX
-                title="Revenue"
-                value={fmtKr(totalRev)}
-                delta={revDelta}
-                deltaGood
-                variant="channels"
-                channels={channels}
-                microLabel={periodLabel}
-              />
-              <KpiCardUX
-                title="Margin"
-                value={marginCardValue}
-                delta={marginDelta}
-                deltaGood
-                variant="stacked"
-                stackedBars={[
-                  { label: 'Current', value: grossMargin,   max: 100, color: UXP.lav },
-                  { label: 'Target',  value: TARGET_MARGIN, max: 100, color: UXP.green },
-                ]}
-              />
-              <KpiCardUX
-                title="Labour"
-                value={labourValue}
-                delta={labourDelta}
-                deltaGood={false /* labour-up vs prev = bad */}
-                variant="targetBand"
-                targetBand={{
-                  actualPct:    Math.min(100, labourPct),
-                  targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
-                  targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
-                }}
-                microLabel={tier === 'no-data' ? 'No data' : tier.replace('-', ' ')}
-              />
-            </div>
-          )
-        })()}
-
-        {/* ── Dashboard header — replaces the legacy yellow alert banner.
-              Pulses a small anomaly pill linking to /alerts; same filter
-              the banner used (severity high/critical, top row only). */}
-        <DashboardHeader
-          breadcrumb={tDash('header.breadcrumb', { biz: selectedBiz?.name ?? '' })}
-          pageTitle={tDash('header.title')}
-          alerts={alerts as any[]}
+        {/* ── KPI strip ─────────────────────────────────────────── */}
+        <KpiStrip
+          totalRev={totalRev}
+          prevRev={prevRev}
+          totalLabour={totalLabour}
+          labourPct={labourPct}
+          prevLabPct={prevLabPct}
+          totalCovers={totalCovers}
+          prevCovers={prevCovers}
+          depts={depts?.departments ?? []}
+          periodLabel={periodLabel}
         />
 
-        {/* ─── PageHero + chart + supporting row ─────────────────────────────
-            One consolidated view for both week and month — the chart's own
-            W/M toggle drives viewMode state, so a single render path serves
-            both. Spec: DESIGN.md § 1. Overview. */}
-        {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{tCommon('state.loading')}</div>
-        ) : (
-          <>
-            {/* Demand outlook — moved to top of dashboard so the 7-day
-                forward view (weather × holidays × AI sales pattern) sets
-                context BEFORE the retrospective week/month numbers. The
-                widget fetches its own data so it can render before
-                anything else is computed. */}
-            <DemandOutlook
-              bizId={bizId}
-              cutHoursByDate={(() => {
-                const map: Record<string, number> = {}
-                if (aiSched?.suggested) {
-                  for (const s of aiSched.suggested) {
-                    if (typeof s.delta_hours === 'number') map[s.date] = s.delta_hours
-                  }
-                }
-                return map
-              })()}
-            />
-
-            {/*
-              FIXES §0tt (2026-04-28): top-of-dashboard split — week summary
-              (left) sits next to AI scheduling savings card (right).
-              When AI has no saving (saving_kr <= 0) the right slot is null
-              and OverviewHero takes the full grid width via grid-column.
-              On narrow viewports the grid wraps to a single column.
-            */}
-            {(() => {
-              // Labour-ratio scheduling card. Two modes:
-              //   1. Current period + AI recommendation → predictive shift
-              //      (e.g. 47% → 35%, save X kr)
-              //   2. Past period → retrospective (labour was X% of Y%
-              //      target — could have saved Z kr by hitting target)
-              // Card always renders so the user has continuity across
-              // period navigation. FIXES §0ww (2026-04-28).
-              const isCurrentPeriod = (viewMode === 'week' && weekOffset === 0) || (viewMode === 'month' && monthOffset === 0)
-              const aiSaving = Number(aiSched?.summary?.saving_kr ?? 0)
-              const aiCutH   = Number(aiSched?.summary?.current_hours ?? 0) - Number(aiSched?.summary?.suggested_hours ?? 0)
-              const sugg     = (aiSched?.suggested as any[] | undefined) ?? []
-              const cur      = (aiSched?.current   as any[] | undefined) ?? []
-              const weekRev  = sugg.reduce((s, r) => s + Number(r.est_revenue ?? 0), 0)
-              const weekCur  = cur.reduce((s, r) => s + Number(r.est_cost ?? 0), 0)
-              const weekAi   = sugg.reduce((s, r) => s + Number(r.est_cost ?? 0), 0)
-              const curPct   = weekRev > 0 ? (weekCur / weekRev) * 100 : null
-              const aiPct    = weekRev > 0 ? (weekAi  / weekRev) * 100 : null
-              const hasPredictive = isCurrentPeriod && aiSaving > 0 && curPct != null && aiPct != null
-              // Retrospective metrics — actual labour for the displayed
-              // period (already computed for OverviewHero). We only show
-              // the retrospective card when there's actual revenue;
-              // closed/empty periods get nothing.
-              const hasRetrospective = !hasPredictive && totalRev > 0 && labourPct > 0
-              // FIXES §0ap: overhead-review card sits alongside the labour
-              // card in the right rail. Show only when there's a pending
-              // queue + non-zero savings (no point telling the owner about
-              // 0 kr potential — they'd ignore it).
-              const hasOverheadCard = !!overheadProj
-                && Number(overheadProj?.pending_count ?? 0) > 0
-                && Number(overheadProj?.savings?.total_sek ?? 0) > 0
-              return (
-                // FIXES §0aw: 3-column auto-fit grid so hero + labour + overhead
-                // cards sit as equal-size siblings instead of one wide hero +
-                // a tall right rail. minmax(280px, 1fr) wraps to 2-col then
-                // 1-col on narrower viewports.
-                <div style={{
-                  display:             'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-                  gap:                 12,
-                  alignItems:          'stretch',
-                  marginBottom:        12,
-                }}>
-                  <OverviewHero
-                    viewMode={viewMode}
-                    curr={curr}
-                    currM={currM}
-                    currLabel={formatMonthLabel(currM)}
-                    weekRangeLabel={formatWeekRange(curr)}
-                    totalRev={totalRev}
-                    totalLabour={totalLabour}
-                    prevRev={prevRev}
-                    prevLabour={prevLabour}
-                    totalHours={totalHours}
-                    revPerHour={revPerHour}
-                    labourPct={labourPct}
-                    targetPct={targetPct}
-                    aiSaving={aiSaving}
-                    fmtKr={fmtKr}
-                    fmtPct={fmtPct}
-                  />
-
-                  {hasPredictive && (() => {
-                    // Days flagged = days where AI proposes a cut
-                    // (delta_cost < 0). Total days in window for the
-                    // "N of M" context.
-                    const flaggedDays = sugg.filter((s: any) => Number(s.delta_cost ?? 0) < 0).length
-                    return (
-                      <a
-                        href="/scheduling"
-                        style={pillarCardLink('green')}
-                        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)')}
-                        onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
-                      >
-                        <div style={pillarHeadStyle}>
-                          <span style={pillarHLabelStyle}>{tDash('labour.predictiveEyebrow')}</span>
-                          <span style={{ ...pillarStatusStyle, background: UX.greenBg, color: UX.greenInk }}>
-                            {tDash('labour.statusReady')}
-                          </span>
-                        </div>
-
-                        <div style={pillarBodyStyle}>
-                          <div style={baRowStyle}>
-                            <span style={{ ...baCurrentStyle, color: UX.amberInk }}>{Math.round(curPct!)}%</span>
-                            <span style={baArrowStyle}>→</span>
-                            <span style={baProjectedStyle}>{Math.round(aiPct!)}%</span>
-                            <span style={baSuffixStyle}>{tDash('labour.ofRevenue')}</span>
-                          </div>
-
-                          <p style={pillarContextStyle}>
-                            {tDash.rich('labour.contextRich', {
-                              curr:   Math.round(curPct!),
-                              ai:     Math.round(aiPct!),
-                              strong: (chunks: any) => <strong style={pillarStrongStyle}>{chunks}</strong>,
-                            })}
-                          </p>
-
-                          <div style={pillarStatsStyle}>
-                            <div style={pillarStatCellStyle}>
-                              <div style={pillarStatLabelStyle}>{tDash('labour.statSaves')}</div>
-                              <div style={{ ...pillarStatValueStyle, color: UX.greenInk }}>{fmtKr(aiSaving)}</div>
-                            </div>
-                            <div style={pillarStatCellStyle}>
-                              <div style={pillarStatLabelStyle}>{tDash('labour.statHoursCut')}</div>
-                              <div style={pillarStatValueStyle}>
-                                {aiCutH > 0.05 ? `−${(Math.round(aiCutH * 10) / 10).toFixed(1)}h` : '—'}
-                              </div>
-                            </div>
-                            <div style={pillarStatCellStyle}>
-                              <div style={pillarStatLabelStyle}>{tDash('labour.statDaysFlagged')}</div>
-                              <div style={pillarStatValueStyle}>
-                                {flaggedDays} of {sugg.length || 7}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Cosmetic CTA — parent anchor handles navigation. */}
-                          <span style={{ ...pillarCtaStyle, background: UX.greenInk }}>
-                            {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
-                          </span>
-                        </div>
-                      </a>
-                    )
-                  })()}
-
-                  {hasRetrospective && (() => {
-                    const periodLabel = viewMode === 'week'
-                      ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) }).split(' · ')[0].toUpperCase()
-                      : formatMonthLabel(currM).toUpperCase()
-                    const onTarget   = labourPct <= targetPct
-                    const targetCost = totalRev * (targetPct / 100)
-                    const couldSave  = Math.max(0, totalLabour - targetCost)
-                    const stripe: 'green' | 'amber' = onTarget ? 'green' : 'amber'
-                    const accent     = onTarget ? UX.greenInk : UX.amberInk
-                    return (
-                      <a
-                        href="/scheduling"
-                        style={pillarCardLink(stripe)}
-                        onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)')}
-                        onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
-                      >
-                        <div style={pillarHeadStyle}>
-                          <span style={pillarHLabelStyle}>{tDash('labour.retroEyebrow', { period: periodLabel })}</span>
-                          <span style={{
-                            ...pillarStatusStyle,
-                            background: onTarget ? UX.greenBg : UX.amberBg,
-                            color:      accent,
-                          }}>
-                            {onTarget ? tDash('labour.statusOnTarget') : tDash('labour.statusOver')}
-                          </span>
-                        </div>
-
-                        <div style={pillarBodyStyle}>
-                          <div style={baRowStyle}>
-                            <span style={{ ...baCurrentStyle, color: accent }}>{Math.round(labourPct)}%</span>
-                            <span style={baSuffixStyle}>{tDash('labour.retroVsTarget', { target: Math.round(targetPct) })}</span>
-                          </div>
-
-                          <p style={pillarContextStyle}>
-                            {onTarget
-                              ? tDash('labour.retroOnTarget')
-                              : tDash('labour.retroOver', { pp: Math.round(labourPct - targetPct) })}
-                          </p>
-
-                          <div style={pillarStatsStyle}>
-                            <div style={pillarStatCellStyle}>
-                              <div style={pillarStatLabelStyle}>{tDash('labour.statActual')}</div>
-                              <div style={pillarStatValueStyle}>{fmtKr(totalLabour)}</div>
-                            </div>
-                            <div style={pillarStatCellStyle}>
-                              <div style={pillarStatLabelStyle}>{tDash('labour.statTargetCost')}</div>
-                              <div style={pillarStatValueStyle}>{fmtKr(targetCost)}</div>
-                            </div>
-                            <div style={pillarStatCellStyle}>
-                              <div style={pillarStatLabelStyle}>{onTarget ? tDash('labour.statSurplus') : tDash('labour.statMissed')}</div>
-                              <div style={{ ...pillarStatValueStyle, color: onTarget ? UX.greenInk : UX.redInk }}>
-                                {onTarget ? '—' : fmtKr(couldSave)}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Cosmetic CTA — parent anchor handles navigation. */}
-                          <span style={{ ...pillarCtaStyle, background: UX.ink1 }}>
-                            {tDash('labour.openScheduling')} <span aria-hidden style={{ fontSize: 14 }}>→</span>
-                          </span>
-                        </div>
-                      </a>
-                    )
-                  })()}
-
-                  {hasOverheadCard && <OverheadReviewCard data={overheadProj} />}
-                </div>
-              )
-            })()}
-
-            {/* Four-stat strip on the chart header — Revenue / Labour /
-                Labour margin / Covers. Lives ABOVE the chart card so the
-                chart's own controls stay clean. Numbers come from
-                already-loaded daily summary; covers is newly consumed
-                (already in `summary.total_covers`, just unread before). */}
-            <ChartHeaderStrip
-              viewMode={viewMode}
-              periodLabel={viewMode === 'week'
-                ? tDash('period.weekLabel', { num: curr.weekNum, range: formatWeekRange(curr) })
-                : formatMonthLabel(currM)}
-              totalRev={totalRev}
-              totalLabour={totalLabour}
-              labourPct={labourPct}
-              covers={Number(currSummary?.total_covers ?? 0)}
-              prevRev={prevRev}
-              prevLabPct={prevLabPct}
-              fmtKr={fmtKr}
-              fmtPct={fmtPct}
-            />
-
-            {/* Phase 2 — headline chart on the new system. PairedBarChart
-                is presentational only (no period dropdown / day-click /
-                compare modes); period navigation moves up to the toolbar's
-                date stepper, and W/M view mode + the rich interactions
-                from the legacy OverviewChart will return in a later phase
-                as the new system grows them. OverviewChart itself stays
-                in-tree for the day drill-down + admin diagnostics. */}
-            {(() => {
-              const days = viewMode === 'week' ? weekDays : monthDays
-              const groups = days.map((d: any) => d.dayName ?? d.date.slice(-2))
-              return (
-                <div style={{
-                  background:   UXP.cardBg,
-                  border:       `0.5px solid ${UXP.border}`,
-                  borderRadius: UXP.r_lg,
-                  padding:      '14px 16px',
-                  marginBottom: 12,
-                }}>
-                  <PairedBarChart
-                    groups={groups}
-                    series={[
-                      { label: 'Revenue', data: days.map((d: any) => Number(d.revenue ?? 0)),   color: UXP.lav },
-                      { label: 'Labour',  data: days.map((d: any) => Number(d.staff_cost ?? 0)), color: UXP.lavMid },
-                    ]}
-                    lines={[{
-                      label:  'Labour %',
-                      data:   days.map((d: any) => {
-                        const rev = Number(d.revenue ?? 0)
-                        return rev > 0 ? (Number(d.staff_cost ?? 0) / rev) * 100 : null
-                      }),
-                      color:  UXP.coral,
-                      dashed: false,
-                    }]}
-                    rightMax={100}
-                    width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 100, 900) : 900}
-                    height={240}
-                  />
-                </div>
-              )
-            })()}
-
-            {/* Two chart footer notes — honesty about how to read the chart.
-                Stack to single column at <880px. */}
-            <div className="cc-chart-footer-notes" style={chartFooterNotesStyle}>
-              <div style={chartFooterNoteStyle}>
-                <strong style={{ color: UX.ink3 }}>{tDash('chart.notes.dayRatioTitle')}</strong>
-                {' '}— {tDash('chart.notes.dayRatioBody')}
-              </div>
-              <div style={chartFooterNoteStyle}>
-                <strong style={{ color: UX.ink3 }}>{tDash('chart.notes.readingTitle')}</strong>
-                {' '}{tDash('chart.notes.readingBody')}
-              </div>
-              <style>{`
-                @media (max-width: 880px) {
-                  .cc-chart-footer-notes { grid-template-columns: 1fr !important; }
-                }
-              `}</style>
-            </div>
-
-            {/* Phase B attribution UX — "Why this week's numbers" card.
-                Reads the attribution payload from the same aiSched response
-                the chart and AttentionPanel already use; no new API call.
-                Hidden when no day has unusual drivers OR when aiSched
-                hasn't loaded yet. */}
-            <WhyThisWeekCard aiSched={aiSched} fmtKr={fmtKr} />
-
-            {/* Per-week scorecard — Nory's "X of Y days on target" framing.
-                Reuses aiSched.suggested + dailyRows that the chart already
-                loads; no new API call. Hidden when the whole week is
-                pending or closed (nothing to score yet). */}
-            <WeekScorecardCard aiSched={aiSched} dailyRows={dailyRows} fmtKr={fmtKr} />
-
-            {/* Variance attribution — picks the past day with biggest
-                absolute |actual − predicted| variance and decomposes it
-                using the same attribution drivers as WhyThisWeekCard.
-                Hidden when no past day diverged > 10%. */}
-            <WhatHappenedCard aiSched={aiSched} dailyRows={dailyRows} fmtKr={fmtKr} />
-
-            {/* Review intelligence — top guest-feedback themes from
-                Google Maps, rolling 90 days. Hidden when no place is
-                linked or no reviews are on file. Self-fetches, so no
-                blocking on dashboard's other data. */}
-            <ReviewThemesCard businessId={bizId ?? null} />
-
-            {/* Phase 5 cash visibility — net bank movement derived from
-                BAS 1910-1979 voucher activity (data we already had but were
-                throwing away). Honest about not being an absolute balance.
-                Soft-fails when Fortnox isn't bank-linked. */}
-            {bizId && (
-              <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-                <CashPositionTile businessId={bizId} />
-                <CashFlowProjectionTile businessId={bizId} />
-              </div>
-            )}
-
-            {/* Recent invoices — operational view of supplier costs landing
-                in Fortnox day-by-day. Independent of period closure status,
-                so this stays useful even when April/May 2026 P&L numbers
-                aren't yet booked. Pairs with the M062 provisional flag:
-                P&L pages hide partial months; this widget shows what's
-                actually flowing in. */}
-            <RecentInvoicesFeed businessId={bizId} days={14} maxRows={20} />
-
-            {/* Compact horizontal attention strip — was a right-rail card,
-                now a single-row footer with horizontally-scrolling items.
-                DepartmentsSummary removed entirely; the /departments route
-                still works for direct navigation. */}
-            <CompactAttentionStrip
-              items={buildAttentionItems({
-                depts: depts?.departments ?? [],
-                aiSaving: aiSched?.summary?.saving_kr ?? 0,
-                targetPct,
-                labourPct,
-                totalRev,
-                country: (selectedBiz as any)?.country ?? 'SE',
-                t: tDash,
-                tCommon,
-              })}
-            />
-
-          </>
+        {/* ── Demand outlook (next 7 days) ──────────────────────── */}
+        {demand?.days?.length > 0 && (
+          <DemandOutlookStrip demand={demand} />
         )}
 
+        {/* ── Performance chart ─────────────────────────────────── */}
+        <ChartCard days={days} loading={loading} />
+
+        {/* ── Attention panel ───────────────────────────────────── */}
+        {attentionItems.length > 0 && (
+          <AttentionCard items={attentionItems} />
+        )}
+
+        {/* ── Money flow row ────────────────────────────────────── */}
+        <MoneyFlowRow bankPos={bankPos} cashFlow={cashFlow} recentInv={recentInv} />
+
+        {/* ── Review themes ─────────────────────────────────────── */}
+        {reviewThemes?.top_themes?.length > 0 && (
+          <ReviewThemesCard themes={reviewThemes} />
+        )}
       </div>
 
       <AskAI
         page="dashboard"
         context={selectedBiz ? [
+          `Period: ${periodLabel}`,
           `Business: ${selectedBiz.name}`,
-          viewMode === 'week'
-            ? `Week ${curr.weekNum} (${curr.label}): revenue ${fmtKr(totalRev)}, labour cost ${fmtKr(totalLabour)} (${totalRev > 0 ? fmtPct(labourPct) : '—'}), ${Math.round(totalHours)}h`
-            : `${currM.label}: revenue ${fmtKr(totalRev)}, labour cost ${fmtKr(totalLabour)} (${totalRev > 0 ? fmtPct(labourPct) : '—'}), ${Math.round(totalHours)}h`,
-          depts?.summary ? `Departments: ${(depts.departments ?? []).map((d: any) => `${d.name} ${d.revenue > 0 ? fmtKr(d.revenue) : 'no revenue'}`).join(', ')}` : '',
-        ].filter(Boolean).join('\n') : 'No business selected'}
+          `Revenue ${fmtKr(totalRev)}, labour ${fmtKr(totalLabour)} (${fmtPct(labourPct)}), covers ${totalCovers}.`,
+        ].join('\n') : 'No business selected'}
       />
     </AppShell>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OverviewHero — PageHero wrapping the redesigned Overview-page introduction.
-// Single-sentence headline answering "am I trading ahead this week?", inline
-// coloured delta, SupportingStats in the right slot.
-// ─────────────────────────────────────────────────────────────────────────────
-function OverviewHero({
-  viewMode, curr, currM,
-  currLabel, weekRangeLabel,
-  totalRev, totalLabour, prevRev, prevLabour,
-  totalHours, revPerHour,
-  labourPct, targetPct,
-  aiSaving,
-  fmtKr, fmtPct,
+// ════════════════════════════════════════════════════════════════════
+// Sub-components — all UXP, all 0.5px hairlines, all tabular-nums
+// ════════════════════════════════════════════════════════════════════
+
+// ── KPI strip ────────────────────────────────────────────────────────
+function KpiStrip({
+  totalRev, prevRev, totalLabour, labourPct, prevLabPct, totalCovers, prevCovers, depts, periodLabel,
 }: any) {
-  const tDash   = useTranslations('dashboard')
-  const isWeek  = viewMode === 'week'
-  const eyebrow = isWeek
-    ? tDash('hero.eyebrowWeek',  { label: (weekRangeLabel ?? '').toUpperCase() })
-    : tDash('hero.eyebrowMonth', { label: (currLabel ?? '').toUpperCase() })
-
-  const revDelta = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
-  const margin   = Math.max(0, totalRev - totalLabour)
-
-  // Tone the headline number on revenue movement.
-  const revTone =
-    revDelta == null ? UX.ink2 :
-    revDelta >= 0    ? UX.greenInk :
-                       UX.redInk
-  const revArrow = revDelta == null ? '' : revDelta >= 0 ? '↑' : '↓'
-  const revPct   = revDelta == null ? null : Math.abs(Math.round(revDelta * 10) / 10)
-
-  const labourState: 'lean' | 'tight' | 'hot' | 'unknown' =
-    totalRev <= 0 || labourPct == null ? 'unknown'
-    : labourPct <= targetPct           ? 'lean'
-    : labourPct <= targetPct + 5       ? 'tight'
-    :                                    'hot'
-  const labourColor =
-    labourState === 'lean'  ? UX.greenInk :
-    labourState === 'tight' ? UX.amberInk :
-    labourState === 'hot'   ? UX.redInk :
-                              UX.ink2
-
-  // Body sentence — single line, mirrors the labour/overhead card body.
-  const body = (() => {
-    if (totalRev <= 0) return <>{tDash('hero.waiting')}</>
-    if (revDelta != null) {
-      const ref = isWeek ? tDash('hero.lastWeek') : tDash('hero.lastMonth')
-      const pct = revPct ?? 0
-      const head = revDelta >= 0
-        ? tDash('hero.upOn',   { pct, ref })
-        : tDash('hero.downOn', { pct, ref })
-      return (
-        <>
-          {head}
-          {labourState !== 'unknown' && (
-            <>{' '}
-              {labourState === 'lean'
-                ? tDash('hero.labourLeanTarget', { pct: fmtPct(labourPct), target: targetPct })
-                : tDash('hero.labourVsTarget',   { pct: fmtPct(labourPct), target: targetPct })}
-            </>
-          )}
-        </>
-      )
-    }
-    return (
-      <>
-        {isWeek
-          ? tDash('hero.marginWeek',  { amount: fmtKr(margin) })
-          : tDash('hero.marginMonth', { amount: fmtKr(margin) })}
-      </>
-    )
-  })()
-
-  // Footer — compact stat strip, dashed top-border like the other cards.
-  const footerParts: string[] = []
-  if (totalHours > 0) footerParts.push(tDash('hero.footerHours',  { hours: Math.round(totalHours) }))
-  if (revPerHour > 0) footerParts.push(tDash('hero.footerRate',   { amount: fmtKr(revPerHour) }))
-  if (totalRev > 0)   footerParts.push(tDash('hero.footerMargin', { amount: fmtKr(margin) }))
-  const footer = footerParts.join(' · ')
-
-  return (
-    <div
-      style={{
-        display:        'flex',
-        flexDirection:  'column' as const,
-        justifyContent: 'space-between',
-        background:     UX.cardBg,
-        border:         `1px solid ${UX.border}`,
-        borderLeft:     `4px solid ${revTone}`,
-        borderRadius:   UX.r_lg,
-        padding:        '18px 20px',
-        minHeight:      0,
-      }}
-    >
-      <div>
-        <div style={schedCardEyebrow}>{eyebrow}</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 10, flexWrap: 'wrap' as const }}>
-          <span style={{ fontSize: 26, fontWeight: 500, color: revTone, letterSpacing: '-0.02em' }}>
-            {totalRev > 0 ? fmtKr(totalRev) : '—'}
-          </span>
-          {revPct != null && (
-            <span style={{ fontSize: 14, color: revTone, fontWeight: 500 }}>
-              {revArrow} {revPct}%
-            </span>
-          )}
-          <span style={{ fontSize: 12, color: UX.ink3, marginLeft: 2 }}>{tDash('hero.revenue')}</span>
-        </div>
-        <div style={{ fontSize: 12, color: UX.ink3, marginTop: 6, lineHeight: 1.4 }}>
-          {body}
-        </div>
-        {footer && (
-          <div style={{ fontSize: 11, color: UX.ink4, marginTop: 8, paddingTop: 6, borderTop: `1px dashed ${UX.borderSoft}` }}>
-            {footer}
-            {aiSaving > 0 && <span> · {tDash('hero.aiSees', { amount: fmtKr(aiSaving) })}</span>}
-          </div>
-        )}
-      </div>
-    </div>
+  const channels = (depts && depts.length > 0
+    ? [...depts]
+        .sort((a: any, b: any) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))
+        .slice(0, 3)
+        .map((d: any, i: number) => ({
+          label: d.name ?? `Dept ${i + 1}`,
+          value: Number(d.revenue ?? 0),
+          share: 0,
+          color: [UXP.lav, UXP.lavMid, UXP.lavPale][i] ?? UXP.lav,
+        }))
+    : [{ label: 'Total', value: totalRev, share: 1, color: UXP.lav }]
   )
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DepartmentsSummary — condensed list of departments for the current period.
-// Spec § 1 Overview: 5 rows max, each with status dot · name · revenue · margin
-// · sparkline. `View all →` routes to /departments.
-// ─────────────────────────────────────────────────────────────────────────────
-function DepartmentsSummary({ depts, targetPct, periodLabel, fmtKr, fmtPct }: any) {
-  const tDash = useTranslations('dashboard')
-  const rows = (depts ?? [])
-    .filter((d: any) => Number(d.revenue ?? 0) > 0 || Number(d.staff_cost ?? 0) > 0)
-    .sort((a: any, b: any) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))
-    .slice(0, 5)
+  const grossMargin = totalRev > 0 ? ((totalRev - totalLabour) / totalRev) * 100 : 0
+  const TARGET_MARGIN = 12
+
+  const tier = labourTier(totalRev > 0 ? labourPct : null)
+  const tierLabel = tier === 'no-data' ? 'No data' : tier.replace('-', ' ')
+
+  const revDeltaPct = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
+  const revDelta = revDeltaPct != null ? `${revDeltaPct >= 0 ? '+' : ''}${revDeltaPct.toFixed(1)}%` : null
+
+  const labDelta = prevLabPct != null
+    ? `${labourPct - prevLabPct >= 0 ? '+' : ''}${(labourPct - prevLabPct).toFixed(1)}pp`
+    : null
+
+  const coversDelta = prevCovers > 0
+    ? `${totalCovers - prevCovers >= 0 ? '+' : ''}${(((totalCovers - prevCovers) / prevCovers) * 100).toFixed(1)}%`
+    : null
+
+  // gross margin = revenue − labour, so prev margin ≈ 100 − prevLabPct.
+  // Comparing the two pp values gives a clean "+1.2pp / −0.4pp" delta.
+  const marginDelta = prevLabPct != null && totalRev > 0
+    ? (() => {
+        const prevMarginPct = 100 - prevLabPct
+        const diff = grossMargin - prevMarginPct
+        return `${diff >= 0 ? '+' : ''}${diff.toFixed(1)}pp`
+      })()
+    : null
 
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `0.5px solid ${UX.border}`,
-      borderRadius: UX.r_lg,
-      overflow:     'hidden' as const,
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
     }}>
+      <KpiCardUX
+        title="Revenue"
+        value={totalRev > 0 ? fmtKr(totalRev) : '—'}
+        delta={revDelta}
+        deltaGood
+        variant="channels"
+        channels={channels}
+        microLabel={periodLabel}
+      />
+      <KpiCardUX
+        title="Margin"
+        value={totalRev > 0 ? fmtPct(grossMargin) : '—'}
+        delta={marginDelta}
+        deltaGood
+        variant="stacked"
+        stackedBars={[
+          { label: 'Current', value: grossMargin,   max: 100, color: UXP.lav   },
+          { label: 'Target',  value: TARGET_MARGIN, max: 100, color: UXP.green },
+        ]}
+      />
+      <KpiCardUX
+        title="Labour"
+        value={totalRev > 0 ? fmtPct(labourPct) : '—'}
+        delta={labDelta}
+        deltaGood={false}
+        variant="targetBand"
+        targetBand={{
+          actualPct:    Math.min(100, labourPct),
+          targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+          targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+        }}
+        microLabel={tierLabel}
+      />
+      <KpiCardUX
+        title="Covers"
+        value={totalCovers > 0 ? totalCovers.toLocaleString('sv-SE') : '—'}
+        delta={coversDelta}
+        deltaGood
+        microLabel={totalCovers > 0 && totalRev > 0 ? `${fmtKr(Math.round(totalRev / totalCovers))} per cover` : ''}
+      />
+    </div>
+  )
+}
+
+// ── Demand outlook (horizontal strip) ────────────────────────────────
+function DemandOutlookStrip({ demand }: { demand: any }) {
+  const days = demand.days as any[]
+  return (
+    <Card title="Demand outlook" subtitle={`Next ${days.length} days — weather × revenue correlation`}>
       <div style={{
-        padding:        '12px 16px',
-        borderBottom:   `0.5px solid ${UX.borderSoft}`,
-        display:        'flex',
-        justifyContent: 'space-between',
-        alignItems:     'baseline',
+        display:             'grid',
+        gridTemplateColumns: `repeat(${Math.min(days.length, 7)}, minmax(120px, 1fr))`,
+        gap:                 8,
       }}>
-        <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-          {tDash('departments.header', { period: periodLabel })}
-        </div>
-        <a href="/departments" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
-          {tDash('departments.viewAll')}
-        </a>
-      </div>
-
-      {rows.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center' as const, fontSize: UX.fsBody, color: UX.ink4 }}>
-          {tDash('departments.empty')}
-        </div>
-      ) : (
-        <div>
-          {rows.map((d: any) => {
-            const margin = Number(d.revenue ?? 0) - Number(d.staff_cost ?? 0)
-            const marginPct = d.revenue > 0 ? (margin / d.revenue) * 100 : null
-            const marginTone: 'good' | 'bad' | 'warning' | 'neutral' =
-              marginPct == null ? 'neutral'
-              : marginPct >= 55 ? 'good'
-              : marginPct >= 30 ? 'warning'
-              :                   'bad'
-            const dotColour =
-              marginTone === 'good'    ? UX.greenInk :
-              marginTone === 'warning' ? UX.amberInk :
-              marginTone === 'bad'     ? UX.redInk   : UX.ink4
-            return (
-              <a
-                key={d.name}
-                href={`/departments/${encodeURIComponent(d.name)}`}
-                style={{
-                  display:        'grid',
-                  gridTemplateColumns: '10px 1fr auto auto auto',
-                  gap:            10,
-                  alignItems:     'center',
-                  padding:        '9px 16px',
-                  borderBottom:   `0.5px solid ${UX.borderSoft}`,
-                  textDecoration: 'none',
-                  color:          UX.ink1,
-                  fontSize:       UX.fsBody,
-                }}
-              >
-                <span
-                  aria-hidden
-                  style={{ width: 6, height: 6, borderRadius: '50%', background: d.color ?? dotColour }}
-                />
-                <span style={{ fontWeight: UX.fwMedium, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                  {d.name}
-                </span>
-                <span style={{ color: UX.ink2, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const }}>
-                  {fmtKr(d.revenue)}
-                </span>
-                <span style={{
-                  fontVariantNumeric: 'tabular-nums' as const,
-                  fontWeight: UX.fwMedium,
-                  color:
-                    marginTone === 'good'    ? UX.greenInk :
-                    marginTone === 'warning' ? UX.amberInk :
-                    marginTone === 'bad'     ? UX.redInk   : UX.ink3,
-                  whiteSpace: 'nowrap' as const,
-                }}>
-                  {marginPct == null ? '—' : fmtPct(marginPct)}
-                </span>
-                <Sparkline points={[]} tone={marginTone} dashed />
-              </a>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// buildAttentionItems — synthesise up to 3 items for the AttentionPanel from
-// the data already loaded on this page. Spec § 1: worst dept + trending-down
-// dept + AI saving. We approximate "trending-down" with the 2nd-worst margin
-// when a clear worst exists, since per-dept deltas aren't fetched yet.
-// ─────────────────────────────────────────────────────────────────────────────
-function daysBetweenYmd(fromYmd: string, toYmd: string): number {
-  const [fy, fm, fd] = fromYmd.split('-').map(Number)
-  const [ty, tm, td] = toYmd.split('-').map(Number)
-  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000)
-}
-
-function buildAttentionItems({ depts, aiSaving, targetPct, labourPct, totalRev, country, t, tCommon }: any): AttentionItem[] {
-  const items: AttentionItem[] = []
-
-  // 0. Upcoming public holiday in the next 14 days — peak (high impact)
-  // gets surfaced first because it's the most actionable for staffing
-  // decisions ("Midsummer Eve next Friday — book extra cover"). Quiet
-  // holidays (Christmas Day, Easter Sunday) are flagged neutrally.
-  // Computed client-side from the pure holiday lib — no fetch needed.
-  try {
-    const today    = new Date()
-    const fromYmd  = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
-    const upcoming = getUpcomingHolidays(country ?? 'SE', fromYmd, 14)
-    const next     = upcoming[0]
-    if (next) {
-      const days = Math.max(0, daysBetweenYmd(fromYmd, next.date))
-      const when = days === 0 ? tCommon('time.today')
-                 : days === 1 ? tCommon('time.tomorrow')
-                 : tCommon('time.inDays', { days })
-      const localeName = next.name_sv  // we'll let the AttentionPanel rely on the en-GB fallback for now; sv users see the Swedish name everywhere else too
-      items.push({
-        tone:    next.impact === 'high' ? 'good' : next.impact === 'low' ? 'warning' : 'good',
-        entity:  '📅',
-        message: `${localeName} — ${when}${next.impact === 'high' ? ' · expect peak demand' : next.impact === 'low' ? ' · most restaurants close' : ''}`,
-      })
-    }
-  } catch { /* holiday lookup failure must never block the panel */ }
-
-  // 1. AI saving (if any) — most actionable first.
-  if (aiSaving > 0) {
-    const kr = Math.round(aiSaving).toLocaleString('en-GB').replace(/,/g, ' ')
-    items.push({
-      tone:    'good',
-      entity:  'AI',
-      message: t('attention.aiSees', { amount: kr }),
-    })
-  }
-
-  // 2. Worst department by margin %.
-  const withRev = (depts ?? []).filter((d: any) => Number(d.revenue ?? 0) > 0)
-  if (withRev.length) {
-    const ranked = withRev.map((d: any) => {
-      const margin    = Number(d.revenue ?? 0) - Number(d.staff_cost ?? 0)
-      const marginPct = d.revenue > 0 ? (margin / d.revenue) * 100 : null
-      return { ...d, _marginPct: marginPct }
-    }).sort((a: any, b: any) => (a._marginPct ?? 1e9) - (b._marginPct ?? 1e9))
-
-    const worst = ranked[0]
-    if (worst && worst._marginPct != null && worst._marginPct < 55) {
-      items.push({
-        tone:    worst._marginPct < 30 ? 'bad' : 'warning',
-        entity:  worst.name,
-        message: t('attention.deptWorst', { pct: (Math.round(worst._marginPct * 10) / 10).toFixed(1) }),
-      })
-    }
-
-    // 3. Second worst if it's also in trouble.
-    const second = ranked[1]
-    if (items.length < 3 && second && second._marginPct != null && second._marginPct < 40) {
-      items.push({
-        tone:    'warning',
-        entity:  second.name,
-        message: t('attention.deptSecondWorst', { pct: (Math.round(second._marginPct * 10) / 10).toFixed(1) }),
-      })
-    }
-  }
-
-  // 4. Group-level labour flag if nothing else.
-  if (items.length === 0 && labourPct != null && totalRev > 0 && labourPct > targetPct + 5) {
-    items.push({
-      tone:    'warning',
-      entity:  'Labour',
-      message: t('attention.labour', { pct: (Math.round(labourPct * 10) / 10).toFixed(1), target: targetPct }),
-    })
-  }
-
-  return items
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ChartHeaderStrip — four-stat strip above the chart card. Revenue / Labour /
-// Labour margin / Covers, label-above-value layout per v7 mockup. Re-introduced
-// after the legacy KPI strip was removed in commit 63809e7 (it duplicated
-// PageHero/SupportingStats); v7's design has no SupportingStats so the
-// duplication risk doesn't apply.
-// ─────────────────────────────────────────────────────────────────────────────
-function ChartHeaderStrip({
-  viewMode, periodLabel,
-  totalRev, totalLabour, labourPct, covers,
-  prevRev, prevLabPct,
-  fmtKr, fmtPct,
-}: any) {
-  const tDash = useTranslations('dashboard')
-
-  // Revenue delta vs previous period — same source the existing OverviewHero
-  // already uses. Sign drives the badge tone.
-  const revDelta = prevRev > 0 ? ((totalRev - prevRev) / prevRev) * 100 : null
-  const revDeltaTone = revDelta == null ? 'neutral' : revDelta >= 0 ? 'good' : 'bad'
-
-  // Labour delta in percentage POINTS (not relative). +21pp etc.
-  const labDeltaPp = (labourPct != null && prevLabPct != null) ? Math.round(labourPct - prevLabPct) : null
-  const labDeltaTone = labDeltaPp == null ? 'neutral' : labDeltaPp <= 0 ? 'good' : 'bad'
-
-  // Labour margin = revenue − labour. NOT net margin (no food/overhead here).
-  const labourMargin = Math.max(0, totalRev - totalLabour)
-  // No reliable YoY comparison wired today — show prev-period delta if we
-  // have it, else omit. Mockup's "+9pp YoY" is illustrative.
-  const marginDeltaPp = (labourPct != null && prevLabPct != null) ? Math.round(prevLabPct - labourPct) : null
-  const marginDeltaTone = marginDeltaPp == null ? 'neutral' : marginDeltaPp >= 0 ? 'good' : 'bad'
-
-  return (
-    <div className="cc-chart-strip" style={{
-      display:        'flex',
-      gap:            36,
-      alignItems:     'flex-start',
-      padding:        '14px 20px 16px',
-      background:     UX.cardBg,
-      border:         `1px solid ${UX.border}`,
-      borderRadius:   12,
-      marginBottom:   12,
-      flexWrap:       'wrap' as const,
-    }}>
-      <Stat
-        label={tDash('chart.strip.revenue')}
-        value={fmtKr(totalRev)}
-        delta={revDelta == null ? null : `${revDelta >= 0 ? '+' : ''}${(Math.round(revDelta * 10) / 10).toFixed(1)}%`}
-        tone={revDeltaTone}
-      />
-      <Stat
-        label={tDash('chart.strip.labour')}
-        value={totalRev > 0 ? `${(Math.round(labourPct * 10) / 10).toFixed(1)}%` : '—'}
-        delta={labDeltaPp == null ? null : `${labDeltaPp >= 0 ? '+' : ''}${labDeltaPp}pp`}
-        tone={labDeltaTone}
-        valueTone={labDeltaTone}
-      />
-      <Stat
-        label={tDash('chart.strip.labourMargin')}
-        value={fmtKr(labourMargin)}
-        delta={marginDeltaPp == null ? null : `${marginDeltaPp >= 0 ? '+' : ''}${marginDeltaPp}pp`}
-        tone={marginDeltaTone}
-        valueTone={marginDeltaTone}
-      />
-      <Stat
-        label={tDash('chart.strip.covers')}
-        value={covers > 0 ? String(covers) : '—'}
-      />
-      <style>{`
-        @media (max-width: 880px) {
-          .cc-chart-strip { gap: 14px !important; padding: 12px 14px !important; }
-        }
-      `}</style>
-    </div>
-  )
-}
-
-function Stat({ label, value, delta, tone, valueTone }: {
-  label:     string
-  value:     string
-  delta?:    string | null
-  tone?:     'good' | 'bad' | 'neutral'
-  valueTone?:'good' | 'bad' | 'neutral'
-}) {
-  const valueColor = valueTone === 'good' ? UX.greenInk : valueTone === 'bad' ? UX.redInk : UX.ink1
-  const deltaPalette = tone === 'good'
-    ? { bg: UX.greenBg, fg: UX.greenInk }
-    : tone === 'bad'
-    ? { bg: UX.redSoft, fg: UX.redInk }
-    : { bg: 'transparent', fg: UX.ink4 }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, minWidth: 0 }}>
-      <span style={{
-        fontSize:      11,
-        color:         UX.ink4,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase' as const,
-        fontWeight:    500,
-        lineHeight:    1.2,
-        whiteSpace:    'nowrap' as const,
-      }}>
-        {label}
-      </span>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' as const }}>
-        <span style={{
-          fontSize:      26,
-          fontWeight:    700,
-          color:         valueColor,
-          letterSpacing: '-0.02em',
-          lineHeight:    1,
-          whiteSpace:    'nowrap' as const,
-        }}>
-          {value}
-        </span>
-        {delta && (
-          <span style={{
-            fontSize:    11,
-            fontWeight:  700,
-            padding:     '2px 8px',
-            borderRadius:999,
-            background:  deltaPalette.bg,
-            color:       deltaPalette.fg,
-            whiteSpace:  'nowrap' as const,
-          }}>
-            {delta}
-          </span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// CompactAttentionStrip — horizontal version of AttentionPanel for the new
-// dashboard footer. Same input shape (AttentionItem[]) so the existing
-// buildAttentionItems() helper feeds it unchanged.
-// ─────────────────────────────────────────────────────────────────────────────
-function CompactAttentionStrip({ items }: { items: AttentionItem[] }) {
-  const t = useTranslations('common.attention')
-  if (!items.length) return null
-  return (
-    <div className="cc-attention-strip" style={{
-      background:   UX.cardBg,
-      border:       `1px solid ${UX.border}`,
-      borderRadius: 10,
-      padding:      '16px 22px',
-      display:      'flex',
-      gap:          18,
-      alignItems:   'center',
-      marginTop:    16,
-      marginBottom: 16,
-    }}>
-      <div className="cc-attention-strip-h" style={{
-        fontSize:      11,
-        color:         UX.ink4,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase' as const,
-        fontWeight:    500,
-        flexShrink:    0,
-        paddingRight:  18,
-        borderRight:   `1px solid ${UX.borderSoft}`,
-      }}>
-        {t('defaultTitle')}{' '}
-        <span style={{
-          background:   UX.ink1,
-          color:        'white',
-          fontSize:     10,
-          fontWeight:   600,
-          padding:      '1px 6px',
-          borderRadius: 999,
-          marginLeft:   4,
-        }}>{items.length}</span>
-      </div>
-      <div style={{
-        display:    'flex',
-        gap:        22,
-        flex:       1,
-        overflowX:  'auto',
-      }}>
-        {items.slice(0, 6).map((it, i) => {
-          const palette = it.tone === 'bad'
-            ? { bg: UX.redSoft, fg: UX.redInk, glyph: '!' }
-            : it.tone === 'warning'
-            ? { bg: UX.amberSoft, fg: UX.amberInk, glyph: '⌖' }
-            : { bg: UX.greenBg, fg: UX.greenInk, glyph: '→' }
+        {days.slice(0, 7).map((d: any) => {
+          const isHoliday = d.is_holiday
+          const tone: 'good' | 'bad' | 'warning' | 'neutral' =
+            d.delta_pct == null              ? 'neutral'
+            : d.delta_pct >=  10             ? 'good'
+            : d.delta_pct <= -10             ? 'bad'
+            :                                  'warning'
+          const tonePalette = {
+            good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
+            bad:     { bg: UXP.roseFill,  fg: UXP.roseText  },
+            warning: { bg: UXP.lavFill,   fg: UXP.lavText   },
+            neutral: { bg: UXP.subtleBg,  fg: UXP.ink3      },
+          }[tone]
           return (
-            <div key={`${it.entity}-${i}`} style={{
-              display:    'flex',
-              alignItems: 'center',
-              gap:        8,
-              fontSize:   12,
-              whiteSpace: 'nowrap' as const,
-              minWidth:   0,
-            }}>
-              <span style={{
-                width:        18,
-                height:       18,
-                borderRadius: 5,
-                display:      'grid',
-                placeItems:   'center',
-                fontSize:     10,
-                fontWeight:   700,
-                background:   palette.bg,
-                color:        palette.fg,
-                flexShrink:   0,
-              }}>{palette.glyph}</span>
-              <span style={{ fontWeight: 600, color: UX.ink1 }}>{it.entity}</span>
-              <span style={{ color: UX.ink4 }}>— {it.message}</span>
+            <div
+              key={d.date}
+              style={{
+                background:   UXP.cardBg,
+                border:       `0.5px solid ${isHoliday ? UXP.coral : UXP.border}`,
+                borderRadius: UXP.r_md,
+                padding:      '10px 12px',
+                display:      'flex',
+                flexDirection: 'column' as const,
+                gap:          4,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500, letterSpacing: '0.02em' }}>
+                  {d.weekday}
+                </span>
+                <span style={{ fontSize: 14 }} aria-hidden>{weatherIcon(d.weather?.code)}</span>
+              </div>
+              <div style={{
+                fontSize:           17,
+                fontWeight:         500,
+                color:              UXP.ink1,
+                fontFamily:         'var(--font-display)',
+                fontVariantNumeric: 'tabular-nums' as const,
+                letterSpacing:      '-0.02em',
+                lineHeight:         1.1,
+              }}>
+                {fmtKr(d.predicted_revenue ?? 0)}
+              </div>
+              {d.delta_pct != null && (
+                <span style={{
+                  display:        'inline-block',
+                  fontSize:       9,
+                  padding:        '2px 6px',
+                  borderRadius:   6,
+                  background:     tonePalette.bg,
+                  color:          tonePalette.fg,
+                  alignSelf:      'flex-start' as const,
+                  fontVariantNumeric: 'tabular-nums' as const,
+                }}>
+                  {d.delta_pct >= 0 ? '+' : ''}{Math.round(d.delta_pct)}% vs baseline
+                </span>
+              )}
+              {isHoliday && d.holiday_name && (
+                <span style={{ fontSize: 9, color: UXP.coral, fontWeight: 500 }}>
+                  {d.holiday_name}
+                </span>
+              )}
             </div>
           )
         })}
       </div>
-      <style>{`
-        @media (max-width: 880px) {
-          .cc-attention-strip { flex-direction: column; align-items: flex-start; }
-          .cc-attention-strip-h { border-right: none; border-bottom: 1px solid ${UX.borderSoft}; padding-right: 0; padding-bottom: 12px; width: 100%; }
-        }
-      `}</style>
+    </Card>
+  )
+}
+
+// ── Chart card ───────────────────────────────────────────────────────
+function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
+  return (
+    <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue">
+      {loading ? (
+        <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
+      ) : (
+        <PairedBarChart
+          groups={days.map(d => d.dayName)}
+          series={[
+            { label: 'Revenue', data: days.map(d => Number(d.revenue ?? 0)),    color: UXP.lav },
+            { label: 'Labour',  data: days.map(d => Number(d.staff_cost ?? 0)), color: UXP.lavMid },
+          ]}
+          lines={[{
+            label:  'Labour %',
+            data:   days.map(d => {
+              const r = Number(d.revenue ?? 0)
+              return r > 0 ? (Number(d.staff_cost ?? 0) / r) * 100 : null
+            }),
+            color:  UXP.coral,
+            dashed: false,
+          }]}
+          rightMax={100}
+          width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 1200) : 1100}
+          height={260}
+        />
+      )}
+    </Card>
+  )
+}
+
+// ── Attention items ──────────────────────────────────────────────────
+interface AttentionItem {
+  id:       string
+  tone:     'good' | 'warning' | 'bad'
+  title:    string
+  detail:   string
+  cta?:     { label: string; href: string }
+}
+
+function buildAttentionItems({
+  aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount,
+}: any): AttentionItem[] {
+  const items: AttentionItem[] = []
+
+  const saving = Number(aiSched?.summary?.saving_kr ?? 0)
+  if (saving > 0) {
+    items.push({
+      id: 'labour',
+      tone: 'warning',
+      title: `Cut labour by ${fmtKr(saving)} this period`,
+      detail: `AI-suggested schedule reduces labour by ${Math.round(Number(aiSched.summary.current_hours ?? 0) - Number(aiSched.summary.suggested_hours ?? 0))}h.`,
+      cta: { label: 'Open scheduling →', href: '/scheduling' },
+    })
+  }
+
+  const pending = Number(overheadProj?.pending_count ?? 0)
+  const potSavings = Number(overheadProj?.savings?.total_sek ?? 0)
+  if (pending > 0) {
+    items.push({
+      id: 'overhead',
+      tone: pending > 3 ? 'bad' : 'warning',
+      title: `${pending} cost flag${pending === 1 ? '' : 's'} pending review`,
+      detail: potSavings > 0 ? `~${fmtKr(potSavings)}/mo potential savings.` : 'Review the queue to confirm or dismiss.',
+      cta: { label: 'Review overheads →', href: '/overheads/review' },
+    })
+  }
+
+  const tier = labourTier(totalRev > 0 ? labourPct : null)
+  if (tier === 'over') {
+    items.push({
+      id: 'labour-tier',
+      tone: 'bad',
+      title: `Labour at ${fmtPct(labourPct)} — over target`,
+      detail: `Target ${DEFAULT_TIER_CONFIG.targetMin}–${DEFAULT_TIER_CONFIG.targetMax}%. Cutting to the top of band saves ~${fmtKr(Math.max(0, totalLabour - totalRev * (DEFAULT_TIER_CONFIG.targetMax / 100)))}.`,
+      cta: { label: 'Open scheduling →', href: '/scheduling' },
+    })
+  } else if (tier === 'on-target') {
+    items.push({
+      id: 'labour-tier',
+      tone: 'good',
+      title: `Labour at ${fmtPct(labourPct)} — on target`,
+      detail: `Within ${DEFAULT_TIER_CONFIG.targetMin}–${DEFAULT_TIER_CONFIG.targetMax}%. Hold the line.`,
+    })
+  }
+
+  const recentAlerts = alerts.filter((a: any) => !a.is_dismissed && (a.severity === 'high' || a.severity === 'critical')).slice(0, 1)
+  for (const a of recentAlerts) {
+    items.push({
+      id: `alert-${a.id}`,
+      tone: a.severity === 'critical' ? 'bad' : 'warning',
+      title: a.title ?? 'Anomaly flagged',
+      detail: a.summary ?? '',
+      cta: { label: 'Open alerts →', href: '/alerts' },
+    })
+  }
+
+  return items.slice(0, 5)
+}
+
+function AttentionCard({ items }: { items: AttentionItem[] }) {
+  return (
+    <Card title="What needs attention" subtitle={`${items.length} item${items.length === 1 ? '' : 's'}`}>
+      <div style={{ display: 'grid', gap: 0 }}>
+        {items.map((it, idx) => {
+          const toneColor =
+            it.tone === 'good'    ? UXP.green
+            : it.tone === 'bad'   ? UXP.rose
+            :                       UXP.coral
+          const toneBg =
+            it.tone === 'good'    ? UXP.greenFill
+            : it.tone === 'bad'   ? UXP.roseFill
+            :                       UXP.lavFill
+          return (
+            <div
+              key={it.id}
+              style={{
+                display:        'grid',
+                gridTemplateColumns: '4px 1fr auto',
+                gap:            12,
+                padding:        '12px 0',
+                borderBottom:   idx < items.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+                alignItems:     'center',
+              }}
+            >
+              <span style={{ width: 4, height: '100%', minHeight: 32, background: toneColor, borderRadius: 2, alignSelf: 'stretch' as const }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1, marginBottom: 2 }}>{it.title}</div>
+                <div style={{ fontSize: 11, color: UXP.ink3, lineHeight: 1.4 }}>{it.detail}</div>
+              </div>
+              {it.cta && (
+                <a
+                  href={it.cta.href}
+                  style={{
+                    padding:      '5px 10px',
+                    background:   toneBg,
+                    color:        toneColor,
+                    border:       `0.5px solid ${toneColor}22`,
+                    borderRadius: 999,
+                    fontSize:     10,
+                    fontWeight:   500,
+                    textDecoration: 'none',
+                    whiteSpace:   'nowrap' as const,
+                  }}
+                >
+                  {it.cta.label}
+                </a>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ── Money flow row ──────────────────────────────────────────────────
+function MoneyFlowRow({ bankPos, cashFlow, recentInv }: any) {
+  const cashPosition = Number(bankPos?.summary?.current_position_since_tracking ?? 0)
+  const cashMtd      = Number(bankPos?.summary?.this_month_change ?? 0)
+  const absBalance   = bankPos?.summary?.absolute_balance != null ? Number(bankPos.summary.absolute_balance) : null
+
+  const cashFlowDays = Array.isArray(cashFlow?.daily) ? cashFlow.daily : []
+  const cashFlowEnd  = cashFlowDays.length > 0 ? Number(cashFlowDays[cashFlowDays.length - 1].cumulative ?? 0) : null
+
+  const invoices = Array.isArray(recentInv?.invoices) ? recentInv.invoices.slice(0, 4) : []
+
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+      gap:                 12,
+    }}>
+      {/* Cash position */}
+      <Card title="Cash position" subtitle={absBalance != null ? 'Absolute balance' : 'Net since tracking'}>
+        {bankPos ? (
+          <div>
+            <BigNumber value={fmtKr(absBalance ?? cashPosition)} tone={(absBalance ?? cashPosition) >= 0 ? 'ink' : 'rose'} />
+            <DeltaRow label="This month" value={cashMtd} />
+          </div>
+        ) : (
+          <Empty>No bank data yet.</Empty>
+        )}
+      </Card>
+
+      {/* Cash flow projection */}
+      <Card title="Cash flow" subtitle="30-day projection">
+        {cashFlowDays.length > 0 ? (
+          <div>
+            <BigNumber
+              value={cashFlowEnd != null ? fmtKr(cashFlowEnd) : '—'}
+              tone={(cashFlowEnd ?? 0) >= 0 ? 'ink' : 'rose'}
+            />
+            <MiniSparkline points={cashFlowDays.map((d: any) => Number(d.cumulative ?? 0))} />
+          </div>
+        ) : (
+          <Empty>No projection yet.</Empty>
+        )}
+      </Card>
+
+      {/* Recent invoices */}
+      <Card title="Recent invoices" subtitle={`Last ${recentInv?.days_window ?? 14} days`}>
+        {invoices.length > 0 ? (
+          <div style={{ display: 'grid', gap: 0 }}>
+            {invoices.map((inv: any, idx: number) => (
+              <div key={inv.given_number ?? idx} style={{
+                display:             'grid',
+                gridTemplateColumns: '1fr auto',
+                gap:                 8,
+                padding:             '8px 0',
+                borderBottom:        idx < invoices.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+                alignItems:          'baseline',
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                    {inv.supplier_name}
+                  </div>
+                  <div style={{ fontSize: 9, color: UXP.ink4 }}>{inv.invoice_date}</div>
+                </div>
+                <div style={{
+                  fontSize:           11,
+                  fontWeight:         500,
+                  color:              UXP.ink1,
+                  fontVariantNumeric: 'tabular-nums' as const,
+                }}>
+                  {inv.total != null ? fmtKr(inv.total) : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty>No recent invoices.</Empty>
+        )}
+      </Card>
     </div>
   )
 }
 
-const chartFooterNotesStyle: React.CSSProperties = {
-  display:             'grid',
-  gridTemplateColumns: '1fr 1fr',
-  gap:                 12,
-  marginTop:           10,
-  marginBottom:        16,
+// ── Review themes card ──────────────────────────────────────────────
+function ReviewThemesCard({ themes }: { themes: any }) {
+  const top = (themes.top_themes ?? []).slice(0, 4)
+  return (
+    <Card title="Review themes" subtitle={`Rolling ${themes.window_days ?? 90} days · ${themes.sample_size ?? 0} reviews`}>
+      <div style={{ display: 'grid', gap: 0 }}>
+        {top.map((t: any, idx: number) => {
+          const isPositive = (t.net_sentiment ?? 0) >  0.2
+          const isNegative = (t.net_sentiment ?? 0) < -0.2
+          const tone = isPositive ? 'good' : isNegative ? 'bad' : 'neutral'
+          const palette = {
+            good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
+            bad:     { bg: UXP.roseFill,  fg: UXP.roseText  },
+            neutral: { bg: UXP.lavFill,   fg: UXP.lavText   },
+          }[tone] as { bg: string; fg: string }
+          return (
+            <div key={t.category} style={{
+              display:             'grid',
+              gridTemplateColumns: '1fr auto auto',
+              gap:                 12,
+              alignItems:          'center',
+              padding:             '8px 0',
+              borderBottom:        idx < top.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+            }}>
+              <span style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500, textTransform: 'capitalize' as const }}>
+                {t.category}
+              </span>
+              <span style={{ fontSize: 10, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
+                {t.total_count} mentions
+              </span>
+              <span style={{
+                fontSize:       9,
+                padding:        '2px 7px',
+                borderRadius:   6,
+                background:     palette.bg,
+                color:          palette.fg,
+              }}>
+                {isPositive ? 'Positive' : isNegative ? 'Negative' : 'Mixed'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
 }
 
-const chartFooterNoteStyle: React.CSSProperties = {
-  fontSize:    11,
-  color:       UX.ink4,
-  padding:     '8px 12px',
-  background:  UX.subtleBg,
-  borderRadius:6,
-  lineHeight:  1.5,
+// ── Banners ─────────────────────────────────────────────────────────
+function UpgradeBanner({ plan, onClose }: { plan: string; onClose: () => void }) {
+  return (
+    <div style={{
+      background:    UXP.greenFill,
+      border:        `0.5px solid ${UXP.green}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '12px 16px',
+      display:       'flex',
+      alignItems:    'center',
+      justifyContent: 'space-between',
+      gap:           12,
+    }}>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: UXP.greenDeep }}>
+          🎉 Welcome to {plan || 'your new plan'}
+        </div>
+        <div style={{ fontSize: 11, color: UXP.greenDeep, marginTop: 2 }}>
+          Your subscription is active — all features unlocked.
+        </div>
+      </div>
+      <button onClick={onClose} aria-label="Dismiss" style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        color: UXP.greenDeep, fontSize: 16, padding: '0 4px',
+      }}>×</button>
+    </div>
+  )
+}
+
+function StaleDataBanner({ dataAsOf, loading, viewMode, weekOffset, monthOffset }: any) {
+  if (!dataAsOf || loading) return null
+  const isCurrentPeriod = (viewMode === 'week' && weekOffset === 0) || (viewMode === 'month' && monthOffset === 0)
+  if (!isCurrentPeriod) return null
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+  if (dataAsOf >= yesterday) return null
+  const daysOld = Math.floor((Date.now() - new Date(dataAsOf + 'T23:59:59Z').getTime()) / 86_400_000)
+  return (
+    <div style={{
+      background:    UXP.lavFill,
+      border:        `0.5px solid ${UXP.lav}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '10px 14px',
+      fontSize:      12,
+      color:         UXP.lavText,
+    }}>
+      Latest synced data is <strong>{daysOld === 1 ? 'yesterday' : `${daysOld} days old`}</strong>. Hourly catchup may be running.
+    </div>
+  )
+}
+
+// ── Generic card primitive ──────────────────────────────────────────
+function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+    }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function BigNumber({ value, tone = 'ink' }: { value: string; tone?: 'ink' | 'rose' }) {
+  return (
+    <div style={{
+      fontFamily:         'var(--font-display)',
+      fontSize:           24,
+      fontWeight:         500,
+      color:              tone === 'rose' ? UXP.roseText : UXP.ink1,
+      letterSpacing:      '-0.02em',
+      fontVariantNumeric: 'tabular-nums' as const,
+      lineHeight:         1.1,
+      marginBottom:       6,
+    }}>
+      {value}
+    </div>
+  )
+}
+
+function DeltaRow({ label, value }: { label: string; value: number }) {
+  const tone = value >= 0 ? UXP.green : UXP.rose
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 10 }}>
+      <span style={{ color: UXP.ink3 }}>{label}</span>
+      <span style={{ color: tone, fontVariantNumeric: 'tabular-nums' as const }}>
+        {value >= 0 ? '+' : '−'}{fmtKr(Math.abs(value))}
+      </span>
+    </div>
+  )
+}
+
+function MiniSparkline({ points }: { points: number[] }) {
+  if (points.length < 2) return null
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const range = max - min || 1
+  const w = 200, h = 32
+  const step = w / (points.length - 1)
+  const path = points.map((v, i) => {
+    const x = i * step
+    const y = h - ((v - min) / range) * h
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  const endNegative = points[points.length - 1] < 0
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ marginTop: 6, display: 'block' }}>
+      <path d={path} stroke={endNegative ? UXP.rose : UXP.lav} strokeWidth={1.5} fill="none" />
+    </svg>
+  )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>{children}</div>
+  )
+}
+
+// ── W/M toggle ──────────────────────────────────────────────────────
+function ViewModeToggle({ value, onChange }: { value: 'week' | 'month'; onChange: (v: 'week' | 'month') => void }) {
+  return (
+    <div style={{
+      display:      'inline-flex',
+      gap:          2,
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: 7,
+      padding:      2,
+    }}>
+      {(['week', 'month'] as const).map(v => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          style={{
+            padding:      '4px 12px',
+            background:   value === v ? UXP.lavFill : 'transparent',
+            color:        value === v ? UXP.lavText : UXP.ink3,
+            border:       'none',
+            borderRadius: 5,
+            fontSize:     10,
+            fontWeight:   500,
+            fontFamily:   'inherit',
+            cursor:       'pointer',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase' as const,
+          }}
+        >
+          {v === 'week' ? 'W' : 'M'}
+        </button>
+      ))}
+    </div>
+  )
 }
