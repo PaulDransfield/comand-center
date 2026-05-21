@@ -83,8 +83,11 @@ export default function PairedBarChart({
 
   const xFor = (gi: number, si: number) =>
     PAD_L + gi * groupW + clusterGap / 2 + si * (barW + 2)
-  const yLeftFor  = (v: number) => PAD_T + innerH - (Math.max(0, v) / yLeftMax)  * innerH
-  const yRightFor = (v: number) => PAD_T + innerH - (Math.max(0, v) / yRightMax) * innerH
+  // Clamp both axes to [0, max] so a value outside the visible range
+  // (e.g. labour% = 500% on a closed day) tops out at the chart ceiling
+  // instead of producing a negative y that bleeds above the SVG.
+  const yLeftFor  = (v: number) => PAD_T + innerH - (Math.min(yLeftMax,  Math.max(0, v)) / yLeftMax ) * innerH
+  const yRightFor = (v: number) => PAD_T + innerH - (Math.min(yRightMax, Math.max(0, v)) / yRightMax) * innerH
   const xMidFor   = (gi: number) => PAD_L + gi * groupW + groupW / 2
 
   // Y-axis ticks — 4 evenly-spaced gridlines
@@ -102,7 +105,11 @@ export default function PairedBarChart({
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label="Bar chart"
-        style={{ display: 'block', overflow: 'visible' as const }}
+        // Belt-and-braces with the clamp above: even if a future change
+        // forgets to clamp a value, hidden overflow keeps the SVG from
+        // spilling onto sibling elements (Vero dashboard bug 2026-05-21
+        // — labour% line drew above the KPI strip).
+        style={{ display: 'block', overflow: 'hidden' as const }}
       >
         {/* Gridlines + left + right axis ticks */}
         {yTicks.map(t => (

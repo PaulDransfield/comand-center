@@ -1,31 +1,43 @@
 'use client'
 // @ts-nocheck
-// app/staff/page.tsx — Staff costs, hours, lateness, OB
-// Same W/M navigator pattern as dashboard
+// app/staff/page.tsx — full rebuild on the new system
+//
+// Same treatment as the dashboard rebuild: every surface lives on UXP
+// tokens + KpiCardUX / PairedBarChart / BreakdownTable. The legacy
+// PageHero / SupportingStats / SegmentedToggle / inline interactive
+// <table> are gone. Period nav lives in the AppShell toolbar's date
+// stepper; W/M sits inline at the top right.
+//
+// Data sources (unchanged):
+//   /api/staff?from&to&business_id              — per-staff breakdown
+//   /api/metrics/daily (curr + prev) ?from&to   — revenue + labour rollups
+//
+// labourTier() is the single source for every labour-cost colour
+// decision; no inline thresholds.
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
-import { useTranslations } from 'next-intl'
-import AppShell from '@/components/AppShell'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import dynamicImport from 'next/dynamic'
-// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
+
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-import { labourTier, labourTierStyle, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
-// Phase 4 — Schedule & workforce migration. Period nav moves into the
-// AppShell toolbar's date stepper; W/M toggle stays inline. KPI strip
-// added per OVERHAUL-PROMPT-PACK §4 (team / hours / labour cost / late).
+
+import AppShell from '@/components/AppShell'
 import KpiCardUX from '@/components/ux/KpiCard'
-const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
+
+// ── Period helpers ────────────────────────────────────────────────────
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
 
-// ── Period helpers (same as dashboard) ────────────────────────────────────────
 function getISOWeek(d: Date): number {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
   const day  = date.getUTCDay() || 7
@@ -33,7 +45,6 @@ function getISOWeek(d: Date): number {
   const y1   = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
   return Math.ceil(((date.getTime() - y1.getTime()) / 86400000 + 1) / 7)
 }
-
 function getWeekBounds(offset = 0) {
   const today = new Date()
   const dow   = today.getDay()
@@ -41,64 +52,71 @@ function getWeekBounds(offset = 0) {
   mon.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1) + offset * 7)
   mon.setHours(0, 0, 0, 0)
   const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
-  const wk  = getISOWeek(mon)
-  const mStr = localDate(mon), sStr = localDate(sun)
-  const mM = MONTHS[mon.getMonth()], sM = MONTHS[sun.getMonth()]
-  const label = mM === sM ? `${mon.getDate()}–${sun.getDate()} ${mM}` : `${mon.getDate()} ${mM} – ${sun.getDate()} ${sM}`
-  return { from: mStr, to: sStr, weekNum: wk, label, mon }
+  const wk    = getISOWeek(mon)
+  const mMon  = MONTHS[mon.getMonth()]
+  const sMon  = MONTHS[sun.getMonth()]
+  const label = mMon === sMon
+    ? `${mon.getDate()}–${sun.getDate()} ${mMon}`
+    : `${mon.getDate()} ${mMon} – ${sun.getDate()} ${sMon}`
+  return { from: localDate(mon), to: localDate(sun), weekNum: wk, label, mon }
 }
-
 function getMonthBounds(offset = 0) {
   const now  = new Date()
   const d    = new Date(now.getFullYear(), now.getMonth() + offset, 1)
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0)
-  return { from: localDate(d), to: localDate(last), label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, firstDay: d, daysInMonth: last.getDate() }
+  return {
+    from:        localDate(d),
+    to:          localDate(last),
+    label:       `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
+    firstDay:    d,
+    daysInMonth: last.getDate(),
+  }
 }
 
-function delta(cur: number, prev: number) {
-  if (!prev) return null
-  const p = ((cur - prev) / prev) * 100
-  return { pct: Math.round(p * 10) / 10, up: p >= 0 }
-}
-
-// ── KPI Card ──────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, deltaVal, ok }: any) {
+// ── Suspense wrapper ──────────────────────────────────────────────────
+export default function StaffPage() {
   return (
-    <div style={{ background: 'white', borderRadius: 12, padding: '18px 20px', border: `1px solid ${ok === false ? '#fecaca' : '#e5e7eb'}` }}>
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: '#111', marginBottom: 6, letterSpacing: '-0.5px' }}>{value}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 18 }}>
-        {deltaVal && (
-          <span style={{ fontSize: 12, fontWeight: 700, color: deltaVal.up ? '#16a34a' : '#dc2626' }}>
-            {deltaVal.up ? '↑' : '↓'} {Math.abs(deltaVal.pct)}%
-          </span>
-        )}
-        {sub && <span style={{ fontSize: 12, color: '#9ca3af' }}>{sub}</span>}
-      </div>
-    </div>
+    <Suspense fallback={<div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>}>
+      <StaffInner />
+    </Suspense>
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-export default function StaffPage() {
-  const t       = useTranslations('operations.staff')
-  const tCrumbs = useTranslations('operations.crumbs')
+function StaffInner() {
+  const searchParams = useSearchParams()
   const [bizId,       setBizId]       = useState<string | null>(null)
   const [weekOffset,  setWeekOffset]  = useState(0)
   const [monthOffset, setMonthOffset] = useState(0)
-  // Default to month — week view early in the week is empty.
-  const [viewMode,    setViewMode]    = useState<'week'|'month'>('month')
+  const [viewMode,    setViewMode]    = useState<'week' | 'month'>('month')
   const [staffData,   setStaffData]   = useState<any>(null)
   const [srData,      setSrData]      = useState<any>(null)
   const [prevSr,      setPrevSr]      = useState<any>(null)
   const [loading,     setLoading]     = useState(true)
   const [search,      setSearch]      = useState('')
-  const [expanded,    setExpanded]    = useState<any>(null)
-  const [tooltip,     setTooltip]     = useState<any>(null)
-  // Top-5 vs full table mode (FIX-PROMPT § Phase 7)
-  const [tableExpanded, setTableExpanded] = useState(false)
 
-  // Sync with sidebar business switcher
+  // URL hydration
+  useEffect(() => {
+    const v   = searchParams?.get('view')   as 'week' | 'month' | null
+    const off = searchParams?.get('offset')
+    if (v === 'week' || v === 'month') setViewMode(v)
+    if (off != null && !Number.isNaN(Number(off))) {
+      if (v === 'month') setMonthOffset(Number(off))
+      else               setWeekOffset(Number(off))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function writeUrl(next: { view?: string; offset?: number }) {
+    const p = new URLSearchParams()
+    const v   = next.view   ?? viewMode
+    const off = next.offset ?? (v === 'month' ? monthOffset : weekOffset)
+    if (v !== 'month') p.set('view', v)
+    if (off !== 0)    p.set('offset', String(off))
+    const qs = p.toString()
+    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''))
+  }
+
+  // Business sync
   useEffect(() => {
     const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
     sync()
@@ -106,39 +124,35 @@ export default function StaffPage() {
     return () => window.removeEventListener('storage', sync)
   }, [])
 
-  // Fetch data
+  // Data fetch
   useEffect(() => {
     if (!bizId) return
     setLoading(true)
-
     const biz  = `business_id=${bizId}`
     const curr = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
     const prev = viewMode === 'week' ? getWeekBounds(weekOffset - 1) : getMonthBounds(monthOffset - 1)
 
     Promise.all([
-      // Per-staff breakdown (still needs raw staff_logs for individual data)
       fetch(`/api/staff?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-      // Pre-computed daily metrics for chart + totals
       fetch(`/api/metrics/daily?from=${curr.from}&to=${curr.to}&${biz}`).then(r => r.json()).catch(() => ({})),
       fetch(`/api/metrics/daily?from=${prev.from}&to=${prev.to}&${biz}`).then(r => r.json()).catch(() => ({})),
-    ]).then(([staff, sr, prevSrRes]) => {
-      setStaffData(staff)
-      // Map daily_metrics fields to what staff page expects
-      const mapped = { ...sr, rows: (sr.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct })) }
+    ]).then(([staffRes, srRes, prevRes]) => {
+      setStaffData(staffRes)
+      const mapped = { ...srRes, rows: (srRes.rows ?? []).map((r: any) => ({ ...r, staff_pct: r.labour_pct })) }
       setSrData(mapped)
-      setPrevSr(prevSrRes)
+      setPrevSr(prevRes)
       setLoading(false)
     })
   }, [bizId, weekOffset, monthOffset, viewMode])
 
-  // ── Derived values ─────────────────────────────────────────────────────────
-  const now       = new Date()
-  const curr      = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
-  const periodLabel = viewMode === 'week' ? `Week ${(curr as any).weekNum}` : curr.label
+  // Derived values
+  const now      = new Date()
+  const curr     = viewMode === 'week' ? getWeekBounds(weekOffset) : getMonthBounds(monthOffset)
+  const dayCount = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
 
   const summary   = staffData?.summary ?? null
-  const connected = staffData?.connected ?? false
   const staff     = staffData?.staff ?? []
+  const deptLate  = staffData?.dept_lateness ?? []
   const srRows    = srData?.rows ?? []
   const srSum     = srData?.summary ?? null
 
@@ -152,627 +166,544 @@ export default function StaffPage() {
   const curRev        = srSum?.total_revenue ?? 0
   const labourPct     = curRev > 0 ? (totalCost / curRev) * 100 : 0
   const prevLabPct    = prevTotalRev > 0 && prevTotalCost > 0 ? (prevTotalCost / prevTotalRev) * 100 : null
-  // Shared four-tier labour target with /scheduling. Default 30–35 (target)
-  // / 35–50 (watch) / >50 (over). Uses labourTier() helper.
-  //
-  // TODO: surface in Settings → Business → Labour target range (min/max/watch ceiling)
-  const tierCfg     = DEFAULT_TIER_CONFIG
-  const targetPct   = tierCfg.targetMax   // used for the dashed chart line
-  const targetMinPct = tierCfg.targetMin
+  const tier          = labourTier(curRev > 0 ? labourPct : null)
+  const tierLabel     = tier === 'no-data' ? 'No data' : tier.replace('-', ' ')
 
-  // ── Build day grid for chart ────────────────────────────────────────────────
-  const maxDayPct = Math.max(...srRows.map((r: any) => r.staff_pct ?? 0), targetPct + 5, 1)
-  const dayCount  = viewMode === 'week' ? 7 : (curr as any).daysInMonth ?? 30
-  const chartDays = Array.from({ length: dayCount }, (_, i) => {
-    const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
-    d.setDate(d.getDate() + i)
-    const ds  = localDate(d)
-    const row = srRows.find((r: any) => r.date === ds)
-    const isToday  = ds === localDate(now)
-    const isFuture = d > now
-    const dayIdx   = (d.getDay() + 6) % 7
-    return {
-      dateStr: ds, isToday, isFuture,
-      dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
-      pct: row?.staff_pct ?? null,
-      cost: row?.staff_cost ?? 0,
-      revenue: row?.revenue ?? 0,
-      dayIdx,
-    }
-  })
+  // Chart days
+  const chartDays = useMemo(() => {
+    return Array.from({ length: dayCount }, (_, i) => {
+      const d = viewMode === 'week' ? new Date((curr as any).mon) : new Date((curr as any).firstDay)
+      d.setDate(d.getDate() + i)
+      const ds  = localDate(d)
+      const row = srRows.find((r: any) => r.date === ds)
+      const isToday  = ds === localDate(now)
+      const isFuture = d > now
+      const dayIdx   = (d.getDay() + 6) % 7
+      return {
+        date:    ds,
+        dayName: viewMode === 'week' ? DAYS[dayIdx] : String(i + 1),
+        revenue: row?.revenue    ?? 0,
+        cost:    row?.staff_cost ?? 0,
+        pct:     row?.staff_pct  ?? null,
+        isToday, isFuture,
+      }
+    })
+  }, [viewMode, weekOffset, monthOffset, srRows, dayCount])
 
-  // ── Staff table ─────────────────────────────────────────────────────────────
-  const filtered = staff.filter((s: any) =>
-    !search || (s.name ?? '').toLowerCase().includes(search.toLowerCase()) || (s.group ?? '').toLowerCase().includes(search.toLowerCase())
-  )
-  const sorted = [...filtered].sort((a: any, b: any) => (b.effective_cost ?? b.cost_actual) - (a.effective_cost ?? a.cost_actual))
-
-  // ── Auto-insights ──────────────────────────────────────────────────────────
-  const insights: Array<{ text: string; type: 'warn' | 'info' | 'good' }> = []
-  if (lateShifts > 0) {
-    const worst = [...(staffData?.dept_lateness ?? [])].sort((a: any, b: any) => b.late_rate_pct - a.late_rate_pct)[0]
-    if (worst?.late_rate_pct > 15) insights.push({ text: `${worst.dept}: ${worst.late_rate_pct.toFixed(0)}% late rate (${worst.late_count} shifts)`, type: 'warn' })
-  }
-  if (totalOb > 0 && totalCost > 0) {
-    const obPct = (totalOb / totalCost) * 100
-    if (obPct > 5) insights.push({ text: `OB supplements are ${fmtPct(obPct)} of total labour (${fmtKr(totalOb)})`, type: 'warn' })
-  }
-  if (srSum?.worst_day) insights.push({ text: `Highest cost day: ${new Date(srSum.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${fmtPct(srSum.worst_day.pct)}`, type: 'warn' })
-  if (srSum?.best_day) insights.push({ text: `Best day: ${new Date(srSum.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} at ${fmtPct(srSum.best_day.pct)}`, type: 'good' })
-  // Labour-tier insights: green "on-target", amber "watch", red "over",
-  // indigo "low" (below target — verify staffing rather than celebrate).
-  if (labourPct > 0) {
-    const t = labourTier(labourPct, tierCfg)
-    if (t === 'on-target') insights.push({ text: `Labour at ${fmtPct(labourPct)} — on target (${tierCfg.targetMin}–${tierCfg.targetMax}%)`, type: 'good' })
-    else if (t === 'low')  insights.push({ text: `Labour at ${fmtPct(labourPct)} — below target. Verify service quality isn't suffering.`, type: 'info' })
-    else if (t === 'watch') insights.push({ text: `Labour at ${fmtPct(labourPct)} — watch (target ${tierCfg.targetMin}–${tierCfg.targetMax}%)`, type: 'warn' })
-    else if (t === 'over')  insights.push({ text: `Labour at ${fmtPct(labourPct)} — significantly over target`, type: 'warn' })
-  }
-  const topLate = sorted.filter((s: any) => (s.late_shifts ?? 0) > 0).slice(0, 2)
-  topLate.forEach((s: any) => insights.push({ text: `${s.name}: ${s.late_shifts} late shift${s.late_shifts > 1 ? 's' : ''} (avg ${s.avg_late_minutes}min)`, type: 'warn' }))
-
-  // Phase 4 — date stepper wiring.
-  const stepperLabel = viewMode === 'week'
+  // Period-stepper wiring for the AppShell toolbar
+  const periodLabel = viewMode === 'week'
     ? `Week ${(curr as any).weekNum} · ${curr.label}`
     : curr.label
   function step(dir: -1 | 1) {
-    if (viewMode === 'week') setWeekOffset(o => o + dir)
-    else                     setMonthOffset(o => o + dir)
+    if (viewMode === 'week') {
+      const next = weekOffset + dir; setWeekOffset(next); writeUrl({ view: 'week', offset: next })
+    } else {
+      const next = monthOffset + dir; setMonthOffset(next); writeUrl({ view: 'month', offset: next })
+    }
   }
   const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
-  const labourTierKey = labourPct > 0 ? labourTier(labourPct, tierCfg) : 'no-data'
+
+  // Filtered + sorted employee rows
+  const filtered = staff.filter((s: any) =>
+    !search
+    || (s.name  ?? '').toLowerCase().includes(search.toLowerCase())
+    || (s.group ?? '').toLowerCase().includes(search.toLowerCase())
+  )
+  const sorted = [...filtered].sort((a: any, b: any) => (b.effective_cost ?? b.cost_actual) - (a.effective_cost ?? a.cost_actual))
+
+  // Attention items
+  const attention = useMemo(() => buildAttention({
+    lateShifts, totalOb, totalCost, labourPct, tier, deptLate, sorted, srSum,
+  }), [lateShifts, totalOb, totalCost, labourPct, tier, deptLate, sorted, srSum])
 
   return (
     <AppShell
-      dateLabel={stepperLabel}
+      dateLabel={periodLabel}
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div className="page-wrap">
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        {/* W/M toggle — kept inline; toolbar has no view-mode pill yet. */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-          <SegmentedToggle
-            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-            value={viewMode}
-            onChange={(v) => setViewMode(v as 'week' | 'month')}
-          />
+        {/* W/M toggle row */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <ViewModeToggle value={viewMode} onChange={v => {
+            setViewMode(v)
+            writeUrl({ view: v, offset: v === 'month' ? monthOffset : weekOffset })
+          }} />
         </div>
 
-        {/* Phase 4 KPI strip — Team · Hours · Labour cost · Late arrivals.
-            Driven entirely by the existing summary; presentation only. The
-            labour-cost card carries the targetBand chip so the operator
-            sees the labourTier() verdict alongside the SEK total. */}
-        {!loading && summary && (() => {
-          const hoursDelta = (prevSr?.summary?.total_hours ?? 0) > 0
-            ? `${totalHours - prevSr.summary.total_hours >= 0 ? '+' : ''}${(((totalHours - prevSr.summary.total_hours) / prevSr.summary.total_hours) * 100).toFixed(1)}%`
-            : null
-          const costDelta = prevTotalCost > 0
-            ? `${totalCost - prevTotalCost >= 0 ? '+' : ''}${(((totalCost - prevTotalCost) / prevTotalCost) * 100).toFixed(1)}%`
-            : null
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        14,
-              }}
-            >
-              <KpiCardUX
-                title="Team"
-                value={String(staff.length)}
-                microLabel={`${staff.filter((s: any) => (s.hours_logged ?? 0) > 0).length} active`}
-              />
-              <KpiCardUX
-                title="Hours"
-                value={fmtPct(totalHours / Math.max(1, dayCount)).replace('%', 'h/day')}
-                delta={hoursDelta}
-                deltaGood
-                microLabel={`${Math.round(totalHours).toLocaleString()} total`}
-              />
-              <KpiCardUX
-                title="Labour cost"
-                value={fmtKr(totalCost)}
-                delta={costDelta}
-                deltaGood={false}
-                variant="targetBand"
-                targetBand={labourPct > 0 ? {
-                  actualPct:    Math.min(100, labourPct),
-                  targetMinPct: tierCfg.targetMin,
-                  targetMaxPct: tierCfg.targetMax,
-                } : undefined}
-                microLabel={labourTierKey === 'no-data' ? 'No revenue' : labourTierKey.replace('-', ' ')}
-              />
-              <KpiCardUX
-                title="Late arrivals"
-                value={String(lateShifts)}
-                deltaGood={false}
-                delta={lateShifts > 0 ? `+${lateShifts} flagged` : null}
-                microLabel={totalOb > 0 ? `OB ${fmtKr(totalOb)}` : ''}
-              />
-            </div>
-          )
-        })()}
-
-        {/* ─── PageHero ─────────────────────────────────────────────── */}
-        <PageHero
-          eyebrow={`LABOUR — ${viewMode === 'week' ? `WEEK ${(curr as any).weekNum} ${curr.label}` : curr.label}`.toUpperCase()}
-          headline={
-            <StaffHeadline
-              labourPct={labourPct}
-              targetPct={targetPct}
-              curRev={curRev}
-              totalCost={totalCost}
-              lateShifts={lateShifts}
-            />
-          }
-          context={staffContext(summary, totalCost, totalHours)}
-          right={
-            <SupportingStats
-              items={[
-                {
-                  label: 'Labour',
-                  value: totalCost > 0 ? fmtKr(totalCost) : '—',
-                  delta: staffDeltaLabel(totalCost, prevTotalCost),
-                  deltaTone: prevTotalCost > 0 ? (totalCost <= prevTotalCost ? 'good' : 'bad') : 'neutral',
-                },
-                {
-                  label: 'Hours',
-                  value: totalHours > 0 ? `${Math.round(totalHours)}h` : '—',
-                  sub:   summary?.shifts_logged ? `${summary.shifts_logged} shifts` : undefined,
-                },
-                {
-                  label: 'Late arrivals',
-                  value: lateShifts > 0 ? String(lateShifts) : '0',
-                  sub:   lateShifts > 0 ? 'flagged shifts' : 'all on time',
-                  deltaTone: lateShifts === 0 ? 'good' : lateShifts > 5 ? 'bad' : 'neutral',
-                },
-              ]}
-            />
-          }
+        {/* ── KPI strip ─────────────────────────────────────────── */}
+        <KpiStrip
+          staffCount={staff.length}
+          activeCount={staff.filter((s: any) => (s.hours_logged ?? 0) > 0).length}
+          totalHours={totalHours}
+          dayCount={dayCount}
+          totalCost={totalCost}
+          prevTotalCost={prevTotalCost}
+          labourPct={labourPct}
+          prevLabPct={prevLabPct}
+          tier={tier}
+          tierLabel={tierLabel}
+          lateShifts={lateShifts}
+          totalOb={totalOb}
+          periodLabel={periodLabel}
         />
 
-        {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
-        ) : !connected ? (
-          <div style={{ background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg, padding: 48, textAlign: 'center' as const }}>
-            <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>Personalkollen not connected</div>
-            <div style={{ fontSize: UX.fsBody, color: UX.ink3, marginBottom: 20 }}>Connect to see staff hours, costs and punctuality.</div>
-            <a href="/integrations" style={{ padding: '10px 20px', background: UX.navy, color: 'white', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium, textDecoration: 'none' }}>Connect now</a>
-          </div>
-        ) : (
-          <>
-
-            {/* ── Daily labour % chart ────────────────────────────────── */}
-            {srRows.length > 0 && (
-              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '20px 24px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                    Labour % — {periodLabel}
-                  </div>
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-                    {srSum?.days_over_target > 0 && (
-                      <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>{srSum.days_over_target} days over target</span>
-                    )}
-                    <span style={{ fontSize: 11, color: '#9ca3af' }}>Target: {targetMinPct}–{targetPct}%</span>
-                  </div>
-                </div>
-
-                {/* Vertical bars — one per day. Colour uses the shared
-                    four-tier labour helper (labourTier/labourTierStyle) so
-                    Staff and Scheduling stay perfectly aligned. */}
-                <div style={{ display: 'flex', gap: viewMode === 'week' ? 8 : 2, height: 200, alignItems: 'flex-end', position: 'relative', paddingTop: 16 }}>
-                  {/* Target range band (30–35% by default) */}
-                  <div style={{
-                    position: 'absolute', left: 0, right: 0,
-                    bottom: `${(targetMinPct / maxDayPct) * 170}px`,
-                    height: `${((targetPct - targetMinPct) / maxDayPct) * 170}px`,
-                    background: 'rgba(21,128,61,0.06)',
-                    borderTop: '1px dashed rgba(21,128,61,0.45)',
-                    borderBottom: '1px dashed rgba(21,128,61,0.45)',
-                    zIndex: 0,
-                  }} />
-
-                  {chartDays.map((day, i) => {
-                    const barH   = day.pct !== null ? Math.max((day.pct / maxDayPct) * 170, 3) : 0
-                    const tier   = day.pct === null ? 'no-data' : labourTier(day.pct, tierCfg)
-                    const color  = tier === 'no-data' ? '#e5e7eb' : labourTierStyle(tier).ink
-                    const isHover = tooltip?.dateStr === day.dateStr
-
-                    // X-axis label visibility — week view labels every day;
-                    // month view labels every 5th day + day 1 + today
-                    // (STAFF-FIX § 4).
-                    const dayNum = Number(day.dayName)
-                    const showLabel = viewMode === 'week'
-                      ? true
-                      : (day.isToday || dayNum === 1 || (!Number.isNaN(dayNum) && dayNum % 5 === 0))
-
-                    return (
-                      <div
-                        key={day.dateStr}
-                        style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: day.pct !== null ? 'pointer' : 'default', position: 'relative' as const }}
-                        onMouseEnter={() => day.pct !== null && setTooltip(day)}
-                        onMouseLeave={() => setTooltip(null)}
-                      >
-                        <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', position: 'relative' as const }}>
-                          {day.pct !== null ? (
-                            <>
-                              {/* Value label above the bar when it dwarfs the
-                                  target — a 162% bar without a number is
-                                  useless at a glance. */}
-                              {day.pct > 100 && (
-                                <div style={{
-                                  position:   'absolute' as const,
-                                  left:       0,
-                                  right:      0,
-                                  bottom:     `${barH + 2}px`,
-                                  textAlign:  'center' as const,
-                                  fontSize:   10,
-                                  fontWeight: 500,
-                                  color:      UX.redInk,
-                                  pointerEvents: 'none' as const,
-                                }}>
-                                  {Math.round(day.pct)}%
-                                </div>
-                              )}
-                              <div style={{
-                                height: barH, borderRadius: '4px 4px 0 0',
-                                background: color, opacity: isHover ? 1 : day.isFuture ? 0.3 : 0.85,
-                                transition: 'opacity 0.15s',
-                                boxShadow: isHover ? '0 0 0 2px #6366f1' : (day.isToday ? '0 0 0 1.5px #6366f1' : 'none'),
-                              }} />
-                            </>
-                          ) : (
-                            <div style={{ height: 2, background: day.isFuture ? '#f3f4f6' : '#e5e7eb', borderRadius: 2 }} />
-                          )}
-                        </div>
-
-                        {/* Day label — sparse in month view */}
-                        <div style={{
-                          fontSize: viewMode === 'week' ? 11 : 9,
-                          fontWeight: day.isToday ? 700 : 400,
-                          color: day.isToday ? '#6366f1' : day.dayIdx >= 5 ? '#d1d5db' : '#9ca3af',
-                          minHeight: 14,
-                        }}>
-                          {showLabel
-                            ? (day.isToday ? `${day.dayName} ↑` : day.dayName)
-                            : ''}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Tooltip */}
-                {tooltip && (
-                  <div style={{ marginTop: 12, padding: '12px 16px', background: '#1a1f2e', borderRadius: 10, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', alignSelf: 'center', minWidth: 80 }}>
-                      {new Date(tooltip.dateStr + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' })}
-                    </div>
-                    {[
-                      { label: 'Labour %',    value: fmtPct(tooltip.pct), color: tooltip.pct > targetPct ? '#f87171' : '#86efac' },
-                      { label: 'Labour Cost', value: fmtKr(tooltip.cost), color: '#f59e0b' },
-                      { label: 'Revenue',     value: fmtKr(tooltip.revenue), color: 'white' },
-                    ].map(col => (
-                      <div key={col.label}>
-                        <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>{col.label}</div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: col.color }}>{col.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Best / worst day — when we only have one day of data they
-                    both point at the same date, which reads bizarre. Collapse
-                    to a single neutral "Only day" card in that case
-                    (FIX-PROMPT § Phase 7 Q1). */}
-                {(() => {
-                  const daysWithPct = srRows.filter((r: any) => r.staff_pct != null).length
-                  if (daysWithPct === 0) return null
-                  if (daysWithPct === 1) {
-                    const only = srRows.find((r: any) => r.staff_pct != null)
-                    if (!only) return null
-                    return (
-                      <div style={{
-                        marginTop: 12,
-                        padding: '8px 12px',
-                        background: UX.subtleBg,
-                        borderRadius: 8,
-                        border: `1px solid ${UX.borderSoft}`,
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'baseline',
-                      }}>
-                        <div style={{ fontSize: 10, color: UX.ink4, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Only day with data</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
-                          {new Date(only.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                          <span style={{ marginLeft: 8, color: labourTierStyle(labourTier(only.staff_pct, tierCfg)).ink }}>
-                            {fmtPct(only.staff_pct)}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  }
-                  // Callouts use the tier colour of each day's %, not a hardcoded
-                  // green/red. A 'best day' at 28% still renders indigo (below
-                  // target) to flag that low % deserves a service-quality check.
-                  const bestStyle  = srSum?.best_day  ? labourTierStyle(labourTier(srSum.best_day.pct,  tierCfg)) : null
-                  const worstStyle = srSum?.worst_day ? labourTierStyle(labourTier(srSum.worst_day.pct, tierCfg)) : null
-                  return (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-                      {srSum?.best_day && bestStyle && (
-                        <div style={{ padding: '8px 12px', background: bestStyle.bg, borderRadius: 8, border: `1px solid ${bestStyle.ink}20` }}>
-                          <div style={{ fontSize: 10, color: bestStyle.ink, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Lowest labour %</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
-                            {new Date(srSum.best_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                            <span style={{ marginLeft: 8, color: bestStyle.ink }}>{fmtPct(srSum.best_day.pct)}</span>
-                          </div>
-                        </div>
-                      )}
-                      {srSum?.worst_day && worstStyle && (
-                        <div style={{ padding: '8px 12px', background: worstStyle.bg, borderRadius: 8, border: `1px solid ${worstStyle.ink}20` }}>
-                          <div style={{ fontSize: 10, color: worstStyle.ink, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em' }}>Highest labour %</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: UX.ink1 }}>
-                            {new Date(srSum.worst_day.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
-                            <span style={{ marginLeft: 8, color: worstStyle.ink }}>{fmtPct(srSum.worst_day.pct)}</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()}
-              </div>
-            )}
-
-            {/* ── Staff table + Insights ──────────────────────────────── */}
-            <div style={{ display: 'grid', gridTemplateColumns: insights.length > 0 ? '3fr 1fr' : '1fr', gap: 12 }}>
-
-              {/* Staff table — default to top-5 by cost, with
-                  "All N staff →" expander in the card header
-                  (FIX-PROMPT § Phase 7 Q2). Search bar always opens
-                  the full list (narrowed by query). */}
-              {(() => {
-                const showingFull = tableExpanded || !!search
-                const visible = showingFull ? sorted : sorted.slice(0, 5)
-                const hiddenCount = sorted.length - visible.length
-                return (
-              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-                <div style={{ padding: '12px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' as const }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                    {showingFull ? `${sorted.length} staff members` : `Top ${visible.length} by cost`}
-                  </div>
-                  {/* Search only shown in full-list mode — typing "Joakim"
-                      in the top-5 view is misleading, you can't find someone
-                      outside the visible rows (STAFF-FIX § 6). The expand
-                      link is kept at the card footer only (STAFF-FIX § 5). */}
-                  {showingFull && (
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
-                      style={{ padding: '6px 12px', border: '1px solid #e5e7eb', borderRadius: 6, fontSize: 12, width: 180, fontFamily: 'inherit' }} />
-                  )}
-                </div>
-
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#f9fafb' }}>
-                      {['Name', 'Dept', 'Hours', 'Cost', 'Cost/hr', 'Late', 'OB'].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', textAlign: h === 'Name' || h === 'Dept' ? 'left' : 'right', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase' as const, letterSpacing: '.05em' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.map((s: any) => {
-                      const isExp = expanded === s.id
-                      const cost  = s.cost_actual > 0 ? s.cost_actual : s.estimated_salary
-                      // Compute cost-per-hour locally when the API value is
-                      // missing — both inputs already exist on the row, so
-                      // the previous "—" display was wasted space
-                      // (STAFF-FIX § 7).
-                      const costPerHour = (s.cost_per_hour && s.cost_per_hour > 0)
-                        ? s.cost_per_hour
-                        : (cost > 0 && s.hours_logged > 0 ? cost / s.hours_logged : 0)
-                      return (
-                        <>
-                          <tr key={s.id} onClick={() => setExpanded(isExp ? null : s.id)}
-                            style={{ borderBottom: '1px solid #f9fafb', cursor: 'pointer', background: isExp ? '#fafbff' : 'white' }}>
-                            <td style={{ padding: '10px 14px', fontWeight: 500, color: '#111', fontSize: 13 }}>
-                              {s.name}
-                            </td>
-                            <td style={{ padding: '10px 14px', fontSize: 12, color: '#6b7280' }}>{s.group ?? '—'}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#111' }}>{s.hours_logged > 0 ? `${Math.round(s.hours_logged * 10) / 10}h` : '—'}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, fontWeight: 600, color: '#111' }}>
-                              {cost > 0 ? fmtKr(cost) : '—'}
-                              {s.cost_actual === 0 && s.estimated_salary > 0 && <span style={{ fontSize: 9, color: '#d97706', marginLeft: 4 }}>est</span>}
-                            </td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 13, color: '#6b7280' }}>{costPerHour > 0 ? fmtKr(costPerHour) : '—'}</td>
-                            <td style={{ padding: '10px 14px', textAlign: 'right' as const }}>
-                              {(s.late_shifts ?? 0) > 0 ? (
-                                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: '#fef3c7', color: '#d97706' }}>{s.late_shifts}</span>
-                              ) : <span style={{ color: '#d1d5db', fontSize: 12 }}>—</span>}
-                            </td>
-                            {/* OB — plain ink2, no indigo.  Reads as a number,
-                                not a link (STAFF-FIX § 8).  Expanded row
-                                already shows the OB type breakdown for anyone
-                                who wants detail. */}
-                            <td style={{ padding: '10px 14px', textAlign: 'right' as const, fontSize: 12, color: s.ob_supplement_kr > 0 ? UX.ink2 : '#d1d5db' }}>
-                              {s.ob_supplement_kr > 0 ? fmtKr(s.ob_supplement_kr) : '—'}
-                            </td>
-                          </tr>
-
-                          {/* Expanded row */}
-                          {isExp && (
-                            <tr key={`exp-${s.id}`}>
-                              <td colSpan={7} style={{ background: '#f9fafb', padding: '14px 20px', borderBottom: '1px solid #e5e7eb' }}>
-                                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 12 }}>
-                                  {[
-                                    { label: 'Estimated salary', value: s.estimated_salary > 0 ? fmtKr(s.estimated_salary) : '—' },
-                                    { label: 'Actual cost',      value: s.cost_actual > 0 ? fmtKr(s.cost_actual) : 'Pending' },
-                                    { label: 'Variance',         value: s.cost_variance !== 0 ? (s.cost_variance > 0 ? '+' : '') + fmtKr(s.cost_variance) : '—' },
-                                    { label: 'Tax multiplier',   value: s.tax_multiplier ? s.tax_multiplier.toFixed(2) + '×' : '—' },
-                                    { label: 'Shifts',           value: String(s.shifts_logged) },
-                                  ].map(r => (
-                                    <div key={r.label}>
-                                      <div style={{ color: '#9ca3af', marginBottom: 2, fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>{r.label}</div>
-                                      <div style={{ fontWeight: 700, color: '#111' }}>{r.value}</div>
-                                    </div>
-                                  ))}
-                                </div>
-
-                                {(s.late_shifts ?? 0) > 0 && (
-                                  <div style={{ marginTop: 10, padding: '6px 10px', background: '#fef3c7', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
-                                    {s.late_shifts} late shift{s.late_shifts > 1 ? 's' : ''}, avg {s.avg_late_minutes} min late
-                                  </div>
-                                )}
-
-                                {s.ob_types && Object.keys(s.ob_types).length > 0 && (
-                                  <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                    {Object.entries(s.ob_types).sort((a: any, b: any) => b[1] - a[1]).map(([type, kr]: any) => (
-                                      <span key={type} style={{ fontSize: 11, padding: '3px 8px', background: '#f0f0ff', borderRadius: 6, border: '1px solid #e0e0ff', color: '#4f46e5' }}>
-                                        {type}: <strong>{Math.round(kr).toLocaleString('en-GB')} kr</strong>
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          )}
-                        </>
-                      )
-                    })}
-                    {visible.length === 0 && (
-                      <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center' as const, color: '#9ca3af', fontSize: 13 }}>
-                        {search ? `No staff matching "${search}"` : 'No staff data for this period'}
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-
-                {/* Bottom expander — mirrors the header one for long scrolls. */}
-                {hiddenCount > 0 && !search && (
-                  <div style={{ padding: '10px 20px', borderTop: '1px solid #f3f4f6', textAlign: 'center' as const }}>
-                    <button
-                      onClick={() => setTableExpanded(true)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: UX.indigo, fontSize: UX.fsLabel, fontWeight: UX.fwMedium, padding: 0 }}
-                    >
-                      All {sorted.length} staff →
-                    </button>
-                  </div>
-                )}
-              </div>
-                )
-              })()}
-
-              {/* Insights sidebar */}
-              {insights.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 12 }}>Insights</div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {insights.slice(0, 6).map((ins, i) => (
-                        <div key={i} style={{
-                          fontSize: 12, padding: '8px 10px', borderRadius: 8, lineHeight: 1.4,
-                          background: ins.type === 'warn' ? '#fef3c7' : ins.type === 'good' ? '#f0fdf4' : '#f3f4f6',
-                          color: ins.type === 'warn' ? '#92400e' : ins.type === 'good' ? '#166534' : '#374151',
-                          border: `1px solid ${ins.type === 'warn' ? '#fde68a' : ins.type === 'good' ? '#bbf7d0' : '#e5e7eb'}`,
-                        }}>
-                          {ins.text}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* OB summary card */}
-                  {totalOb > 0 && (
-                    <div style={{ background: 'white', borderRadius: 12, border: '1px solid #e5e7eb', padding: '16px 18px' }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>OB Supplements</div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: '#111', marginBottom: 6 }}>{fmtKr(totalOb)}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 10 }}>{summary?.shifts_with_ob ?? 0} shifts with OB</div>
-                      {(summary?.ob_type_breakdown ?? []).map((ob: any) => (
-                        <div key={ob.type} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f3f4f6' }}>
-                          <span style={{ color: '#6b7280' }}>{ob.type}</span>
-                          <span style={{ fontWeight: 600, color: '#111' }}>{fmtKr(ob.kr)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
+        {/* ── Best / worst day strip ────────────────────────────── */}
+        {(srSum?.best_day || srSum?.worst_day) && (
+          <BestWorstStrip best={srSum?.best_day} worst={srSum?.worst_day} />
         )}
+
+        {/* ── Revenue / labour chart ────────────────────────────── */}
+        <ChartCard days={chartDays} loading={loading} />
+
+        {/* ── Attention card ────────────────────────────────────── */}
+        {attention.length > 0 && (
+          <AttentionCard items={attention} />
+        )}
+
+        {/* ── Employee breakdown ────────────────────────────────── */}
+        <EmployeeBreakdown
+          rows={sorted}
+          totalRev={curRev}
+          totalCost={totalCost}
+          totalHours={totalHours}
+          search={search}
+          onSearch={setSearch}
+        />
       </div>
 
       <AskAI
         page="staff"
         context={summary ? [
-          `Period: ${curr.from} to ${curr.to}`,
-          `Labour cost: ${fmtKr(totalCost)}, Hours: ${Math.round(totalHours)}h, ${summary.shifts_logged} shifts`,
-          curRev > 0 ? `Labour %: ${fmtPct(labourPct)} (target ${targetPct}%)` : '',
-          lateShifts > 0 ? `Late arrivals: ${lateShifts} shifts` : '',
-          totalOb > 0 ? `OB supplements: ${fmtKr(totalOb)}` : '',
-          sorted.length > 0 ? `Top staff by cost: ${sorted.slice(0, 5).map((s: any) => `${s.name} ${fmtKr(s.effective_cost ?? s.cost_actual)}`).join(', ')}` : '',
-        ].filter(Boolean).join('\n') : 'No staff data loaded'}
+          `Period: ${periodLabel}`,
+          `Team: ${staff.length} (${staff.filter((s: any) => (s.hours_logged ?? 0) > 0).length} active)`,
+          `Labour ${fmtKr(totalCost)} (${fmtPct(labourPct)} of ${fmtKr(curRev)} revenue), ${totalHours}h.`,
+          lateShifts > 0 ? `${lateShifts} late shift${lateShifts === 1 ? '' : 's'}.` : 'No late shifts.',
+        ].join('\n') : 'No staff data'}
       />
     </AppShell>
   )
 }
 
-// ─── Staff hero headline + helpers ──────────────────────────────────────────
-function StaffHeadline({ labourPct, targetPct, curRev, totalCost, lateShifts }: any) {
-  if (curRev <= 0) return <>No staff data in this period yet.</>
-  const over = labourPct - targetPct
+// ════════════════════════════════════════════════════════════════════
+// Sub-components — all UXP, 0.5px hairlines, tabular-nums
+// ════════════════════════════════════════════════════════════════════
 
-  // Plain-language framing when labour crosses revenue (FIX-PROMPT § Phase 7 Q3).
-  // A four-digit % reads as a typo more than a useful metric; say what it
-  // means in words + absolute numbers instead.
-  if (labourPct >= 100) {
-    const kLab = Math.round(totalCost / 1000)
-    const kRev = Math.round(curRev    / 1000)
-    return (
-      <>
-        Labour spent <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>exceeds revenue</span>
-        {' '}— {kLab}k kr on {kRev}k kr sales.
-      </>
-    )
-  }
-  if (over > 10) {
-    return (
-      <>
-        Labour ran <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{(Math.round(labourPct * 10) / 10).toFixed(1)}%</span> of revenue — <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{(Math.round(over * 10) / 10).toFixed(1)}pp over target</span>.
-      </>
-    )
-  }
-  if (over > 3) {
-    return (
-      <>
-        Labour at <span style={{ color: UX.amberInk, fontWeight: UX.fwMedium }}>{(Math.round(labourPct * 10) / 10).toFixed(1)}%</span> — trending over the {targetPct}% target.
-      </>
-    )
-  }
+function KpiStrip({
+  staffCount, activeCount, totalHours, dayCount, totalCost, prevTotalCost,
+  labourPct, prevLabPct, tier, tierLabel, lateShifts, totalOb, periodLabel,
+}: any) {
+  const hoursPerDay = dayCount > 0 ? totalHours / dayCount : 0
+  const costDelta = prevTotalCost > 0
+    ? `${totalCost - prevTotalCost >= 0 ? '+' : ''}${(((totalCost - prevTotalCost) / prevTotalCost) * 100).toFixed(1)}%`
+    : null
+  const labDelta = prevLabPct != null
+    ? `${labourPct - prevLabPct >= 0 ? '+' : ''}${(labourPct - prevLabPct).toFixed(1)}pp`
+    : null
+
   return (
-    <>
-      Labour at <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{(Math.round(labourPct * 10) / 10).toFixed(1)}%</span> — in range{lateShifts > 0 ? `, ${lateShifts} late arrival${lateShifts === 1 ? '' : 's'}` : ''}.
-    </>
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      <KpiCardUX
+        title="Team"
+        value={String(staffCount)}
+        microLabel={`${activeCount} active this period`}
+      />
+      <KpiCardUX
+        title="Hours"
+        value={totalHours > 0 ? `${Math.round(totalHours).toLocaleString('sv-SE')}h` : '—'}
+        microLabel={`${hoursPerDay.toFixed(1)}h / day`}
+      />
+      <KpiCardUX
+        title="Labour cost"
+        value={totalCost > 0 ? fmtKr(totalCost) : '—'}
+        delta={costDelta}
+        deltaGood={false}
+        variant="targetBand"
+        targetBand={labourPct > 0 ? {
+          actualPct:    Math.min(100, labourPct),
+          targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+          targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+        } : undefined}
+        microLabel={tierLabel}
+      />
+      <KpiCardUX
+        title="Late arrivals"
+        value={String(lateShifts)}
+        deltaGood={false}
+        delta={lateShifts > 0 ? '+ flagged' : null}
+        microLabel={totalOb > 0 ? `OB ${fmtKr(totalOb)}` : 'No OB this period'}
+      />
+    </div>
   )
 }
 
-function staffContext(summary: any, totalCost: number, totalHours: number): string | undefined {
-  const parts: string[] = []
-  if (totalCost > 0) parts.push(`${Math.round(totalCost).toLocaleString('en-GB').replace(/,/g, ' ')} kr labour`)
-  if (totalHours > 0) parts.push(`${Math.round(totalHours)}h worked`)
-  if (summary?.shifts_logged) parts.push(`${summary.shifts_logged} shifts`)
-  if (!parts.length) return undefined
-  return parts.join(' · ')
+// ── Best / worst day ─────────────────────────────────────────────────
+function BestWorstStrip({ best, worst }: { best: any; worst: any }) {
+  const cards: Array<{ kind: 'best' | 'worst'; day: any }> = []
+  if (best)  cards.push({ kind: 'best',  day: best  })
+  if (worst) cards.push({ kind: 'worst', day: worst })
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))`,
+      gap:                 12,
+    }}>
+      {cards.map(({ kind, day }) => {
+        const tone   = kind === 'best' ? labourTier(day.pct) : labourTier(day.pct)
+        const isGood = kind === 'best' && (tone === 'on-target' || tone === 'low')
+        const palette = isGood
+          ? { bg: UXP.greenFill, fg: UXP.greenDeep, accent: UXP.green }
+          : kind === 'worst'
+            ? { bg: UXP.roseFill, fg: UXP.roseText, accent: UXP.rose }
+            : { bg: UXP.lavFill, fg: UXP.lavText, accent: UXP.lav }
+        const dateLabel = new Date(day.date).toLocaleDateString('en-GB', {
+          weekday: 'short', day: 'numeric', month: 'short',
+        })
+        return (
+          <div key={kind} style={{
+            background:   UXP.cardBg,
+            border:       `0.5px solid ${UXP.border}`,
+            borderRadius: UXP.r_lg,
+            padding:      '14px 16px',
+            display:      'flex',
+            gap:          12,
+            alignItems:   'center',
+          }}>
+            <span style={{
+              padding:      '4px 10px',
+              background:   palette.bg,
+              color:        palette.fg,
+              borderRadius: 999,
+              fontSize:     9,
+              fontWeight:   600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase' as const,
+            }}>
+              {kind === 'best' ? 'Lowest labour %' : 'Highest labour %'}
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500 }}>{dateLabel}</div>
+              <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                {kind === 'best' ? 'Strongest day' : 'Most expensive day'}
+              </div>
+            </div>
+            <span style={{
+              fontFamily:         'var(--font-display)',
+              fontSize:           22,
+              fontWeight:         500,
+              color:              palette.accent,
+              letterSpacing:      '-0.02em',
+              fontVariantNumeric: 'tabular-nums' as const,
+            }}>
+              {fmtPct(day.pct)}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
-function staffDeltaLabel(cur: number, prev: number): string | undefined {
-  if (!prev) return undefined
-  const pct = ((cur - prev) / prev) * 100
-  return `${pct >= 0 ? '↑' : '↓'} ${Math.abs(Math.round(pct * 10) / 10).toFixed(1)}%`
+// ── Chart card ───────────────────────────────────────────────────────
+function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
+  return (
+    <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue">
+      {loading ? (
+        <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
+      ) : (
+        <PairedBarChart
+          groups={days.map(d => d.dayName)}
+          series={[
+            { label: 'Revenue', data: days.map(d => Number(d.revenue ?? 0)), color: UXP.lav    },
+            { label: 'Labour',  data: days.map(d => Number(d.cost    ?? 0)), color: UXP.lavMid },
+          ]}
+          lines={[{
+            label:  'Labour %',
+            data:   days.map(d => {
+              const r = Number(d.revenue ?? 0)
+              return r > 0 ? (Number(d.cost ?? 0) / r) * 100 : null
+            }),
+            color:  UXP.coral,
+            dashed: false,
+          }]}
+          rightMax={100}
+          width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 1200) : 1100}
+          height={260}
+        />
+      )}
+    </Card>
+  )
 }
 
-const staffNavBtn = {
-  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
-  background: UX.cardBg, cursor: 'pointer', fontSize: 14,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', color: UX.ink2,
-} as const
+// ── Attention ────────────────────────────────────────────────────────
+interface AttentionItem {
+  id:    string
+  tone:  'good' | 'warning' | 'bad'
+  title: string
+  detail: string
+}
+
+function buildAttention({
+  lateShifts, totalOb, totalCost, labourPct, tier, deptLate, sorted, srSum,
+}: any): AttentionItem[] {
+  const items: AttentionItem[] = []
+
+  if (tier === 'over') {
+    items.push({
+      id: 'tier-over',
+      tone: 'bad',
+      title: `Labour at ${fmtPct(labourPct)} — over target`,
+      detail: `Target ${DEFAULT_TIER_CONFIG.targetMin}–${DEFAULT_TIER_CONFIG.targetMax}%. Trim shifts on the highest-cost days first.`,
+    })
+  } else if (tier === 'watch') {
+    items.push({
+      id: 'tier-watch',
+      tone: 'warning',
+      title: `Labour at ${fmtPct(labourPct)} — watch`,
+      detail: `Inside the ${DEFAULT_TIER_CONFIG.targetMax}–${DEFAULT_TIER_CONFIG.watchCeiling}% band. One slow day pushes it over.`,
+    })
+  } else if (tier === 'on-target') {
+    items.push({
+      id: 'tier-good',
+      tone: 'good',
+      title: `Labour at ${fmtPct(labourPct)} — on target`,
+      detail: `Within ${DEFAULT_TIER_CONFIG.targetMin}–${DEFAULT_TIER_CONFIG.targetMax}%. Hold the line.`,
+    })
+  } else if (tier === 'low') {
+    items.push({
+      id: 'tier-low',
+      tone: 'warning',
+      title: `Labour at ${fmtPct(labourPct)} — below target`,
+      detail: `Verify service quality isn't suffering — under-staffing can cost more in covers lost.`,
+    })
+  }
+
+  if (deptLate && deptLate.length > 0) {
+    const worst = [...deptLate].sort((a: any, b: any) => b.late_rate_pct - a.late_rate_pct)[0]
+    if (worst?.late_rate_pct > 15) {
+      items.push({
+        id: 'dept-late',
+        tone: 'warning',
+        title: `${worst.dept}: ${Math.round(worst.late_rate_pct)}% late rate`,
+        detail: `${worst.late_count} late shift${worst.late_count === 1 ? '' : 's'} in this period.`,
+      })
+    }
+  }
+
+  if (totalOb > 0 && totalCost > 0) {
+    const obPct = (totalOb / totalCost) * 100
+    if (obPct > 5) {
+      items.push({
+        id: 'ob-share',
+        tone: 'warning',
+        title: `OB supplements ${fmtPct(obPct)} of total labour`,
+        detail: `${fmtKr(totalOb)} in OB this period — review evening/weekend coverage.`,
+      })
+    }
+  }
+
+  const topLate = sorted.filter((s: any) => (s.late_shifts ?? 0) > 0).slice(0, 2)
+  for (const s of topLate) {
+    items.push({
+      id: `late-${s.id}`,
+      tone: 'warning',
+      title: `${s.name}: ${s.late_shifts} late shift${s.late_shifts > 1 ? 's' : ''}`,
+      detail: `Average ${s.avg_late_minutes} min late.`,
+    })
+  }
+
+  return items.slice(0, 5)
+}
+
+function AttentionCard({ items }: { items: AttentionItem[] }) {
+  return (
+    <Card title="What needs attention" subtitle={`${items.length} item${items.length === 1 ? '' : 's'}`}>
+      <div style={{ display: 'grid', gap: 0 }}>
+        {items.map((it, idx) => {
+          const tonePalette = {
+            good:    { bar: UXP.green, bg: UXP.greenFill, fg: UXP.greenDeep },
+            warning: { bar: UXP.coral, bg: UXP.lavFill,   fg: UXP.coral     },
+            bad:     { bar: UXP.rose,  bg: UXP.roseFill,  fg: UXP.roseText  },
+          }[it.tone]
+          return (
+            <div key={it.id} style={{
+              display:        'grid',
+              gridTemplateColumns: '4px 1fr',
+              gap:            12,
+              padding:        '12px 0',
+              borderBottom:   idx < items.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+              alignItems:     'center',
+            }}>
+              <span style={{ width: 4, height: '100%', minHeight: 32, background: tonePalette.bar, borderRadius: 2 }} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1, marginBottom: 2 }}>{it.title}</div>
+                <div style={{ fontSize: 11, color: UXP.ink3, lineHeight: 1.4 }}>{it.detail}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ── Employee BreakdownTable ──────────────────────────────────────────
+function EmployeeBreakdown({ rows, totalRev, totalCost, totalHours, search, onSearch }: {
+  rows: any[]; totalRev: number; totalCost: number; totalHours: number;
+  search: string; onSearch: (s: string) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <Card title="Employees" subtitle="No staff data in this period">
+        <Empty>Empty period — no shifts logged.</Empty>
+      </Card>
+    )
+  }
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Employees</div>
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            {rows.length} {rows.length === 1 ? 'person' : 'people'} · sorted by cost
+          </div>
+        </div>
+        <input
+          value={search}
+          onChange={e => onSearch(e.target.value)}
+          placeholder="Search name or dept…"
+          style={{
+            padding:        '6px 10px',
+            background:     UXP.cardBg,
+            color:          UXP.ink1,
+            border:         `0.5px solid ${UXP.border}`,
+            borderRadius:   7,
+            fontSize:       11,
+            fontFamily:     'inherit',
+            width:          200,
+          }}
+        />
+      </div>
+
+      <BreakdownTable
+        columns={[
+          { key: 'name',  header: 'Name',    align: 'left', render: (r: any) => (
+            <span>
+              <span style={{ color: UXP.ink1, fontWeight: 500 }}>{r.name}</span>
+              {r.group && <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, marginTop: 1 }}>{r.group}</span>}
+            </span>
+          ) },
+          { key: 'hours', header: 'Hours',   align: 'right', render: (r: any) => `${(r.hours_logged ?? 0).toFixed(1)}h` },
+          { key: 'cost',  header: 'Cost',    align: 'right', render: (r: any) => fmtKr(r.effective_cost ?? r.cost_actual ?? 0) },
+          { key: 'rate',  header: 'Cost/hr', align: 'right', render: (r: any) => {
+            const eff = r.effective_cost ?? r.cost_actual ?? 0
+            const hrs = r.hours_logged ?? 0
+            return hrs > 0 ? fmtKr(Math.round(eff / hrs)) : '—'
+          } },
+          { key: 'late',  header: 'Late',    align: 'right', render: (r: any) => {
+            const n = r.late_shifts ?? 0
+            return n === 0
+              ? <span style={{ color: UXP.ink4 }}>—</span>
+              : <DeltaChip value={`${n}×${r.avg_late_minutes ? ` ${r.avg_late_minutes}m` : ''}`} positiveIsGood={false} />
+          } },
+          { key: 'ob',    header: 'OB',      align: 'right', render: (r: any) =>
+            (r.ob_supplement_kr ?? 0) > 0 ? fmtKr(r.ob_supplement_kr) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'tier',  header: 'Share',   align: 'right', render: (r: any) => {
+            const eff = r.effective_cost ?? r.cost_actual ?? 0
+            const pct = totalCost > 0 ? (eff / totalCost) * 100 : 0
+            return (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                <span style={{
+                  display: 'inline-block', width: 60, height: 3, background: UXP.lavFill,
+                  borderRadius: 2, overflow: 'hidden',
+                }}>
+                  <span style={{ display: 'block', height: '100%', width: `${Math.min(100, pct)}%`, background: UXP.lav }} />
+                </span>
+                <span style={{ fontSize: 10, color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const, minWidth: 30, textAlign: 'right' as const }}>
+                  {pct.toFixed(1)}%
+                </span>
+              </span>
+            )
+          } },
+        ]}
+        sections={[{ rows }]}
+        footer={{
+          label: 'Total',
+          cells: {
+            hours: `${Math.round(totalHours).toLocaleString('sv-SE')}h`,
+            cost:  fmtKr(totalCost),
+            rate:  totalHours > 0 ? fmtKr(Math.round(totalCost / totalHours)) : '—',
+            late:  '',
+            ob:    '',
+            tier:  '100%',
+          },
+        }}
+        rowKey={(row: any) => row.id}
+      />
+    </div>
+  )
+}
+
+// ── Shared primitives ────────────────────────────────────────────────
+function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+    }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>{children}</div>
+}
+
+function ViewModeToggle({ value, onChange }: { value: 'week' | 'month'; onChange: (v: 'week' | 'month') => void }) {
+  return (
+    <div style={{
+      display:      'inline-flex',
+      gap:          2,
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: 7,
+      padding:      2,
+    }}>
+      {(['week', 'month'] as const).map(v => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          style={{
+            padding:       '4px 12px',
+            background:    value === v ? UXP.lavFill : 'transparent',
+            color:         value === v ? UXP.lavText : UXP.ink3,
+            border:        'none',
+            borderRadius:  5,
+            fontSize:      10,
+            fontWeight:    500,
+            fontFamily:    'inherit',
+            cursor:        'pointer',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase' as const,
+          }}
+        >
+          {v === 'week' ? 'W' : 'M'}
+        </button>
+      ))}
+    </div>
+  )
+}
