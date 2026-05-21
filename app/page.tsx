@@ -16,6 +16,9 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+// Language selector lives in the marketing nav so visitors can switch
+// languages before signing up. Inline variant + light tone (paper bg).
+import { LanguageSelector } from '@/components/LanguageSelector'
 
 // ── Palette (matches commandcenter-landing.html :root) ─────────────
 const C = {
@@ -105,6 +108,7 @@ export default function LandingPage() {
           <a href="#how"      style={{ color: 'inherit' }}>How it works</a>
           <a href="#platform" style={{ color: 'inherit' }}>Platform</a>
           <a href="#pricing"  style={{ color: 'inherit' }}>Pricing</a>
+          <LanguageSelector variant="inline" onTone="light" />
           <Link href="/login" style={inkBtn}>Log in</Link>
           <Link href="/login?mode=signup&plan=founding" style={lavBtn}>Book a demo</Link>
         </div>
