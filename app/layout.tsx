@@ -20,7 +20,6 @@ const fontSans = Spline_Sans({
 const fontDisplay = Fraunces({
   subsets:  ['latin', 'latin-ext'],
   weight:   ['300', '400', '500', '600'],
-  axes:     ['opsz'],
   display:  'swap',
   variable: '--font-display',
 })
