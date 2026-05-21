@@ -14,10 +14,13 @@ const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, lo
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import TopBar from '@/components/ui/TopBar'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
 import { labourTier, labourTierStyle, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
+// Phase 4 — Schedule & workforce migration. Period nav moves into the
+// AppShell toolbar's date stepper; W/M toggle stays inline. KPI strip
+// added per OVERHAUL-PROMPT-PACK §4 (team / hours / labour cost / late).
+import KpiCardUX from '@/components/ux/KpiCard'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
@@ -208,41 +211,89 @@ export default function StaffPage() {
   const topLate = sorted.filter((s: any) => (s.late_shifts ?? 0) > 0).slice(0, 2)
   topLate.forEach((s: any) => insights.push({ text: `${s.name}: ${s.late_shifts} late shift${s.late_shifts > 1 ? 's' : ''} (avg ${s.avg_late_minutes}min)`, type: 'warn' }))
 
+  // Phase 4 — date stepper wiring.
+  const stepperLabel = viewMode === 'week'
+    ? `Week ${(curr as any).weekNum} · ${curr.label}`
+    : curr.label
+  function step(dir: -1 | 1) {
+    if (viewMode === 'week') setWeekOffset(o => o + dir)
+    else                     setMonthOffset(o => o + dir)
+  }
+  const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
+  const labourTierKey = labourPct > 0 ? labourTier(labourPct, tierCfg) : 'no-data'
+
   return (
-    <AppShell>
+    <AppShell
+      dateLabel={stepperLabel}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
+    >
       <div className="page-wrap">
 
-        {/* TopBar — breadcrumb + period nav + W/M toggle in the right slot. */}
-        <TopBar
-          crumbs={[
-            { label: tCrumbs('operations') },
-            { label: tCrumbs('staff'), active: true },
-          ]}
-          rightSlot={
-            <>
-              {viewMode === 'week' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setWeekOffset(o => o - 1)} style={staffNavBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                    Week {(curr as any).weekNum} · {curr.label}
-                  </div>
-                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...staffNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setMonthOffset(o => o - 1)} style={staffNavBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
-                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...staffNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              )}
-              <SegmentedToggle
-                options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-                value={viewMode}
-                onChange={(v) => setViewMode(v as 'week' | 'month')}
+        {/* W/M toggle — kept inline; toolbar has no view-mode pill yet. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <SegmentedToggle
+            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'week' | 'month')}
+          />
+        </div>
+
+        {/* Phase 4 KPI strip — Team · Hours · Labour cost · Late arrivals.
+            Driven entirely by the existing summary; presentation only. The
+            labour-cost card carries the targetBand chip so the operator
+            sees the labourTier() verdict alongside the SEK total. */}
+        {!loading && summary && (() => {
+          const hoursDelta = (prevSr?.summary?.total_hours ?? 0) > 0
+            ? `${totalHours - prevSr.summary.total_hours >= 0 ? '+' : ''}${(((totalHours - prevSr.summary.total_hours) / prevSr.summary.total_hours) * 100).toFixed(1)}%`
+            : null
+          const costDelta = prevTotalCost > 0
+            ? `${totalCost - prevTotalCost >= 0 ? '+' : ''}${(((totalCost - prevTotalCost) / prevTotalCost) * 100).toFixed(1)}%`
+            : null
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        14,
+              }}
+            >
+              <KpiCardUX
+                title="Team"
+                value={String(staff.length)}
+                microLabel={`${staff.filter((s: any) => (s.hours_logged ?? 0) > 0).length} active`}
               />
-            </>
-          }
-        />
+              <KpiCardUX
+                title="Hours"
+                value={fmtPct(totalHours / Math.max(1, dayCount)).replace('%', 'h/day')}
+                delta={hoursDelta}
+                deltaGood
+                microLabel={`${Math.round(totalHours).toLocaleString()} total`}
+              />
+              <KpiCardUX
+                title="Labour cost"
+                value={fmtKr(totalCost)}
+                delta={costDelta}
+                deltaGood={false}
+                variant="targetBand"
+                targetBand={labourPct > 0 ? {
+                  actualPct:    Math.min(100, labourPct),
+                  targetMinPct: tierCfg.targetMin,
+                  targetMaxPct: tierCfg.targetMax,
+                } : undefined}
+                microLabel={labourTierKey === 'no-data' ? 'No revenue' : labourTierKey.replace('-', ' ')}
+              />
+              <KpiCardUX
+                title="Late arrivals"
+                value={String(lateShifts)}
+                deltaGood={false}
+                delta={lateShifts > 0 ? `+${lateShifts} flagged` : null}
+                microLabel={totalOb > 0 ? `OB ${fmtKr(totalOb)}` : ''}
+              />
+            </div>
+          )
+        })()}
 
         {/* ─── PageHero ─────────────────────────────────────────────── */}
         <PageHero

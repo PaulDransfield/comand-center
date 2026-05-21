@@ -8,7 +8,6 @@ import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
 // FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import TopBar from '@/components/ui/TopBar'
 import { UX } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct, fmtHrs as fmtH } from '@/lib/format'
 // FIXES §0rr (2026-04-28): swapped AiSchedulePanel for AiHoursReductionMap
@@ -370,18 +369,11 @@ export default function SchedulingPage() {
     <AppShell>
       <div className="page-wrap" style={{ maxWidth: 1100 }}>
 
-        {/* Period nav + W/M toggle removed 2026-04-23. The scheduling
-            page is now forward-looking only — the AI panel's own range
-            picker (Next week / 2 weeks / 4 weeks / Next month) is the
-            sole period control. The historical /api/scheduling fetch
-            still runs with the default current-month window for the
-            AskAI context + "no joined data yet" guard. */}
-        <TopBar
-          crumbs={[
-            { label: t('crumb.operations') },
-            { label: t('crumb.scheduling'), active: true },
-          ]}
-        />
+        {/* TopBar removed 2026-05-21 (Phase 4 UX overhaul) — the new
+            AppShell toolbar already shows the Schedule area + Scheduling
+            page in its area/page dropdowns, so the crumb was duplicated.
+            Period nav was removed in 2026-04-23; the AiRangePicker below
+            remains the sole forward-looking range control. */}
 
         {/* SchPageHero removed 2026-04-23 — the new AI schedule panel's
             hero + saving strip cover the same information, so leaving

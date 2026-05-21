@@ -22,10 +22,13 @@ import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import StatusPill from '@/components/ui/StatusPill'
 import Sparkline from '@/components/ui/Sparkline'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import TopBar from '@/components/ui/TopBar'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { deptColor } from '@/lib/constants/colors'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 4 — Schedule & workforce. KPI strip for total revenue, best-margin
+// dept, and group labour %. labourTier handles the labour-cost tone.
+import KpiCardUX from '@/components/ux/KpiCard'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -161,41 +164,78 @@ export default function DepartmentsPage() {
     }
   }
 
+  // Phase 4 — date-stepper wiring.
+  const stepperLabel = viewMode === 'week'
+    ? t('weekLabel', { num: (curr as any).weekNum, range: curr.label })
+    : curr.label
+  function step(dir: -1 | 1) {
+    if (viewMode === 'week') setWeekOffset(o => o + dir)
+    else                     setMonthOffset(o => o + dir)
+  }
+  const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
+  const groupLabPct = Number(summary.labour_pct ?? 0)
+
   return (
-    <AppShell>
+    <AppShell
+      dateLabel={stepperLabel}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
+    >
       <div style={{ maxWidth: 1100 }}>
 
-        {/* TopBar — breadcrumb + period nav + W/M toggle in the right slot */}
-        <TopBar
-          crumbs={[
-            { label: tCrumbs('operations') },
-            { label: tCrumbs('departments'), active: true },
-          ]}
-          rightSlot={
-            <>
-              {viewMode === 'week' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setWeekOffset(o => o - 1)} style={deptNavBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                    {t('weekLabel', { num: (curr as any).weekNum, range: curr.label })}
-                  </div>
-                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...deptNavBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setMonthOffset(o => o - 1)} style={deptNavBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
-                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...deptNavBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              )}
-              <SegmentedToggle
-                options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-                value={viewMode}
-                onChange={(v) => setViewMode(v as 'week' | 'month')}
+        {/* W/M toggle — kept inline; toolbar has no view-mode pill yet. */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <SegmentedToggle
+            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'week' | 'month')}
+          />
+        </div>
+
+        {/* Phase 4 KPI strip — Total revenue · Best-margin department ·
+            Group labour % (with target band). Drawn from the same
+            /api/departments summary that powers the hero + table below. */}
+        {!loading && hasAnyActivity && (() => {
+          const tier = labourTier(groupLabPct > 0 ? groupLabPct : null)
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        14,
+              }}
+            >
+              <KpiCardUX
+                title={t('stats.revenue')}
+                value={fmtKr(summary.total_revenue ?? 0)}
+                microLabel={t('stats.departments', { count: activeDepts.length })}
               />
-            </>
-          }
-        />
+              <KpiCardUX
+                title="Best margin"
+                value={best ? fmtPct(best.gp_pct) : '—'}
+                microLabel={best?.name ?? ''}
+                variant="stacked"
+                stackedBars={best && worst ? [
+                  { label: best.name,  value: Number(best.gp_pct ?? 0),  max: 100, color: UXP.green },
+                  { label: worst.name, value: Number(worst.gp_pct ?? 0), max: 100, color: UXP.rose  },
+                ] : undefined}
+              />
+              <KpiCardUX
+                title="Group labour"
+                value={fmtPct(groupLabPct)}
+                deltaGood={false}
+                variant="targetBand"
+                targetBand={groupLabPct > 0 ? {
+                  actualPct:    Math.min(100, groupLabPct),
+                  targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+                  targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+                } : undefined}
+                microLabel={tier === 'no-data' ? 'No data' : tier.replace('-', ' ')}
+              />
+            </div>
+          )
+        })()}
 
         {/* PageHero — SupportingStats only rendered when there's real
             activity, so we don't prominently display "0 kr · 0 dept"
