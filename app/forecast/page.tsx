@@ -1,166 +1,129 @@
 'use client'
 // @ts-nocheck
-// app/forecast/page.tsx — Phase 5 of the UX redesign, per DESIGN.md § 5.
+// app/forecast/page.tsx — full rebuild on the new system
 //
-// Structure:
-//   PageHero    eyebrow + projected-revenue / weak-spot headline + YTD profit
-//               block in the right slot.
-//   Primary     one full-year line chart: navy solid line for actual months
-//               (Jan–current), indigo dashed for forecast months (current+1–
-//               Dec), light-grey band over the forecast region, vertical
-//               "today" line at the boundary, dots coloured by tone.
-//   Supporting  Forecast flags card — months that missed or are at risk.
+// Same treatment as the other rebuilds. Every surface lives on UXP +
+// KpiCardUX / PairedBarChart / BreakdownTable. The legacy PageHero /
+// StatusPill / AttentionPanel / Sparkline / TopBar / inline year line
+// chart are gone.
 //
-// Data source is unchanged (/api/forecast + /api/departments). Dept drill-down
-// is available on /departments/[id]?year=&month=, which is already wired.
+// Data unchanged:
+//   GET /api/forecast?business_id           — { forecasts, actuals, pk_forecasts }
+//   POST /api/sync                          — refresh trigger
+//
+// The page is month-level resolution; "next month" / "year projection"
+// / "weak spot" are the meaningful surfaces. The dashboard handles
+// day-level forecasts via /api/scheduling/ai-suggestion separately.
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
-import { useTranslations } from 'next-intl'
-import AppShell from '@/components/AppShell'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import dynamicImport from 'next/dynamic'
-// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
-const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import PageHero from '@/components/ui/PageHero'
-import StatusPill from '@/components/ui/StatusPill'
-import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import Sparkline from '@/components/ui/Sparkline'
-import TopBar from '@/components/ui/TopBar'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-// Phase 3 — Insights migration. Three-card KpiCard strip for the projected
-// year roll-up; existing year line-chart and weak-spot panel stay below.
-import KpiCardUX from '@/components/ux/KpiCard'
 
-const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+
+import AppShell from '@/components/AppShell'
+import KpiCardUX from '@/components/ux/KpiCard'
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
+
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const MONTHS_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
 export default function ForecastPage() {
-  const t   = useTranslations('financials.forecast')
-  const now           = new Date()
-  const currentYear   = now.getFullYear()
-  const currentMonth  = now.getMonth() + 1
-  const daysInMonth   = new Date(currentYear, currentMonth, 0).getDate()
-  const todayProgress = now.getDate() / daysInMonth
-
-  const [businesses, setBusinesses] = useState<any[]>([])
-  const [selected,   setSelected]   = useState('')
+  const now          = new Date()
+  const [year,       setYear]       = useState(now.getFullYear())
+  const [bizId,      setBizId]      = useState<string | null>(null)
   const [data,       setData]       = useState<any>(null)
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState('')
   const [syncing,    setSyncing]    = useState(false)
 
+  // Subscribe to BizPicker
   useEffect(() => {
-    fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
-      if (!Array.isArray(data) || !data.length) { setLoading(false); return }
-      setBusinesses(data)
-      const sync = () => {
-        const saved = localStorage.getItem('cc_selected_biz')
-        const id = (saved && data.find((b: any) => b.id === saved)) ? saved : data[0].id
-        setSelected(id)
-      }
-      sync()
-      window.addEventListener('storage', sync)
-    }).catch(() => {})
+    const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
+    sync()
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
   }, [])
 
+  // Load forecasts
   const load = useCallback(async () => {
-    if (!selected) return
+    if (!bizId) return
     setLoading(true); setError('')
     try {
-      const res = await fetch(`/api/forecast?business_id=${selected}`)
+      const res = await fetch(`/api/forecast?business_id=${bizId}`)
       if (res.ok) setData(await res.json())
-    } catch (e: any) { setError(e.message) }
+      else setError(`HTTP ${res.status}`)
+    } catch (e: any) {
+      setError(e.message)
+    }
     setLoading(false)
-  }, [selected])
+  }, [bizId])
+  useEffect(() => { if (bizId) load() }, [bizId, load])
 
-  useEffect(() => { if (selected) load() }, [selected, load])
-
-  async function triggerSync() {
+  async function refresh() {
     setSyncing(true)
     await fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider: 'personalkollen' }) })
     await load()
     setSyncing(false)
   }
 
-  // ── Shape the 12 months of this year ──────────────────────────────────────
+  // ── Shape 12 months ────────────────────────────────────────────
   const monthly = useMemo(() => {
     const forecasts = data?.forecasts ?? []
     const actuals   = data?.actuals   ?? []
+    const currentMonth = now.getMonth() + 1
     return Array.from({ length: 12 }, (_, i) => {
       const m = i + 1
-      const f = forecasts.find((r: any) => r.period_year === currentYear && r.period_month === m)
-      const a = actuals.find((r: any) => r.period_year === currentYear && r.period_month === m)
-      const isPast    = m < currentMonth
-      const isCurrent = m === currentMonth
-      const isFuture  = m > currentMonth
+      const f = forecasts.find((r: any) => r.period_year === year && r.period_month === m)
+      const a = actuals.find((r: any)   => r.period_year === year && r.period_month === m)
+      const isPast    = year < now.getFullYear() || (year === now.getFullYear() && m < currentMonth)
+      const isCurrent = year === now.getFullYear() && m === currentMonth
+      const isFuture  = !isPast && !isCurrent
       const actualRev   = a ? Number(a.revenue ?? 0) : 0
       const forecastRev = f ? Number(f.revenue_forecast ?? 0) : 0
-      // Primary Y-value for the line:
-      //   past / current month → actual (if any) falling back to forecast
-      //   future month → forecast
-      const value = isFuture ? forecastRev
-                   : (actualRev > 0 ? actualRev : forecastRev)
-      // Tone for the marker dot
+      const value = isFuture ? forecastRev : (actualRev > 0 ? actualRev : forecastRev)
       let tone: 'good' | 'bad' | 'warning' | 'neutral' = 'neutral'
       if (isPast && actualRev > 0 && forecastRev > 0) {
         const pct = (actualRev - forecastRev) / forecastRev
         tone = pct >= 0 ? 'good' : pct <= -0.10 ? 'bad' : 'warning'
-      } else if (isFuture && forecastRev > 0) {
-        tone = 'neutral'
       }
       return {
         m, f, a,
         isPast, isCurrent, isFuture,
         actualRev, forecastRev,
         value, tone,
-        margin:       a?.margin_pct != null ? Number(a.margin_pct) : null,
+        margin:         a?.margin_pct      != null ? Number(a.margin_pct)      : null,
         marginForecast: f?.margin_forecast != null ? Number(f.margin_forecast) : null,
       }
     })
-  }, [data, currentYear, currentMonth])
+  }, [data, year])
 
-  // YTD actual profit
-  const ytdActualProfit = (data?.actuals ?? [])
-    .filter((r: any) => r.period_year === currentYear)
-    .reduce((s: number, r: any) => s + Number(r.net_profit ?? 0), 0)
-
-  // Honesty guards — before we can claim a full-year projection we need
-  // (a) at least one non-zero actual and (b) forecasts covering the rest
-  // of the year. Without both, saying "Tracking to X kr" is a maths lie.
-  const forecastCount = (data?.forecasts ?? [])
-    .filter((r: any) => r.period_year === currentYear && r.period_month >= currentMonth)
-    .length
+  // ── Year-level derived numbers ────────────────────────────────
   const actualMonths = monthly.filter(r => r.actualRev > 0).length
+  const forecastCount = (data?.forecasts ?? [])
+    .filter((r: any) => r.period_year === year && (r.period_month >= (year === now.getFullYear() ? now.getMonth() + 1 : 1)))
+    .length
   const hasProjection = forecastCount > 0 && actualMonths > 0
-
-  // Projected full-year revenue — only meaningful when we have forecasts
-  // for the remaining months. Otherwise return null so the hero never
-  // shows a "Tracking to {kr}" line that's really just one month's actual.
+  const ytdActualProfit = (data?.actuals ?? [])
+    .filter((r: any) => r.period_year === year)
+    .reduce((s: number, r: any) => s + Number(r.net_profit ?? 0), 0)
   const projectedFullYear = hasProjection
-    ? monthly.reduce((s, r) => {
-        if (r.isPast || r.isCurrent) return s + Math.max(r.actualRev, r.forecastRev)
-        return s + r.forecastRev
-      }, 0)
+    ? monthly.reduce((s, r) => s + (r.isFuture ? r.forecastRev : Math.max(r.actualRev, r.forecastRev)), 0)
     : null
-
-  // Projected full-year margin — same horizon, weighted by revenue. Needed
-  // for the hero context (FORECAST-FIX § 5) so we can say
-  //   "tracking to X kr · forecast margin Y%"
-  // instead of just quoting revenue.
   const projectedMarginPct = (() => {
     if (!hasProjection) return null
     let rev = 0, profit = 0
     for (const r of monthly) {
       if (r.isPast || r.isCurrent) {
         const revV = Math.max(r.actualRev, r.forecastRev)
-        rev    += revV
+        rev += revV
         profit += Number(r.a?.net_profit ?? 0)
       } else {
-        rev    += r.forecastRev
-        // Prefer margin_forecast when present, fall back to the year's
-        // average; zero-pad missing so the ratio stays stable.
+        rev += r.forecastRev
         const mpct = r.marginForecast
         profit += mpct != null ? (r.forecastRev * mpct / 100) : 0
       }
@@ -168,7 +131,6 @@ export default function ForecastPage() {
     return rev > 0 ? (profit / rev) * 100 : null
   })()
 
-  // Year-average forecast margin — used to flag at-risk months (FORECAST-FIX § 3).
   const forecastMargins = monthly
     .filter(r => (r.isFuture || r.isCurrent) && r.marginForecast != null)
     .map(r => r.marginForecast!)
@@ -176,471 +138,418 @@ export default function ForecastPage() {
     ? forecastMargins.reduce((s, v) => s + v, 0) / forecastMargins.length
     : null
 
-  // Weak spot = future month with lowest margin forecast (or biggest past miss if none).
+  // Next forecast month (current → next future), and weakest forecast month
+  const nextMonth = monthly.find(r => r.isCurrent) ?? monthly.find(r => r.isFuture)
   const weakFuture = monthly
     .filter(r => r.isFuture && r.marginForecast != null)
-    .sort((a, b) => (a.marginForecast ?? 1e9) - (b.marginForecast ?? 1e9))[0] ?? null
-  const biggestMiss = monthly
-    .filter(r => r.isPast && r.actualRev > 0 && r.forecastRev > 0 && r.tone === 'bad')
-    .sort((a, b) => ((a.actualRev - a.forecastRev) - (b.actualRev - b.forecastRev)))[0] ?? null
+    .sort((a, b) => (a.marginForecast ?? 1e9) - (b.marginForecast ?? 1e9))[0]
 
-  // ── Hero headline ─────────────────────────────────────────────────────────
-  // Translations own word order; we render the result in a span so the
-  // PageHero can inherit colour. (Inline-coloured fragments were dropped to
-  // simplify localisation — colour now comes from the eyebrow/context tone.)
-  const headline = (() => {
-    if (loading) return <>{t('loading')}</>
-    if (!data) return <>{t('hero.notAvailable')}</>
-    if (!hasProjection) {
-      if (actualMonths === 0) {
-        return <>{t('hero.noActualsYet', { year: currentYear })}</>
-      }
-      const monthNames = monthly
-        .filter(r => r.actualRev > 0)
-        .map(r => MONTHS_SHORT[r.m - 1]).join(', ')
-      return <span>{t('hero.loggedNoFc', { months: monthNames })}</span>
-    }
-    if (weakFuture && weakFuture.marginForecast != null && weakFuture.marginForecast < 12) {
-      return <span>{t('hero.weakMargin', {
-        revenue: fmtKr(projectedFullYear!),
-        month:   MONTHS_SHORT[weakFuture.m - 1],
-        pct:     fmtPct(weakFuture.marginForecast),
-      })}</span>
-    }
-    if (biggestMiss) {
-      const pct = ((biggestMiss.actualRev - biggestMiss.forecastRev) / biggestMiss.forecastRev) * 100
-      return <span>{t('hero.missedForecast', {
-        revenue: fmtKr(projectedFullYear!),
-        month:   MONTHS_SHORT[biggestMiss.m - 1],
-        pct:     fmtPct(Math.abs(pct)),
-      })}</span>
-    }
-    return <span>{t('hero.tracking', { revenue: fmtKr(projectedFullYear!) })}</span>
+  // ── MAPE / confidence (rough — based on past months) ──────────
+  const mape = (() => {
+    const pairs = monthly.filter(r => r.isPast && r.actualRev > 0 && r.forecastRev > 0)
+    if (pairs.length === 0) return null
+    const sumErr = pairs.reduce((s, r) => s + Math.abs((r.actualRev - r.forecastRev) / r.forecastRev), 0)
+    return (sumErr / pairs.length) * 100
   })()
+  const confidence = mape == null ? null
+    : mape <= 5  ? 'high'
+    : mape <= 12 ? 'medium'
+    :              'low'
 
-  const heroContextText = (() => {
-    if (!data) return undefined
-    if (!hasProjection) {
-      return t('hero.ctxNoFc', { count: actualMonths })
-    }
-    const parts: string[] = []
-    if (projectedMarginPct != null) {
-      parts.push(t('hero.ctxMargin', { pct: fmtPct(projectedMarginPct) }))
-    }
-    parts.push(t('hero.ctxActuals', { count: actualMonths, profit: fmtKr(ytdActualProfit) }))
-    return parts.join(' · ')
-  })()
-
-  // ── Flags list (supporting row) ───────────────────────────────────────────
-  // Rules per FORECAST-FIX § 3:
-  //   MISSED — past/current actual is > 15% below forecast
-  //   AT RISK — future margin_forecast is > 10pp below year-avg forecast
-  //             margin (or, fallback, below 12% absolute when no avg).
-  const flags: AttentionItem[] = monthly.flatMap(r => {
+  // ── Flags ──────────────────────────────────────────────────────
+  interface Flag { tone: 'good' | 'warning' | 'bad'; entity: string; message: string }
+  const flags: Flag[] = []
+  for (const r of monthly) {
+    // Past month that missed forecast > 15%
     if (!r.isFuture && r.actualRev > 0 && r.forecastRev > 0) {
       const pct = ((r.actualRev - r.forecastRev) / r.forecastRev) * 100
       if (pct <= -15) {
-        return [{
+        flags.push({
           tone: 'bad',
           entity: MONTHS_SHORT[r.m - 1],
-          message: t('flags.missed', {
-            pct:      fmtPct(Math.abs(pct)),
-            actual:   fmtKr(r.actualRev),
-            forecast: fmtKr(r.forecastRev),
-          }),
-        } as AttentionItem]
+          message: `Missed forecast by ${fmtPct(Math.abs(pct))} — actual ${fmtKr(r.actualRev)} vs forecast ${fmtKr(r.forecastRev)}.`,
+        })
       }
     }
+    // Future month with margin > 10pp below year average (or below 12% absolute)
     if (r.isFuture && r.marginForecast != null) {
-      const threshold = avgForecastMargin != null ? avgForecastMargin - 10 : 12
-      if (r.marginForecast < threshold) {
-        const rel = avgForecastMargin != null
-          ? t('flags.belowAvg', { pp: (Math.round((avgForecastMargin - r.marginForecast) * 10) / 10).toFixed(1) })
-          : t('flags.belowFloor')
-        return [{
-          tone: 'warning',
+      const belowAvg = avgForecastMargin != null && r.marginForecast <= avgForecastMargin - 10
+      const belowAbs = r.marginForecast < 12
+      if (belowAvg || belowAbs) {
+        flags.push({
+          tone: r.marginForecast < 5 ? 'bad' : 'warning',
           entity: MONTHS_SHORT[r.m - 1],
-          message: t('flags.atRisk', {
-            pct:     fmtPct(r.marginForecast),
-            rel,
-            revenue: fmtKr(r.forecastRev),
-          }),
-        } as AttentionItem]
+          message: `Forecast margin ${fmtPct(r.marginForecast)} — below typical for the year.`,
+        })
       }
     }
-    return []
-  })
+  }
+
+  // ── Year nav ──────────────────────────────────────────────────
+  const canStepNext = year < now.getFullYear() + 1
+  function step(dir: -1 | 1) { setYear(y => y + dir) }
 
   return (
-    <AppShell>
-      <div style={{ maxWidth: 1100 }}>
+    <AppShell
+      dateLabel={String(year)}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
+    >
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        {/* TopBar — crumb trail + refresh + biz picker. Replaces the
-            floating right-aligned selectors. */}
-        <TopBar
-          crumbs={[
-            { label: t('crumb.financials') },
-            { label: t('crumb.forecast'), active: true },
-          ]}
-          rightSlot={
-            <>
-              <select value={selected} onChange={e => setSelected(e.target.value)}
-                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-                {businesses.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              {/* Icon-ified refresh (FORECAST-FIX § 4). The full-width
-                  "Refresh forecast" button competed with the dropdown for
-                  the same corner — a 24 px circular icon is enough. */}
-              <button
-                onClick={triggerSync}
-                disabled={syncing || !selected}
-                title={syncing ? t('syncing') : t('refresh')}
-                aria-label={t('refresh')}
-                style={{
-                  width:        28,
-                  height:       28,
-                  borderRadius: '50%',
-                  background:   'transparent',
-                  border:       `0.5px solid ${UX.border}`,
-                  color:        UX.ink3,
-                  cursor:       syncing || !selected ? 'not-allowed' : 'pointer',
-                  opacity:      syncing || !selected ? 0.5 : 1,
-                  display:      'flex',
-                  alignItems:   'center',
-                  justifyContent: 'center',
-                  fontSize:     14,
-                  padding:      0,
-                }}
-              >
-                <span className={syncing ? 'cc-fc-spin' : undefined} style={{ display: 'inline-block', lineHeight: 1 }}>↻</span>
-              </button>
-              <style>{`
-                @keyframes cc-fc-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
-                .cc-fc-spin { animation: cc-fc-spin 1s linear infinite; display: inline-block; }
-              `}</style>
-            </>
-          }
-        />
-
-        {/* Phase 3 KPI strip — Projected year · YTD profit · Next-month
-            forecast. Driven by the same monthly[] derivation that powers the
-            existing hero + line chart below; no extra data fetched. */}
-        {!loading && data && (() => {
-          const nextMonth = monthly.find(r => r.isCurrent) ?? monthly.find(r => r.isFuture)
-          const nextRev   = nextMonth?.forecastRev ?? 0
-          const nextMargin= nextMonth?.marginForecast ?? null
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        14,
-              }}
-            >
-              <KpiCardUX
-                title={`Projected ${currentYear}`}
-                value={projectedFullYear != null ? fmtKr(projectedFullYear) : '—'}
-                microLabel={hasProjection ? `${actualMonths} months actual` : 'Not enough data'}
-              />
-              <KpiCardUX
-                title="YTD net profit"
-                value={fmtKr(ytdActualProfit)}
-                deltaGood
-                delta={ytdActualProfit >= 0 ? '+' : '−'}
-                microLabel={`${currentMonth - 1} closed months`}
-              />
-              <KpiCardUX
-                title={nextMonth?.isCurrent ? 'This month forecast' : 'Next month forecast'}
-                value={nextRev > 0 ? fmtKr(nextRev) : '—'}
-                variant="stacked"
-                stackedBars={nextMargin != null ? [
-                  { label: 'Forecast margin', value: nextMargin,        max: 100, color: UXP.lav   },
-                  { label: 'Year avg',        value: avgForecastMargin ?? 0, max: 100, color: UXP.lavMid },
-                ] : undefined}
-                microLabel={nextMonth ? MONTHS[nextMonth.m - 1] : ''}
-              />
-            </div>
-          )
-        })()}
-
-        {/* ─── PageHero ──────────────────────────────────────────────────── */}
-        <PageHero
-          eyebrow={`${currentYear} FORECAST`}
-          headline={headline}
-          context={heroContextText}
-          right={
-            <div style={{ minWidth: 160, textAlign: 'right' as const }}>
-              <div style={{ fontSize: UX.fsMicro, color: UX.ink4, letterSpacing: '0.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium, marginBottom: 3 }}>
-                YTD net profit
-              </div>
-              <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: ytdActualProfit >= 0 ? UX.ink1 : UX.redInk, fontVariantNumeric: 'tabular-nums' as const, letterSpacing: '-0.02em' }}>
-                {fmtKr(ytdActualProfit)}
-              </div>
-              <div style={{ fontSize: UX.fsMicro, color: UX.ink3, marginTop: 3 }}>
-                {currentMonth - 1} months actual
-              </div>
-            </div>
-          }
-        />
-
-        {error && (
-          <div style={{ background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: UX.r_lg, padding: '10px 14px', fontSize: UX.fsBody, color: UX.redInk, marginBottom: 12 }}>
-            {error}
-          </div>
-        )}
-
-        {/* ─── Primary: full-year line chart ────────────────────────────
-            When no forecast exists for the remaining months AND fewer than
-            2 past months have actuals, an empty chart is noise — render an
-            explainer card instead (FIX-PROMPT § Phase 5). Once we have
-            enough signal, show the chart with the actual line connecting
-            through zero months so Jan → current is always one stroke. */}
-        <div style={{
-          background:   UX.cardBg,
-          border:       `0.5px solid ${UX.border}`,
-          borderRadius: UX.r_lg,
-          padding:      '18px 20px',
-          marginBottom: 14,
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>{t('chart.header')}</div>
-            <div style={{ display: 'flex', gap: 14, fontSize: UX.fsMicro, color: UX.ink3 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 14, height: 2, background: UX.navy, borderRadius: 1 }} /> {t('chart.actual')}
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <span style={{ width: 14, height: 0, borderTop: `2px dashed ${UX.indigo}` }} /> {t('chart.forecast')}
-              </span>
-            </div>
-          </div>
-          {!loading && !hasProjection && actualMonths < 2 ? (
-            <div style={{
-              padding:     '40px 20px',
-              textAlign:   'center' as const,
-              color:       UX.ink4,
-              fontSize:    UX.fsBody,
-              lineHeight:  1.55,
-            }}>
-              {actualMonths === 0
-                ? t.rich('chart.emptyNoData', { b: chunks => <b>{chunks}</b> })
-                : t('chart.emptyOneMonth')}
-            </div>
-          ) : (
-            <ForecastChart
-              monthly={monthly}
-              currentMonth={currentMonth}
-              todayProgress={todayProgress}
-              loading={loading}
-            />
-          )}
+        {/* Header — confidence pill + refresh */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
+          {confidence && mape != null && <ConfidenceChip confidence={confidence} mape={mape} />}
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={syncing || !bizId}
+            aria-label="Refresh forecast"
+            title={syncing ? 'Refreshing…' : 'Refresh forecast'}
+            style={{
+              width:          28,
+              height:         28,
+              borderRadius:   '50%',
+              background:     UXP.cardBg,
+              border:         `0.5px solid ${UXP.border}`,
+              color:          UXP.ink3,
+              cursor:         syncing || !bizId ? 'not-allowed' : 'pointer',
+              opacity:        syncing || !bizId ? 0.5 : 1,
+              display:        'flex',
+              alignItems:     'center',
+              justifyContent: 'center',
+              fontSize:       14,
+              padding:        0,
+            }}
+          >
+            <span className={syncing ? 'cc-fc-spin' : undefined} style={{ display: 'inline-block', lineHeight: 1 }}>↻</span>
+          </button>
+          <style>{`
+            @keyframes cc-fc-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+            .cc-fc-spin { animation: cc-fc-spin 1s linear infinite; }
+          `}</style>
         </div>
 
-        {/* ─── Supporting: forecast flags ─────────────────────────────── */}
+        {error && (
+          <Banner tone="bad" text={error} />
+        )}
+
+        {/* KPI strip */}
+        <KpiStrip
+          year={year}
+          projectedFullYear={projectedFullYear}
+          actualMonths={actualMonths}
+          hasProjection={hasProjection}
+          ytdActualProfit={ytdActualProfit}
+          currentMonthIdx={now.getMonth() + 1}
+          nextMonth={nextMonth}
+          avgForecastMargin={avgForecastMargin}
+          projectedMarginPct={projectedMarginPct}
+        />
+
+        {/* Year chart */}
+        <YearChart monthly={monthly} loading={loading} />
+
+        {/* Monthly breakdown */}
+        <MonthlyBreakdown
+          monthly={monthly}
+          totalActual={monthly.reduce((s, r) => s + r.actualRev, 0)}
+          totalForecast={monthly.reduce((s, r) => s + r.forecastRev, 0)}
+          projectedFullYear={projectedFullYear}
+        />
+
+        {/* Flags */}
         {flags.length > 0 && (
-          <AttentionPanel
-            title={t('flags.panelTitle')}
-            items={flags}
-            maxItems={6}
-          />
+          <FlagsCard flags={flags} />
         )}
       </div>
 
       <AskAI
         page="forecast"
-        context={data ? `Year: ${currentYear}. YTD profit: ${fmtKr(ytdActualProfit)}. ${projectedFullYear != null ? `Projected full year: ${fmtKr(projectedFullYear)}. ` : 'No full-year forecast yet. '}${flags.length} flagged months.` : 'No forecast data yet'}
+        context={data ? [
+          `Year ${year} forecast view`,
+          hasProjection
+            ? `Projected ${fmtKr(projectedFullYear!)}; projected margin ${projectedMarginPct != null ? fmtPct(projectedMarginPct) : '—'}.`
+            : `Not enough actuals yet (${actualMonths} closed) for a year projection.`,
+          confidence ? `Model confidence: ${confidence} (MAPE ${mape!.toFixed(1)}%).` : null,
+          weakFuture ? `Weakest forecast month: ${MONTHS_SHORT[weakFuture.m - 1]} at ${fmtPct(weakFuture.marginForecast!)}.` : null,
+        ].filter(Boolean).join('\n') : 'No forecast data'}
       />
     </AppShell>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ForecastChart — inline SVG. Navy solid for actual months, indigo dashed for
-// forecast months, light-grey rectangle over the forecast region, vertical
-// "today" dashed line at the month boundary, coloured dots at each point.
-// ─────────────────────────────────────────────────────────────────────────────
-function ForecastChart({ monthly, currentMonth, todayProgress, loading }: any) {
-  const t = useTranslations('financials.forecast')
-  const W   = 720
-  const H   = 240
-  const PL  = 46
-  const PR  = 14
-  const PT  = 14
-  const PB  = 30
-  const plotW = W - PL - PR
-  const plotH = H - PT - PB
+// ════════════════════════════════════════════════════════════════════
+// Sub-components
+// ════════════════════════════════════════════════════════════════════
 
-  const values = monthly.map((m: any) => m.value ?? 0)
-  const maxV = Math.max(1, ...values)
-  const yMax = Math.ceil(maxV / 100_000) * 100_000
-
-  const xAt = (i: number) => PL + (plotW * (i + 0.5)) / 12
-  const yAt = (v: number) => PT + plotH * (1 - v / yMax)
-
-  // Actual line — connects Jan → last COMPLETED month.  The current
-  // month is rendered separately as a hollow "in progress" circle and is
-  // NOT connected into the solid navy line — part-month actuals drop
-  // dramatically from the previous month's total and would otherwise
-  // read as "April collapsed" (FORECAST-FIX § 2).
-  const pastMonthly = monthly.filter((m: any) => m.isPast)
-  const firstActualIdx = pastMonthly.findIndex((m: any) => m.actualRev > 0)
-  const lastActualIdx  = pastMonthly.length - 1 - [...pastMonthly].reverse().findIndex((m: any) => m.actualRev > 0)
-  const actualPoints = firstActualIdx < 0
-    ? []
-    : pastMonthly
-        .slice(firstActualIdx, lastActualIdx + 1)
-        .map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.actualRev), tone: m.tone, m: m.m, value: m.actualRev, actual: true }))
-
-  // Current month treated specially.  Hollow ring with "in progress"
-  // label instead of a solid dot — it's not a final value.
-  const currentRow = monthly.find((m: any) => m.isCurrent)
-  const currentInProgress = currentRow && currentRow.actualRev > 0
-    ? { x: xAt(currentRow.m - 1), y: yAt(currentRow.actualRev), m: currentRow.m, value: currentRow.actualRev }
-    : null
-
-  const forecastPoints = monthly.filter((m: any) => m.isFuture && m.value > 0).map((m: any) => ({ x: xAt(m.m - 1), y: yAt(m.value), tone: m.tone, m: m.m, value: m.value, actual: false }))
-
-  const actualPath = actualPoints.length >= 2
-    ? actualPoints.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-    : ''
-  const forecastPath = forecastPoints.length >= 2
-    ? forecastPoints.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-    : ''
-
-  // Connect last-completed actual → first forecast (dashed).  If the
-  // current month is in progress we still connect from its hollow point,
-  // so the eye has one continuous dashed trail from the last solid dot
-  // through "in progress" to the forecast.
-  const lastActual = actualPoints[actualPoints.length - 1] ?? null
-  const firstForecast = forecastPoints[0] ?? null
-  const connectPath = (() => {
-    const anchors: Array<{ x: number; y: number }> = []
-    if (lastActual)        anchors.push(lastActual)
-    if (currentInProgress) anchors.push(currentInProgress)
-    if (firstForecast)     anchors.push(firstForecast)
-    if (anchors.length < 2) return ''
-    return anchors.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
-  })()
-
-  // Today line — sits inside current month's cell at month-progress %
-  const todayX = xAt(currentMonth - 1) - (plotW / 12) / 2 + (plotW / 12) * todayProgress
-
-  // Y-axis ticks
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => ({ v: yMax * f, y: yAt(yMax * f) }))
-
+function ConfidenceChip({ confidence, mape }: { confidence: 'high' | 'medium' | 'low'; mape: number }) {
+  const palette = {
+    high:   { bg: UXP.greenFill, fg: UXP.greenDeep, dot: UXP.green },
+    medium: { bg: UXP.lavFill,   fg: UXP.lavText,   dot: UXP.coral },
+    low:    { bg: UXP.roseFill,  fg: UXP.roseText,  dot: UXP.rose  },
+  }[confidence]
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      width="100%"
-      height={H}
-      role="img"
-      aria-label="Full-year revenue forecast — actual solid navy, forecast dashed indigo"
-      style={{ display: 'block' as const }}
-    >
-      {/* Forecast band */}
-      <rect
-        x={xAt(currentMonth - 1) - (plotW / 12) / 2}
-        y={PT}
-        width={(W - PR) - (xAt(currentMonth - 1) - (plotW / 12) / 2)}
-        height={plotH}
-        fill={UX.indigoBg}
-        opacity={0.5}
-      />
-
-      {/* Gridlines */}
-      {ticks.map(t => (
-        <g key={t.v}>
-          <line x1={PL} x2={W - PR} y1={t.y} y2={t.y} stroke={UX.borderSoft} strokeWidth={0.5} />
-          <text x={PL - 6} y={t.y + 3} textAnchor="end" fontSize={UX.fsNano} fill={UX.ink4}>
-            {t.v === 0 ? '0' : formatKShort(t.v)}
-          </text>
-        </g>
-      ))}
-
-      {/* Today marker */}
-      <line x1={todayX} x2={todayX} y1={PT} y2={H - PB} stroke={UX.ink3} strokeWidth={0.8} strokeDasharray="2 2" />
-      <text x={todayX} y={PT - 2} textAnchor="middle" fontSize={UX.fsNano} fill={UX.ink3}>today</text>
-
-      {/* Actual line */}
-      {actualPath && (
-        <path d={actualPath} stroke={UX.navy} strokeWidth={2} fill="none" strokeLinejoin="round" />
-      )}
-      {/* Connector */}
-      {connectPath && (
-        <path d={connectPath} stroke={UX.indigo} strokeWidth={2} strokeDasharray="4 3" fill="none" />
-      )}
-      {/* Forecast line */}
-      {forecastPath && (
-        <path d={forecastPath} stroke={UX.indigo} strokeWidth={2} strokeDasharray="4 3" fill="none" strokeLinejoin="round" />
-      )}
-
-      {/* Dots — tone-coloured per FORECAST-FIX § 6 (green ≥ forecast,
-          amber within 10% under, red > 10% under; navy default). */}
-      {[...actualPoints, ...forecastPoints].map((p: any) => (
-        <circle
-          key={`${p.actual ? 'a' : 'f'}-${p.m}`}
-          cx={p.x}
-          cy={p.y}
-          r={2.6}
-          fill={
-            p.tone === 'bad'     ? UX.redInk :
-            p.tone === 'warning' ? UX.amberInk :
-            p.tone === 'good'    ? UX.greenInk :
-            p.actual             ? UX.navy : UX.indigo
-          }
-        />
-      ))}
-
-      {/* Current month — hollow ring + tiny "(in progress)" label so the
-          part-month actual isn't misread as "Apr collapsed". */}
-      {currentInProgress && (
-        <g>
-          <circle
-            cx={currentInProgress.x}
-            cy={currentInProgress.y}
-            r={4}
-            fill="white"
-            stroke={UX.navy}
-            strokeWidth={1.4}
-          />
-          <text
-            x={currentInProgress.x}
-            y={currentInProgress.y - 8}
-            textAnchor="middle"
-            fontSize={UX.fsNano}
-            fill={UX.ink3}
-          >
-            in progress
-          </text>
-        </g>
-      )}
-
-      {/* Month labels */}
-      {monthly.map((m: any, i: number) => (
-        <text
-          key={m.m}
-          x={xAt(i)}
-          y={H - PB + 14}
-          textAnchor="middle"
-          fontSize={UX.fsNano}
-          fill={m.isCurrent ? UX.ink1 : UX.ink4}
-          fontWeight={m.isCurrent ? UX.fwMedium : UX.fwRegular}
-        >
-          {MONTHS_SHORT[m.m - 1]}
-        </text>
-      ))}
-
-      {/* Loading overlay */}
-      {loading && (
-        <text x={W / 2} y={H / 2} textAnchor="middle" fill={UX.ink4} fontSize={UX.fsBody}>{t('loadingChart')}</text>
-      )}
-    </svg>
+    <span style={{
+      display:        'inline-flex',
+      alignItems:     'center',
+      gap:            6,
+      padding:        '4px 10px',
+      background:     palette.bg,
+      color:          palette.fg,
+      borderRadius:   999,
+      fontSize:       10,
+      fontWeight:     500,
+      letterSpacing:  '0.02em',
+    }}>
+      <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: palette.dot }} />
+      Model {confidence} confidence · MAPE {mape.toFixed(1)}%
+    </span>
   )
 }
 
-function formatKShort(n: number): string {
-  if (n >= 1_000_000) return `${Math.round(n / 100_000) / 10}M`
-  if (n >= 1_000)     return `${Math.round(n / 100) / 10}k`
-  return String(n)
+function KpiStrip({
+  year, projectedFullYear, actualMonths, hasProjection,
+  ytdActualProfit, currentMonthIdx, nextMonth, avgForecastMargin, projectedMarginPct,
+}: any) {
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      <KpiCardUX
+        title={`Projected ${year}`}
+        value={projectedFullYear != null ? fmtKr(projectedFullYear) : '—'}
+        microLabel={hasProjection
+          ? `${actualMonths} month${actualMonths === 1 ? '' : 's'} closed`
+          : 'Not enough actuals yet'}
+      />
+      <KpiCardUX
+        title="YTD net profit"
+        value={fmtKr(ytdActualProfit)}
+        deltaGood
+        delta={ytdActualProfit >= 0 ? '+' : '−'}
+        microLabel={`${currentMonthIdx - 1} closed months`}
+      />
+      <KpiCardUX
+        title={nextMonth?.isCurrent ? 'This month forecast' : 'Next month forecast'}
+        value={nextMonth?.forecastRev ? fmtKr(nextMonth.forecastRev) : '—'}
+        variant={nextMonth?.marginForecast != null && avgForecastMargin != null ? 'stacked' : 'plain'}
+        stackedBars={nextMonth?.marginForecast != null && avgForecastMargin != null ? [
+          { label: 'This month', value: nextMonth.marginForecast, max: 100, color: UXP.lav   },
+          { label: 'Year avg',   value: avgForecastMargin,        max: 100, color: UXP.lavMid },
+        ] : undefined}
+        microLabel={nextMonth ? MONTHS_SHORT[nextMonth.m - 1] : ''}
+      />
+      <KpiCardUX
+        title="Projected margin"
+        value={projectedMarginPct != null ? fmtPct(projectedMarginPct) : '—'}
+        variant="targetBand"
+        targetBand={projectedMarginPct != null ? {
+          actualPct:    Math.max(0, Math.min(100, projectedMarginPct)),
+          targetMinPct: 5,
+          targetMaxPct: 15,
+        } : undefined}
+        microLabel="Target 5-15%"
+      />
+    </div>
+  )
+}
+
+// ── Year chart ──────────────────────────────────────────────────────
+function YearChart({ monthly, loading }: { monthly: any[]; loading: boolean }) {
+  return (
+    <Card title="Year at a glance" subtitle="Actuals + forecast · margin overlay">
+      {loading ? (
+        <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
+      ) : (
+        <div>
+          <PairedBarChart
+            groups={monthly.map(r => MONTHS_SHORT[r.m - 1])}
+            series={[
+              { label: 'Actual',   data: monthly.map(r => r.actualRev),   color: UXP.lav    },
+              { label: 'Forecast', data: monthly.map(r => r.isFuture ? r.forecastRev : 0), color: UXP.lavPale },
+            ]}
+            lines={[{
+              label:  'Margin %',
+              data:   monthly.map(r => {
+                if (r.isFuture) return r.marginForecast ?? null
+                return r.margin ?? r.marginForecast ?? null
+              }),
+              color:  UXP.coral,
+              dashed: false,
+            }]}
+            width={typeof window !== 'undefined' ? Math.min(window.innerWidth - 120, 1200) : 1100}
+            height={260}
+          />
+          {/* "Idag" divider note — points at the current month index */}
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 6 }}>
+            Solid bars = actuals (Jan → current month) · Pale bars = forecast (current → Dec)
+          </div>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+// ── Monthly BreakdownTable ──────────────────────────────────────────
+function MonthlyBreakdown({ monthly, totalActual, totalForecast, projectedFullYear }: any) {
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Monthly forecast</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          Actual vs forecast per month
+        </div>
+      </div>
+      <BreakdownTable
+        columns={[
+          { key: 'month', header: 'Month', align: 'left', render: (r: any) => (
+            <span style={{
+              display:     'inline-flex',
+              alignItems:  'center',
+              gap:         8,
+              color:       UXP.ink1,
+              fontWeight:  500,
+            }}>
+              {MONTHS_FULL[r.m - 1]}
+              {r.isCurrent && <Status tone="lav">Now</Status>}
+              {r.isFuture  && <Status tone="neutral">Future</Status>}
+            </span>
+          ) },
+          { key: 'actual', header: 'Actual', align: 'right', render: (r: any) =>
+            r.actualRev > 0 ? fmtKr(r.actualRev) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'forecast', header: 'Forecast', align: 'right', render: (r: any) =>
+            r.forecastRev > 0 ? fmtKr(r.forecastRev) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'delta', header: 'Δ vs forecast', align: 'right', render: (r: any) => {
+            if (!(r.actualRev > 0 && r.forecastRev > 0)) return <span style={{ color: UXP.ink4 }}>—</span>
+            const pct = ((r.actualRev - r.forecastRev) / r.forecastRev) * 100
+            return <DeltaChip value={`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`} positiveIsGood />
+          } },
+          { key: 'margin', header: 'Margin', align: 'right', render: (r: any) => {
+            const m = r.isFuture ? r.marginForecast : (r.margin ?? r.marginForecast)
+            return m != null ? fmtPct(m) : <span style={{ color: UXP.ink4 }}>—</span>
+          } },
+          { key: 'tone', header: 'Status', align: 'right', render: (r: any) => {
+            if (r.isFuture) return <Status tone="lav">Forecast</Status>
+            if (r.tone === 'good')    return <Status tone="good">Beat</Status>
+            if (r.tone === 'bad')     return <Status tone="bad">Missed</Status>
+            if (r.tone === 'warning') return <Status tone="warning">Under</Status>
+            return <Status tone="neutral">—</Status>
+          } },
+        ]}
+        sections={[{ rows: monthly }]}
+        footer={{
+          label: 'Year',
+          cells: {
+            actual:    fmtKr(totalActual),
+            forecast:  fmtKr(totalForecast),
+            delta:     '',
+            margin:    '',
+            tone:      projectedFullYear != null ? fmtKr(projectedFullYear) : '',
+          },
+        }}
+        rowKey={(row: any) => String(row.m)}
+      />
+    </div>
+  )
+}
+
+function Status({ children, tone }: { children: React.ReactNode; tone: 'good' | 'bad' | 'warning' | 'lav' | 'neutral' }) {
+  const palette = {
+    good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
+    bad:     { bg: UXP.roseFill,  fg: UXP.roseText  },
+    warning: { bg: UXP.lavFill,   fg: UXP.coral     },
+    lav:     { bg: UXP.lavFill,   fg: UXP.lavText   },
+    neutral: { bg: UXP.subtleBg,  fg: UXP.ink4      },
+  }[tone]
+  return (
+    <span style={{
+      display:        'inline-block',
+      fontSize:       9,
+      padding:        '2px 7px',
+      borderRadius:   6,
+      background:     palette.bg,
+      color:          palette.fg,
+      fontWeight:     500,
+      letterSpacing:  '0.02em',
+    }}>{children}</span>
+  )
+}
+
+// ── Flags card ──────────────────────────────────────────────────────
+function FlagsCard({ flags }: { flags: any[] }) {
+  return (
+    <Card title="Forecast flags" subtitle={`${flags.length} attention item${flags.length === 1 ? '' : 's'}`}>
+      <div style={{ display: 'grid', gap: 0 }}>
+        {flags.map((f: any, idx: number) => {
+          const palette: { bar: string; fg: string } = (({
+            good:    { bar: UXP.green, fg: UXP.greenDeep },
+            bad:     { bar: UXP.rose,  fg: UXP.roseText  },
+            warning: { bar: UXP.coral, fg: UXP.coral     },
+          } as Record<string, { bar: string; fg: string }>)[f.tone] ?? { bar: UXP.coral, fg: UXP.coral })
+          return (
+            <div key={idx} style={{
+              display:             'grid',
+              gridTemplateColumns: '4px auto 1fr',
+              gap:                 12,
+              alignItems:          'center',
+              padding:             '10px 0',
+              borderBottom:        idx < flags.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+            }}>
+              <span style={{ width: 4, height: '100%', minHeight: 24, background: palette.bar, borderRadius: 2 }} />
+              <span style={{
+                fontSize:      9,
+                fontWeight:    600,
+                letterSpacing: '0.04em',
+                color:         palette.fg,
+                textTransform: 'uppercase' as const,
+                minWidth:      36,
+              }}>{f.entity}</span>
+              <span style={{ fontSize: 11, color: UXP.ink2, lineHeight: 1.4 }}>{f.message}</span>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
+// ── Atoms ──────────────────────────────────────────────────────────
+function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+    }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Banner({ tone, text }: { tone: 'bad' | 'good'; text: string }) {
+  const palette = tone === 'bad'
+    ? { bg: UXP.roseFill,  border: UXP.rose,  fg: UXP.roseText  }
+    : { bg: UXP.greenFill, border: UXP.green, fg: UXP.greenDeep }
+  return (
+    <div style={{
+      background:    palette.bg,
+      border:        `0.5px solid ${palette.border}`,
+      borderRadius:  UXP.r_md,
+      padding:       '10px 14px',
+      fontSize:      12,
+      color:         palette.fg,
+    }}>
+      {text}
+    </div>
+  )
 }
