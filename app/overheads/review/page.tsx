@@ -19,8 +19,7 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
-import PageHero from '@/components/ui/PageHero'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import HeadlineStrip from '@/components/overheads/HeadlineStrip'
 import FlagListPane  from '@/components/overheads/FlagListPane'
 import FlagDetailPane from '@/components/overheads/FlagDetailPane'
@@ -252,30 +251,37 @@ export default function OverheadReviewPage() {
   const showListPane   = !isMobile || mobileView === 'list'
   const showDetailPane = !isMobile || mobileView === 'detail'
 
+  const headlineText = tableMissing
+    ? t('headlineMissing')
+    : allGroups.length === 0
+      ? t('headlineEmpty')
+      : t('headlinePending', { count: filteredGroups.length, amount: '' })
+
   return (
     <AppShell>
-      <PageHero
-        eyebrow={t('eyebrow')}
-        headline={
-          tableMissing
-            ? t('headlineMissing')
-            : allGroups.length === 0
-              ? t('headlineEmpty')
-              : t('headlinePending', { count: filteredGroups.length, amount: '' })
-        }
-      />
-
       <div style={{
-        padding:   '0 24px 40px',
+        display:   'grid',
+        gap:       14,
         maxWidth:  1500,
-        margin:    '0 auto',
-        // Final-line-of-defence: clip any horizontal overflow rather than
-        // let it widen the page. Anything inside that wants to be wider
-        // than the viewport gets cut off — the page itself stays put.
         width:     '100%',
         overflowX: 'hidden',
         boxSizing: 'border-box',
       }}>
+        <div>
+          <div style={{
+            fontSize:      10,
+            fontWeight:    600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color:         UXP.lavText,
+            marginBottom:  4,
+          }}>
+            {t('eyebrow')}
+          </div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+            {headlineText}
+          </h1>
+        </div>
         {error && <Banner tone="bad" text={error} />}
         {tableMissing && <Banner tone="warn" text={t('tableMissingBanner')} />}
 
@@ -425,13 +431,13 @@ function panesStyle(isMobile: boolean): React.CSSProperties {
 
 function Banner({ tone, text }: { tone: 'bad' | 'warn' | 'ok'; text: string }) {
   const palette = tone === 'bad'
-    ? { bg: '#fef2f2', border: '#fecaca', fg: '#991b1b' }
+    ? { bg: UXP.roseFill, border: UXP.rose,   fg: UXP.roseText  }
     : tone === 'warn'
-    ? { bg: '#fffbeb', border: '#fde68a', fg: '#92400e' }
-    : { bg: '#ecfdf5', border: '#a7f3d0', fg: '#065f46' }
+    ? { bg: UXP.lavFill,  border: UXP.lavMid, fg: UXP.coral     }
+    : { bg: UXP.greenFill, border: UXP.green, fg: UXP.greenDeep }
   return (
     <div style={{
-      background: palette.bg, border: `1px solid ${palette.border}`, color: palette.fg,
+      background: palette.bg, border: `0.5px solid ${palette.border}`, color: palette.fg,
       borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 12,
     }}>
       {text}
@@ -442,8 +448,8 @@ function Banner({ tone, text }: { tone: 'bad' | 'warn' | 'ok'; text: string }) {
 function Empty({ text }: { text: string }) {
   return (
     <div style={{
-      background: 'white', border: `1px solid ${UX.borderSoft}`, borderRadius: 10,
-      padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: 13,
+      background: 'white', border: `1px solid ${UXP.borderSoft}`, borderRadius: 10,
+      padding: 40, textAlign: 'center' as const, color: UXP.ink4, fontSize: 13,
     }}>
       {text}
     </div>
@@ -482,9 +488,9 @@ function CatBtn({ active, onClick, children }: { active: boolean; onClick: () =>
       onClick={onClick}
       style={{
         padding:      '6px 12px',
-        background:   active ? UX.ink1 : 'white',
-        color:        active ? 'white' : UX.ink2,
-        border:       `1px solid ${active ? UX.ink1 : UX.borderSoft}`,
+        background:   active ? UXP.ink1 : 'white',
+        color:        active ? 'white' : UXP.ink2,
+        border:       `1px solid ${active ? UXP.ink1 : UXP.borderSoft}`,
         borderRadius: 999,
         fontSize:     12,
         fontWeight:   active ? 600 : 500,
@@ -516,19 +522,19 @@ function DetailEmpty() {
   return (
     <div style={{
       background:    'white',
-      border:        `1px solid ${UX.border}`,
-      borderRadius:  UX.r_lg,
+      border:        `1px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
       display:       'grid',
       placeItems:    'center',
       padding:       48,
       textAlign:     'center' as const,
     }}>
       <div>
-        <div style={{ fontSize: 36, color: UX.ink4, opacity: 0.4, marginBottom: 12 }}>○</div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: UX.ink3, marginBottom: 4 }}>
+        <div style={{ fontSize: 36, color: UXP.ink4, opacity: 0.4, marginBottom: 12 }}>○</div>
+        <div style={{ fontSize: 16, fontWeight: 600, color: UXP.ink3, marginBottom: 4 }}>
           {t('emptyTitle')}
         </div>
-        <div style={{ fontSize: 13, color: UX.ink4, maxWidth: 320 }}>
+        <div style={{ fontSize: 13, color: UXP.ink4, maxWidth: 320 }}>
           {t('emptyBody')}
         </div>
       </div>

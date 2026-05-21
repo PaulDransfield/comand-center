@@ -7,7 +7,7 @@
 // period elsewhere" action, just "show invoices for this period in the
 // inline drilldown."
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { useTranslations } from 'next-intl'
 
 export interface PeriodKey { year: number; month: number }
@@ -34,7 +34,7 @@ export default function PeriodChips({ periods, selected, onSelect }: Props) {
       marginBottom: 14,
       alignItems: 'center',
     }}>
-      <span style={{ fontSize: 12, color: UX.ink3, marginRight: 4 }}>{t('label')}</span>
+      <span style={{ fontSize: 12, color: UXP.ink3, marginRight: 4 }}>{t('label')}</span>
       {periods.map(p => {
         const active = p.year === selected.year && p.month === selected.month
         return (
@@ -43,9 +43,9 @@ export default function PeriodChips({ periods, selected, onSelect }: Props) {
             type="button"
             onClick={() => onSelect(p)}
             style={{
-              background:   active ? UX.ink1 : 'white',
-              color:        active ? 'white'  : UX.ink3,
-              border:       `1px solid ${active ? UX.ink1 : UX.border}`,
+              background:   active ? UXP.ink1 : 'white',
+              color:        active ? 'white'  : UXP.ink3,
+              border:       `1px solid ${active ? UXP.ink1 : UXP.border}`,
               padding:      '4px 10px',
               borderRadius: 999,
               fontSize:     11,

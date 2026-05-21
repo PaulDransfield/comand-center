@@ -10,7 +10,7 @@
 // FlagGroup and fires its own data (supplier-history + drilldown) on
 // mount and when the period chip changes.
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
@@ -122,7 +122,7 @@ export default function FlagDetailPane({
   // Pre-2026-05-09 this called /api/integrations/fortnox/drilldown which
   // does TWO Fortnox calls (vouchers + supplierinvoices) and joins them
   // for amount-by-category precision. That endpoint timed out on busy
-  // months and produced "drilldown_failed" UX. For owner intent ("show me
+  // months and produced "drilldown_failed" UI. For owner intent ("show me
   // the supplier invoices for this flag"), we don't need voucher math —
   // a flat supplier-invoice list scoped to (period, supplier_name) is
   // simpler and more reliable. The /recent-invoices endpoint with
@@ -240,23 +240,23 @@ export default function FlagDetailPane({
             <BadgeLarge tone="gray">{tCat(f.category === 'food_cost' ? 'food' : 'overhead')}</BadgeLarge>
             {isResolved && <BadgeLarge tone="gray">{t('resolvedBadge')}</BadgeLarge>}
           </div>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: UX.ink1, letterSpacing: '-0.015em', margin: '0 0 4px 0', lineHeight: 1.2, overflowWrap: 'anywhere' as const }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: UXP.ink1, letterSpacing: '-0.015em', margin: '0 0 4px 0', lineHeight: 1.2, overflowWrap: 'anywhere' as const }}>
             {f.supplier_name}
           </h2>
-          {f.reason && <div style={{ fontSize: 13, color: UX.ink3, overflowWrap: 'anywhere' as const }}>{f.reason}</div>}
+          {f.reason && <div style={{ fontSize: 13, color: UXP.ink3, overflowWrap: 'anywhere' as const }}>{f.reason}</div>}
         </div>
         <div style={{ textAlign: 'right' as const, whiteSpace: 'nowrap' as const }}>
           <div style={{
-            fontSize: 28, fontWeight: 700, color: badgeTone === 'red' ? UX.redInk : UX.ink1,
+            fontSize: 28, fontWeight: 700, color: badgeTone === 'red' ? UXP.roseText : UXP.ink1,
             letterSpacing: '-0.02em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' as const,
           }}>
             {fmtKr(f.amount_sek)}
           </div>
-          <div style={{ fontSize: 12, color: UX.ink4, marginTop: 4 }}>{t('periodMonthly', { period: periodLabel })}</div>
+          <div style={{ fontSize: 12, color: UXP.ink4, marginTop: 4 }}>{t('periodMonthly', { period: periodLabel })}</div>
           {delta != null && Math.abs(delta) > 1 && (
             <div style={{
               fontSize: 13, fontWeight: 600,
-              color: delta > 0 ? UX.redInk : UX.greenInk,
+              color: delta > 0 ? UXP.roseText : UXP.greenDeep,
               marginTop: 6,
             }}>
               {delta > 0 ? '↑ ' : '↓ '}{fmtKr(Math.abs(delta))} {t('vsAvg')}
@@ -267,11 +267,11 @@ export default function FlagDetailPane({
 
       {/* ACTION BAR */}
       <div style={actionBarStyle}>
-        <div style={{ fontSize: 13, color: UX.ink3, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' as const }}>
-          <strong style={{ color: UX.ink1, fontWeight: 600 }}>
+        <div style={{ fontSize: 13, color: UXP.ink3, lineHeight: 1.4, minWidth: 0, overflowWrap: 'anywhere' as const }}>
+          <strong style={{ color: UXP.ink1, fontWeight: 600 }}>
             {isResolved ? t('alreadyDecided') : t('decisionNeeded')}
           </strong>
-          <span style={{ display: 'block', fontSize: 11, color: UX.ink4, marginTop: 4, fontStyle: 'italic' as const }}>
+          <span style={{ display: 'block', fontSize: 11, color: UXP.ink4, marginTop: 4, fontStyle: 'italic' as const }}>
             {scopeNote(t, f.category, group.pendingCount, tCat)}
           </span>
         </div>
@@ -320,8 +320,8 @@ export default function FlagDetailPane({
               {f.ai_confidence != null && (
                 <div style={{
                   marginTop: 10, paddingTop: 10,
-                  borderTop: `1px solid ${UX.borderSoft}`,
-                  fontSize: 11, color: UX.ink4,
+                  borderTop: `1px solid ${UXP.borderSoft}`,
+                  fontSize: 11, color: UXP.ink4,
                   display: 'flex', justifyContent: 'space-between',
                 }}>
                   <span>{t('confidence', { value: fmtPct(f.ai_confidence * 100) })}</span>
@@ -360,10 +360,10 @@ export default function FlagDetailPane({
             onSelect={setSelectedPeriod}
           />
           {drilldownLoading && (
-            <div style={{ fontSize: 12, color: UX.ink3, padding: '14px 0' }}>{t('drilldownLoading')}</div>
+            <div style={{ fontSize: 12, color: UXP.ink3, padding: '14px 0' }}>{t('drilldownLoading')}</div>
           )}
           {drilldownError && !drilldownLoading && (
-            <div style={{ fontSize: 12, color: UX.redInk, padding: 10, background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: 6 }}>
+            <div style={{ fontSize: 12, color: UXP.roseText, padding: 10, background: UXP.roseFill, border: `1px solid ${UXP.rose}`, borderRadius: 6 }}>
               {drilldownError}
             </div>
           )}
@@ -375,7 +375,7 @@ export default function FlagDetailPane({
             </ul>
           )}
           {!drilldownLoading && !drilldownError && (!matchedGroup || matchedGroup.invoices.length === 0) && (
-            <div style={{ fontSize: 12, color: UX.ink4, padding: '14px 0' }}>
+            <div style={{ fontSize: 12, color: UXP.ink4, padding: '14px 0' }}>
               {t('drilldownEmpty', { supplier: f.supplier_name })}
             </div>
           )}
@@ -448,26 +448,26 @@ function InvoiceRow({ invoice, bizId, monthsShort }: {
   return (
     <li style={{
       padding:      '11px 0',
-      borderBottom: `1px solid ${UX.borderSoft}`,
+      borderBottom: `1px solid ${UXP.borderSoft}`,
       display:      'grid',
       gridTemplateColumns: '80px minmax(0, 1fr) auto auto',
       gap:          12,
       alignItems:   'center',
       fontSize:     13,
     }}>
-      <span style={{ color: UX.ink3, fontSize: 12, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const }}>
+      <span style={{ color: UXP.ink3, fontSize: 12, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const }}>
         {dateLabel}
       </span>
       <div style={{ minWidth: 0 }}>
-        <div style={{ color: UX.ink2, fontWeight: 500, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
+        <div style={{ color: UXP.ink2, fontWeight: 500, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
           #{invoice.invoice_number || invoice.source_id}
         </div>
-        <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
+        <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 2, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>
           {invoice.account_description ?? `Konto ${invoice.account}`}
         </div>
       </div>
       <span style={{
-        fontWeight: 700, color: UX.ink1, textAlign: 'right' as const, whiteSpace: 'nowrap' as const,
+        fontWeight: 700, color: UXP.ink1, textAlign: 'right' as const, whiteSpace: 'nowrap' as const,
         fontVariantNumeric: 'tabular-nums' as const,
       }}>
         {fmtKr(invoice.amount)}
@@ -510,11 +510,11 @@ function CancelModal({ supplier, reason, setReason, busy, onCancel, onConfirm }:
       }}
     >
       <div style={{ background: 'white', borderRadius: 12, padding: 20, width: 460, maxWidth: '100%' }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: UX.ink1, margin: '0 0 6px 0' }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: UXP.ink1, margin: '0 0 6px 0' }}>
           {t('title', { supplier })}
         </h2>
-        <p style={{ fontSize: 12, color: UX.ink3, margin: '0 0 14px 0' }}>{t('body')}</p>
-        <label style={{ fontSize: 11, fontWeight: 600, color: UX.ink2, display: 'block', marginBottom: 4 }}>
+        <p style={{ fontSize: 12, color: UXP.ink3, margin: '0 0 14px 0' }}>{t('body')}</p>
+        <label style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, display: 'block', marginBottom: 4 }}>
           {t('notes')}
         </label>
         <textarea
@@ -524,16 +524,16 @@ function CancelModal({ supplier, reason, setReason, busy, onCancel, onConfirm }:
           rows={3}
           maxLength={1000}
           style={{
-            width: '100%', padding: 10, border: `1px solid ${UX.borderSoft}`, borderRadius: 7,
-            fontSize: 13, fontFamily: 'inherit', color: UX.ink1, resize: 'vertical' as const,
+            width: '100%', padding: 10, border: `1px solid ${UXP.borderSoft}`, borderRadius: 7,
+            fontSize: 13, fontFamily: 'inherit', color: UXP.ink1, resize: 'vertical' as const,
             boxSizing: 'border-box' as const, lineHeight: 1.5,
           }}
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-          <button onClick={onCancel} disabled={busy} style={{ padding: '7px 14px', background: 'transparent', border: 'none', color: UX.ink3, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
+          <button onClick={onCancel} disabled={busy} style={{ padding: '7px 14px', background: 'transparent', border: 'none', color: UXP.ink3, fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>
             {t('cancel')}
           </button>
-          <button onClick={onConfirm} disabled={busy} style={{ padding: '7px 14px', background: 'white', border: `1px solid ${UX.redBorder}`, color: UX.redInk2, borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>
+          <button onClick={onConfirm} disabled={busy} style={{ padding: '7px 14px', background: 'white', border: `1px solid ${UXP.rose}`, color: UXP.roseText, borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer' }}>
             {busy ? t('saving') : t('confirm')}
           </button>
         </div>
@@ -555,14 +555,14 @@ function Section({ header, children, extra, extraText }: {
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{
-        fontSize: 11, color: UX.ink4,
+        fontSize: 11, color: UXP.ink4,
         letterSpacing: '0.08em', textTransform: 'uppercase' as const,
         fontWeight: 500, marginBottom: 10,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <span>{header}</span>
         {extra}
-        {extraText && <span style={{ fontSize: 11, color: UX.ink4, textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>{extraText}</span>}
+        {extraText && <span style={{ fontSize: 11, color: UXP.ink4, textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>{extraText}</span>}
       </div>
       {children}
     </div>
@@ -572,10 +572,10 @@ function Section({ header, children, extra, extraText }: {
 function NewDataPill({ text }: { text: string }) {
   return (
     <span style={{
-      fontSize: 9, color: UX.indigo,
+      fontSize: 9, color: UXP.lavDeep,
       textTransform: 'none', letterSpacing: 0, fontWeight: 700,
-      background: UX.indigoBg, padding: '2px 6px',
-      borderRadius: 999, border: `1px solid ${UX.borderSoft}`,
+      background: UXP.lavFill, padding: '2px 6px',
+      borderRadius: 999, border: `1px solid ${UXP.borderSoft}`,
     }}>
       {text}
     </span>
@@ -598,13 +598,13 @@ const TONE: Record<'red' | 'amber' | 'info' | 'purple' | 'gray', { bg: string; f
   amber:  { bg: '#fbeede', fg: '#c46a18' },
   info:   { bg: '#ebf2f8', fg: '#3a6f9a' },
   purple: { bg: '#f1ebf8', fg: '#6b4a8a' },
-  gray:   { bg: '#e9eae5', fg: UX.ink3 },
+  gray:   { bg: '#e9eae5', fg: UXP.ink3 },
 }
 
 const paneStyle: React.CSSProperties = {
-  background:    UX.cardBg,
-  border:        `1px solid ${UX.border}`,
-  borderRadius:  UX.r_lg,
+  background:    UXP.cardBg,
+  border:        `1px solid ${UXP.border}`,
+  borderRadius:  UXP.r_lg,
   overflowY:     'auto',
   overflowX:     'hidden',
   display:       'flex',
@@ -622,17 +622,17 @@ const mobileBackStyle: React.CSSProperties = {
   margin:         '12px 16px 0',
   padding:        '6px 12px',
   background:     'transparent',
-  border:         `1px solid ${UX.border}`,
+  border:         `1px solid ${UXP.border}`,
   borderRadius:   999,
   fontSize:       12,
-  color:          UX.ink2,
+  color:          UXP.ink2,
   cursor:         'pointer',
   alignSelf:      'flex-start',
 }
 
 const headStyle: React.CSSProperties = {
   padding:             '20px 26px 16px',
-  borderBottom:        `1px solid ${UX.borderSoft}`,
+  borderBottom:        `1px solid ${UXP.borderSoft}`,
   display:             'grid',
   gridTemplateColumns: 'minmax(0, 1fr) auto',
   gap:                 18,
@@ -641,8 +641,8 @@ const headStyle: React.CSSProperties = {
 
 const actionBarStyle: React.CSSProperties = {
   padding:             '14px 26px',
-  background:          UX.subtleBg,
-  borderBottom:        `1px solid ${UX.borderSoft}`,
+  background:          UXP.subtleBg,
+  borderBottom:        `1px solid ${UXP.borderSoft}`,
   display:             'grid',
   gridTemplateColumns: 'minmax(0, 1fr) auto',
   gap:                 18,
@@ -657,7 +657,7 @@ const bodyStyle: React.CSSProperties = {
 
 function btnDefer(busy: boolean): React.CSSProperties {
   return {
-    background: 'white', color: UX.ink3, border: `1px solid ${UX.border}`,
+    background: 'white', color: UXP.ink3, border: `1px solid ${UXP.border}`,
     padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 500,
     cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
     opacity: busy ? 0.5 : 1,
@@ -665,7 +665,7 @@ function btnDefer(busy: boolean): React.CSSProperties {
 }
 function btnCancel(busy: boolean): React.CSSProperties {
   return {
-    background: 'white', color: UX.redInk, border: `1px solid ${UX.redBorder}`,
+    background: 'white', color: UXP.roseText, border: `1px solid ${UXP.rose}`,
     padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600,
     cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
     opacity: busy ? 0.5 : 1,
@@ -673,7 +673,7 @@ function btnCancel(busy: boolean): React.CSSProperties {
 }
 function btnEssential(busy: boolean): React.CSSProperties {
   return {
-    background: UX.ink1, color: 'white', border: 'none',
+    background: UXP.ink1, color: 'white', border: 'none',
     padding: '8px 16px', borderRadius: 999, fontSize: 13, fontWeight: 600,
     cursor: busy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
     opacity: busy ? 0.5 : 1,
@@ -684,20 +684,20 @@ const aiExplanationStyle: React.CSSProperties = {
   background: '#ebf2f8', border: '1px solid #cfdce9',
   borderLeft: '3px solid #3a6f9a',
   borderRadius: 8, padding: '14px 18px',
-  fontSize: 14, lineHeight: 1.55, color: UX.ink2,
+  fontSize: 14, lineHeight: 1.55, color: UXP.ink2,
 }
 
 const aiExplanationEmptyStyle: React.CSSProperties = {
-  background: UX.subtleBg, border: `1px dashed ${UX.border}`,
-  borderLeft: `3px solid ${UX.border}`,
+  background: UXP.subtleBg, border: `1px dashed ${UXP.border}`,
+  borderLeft: `3px solid ${UXP.border}`,
   borderRadius: 8, padding: 20,
-  fontSize: 13, color: UX.ink3, textAlign: 'center' as const,
+  fontSize: 13, color: UXP.ink3, textAlign: 'center' as const,
 }
 
 function genBtnStyle(busy: boolean): React.CSSProperties {
   return {
     display: 'inline-block', marginTop: 8, padding: '8px 16px',
-    background: UX.ink1, color: 'white', borderRadius: 999, border: 'none',
+    background: UXP.ink1, color: 'white', borderRadius: 999, border: 'none',
     fontWeight: 600, fontSize: 13, cursor: busy ? 'not-allowed' : 'pointer',
     opacity: busy ? 0.6 : 1, fontFamily: 'inherit',
   }
@@ -705,7 +705,7 @@ function genBtnStyle(busy: boolean): React.CSSProperties {
 
 function reexplainLinkStyle(busy: boolean): React.CSSProperties {
   return {
-    fontSize: 11, color: UX.ink3, fontWeight: 500,
+    fontSize: 11, color: UXP.ink3, fontWeight: 500,
     textTransform: 'none', letterSpacing: 0, cursor: busy ? 'wait' : 'pointer',
     textDecoration: 'underline', background: 'transparent', border: 'none',
     padding: 0, fontFamily: 'inherit',
@@ -713,13 +713,13 @@ function reexplainLinkStyle(busy: boolean): React.CSSProperties {
 }
 
 const invoiceActionStyle: React.CSSProperties = {
-  fontSize: 11, color: UX.ink3, textDecoration: 'none',
-  padding: '4px 9px', border: `1px solid ${UX.borderSoft}`,
+  fontSize: 11, color: UXP.ink3, textDecoration: 'none',
+  padding: '4px 9px', border: `1px solid ${UXP.borderSoft}`,
   borderRadius: 999, background: 'white', fontWeight: 500,
 }
 
 const relatedCardStyle: React.CSSProperties = {
-  background: '#f3f4f0', border: `1px solid ${UX.borderSoft}`,
+  background: '#f3f4f0', border: `1px solid ${UXP.borderSoft}`,
   borderRadius: 8, padding: '12px 16px',
-  fontSize: 13, color: UX.ink2, lineHeight: 1.55,
+  fontSize: 13, color: UXP.ink2, lineHeight: 1.55,
 }

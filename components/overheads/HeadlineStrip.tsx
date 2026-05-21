@@ -8,7 +8,7 @@
 // sums and decided-last-90d come from /api/overheads/flags?stats=1 and
 // client-side groupBy on the existing flag list.
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtNum } from '@/lib/format'
 import { useTranslations } from 'next-intl'
 
@@ -56,9 +56,9 @@ export default function HeadlineStrip(props: HeadlineStripProps) {
 }
 
 const stripStyle: React.CSSProperties = {
-  background:           UX.cardBg,
-  border:               `1px solid ${UX.border}`,
-  borderRadius:         UX.r_lg,
+  background:           UXP.cardBg,
+  border:               `1px solid ${UXP.border}`,
+  borderRadius:         UXP.r_lg,
   padding:              '12px 22px',
   marginBottom:         14,
   display:              'grid',
@@ -70,17 +70,17 @@ const stripStyle: React.CSSProperties = {
 function Cell({ children, isNew, isFirst }: { children: React.ReactNode; isNew?: boolean; isFirst?: boolean }) {
   return (
     <div className="cc-strip-cell" data-new={isNew ? 'true' : undefined} style={{
-      borderLeft:  isFirst ? 'none' : `1px solid ${UX.borderSoft}`,
+      borderLeft:  isFirst ? 'none' : `1px solid ${UXP.borderSoft}`,
       paddingLeft: isFirst ? 0 : 24,
       position:    'relative',
     }}>
       {isNew && (
         <span style={{
           position: 'absolute', top: -2, right: 4,
-          fontSize: 8, fontWeight: 700, color: UX.indigo,
+          fontSize: 8, fontWeight: 700, color: UXP.lavDeep,
           letterSpacing: '0.06em',
-          background: UX.indigoBg, padding: '1px 5px',
-          borderRadius: 999, border: `1px solid ${UX.border}`,
+          background: UXP.lavFill, padding: '1px 5px',
+          borderRadius: 999, border: `1px solid ${UXP.border}`,
         }}>NEW</span>
       )}
       {children}
@@ -91,7 +91,7 @@ function Cell({ children, isNew, isFirst }: { children: React.ReactNode; isNew?:
 function Label({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      fontSize: 10, color: UX.ink4, letterSpacing: '0.08em',
+      fontSize: 10, color: UXP.ink4, letterSpacing: '0.08em',
       textTransform: 'uppercase' as const, fontWeight: 500, marginBottom: 4,
     }}>
       {children}
@@ -101,9 +101,9 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function Value({ children, tone }: { children: React.ReactNode; tone?: 'red' | 'amber' | 'green' }) {
   const color =
-    tone === 'red'   ? UX.redInk :
-    tone === 'amber' ? UX.amberInk :
-    tone === 'green' ? UX.greenInk : UX.ink1
+    tone === 'red'   ? UXP.roseText :
+    tone === 'amber' ? UXP.coral :
+    tone === 'green' ? UXP.greenDeep : UXP.ink1
   return (
     <div style={{
       fontSize: 19, fontWeight: 700, letterSpacing: '-0.01em',
@@ -115,9 +115,9 @@ function Value({ children, tone }: { children: React.ReactNode; tone?: 'red' | '
 }
 
 function Suffix({ children }: { children: React.ReactNode }) {
-  return <span style={{ fontSize: 12, fontWeight: 500, color: UX.ink4, marginLeft: 4 }}>{children}</span>
+  return <span style={{ fontSize: 12, fontWeight: 500, color: UXP.ink4, marginLeft: 4 }}>{children}</span>
 }
 
 function Meta({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: 11, color: UX.ink4, marginTop: 4 }}>{children}</div>
+  return <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 4 }}>{children}</div>
 }

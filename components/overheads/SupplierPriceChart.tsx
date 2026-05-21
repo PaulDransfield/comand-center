@@ -9,7 +9,7 @@
 // above the prior 11-month average, since that's typically why the user
 // is looking at a price-spike flag.
 
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { useMemo } from 'react'
 import { useTranslations } from 'next-intl'
@@ -29,8 +29,8 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
     ?? ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
   const wrapStyle: React.CSSProperties = {
-    background:   UX.subtleBg,
-    border:       `1px solid ${UX.borderSoft}`,
+    background:   UXP.subtleBg,
+    border:       `1px solid ${UXP.borderSoft}`,
     borderRadius: 8,
     padding:      '16px 18px',
   }
@@ -56,13 +56,13 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
   }, [data])
 
   if (loading) {
-    return <div style={{ ...wrapStyle, color: UX.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('loading')}</div>
+    return <div style={{ ...wrapStyle, color: UXP.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('loading')}</div>
   }
   if (error) {
-    return <div style={{ ...wrapStyle, color: UX.redInk, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{error}</div>
+    return <div style={{ ...wrapStyle, color: UXP.roseText, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{error}</div>
   }
   if (data.length === 0) {
-    return <div style={{ ...wrapStyle, color: UX.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('noData')}</div>
+    return <div style={{ ...wrapStyle, color: UXP.ink4, fontSize: 12, textAlign: 'center' as const, padding: 32 }}>{t('noData')}</div>
   }
 
   // Layout
@@ -116,7 +116,7 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
         {data.length > 1 && (
           <polyline
             points={data.slice(0, -1).map((d, i) => `${xs(i)},${ys(d.amount)}`).join(' ')}
-            stroke={UX.ink1}
+            stroke={UXP.ink1}
             strokeWidth="2"
             fill="none"
             strokeLinejoin="round"
@@ -127,13 +127,13 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
         {data.length > 1 && (
           <line
             x1={prevX} y1={prevY} x2={trailX} y2={trailY}
-            stroke={stats.isSpike ? '#b8412e' : UX.ink1}
+            stroke={stats.isSpike ? '#b8412e' : UXP.ink1}
             strokeWidth={stats.isSpike ? 2.5 : 2}
           />
         )}
 
         {/* Trailing marker */}
-        <circle cx={trailX} cy={trailY} r={5} fill={stats.isSpike ? '#b8412e' : UX.ink1} />
+        <circle cx={trailX} cy={trailY} r={5} fill={stats.isSpike ? '#b8412e' : UXP.ink1} />
         {stats.isSpike && (
           <>
             <circle cx={trailX} cy={trailY} r={10} fill="#b8412e" opacity={0.18} />
@@ -159,7 +159,7 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
             y={H - 6}
             fontFamily="Inter, sans-serif"
             fontSize="9"
-            fill={UX.ink4}
+            fill={UXP.ink4}
             textAnchor="middle"
           >
             {monthsShort[data[i].month - 1]?.[0] ?? '?'}
@@ -167,8 +167,8 @@ export default function SupplierPriceChart({ history, loading, error }: Props) {
         ))}
       </svg>
 
-      <div style={{ display: 'flex', gap: 18, fontSize: 11, color: UX.ink3, flexWrap: 'wrap' as const }}>
-        <span><LegendLine color={UX.ink1} /> {t('legendMonthly')}</span>
+      <div style={{ display: 'flex', gap: 18, fontSize: 11, color: UXP.ink3, flexWrap: 'wrap' as const }}>
+        <span><LegendLine color={UXP.ink1} /> {t('legendMonthly')}</span>
         <span><LegendLine color="#8d8f86" dashed /> {t('legendAvg', { amount: fmtKr(stats.priorAvg) })}</span>
         {stats.isSpike && <span><LegendLine color="#b8412e" /> {t('legendSpike')}</span>}
       </div>
