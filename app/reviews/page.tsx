@@ -15,7 +15,9 @@
 
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
+// Phase 3 — Insights pages onto the new system. SummaryStrip → KpiCardUX row.
+import KpiCardUX from '@/components/ux/KpiCard'
 
 const CATEGORY_LABEL: Record<string, string> = {
   food:        'Food',
@@ -405,17 +407,54 @@ function Spinner() {
 // ─── Summary strip ───────────────────────────────────────────────────
 
 function SummaryStrip({ themes }: { themes: ThemesResp }) {
+  // Phase 3 — four KpiCardUX cards replace the bespoke StatTile strip. The
+  // legacy StatTile component below is still used by other surfaces (kept
+  // in-file) until later phases sweep it.
   const positiveCount = themes.top_themes.reduce((s, t) => s + t.positive_count, 0)
   const negativeCount = themes.top_themes.reduce((s, t) => s + t.negative_count, 0)
+  const rating        = themes.avg_rating
+  // Rating delta — distance from a 4.5★ target, in 0.1★ units. Treats "above
+  // target" as the positive direction so deltaGood lights green when good.
+  const ratingDelta   = rating != null
+    ? (rating >= 4.5 ? '+' : '') + (rating - 4.5).toFixed(1) + '★'
+    : null
+
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8,
-      marginBottom: 14,
-    }}>
-      <StatTile label="Reviews analysed" value={themes.sample_size.toString()} />
-      <StatTile label="Average rating"   value={themes.avg_rating != null ? themes.avg_rating.toFixed(1) + '★' : '—'} />
-      <StatTile label="Positive mentions" value={positiveCount.toString()} tone="good" />
-      <StatTile label="Negative mentions" value={negativeCount.toString()} tone={negativeCount > positiveCount ? 'bad' : 'neutral'} />
+    <div
+      style={{
+        display:             'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap:                 12,
+        marginBottom:        14,
+      }}
+    >
+      <KpiCardUX
+        title="Average rating"
+        value={rating != null ? rating.toFixed(1) + '★' : '—'}
+        delta={ratingDelta}
+        deltaGood
+        microLabel={`${themes.window_days}-day window`}
+      />
+      <KpiCardUX
+        title="Reviews analysed"
+        value={themes.sample_size.toString()}
+        microLabel={`${themes.window_days}-day window`}
+      />
+      <KpiCardUX
+        title="Positive mentions"
+        value={positiveCount.toString()}
+        variant="stacked"
+        stackedBars={[
+          { label: 'Positive', value: positiveCount, max: Math.max(positiveCount + negativeCount, 1), color: UXP.green },
+          { label: 'Negative', value: negativeCount, max: Math.max(positiveCount + negativeCount, 1), color: UXP.rose  },
+        ]}
+      />
+      <KpiCardUX
+        title="Negative mentions"
+        value={negativeCount.toString()}
+        deltaGood={false}
+        delta={negativeCount > positiveCount ? '+ flagged' : null}
+      />
     </div>
   )
 }

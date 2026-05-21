@@ -14,9 +14,12 @@ const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, lo
 import PageHero from '@/components/ui/PageHero'
 import SupportingStats from '@/components/ui/SupportingStats'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import TopBar from '@/components/ui/TopBar'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 3 — Insights migration. Period nav moved into the AppShell toolbar's
+// date stepper; the W/M toggle stays inline because the toolbar doesn't have
+// a view-mode pill yet.
+import KpiCardUX from '@/components/ux/KpiCard'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const DAYS   = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
@@ -170,43 +173,90 @@ export default function RevenuePage() {
   })
   const maxDayRev = Math.max(...chartDays.map(d => d.revenue), 1)
 
+  // Phase 3 — date-stepper wiring for the AppShell toolbar.
+  const stepperLabel = viewMode === 'week'
+    ? `Week ${(curr as any).weekNum} · ${curr.label}`
+    : curr.label
+  function step(dir: -1 | 1) {
+    if (viewMode === 'week') setWeekOffset(o => o + dir)
+    else                     setMonthOffset(o => o + dir)
+  }
+  const canStepNext = viewMode === 'week' ? weekOffset < 0 : monthOffset < 0
+
   return (
-    <AppShell>
+    <AppShell
+      dateLabel={stepperLabel}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
+    >
       <div className="page-wrap">
 
-        {/* TopBar — crumb + period navigator + W/M toggle in the right slot.
-            Replaces the free-floating navigator that was competing with the
-            hero's SupportingStats for visual weight. */}
-        <TopBar
-          crumbs={[
-            { label: tCrumbs('operations') },
-            { label: tCrumbs('revenue'), active: true },
-          ]}
-          rightSlot={
-            <>
-              {viewMode === 'week' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setWeekOffset(o => o - 1)} style={navBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                    Week {(curr as any).weekNum} · {curr.label}
-                  </div>
-                  <button onClick={() => setWeekOffset(o => Math.min(o + 1, 0))} disabled={weekOffset === 0} style={{ ...navBtn, color: weekOffset === 0 ? UX.ink5 : UX.ink2, cursor: weekOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn}>‹</button>
-                  <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{curr.label}</div>
-                  <button onClick={() => setMonthOffset(o => Math.min(o + 1, 0))} disabled={monthOffset === 0} style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}>›</button>
-                </div>
-              )}
-              <SegmentedToggle
-                options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
-                value={viewMode}
-                onChange={(v) => setViewMode(v as 'week' | 'month')}
-              />
-            </>
+        {/* W/M toggle — kept inline because the toolbar doesn't yet have a
+            view-mode pill (Phase 7 or a follow-up will fold it in). */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <SegmentedToggle
+            options={[{ value: 'week', label: 'W' }, { value: 'month', label: 'M' }]}
+            value={viewMode}
+            onChange={(v) => setViewMode(v as 'week' | 'month')}
+          />
+        </div>
+
+        {/* Phase 3 KPI strip — Revenue (channels) + Per cover + Takeaway.
+            Reads the same /api/revenue-detail summary as the hero below.
+            Channels variant uses dine-in vs takeaway when both are present;
+            falls back to food vs beverage; else a single "Total" channel. */}
+        {!loading && sum && totalRev > 0 && (() => {
+          let channels: { label: string; value: number; share: number; color: string }[]
+          if (dineIn > 0 || takeaway > 0) {
+            channels = [
+              { label: 'Dine-in',  value: dineIn,   share: 0, color: UXP.lav     },
+              { label: 'Takeaway', value: takeaway, share: 0, color: UXP.lavMid  },
+            ].filter(c => c.value > 0)
+          } else if (foodRev > 0 || bevRev > 0) {
+            channels = [
+              { label: 'Food',     value: foodRev, share: 0, color: UXP.lav    },
+              { label: 'Beverage', value: bevRev,  share: 0, color: UXP.lavMid },
+            ].filter(c => c.value > 0)
+          } else {
+            channels = [{ label: 'Total', value: totalRev, share: 1, color: UXP.lav }]
           }
-        />
+          const revDeltaPct = (prevSum.total_revenue ?? 0) > 0
+            ? ((totalRev - prevSum.total_revenue) / prevSum.total_revenue) * 100
+            : null
+          const revDelta = revDeltaPct != null
+            ? `${revDeltaPct >= 0 ? '+' : ''}${revDeltaPct.toFixed(1)}%`
+            : null
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        14,
+              }}
+            >
+              <KpiCardUX
+                title="Revenue"
+                value={fmtKr(totalRev)}
+                delta={revDelta}
+                deltaGood
+                variant="channels"
+                channels={channels}
+                microLabel={stepperLabel}
+              />
+              <KpiCardUX
+                title="Per cover"
+                value={avgRpc > 0 ? fmtKr(avgRpc) : '—'}
+                microLabel={totalCovers > 0 ? `${totalCovers} covers` : 'No cover data'}
+              />
+              <KpiCardUX
+                title="Takeaway share"
+                value={takeaway > 0 && totalRev > 0 ? fmtPct((takeaway / totalRev) * 100) : '—'}
+                microLabel="6% VAT bucket"
+              />
+            </div>
+          )
+        })()}
 
         {/* PageHero */}
         <PageHero

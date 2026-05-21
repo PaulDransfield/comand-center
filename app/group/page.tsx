@@ -26,9 +26,13 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import StatusPill from '@/components/ui/StatusPill'
 import Sparkline from '@/components/ui/Sparkline'
-import TopBar from '@/components/ui/TopBar'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 3 — Insights pages onto the new system. Period nav has moved up
+// into the toolbar's date stepper (wired via AppShell props below); the
+// old TopBar crumb + month-pager is therefore gone. KPI strip added.
+import KpiCardUX from '@/components/ux/KpiCard'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
 const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -81,30 +85,58 @@ export default function GroupPage() {
   const draining = worst && worst.revenue === 0 && worst.staff_cost > 0  // hours with no revenue
 
   return (
-    <AppShell>
+    <AppShell
+      dateLabel={period.label}
+      onPrev={() => setMonthOffset(o => o - 1)}
+      onNext={monthOffset < 0 ? () => setMonthOffset(o => o + 1) : undefined}
+    >
       <div style={{ maxWidth: 1100 }}>
 
-        {/* TopBar — breadcrumb + period picker on the right slot.  Using
-            TopBar keeps the period control on the same visual line as the
-            page crumb, so it stops colliding with the hero's SupportingStats
-            below (GROUP-FIX § 5).  */}
-        <TopBar
-          crumbs={[{ label: t('crumb'), active: true }]}
-          rightSlot={
-            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-              <button onClick={() => setMonthOffset(o => o - 1)} style={navBtn} aria-label={t('prevMonth')}>‹</button>
-              <div style={{ minWidth: 120, textAlign: 'center' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-                {period.label}
-              </div>
-              <button
-                onClick={() => setMonthOffset(o => Math.min(o + 1, 0))}
-                disabled={monthOffset === 0}
-                aria-label={t('nextMonth')}
-                style={{ ...navBtn, color: monthOffset === 0 ? UX.ink5 : UX.ink2, cursor: monthOffset === 0 ? 'not-allowed' : 'pointer' }}
-              >›</button>
+        {/* Phase 3 KPI strip — Revenue · Margin · Labour roll-up. Built from
+            the same /api/group/overview summary that powers the existing hero
+            below; new presentation only. Hidden until the first fetch lands. */}
+        {!loading && summary && businesses.length > 1 && (() => {
+          const labPct = Number(summary.group_labour_pct ?? 0)
+          const tier   = labourTier(labPct > 0 ? labPct : null)
+          const marginPct = Number(summary.group_margin_pct ?? 0)
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        14,
+              }}
+            >
+              <KpiCardUX
+                title={t('stats.revenue')}
+                value={fmtKr(summary.total_revenue ?? 0)}
+                microLabel={period.label}
+              />
+              <KpiCardUX
+                title={t('stats.margin')}
+                value={fmtPct(marginPct)}
+                variant="stacked"
+                stackedBars={[
+                  { label: 'Current', value: marginPct, max: 100, color: UXP.lav   },
+                  { label: 'Target',  value: 45,        max: 100, color: UXP.green },
+                ]}
+              />
+              <KpiCardUX
+                title={t('stats.labourPct')}
+                value={fmtPct(labPct)}
+                deltaGood={false}
+                variant="targetBand"
+                targetBand={{
+                  actualPct:    Math.min(100, labPct),
+                  targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+                  targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+                }}
+                microLabel={tier === 'no-data' ? 'No data' : tier.replace('-', ' ')}
+              />
             </div>
-          }
-        />
+          )
+        })()}
 
         {loading ? (
           <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>

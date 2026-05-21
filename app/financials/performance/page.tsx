@@ -30,8 +30,13 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
+// Phase 3 — Insights migration. Four-card Sales · CoGS · Labour · Flash
+// profit strip lands above the existing waterfall card; the rest of the
+// page is unchanged. The local fmtPct below (line ~99) handles % formatting
+// since lib/format's signature differs from the one this page relies on.
+import KpiCardUX from '@/components/ux/KpiCard'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type Granularity = 'week' | 'month' | 'quarter' | 'ytd'
@@ -644,6 +649,74 @@ export default function PerformancePage() {
             />
           }
         />
+
+        {/* Phase 3 KPI strip — Sales · CoGS · Labour · Flash profit. Reads
+            the same currentData rollup that powers the hero / waterfall /
+            sparklines below. Spec calls for per-location columns; this page
+            is single-business, so the row is a single business-column
+            stack. */}
+        {currentData && (() => {
+          const cogsPct  = currentData.has_food && currentData.revenue > 0
+            ? (currentData.food_cost / currentData.revenue) * 100
+            : null
+          const labPct   = currentData.staff_pct
+          const marginPct = currentData.margin_pct
+          const revDelta = compareData && compareData.revenue > 0
+            ? `${currentData.revenue - compareData.revenue >= 0 ? '+' : ''}${(((currentData.revenue - compareData.revenue) / compareData.revenue) * 100).toFixed(1)}%`
+            : null
+          const marginDelta = compareData && compareData.margin_pct != null && marginPct != null
+            ? `${marginPct - compareData.margin_pct >= 0 ? '+' : ''}${(marginPct - compareData.margin_pct).toFixed(1)}pp`
+            : null
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginTop:           12,
+                marginBottom:        12,
+              }}
+            >
+              <KpiCardUX
+                title="Sales"
+                value={currentData.revenue > 0 ? fmtKr(currentData.revenue) : '—'}
+                delta={revDelta}
+                deltaGood
+                microLabel={periodLabel(period)}
+              />
+              <KpiCardUX
+                title="CoGS"
+                value={currentData.has_food ? fmtKr(currentData.food_cost) : '—'}
+                deltaGood={false}
+                variant="stacked"
+                stackedBars={cogsPct != null ? [
+                  { label: 'Current', value: cogsPct, max: 100, color: UXP.lav   },
+                  { label: 'Target',  value: 30,      max: 100, color: UXP.green },
+                ] : undefined}
+                microLabel={cogsPct != null ? `${cogsPct.toFixed(1)}% of revenue` : 'No CoGS data'}
+              />
+              <KpiCardUX
+                title="Labour"
+                value={fmtKr(currentData.staff_cost)}
+                deltaGood={false}
+                variant="targetBand"
+                targetBand={labPct != null ? {
+                  actualPct:    Math.min(100, labPct),
+                  targetMinPct: 30,
+                  targetMaxPct: 42,
+                } : undefined}
+                microLabel={labPct != null ? `${labPct.toFixed(1)}% of revenue` : ''}
+              />
+              <KpiCardUX
+                title="Flash profit"
+                value={fmtKr(currentData.net_margin)}
+                delta={marginDelta}
+                deltaGood
+                microLabel={marginPct != null ? `${fmtPct(marginPct)} net margin` : ''}
+              />
+            </div>
+          )
+        })()}
 
         {/* Hero */}
         <PageHero

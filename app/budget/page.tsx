@@ -10,9 +10,13 @@ import SupportingStats from '@/components/ui/SupportingStats'
 import StatusPill from '@/components/ui/StatusPill'
 import TopBar from '@/components/ui/TopBar'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 3 — Insights migration. Year nav moves to the AppShell date stepper;
+// TopBar reduces to just the Generate-AI action so the toolbar carries the
+// per-year focus.
+import KpiCardUX from '@/components/ux/KpiCard'
 
 interface Business { id: string; name: string }
 interface BudgetRow {
@@ -293,8 +297,14 @@ export default function BudgetPage() {
     return out.slice(0, 3)
   })()
 
+  // Phase 3 — year stepper wired into the AppShell toolbar.
+  const currentYear = now2.getFullYear()
   return (
-    <AppShell>
+    <AppShell
+      dateLabel={`${year}`}
+      onPrev={() => setYear(y => y - 1)}
+      onNext={year < currentYear + 1 ? () => setYear(y => y + 1) : undefined}
+    >
       <div style={{ maxWidth: 1000 }}>
 
         {/* Row-hover reveal for the pencil action — same pattern as the
@@ -341,6 +351,56 @@ export default function BudgetPage() {
             </>
           }
         />
+
+        {/* Phase 3 KPI strip — Budget · Actual-so-far · Projection. Reads the
+            same year-rollup data that powers the hero tallies below; the
+            pacing % drives the "channels" bar so the operator sees how far
+            into the year the actuals have reached. */}
+        {!loading && rows.length > 0 && (() => {
+          const pacingPct = totalBudg > 0 ? (totalRev / totalBudg) * 100 : 0
+          // Naive projection — extrapolate YTD revenue onto a full-year run
+          // rate. Only meaningful when at least one month has actuals and we
+          // know how many months of the year have elapsed.
+          const projection = monthsInYearSoFar > 0 && withActual.length > 0
+            ? (totalRev / withActual.length) * 12
+            : 0
+          const projDelta = totalBudg > 0 && projection > 0
+            ? `${projection >= totalBudg ? '+' : ''}${(((projection - totalBudg) / totalBudg) * 100).toFixed(1)}%`
+            : null
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        14,
+              }}
+            >
+              <KpiCardUX
+                title={`Budget ${year}`}
+                value={totalBudg > 0 ? fmtKr(totalBudg) : '—'}
+                microLabel={`${rows.filter(r => r.budget).length} of 12 months set`}
+              />
+              <KpiCardUX
+                title="Actual YTD"
+                value={fmtKr(totalRev)}
+                variant="stacked"
+                stackedBars={[
+                  { label: 'Pacing', value: pacingPct, max: 100, color: UXP.lav },
+                  { label: 'Year',   value: monthsInYearSoFar * (100 / 12), max: 100, color: UXP.lavMid },
+                ]}
+                microLabel={`${withActual.length} of ${monthsInYearSoFar} closed`}
+              />
+              <KpiCardUX
+                title="Projected"
+                value={projection > 0 ? fmtKr(projection) : '—'}
+                delta={projDelta}
+                deltaGood
+                microLabel="Linear extrapolation"
+              />
+            </div>
+          )
+        })()}
 
         {/* PageHero — replaces the big header + KPI row */}
         <PageHero

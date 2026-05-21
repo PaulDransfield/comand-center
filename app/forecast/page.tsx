@@ -27,8 +27,11 @@ import StatusPill from '@/components/ui/StatusPill'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import Sparkline from '@/components/ui/Sparkline'
 import TopBar from '@/components/ui/TopBar'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 3 — Insights migration. Three-card KpiCard strip for the projected
+// year roll-up; existing year line-chart and weak-spot panel stay below.
+import KpiCardUX from '@/components/ux/KpiCard'
 
 const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -318,6 +321,48 @@ export default function ForecastPage() {
             </>
           }
         />
+
+        {/* Phase 3 KPI strip — Projected year · YTD profit · Next-month
+            forecast. Driven by the same monthly[] derivation that powers the
+            existing hero + line chart below; no extra data fetched. */}
+        {!loading && data && (() => {
+          const nextMonth = monthly.find(r => r.isCurrent) ?? monthly.find(r => r.isFuture)
+          const nextRev   = nextMonth?.forecastRev ?? 0
+          const nextMargin= nextMonth?.marginForecast ?? null
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        14,
+              }}
+            >
+              <KpiCardUX
+                title={`Projected ${currentYear}`}
+                value={projectedFullYear != null ? fmtKr(projectedFullYear) : '—'}
+                microLabel={hasProjection ? `${actualMonths} months actual` : 'Not enough data'}
+              />
+              <KpiCardUX
+                title="YTD net profit"
+                value={fmtKr(ytdActualProfit)}
+                deltaGood
+                delta={ytdActualProfit >= 0 ? '+' : '−'}
+                microLabel={`${currentMonth - 1} closed months`}
+              />
+              <KpiCardUX
+                title={nextMonth?.isCurrent ? 'This month forecast' : 'Next month forecast'}
+                value={nextRev > 0 ? fmtKr(nextRev) : '—'}
+                variant="stacked"
+                stackedBars={nextMargin != null ? [
+                  { label: 'Forecast margin', value: nextMargin,        max: 100, color: UXP.lav   },
+                  { label: 'Year avg',        value: avgForecastMargin ?? 0, max: 100, color: UXP.lavMid },
+                ] : undefined}
+                microLabel={nextMonth ? MONTHS[nextMonth.m - 1] : ''}
+              />
+            </div>
+          )
+        })()}
 
         {/* ─── PageHero ──────────────────────────────────────────────────── */}
         <PageHero
