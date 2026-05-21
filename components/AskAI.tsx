@@ -13,6 +13,7 @@ import { useState, useRef, useEffect }  from 'react'
 import { useTranslations }              from 'next-intl'
 import { createClient }                from '@/lib/supabase/client'
 import AiLimitReached                  from '@/components/AiLimitReached'
+import { UXP }                         from '@/lib/constants/tokens'
 
 interface Message {
   role:    'user' | 'assistant'
@@ -151,24 +152,30 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
   }
 
   // ── Styles ───────────────────────────────────────────────────────
+  // UXP redesign — the floating button now matches the toolbar's
+  // "Ask CC" pill (lavender + sparkle + white text). Panel + overlay
+  // re-tinted to the pastel palette so the slide-in feels like part of
+  // the same product surface.
   const FAB: React.CSSProperties = {
     position:     'fixed',
     bottom:       28,
     right:        28,
     zIndex:       1000,
-    display:      'flex',
+    display:      'inline-flex',
     alignItems:   'center',
-    gap:          8,
-    padding:      '11px 18px',
-    background:   '#1a1f2e',
-    color:        'white',
+    gap:          7,
+    padding:      '11px 20px',
+    background:   UXP.lav,
+    color:        '#fff',
     border:       'none',
-    borderRadius: 24,
-    fontSize:     13,
-    fontWeight:   600,
+    borderRadius: 999,
+    fontSize:     12,
+    fontWeight:   500,
+    letterSpacing: '0.02em',
     cursor:       'pointer',
-    boxShadow:    '0 4px 16px rgba(0,0,0,0.20)',
+    boxShadow:    '0 10px 28px -10px rgba(125,108,201,0.55), 0 2px 6px rgba(58,53,80,0.10)',
     transition:   'transform 0.15s, box-shadow 0.15s',
+    fontFamily:   'inherit',
   }
 
   const PANEL: React.CSSProperties = {
@@ -177,10 +184,11 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
     right:           0,
     bottom:          0,
     zIndex:          1001,
-    width:           380,
+    width:           400,
     maxWidth:        '95vw',
-    background:      'white',
-    boxShadow:       '-4px 0 32px rgba(0,0,0,0.12)',
+    background:      UXP.cardBg,
+    borderLeft:      `0.5px solid ${UXP.border}`,
+    boxShadow:       '-8px 0 32px rgba(58,53,80,0.12)',
     display:         'flex',
     flexDirection:   'column',
     transform:       open ? 'translateX(0)' : 'translateX(100%)',
@@ -191,7 +199,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
     position:   'fixed',
     inset:      0,
     zIndex:     1000,
-    background: 'rgba(0,0,0,0.2)',
+    background: 'rgba(58,53,80,0.28)',
     opacity:    open ? 1 : 0,
     pointerEvents: open ? 'auto' : 'none',
     transition: 'opacity 0.25s',
@@ -199,15 +207,17 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — UXP "Ask CC" pill */}
       <button
         className="ai-fab"
         style={FAB}
         onClick={() => setOpen(o => !o)}
         title={t('fabTitle')}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}
       >
-        <span style={{ fontSize: 16 }}>✦</span>
-        {t('fab')}
+        <span aria-hidden style={{ fontSize: 12 }}>✦</span>
+        Ask CC
       </button>
 
       {/* Backdrop */}
@@ -217,17 +227,27 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
       <div style={PANEL}>
 
         {/* Header */}
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <div style={{
+          padding:        '16px 20px',
+          borderBottom:   `0.5px solid ${UXP.borderSoft}`,
+          display:        'flex',
+          alignItems:     'center',
+          justifyContent: 'space-between',
+          flexShrink:     0,
+        }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#111' }}>{t('header.title')}</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>{t('header.subtitle')}</div>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <span aria-hidden style={{ color: UXP.lav, fontSize: 13 }}>✦</span>
+              <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1 }}>{t('header.title')}</div>
+            </div>
+            <div style={{ fontSize: 10, color: UXP.ink4 }}>{t('header.subtitle')}</div>
           </div>
           <button
+            type="button"
             onClick={() => setOpen(false)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#9ca3af', lineHeight: 1, padding: '0 4px' }}
-          >
-            ×
-          </button>
+            aria-label="Close"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: UXP.ink3, lineHeight: 1, padding: '0 4px', fontFamily: 'inherit' }}
+          >×</button>
         </div>
 
         {/* Messages */}
@@ -236,26 +256,35 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
           {/* Empty state — show suggestions */}
           {messages.length === 0 && (
             <div>
-              <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+              <div style={{
+                fontSize:      9,
+                color:         UXP.ink4,
+                marginBottom:  10,
+                fontWeight:    600,
+                textTransform: 'uppercase' as const,
+                letterSpacing: '0.05em',
+              }}>
                 {t('suggestionsHeader')}
               </div>
               {suggestions.map(s => (
                 <button
                   key={s}
+                  type="button"
                   onClick={() => send(s)}
                   style={{
                     display:       'block',
                     width:         '100%',
-                    textAlign:     'left',
+                    textAlign:     'left' as const,
                     padding:       '10px 12px',
                     marginBottom:  8,
-                    background:    '#f9fafb',
-                    border:        '1px solid #f3f4f6',
-                    borderRadius:  8,
-                    fontSize:      13,
-                    color:         '#374151',
+                    background:    UXP.subtleBg,
+                    border:        `0.5px solid ${UXP.border}`,
+                    borderRadius:  UXP.r_md,
+                    fontSize:      12,
+                    color:         UXP.ink2,
                     cursor:        'pointer',
-                    lineHeight:    1.4,
+                    lineHeight:    1.45,
+                    fontFamily:    'inherit',
                   }}
                 >
                   {s}
@@ -276,10 +305,17 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
               {msg.role === 'assistant' && (
                 // EU AI Act Art. 52 — users must know they are looking at AI output.
                 <div title={t('aiBadgeTitle')} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 3,
-                  padding: '1px 6px', background: '#ede9fe', color: '#6d28d9',
-                  borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: '.04em',
-                  alignSelf: 'flex-start',
+                  display:       'inline-flex',
+                  alignItems:    'center',
+                  gap:           3,
+                  padding:       '1px 6px',
+                  background:    UXP.lavFill,
+                  color:         UXP.lavText,
+                  borderRadius:  6,
+                  fontSize:      9,
+                  fontWeight:    600,
+                  letterSpacing: '0.04em',
+                  alignSelf:     'flex-start' as const,
                 }}>
                   <span aria-hidden="true">✦</span>
                   <span>AI</span>
@@ -288,9 +324,9 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
               <div style={{
                 padding:      '10px 14px',
                 borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                background:   msg.role === 'user' ? '#1a1f2e' : '#f3f4f6',
-                color:        msg.role === 'user' ? 'white' : '#111',
-                fontSize:     13,
+                background:   msg.role === 'user' ? UXP.lavDeep : UXP.subtleBg,
+                color:        msg.role === 'user' ? '#fff' : UXP.ink1,
+                fontSize:     12.5,
                 lineHeight:   1.55,
                 whiteSpace:   'pre-wrap' as const,
               }}>
@@ -301,27 +337,40 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
 
           {/* Loading indicator */}
           {loading && (
-            <div style={{ alignSelf: 'flex-start', padding: '10px 14px', background: '#f3f4f6', borderRadius: '14px 14px 14px 4px', fontSize: 13, color: '#9ca3af' }}>
+            <div style={{
+              alignSelf:    'flex-start' as const,
+              padding:      '10px 14px',
+              background:   UXP.subtleBg,
+              borderRadius: '14px 14px 14px 4px',
+              fontSize:     12,
+              color:        UXP.ink3,
+              fontStyle:    'italic' as const,
+            }}>
               {t('thinking')}
             </div>
           )}
 
-          {/* Soft warning — 80 % of daily quota used. Shown once then persists
-              for the session until the next question confirms it's gone. */}
+          {/* Soft warning — 80 % of daily quota used. */}
           {warning && !upgrade && (
             <div style={{
-              padding: '10px 12px',
-              background: warning.severity === 'info' ? '#eef2ff' : '#fffbeb',
-              border:     warning.severity === 'info' ? '1px solid #c7d2fe' : '1px solid #fde68a',
-              borderRadius: 8, fontSize: 12,
-              color:      warning.severity === 'info' ? '#3730a3' : '#78350f',
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+              padding:      '10px 12px',
+              background:   warning.severity === 'info' ? UXP.lavFill : UXP.lavFill,
+              border:       `0.5px solid ${UXP.lavMid}`,
+              borderRadius: UXP.r_md,
+              fontSize:     11,
+              color:        warning.severity === 'info' ? UXP.lavText : UXP.coral,
+              display:      'flex',
+              justifyContent: 'space-between',
+              alignItems:   'center',
+              gap:          10,
             }}>
               <span>{t('warning.body', { percent: warning.percent, used: warning.used, limit: warning.limit })}</span>
               <a href="/upgrade?focus=ai" style={{
-                fontSize: 11,
-                color: warning.severity === 'info' ? '#4338ca' : '#b45309',
-                fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap',
+                fontSize:       10,
+                color:          UXP.lavText,
+                fontWeight:     500,
+                textDecoration: 'underline',
+                whiteSpace:     'nowrap' as const,
               }}>
                 {t('warning.upgrade')}
               </a>
@@ -335,16 +384,25 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
 
           {/* Regular error (non-limit) */}
           {error && !upgrade && (
-            <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12, color: '#dc2626' }}>
-              {error}
-            </div>
+            <div style={{
+              padding:      '10px 14px',
+              background:   UXP.roseFill,
+              border:       `0.5px solid ${UXP.rose}`,
+              borderRadius: UXP.r_md,
+              fontSize:     11,
+              color:        UXP.roseText,
+            }}>{error}</div>
           )}
 
           <div ref={bottomRef} />
         </div>
 
         {/* Input */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+        <div style={{
+          padding:    '12px 16px',
+          borderTop:  `0.5px solid ${UXP.borderSoft}`,
+          flexShrink: 0,
+        }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <textarea
               ref={inputRef}
@@ -354,38 +412,41 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
               placeholder={t('input.placeholder')}
               rows={2}
               style={{
-                flex:        1,
-                padding:     '10px 12px',
-                border:      '1px solid #e5e7eb',
-                borderRadius: 10,
-                fontSize:    13,
-                resize:      'none',
-                outline:     'none',
-                lineHeight:  1.4,
-                color:       '#111',
-                background:  'white',
+                flex:         1,
+                padding:      '10px 12px',
+                background:   UXP.subtleBg,
+                color:        UXP.ink1,
+                border:       `0.5px solid ${UXP.border}`,
+                borderRadius: UXP.r_md,
+                fontSize:     12.5,
+                resize:       'none' as const,
+                outline:      'none',
+                lineHeight:   1.45,
+                fontFamily:   'inherit',
               }}
             />
             <button
+              type="button"
               onClick={() => send(input)}
               disabled={!input.trim() || loading}
               style={{
                 padding:      '10px 14px',
-                background:   !input.trim() || loading ? '#e5e7eb' : '#1a1f2e',
-                color:        !input.trim() || loading ? '#9ca3af' : 'white',
+                background:   !input.trim() || loading ? UXP.subtleBg : UXP.lavDeep,
+                color:        !input.trim() || loading ? UXP.ink4    : '#fff',
                 border:       'none',
-                borderRadius: 10,
-                fontSize:     13,
-                fontWeight:   600,
+                borderRadius: 999,
+                fontSize:     12,
+                fontWeight:   500,
                 cursor:       !input.trim() || loading ? 'not-allowed' : 'pointer',
                 flexShrink:   0,
-                alignSelf:    'flex-end',
+                alignSelf:    'flex-end' as const,
+                fontFamily:   'inherit',
               }}
             >
               {t('input.send')}
             </button>
           </div>
-          <div style={{ fontSize: 10, color: '#d1d5db', marginTop: 6, textAlign: 'center' }}>
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 6, textAlign: 'center' as const }}>
             {t('input.hint')}
           </div>
         </div>
