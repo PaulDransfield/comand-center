@@ -1,179 +1,161 @@
 'use client'
 // @ts-nocheck
+// app/budget/page.tsx — full rebuild on the new system
+//
+// Same treatment as the dashboard / staff / revenue rebuilds. Every
+// surface lives on UXP + KpiCardUX / BreakdownTable; the legacy
+// PageHero / SupportingStats / AttentionPanel / TopBar / inline
+// QuickStat are deleted. Year stepper lives in the AppShell toolbar.
+//
+// Four flows preserved:
+//   1. Year nav  → AppShell date stepper
+//   2. AI Generate (whole year) → "✦ Generate with AI" pill → modal →
+//      apply all
+//   3. Manual per-month edit → click any row → inline drawer
+//   4. Per-month AI Analyse → "Analyse" link inside the edit drawer
+//
+// Data:
+//   GET  /api/budgets?business_id&year         — { year, months: [12] }
+//   POST /api/budgets                          — upsert per-month targets
+//   POST /api/budgets/generate                 — whole-year AI suggestions
+//   POST /api/budgets/analyse                  — per-month AI verdict
+//   GET  /api/budgets/coach?business_id        — current-month pacing
+//   POST /api/budgets/feedback                 — owner reaction on suggestion
+
 export const dynamic = 'force-dynamic'
-import { useEffect, useState, useCallback } from 'react'
-import { useTranslations } from 'next-intl'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import dynamicImport from 'next/dynamic'
+
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+const AiLimitReached = dynamicImport(() => import('@/components/AiLimitReached'), { ssr: false, loading: () => null })
+
 import AppShell from '@/components/AppShell'
-import AiLimitReached from '@/components/AiLimitReached'
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import StatusPill from '@/components/ui/StatusPill'
-import TopBar from '@/components/ui/TopBar'
-import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-// Phase 3 — Insights migration. Year nav moves to the AppShell date stepper;
-// TopBar reduces to just the Generate-AI action so the toolbar carries the
-// per-year focus.
 import KpiCardUX from '@/components/ux/KpiCard'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
 
-interface Business { id: string; name: string }
-interface BudgetRow {
-  month: number
-  budget: { revenue_target: number; food_cost_pct_target: number; staff_cost_pct_target: number; net_profit_target: number } | null
-  actual: { revenue: number; food_cost: number; staff_cost: number; net_profit: number; food_pct: number; staff_pct: number } | null
-}
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-function QuickStat({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' }) {
-  const valueColour = tone === 'bad' ? '#fca5a5' : tone === 'ok' ? '#86efac' : 'white'
-  return (
-    <div>
-      <div style={{ fontSize: 10, color: 'rgba(199,210,254,0.65)', letterSpacing: '.05em', textTransform: 'uppercase' as const, fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: valueColour, marginTop: 1 }}>{value}</div>
-    </div>
-  )
+interface BudgetRow {
+  month:  number
+  budget: any
+  actual: any
+  last_year: any
+  variance: any
 }
 
 export default function BudgetPage() {
-  const t   = useTranslations('financials.budget')
   const now = new Date()
-  const [businesses, setBusinesses] = useState<Business[]>([])
-  const [selected, setSelected]     = useState('')
-  const [year, setYear]             = useState(now.getFullYear())
-  const [rows, setRows]             = useState<BudgetRow[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [editing, setEditing]       = useState<number|null>(null)
-  const [form, setForm]             = useState<any>({})
-  const [saving, setSaving]         = useState(false)
+  const [bizId,        setBizId]        = useState<string | null>(null)
+  const [year,         setYear]         = useState(now.getFullYear())
+  const [rows,         setRows]         = useState<BudgetRow[]>([])
+  const [loading,      setLoading]      = useState(true)
+  const [editing,      setEditing]      = useState<BudgetRow | null>(null)
+  const [editForm,     setEditForm]     = useState<any>({})
+  const [saving,       setSaving]       = useState(false)
   // AI generation state
-  const [generating, setGenerating] = useState(false)
-  const [genError,   setGenError]   = useState('')
-  const [suggestions, setSuggestions] = useState<any>(null)  // { overall_strategy, monthly }
-  // Owner feedback per month (too_high / too_low / just_right / wrong_shape).
-  // Captured immediately on click; flows into ai_forecast_outcomes and feeds
-  // the next AI generation's "PRIOR ACCURACY" block.
+  const [generating,   setGenerating]   = useState(false)
+  const [genError,     setGenError]     = useState('')
+  const [suggestions,  setSuggestions]  = useState<any>(null)
+  const [applying,     setApplying]     = useState(false)
   const [feedbackByMonth, setFeedbackByMonth] = useState<Record<number, string>>({})
-  const [applying,   setApplying]   = useState(false)
-  // Per-month analyse state
-  const [analysingMonth, setAnalysingMonth] = useState<number|null>(null)  // month being analysed (loading spinner)
-  const [analysis, setAnalysis] = useState<any>(null)                       // { month, result }
-  // Shared AI limit-reached flag (either Generate or Analyse triggered a 429 with upgrade:true)
-  const [aiLimitHit, setAiLimitHit] = useState<{limit:number,used:number,plan:string}|null>(null)
-  // AI Budget Coach — current-month pacing + prescription
+  // Per-month analyse
+  const [analysingMonth, setAnalysingMonth] = useState<number | null>(null)
+  const [analysis,       setAnalysis]       = useState<any>(null)
+  // AI limit
+  const [aiLimitHit, setAiLimitHit] = useState<any>(null)
+  // Coach
   const [coach,        setCoach]        = useState<any>(null)
   const [coachLoading, setCoachLoading] = useState(false)
 
+  // Subscribe to BizPicker
   useEffect(() => {
-    fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
-      if (!Array.isArray(data) || !data.length) return
-      setBusinesses(data)
-      const sync = () => {
-        const saved = localStorage.getItem('cc_selected_biz')
-        const id = (saved && data.find((b: any) => b.id === saved)) ? saved : data[0].id
-        setSelected(id)
-      }
-      sync()
-      window.addEventListener('storage', sync)
-    }).catch(() => {})
+    const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
+    sync()
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
   }, [])
 
+  // Load year rollup
   const load = useCallback(async () => {
-    if (!selected) return
+    if (!bizId) return
     setLoading(true)
-    const res = await fetch(`/api/budgets?business_id=${selected}&year=${year}`)
-    const d   = await res.json()
-    // API returns { year, months } — months is the array we render
-    const months = Array.isArray(d) ? d : (Array.isArray(d?.months) ? d.months : [])
+    const res  = await fetch(`/api/budgets?business_id=${bizId}&year=${year}`)
+    const data = await res.json()
+    const months = Array.isArray(data) ? data : (Array.isArray(data?.months) ? data.months : [])
     setRows(months)
     setLoading(false)
-  }, [selected, year])
+  }, [bizId, year])
+  useEffect(() => { if (bizId) load() }, [bizId, year, load])
 
-  useEffect(() => { if (selected) load() }, [selected])
-
-  // Fetch the AI Budget Coach pacing narrative for the current month as soon
-  // as a business is picked. Cheap — one Haiku call, ~200 tokens.
+  // Load coach
   useEffect(() => {
-    if (!selected) return
+    if (!bizId) return
     let cancelled = false
     setCoachLoading(true); setCoach(null)
-    fetch(`/api/budgets/coach?business_id=${selected}`, { cache: 'no-store' })
+    fetch(`/api/budgets/coach?business_id=${bizId}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(j => { if (!cancelled && j && !j.error) setCoach(j) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setCoachLoading(false) })
     return () => { cancelled = true }
-  }, [selected])
+  }, [bizId])
 
-  async function save(month: number) {
+  // Save per-month edit
+  async function saveEdit() {
+    if (!editing || !bizId) return
     setSaving(true)
     await fetch('/api/budgets', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, business_id: selected, year, month }),
+      body: JSON.stringify({ ...editForm, business_id: bizId, year, month: editing.month }),
     })
-    setSaving(false); setEditing(null); load()
+    setSaving(false)
+    setEditing(null)
+    load()
   }
 
+  // AI generate
   async function generateWithAI() {
-    if (!selected) return
+    if (!bizId) return
     setGenerating(true); setGenError(''); setSuggestions(null); setAiLimitHit(null)
     try {
       const res = await fetch('/api/budgets/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: selected, year }),
+        body: JSON.stringify({ business_id: bizId, year }),
       })
       const data = await res.json()
       if (res.status === 429 && data.upgrade) {
         setAiLimitHit({ limit: data.limit, used: data.used, plan: data.plan })
-        return
+      } else if (!res.ok) {
+        throw new Error(data.error ?? 'Generation failed')
+      } else {
+        setSuggestions(data)
+        try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
       }
-      if (!res.ok) throw new Error(data.error ?? 'Generation failed')
-      setSuggestions(data)
-      // Tell the sidebar meter to refresh — AI counter just moved server-side.
-      try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
-    } catch (e: any) { setGenError(e.message) }
+    } catch (e: any) {
+      setGenError(e.message)
+    }
     setGenerating(false)
   }
 
-  async function analyseMonth(month: number) {
-    if (!selected) return
-    setAnalysingMonth(month); setAnalysis(null); setAiLimitHit(null)
-    try {
-      const res = await fetch('/api/budgets/analyse', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ business_id: selected, year, month }),
-      })
-      const data = await res.json()
-      if (res.status === 429 && data.upgrade) {
-        setAiLimitHit({ limit: data.limit, used: data.used, plan: data.plan })
-        setAnalysingMonth(null)
-        return
-      }
-      if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
-      setAnalysis({ month, result: data })
-      try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
-    } catch (e: any) {
-      setAnalysis({ month, result: { verdict: 'error', headline: e.message, analysis: [], recommendations: [] } })
-    }
-    setAnalysingMonth(null)
-  }
-
   async function applyAllSuggestions() {
-    if (!suggestions?.monthly) return
+    if (!suggestions?.monthly || !bizId) return
     setApplying(true)
     try {
-      // Upsert each month in parallel
       await Promise.all(suggestions.monthly.map((s: any) =>
         fetch('/api/budgets', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            business_id:            selected,
+            business_id:           bizId,
             year,
-            month:                  s.month,
-            revenue_target:         s.revenue_target,
-            food_cost_pct_target:   s.food_cost_pct_target,
-            staff_cost_pct_target:  s.staff_cost_pct_target,
-            net_profit_target:      s.net_profit_target,
+            month:                 s.month,
+            revenue_target:        s.revenue_target,
+            food_cost_pct_target:  s.food_cost_pct_target,
+            staff_cost_pct_target: s.staff_cost_pct_target,
+            net_profit_target:     s.net_profit_target,
           }),
         })
       ))
@@ -185,742 +167,543 @@ export default function BudgetPage() {
     setApplying(false)
   }
 
-  // ── Derived status tallies + outlier for hero ──────────────────────────
-  const now2 = new Date()
-  const monthsInYearSoFar = year === now2.getFullYear() ? now2.getMonth() + 1
-                          : year < now2.getFullYear() ? 12
-                          : 0
+  // Per-month analyse
+  async function analyseMonth(month: number) {
+    if (!bizId) return
+    setAnalysingMonth(month); setAnalysis(null)
+    try {
+      const res = await fetch('/api/budgets/analyse', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId, year, month }),
+      })
+      const data = await res.json()
+      if (res.status === 429 && data.upgrade) {
+        setAiLimitHit({ limit: data.limit, used: data.used, plan: data.plan })
+        return
+      }
+      if (!res.ok) throw new Error(data.error ?? 'Analysis failed')
+      setAnalysis({ month, result: data })
+      try { window.dispatchEvent(new Event('cc_ai_used')) } catch {}
+    } catch (e: any) {
+      setAnalysis({ month, result: { verdict: 'error', headline: e.message, analysis: [], recommendations: [] } })
+    }
+    setAnalysingMonth(null)
+  }
+
+  // ── Derived totals ──────────────────────────────────────────────
+  const monthsInYearSoFar = year === now.getFullYear() ? now.getMonth() + 1
+                          : year <  now.getFullYear() ? 12 : 0
   const withActual = rows.filter(r => r.actual && r.actual.revenue > 0)
   const totalRev   = withActual.reduce((s, r) => s + (r.actual?.revenue ?? 0), 0)
   const totalBudg  = withActual.reduce((s, r) => s + (r.budget?.revenue_target ?? 0), 0)
+  const totalYearBudg = rows.reduce((s, r) => s + (r.budget?.revenue_target ?? 0), 0)
+  const monthsSet  = rows.filter(r => r.budget).length
   const onTrack    = withActual.filter(r => r.actual && r.budget && r.actual.revenue >= r.budget.revenue_target).length
-  const offTrack   = withActual.filter(r => r.actual && r.budget && r.actual.revenue < r.budget.revenue_target).length
-  // 4th bucket per BUDGET-FIX § 6 — months with real revenue but no budget
-  // set. Previously these were mis-counted as "Not started" (wrong —
-  // April HAD started) or silently dropped. Now they show up explicitly.
-  const loggedNoBudget = withActual.filter(r => !r.budget).length
-  const notStarted = rows.filter(r => !r.budget && (!r.actual || r.actual.revenue === 0)).length
+  const offTrack   = withActual.filter(r => r.actual && r.budget && r.actual.revenue <  r.budget.revenue_target).length
+  const pacingPct  = totalBudg > 0 ? (totalRev / totalBudg) * 100 : 0
+  // Linear projection: average actual × 12 (only when at least one month closed)
+  const projection = withActual.length > 0 ? (totalRev / withActual.length) * 12 : 0
+  const projDelta  = totalYearBudg > 0 && projection > 0
+    ? `${projection >= totalYearBudg ? '+' : ''}${(((projection - totalYearBudg) / totalYearBudg) * 100).toFixed(1)}%`
+    : null
 
-  // Biggest miss = month with largest negative variance on rev_target
-  let biggestMiss: { month: number; kr: number } | null = null
-  for (const r of withActual) {
-    if (!r.budget) continue
-    const miss = (r.actual?.revenue ?? 0) - r.budget.revenue_target
-    if (miss < 0 && (biggestMiss == null || miss < biggestMiss.kr)) {
-      biggestMiss = { month: r.month, kr: miss }
-    }
-  }
+  // Stepper
+  const canStepNext = year < now.getFullYear() + 1
+  function step(dir: -1 | 1) { setYear(y => y + dir) }
 
-  const headline = (() => {
-    if (withActual.length === 0) {
-      return <>{t('hero.noActuals', { year })}</>
-    }
-    if (withActual.length === 1 && loggedNoBudget === 1) {
-      const m = withActual[0]
-      return <span>{t('hero.singleNoBudget', {
-        month:   MONTHS[m.month - 1],
-        revenue: fmtKr(Number(m.actual?.revenue ?? 0)),
-      })}</span>
-    }
-    if (biggestMiss) {
-      return <span style={{ color: onTrack > offTrack ? UX.greenInk : UX.redInk, fontWeight: UX.fwMedium }}>
-        {t('hero.missMonths', {
-          onTrack,
-          total:  withActual.length,
-          month:  MONTHS[biggestMiss.month - 1],
-          amount: fmtKr(Math.abs(biggestMiss.kr)),
-        })}
-      </span>
-    }
-    return <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>
-      {withActual.length === 1
-        ? t('hero.monthOnBudget', { month: MONTHS[withActual[0].month - 1] })
-        : t('hero.allOnTrack',    { count: withActual.length })}
-    </span>
-  })()
-
-  const heroContext = totalBudg > 0
-    ? t('hero.ctxYtd', {
-        pct:   Math.round((totalRev / totalBudg) * 100),
-        count: withActual.length,
-        total: monthsInYearSoFar,
-      })
-    : withActual.length
-      ? t('hero.ctxNoBudget', { count: withActual.length, total: monthsInYearSoFar })
-      : undefined
-
-  // ── AI Budget Coach → AttentionPanel items  (no more purple gradient).
-  //    Phase 4 collapses the banner into regular content: a short white
-  //    AttentionPanel with up to 3 bullets (pacing verdict, labour lever,
-  //    scheduling jump). Narrative prose that's too long to fit in a
-  //    bullet falls back to a single bullet with the full line.
-  const coachItems: AttentionItem[] = (() => {
-    if (!coach || coach.has_budget === false || !coach.narrative) return []
-    const out: AttentionItem[] = []
-    // Overall pacing — tone from projected vs budget revenue.
-    const onPace = coach.projected && coach.budget
-      ? Number(coach.projected.revenue ?? 0) >= Number(coach.budget.revenue_target ?? 0)
-      : null
-    out.push({
-      tone:    onPace == null ? 'warning' : onPace ? 'good' : 'bad',
-      entity:  t('coach.pacing'),
-      message: coach.budget?.revenue_target
-        ? t('coach.pacingMsgWithTarget', {
-            mtd:       fmtKr(Number(coach.mtd?.revenue ?? 0)),
-            projected: fmtKr(Number(coach.projected?.revenue ?? 0)),
-            target:    fmtKr(Number(coach.budget.revenue_target)),
-          })
-        : t('coach.pacingMsg', {
-            mtd:       fmtKr(Number(coach.mtd?.revenue ?? 0)),
-            projected: fmtKr(Number(coach.projected?.revenue ?? 0)),
-          }),
-    })
-    // Labour lever, if flagged by the server.
-    if (coach.labour_is_the_lever && coach.projected?.labour_pct != null) {
-      out.push({
-        tone:    'bad',
-        entity:  t('coach.labour'),
-        message: t('coach.labourMsg', { pct: fmtPct(Number(coach.projected.labour_pct)) }),
-      })
-    }
-    // Narrative first-sentence — Claude already responded in the user's
-    // locale via PR3, so we keep the verbatim text.
-    const firstSentence = String(coach.narrative).split(/(?<=[.!?])\s+/).filter(Boolean)[0]
-    if (firstSentence) {
-      out.push({
-        tone:    'warning',
-        entity:  t('coach.coach'),
-        message: firstSentence.slice(0, 180),
-      })
-    }
-    return out.slice(0, 3)
-  })()
-
-  // Phase 3 — year stepper wired into the AppShell toolbar.
-  const currentYear = now2.getFullYear()
   return (
     <AppShell
-      dateLabel={`${year}`}
-      onPrev={() => setYear(y => y - 1)}
-      onNext={year < currentYear + 1 ? () => setYear(y => y + 1) : undefined}
+      dateLabel={String(year)}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ maxWidth: 1000 }}>
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        {/* Row-hover reveal for the pencil action — same pattern as the
-            P&L tracker.  Keeps the row visually clean; ✎ shows on hover
-            or focus (FIX-PROMPT § Phase 4 "remove per-row buttons"). */}
-        <style>{`
-          .cc-bud-action { opacity: 0; transition: opacity .12s ease; }
-          .cc-bud-row:hover .cc-bud-action,
-          .cc-bud-row:focus-within .cc-bud-action { opacity: 1; }
-        `}</style>
-
-        {/* TopBar — breadcrumb + business/year selectors + top-level AI
-            action. Replaces the floating "Generate with AI" row. */}
-        <TopBar
-          crumbs={[
-            { label: t('crumb.financials') },
-            { label: t('crumb.budget'), active: true },
-          ]}
-          rightSlot={
-            <>
-              <button
-                onClick={generateWithAI}
-                disabled={generating || !selected}
-                title={t('ai.title')}
-                style={{
-                  padding: '5px 11px', background: UX.indigo, color: 'white',
-                  border: 'none', borderRadius: UX.r_md, fontSize: UX.fsBody, fontWeight: UX.fwMedium,
-                  cursor: generating || !selected ? 'not-allowed' : 'pointer',
-                  opacity: generating || !selected ? 0.6 : 1,
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                }}
-              >
-                <span>✦</span>
-                {generating ? t('ai.generating') : t('ai.generate')}
-              </button>
-              <select value={selected} onChange={e => setSelected(e.target.value)}
-                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-                {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-              <select value={year} onChange={e => setYear(parseInt(e.target.value))}
-                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-                {[2024,2025,2026,2027].map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </>
-          }
-        />
-
-        {/* Phase 3 KPI strip — Budget · Actual-so-far · Projection. Reads the
-            same year-rollup data that powers the hero tallies below; the
-            pacing % drives the "channels" bar so the operator sees how far
-            into the year the actuals have reached. */}
-        {!loading && rows.length > 0 && (() => {
-          const pacingPct = totalBudg > 0 ? (totalRev / totalBudg) * 100 : 0
-          // Naive projection — extrapolate YTD revenue onto a full-year run
-          // rate. Only meaningful when at least one month has actuals and we
-          // know how many months of the year have elapsed.
-          const projection = monthsInYearSoFar > 0 && withActual.length > 0
-            ? (totalRev / withActual.length) * 12
-            : 0
-          const projDelta = totalBudg > 0 && projection > 0
-            ? `${projection >= totalBudg ? '+' : ''}${(((projection - totalBudg) / totalBudg) * 100).toFixed(1)}%`
-            : null
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        14,
-              }}
-            >
-              <KpiCardUX
-                title={`Budget ${year}`}
-                value={totalBudg > 0 ? fmtKr(totalBudg) : '—'}
-                microLabel={`${rows.filter(r => r.budget).length} of 12 months set`}
-              />
-              <KpiCardUX
-                title="Actual YTD"
-                value={fmtKr(totalRev)}
-                variant="stacked"
-                stackedBars={[
-                  { label: 'Pacing', value: pacingPct, max: 100, color: UXP.lav },
-                  { label: 'Year',   value: monthsInYearSoFar * (100 / 12), max: 100, color: UXP.lavMid },
-                ]}
-                microLabel={`${withActual.length} of ${monthsInYearSoFar} closed`}
-              />
-              <KpiCardUX
-                title="Projected"
-                value={projection > 0 ? fmtKr(projection) : '—'}
-                delta={projDelta}
-                deltaGood
-                microLabel="Linear extrapolation"
-              />
-            </div>
-          )
-        })()}
-
-        {/* PageHero — replaces the big header + KPI row */}
-        <PageHero
-          eyebrow={t('eyebrowYearBudget', { year })}
-          headline={headline}
-          context={heroContext}
-          right={
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' as const }}>
-              <TallyDot tone="good"    count={onTrack}         label={t('tally.onTrack')} />
-              <TallyDot tone="bad"     count={offTrack}        label={t('tally.offTrack')} />
-              {loggedNoBudget > 0 && (
-                <TallyDot tone="info"  count={loggedNoBudget}  label={t('tally.noBudget')} />
-              )}
-              <TallyDot tone="neutral" count={notStarted}      label={t('tally.notStarted')} />
-            </div>
-          }
-        />
-
-        {/* AI Budget Coach — only rendered when Claude has real, actionable
-            output. Empty states (no budget set, still loading) show NOTHING
-            here (BUDGET-FIX § 1). The hero / tally / NOT SET pills already
-            carry the "you haven't set a budget yet" signal; a banner
-            repeating it is noise. */}
-        {coachItems.length > 0 && (
-          <div style={{ marginBottom: 12 }}>
-            <AttentionPanel
-              title="AI Budget Coach"
-              items={coachItems}
-              rightSlot={coach?.labour_is_the_lever ? (
-                <a href="/scheduling" style={{ fontSize: UX.fsLabel, color: UX.indigo, textDecoration: 'none', fontWeight: UX.fwMedium }}>
-                  Open scheduling →
-                </a>
-              ) : undefined}
-            />
-          </div>
-        )}
-
-        {/* AI daily limit hit — reuse the AskAI upsell card */}
-        {aiLimitHit && (
-          <div style={{ marginBottom: 16 }}>
-            <AiLimitReached used={aiLimitHit.used} limit={aiLimitHit.limit} plan={aiLimitHit.plan} />
-          </div>
-        )}
-
-        {/* Generation error banner */}
-        {genError && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', fontSize: 12, color: '#dc2626', marginBottom: 16 }}>
-            {genError}
-            <button onClick={() => setGenError('')} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontWeight: 700 }}>×</button>
-          </div>
-        )}
-
-        {/* AI suggestions review modal */}
-        {suggestions && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              {/* Modal header */}
-              <div style={{ padding: '18px 24px', borderBottom: '1px solid #f3f4f6', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: '#111' }}>{t('modal.title', { year })}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>{t('modal.subtitle')}</div>
-                </div>
-                <button onClick={() => setSuggestions(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: '#9ca3af', lineHeight: 1 }}>×</button>
-              </div>
-
-              {/* Strategy */}
-              {suggestions.overall_strategy && (
-                <div style={{ padding: '14px 24px', background: '#fafbff', borderBottom: '1px solid #f3f4f6', fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-                  <span style={{ fontWeight: 700, color: '#6366f1' }}>{t('modal.strategy')} </span>
-                  {suggestions.overall_strategy}
-                </div>
-              )}
-
-              {/* Monthly suggestions list */}
-              <div style={{ overflowY: 'auto', flex: 1, padding: '10px 24px 16px' }}>
-                {suggestions.monthly.map((s: any) => (
-                  <div key={s.month} style={{ padding: '12px 0', borderBottom: '1px solid #f3f4f6' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, color: '#111', fontSize: 14 }}>{MONTHS[s.month - 1]}</span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <FeedbackButtons
-                          businessId={selected}
-                          year={year}
-                          month={s.month}
-                          currentReaction={feedbackByMonth[s.month]}
-                          onRecord={(reaction) => setFeedbackByMonth(prev => ({ ...prev, [s.month]: reaction }))}
-                        />
-                        <span style={{ fontSize: 13, color: '#6366f1', fontWeight: 600 }}>{fmtKr(s.revenue_target)}</span>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>
-                      {t('modal.monthLine', { food: s.food_cost_pct_target, staff: s.staff_cost_pct_target, profit: fmtKr(s.net_profit_target) })}
-                    </div>
-                    {s.reasoning && (
-                      <div style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>{s.reasoning}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Modal footer */}
-              <div style={{ padding: '14px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button
-                  onClick={() => setSuggestions(null)}
-                  disabled={applying}
-                  style={{ padding: '9px 18px', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {t('modal.discard')}
-                </button>
-                <button
-                  onClick={applyAllSuggestions}
-                  disabled={applying}
-                  style={{ padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: applying ? 'not-allowed' : 'pointer', opacity: applying ? 0.6 : 1 }}
-                >
-                  {applying ? t('modal.applying') : t('modal.applyAll')}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ─── 12-row progress-bar list ─────────────────────────────────── */}
-        <div style={{
-          background:   UX.cardBg,
-          border:       `0.5px solid ${UX.border}`,
-          borderRadius: UX.r_lg,
-          overflow:     'hidden' as const,
-        }}>
-          <div style={{
-            padding:      '10px 16px',
-            background:   UX.subtleBg,
-            borderBottom: `0.5px solid ${UX.borderSoft}`,
-            display:      'grid',
-            gridTemplateColumns: '60px 1fr 90px 90px 90px',
-            gap:          12,
-            fontSize:     UX.fsMicro,
-            fontWeight:   UX.fwMedium,
-            color:        UX.ink4,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase' as const,
-          }}>
-            <span>{t('table.month')}</span>
-            <span>{t('table.progress')}</span>
-            <span style={{ textAlign: 'right' as const }}>{t('table.variance')}</span>
-            <span style={{ textAlign: 'right' as const }}>{t('table.status')}</span>
-            <span style={{ textAlign: 'right' as const }}></span>
-          </div>
-
-          {loading ? (
-            <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
-          ) : (() => {
-            // Year-max drives the horizontal scale so every month's bar is
-            // honestly proportional to the biggest month on the page — whether
-            // that max comes from a budget or an actual. BUDGET-FIX § 4 fixes
-            // the earlier bug where rows with actuals-but-no-budget rendered
-            // as empty tracks because yearMax only looked at budgets.
-            const yearMax = Math.max(
-              1,
-              ...rows.map(r => Number(r.budget?.revenue_target ?? 0)),
-              ...rows.map(r => Number(r.actual?.revenue         ?? 0)),
-            )
-            return rows.map((row, i) => {
-              const a = row.actual
-              const b = row.budget
-              const hasActual = !!(a && a.revenue > 0)
-              const variance  = hasActual && b ? a!.revenue - b.revenue_target : null
-              const onTrackFlag = variance !== null ? variance >= 0 : null
-              const isEdit    = editing === row.month
-
-              // Bar geometry — both values as a % of the year max.
-              const tickPct = b && b.revenue_target > 0
-                ? (b.revenue_target / yearMax) * 100
-                : null
-              const fillPct = hasActual
-                ? Math.min(120, (a!.revenue / yearMax) * 100)
-                : null
-              // Green when actual ≥ budget (or there's no budget to fail
-              // against — actual is the only data we have). Red only when
-              // the user has set a budget and actual came in under.
-              const fillColour = !b                      ? UX.greenInk
-                               : onTrackFlag === true    ? UX.greenInk
-                               : onTrackFlag === false   ? UX.redInk
-                               :                           UX.ink5
-              // Status key drives both the i18n label and the tone — keep
-              // the key locale-neutral so the colour mapping is stable.
-              const statusKey: 'notSet' | 'noBudget' | 'noActuals' | 'onTrack' | 'offTrack' =
-                !b && !hasActual             ? 'notSet'
-                : !b && hasActual            ? 'noBudget'
-                : !hasActual                 ? 'noActuals'
-                : onTrackFlag                ? 'onTrack'
-                :                              'offTrack'
-              const statusLabel = t(`table.status_${statusKey}`)
-              const statusTone: 'good' | 'warning' | 'bad' | 'neutral' | 'info' =
-                statusKey === 'onTrack'   ? 'good'
-                : statusKey === 'offTrack' ? 'bad'
-                : statusKey === 'noBudget' ? 'info'
-                :                            'neutral'
-
-              return (
-                <div key={row.month}>
-                  {isEdit ? (
-                    <div style={{
-                      display:             'grid',
-                      gridTemplateColumns: '60px 1fr 90px 90px 90px',
-                      gap:                 12,
-                      padding:             '10px 16px',
-                      alignItems:          'center',
-                      borderBottom:        `0.5px solid ${UX.borderSoft}`,
-                      background:          UX.cardBg,
-                    }}>
-                      <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
-                        {[
-                          { key: 'revenue_target',        placeholder: t('table.phRevenue') },
-                          { key: 'food_cost_pct_target',  placeholder: t('table.phFood') },
-                          { key: 'staff_cost_pct_target', placeholder: t('table.phStaff') },
-                          { key: 'net_profit_target',     placeholder: t('table.phProfit') },
-                        ].map(f => (
-                          <input
-                            key={f.key}
-                            type="number" placeholder={f.placeholder}
-                            value={(form as any)[f.key] ?? ''}
-                            onChange={e => setForm((prev: any) => ({ ...prev, [f.key]: parseFloat(e.target.value) || 0 }))}
-                            style={{ padding: '5px 8px', border: `1px solid ${UX.indigo}`, borderRadius: UX.r_sm, fontSize: UX.fsMicro }}
-                          />
-                        ))}
-                      </div>
-                      <span />
-                      <span />
-                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                        <button onClick={() => save(row.month)} disabled={saving}
-                          style={{ padding: '4px 10px', background: UX.navy, color: 'white', border: 'none', borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', fontWeight: UX.fwMedium }}>
-                          {saving ? '…' : t('table.save')}
-                        </button>
-                        <button onClick={() => setEditing(null)}
-                          style={{ padding: '4px 8px', background: UX.borderSoft, border: 'none', borderRadius: UX.r_sm, fontSize: UX.fsMicro, cursor: 'pointer', color: UX.ink2 }}>
-                          {t('table.cancel')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      className="cc-bud-row"
-                      style={{
-                        display:             'grid',
-                        gridTemplateColumns: '60px 1fr 90px 90px 90px',
-                        gap:                 12,
-                        padding:             '11px 16px',
-                        alignItems:          'center',
-                        borderBottom:        i === rows.length - 1 ? 'none' : `0.5px solid ${UX.borderSoft}`,
-                        opacity:             !b && !hasActual ? 0.6 : 1,
-                      }}
-                    >
-                      <span style={{ fontWeight: UX.fwMedium, color: UX.ink1, fontSize: UX.fsBody }}>{MONTHS[row.month - 1].slice(0, 3)}</span>
-
-                      {/* Progress bar per DESIGN.md § 4.  Rendered whenever
-                          there's EITHER a budget or an actual, so an
-                          actual-only month (April) now shows a full green
-                          fill instead of the empty track that BUDGET-FIX § 4
-                          called out. */}
-                      {(b || hasActual) ? (
-                        <div style={{ position: 'relative' as const, height: 26 }}>
-                          {/* Grey track */}
-                          <div style={{
-                            position:     'absolute' as const,
-                            left: 0, right: 0,
-                            top: 10, height: 8,
-                            background:   UX.borderSoft,
-                            borderRadius: 3,
-                          }}>
-                            {fillPct != null && fillPct > 0 && (
-                              <div style={{
-                                position:     'absolute' as const,
-                                left:         0,
-                                top:          0,
-                                bottom:       0,
-                                width:        `${Math.max(1, fillPct)}%`,
-                                background:   fillColour,
-                                borderRadius: fillPct >= 99.5 ? 3 : '3px 0 0 3px',
-                                opacity:      0.92,
-                              }} />
-                            )}
-                            {tickPct != null && (
-                              <div
-                                title={t('table.targetTip', { amount: fmtKr(b!.revenue_target) })}
-                                style={{
-                                  position:     'absolute' as const,
-                                  left:         `calc(${tickPct}% - 1px)`,
-                                  top:          -3,
-                                  bottom:       -3,
-                                  width:        2,
-                                  background:   UX.ink1,
-                                  borderRadius: 1,
-                                }}
-                              />
-                            )}
-                          </div>
-
-                          {/* Labels — "act" above the bar at the fill end,
-                              "bud" below at the tick. If the two are within
-                              10pp of each other they'd collide; drop the
-                              label on the shorter one (BUDGET-FIX § 5). */}
-                          {(() => {
-                            const showAct = fillPct != null
-                            const showBud = tickPct != null
-                            const tooClose = showAct && showBud && Math.abs(fillPct! - tickPct!) < 10
-                            const hideAct = tooClose && fillPct! < tickPct!
-                            const hideBud = tooClose && tickPct! <= fillPct!
-                            return (
-                              <>
-                                {showAct && !hideAct && (
-                                  <span style={{
-                                    position:     'absolute' as const,
-                                    left:         `clamp(0%, calc(${Math.min(95, fillPct!)}% - 6px), calc(100% - 80px))`,
-                                    top:          -2,
-                                    fontSize:     9,
-                                    color:        fillColour,
-                                    fontWeight:   UX.fwMedium,
-                                    fontVariantNumeric: 'tabular-nums' as const,
-                                    whiteSpace:   'nowrap' as const,
-                                  }}>
-                                    {t('table.labelAct', { amount: fmtKr(a!.revenue) })}
-                                  </span>
-                                )}
-                                {showBud && !hideBud && (
-                                  <span style={{
-                                    position:     'absolute' as const,
-                                    left:         `clamp(0%, calc(${tickPct!}% + 4px), calc(100% - 70px))`,
-                                    bottom:       -2,
-                                    fontSize:     9,
-                                    color:        UX.ink3,
-                                    fontVariantNumeric: 'tabular-nums' as const,
-                                    whiteSpace:   'nowrap' as const,
-                                  }}>
-                                    {t('table.labelBud', { amount: fmtKr(b!.revenue_target) })}
-                                  </span>
-                                )}
-                              </>
-                            )
-                          })()}
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontStyle: 'italic' as const }}>
-                          {t('table.noBudget')}
-                        </span>
-                      )}
-
-                      <span style={{ textAlign: 'right' as const, fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: variance == null ? UX.ink5 : variance >= 0 ? UX.greenInk : UX.redInk, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const }}>
-                        {variance != null ? (variance >= 0 ? '+' : '−') + fmtKr(Math.abs(variance)) : '—'}
-                      </span>
-
-                      <div style={{ textAlign: 'right' as const }}>
-                        <StatusPill tone={statusTone}>{statusLabel}</StatusPill>
-                      </div>
-
-                      {/* Hover-only pencil — single affordance.  No per-row
-                          Set / +Analyse buttons cluttering the table. The
-                          top-right "+ Generate with AI" handles bulk
-                          setting.  A future iteration could bring the
-                          per-month "Analyse" back as a right-click menu or
-                          keyboard shortcut; it doesn't belong on every row.
-                          FIX-PROMPT § Phase 4. */}
-                      <div
-                        className="cc-bud-action"
-                        style={{ textAlign: 'right' as const }}
-                        onClick={e => e.stopPropagation()}
-                      >
-                        <button
-                          aria-label={b
-                            ? t('table.editAria', { month: MONTHS[row.month - 1] })
-                            : t('table.setAria',  { month: MONTHS[row.month - 1] })}
-                          onClick={() => { setEditing(row.month); setForm(b ?? {}) }}
-                          style={{
-                            padding:      '3px 8px',
-                            background:   'transparent',
-                            border:       'none',
-                            borderRadius: UX.r_sm,
-                            fontSize:     13,
-                            cursor:       'pointer',
-                            color:        UX.ink4,
-                            lineHeight:   1,
-                          }}
-                        >
-                          ✎
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })
-          })()}
+        {/* Header row — Generate AI action */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={generateWithAI}
+            disabled={generating || !bizId}
+            style={{
+              padding:      '6px 14px',
+              background:   generating ? UXP.lavMid : UXP.lav,
+              color:        '#fff',
+              border:       'none',
+              borderRadius: 999,
+              fontSize:     11,
+              fontWeight:   500,
+              fontFamily:   'inherit',
+              cursor:       generating || !bizId ? 'not-allowed' : 'pointer',
+              opacity:      generating || !bizId ? 0.6 : 1,
+              display:      'inline-flex',
+              alignItems:   'center',
+              gap:          6,
+            }}
+          >
+            <span aria-hidden>✦</span>
+            {generating ? 'Generating…' : 'Generate with AI'}
+          </button>
         </div>
 
-        {/* Per-month analysis modal */}
-        {analysis && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <div style={{ background: 'white', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              {/* Header */}
-              <div style={{
-                padding: '18px 24px',
-                background: analysis.result?.verdict === 'hit'    ? 'linear-gradient(135deg, #15803d 0%, #22c55e 100%)'
-                           : analysis.result?.verdict === 'missed'? 'linear-gradient(135deg, #dc2626 0%, #f87171 100%)'
-                           : analysis.result?.verdict === 'mixed' ? 'linear-gradient(135deg, #d97706 0%, #fbbf24 100%)'
-                           : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                color: 'white',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-              }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase' as const, opacity: 0.85, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span>{MONTHS[analysis.month - 1]} {year} · {analysis.result?.verdict?.toUpperCase() ?? 'ANALYSIS'}</span>
-                    <span title="Generated by AI — review before acting" style={{ background: 'rgba(255,255,255,0.2)', padding: '1px 6px', borderRadius: 3, fontSize: 9 }}>✦ AI</span>
-                  </div>
-                  <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.4 }}>
-                    {analysis.result?.headline ?? 'Analysis'}
-                  </div>
-                </div>
-                <button onClick={() => setAnalysis(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'white', lineHeight: 1 }}>×</button>
-              </div>
+        {aiLimitHit && (
+          <AiLimitReached used={aiLimitHit.used} limit={aiLimitHit.limit} plan={aiLimitHit.plan} />
+        )}
 
-              {/* Body */}
-              <div style={{ overflowY: 'auto', flex: 1, padding: '16px 24px' }}>
+        {genError && (
+          <Banner tone="bad" text={genError} onClose={() => setGenError('')} />
+        )}
 
-                {/* Per-metric analysis */}
-                {analysis.result?.analysis?.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>
-                      What happened
-                    </div>
-                    {analysis.result.analysis.map((a: any, idx: number) => {
-                      const color = a.status === 'good' ? { bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d' }
-                                  : a.status === 'bad'  ? { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' }
-                                  :                        { bg: '#fffbeb', border: '#fef3c7', text: '#d97706' }
-                      const label = a.metric === 'staff_cost' ? 'Staff cost'
-                                  : a.metric === 'food_cost'  ? 'Food cost'
-                                  : a.metric === 'net_profit' ? 'Net profit'
-                                  : a.metric === 'margin'     ? 'Margin'
-                                  : a.metric === 'revenue'    ? 'Revenue'
-                                  : a.metric
-                      return (
-                        <div key={idx} style={{ background: color.bg, border: `1px solid ${color.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.06em', color: color.text, marginBottom: 3 }}>
-                            {label}
-                          </div>
-                          <div style={{ fontSize: 13, color: '#374151', lineHeight: 1.5 }}>{a.message}</div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
+        {/* ── KPI strip ─────────────────────────────────────────── */}
+        <KpiStrip
+          year={year}
+          totalYearBudg={totalYearBudg}
+          monthsSet={monthsSet}
+          totalRev={totalRev}
+          pacingPct={pacingPct}
+          monthsInYearSoFar={monthsInYearSoFar}
+          withActualCount={withActual.length}
+          projection={projection}
+          projDelta={projDelta}
+          onTrack={onTrack}
+          offTrack={offTrack}
+        />
 
-                {/* Recommendations */}
-                {analysis.result?.recommendations?.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af', marginBottom: 10 }}>
-                      Recommendations
-                    </div>
-                    <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#374151', lineHeight: 1.6 }}>
-                      {analysis.result.recommendations.map((rec: string, idx: number) => (
-                        <li key={idx} style={{ marginBottom: 6 }}>{rec}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+        {/* ── Coach card ─────────────────────────────────────────── */}
+        {coach && coach.has_budget !== false && coach.narrative && (
+          <CoachCard coach={coach} />
+        )}
 
-                {analysis.result?.verdict === 'no-data' && (
-                  <div style={{ fontSize: 13, color: '#6b7280', padding: '10px 0' }}>
-                    Nothing to analyse for this month yet.
-                  </div>
-                )}
-              </div>
+        {/* ── Monthly BreakdownTable ─────────────────────────────── */}
+        <MonthlyBreakdown
+          rows={rows}
+          loading={loading}
+          onEdit={(row: any) => {
+            setEditing(row)
+            setEditForm({
+              revenue_target:        row.budget?.revenue_target        ?? '',
+              food_cost_pct_target:  row.budget?.food_cost_pct_target  ?? '',
+              staff_cost_pct_target: row.budget?.staff_cost_pct_target ?? '',
+              net_profit_target:     row.budget?.net_profit_target     ?? '',
+            })
+            setAnalysis(null)
+          }}
+          totalRev={totalRev}
+          totalYearBudg={totalYearBudg}
+        />
 
-              {/* Footer */}
-              <div style={{ padding: '12px 24px', borderTop: '1px solid #f3f4f6', display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => setAnalysis(null)}
-                  style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Per-month edit drawer */}
+        {editing && (
+          <EditDrawer
+            row={editing}
+            form={editForm}
+            saving={saving}
+            analysing={analysingMonth === editing.month}
+            analysis={analysis && analysis.month === editing.month ? analysis.result : null}
+            onChange={setEditForm}
+            onSave={saveEdit}
+            onCancel={() => { setEditing(null); setAnalysis(null) }}
+            onAnalyse={() => analyseMonth(editing.month)}
+          />
+        )}
+
+        {/* AI suggestions modal */}
+        {suggestions && (
+          <SuggestionsModal
+            year={year}
+            suggestions={suggestions}
+            applying={applying}
+            feedbackByMonth={feedbackByMonth}
+            onRecord={(m: number, r: string) => setFeedbackByMonth(prev => ({ ...prev, [m]: r }))}
+            onApply={applyAllSuggestions}
+            onClose={() => setSuggestions(null)}
+            businessId={bizId}
+          />
         )}
       </div>
+
+      <AskAI
+        page="budget"
+        context={rows.length > 0 ? [
+          `Year ${year} budget overview`,
+          `${monthsSet} of 12 months have targets set.`,
+          `YTD: actual ${fmtKr(totalRev)} vs budgeted ${fmtKr(totalBudg)} (pacing ${fmtPct(pacingPct)}).`,
+          projection > 0 ? `Linear projection: ${fmtKr(projection)} for the year.` : null,
+        ].filter(Boolean).join('\n') : 'No budget data yet'}
+      />
     </AppShell>
   )
 }
 
-// Small dot + count + label tally used in the PageHero right slot.
-function TallyDot({ tone, count, label }: { tone: 'good' | 'bad' | 'neutral' | 'info'; count: number; label: string }) {
-  const dot =
-    tone === 'good' ? UX.greenInk :
-    tone === 'bad'  ? UX.redInk   :
-    tone === 'info' ? UX.indigo   :
-                      UX.ink4
+// ════════════════════════════════════════════════════════════════════
+// Sub-components
+// ════════════════════════════════════════════════════════════════════
+
+function KpiStrip({
+  year, totalYearBudg, monthsSet, totalRev, pacingPct,
+  monthsInYearSoFar, withActualCount, projection, projDelta, onTrack, offTrack,
+}: any) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, display: 'inline-block' }} />
-      <span style={{ fontSize: 17, fontWeight: UX.fwMedium, color: UX.ink1, fontVariantNumeric: 'tabular-nums' as const }}>{count}</span>
-      <span style={{ fontSize: UX.fsMicro, color: UX.ink3 }}>{label}</span>
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      <KpiCardUX
+        title={`Budget ${year}`}
+        value={totalYearBudg > 0 ? fmtKr(totalYearBudg) : '—'}
+        microLabel={`${monthsSet} of 12 months set`}
+      />
+      <KpiCardUX
+        title="Actual YTD"
+        value={fmtKr(totalRev)}
+        variant="stacked"
+        stackedBars={[
+          { label: 'Pacing %',     value: Math.min(100, pacingPct),               max: 100, color: UXP.lav    },
+          { label: 'Year elapsed', value: monthsInYearSoFar * (100 / 12), max: 100, color: UXP.lavMid },
+        ]}
+        microLabel={`${withActualCount} of ${monthsInYearSoFar} closed`}
+      />
+      <KpiCardUX
+        title="Projected"
+        value={projection > 0 ? fmtKr(projection) : '—'}
+        delta={projDelta}
+        deltaGood
+        microLabel="Linear extrapolation"
+      />
+      <KpiCardUX
+        title="On track"
+        value={`${onTrack}`}
+        variant="stacked"
+        stackedBars={(onTrack + offTrack) > 0 ? [
+          { label: 'On track',  value: onTrack,  max: onTrack + offTrack, color: UXP.green },
+          { label: 'Off track', value: offTrack, max: onTrack + offTrack, color: UXP.rose  },
+        ] : undefined}
+        microLabel={`${offTrack} off track`}
+      />
     </div>
   )
 }
 
-// ─── FeedbackButtons — per-month owner reaction on an AI suggestion ──
-// Writes to ai_forecast_outcomes via /api/budgets/feedback. The next
-// AI generation includes these reactions in its "PRIOR ACCURACY"
-// block, so the AI self-corrects toward what the owner actually wants.
-function FeedbackButtons({
-  businessId, year, month, currentReaction, onRecord,
-}: {
-  businessId: string | null
-  year: number
-  month: number
-  currentReaction: string | undefined
-  onRecord: (reaction: string) => void
-}) {
-  const [saving, setSaving] = useState<string | null>(null)
+// ── Coach card ──────────────────────────────────────────────────────
+function CoachCard({ coach }: { coach: any }) {
+  const onPace = coach.projected && coach.budget
+    ? Number(coach.projected.revenue ?? 0) >= Number(coach.budget.revenue_target ?? 0)
+    : null
+  const tone: 'good' | 'bad' | 'warning' = onPace == null ? 'warning' : onPace ? 'good' : 'bad'
+  const palette = {
+    good:    { bg: UXP.greenFill, fg: UXP.greenDeep, accent: UXP.green },
+    bad:     { bg: UXP.roseFill,  fg: UXP.roseText,  accent: UXP.rose  },
+    warning: { bg: UXP.lavFill,   fg: UXP.lavText,   accent: UXP.coral },
+  }[tone]
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+      display:       'grid',
+      gap:           10,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          padding:      '3px 8px',
+          background:   palette.bg,
+          color:        palette.fg,
+          borderRadius: 999,
+          fontSize:     9,
+          fontWeight:   600,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase' as const,
+        }}>
+          AI coach
+        </span>
+        {coach.budget?.revenue_target && coach.projected?.revenue != null && (
+          <span style={{ fontSize: 10, color: UXP.ink3 }}>
+            {fmtKr(Number(coach.mtd?.revenue ?? 0))} MTD · projected {fmtKr(Number(coach.projected.revenue))} vs {fmtKr(Number(coach.budget.revenue_target))} target
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: UXP.ink1, lineHeight: 1.55 }}>
+        {coach.narrative}
+      </div>
+      {coach.labour_is_the_lever && (
+        <a href="/scheduling" style={{
+          alignSelf:    'flex-start' as const,
+          padding:      '4px 10px',
+          background:   palette.bg,
+          color:        palette.fg,
+          border:       `0.5px solid ${palette.accent}22`,
+          borderRadius: 999,
+          fontSize:     10,
+          fontWeight:   500,
+          textDecoration: 'none',
+        }}>Open scheduling →</a>
+      )}
+    </div>
+  )
+}
 
-  const record = async (reaction: 'too_high' | 'too_low' | 'just_right' | 'wrong_shape') => {
+// ── Monthly BreakdownTable ──────────────────────────────────────────
+function MonthlyBreakdown({ rows, loading, onEdit, totalRev, totalYearBudg }: any) {
+  if (loading) {
+    return <Card title={`Monthly budgets`} subtitle="Loading…"><Empty>Loading…</Empty></Card>
+  }
+  if (rows.length === 0) {
+    return <Card title="Monthly budgets" subtitle="No budget rows"><Empty>No budget data yet.</Empty></Card>
+  }
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Monthly budgets</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          Click a row to edit or analyse
+        </div>
+      </div>
+      <BreakdownTable<BudgetRow>
+        columns={[
+          { key: 'month', header: 'Month', align: 'left', render: (r) => (
+            <button type="button" onClick={() => onEdit(r)} style={inlineLinkBtn}>
+              <span style={{ color: UXP.ink1, fontWeight: 500 }}>{MONTHS[r.month - 1]}</span>
+            </button>
+          ) },
+          { key: 'budget_rev', header: 'Budgeted', align: 'right', render: (r) =>
+            r.budget?.revenue_target ? fmtKr(r.budget.revenue_target) : <span style={{ color: UXP.ink4 }}>Not set</span>
+          },
+          { key: 'actual_rev', header: 'Actual', align: 'right', render: (r) =>
+            r.actual ? fmtKr(r.actual.revenue) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'variance', header: 'Variance', align: 'right', render: (r) => {
+            if (!r.budget?.revenue_target || !r.actual) return <span style={{ color: UXP.ink4 }}>—</span>
+            const v = (r.actual.revenue - r.budget.revenue_target)
+            const pct = (v / r.budget.revenue_target) * 100
+            return <DeltaChip value={`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`} positiveIsGood />
+          } },
+          { key: 'food_pct', header: 'Food %', align: 'right', render: (r) =>
+            r.actual?.food_pct ? fmtPct(r.actual.food_pct) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'staff_pct', header: 'Staff %', align: 'right', render: (r) =>
+            r.actual?.staff_pct ? fmtPct(r.actual.staff_pct) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'margin', header: 'Margin', align: 'right', render: (r) =>
+            r.actual?.margin_pct != null ? fmtPct(r.actual.margin_pct) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'status', header: 'Status', align: 'right', render: (r) => {
+            if (!r.budget) return <Status tone="neutral">Not set</Status>
+            if (!r.actual) return <Status tone="lav">Planned</Status>
+            const hit = r.actual.revenue >= r.budget.revenue_target
+            return <Status tone={hit ? 'good' : 'bad'}>{hit ? 'On track' : 'Off track'}</Status>
+          } },
+        ]}
+        sections={[{ rows }]}
+        footer={{
+          label: 'YTD',
+          cells: {
+            budget_rev: fmtKr(totalYearBudg),
+            actual_rev: fmtKr(totalRev),
+            variance:   '',
+            food_pct:   '',
+            staff_pct:  '',
+            margin:     '',
+            status:     '',
+          },
+        }}
+        rowKey={(row) => String(row.month)}
+      />
+    </div>
+  )
+}
+
+function Status({ children, tone }: { children: React.ReactNode; tone: 'good' | 'bad' | 'lav' | 'neutral' }) {
+  const palette = {
+    good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
+    bad:     { bg: UXP.roseFill,  fg: UXP.roseText  },
+    lav:     { bg: UXP.lavFill,   fg: UXP.lavText   },
+    neutral: { bg: UXP.subtleBg,  fg: UXP.ink4      },
+  }[tone]
+  return (
+    <span style={{
+      display:        'inline-block',
+      fontSize:       9,
+      padding:        '2px 7px',
+      borderRadius:   6,
+      background:     palette.bg,
+      color:          palette.fg,
+      fontWeight:     500,
+      letterSpacing:  '0.02em',
+    }}>{children}</span>
+  )
+}
+
+// ── Edit drawer ──────────────────────────────────────────────────────
+function EditDrawer({
+  row, form, saving, analysing, analysis, onChange, onSave, onCancel, onAnalyse,
+}: any) {
+  return (
+    <div role="dialog" aria-label="Edit budget" style={drawerStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 10, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            Edit budget
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 500, color: UXP.ink1, marginTop: 2 }}>
+            {MONTHS[row.month - 1]}
+          </div>
+        </div>
+        <button type="button" onClick={onCancel} aria-label="Close"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 16 }}>×</button>
+      </div>
+
+      <div style={{ display: 'grid', gap: 10 }}>
+        <FormField label="Revenue target (kr)">
+          <input type="number" value={form.revenue_target}
+                 onChange={e => onChange({ ...form, revenue_target: e.target.value })}
+                 style={formInput} />
+        </FormField>
+        <FormField label="Food cost target (%)">
+          <input type="number" value={form.food_cost_pct_target}
+                 onChange={e => onChange({ ...form, food_cost_pct_target: e.target.value })}
+                 style={formInput} />
+        </FormField>
+        <FormField label="Staff cost target (%)">
+          <input type="number" value={form.staff_cost_pct_target}
+                 onChange={e => onChange({ ...form, staff_cost_pct_target: e.target.value })}
+                 style={formInput} />
+        </FormField>
+        <FormField label="Net profit target (kr)">
+          <input type="number" value={form.net_profit_target}
+                 onChange={e => onChange({ ...form, net_profit_target: e.target.value })}
+                 style={formInput} />
+        </FormField>
+      </div>
+
+      <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
+        <button type="button" onClick={onSave} disabled={saving} style={primaryBtn}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={onAnalyse} disabled={analysing} style={ghostBtn}>
+          ✦ {analysing ? 'Analysing…' : 'Analyse'}
+        </button>
+      </div>
+
+      {analysis && (
+        <div style={{
+          marginTop:    14,
+          padding:      '12px 14px',
+          background:   UXP.lavFill,
+          color:        UXP.lavText,
+          borderRadius: UXP.r_md,
+          fontSize:     11,
+          lineHeight:   1.55,
+        }}>
+          <div style={{ fontWeight: 500, marginBottom: 4 }}>{analysis.headline || 'AI verdict'}</div>
+          {Array.isArray(analysis.analysis) && analysis.analysis.map((line: string, i: number) => (
+            <div key={i} style={{ marginTop: 4 }}>{line}</div>
+          ))}
+          {Array.isArray(analysis.recommendations) && analysis.recommendations.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 9, letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600 }}>
+                Recommendations
+              </div>
+              {analysis.recommendations.map((r: string, i: number) => (
+                <div key={i} style={{ marginTop: 4 }}>• {r}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Suggestions modal ───────────────────────────────────────────────
+function SuggestionsModal({
+  year, suggestions, applying, feedbackByMonth, onRecord, onApply, onClose, businessId,
+}: any) {
+  return (
+    <div role="dialog" aria-label="AI suggestions" style={{
+      position:    'fixed' as const,
+      inset:       0,
+      background:  'rgba(58,53,80,0.32)',
+      display:     'flex',
+      alignItems:  'center',
+      justifyContent: 'center',
+      padding:     20,
+      zIndex:      1000,
+    }}>
+      <div style={{
+        background:    UXP.cardBg,
+        borderRadius:  UXP.r_lg,
+        width:         '100%',
+        maxWidth:      720,
+        maxHeight:     '90vh',
+        overflow:      'hidden' as const,
+        display:       'flex',
+        flexDirection: 'column' as const,
+        border:        `0.5px solid ${UXP.border}`,
+      }}>
+        <div style={{ padding: '14px 18px', borderBottom: `0.5px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1 }}>AI budget for {year}</div>
+            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+              Review each month, give feedback, then apply the whole set.
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" style={{
+            background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 16,
+          }}>×</button>
+        </div>
+
+        {suggestions.overall_strategy && (
+          <div style={{ padding: '10px 18px', background: UXP.lavFill, color: UXP.lavText, fontSize: 11, lineHeight: 1.5, borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+            <span style={{ fontWeight: 500 }}>Strategy: </span>{suggestions.overall_strategy}
+          </div>
+        )}
+
+        <div style={{ overflowY: 'auto' as const, flex: 1, padding: '6px 18px 14px' }}>
+          {suggestions.monthly?.map((s: any) => (
+            <div key={s.month} style={{ padding: '10px 0', borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                <span style={{ fontWeight: 500, color: UXP.ink1, fontSize: 12 }}>{MONTHS[s.month - 1]}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <FeedbackButtons
+                    businessId={businessId}
+                    year={year}
+                    month={s.month}
+                    currentReaction={feedbackByMonth[s.month]}
+                    onRecord={(r: string) => onRecord(s.month, r)}
+                  />
+                  <span style={{ fontSize: 12, color: UXP.lavText, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const }}>
+                    {fmtKr(s.revenue_target)}
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: UXP.ink3 }}>
+                Food {s.food_cost_pct_target}% · Staff {s.staff_cost_pct_target}% · Profit {fmtKr(s.net_profit_target)}
+              </div>
+              {s.reasoning && (
+                <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const, marginTop: 4 }}>
+                  {s.reasoning}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding: '12px 18px', borderTop: `0.5px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={onClose} style={ghostBtn}>Cancel</button>
+          <button type="button" onClick={onApply} disabled={applying} style={primaryBtn}>
+            {applying ? 'Applying…' : 'Apply all'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FeedbackButtons({ businessId, year, month, currentReaction, onRecord }: any) {
+  const [saving, setSaving] = useState<string | null>(null)
+  async function record(reaction: string) {
     if (!businessId || saving) return
     setSaving(reaction)
     try {
@@ -929,40 +712,146 @@ function FeedbackButtons({
         body: JSON.stringify({ business_id: businessId, year, month, reaction }),
       })
       if (r.ok) onRecord(reaction)
-    } catch { /* silent — UI doesn't block on this */ }
+    } catch {}
     setSaving(null)
   }
-
-  const btn = (reaction: 'too_high' | 'too_low' | 'just_right', glyph: string, title: string) => {
+  const btn = (reaction: string, glyph: string, title: string) => {
     const active = currentReaction === reaction
     return (
       <button
+        key={reaction}
+        type="button"
         onClick={() => record(reaction)}
         disabled={saving !== null}
         title={title}
         style={{
-          padding:     '2px 6px',
-          background:  active ? '#6366f1' : 'transparent',
-          color:       active ? 'white'   : '#9ca3af',
-          border:      `1px solid ${active ? '#6366f1' : '#e5e7eb'}`,
+          padding:      '2px 6px',
+          background:   active ? UXP.lav : 'transparent',
+          color:        active ? '#fff'  : UXP.ink3,
+          border:       `0.5px solid ${active ? UXP.lav : UXP.border}`,
           borderRadius: 4,
-          fontSize:    10,
-          fontWeight:  600,
-          cursor:      saving === null ? 'pointer' : 'wait',
-          opacity:     saving === reaction ? 0.6 : 1,
-          transition:  'all 120ms',
+          fontSize:     10,
+          fontWeight:   500,
+          cursor:       saving === null ? 'pointer' : 'wait',
+          opacity:      saving === reaction ? 0.6 : 1,
+          fontFamily:   'inherit',
         }}
-      >
-        {glyph}
-      </button>
+      >{glyph}</button>
     )
   }
-
   return (
-    <div style={{ display: 'flex', gap: 4 }}>
+    <div style={{ display: 'flex', gap: 3 }}>
       {btn('too_low',    '↑', 'Target too low')}
       {btn('just_right', '✓', 'Just right')}
       {btn('too_high',   '↓', 'Target too high')}
     </div>
   )
+}
+
+// ── Atoms / styles ──────────────────────────────────────────────────
+function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+    }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>{children}</div>
+}
+
+function Banner({ tone, text, onClose }: { tone: 'bad' | 'good'; text: string; onClose?: () => void }) {
+  const palette = tone === 'bad'
+    ? { bg: UXP.roseFill,  border: UXP.rose,  fg: UXP.roseText  }
+    : { bg: UXP.greenFill, border: UXP.green, fg: UXP.greenDeep }
+  return (
+    <div style={{
+      background:    palette.bg,
+      border:        `0.5px solid ${palette.border}`,
+      borderRadius:  UXP.r_md,
+      padding:       '10px 14px',
+      fontSize:      12,
+      color:         palette.fg,
+      display:       'flex',
+      justifyContent: 'space-between',
+      alignItems:    'center',
+      gap:           12,
+    }}>
+      <span style={{ flex: 1 }}>{text}</span>
+      {onClose && (
+        <button onClick={onClose} aria-label="Dismiss"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: palette.fg, fontSize: 16 }}>×</button>
+      )}
+    </div>
+  )
+}
+
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+      <span style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const inlineLinkBtn: React.CSSProperties = {
+  background: 'none', border: 'none', padding: 0,
+  cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' as const,
+}
+
+const drawerStyle: React.CSSProperties = {
+  position:   'fixed' as const,
+  top:        0, right: 0, bottom: 0,
+  width:      'min(420px, 100%)',
+  background: UXP.cardBg,
+  borderLeft: `0.5px solid ${UXP.border}`,
+  boxShadow:  '-8px 0 24px rgba(58,53,80,0.08)',
+  padding:    '18px 22px',
+  overflow:   'auto' as const,
+  zIndex:     50,
+}
+
+const formInput: React.CSSProperties = {
+  padding:      '6px 10px',
+  background:   UXP.cardBg,
+  color:        UXP.ink1,
+  border:       `0.5px solid ${UXP.border}`,
+  borderRadius: 7,
+  fontSize:     11,
+  fontFamily:   'inherit',
+}
+
+const primaryBtn: React.CSSProperties = {
+  padding:      '6px 14px',
+  background:   UXP.lavDeep,
+  color:        '#fff',
+  border:       'none',
+  borderRadius: 999,
+  fontSize:     11,
+  fontWeight:   500,
+  cursor:       'pointer',
+  fontFamily:   'inherit',
+}
+
+const ghostBtn: React.CSSProperties = {
+  padding:      '6px 12px',
+  background:   UXP.cardBg,
+  color:        UXP.ink2,
+  border:       `0.5px solid ${UXP.border}`,
+  borderRadius: 999,
+  fontSize:     11,
+  fontWeight:   500,
+  cursor:       'pointer',
+  fontFamily:   'inherit',
 }
