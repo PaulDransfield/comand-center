@@ -2,7 +2,7 @@
 // components/ux/PairedBarChart.tsx
 //
 // Inline-SVG clustered-bar chart with optional 1–2 line overlays on a
-// right axis. Phase 1 — presentational only.
+// right axis. Presentational + hover tooltip.
 //
 // Critical fidelity rules (verbatim from the Phase 1 prompt):
 //   • viewBox width = render width 1:1 so SVG strokes stay crisp
@@ -15,8 +15,9 @@
 // All numeric figures consuming this chart should be fmtKr / fmtNum
 // outputs — never raw template-literal " kr" suffixes.
 
+import { useState } from 'react'
 import { UXP } from '@/lib/constants/tokens'
-import { fmtNum } from '@/lib/format'
+import { fmtKr, fmtNum } from '@/lib/format'
 
 export interface ClusterSeries {
   label: string
@@ -97,8 +98,15 @@ export default function PairedBarChart({
     right:  t * yRightMax,
   }))
 
+  // ── Hover tooltip ─────────────────────────────────────────────
+  // Pure-presentational: we track which group index the cursor is
+  // over and render a small fixed-position pill next to it. The
+  // hover surface is an invisible <rect> per group spanning the full
+  // chart height so the user can hover anywhere in the column.
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, position: 'relative' as const }}>
       <svg
         width={width}
         height={height}
@@ -110,6 +118,7 @@ export default function PairedBarChart({
         // spilling onto sibling elements (Vero dashboard bug 2026-05-21
         // — labour% line drew above the KPI strip).
         style={{ display: 'block', overflow: 'hidden' as const }}
+        onMouseLeave={() => setHoverIdx(null)}
       >
         {/* Gridlines + left + right axis ticks */}
         {yTicks.map(t => (
@@ -156,6 +165,34 @@ export default function PairedBarChart({
           })
         })}
 
+        {/* Hover-target columns — invisible rectangles that span the
+            full chart height so the user can hover anywhere in a
+            group's column. Sits beneath the line overlays so the
+            line markers still receive their own pointer events when
+            the cursor lands on a circle. */}
+        {groups.map((_g, gi) => {
+          const x = PAD_L + gi * groupW
+          return (
+            <rect
+              key={`hover-${gi}`}
+              x={x} y={PAD_T} width={groupW} height={innerH}
+              fill="transparent"
+              onMouseEnter={() => setHoverIdx(gi)}
+              onMouseMove={() => setHoverIdx(gi)}
+            />
+          )
+        })}
+
+        {/* Vertical hover guide */}
+        {hoverIdx != null && (
+          <line
+            x1={xMidFor(hoverIdx)} x2={xMidFor(hoverIdx)}
+            y1={PAD_T} y2={PAD_T + innerH}
+            stroke={UXP.lavMid} strokeWidth={0.5}
+            pointerEvents="none"
+          />
+        )}
+
         {/* Line overlays */}
         {lines.map((line, li) => {
           const pts: Array<{ x: number; y: number }> = []
@@ -181,6 +218,63 @@ export default function PairedBarChart({
           )
         })}
       </svg>
+
+      {/* Hover tooltip — absolute, positioned by the hovered group's
+          centre in % of chart width so the pill follows the SVG
+          even when the container scales. */}
+      {hoverIdx != null && (
+        <div
+          style={{
+            position:    'absolute' as const,
+            top:         8,
+            left:        `${((xMidFor(hoverIdx)) / width) * 100}%`,
+            transform:   hoverIdx > groupCount / 2 ? 'translateX(calc(-100% - 8px))' : 'translateX(8px)',
+            background:  UXP.cardBg,
+            border:      `0.5px solid ${UXP.border}`,
+            borderRadius: UXP.r_md,
+            padding:     '8px 10px',
+            boxShadow:   '0 8px 24px rgba(58,53,80,0.12)',
+            fontSize:    10,
+            color:       UXP.ink1,
+            pointerEvents: 'none' as const,
+            zIndex:      5,
+            minWidth:    120,
+            display:     'grid',
+            gap:         3,
+          }}
+        >
+          <div style={{ fontSize: 9, color: UXP.ink3, fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            {groups[hoverIdx]}
+          </div>
+          {series.map((s, si) => {
+            const v = s.data[hoverIdx]
+            const color = s.color || LAV_PALETTE[si % LAV_PALETTE.length]
+            return (
+              <div key={`tt-s-${si}`} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', gap: 6, alignItems: 'center' }}>
+                <span style={{ width: 6, height: 6, borderRadius: 2, background: color }} />
+                <span style={{ color: UXP.ink2 }}>{s.label}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, fontWeight: 500 }}>
+                  {Number.isFinite(v) && v !== 0
+                    ? (leftAxisUnit === 'kr' ? fmtKr(Math.round(Number(v))) : fmtNum(Math.round(Number(v))))
+                    : '—'}
+                </span>
+              </div>
+            )
+          })}
+          {lines.map((l, li) => {
+            const v = l.data[hoverIdx]
+            return (
+              <div key={`tt-l-${li}`} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', gap: 6, alignItems: 'center' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: l.color }} />
+                <span style={{ color: UXP.ink2 }}>{l.label}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, fontWeight: 500 }}>
+                  {v != null && Number.isFinite(v) ? `${Math.round(Number(v))}` : '—'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Legend */}
       {legend && (
