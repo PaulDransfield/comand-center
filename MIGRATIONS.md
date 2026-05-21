@@ -6,6 +6,20 @@
 
 ## Pending — apply when ready
 
+### M078 — Invoice PDF extractions (Path B) ⏳ pending application
+**File:** `sql/M078-INVOICE-PDF-EXTRACTIONS.sql`
+**Purpose:** Path B of inventory catalogue (INVENTORY-PATH-B-PDF-EXTRACTION.md). Chicce's first backfill returned 3218/3218 rows with `raw_description=''` because Fortnox doesn't post per-line product data for invoices booked as single-line payables. Path B parses the attached PDFs via Claude Sonnet 4.6 vision + tool use, validates against the Fortnox header total (±2%), and replaces placeholder rows atomically.
+**Schema:**
+- `invoice_pdf_extractions` — per-invoice job + audit (status enum: pending/extracting/extracted/failed/no_pdf/needs_review, attempts, rows_extracted, total_extracted vs total_header, validation_warnings JSONB, cost telemetry tokens_in/out + cost_usd)
+- `supplier_invoice_lines.source` — new column tagging row provenance (fortnox_row / pdf_extraction / owner_correction)
+- `apply_invoice_pdf_extraction(...)` RPC — atomic DELETE-then-INSERT inside one transaction so re-extracting an invoice safely replaces placeholders
+**Companion code:**
+- `lib/inventory/pdf-extractor.ts` — Fortnox file fetch → Sonnet 4.6 vision call (record_invoice_rows tool) → validators (total-match ±2%, VAT presence, description non-empty) → RPC persistence. Cost ~$0.02-0.04 per invoice.
+- `lib/inventory/pdf-extraction-worker.ts` — finds invoices needing extraction (empty description + has PDF + not terminal), batches at 40 per call, auto-chains via waitUntil up to 16 batches (~600 invoices/run).
+- `app/api/inventory/lines/extract-pdfs` — kick endpoint (background-worker pattern, maxDuration=800s).
+- `/admin/v2/tools` — `✦ Extract PDFs (Path B)` button + PDF-phase progress card (Extracted ✓ / Needs review / Failed / No PDF / Rows persisted / Cost USD / Batch size / Remaining).
+**Idempotent.** Re-running on a business is safe — terminal states (extracted/needs_review/no_pdf/failed≥3 attempts) are skipped.
+
 ### M077 — Reviews summary persistence + reply tracking ⏳ pending application
 **File:** `sql/M077-REVIEWS-SUMMARY-AND-REPLIES.sql`
 **Purpose:** Two gaps from M074:

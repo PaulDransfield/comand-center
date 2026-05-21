@@ -1,0 +1,373 @@
+// lib/inventory/pdf-extraction-worker.ts
+//
+// The background-worker loop that drives Path B end-to-end:
+//
+//   1. Find invoices needing extraction (placeholder rows + has PDF +
+//      not already extracted/needs_review).
+//   2. For each: insert/refresh invoice_pdf_extractions job row.
+//   3. Call extractInvoicePdf — validators run inside; persists on success.
+//   4. Update the job row with outcome.
+//   5. Flush progress to inventory_backfill_state every N invoices.
+//
+// Wires into the same status panel as the backfill (one in-flight
+// operation per business at a time). Hard cap of N invoices per
+// invocation so we don't overrun the function maxDuration; the kick
+// endpoint chains another batch via waitUntil when more remain.
+
+import { extractInvoicePdf, type ExtractResult } from './pdf-extractor'
+
+// One invocation processes at most this many invoices. At ~10-15 s per
+// PDF extraction (most of that is the Claude vision call), this leaves
+// plenty of headroom under the 800 s maxDuration cap.
+const BATCH_SIZE = 40
+
+// Persist progress every N invoices so the UI stays alive.
+const FLUSH_EVERY_N = 5
+
+export interface RunInput {
+  org_id:       string
+  business_id:  string
+}
+
+export interface BatchSummary {
+  invoices_in_batch:        number
+  extracted:                number
+  needs_review:             number
+  failed:                   number
+  no_pdf:                   number
+  rows_persisted:           number
+  total_cost_usd:           number
+  remaining_after_batch:    number
+}
+
+interface CandidateInvoice {
+  fortnox_invoice_number:   string
+  invoice_date:             string
+  supplier_fortnox_number:  string | null
+  supplier_name_snapshot:   string | null
+  pdf_file_id:              string | null
+  invoice_total_header:     number | null
+}
+
+export async function runPdfExtractionBatch(
+  db: any,
+  input: RunInput,
+): Promise<BatchSummary> {
+  // Mark the inventory_backfill_state row so the admin UI knows we're
+  // in the PDF-extraction phase. We share the same state row as the
+  // Phase A backfill — one in-flight op per business.
+  await db
+    .from('inventory_backfill_state')
+    .upsert({
+      org_id:        input.org_id,
+      business_id:   input.business_id,
+      status:        'running',
+      progress: {
+        phase:                  'extracting_pdfs',
+        operation:              'pdf_extraction',
+        triggered_at:           new Date().toISOString(),
+        invoices_in_batch:      0,
+        extracted:              0,
+        needs_review:           0,
+        failed:                 0,
+        no_pdf:                 0,
+        rows_persisted:         0,
+        total_cost_usd:         0,
+        remaining_after_batch:  0,
+      },
+      started_at:    new Date().toISOString(),
+      finished_at:   null,
+      error_message: null,
+    }, { onConflict: 'business_id' })
+
+  // ── Find invoices needing extraction ─────────────────────────────
+  // Criteria:
+  //   - At least one supplier_invoice_lines row exists with raw_description
+  //     empty (placeholder rows from Phase A backfill that didn't get item
+  //     descriptions from Fortnox).
+  //   - No invoice_pdf_extractions row with terminal status yet
+  //     (extracted / needs_review / no_pdf / failed-with-attempts>=3).
+  const candidates = await findCandidates(db, input.business_id, BATCH_SIZE)
+
+  // Count how many more remain after this batch — for UI estimation.
+  const remainingTotal = await countRemaining(db, input.business_id)
+  const remainingAfterBatch = Math.max(0, remainingTotal - candidates.length)
+
+  const summary: BatchSummary = {
+    invoices_in_batch:     candidates.length,
+    extracted:             0,
+    needs_review:          0,
+    failed:                0,
+    no_pdf:                0,
+    rows_persisted:        0,
+    total_cost_usd:        0,
+    remaining_after_batch: remainingAfterBatch,
+  }
+
+  for (let i = 0; i < candidates.length; i++) {
+    const inv = candidates[i]
+
+    // Pre-write the job row in 'extracting' state.
+    await db.from('invoice_pdf_extractions').upsert({
+      org_id:                  input.org_id,
+      business_id:             input.business_id,
+      fortnox_invoice_number:  inv.fortnox_invoice_number,
+      invoice_date:            inv.invoice_date,
+      supplier_fortnox_number: inv.supplier_fortnox_number,
+      supplier_name_snapshot:  inv.supplier_name_snapshot,
+      pdf_file_id:             inv.pdf_file_id,
+      status:                  inv.pdf_file_id ? 'extracting' : 'no_pdf',
+      attempts:                1,
+      started_at:              new Date().toISOString(),
+    }, { onConflict: 'business_id,fortnox_invoice_number' })
+
+    if (!inv.pdf_file_id) {
+      summary.no_pdf += 1
+      await db.from('invoice_pdf_extractions').update({
+        status:       'no_pdf',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('business_id', input.business_id)
+      .eq('fortnox_invoice_number', inv.fortnox_invoice_number)
+      continue
+    }
+
+    let result: ExtractResult
+    try {
+      result = await extractInvoicePdf(db, {
+        org_id:                  input.org_id,
+        business_id:             input.business_id,
+        fortnox_invoice_number:  inv.fortnox_invoice_number,
+        invoice_date:            inv.invoice_date,
+        supplier_fortnox_number: inv.supplier_fortnox_number,
+        supplier_name_snapshot:  inv.supplier_name_snapshot,
+        pdf_file_id:             inv.pdf_file_id,
+        invoice_total_header:    inv.invoice_total_header,
+      })
+    } catch (e: any) {
+      // Unexpected throw — treat as failed, will retry on a future kick.
+      result = {
+        status: 'failed',
+        rows_extracted: 0,
+        total_extracted: null,
+        total_header: inv.invoice_total_header,
+        total_delta_pct: null,
+        validation_warnings: [{ code: 'unhandled', message: String(e?.message ?? e), severity: 'block' }],
+        ai_model: null,
+        tokens_input: 0,
+        tokens_output: 0,
+        cost_usd: 0,
+        error_message: String(e?.message ?? e),
+      }
+    }
+
+    if (result.status === 'extracted')         summary.extracted    += 1
+    else if (result.status === 'needs_review') summary.needs_review += 1
+    else if (result.status === 'failed')       summary.failed       += 1
+    summary.rows_persisted += result.rows_extracted
+    summary.total_cost_usd += Number(result.cost_usd ?? 0)
+
+    // Update the job row with the outcome.
+    await db.from('invoice_pdf_extractions').update({
+      status:               result.status,
+      rows_extracted:       result.rows_extracted,
+      total_extracted:      result.total_extracted,
+      total_header:         result.total_header,
+      total_delta_pct:      result.total_delta_pct,
+      validation_warnings:  result.validation_warnings,
+      ai_model:             result.ai_model,
+      tokens_input:         result.tokens_input,
+      tokens_output:        result.tokens_output,
+      cost_usd:             result.cost_usd,
+      error_message:        result.error_message,
+      completed_at:         new Date().toISOString(),
+    })
+    .eq('business_id', input.business_id)
+    .eq('fortnox_invoice_number', inv.fortnox_invoice_number)
+
+    if ((i + 1) % FLUSH_EVERY_N === 0) {
+      await flushProgress(db, input.business_id, summary, 'running')
+    }
+  }
+
+  // Final flush.
+  await flushProgress(db, input.business_id, summary, remainingAfterBatch === 0 ? 'completed' : 'running')
+
+  return summary
+}
+
+// ─────────────────────────────────────────────────────────────────────
+
+async function findCandidates(db: any, businessId: string, limit: number): Promise<CandidateInvoice[]> {
+  // Strategy: pick invoices that have at least one empty-description
+  // line in supplier_invoice_lines AND aren't already terminal in
+  // invoice_pdf_extractions.
+  //
+  // We page through supplier_invoice_lines grouped by invoice number.
+  // Keeping the query simple — performance is fine at our scale.
+
+  const { data } = await db
+    .from('supplier_invoice_lines')
+    .select('fortnox_invoice_number, invoice_date, supplier_fortnox_number, supplier_name_snapshot, total_excl_vat, raw_description')
+    .eq('business_id', businessId)
+    .order('invoice_date', { ascending: false })
+    .limit(5000)                                  // generous; per-business
+
+  const byInvoice = new Map<string, CandidateInvoice & { has_empty: boolean }>()
+  for (const r of (data ?? []) as any[]) {
+    const key = r.fortnox_invoice_number
+    if (!key) continue
+    let entry = byInvoice.get(key)
+    if (!entry) {
+      entry = {
+        fortnox_invoice_number:  key,
+        invoice_date:            r.invoice_date,
+        supplier_fortnox_number: r.supplier_fortnox_number ?? null,
+        supplier_name_snapshot:  r.supplier_name_snapshot  ?? null,
+        pdf_file_id:             null,
+        invoice_total_header:    Number(r.total_excl_vat ?? 0),
+        has_empty:               false,
+      }
+      byInvoice.set(key, entry)
+    }
+    entry.invoice_total_header = (entry.invoice_total_header ?? 0) + Number(r.total_excl_vat ?? 0)
+    if (!r.raw_description || String(r.raw_description).trim() === '') {
+      entry.has_empty = true
+    }
+  }
+
+  const needsExtraction = Array.from(byInvoice.values()).filter(e => e.has_empty)
+  if (needsExtraction.length === 0) return []
+
+  // Filter out invoices already in a terminal extraction state.
+  const numbers = needsExtraction.map(e => e.fortnox_invoice_number)
+  const { data: jobs } = await db
+    .from('invoice_pdf_extractions')
+    .select('fortnox_invoice_number, status, attempts')
+    .eq('business_id', businessId)
+    .in('fortnox_invoice_number', numbers)
+  const jobByNumber = new Map<string, { status: string; attempts: number }>()
+  for (const j of (jobs ?? []) as any[]) {
+    jobByNumber.set(j.fortnox_invoice_number, { status: j.status, attempts: j.attempts ?? 0 })
+  }
+
+  const candidates: CandidateInvoice[] = []
+  for (const e of needsExtraction) {
+    const j = jobByNumber.get(e.fortnox_invoice_number)
+    // Skip terminal states. 'failed' with <3 attempts can retry.
+    if (j) {
+      if (j.status === 'extracted')    continue
+      if (j.status === 'needs_review') continue
+      if (j.status === 'no_pdf')       continue
+      if (j.status === 'failed' && j.attempts >= 3) continue
+    }
+    candidates.push({
+      fortnox_invoice_number:  e.fortnox_invoice_number,
+      invoice_date:            e.invoice_date,
+      supplier_fortnox_number: e.supplier_fortnox_number,
+      supplier_name_snapshot:  e.supplier_name_snapshot,
+      pdf_file_id:             null,         // we look this up just-in-time during extraction
+      invoice_total_header:    e.invoice_total_header,
+    })
+    if (candidates.length >= limit) break
+  }
+
+  // For each candidate, fetch the PDF file_id via the existing drilldown
+  // pattern (look at the invoice header's SupplierInvoiceFileConnections).
+  // We fetch in a tight loop because Fortnox is rate-limited; the
+  // existing skip-already-ingested optimisation isn't applicable here.
+  await Promise.all(candidates.map(async c => {
+    c.pdf_file_id = await lookupPdfFileId(db, businessId, c.fortnox_invoice_number)
+  }))
+
+  return candidates
+}
+
+async function countRemaining(db: any, businessId: string): Promise<number> {
+  // Cheap proxy: number of invoice numbers in supplier_invoice_lines
+  // that have at least one empty-description row.
+  const { data } = await db
+    .from('supplier_invoice_lines')
+    .select('fortnox_invoice_number, raw_description')
+    .eq('business_id', businessId)
+    .limit(5000)
+  const empties = new Set<string>()
+  for (const r of (data ?? []) as any[]) {
+    if (!r.raw_description || String(r.raw_description).trim() === '') {
+      empties.add(r.fortnox_invoice_number)
+    }
+  }
+
+  // Subtract terminal jobs.
+  const numbers = Array.from(empties)
+  if (numbers.length === 0) return 0
+  const { data: jobs } = await db
+    .from('invoice_pdf_extractions')
+    .select('fortnox_invoice_number, status, attempts')
+    .eq('business_id', businessId)
+    .in('fortnox_invoice_number', numbers)
+  let terminal = 0
+  for (const j of (jobs ?? []) as any[]) {
+    if (j.status === 'extracted' || j.status === 'needs_review' || j.status === 'no_pdf') terminal += 1
+    else if (j.status === 'failed' && (j.attempts ?? 0) >= 3) terminal += 1
+  }
+  return Math.max(0, empties.size - terminal)
+}
+
+async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: string): Promise<string | null> {
+  // Hit Fortnox's /supplierinvoices/{n} detail to pull
+  // SupplierInvoiceFileConnections[0].FileId. We do this inline rather
+  // than relying on the existing Phase A backfill data because the
+  // backfill didn't persist FileIds (it stored row data only).
+  const { getFreshFortnoxAccessToken } = await import('@/lib/fortnox/api/auth')
+  const { fortnoxFetch } = await import('@/lib/fortnox/api/fetch')
+
+  const { data: integ } = await db
+    .from('integrations')
+    .select('org_id')
+    .eq('business_id', businessId)
+    .eq('provider', 'fortnox')
+    .maybeSingle()
+  if (!integ?.org_id) return null
+
+  const token = await getFreshFortnoxAccessToken(db, integ.org_id, businessId)
+  if (!token) return null
+
+  try {
+    const res = await fortnoxFetch(
+      `https://api.fortnox.se/3/supplierinvoices/${encodeURIComponent(invoiceNumber)}`,
+      token,
+    )
+    if (!res.ok) return null
+    const json: any = await res.json()
+    const conns: any[] = json?.SupplierInvoice?.SupplierInvoiceFileConnections ?? []
+    return conns[0]?.FileId ? String(conns[0].FileId) : null
+  } catch {
+    return null
+  }
+}
+
+async function flushProgress(
+  db: any,
+  businessId: string,
+  summary: BatchSummary,
+  status: 'running' | 'completed',
+): Promise<void> {
+  const update: any = {
+    status,
+    progress: {
+      phase:                  'extracting_pdfs',
+      operation:              'pdf_extraction',
+      invoices_in_batch:      summary.invoices_in_batch,
+      extracted:              summary.extracted,
+      needs_review:           summary.needs_review,
+      failed:                 summary.failed,
+      no_pdf:                 summary.no_pdf,
+      rows_persisted:         summary.rows_persisted,
+      total_cost_usd:         summary.total_cost_usd,
+      remaining_after_batch:  summary.remaining_after_batch,
+    },
+  }
+  if (status === 'completed') update.finished_at = new Date().toISOString()
+  await db.from('inventory_backfill_state').update(update).eq('business_id', businessId)
+}

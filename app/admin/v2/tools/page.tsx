@@ -342,6 +342,35 @@ export default function ToolsPage() {
     }
   }
 
+  // PDF extraction (Path B). Same waitUntil + poll pattern; the worker
+  // identifies invoices with empty-description rows, fetches the PDF,
+  // runs Sonnet 4.6 vision + tool use, validates against the Fortnox
+  // header total, and persists. Auto-chains batches inside the
+  // background function until no more invoices remain.
+  async function kickPdfExtraction() {
+    if (invKicking || invPolling || !opsBizId.trim()) return
+    setInvKicking(true)
+    setInvError(null)
+    setInvSnapshot(null)
+    try {
+      const res = await fetch('/api/inventory/lines/extract-pdfs', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: opsBizId.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setInvError(json?.message ?? json?.error ?? `HTTP ${res.status}`)
+        return
+      }
+      pollInventoryStatus(opsBizId.trim())
+    } catch (e: any) {
+      setInvError(e?.message ?? 'PDF extraction kick failed')
+    } finally {
+      setInvKicking(false)
+    }
+  }
+
   // Poll loop. Stops on terminal status or after the safety cap.
   function pollInventoryStatus(businessId: string) {
     setInvPolling(true)
@@ -627,6 +656,14 @@ export default function ToolsPage() {
           >
             Re-match all unmatched
           </button>
+          <button
+            onClick={kickPdfExtraction}
+            disabled={invKicking || invPolling || !opsBizId.trim()}
+            style={btnPrimary(invKicking || invPolling || !opsBizId.trim())}
+            title="POST /api/inventory/lines/extract-pdfs — fetches PDFs for empty-description invoices, runs Sonnet 4.6 vision extraction, persists structured rows. Auto-chains batches; ~10-15s per invoice."
+          >
+            ✦ Extract PDFs (Path B)
+          </button>
         </div>
 
         {(invSnapshot || invError) && (() => {
@@ -637,8 +674,10 @@ export default function ToolsPage() {
             fetching_invoice_list:  'Fetching invoice list…',
             fetching_rows:          'Fetching invoice rows…',
             matching:               'Matching lines to products…',
+            extracting_pdfs:        'Extracting PDF rows (Path B)…',
             done:                   'Done',
           } as Record<string, string>)[p.phase] ?? p.phase ?? '—'
+          const isPdfPhase = p.operation === 'pdf_extraction' || p.phase === 'extracting_pdfs'
           const isErr = !!invError || status === 'failed'
           const isOk  = status === 'completed'
           const bg    = isErr ? '#fef2f2' : isOk ? '#f0fdf4' : '#eff6ff'
@@ -707,14 +746,27 @@ export default function ToolsPage() {
               )}
 
               {/* Counter grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
-                <Stat label="Lines inserted"     value={p.lines_inserted} />
-                <Stat label="Lines matched"      value={p.lines_matched}  good />
-                <Stat label="Needs review"       value={p.lines_needs_review} warn />
-                <Stat label="Not inventory"      value={p.lines_not_inventory} muted />
-                <Stat label="Skipped (existed)"  value={p.lines_skipped_existing} muted />
-                <Stat label="Errors"             value={p.error_count} danger={Number(p.error_count ?? 0) > 0} />
-              </div>
+              {!isPdfPhase ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                  <Stat label="Lines inserted"     value={p.lines_inserted} />
+                  <Stat label="Lines matched"      value={p.lines_matched}  good />
+                  <Stat label="Needs review"       value={p.lines_needs_review} warn />
+                  <Stat label="Not inventory"      value={p.lines_not_inventory} muted />
+                  <Stat label="Skipped (existed)"  value={p.lines_skipped_existing} muted />
+                  <Stat label="Errors"             value={p.error_count} danger={Number(p.error_count ?? 0) > 0} />
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+                  <Stat label="Extracted ✓"        value={p.extracted}     good />
+                  <Stat label="Needs review"       value={p.needs_review}  warn />
+                  <Stat label="Failed"             value={p.failed}        danger={Number(p.failed ?? 0) > 0} />
+                  <Stat label="No PDF"             value={p.no_pdf}        muted />
+                  <Stat label="Rows persisted"     value={p.rows_persisted} />
+                  <Stat label="Cost (USD)"         value={p.total_cost_usd != null ? '$' + Number(p.total_cost_usd).toFixed(2) : '—'} muted />
+                  <Stat label="Batch size"         value={p.invoices_in_batch} muted />
+                  <Stat label="Remaining"          value={p.remaining_after_batch} muted />
+                </div>
+              )}
 
               {/* Sample errors */}
               {Array.isArray(p.errors) && p.errors.length > 0 && (
