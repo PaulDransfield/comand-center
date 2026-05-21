@@ -1,200 +1,220 @@
+"use client";
+
+import { useId } from "react";
 import styles from "./RailIcon.module.css";
 
 /**
- * CommandCenter sidebar rail icons + floating Ask CC bubble.
+ * CommandCenter rail icons — premium duotone/gradient set.
  *
- * Pure inline SVG + CSS. Server-renderable, no client JS, no icon library.
- * Strokes use `currentColor` so each icon adopts its rail item's text color
- * (set the active item to `color: var(--lav-deep)` and the glyph follows).
- * Filled accents read brand tokens with CommandCenter hex fallbacks baked in.
+ * Each icon is a rounded-square tile (gradient fill + top-light gloss + soft
+ * drop shadow) with layered duotone artwork on top, in the 2026 "soft 3D /
+ * multi-material" style. Inline SVG only — no images, no icon library.
  *
- * Motion: a gentle always-on idle loop, a fuller "action" on hover (driven by
- * the nearest button / a / [data-icon-trigger], so the whole rail row reacts),
- * and a scale pop on click. Respects prefers-reduced-motion.
+ * Why "use client": the SVG gradients/filters need IDs, and two icons on one
+ * page would collide on a shared ID. `useId()` namespaces every def per
+ * instance, so any number of icons coexist safely. It ships a trivially small
+ * amount of client JS (just the render); there is no interactivity logic.
+ * Motion (idle loop, hover, click) is pure CSS in RailIcon.module.css.
+ *
+ * Tokens: the tile gradients use the CommandCenter lavender/coral hexes baked
+ * in (a tile is a filled object, not a `currentColor` stroke). To restyle,
+ * edit the GRADIENTS below.
  */
 
 export const RAIL_ICON_NAMES = [
-  "darkmode", // crescent — theme toggle (top of rail)
-  "insights", // dashboard / overview
-  "workforce", // staff + scheduling
-  "inventory", // inventory setup
-  "bookkeeping", // ledger / receipt
-  "alerts", // warning triangle
-  "ask", // ✦ Ask CC (rail)
-  "settings", // gear
-  "chat", // floating Ask CC bubble (bottom-right)
+  "insights",
+  "workforce",
+  "inventory",
+  "bookkeeping",
+  "alerts",
+  "ask",
+  "settings",
+  "chat",
 ] as const;
 
 export type RailIconName = (typeof RAIL_ICON_NAMES)[number];
 
-export interface RailIconProps extends React.SVGProps<SVGSVGElement> {
+export interface RailIconProps {
   name: RailIconName;
-  /** px size for width & height. Default 22 (rail) — bump for the bubble. */
+  /** px size. Rail ~42, floating bubble ~46, header button ~18. Default 42. */
   size?: number;
-  /** Disable the idle loop (keeps hover/click). Default false. */
+  /** Accessible label. Omit for decorative icons (aria-hidden). */
+  label?: string;
+  /** Disable the idle loop (keeps hover/click). */
   still?: boolean;
+  className?: string;
 }
 
-const v = {
-  lav: "var(--lav, #a99ce6)",
-  lavDeep: "var(--lav-deep, #7d6cc9)",
-  lavFill: "var(--lav-fill, #ece8f8)",
-  coral: "var(--coral, #c0703a)",
-  amber: "var(--amber, #b0883c)",
-  white: "var(--card, #fff)",
-} as const;
-
-const stroke = {
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.9,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
+// fill palettes — alerts gets the coral tile, everything else lavender
+const TILE_GRAD: Record<RailIconName, "lav" | "coral"> = {
+  insights: "lav",
+  workforce: "lav",
+  inventory: "lav",
+  bookkeeping: "lav",
+  alerts: "coral",
+  ask: "lav",
+  settings: "lav",
+  chat: "lav",
 };
+
+// duotone artwork fills
+const W = "#ffffff";
 
 export function RailIcon({
   name,
-  size = 22,
+  size = 42,
+  label,
   still = false,
   className,
-  ...rest
 }: RailIconProps) {
+  // unique, stable IDs per instance so gradient/filter defs never collide
+  const uid = useId().replace(/:/g, "");
+  const id = (k: string) => `${k}-${uid}`;
+  const url = (k: string) => `url(#${id(k)})`;
+
+  const WSOFT = url("glyphHi");
+  const DEEP = "rgba(58,46,110,.42)";
+  const tileFill = TILE_GRAD[name] === "coral" ? url("tileCoral") : url("tileLav");
+
   const cls = [styles.icon, styles[name], still ? styles.still : "", className]
     .filter(Boolean)
     .join(" ");
 
   return (
     <svg
-      viewBox="0 0 24 24"
+      viewBox="0 0 60 60"
       width={size}
       height={size}
       className={cls}
-      aria-hidden={rest["aria-label"] ? undefined : true}
-      role={rest["aria-label"] ? "img" : undefined}
-      {...stroke}
-      {...rest}
+      role={label ? "img" : undefined}
+      aria-label={label}
+      aria-hidden={label ? undefined : true}
+      xmlns="http://www.w3.org/2000/svg"
     >
-      {glyph(name)}
+      <defs>
+        <linearGradient id={id("tileLav")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#b6a9ee" />
+          <stop offset="100%" stopColor="#7d6cc9" />
+        </linearGradient>
+        <linearGradient id={id("tileCoral")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#d08a5a" />
+          <stop offset="100%" stopColor="#b3602f" />
+        </linearGradient>
+        <linearGradient id={id("glyphHi")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="100%" stopColor="#ece6fb" />
+        </linearGradient>
+        <linearGradient id={id("goldGrad")} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f0e3c4" />
+          <stop offset="100%" stopColor="#d9bd86" />
+        </linearGradient>
+        <radialGradient id={id("topLight")} cx="50%" cy="22%" r="75%">
+          <stop offset="0%" stopColor="rgba(255,255,255,.55)" />
+          <stop offset="55%" stopColor="rgba(255,255,255,0)" />
+        </radialGradient>
+        <filter id={id("softShadow")} x="-40%" y="-30%" width="180%" height="190%">
+          <feDropShadow dx="0" dy="3" stdDeviation="3.2" floodColor="#7d6cc9" floodOpacity="0.34" />
+        </filter>
+      </defs>
+
+      {/* tile container */}
+      <g className={styles.tilebox} filter={url("softShadow")}>
+        <rect x="6" y="6" width="48" height="48" rx="15" fill={tileFill} />
+        <rect x="6" y="6" width="48" height="48" rx="15" fill={url("topLight")} />
+        <rect x="6.6" y="6.6" width="46.8" height="46.8" rx="14.4" fill="none" stroke="rgba(255,255,255,.5)" strokeWidth="1" />
+      </g>
+
+      {glyph(name, { W, WSOFT, DEEP, gold: url("goldGrad"), tileLav: url("tileLav") })}
     </svg>
   );
 }
 
-function glyph(name: RailIconName) {
-  switch (name) {
-    // crescent moon — theme toggle. Idle: faint breathing star; hover: moon dips.
-    case "darkmode":
-      return (
-        <>
-          <path
-            className={styles.moon}
-            d="M20 14.5 A8.5 8.5 0 1 1 10.2 4.2 A6.6 6.6 0 0 0 20 14.5 Z"
-            fill={v.lavFill}
-            stroke={v.lavDeep}
-          />
-          <circle className={`${styles.mstar} ${styles.ms1}`} cx="17.5" cy="6" r="0.9" fill={v.lavDeep} stroke="none" />
-          <circle className={`${styles.mstar} ${styles.ms2}`} cx="20" cy="9.5" r="0.7" fill={v.lavDeep} stroke="none" />
-        </>
-      );
+interface Fills {
+  W: string;
+  WSOFT: string;
+  DEEP: string;
+  gold: string;
+  tileLav: string;
+}
 
-    // insights — dashboard grid; tiles settle in on hover, faint breathe on idle
+function glyph(name: RailIconName, f: Fills) {
+  const s = styles;
+  switch (name) {
     case "insights":
       return (
-        <>
-          <rect className={styles.t1} x="3.5" y="3.5" width="7.2" height="7.2" rx="1.8" fill={v.lavFill} stroke={v.lavDeep} />
-          <rect className={styles.t2} x="13.3" y="3.5" width="7.2" height="4.4" rx="1.6" fill={v.white} />
-          <rect className={styles.t3} x="13.3" y="10.3" width="7.2" height="10.2" rx="1.8" fill={v.lavFill} stroke={v.lavDeep} />
-          <rect className={styles.t4} x="3.5" y="13.1" width="7.2" height="7.4" rx="1.8" fill={v.white} />
-        </>
+        <g className={s.insights}>
+          <polyline className={s.ln} points="18,40 26,31 33,35 43,22" fill="none" stroke={f.W} strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="18" cy="40" r="2.4" fill={f.W} />
+          <circle cx="26" cy="31" r="2.4" fill={f.W} />
+          <circle cx="33" cy="35" r="2.4" fill={f.W} />
+          <path className={`${s.spark} ${s.gA}`} d="M43 16 C44 21 44.5 21.5 49.5 22.5 C44.5 23.5 44 24 43 29 C42 24 41.5 23.5 36.5 22.5 C41.5 21.5 42 21 43 16 Z" fill={f.WSOFT} />
+        </g>
       );
-
-    // workforce + scheduling — two people; second springs in, slight bob on idle
     case "workforce":
       return (
-        <>
-          <g className={styles.p2} stroke={v.lavDeep}>
-            <circle cx="16.7" cy="8.4" r="2.5" fill={v.lavFill} />
-            <path d="M21 19 v-1 a3.7 3.7 0 0 0 -3.9 -3.6" />
-          </g>
-          <g className={styles.p1}>
-            <circle cx="9" cy="8" r="3.1" fill={v.white} />
-            <path d="M3.6 19 v-1.1 A4.5 4.5 0 0 1 8 13.4 h2 A4.5 4.5 0 0 1 14.4 17.9 V19" />
-          </g>
-        </>
+        <g className={s.workforce}>
+          <circle className={s.p2} cx="38" cy="25" r="6.2" fill={f.WSOFT} opacity=".85" />
+          <path className={s.p2} d="M27 44 a11 11 0 0 1 22 0 Z" fill={f.WSOFT} opacity=".85" />
+          <circle cx="24" cy="23" r="7.4" fill={f.W} />
+          <path d="M11 46 a13 13 0 0 1 26 0 Z" fill={f.W} />
+        </g>
       );
-
-    // inventory setup — box; lid lifts and an item pops on hover
     case "inventory":
       return (
-        <>
-          <path className={styles.pop} d="M12 9 V4 M9.5 6 L12 3.5 L14.5 6" stroke={v.lavDeep} />
-          <path d="M4 9 L12 12 L20 9 L12 6 Z" fill={v.white} />
-          <path d="M4 9 V17 L12 20 V12" />
-          <path d="M20 9 V17 L12 20" />
-          <path className={styles.lid} d="M4 9 L12 12 L20 9 L12 6 Z" fill={v.lavFill} stroke={v.lavDeep} />
-        </>
+        <g className={s.inventory}>
+          <path d="M16 26 L30 33 L44 26 L30 19 Z" fill={f.DEEP} />
+          <path d="M16 26 L16 40 L30 47 L30 33 Z" fill={f.W} />
+          <path d="M44 26 L44 40 L30 47 L30 33 Z" fill={f.WSOFT} />
+          <path className={s.lid} d="M16 26 L30 33 L44 26 L30 19 Z" fill={f.W} />
+          <path className={`${s.glow} ${s.gA}`} d="M30 21 C30.7 24 31 24.3 34 25 C31 25.7 30.7 26 30 29 C29.3 26 29 25.7 26 25 C29 24.3 29.3 24 30 21 Z" fill={f.DEEP} />
+        </g>
       );
-
-    // bookkeeping — ledger / receipt with lines; a row highlights on hover
     case "bookkeeping":
       return (
-        <>
-          <path d="M6 3 H16 a2 2 0 0 1 2 2 V21 l-2 -1.4 -2 1.4 -2 -1.4 -2 1.4 -2 -1.4 -2 1.4 V5 a2 2 0 0 1 2 -2 Z" fill={v.white} />
-          <line x1="8.5" y1="8" x2="15.5" y2="8" />
-          <line className={styles.r2} x1="8.5" y1="11.4" x2="15.5" y2="11.4" stroke={v.lavDeep} />
-          <line x1="8.5" y1="14.8" x2="13" y2="14.8" />
-          <rect className={styles.hl} x="7.4" y="9.9" width="9.2" height="3" rx="1" fill={v.lavFill} stroke="none" />
-        </>
+        <g className={s.bookkeeping}>
+          <g className={`${s.coin} ${s.gA}`}>
+            <circle cx="30" cy="30" r="13" fill={f.WSOFT} />
+            <circle cx="30" cy="30" r="13" fill="none" stroke={f.DEEP} strokeWidth="1.6" />
+            <path d="M30 22 C31 27 31.5 27.5 37 28.5 C31.5 29.5 31 30 30 35 C29 30 28.5 29.5 23 28.5 C28.5 27.5 29 27 30 22 Z" fill={f.gold} />
+          </g>
+        </g>
       );
-
-    // alerts — warning triangle; idle nudge, hard shake + bang dot on hover
     case "alerts":
       return (
-        <>
-          <g className={styles.tri}>
-            <path d="M12 4 L21 19 H3 Z" fill={v.white} />
-            <line x1="12" y1="10" x2="12" y2="14" stroke={v.coral} />
+        <g className={s.alerts}>
+          <circle className={s.ping} cx="30" cy="30" r="13" fill="rgba(255,255,255,.4)" />
+          <g className={s.body}>
+            <path d="M30 17 C31.4 25 32 25.6 40 27 C32 28.4 31.4 29 30 37 C28.6 29 28 28.4 20 27 C28 25.6 28.6 25 30 17 Z" fill={f.W} />
+            <circle cx="30" cy="40.5" r="2.2" fill={f.W} />
           </g>
-          <circle className={styles.bang} cx="12" cy="16.6" r="1.15" fill={v.coral} stroke="none" />
-        </>
+        </g>
       );
-
-    // Ask CC — ✦ sparkle (matches the rail glyph in the app)
     case "ask":
       return (
-        <g strokeWidth={1.6}>
-          <path className={styles.big} d="M12 3 C12.6 8.4 13.6 9.4 19 10 C13.6 10.6 12.6 11.6 12 17 C11.4 11.6 10.4 10.6 5 10 C10.4 9.4 11.4 8.4 12 3 Z" fill={v.lavDeep} stroke="none" />
-          <path className={styles.sm1} d="M18.5 14 c.25 2 .5 2.25 2.5 2.5 c-2 .25 -2.25 .5 -2.5 2.5 c-.25 -2 -.5 -2.25 -2.5 -2.5 c2 -.25 2.25 -.5 2.5 -2.5 Z" fill={v.lav} stroke="none" />
-          <path className={styles.sm2} d="M5.5 4 c.18 1.4 .35 1.6 1.7 1.8 c-1.35 .2 -1.52 .4 -1.7 1.8 c-.18 -1.4 -.35 -1.6 -1.7 -1.8 c1.35 -.2 1.52 -.4 1.7 -1.8 Z" fill={v.lav} stroke="none" />
+        <g className={s.ask}>
+          <path className={s.big} d="M30 15 C31.6 26 32.4 26.8 43 28 C32.4 29.2 31.6 30 30 41 C28.4 30 27.6 29.2 17 28 C27.6 26.8 28.4 26 30 15 Z" fill={f.W} />
+          <path className={`${s.o1} ${s.gA}`} d="M42 36 C42.5 39 42.7 39.2 46 39.7 C42.7 40.2 42.5 40.4 42 43.5 C41.5 40.4 41.3 40.2 38 39.7 C41.3 39.2 41.5 39 42 36 Z" fill={f.WSOFT} />
+          <path className={`${s.o2} ${s.gA}`} d="M19 17 C19.4 19.4 19.5 19.5 22 20 C19.5 20.5 19.4 20.6 19 23 C18.6 20.6 18.5 20.5 16 20 C18.5 19.5 18.6 19.4 19 17 Z" fill={f.WSOFT} />
         </g>
       );
-
-    // settings — gear; slow idle rotation, quarter-turn snap on hover
     case "settings":
       return (
-        <g className={styles.gear}>
-          <path
-            d="M12 2.6 l1.5 .9 1.7 -.3 .9 1.5 1.5 .9 -.3 1.7 .9 1.5 -.9 1.5 .3 1.7 -1.5 .9 -.9 1.5 -1.7 -.3 -1.5 .9 -1.5 -.9 -1.7 .3 -.9 -1.5 -1.5 -.9 .3 -1.7 -.9 -1.5 .9 -1.5 -.3 -1.7 1.5 -.9 .9 -1.5 1.7 .3 Z"
-            fill={v.lavFill}
-            stroke={v.lavDeep}
-          />
-          <circle cx="12" cy="12" r="3" fill={v.white} stroke="currentColor" />
+        <g className={s.settings}>
+          <g className={`${s.gear} ${s.gA}`}>
+            <path d="M25.59 18.52 L27.04 14.78 L32.96 14.78 L34.41 18.52 L35.0 18.76 L38.67 17.15 L42.85 21.33 L41.24 25.0 L41.48 25.59 L45.22 27.04 L45.22 32.96 L41.48 34.41 L41.24 35.0 L42.85 38.67 L38.67 42.85 L35.0 41.24 L34.41 41.48 L32.96 45.22 L27.04 45.22 L25.59 41.48 L25.0 41.24 L21.33 42.85 L17.15 38.67 L18.76 35.0 L18.52 34.41 L14.78 32.96 L14.78 27.04 L18.52 25.59 L18.76 25.0 L17.15 21.33 L21.33 17.15 L25.0 18.76 Z" fill={f.W} />
+            <circle cx="30" cy="30" r="5.6" fill={f.DEEP} />
+            <circle cx="30" cy="30" r="3.4" fill={f.W} />
+          </g>
         </g>
       );
-
-    // floating Ask CC bubble — distinct from the rail sparkle
     case "chat":
       return (
-        <>
-          <path
-            className={styles.bubble}
-            d="M4 6.5 a3 3 0 0 1 3 -3 H17 a3 3 0 0 1 3 3 V14 a3 3 0 0 1 -3 3 H9.5 L5.5 20.5 V17 H7 a3 3 0 0 1 -3 -3 Z"
-            fill={v.lavFill}
-            stroke={v.lavDeep}
-          />
-          <circle className={`${styles.typ} ${styles.d1}`} cx="9" cy="10.2" r="1.15" fill={v.lavDeep} stroke="none" />
-          <circle className={`${styles.typ} ${styles.d2}`} cx="12" cy="10.2" r="1.15" fill={v.lavDeep} stroke="none" />
-          <circle className={`${styles.typ} ${styles.d3}`} cx="15" cy="10.2" r="1.15" fill={v.lavDeep} stroke="none" />
-        </>
+        <g className={s.chat}>
+          <path className={s.body} d="M15 22 a6 6 0 0 1 6 -6 H39 a6 6 0 0 1 6 6 V34 a6 6 0 0 1 -6 6 H26 L18 47 V40 a6 6 0 0 1 -3 -5 Z" fill={f.W} />
+          <circle className={s.d1} cx="23" cy="29" r="2.4" fill={f.tileLav} />
+          <circle className={s.d2} cx="30" cy="29" r="2.4" fill={f.tileLav} />
+          <circle className={s.d3} cx="37" cy="29" r="2.4" fill={f.tileLav} />
+        </g>
       );
   }
 }

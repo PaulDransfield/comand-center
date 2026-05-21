@@ -1,32 +1,31 @@
-# CommandCenter Rail Icons
+# CommandCenter Rail Icons — Premium Set
 
-The 8 sidebar nav glyphs + the floating Ask CC bubble, matched to the live app.
-Pure inline SVG + CSS — no icon library, no motion library, no client JS.
-Server-renderable. Verified to compile under `strict` TypeScript and render via
-React SSR.
+The 7 sidebar nav icons + the floating Ask CC bubble, in the gradient-tile /
+duotone "soft 3D" style. Inline SVG only — no images, no icon library. Verified
+to compile under `strict` TypeScript and render via React SSR. Multiple
+instances on one page are safe (gradient IDs are namespaced per instance via
+`useId`).
 
 ## Files
 
 - `RailIcon.tsx` — one component, `name` prop
-- `RailIcon.module.css` — colocated idle / hover / click animations
+- `RailIcon.module.css` — tile lift + idle / hover / click animations
 
 Keep them side by side (e.g. `components/RailIcon/`).
 
-## Names → your nav
+## Why it's a client component
 
-| `name`        | Rail item            |
-| ------------- | -------------------- |
-| `darkmode`    | crescent (theme toggle, top) |
-| `insights`    | Insights / Overview  |
-| `workforce`   | Workforce & scheduling |
-| `inventory`   | Inventory setup      |
-| `bookkeeping` | Bookkeeping          |
-| `alerts`      | Warning / alerts     |
-| `ask`         | Ask CC (✦ sparkle)   |
-| `settings`    | Settings (gear)      |
-| `chat`        | Floating Ask CC bubble (not in rail) |
+It starts with `"use client"` because each icon's SVG gradients/filters need
+unique IDs (two icons sharing `id="tileLav"` would visually collide). `useId()`
+namespaces every def per instance. There's no interactivity logic and no state —
+just the render — so the client-JS cost is negligible. All motion is pure CSS.
 
-Exported as `RAIL_ICON_NAMES` and `RailIconName`.
+## Names → nav
+
+`insights · workforce · inventory · bookkeeping · alerts · ask · settings · chat`
+
+`chat` is the floating Ask CC bubble (not in the rail). `alerts` uses the coral
+tile; the rest use lavender. Exported as `RAIL_ICON_NAMES` / `RailIconName`.
 
 ## Usage
 
@@ -35,40 +34,46 @@ import { RailIcon } from "@/components/RailIcon/RailIcon";
 
 // rail item — hover/click motion fires from the <a>/<button> wrapper
 <a href="/insights" aria-current={active ? "page" : undefined}>
-  <RailIcon name="insights" aria-label="Insights" />
+  <RailIcon name="insights" label="Insights" />
 </a>
 
-// floating bubble — bump the size
+// floating Ask CC bubble — bump the size
 <button className="ask-fab" aria-label="Ask CC">
-  <RailIcon name="chat" size={26} />
+  <RailIcon name="chat" size={46} />
 </button>
+
+// header "Ask CC" button — small
+<RailIcon name="ask" size={18} />
 ```
 
-### Active state
+Default size is 42 (rail). `label` makes it accessible; omit for decorative.
+`still` disables the idle loop but keeps hover/click. `prefers-reduced-motion`
+disables all motion automatically.
 
-Strokes are `currentColor`. Set the active item's color and the glyph follows:
+## Active state
+
+These are filled gradient tiles, not `currentColor` strokes — so the icon's
+own color does NOT change with the parent. Show the active item with the rail
+item's background (e.g. `var(--lav-fill)`), the way the live app already does:
 
 ```css
-.railItem[aria-current="page"] { color: var(--lav-deep); background: var(--lav-fill); }
+.railItem[aria-current="page"] { background: var(--lav-fill); }
 ```
 
-### Motion
+The icon stays vivid in every state, which is the intended look.
 
-- Idle: gentle, always-on (moon sways, gear turns slowly, bubble dots type, etc.)
-- Hover: fuller action (gear quarter-turn, triangle shakes + bang pops, box opens, sparkle spins)
-- Click: scale pop
-- `still` prop disables idle only; `prefers-reduced-motion` disables all motion.
+## Restyling
 
-## Token fallbacks
+Tile and accent colors are baked into the `<defs>` in `RailIcon.tsx`
+(`tileLav`, `tileCoral`, `glyphHi`, `goldGrad`, `topLight`, `softShadow`).
+Edit those stops to retune. They're deliberately not wired to CSS vars because
+SVG gradient stops can't read CSS custom properties reliably across all
+engines; keeping them inline guarantees consistent rendering.
 
-Accents read `--lav`, `--lav-deep`, `--lav-fill`, `--coral`, `--card`, with the
-CommandCenter hex values baked in as fallbacks. If your token names differ, do a
-find-replace in both files (the `v` map in the .tsx and the `var(...)` calls in
-the .css).
+## Motion summary
 
-## Note on the feature icons
-
-The earlier set (sales, flash P&L, cash, forecast, reviews, etc.) maps to the
-tabs/cards *inside* Insights, not the rail. Both kits share the same visual
-language and can coexist — use this one for navigation, that one on the
-dashboard.
+- Idle: sparkles twinkle, gear turns slowly, crate glints, chat dots type,
+  tiles rest.
+- Hover: tile lifts; glyph acts (insight line redraws + sparkle rises, people
+  pop in, crate lid lifts, coin flips, alert shakes, sparkle spins, gear snaps).
+- Click: tile presses in.

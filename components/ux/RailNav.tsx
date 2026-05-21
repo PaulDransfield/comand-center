@@ -146,14 +146,18 @@ function RailButton({ area, active, onClick }: RailButtonProps) {
       aria-label={area.label}
       aria-current={active ? 'page' : undefined}
       style={{
-        width:          32,
-        height:         30,
+        // Rail buttons are 36×34 to give the 28px gradient tile a small
+        // gutter without restyling the surrounding layout. The icon is
+        // a filled tile (not a currentColor stroke), so no `color` on
+        // the button — the README explicitly says don't recolor the
+        // glyph on active; the lavFill background does the active job.
+        width:          36,
+        height:         34,
         display:        'flex',
         alignItems:     'center',
         justifyContent: 'center',
         borderRadius:   UXP.r_md,
         background:     active ? UXP.lavFill : 'transparent',
-        color:          active ? UXP.lavDeep : UXP.ink4,
         border:         'none',
         cursor:         'pointer',
         padding:        0,
@@ -161,7 +165,7 @@ function RailButton({ area, active, onClick }: RailButtonProps) {
         fontFamily:     'inherit',
       }}
     >
-      <RailIcon name={RAIL_ICON_FOR[area.icon]} />
+      <RailIcon name={RAIL_ICON_FOR[area.icon]} label={area.label} size={28} />
     </button>
   )
 }

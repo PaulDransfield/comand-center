@@ -218,7 +218,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
         onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
         onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}
       >
-        <RailIcon name="chat" size={26} />
+        <RailIcon name="chat" size={46} />
         Ask CC
       </button>
 
