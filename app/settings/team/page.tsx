@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 interface Member {
   user_id:           string
@@ -80,10 +80,10 @@ export default function TeamPage() {
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 24px 60px' }}>
         <div style={{ marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div>
-            <h1 style={{ fontSize: 22, fontWeight: 600, color: UX.ink1, margin: 0 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
               Team & access
             </h1>
-            <p style={{ fontSize: 13, color: UX.ink3, marginTop: 4, lineHeight: 1.5 }}>
+            <p style={{ fontSize: 13, color: UXP.ink3, marginTop: 4, lineHeight: 1.5 }}>
               Invite managers (operations access) or your revisor (read-only month-end view).
               Each invite sends a branded email; the recipient sets their own password.
             </p>
@@ -129,14 +129,14 @@ export default function TeamPage() {
 function MembersTable({ members, onRemove }: { members: Member[]; onRemove: (id: string) => void }) {
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `1px solid ${UX.border}`,
+      background:   UXP.cardBg,
+      border:       `1px solid ${UXP.border}`,
       borderRadius: 10,
       overflow:     'hidden' as const,
     }}>
       <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 13 }}>
         <thead>
-          <tr style={{ background: UX.pageBg, color: UX.ink3 }}>
+          <tr style={{ background: UXP.pageBg, color: UXP.ink3 }}>
             <th style={th()}>Email</th>
             <th style={th()}>Role</th>
             <th style={th()}>Scope</th>
@@ -146,20 +146,20 @@ function MembersTable({ members, onRemove }: { members: Member[]; onRemove: (id:
         </thead>
         <tbody>
           {members.map(m => (
-            <tr key={m.user_id} style={{ borderTop: `0.5px solid ${UX.border}` }}>
+            <tr key={m.user_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
               <td style={td()}>
-                <div style={{ fontWeight: 500, color: UX.ink1 }}>{m.email ?? <em style={{ color: UX.ink4 }}>no email</em>}</div>
-                {m.full_name && <div style={{ fontSize: 11, color: UX.ink4 }}>{m.full_name}</div>}
-                {m.is_self  && <div style={{ fontSize: 10, color: UX.ink4, fontStyle: 'italic' }}>that's you</div>}
+                <div style={{ fontWeight: 500, color: UXP.ink1 }}>{m.email ?? <em style={{ color: UXP.ink4 }}>no email</em>}</div>
+                {m.full_name && <div style={{ fontSize: 11, color: UXP.ink4 }}>{m.full_name}</div>}
+                {m.is_self  && <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' }}>that's you</div>}
               </td>
               <td style={td()}><RolePill role={m.role} /></td>
               <td style={td()}>
-                {m.role === 'owner' ? <span style={{ color: UX.ink3 }}>All</span>
+                {m.role === 'owner' ? <span style={{ color: UXP.ink3 }}>All</span>
                  : m.business_names && m.business_names.length > 0
-                   ? <span style={{ color: UX.ink2 }}>{m.business_names.join(', ')}</span>
-                   : <span style={{ color: UX.ink3 }}>All</span>}
+                   ? <span style={{ color: UXP.ink2 }}>{m.business_names.join(', ')}</span>
+                   : <span style={{ color: UXP.ink3 }}>All</span>}
               </td>
-              <td style={{ ...td(), color: UX.ink3, fontSize: 12 }}>
+              <td style={{ ...td(), color: UXP.ink3, fontSize: 12 }}>
                 {m.joined_at ? formatDate(m.joined_at) : '—'}
               </td>
               <td style={{ ...td(), textAlign: 'right' as const }}>
@@ -168,8 +168,8 @@ function MembersTable({ members, onRemove }: { members: Member[]; onRemove: (id:
                     onClick={() => onRemove(m.user_id)}
                     style={{
                       padding: '4px 10px', fontSize: 11, fontWeight: 500,
-                      background: 'white', color: '#b91c1c',
-                      border: `1px solid #fecaca`, borderRadius: 6,
+                      background: 'white', color: UXP.roseText,
+                      border: `1px solid ${UXP.rose}`, borderRadius: 6,
                       cursor: 'pointer',
                     }}
                   >
@@ -263,7 +263,7 @@ function InviteModal({
         maxWidth:     480,
         boxShadow:    '0 20px 40px rgba(0,0,0,0.2)',
       }}>
-        <h2 style={{ fontSize: 16, fontWeight: 600, color: UX.ink1, margin: 0, marginBottom: 16 }}>
+        <h2 style={{ fontSize: 16, fontWeight: 600, color: UXP.ink1, margin: 0, marginBottom: 16 }}>
           Invite a team member
         </h2>
 
@@ -328,7 +328,7 @@ function InviteModal({
                 </label>
               ))}
             </div>
-            <div style={{ fontSize: 11, color: UX.ink4, marginTop: 6 }}>
+            <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 6 }}>
               Revisor invites require at least one business in scope.
             </div>
           </Field>
@@ -353,7 +353,7 @@ function InviteModal({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: UX.ink2, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, marginBottom: 5 }}>{label}</div>
       {children}
     </div>
   )
@@ -361,10 +361,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function RolePill({ role }: { role: string }) {
   const TONE: Record<string, { bg: string; color: string }> = {
-    owner:   { bg: '#dbeafe', color: '#1e40af' },
-    manager: { bg: '#fef3c7', color: '#92400e' },
-    revisor: { bg: '#eef2ff', color: '#4338ca' },
-    viewer:  { bg: '#f3f4f6', color: '#374151' },
+    owner:   { bg: UXP.lavFill, color: UXP.lavText },
+    manager: { bg: UXP.lavFill, color: UXP.coral },
+    revisor: { bg: UXP.lavFill, color: UXP.lavDeep },
+    viewer:  { bg: UXP.subtleBg, color: UXP.ink2 },
   }
   const t = TONE[role] ?? TONE.viewer
   return (
@@ -386,9 +386,9 @@ function RolePill({ role }: { role: string }) {
 
 function Banner({ tone, text, onClose }: { tone: 'good' | 'warn' | 'bad'; text: string; onClose?: () => void }) {
   const T = {
-    good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d' },
-    warn: { bg: '#fef3c7', border: '#fde68a', fg: '#92400e' },
-    bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' },
+    good: { bg: UXP.greenFill, border: UXP.green, fg: UXP.greenDeep },
+    warn: { bg: UXP.lavFill, border: UXP.lavMid, fg: UXP.coral },
+    bad:  { bg: UXP.roseFill, border: UXP.rose, fg: UXP.roseText },
   }[tone]
   return (
     <div style={{
@@ -406,7 +406,7 @@ function Banner({ tone, text, onClose }: { tone: 'good' | 'warn' | 'bad'; text: 
 }
 
 function Empty({ text }: { text: string }) {
-  return <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: 12 }}>{text}</div>
+  return <div style={{ padding: 40, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{text}</div>
 }
 
 function th(): React.CSSProperties {
@@ -420,10 +420,10 @@ const inputStyle: React.CSSProperties = {
   width:        '100%',
   padding:      '8px 12px',
   fontSize:     13,
-  border:       `1px solid ${UX.border}`,
+  border:       `1px solid ${UXP.border}`,
   borderRadius: 7,
-  background:   UX.cardBg,
-  color:        UX.ink1,
+  background:   UXP.cardBg,
+  color:        UXP.ink1,
   boxSizing:    'border-box' as const,
 }
 
@@ -431,15 +431,15 @@ function btnStyle(variant: 'primary' | 'secondary'): React.CSSProperties {
   if (variant === 'primary') {
     return {
       padding: '6px 14px', fontSize: 12, fontWeight: 600,
-      background: '#1a1f2e', color: 'white',
+      background: UXP.ink1, color: 'white',
       border: 'none', borderRadius: 7,
       cursor: 'pointer',
     }
   }
   return {
     padding: '6px 14px', fontSize: 12, fontWeight: 500,
-    background: 'white', color: UX.ink2,
-    border: `1px solid ${UX.border}`, borderRadius: 7,
+    background: 'white', color: UXP.ink2,
+    border: `1px solid ${UXP.border}`, borderRadius: 7,
     cursor: 'pointer',
   }
 }
@@ -450,9 +450,9 @@ function chipStyle(active: boolean): React.CSSProperties {
     alignItems:   'center',
     padding:      '5px 10px',
     fontSize:     12,
-    background:   active ? '#eef2ff' : 'white',
-    color:        active ? '#4338ca' : UX.ink2,
-    border:       `1px solid ${active ? '#4338ca' : UX.border}`,
+    background:   active ? UXP.lavFill : 'white',
+    color:        active ? UXP.lavDeep : UXP.ink2,
+    border:       `1px solid ${active ? UXP.lavDeep : UXP.border}`,
     borderRadius: 6,
     cursor:       'pointer',
   }

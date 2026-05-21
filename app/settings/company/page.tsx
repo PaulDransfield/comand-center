@@ -12,8 +12,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
-import PageHero from '@/components/ui/PageHero'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { formatOrgNr, validateOrgNr } from '@/lib/sweden/orgnr'
 
 interface CompanyInfo {
@@ -92,30 +91,42 @@ export default function CompanySettingsPage() {
 
   return (
     <AppShell>
-      <PageHero
-        eyebrow={t('eyebrow')}
-        headline={headline}
-        context={t('context')}
-      />
-
-      <div style={{ padding: '0 24px 40px', maxWidth: 720, margin: '0 auto' }}>
+      <div style={{ maxWidth: 720 }}>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{
+            fontSize:      10,
+            fontWeight:    600,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color:         UXP.lavText,
+            marginBottom:  4,
+          }}>
+            {t('eyebrow')}
+          </div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+            {headline}
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
+            {t('context')}
+          </p>
+        </div>
         {info?.grace_expired && !info.org_number && (
           <div style={{
-            background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
+            background: UXP.roseFill, border: `1px solid ${UXP.rose}`, borderRadius: 10,
             padding: '12px 16px', marginBottom: 14,
-            color: '#991b1b', fontSize: 13,
+            color: UXP.roseText, fontSize: 13,
           }}>
             <strong>{t('expired')}</strong> {t('expiredFollowup')}
           </div>
         )}
 
         <div style={{
-          background: 'white', border: `1px solid ${UX.borderSoft}`, borderRadius: 10,
+          background: 'white', border: `1px solid ${UXP.borderSoft}`, borderRadius: 10,
           padding: 18, marginBottom: 14,
         }}>
           <label style={{
             display: 'block', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
-            textTransform: 'uppercase' as const, color: UX.ink3, marginBottom: 6,
+            textTransform: 'uppercase' as const, color: UXP.ink3, marginBottom: 6,
           }}>
             {t('label')}
           </label>
@@ -127,31 +138,31 @@ export default function CompanySettingsPage() {
             inputMode="numeric"
             disabled={loading || saving}
             style={{
-              width: '100%', padding: '10px 12px', border: `1px solid ${UX.border}`,
+              width: '100%', padding: '10px 12px', border: `1px solid ${UXP.border}`,
               borderRadius: 8, fontSize: 14, fontFamily: 'ui-monospace, monospace',
-              color: UX.ink1, boxSizing: 'border-box' as const,
+              color: UXP.ink1, boxSizing: 'border-box' as const,
             }}
           />
-          <div style={{ fontSize: 11, color: UX.ink4, marginTop: 6 }}>
+          <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 6 }}>
             {t('hint')}
           </div>
 
           {validation && (
             <div style={{
-              marginTop: 10, padding: '8px 10px', background: '#fef2f2',
-              border: '1px solid #fecaca', borderRadius: 7, fontSize: 12, color: '#991b1b',
+              marginTop: 10, padding: '8px 10px', background: UXP.roseFill,
+              border: `1px solid ${UXP.rose}`, borderRadius: 7, fontSize: 12, color: UXP.roseText,
             }}>
               {validation}
             </div>
           )}
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-            <div style={{ fontSize: 11, color: UX.ink4 }}>
+            <div style={{ fontSize: 11, color: UXP.ink4 }}>
               {info?.org_number && info.org_number_set_at && (
                 <>{t('setOn', { date: new Date(info.org_number_set_at).toLocaleDateString('sv-SE') })}</>
               )}
               {savedAt && Date.now() - savedAt < 5000 && (
-                <span style={{ color: UX.greenInk, marginLeft: 8 }}>· {t('saved')}</span>
+                <span style={{ color: UXP.greenDeep, marginLeft: 8 }}>· {t('saved')}</span>
               )}
             </div>
             <button
@@ -159,7 +170,7 @@ export default function CompanySettingsPage() {
               disabled={saving || !draft.trim()}
               style={{
                 padding: '8px 16px',
-                background: saving || !draft.trim() ? UX.ink4 : UX.ink1,
+                background: saving || !draft.trim() ? UXP.ink4 : UXP.ink1,
                 color: 'white', border: 'none', borderRadius: 7,
                 fontSize: 12, fontWeight: 500,
                 cursor: saving || !draft.trim() ? 'not-allowed' : 'pointer',
@@ -170,7 +181,7 @@ export default function CompanySettingsPage() {
           </div>
         </div>
 
-        <div style={{ fontSize: 11, color: UX.ink4, lineHeight: 1.5, padding: '0 4px' }}>
+        <div style={{ fontSize: 11, color: UXP.ink4, lineHeight: 1.5, padding: '0 4px' }}>
           {t('whyTitle')}
           <ul style={{ paddingLeft: 18, marginTop: 4 }}>
             <li>{t('why1')}</li>

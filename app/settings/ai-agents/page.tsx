@@ -19,7 +19,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/AppShell'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 interface Agent {
   key:              string
@@ -86,10 +86,10 @@ export default function AiAgentsPage() {
     <AppShell>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 24px 60px' }}>
         <div style={{ marginBottom: 18 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: UX.ink1, margin: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
             AI agents
           </h1>
-          <p style={{ fontSize: 13, color: UX.ink3, marginTop: 4, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 13, color: UXP.ink3, marginTop: 4, lineHeight: 1.5 }}>
             Six AI agents work in the background on your data: anomaly detection, monday memo, forecast
             calibration, supplier price drift, scheduling, and onboarding welcome. Each runs on its own schedule
             and can be turned off if you don't want it. Costs are shown for the last 30 days.
@@ -136,8 +136,8 @@ function AgentCard({ agent: a, saving, onToggle }: { agent: Agent; saving: boole
 
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `1px solid ${a.enabled ? UX.border : '#fde68a'}`,   // amber border when off — gentle signal
+      background:   UXP.cardBg,
+      border:       `1px solid ${a.enabled ? UXP.border : UXP.lavMid}`,   // amber border when off — gentle signal
       borderRadius: 10,
       padding:      '14px 16px',
       opacity:      a.enabled ? 1 : 0.85,
@@ -150,35 +150,35 @@ function AgentCard({ agent: a, saving, onToggle }: { agent: Agent; saving: boole
       }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' as const, marginBottom: 4 }}>
-            <h2 style={{ fontSize: 15, fontWeight: 600, color: UX.ink1, margin: 0 }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
               {a.name}
             </h2>
             {planLabel && <PlanPill label={planLabel} />}
             <StatusPill enabled={a.enabled} />
           </div>
-          <p style={{ fontSize: 12, color: UX.ink3, margin: 0, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 12, color: UXP.ink3, margin: 0, lineHeight: 1.5 }}>
             {a.description}
           </p>
           <div style={{
             marginTop: 8,
             fontSize:  11,
-            color:     UX.ink4,
+            color:     UXP.ink4,
             display:   'flex',
             flexWrap:  'wrap' as const,
             gap:       '4px 12px',
           }}>
-            <span><strong style={{ color: UX.ink3 }}>Schedule:</strong> {a.schedule_human}</span>
+            <span><strong style={{ color: UXP.ink3 }}>Schedule:</strong> {a.schedule_human}</span>
             <span>·</span>
             <span>
-              <strong style={{ color: UX.ink3 }}>Last run:</strong>{' '}
+              <strong style={{ color: UXP.ink3 }}>Last run:</strong>{' '}
               {lastRunStr}
               {' '}
-              <span style={{ color: statusTone === 'good' ? UX.greenInk : statusTone === 'bad' ? '#b91c1c' : UX.ink4 }}>
+              <span style={{ color: statusTone === 'good' ? UXP.greenDeep : statusTone === 'bad' ? UXP.roseText : UXP.ink4 }}>
                 {statusLabel}
               </span>
             </span>
             <span>·</span>
-            <span><strong style={{ color: UX.ink3 }}>Cost (30d):</strong> {fmtCost(a.cost_usd_30d)}</span>
+            <span><strong style={{ color: UXP.ink3 }}>Cost (30d):</strong> {fmtCost(a.cost_usd_30d)}</span>
           </div>
 
           <div style={{ marginTop: 10 }}>
@@ -187,11 +187,11 @@ function AgentCard({ agent: a, saving, onToggle }: { agent: Agent; saving: boole
               style={{
                 fontSize:       11,
                 fontWeight:     500,
-                color:          UX.ink2,
+                color:          UXP.ink2,
                 textDecoration: 'none',
                 padding:        '4px 10px',
-                background:     UX.pageBg,
-                border:         `1px solid ${UX.border}`,
+                background:     UXP.pageBg,
+                border:         `1px solid ${UXP.border}`,
                 borderRadius:   999,
                 display:        'inline-block',
               }}
@@ -226,7 +226,7 @@ function ToggleSwitch({ checked, disabled, onChange }: { checked: boolean; disab
         height:       26,
         borderRadius: 999,
         border:       'none',
-        background:   checked ? UX.greenInk : '#cbd5e1',
+        background:   checked ? UXP.greenDeep : UXP.ink4,
         position:     'relative' as const,
         cursor:       disabled ? 'not-allowed' : 'pointer',
         opacity:      disabled ? 0.6 : 1,
@@ -258,8 +258,8 @@ function PlanPill({ label }: { label: string }) {
       textTransform: 'uppercase' as const,
       padding:      '2px 6px',
       borderRadius: 3,
-      background:   '#eef2ff',
-      color:        '#4338ca',
+      background:   UXP.lavFill,
+      color:        UXP.lavDeep,
     }}>
       {label}
     </span>
@@ -273,8 +273,8 @@ function StatusPill({ enabled }: { enabled: boolean }) {
       fontWeight:   600,
       padding:      '2px 8px',
       borderRadius: 999,
-      background:   enabled ? UX.greenBg : '#fef3c7',
-      color:        enabled ? UX.greenInk : '#92400e',
+      background:   enabled ? UXP.greenFill : UXP.lavFill,
+      color:        enabled ? UXP.greenDeep : UXP.coral,
     }}>
       {enabled ? 'ENABLED' : 'DISABLED'}
     </span>
@@ -283,9 +283,9 @@ function StatusPill({ enabled }: { enabled: boolean }) {
 
 function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string }) {
   const T = {
-    good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d' },
-    warn: { bg: '#fef3c7', border: '#fde68a', fg: '#92400e' },
-    bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' },
+    good: { bg: UXP.greenFill, border: UXP.green, fg: UXP.greenDeep },
+    warn: { bg: UXP.lavFill, border: UXP.lavMid, fg: UXP.coral },
+    bad:  { bg: UXP.roseFill, border: UXP.rose, fg: UXP.roseText },
   }[tone]
   return (
     <div style={{
@@ -297,7 +297,7 @@ function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string })
 }
 
 function Empty({ text }: { text: string }) {
-  return <div style={{ padding: 36, textAlign: 'center' as const, color: UX.ink4, fontSize: 12 }}>{text}</div>
+  return <div style={{ padding: 36, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{text}</div>
 }
 
 function Footnote() {
@@ -305,12 +305,12 @@ function Footnote() {
     <div style={{
       marginTop:    24,
       paddingTop:   16,
-      borderTop:    `1px solid ${UX.border}`,
+      borderTop:    `1px solid ${UXP.border}`,
       fontSize:     11,
-      color:        UX.ink4,
+      color:        UXP.ink4,
       lineHeight:   1.6,
     }}>
-      <strong style={{ color: UX.ink3 }}>How agents work:</strong> Each agent runs on its own
+      <strong style={{ color: UXP.ink3 }}>How agents work:</strong> Each agent runs on its own
       cron schedule and reads your business data via the Supabase service role. They use Claude Haiku 4.5
       for most actions (low cost, fast) and Claude Sonnet 4.6 for harder reasoning tasks. Data leaves
       Sweden only briefly during the Anthropic API call; nothing about your business is stored on Anthropic's

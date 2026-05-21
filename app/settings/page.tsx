@@ -3,6 +3,7 @@
 export const dynamic = 'force-dynamic'
 
 import AppShell from '@/components/AppShell'
+import { UXP } from '@/lib/constants/tokens'
 import React, { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 
@@ -177,14 +178,14 @@ export default function SettingsPage() {
   }
 
   const S = {
-    card:   { background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '20px 24px', marginBottom: 20 },
-    title:  { fontSize: 14, fontWeight: 700, color: '#111', marginBottom: 4 },
-    sub:    { fontSize: 12, color: '#9ca3af', marginBottom: 16 },
-    label:  { fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 },
-    input:  { width: '100%', padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' as const, fontFamily: 'inherit' },
-    btn:    { padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
-    btnSm:  { padding: '5px 12px', background: '#f3f4f6', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: '#374151' },
-    btnRed: { padding: '4px 10px', background: 'none', border: '1px solid #fecaca', borderRadius: 6, fontSize: 11, color: '#dc2626', cursor: 'pointer' },
+    card:   { background: 'white', border: `0.5px solid ${UXP.border}`, borderRadius: 12, padding: '20px 24px', marginBottom: 20 },
+    title:  { fontSize: 14, fontWeight: 700, color: UXP.ink1, marginBottom: 4 },
+    sub:    { fontSize: 12, color: UXP.ink4, marginBottom: 16 },
+    label:  { fontSize: 12, fontWeight: 600, color: UXP.ink2, display: 'block', marginBottom: 6 },
+    input:  { width: '100%', padding: '9px 12px', border: `1px solid ${UXP.border}`, borderRadius: 8, fontSize: 13, boxSizing: 'border-box' as const, fontFamily: 'inherit' },
+    btn:    { padding: '9px 18px', background: UXP.ink1, color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+    btnSm:  { padding: '5px 12px', background: UXP.subtleBg, border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: UXP.ink2 },
+    btnRed: { padding: '4px 10px', background: 'none', border: `1px solid ${UXP.rose}`, borderRadius: 6, fontSize: 11, color: UXP.roseText, cursor: 'pointer' },
     row:    { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
   }
 
@@ -192,8 +193,8 @@ export default function SettingsPage() {
     <AppShell>
       <div style={{ padding: '28px', maxWidth: 800 }}>
         <div style={{ marginBottom: 28 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>{t('page.title')}</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1 }}>{t('page.title')}</h1>
+          <p style={{ margin: '4px 0 0', fontSize: 13, color: UXP.ink3 }}>{t('page.subtitle')}</p>
         </div>
 
         {/* Team & access — link card */}
@@ -211,11 +212,11 @@ export default function SettingsPage() {
         >
           <div>
             <div style={S.title}>Team &amp; access</div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 2 }}>
               Invite managers or your revisor. Managers see operations; revisors see read-only month-end data per business.
             </div>
           </div>
-          <span style={{ fontSize: 13, color: '#4338ca', fontWeight: 500 }}>Manage →</span>
+          <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
         </a>
 
         {/* AI agents — link card to /settings/ai-agents */}
@@ -233,11 +234,11 @@ export default function SettingsPage() {
         >
           <div>
             <div style={S.title}>AI agents</div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 2 }}>
               Six AI agents work in the background on your data. View status, last run, cost, and toggle any of them on or off.
             </div>
           </div>
-          <span style={{ fontSize: 13, color: '#4338ca', fontWeight: 500 }}>Manage →</span>
+          <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
         </a>
 
         {/* Restaurants */}
@@ -245,36 +246,36 @@ export default function SettingsPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
             <div>
               <div style={S.title}>{t('restaurants.card')}</div>
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('restaurants.subtitle')}</div>
+              <div style={{ fontSize: 12, color: UXP.ink4 }}>{t('restaurants.subtitle')}</div>
             </div>
             <button onClick={() => setShowAddBiz(true)} style={S.btn}>{t('restaurants.addLocation')}</button>
           </div>
 
           {businesses.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#d1d5db', textAlign: 'center', padding: '20px 0' }}>{t('restaurants.empty')}</div>
+            <div style={{ fontSize: 12, color: UXP.ink4, textAlign: 'center', padding: '20px 0' }}>{t('restaurants.empty')}</div>
           ) : businesses.map(biz => {
             const isOpen = expandedBiz === biz.id
             const isEditing = editingBiz?.id === biz.id
             return (
-              <div key={biz.id} style={{ borderBottom: '0.5px solid #f3f4f6' }}>
+              <div key={biz.id} style={{ borderBottom: `0.5px solid ${UXP.subtleBg}` }}>
                 {/* Row */}
                 <div onClick={() => setExpandedBiz(isOpen ? null : biz.id)}
                   style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 11, color: '#9ca3af' }}>{isOpen ? '▼' : '▶'}</span>
+                    <span style={{ fontSize: 11, color: UXP.ink4 }}>{isOpen ? '▼' : '▶'}</span>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#111' }}>{biz.name}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{biz.city ?? t('restaurants.noCity')} · {biz.type ?? t('restaurants.defaultType')}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1 }}>{biz.name}</div>
+                      <div style={{ fontSize: 11, color: UXP.ink4 }}>{biz.city ?? t('restaurants.noCity')} · {biz.type ?? t('restaurants.defaultType')}</div>
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, background: biz.is_active !== false ? '#dcfce7' : '#fee2e2', color: biz.is_active !== false ? '#15803d' : '#dc2626', padding: '2px 8px', borderRadius: 4 }}>
+                  <span style={{ fontSize: 11, background: biz.is_active !== false ? UXP.greenFill : UXP.roseFill, color: biz.is_active !== false ? UXP.greenDeep : UXP.roseText, padding: '2px 8px', borderRadius: 4 }}>
                     {biz.is_active !== false ? t('restaurants.active') : t('restaurants.inactive')}
                   </span>
                 </div>
 
                 {/* Expanded panel */}
                 {isOpen && (
-                  <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '14px 16px', marginBottom: 10 }}>
+                  <div style={{ background: UXP.subtleBg, borderRadius: 8, padding: '14px 16px', marginBottom: 10 }}>
                     {isEditing ? (
                       /* Edit form */
                       <div>
@@ -303,7 +304,7 @@ export default function SettingsPage() {
                             inputMode="numeric"
                             style={{ ...S.input, fontFamily: 'ui-monospace, monospace' }}
                           />
-                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                          <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 4 }}>
                             {t('restaurants.edit_form.orgNumberHint')}
                           </div>
                         </div>
@@ -317,11 +318,11 @@ export default function SettingsPage() {
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button onClick={e => { e.stopPropagation(); setEditingBiz({...biz}) }} style={S.btnSm}>{t('restaurants.edit')}</button>
                         <button onClick={e => { e.stopPropagation(); deactivateBusiness(biz.id, biz.name, biz.is_active) }}
-                          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #e5e7eb', background: 'white', cursor: 'pointer', color: '#6b7280' }}>
+                          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, border: `1px solid ${UXP.border}`, background: 'white', cursor: 'pointer', color: UXP.ink3 }}>
                           {biz.is_active !== false ? t('restaurants.deactivate') : t('restaurants.reactivate')}
                         </button>
                         <button onClick={e => { e.stopPropagation(); deleteBusiness(biz.id, biz.name) }}
-                          style={{ ...S.btnSm, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                          style={{ ...S.btnSm, background: UXP.roseFill, color: UXP.roseText, border: `1px solid ${UXP.rose}` }}>
                           {t('restaurants.delete')}
                         </button>
                       </div>
@@ -337,9 +338,9 @@ export default function SettingsPage() {
         {showAddBiz && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 199, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={() => setShowAddBiz(false)}>
-            <div style={{ background: '#fff', borderRadius: 14, padding: 28, width: 420, maxWidth: '94vw', border: '1px solid #e5e7eb', boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
+            <div style={{ background: UXP.cardBg, borderRadius: 14, padding: 28, width: 420, maxWidth: '94vw', border: `1px solid ${UXP.border}`, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
               onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#111', marginBottom: 20 }}>{t('restaurants.modal.title')}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: UXP.ink1, marginBottom: 20 }}>{t('restaurants.modal.title')}</div>
               <div style={{ marginBottom: 14 }}>
                 <label style={S.label}>{t('restaurants.modal.name')}</label>
                 <input value={newBizName} onChange={e => setNewBizName(e.target.value)}
@@ -358,7 +359,7 @@ export default function SettingsPage() {
                   </select>
                 </div>
               </div>
-              {bizError && <div style={{ fontSize: 12, color: '#dc2626', marginBottom: 10 }}>{bizError}</div>}
+              {bizError && <div style={{ fontSize: 12, color: UXP.roseText, marginBottom: 10 }}>{bizError}</div>}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={saveNewBusiness} disabled={!newBizName.trim() || savingBiz}
                   style={{ ...S.btn, flex: 1, opacity: !newBizName.trim() ? 0.5 : 1 }}>
@@ -376,25 +377,25 @@ export default function SettingsPage() {
           <div style={{ ...S.sub }}>{t('supplier.subtitle')}</div>
 
           {/* Test a vendor */}
-          <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{t('supplier.testHeader')}</div>
+          <div style={{ background: UXP.subtleBg, borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: UXP.ink2, marginBottom: 8 }}>{t('supplier.testHeader')}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input value={testVendor} onChange={e => setTestVendor(e.target.value)}
                 placeholder={t('supplier.testPlaceholder')} style={{ ...S.input, flex: 1 }} />
               <button onClick={testMapping} style={S.btn}>{t('supplier.test')}</button>
             </div>
             {testResult && testResult !== 'no_match' && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#15803d' }}>
+              <div style={{ marginTop: 8, fontSize: 12, color: UXP.greenDeep }}>
                 {t('supplier.match')}<strong>{(testResult as Mapping).category_label ?? (testResult as Mapping).category}</strong>
               </div>
             )}
             {testResult === 'no_match' && (
-              <div style={{ marginTop: 8, fontSize: 12, color: '#dc2626' }}>{t('supplier.noMatch')}</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: UXP.roseText }}>{t('supplier.noMatch')}</div>
             )}
           </div>
 
           {/* Add rule */}
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>{t('supplier.addHeader')}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: UXP.ink2, marginBottom: 10 }}>{t('supplier.addHeader')}</div>
           <form onSubmit={addRule}>
             <div style={{ ...S.row, marginBottom: 10 }}>
               <div>
@@ -414,25 +415,25 @@ export default function SettingsPage() {
 
           {/* Active rules */}
           <div style={{ marginTop: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: UXP.ink2, marginBottom: 8 }}>
               {t('supplier.activeRules', { count: mappings.length })}
             </div>
             {loading ? (
-              <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('supplier.loading')}</div>
+              <div style={{ fontSize: 12, color: UXP.ink4 }}>{t('supplier.loading')}</div>
             ) : mappings.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#d1d5db' }}>{t('supplier.emptyRules')}</div>
+              <div style={{ fontSize: 12, color: UXP.ink4 }}>{t('supplier.emptyRules')}</div>
             ) : mappings.map(m => (
-              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '0.5px solid #f3f4f6' }}>
-                <div style={{ fontSize: 13, color: '#111' }}>
-                  <span style={{ color: '#9ca3af' }}>{t('supplier.contains')}</span>
+              <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `0.5px solid ${UXP.subtleBg}` }}>
+                <div style={{ fontSize: 13, color: UXP.ink1 }}>
+                  <span style={{ color: UXP.ink4 }}>{t('supplier.contains')}</span>
                   <strong>"{m.vendor_contains}"</strong>
-                  <span style={{ color: '#9ca3af' }}>{t('supplier.ruleArrow')}</span>
-                  <span style={{ color: '#6366f1' }}>{m.category_label ?? m.category}</span>
+                  <span style={{ color: UXP.ink4 }}>{t('supplier.ruleArrow')}</span>
+                  <span style={{ color: UXP.lavDeep }}>{m.category_label ?? m.category}</span>
                 </div>
                 <button onClick={() => deleteRule(m.id)} style={S.btnRed}>{t('restaurants.delete')}</button>
               </div>
             ))}
-            <div style={{ fontSize: 11, color: '#d1d5db', marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 10 }}>
               {t('supplier.footnote')}
             </div>
           </div>
@@ -512,34 +513,34 @@ function GdprSection() {
   const privacyConsent = consents.find((c: any) => c.consent_type === 'privacy_policy')
 
   return (
-    <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '24px', marginBottom: 20 }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('title')}</div>
-      <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+    <div style={{ background: 'white', border: `0.5px solid ${UXP.border}`, borderRadius: 12, padding: '24px', marginBottom: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: UXP.ink1, marginBottom: 4 }}>{t('title')}</div>
+      <div style={{ fontSize: 13, color: UXP.ink3, marginBottom: 20 }}>
         {t('subtitle')}{' '}
-        <a href="/privacy" target="_blank" style={{ color: '#6366f1' }}>{t('privacyPolicyLink')}</a>.
+        <a href="/privacy" target="_blank" style={{ color: UXP.lavDeep }}>{t('privacyPolicyLink')}</a>.
       </div>
 
       {/* Consent status */}
-      <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{t('consentHeader')}</div>
+      <div style={{ background: UXP.subtleBg, borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: UXP.ink2, marginBottom: 8 }}>{t('consentHeader')}</div>
         {privacyConsent ? (
-          <div style={{ fontSize: 12, color: '#6b7280' }}>
+          <div style={{ fontSize: 12, color: UXP.ink3 }}>
             {t('consentLine', {
               version: privacyConsent.version,
               date: new Date(privacyConsent.consented_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }),
             })}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: '#9ca3af' }}>{t('noConsent')}</div>
+          <div style={{ fontSize: 12, color: UXP.ink4 }}>{t('noConsent')}</div>
         )}
       </div>
 
       {/* AI question logging toggle — per-org privacy control */}
-      <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #f3f4f6' }}>
+      <div style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${UXP.subtleBg}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('ai.title')}</div>
-            <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.55 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, marginBottom: 4 }}>{t('ai.title')}</div>
+            <div style={{ fontSize: 12, color: UXP.ink3, lineHeight: 1.55 }}>
               {t('ai.subtitle')}
             </div>
           </div>
@@ -553,7 +554,7 @@ function GdprSection() {
             />
             <span style={{
               position: 'absolute' as const, inset: 0, cursor: aiSaving ? 'wait' : 'pointer',
-              background: aiPrivacy === true ? '#1a1f2e' : '#e5e7eb',
+              background: aiPrivacy === true ? UXP.ink1 : UXP.border,
               borderRadius: 24, transition: 'background .2s',
             }}>
               <span style={{
@@ -567,45 +568,45 @@ function GdprSection() {
 
       {/* Export */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('export.title')}</div>
-        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, marginBottom: 4 }}>{t('export.title')}</div>
+        <div style={{ fontSize: 12, color: UXP.ink3, marginBottom: 10 }}>
           {t('export.subtitle')}
         </div>
         <button onClick={exportData} disabled={loading}
-          style={{ padding: '9px 18px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          style={{ padding: '9px 18px', background: UXP.ink1, color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
           {loading ? t('export.preparing') : t('export.button')}
         </button>
       </div>
 
       {/* Deletion */}
-      <div style={{ paddingTop: 16, borderTop: '1px solid #f3f4f6' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#111', marginBottom: 4 }}>{t('delete.title')}</div>
-        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+      <div style={{ paddingTop: 16, borderTop: `1px solid ${UXP.subtleBg}` }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, marginBottom: 4 }}>{t('delete.title')}</div>
+        <div style={{ fontSize: 12, color: UXP.ink3, marginBottom: 10 }}>
           {t('delete.subtitle')}
         </div>
 
         {delStatus ? (
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#15803d' }}>
+          <div style={{ background: UXP.greenFill, border: `1px solid ${UXP.green}`, borderRadius: 8, padding: '10px 14px', fontSize: 13, color: UXP.greenDeep }}>
             {delStatus}
           </div>
         ) : !showConfirm ? (
           <button onClick={() => setShowConfirm(true)}
-            style={{ padding: '9px 18px', background: 'white', color: '#dc2626', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            style={{ padding: '9px 18px', background: 'white', color: UXP.roseText, border: `1px solid ${UXP.rose}`, borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
             {t('delete.button')}
           </button>
         ) : (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '14px 16px' }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626', marginBottom: 8 }}>{t('delete.confirmTitle')}</div>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }}>
+          <div style={{ background: UXP.roseFill, border: `1px solid ${UXP.rose}`, borderRadius: 8, padding: '14px 16px' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: UXP.roseText, marginBottom: 8 }}>{t('delete.confirmTitle')}</div>
+            <div style={{ fontSize: 12, color: UXP.ink3, marginBottom: 12 }}>
               {t('delete.confirmBody')}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={requestDeletion} disabled={delLoading}
-                style={{ padding: '8px 16px', background: '#dc2626', color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                style={{ padding: '8px 16px', background: UXP.roseText, color: 'white', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
                 {delLoading ? t('delete.submitting') : t('delete.submit')}
               </button>
               <button onClick={() => setShowConfirm(false)}
-                style={{ padding: '8px 16px', background: '#f3f4f6', border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer', color: '#374151' }}>
+                style={{ padding: '8px 16px', background: UXP.subtleBg, border: 'none', borderRadius: 7, fontSize: 13, cursor: 'pointer', color: UXP.ink2 }}>
                 {tCancel('actions.cancel')}
               </button>
             </div>

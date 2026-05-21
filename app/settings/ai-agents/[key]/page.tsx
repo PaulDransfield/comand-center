@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/AppShell'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 
 interface ActivityResp {
   meta: {
@@ -92,7 +92,7 @@ export default function AgentActivityPage() {
     <AppShell>
       <div style={{ maxWidth: 980, margin: '0 auto', padding: '20px 24px 60px' }}>
         <div style={{ marginBottom: 14 }}>
-          <Link href="/settings/ai-agents" style={{ fontSize: 12, color: UX.ink3, textDecoration: 'none' }}>
+          <Link href="/settings/ai-agents" style={{ fontSize: 12, color: UXP.ink3, textDecoration: 'none' }}>
             ← All AI agents
           </Link>
         </div>
@@ -123,29 +123,29 @@ function Header({ meta }: { meta: ActivityResp['meta'] }) {
     null
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `1px solid ${UX.border}`,
+      background:   UXP.cardBg,
+      border:       `1px solid ${UXP.border}`,
       borderRadius: 10,
       padding:      '18px 20px',
       marginBottom: 14,
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' as const }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: UX.ink1, margin: 0 }}>{meta.name}</h1>
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: UXP.ink1, margin: 0 }}>{meta.name}</h1>
         {planLabel && (
           <span style={{
             fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
             textTransform: 'uppercase' as const,
             padding: '2px 6px', borderRadius: 3,
-            background: '#eef2ff', color: '#4338ca',
+            background: UXP.lavFill, color: UXP.lavDeep,
           }}>{planLabel}</span>
         )}
       </div>
-      <p style={{ fontSize: 13, color: UX.ink3, marginTop: 6, lineHeight: 1.55 }}>
+      <p style={{ fontSize: 13, color: UXP.ink3, marginTop: 6, lineHeight: 1.55 }}>
         {meta.description}
       </p>
-      <div style={{ marginTop: 8, fontSize: 11, color: UX.ink4 }}>
-        <strong style={{ color: UX.ink3 }}>Schedule:</strong> {meta.schedule_human}
-        &nbsp;·&nbsp;<strong style={{ color: UX.ink3 }}>Cron job:</strong> <code style={{ fontSize: 10 }}>{meta.cron_name}</code>
+      <div style={{ marginTop: 8, fontSize: 11, color: UXP.ink4 }}>
+        <strong style={{ color: UXP.ink3 }}>Schedule:</strong> {meta.schedule_human}
+        &nbsp;·&nbsp;<strong style={{ color: UXP.ink3 }}>Cron job:</strong> <code style={{ fontSize: 10 }}>{meta.cron_name}</code>
       </div>
     </div>
   )
@@ -168,13 +168,13 @@ function CostStrip({ cost, hasRequests }: { cost: ActivityResp['cost']; hasReque
 function CostTile({ label, value }: { label: string; value: number }) {
   return (
     <div style={{
-      background: UX.cardBg, border: `1px solid ${UX.border}`, borderRadius: 8,
+      background: UXP.cardBg, border: `1px solid ${UXP.border}`, borderRadius: 8,
       padding: '12px 14px',
     }}>
-      <div style={{ fontSize: 10, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>
+      <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 4 }}>
         {label}
       </div>
-      <div style={{ fontSize: 18, fontWeight: 600, color: UX.ink1 }}>
+      <div style={{ fontSize: 18, fontWeight: 600, color: UXP.ink1 }}>
         {fmtCost(value)}
       </div>
     </div>
@@ -198,27 +198,27 @@ function ActionsSection({ actions, agentKey }: { actions: Action[]; agentKey: st
 function ActionRow({ action }: { action: Action }) {
   const severity = action.meta?.severity as string | undefined
   const sevColor =
-    severity === 'high'   ? '#b91c1c' :
-    severity === 'medium' ? UX.amberInk :
-    severity === 'low'    ? UX.greenInk :
-    UX.ink3
+    severity === 'high'   ? UXP.roseText :
+    severity === 'medium' ? UXP.coral :
+    severity === 'low'    ? UXP.greenDeep :
+    UXP.ink3
   return (
     <div style={{
       display: 'grid', gridTemplateColumns: '110px 1fr', gap: 12,
       padding: '10px 12px',
-      background: UX.pageBg, border: `0.5px solid ${UX.border}`, borderRadius: 6,
+      background: UXP.pageBg, border: `0.5px solid ${UXP.border}`, borderRadius: 6,
       fontSize: 12,
     }}>
-      <div style={{ color: UX.ink4, fontSize: 11 }}>
+      <div style={{ color: UXP.ink4, fontSize: 11 }}>
         {fmtDateShort(action.occurred_at)}
         {action.business_name && (
-          <div style={{ marginTop: 2, color: UX.ink3, fontSize: 10 }}>
+          <div style={{ marginTop: 2, color: UXP.ink3, fontSize: 10 }}>
             {action.business_name}
           </div>
         )}
       </div>
       <div>
-        <div style={{ color: UX.ink1, fontWeight: 500 }}>
+        <div style={{ color: UXP.ink1, fontWeight: 500 }}>
           {severity && (
             <span style={{
               display: 'inline-block', marginRight: 6,
@@ -231,7 +231,7 @@ function ActionRow({ action }: { action: Action }) {
           {action.title}
         </div>
         {action.detail && (
-          <div style={{ marginTop: 4, color: UX.ink3, fontSize: 11, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 4, color: UXP.ink3, fontSize: 11, lineHeight: 1.5 }}>
             {action.detail}
           </div>
         )}
@@ -261,10 +261,10 @@ function RunRow({ run }: { run: Run }) {
     : run.status === 'running' ? 'warn'
     : 'neutral'
   const tonePalette: Record<typeof tone, { bg: string; fg: string }> = {
-    good:    { bg: UX.greenBg, fg: UX.greenInk },
-    warn:    { bg: UX.amberBg, fg: UX.amberInk },
-    bad:     { bg: '#fef2f2',  fg: '#b91c1c' },
-    neutral: { bg: '#f1f5f9',  fg: UX.ink3 },
+    good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
+    warn:    { bg: UXP.lavFill, fg: UXP.coral },
+    bad:     { bg: UXP.roseFill,  fg: UXP.roseText },
+    neutral: { bg: UXP.subtleBg,  fg: UXP.ink3 },
   }
   const durMs = run.finished_at && run.started_at
     ? new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()
@@ -274,8 +274,8 @@ function RunRow({ run }: { run: Run }) {
       display: 'grid', gridTemplateColumns: '160px 90px 1fr 90px',
       gap: 10, alignItems: 'center',
       padding: '6px 10px',
-      background: UX.pageBg, border: `0.5px solid ${UX.border}`, borderRadius: 6,
-      fontSize: 11, color: UX.ink3,
+      background: UXP.pageBg, border: `0.5px solid ${UXP.border}`, borderRadius: 6,
+      fontSize: 11, color: UXP.ink3,
     }}>
       <div>{fmtDateTime(run.started_at)}</div>
       <span style={{
@@ -286,12 +286,12 @@ function RunRow({ run }: { run: Run }) {
       }}>
         {run.status ?? 'unknown'}
       </span>
-      <div style={{ color: UX.ink4, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+      <div style={{ color: UXP.ink4, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
         {run.error_message
-          ? <span style={{ color: '#b91c1c' }}>error: {run.error_message}</span>
+          ? <span style={{ color: UXP.roseText }}>error: {run.error_message}</span>
           : payloadSummary(run.payload)}
       </div>
-      <div style={{ textAlign: 'right' as const, color: UX.ink4 }}>
+      <div style={{ textAlign: 'right' as const, color: UXP.ink4 }}>
         {durMs == null ? '—' : durMs < 1000 ? `${durMs} ms` : `${(durMs / 1000).toFixed(1)} s`}
       </div>
     </div>
@@ -315,7 +315,7 @@ function LlmSection({ calls, hasRequests }: { calls: LlmCall[]; hasRequests: boo
           <div style={{
             display: 'grid', gridTemplateColumns: '140px 120px 90px 90px 60px 70px',
             gap: 10, padding: '4px 10px',
-            fontSize: 10, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '0.05em',
+            fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: '0.05em',
           }}>
             <div>When</div><div>Model</div><div>In</div><div>Out</div><div>Latency</div><div style={{ textAlign: 'right' as const }}>Cost</div>
           </div>
@@ -333,17 +333,17 @@ function LlmRow({ call }: { call: LlmCall }) {
       display: 'grid', gridTemplateColumns: '140px 120px 90px 90px 60px 70px',
       gap: 10, alignItems: 'center',
       padding: '5px 10px',
-      background: UX.pageBg, border: `0.5px solid ${UX.border}`, borderRadius: 6,
-      fontSize: 11, color: UX.ink3,
+      background: UXP.pageBg, border: `0.5px solid ${UXP.border}`, borderRadius: 6,
+      fontSize: 11, color: UXP.ink3,
     }}>
       <div>{fmtDateTime(call.created_at)}</div>
-      <div style={{ fontSize: 10, color: UX.ink2 }} title={call.model ?? ''}>
+      <div style={{ fontSize: 10, color: UXP.ink2 }} title={call.model ?? ''}>
         {shortenModel(call.model)}
       </div>
-      <div style={{ color: UX.ink4 }}>{fmtNum(call.input_tokens)}</div>
-      <div style={{ color: UX.ink4 }}>{fmtNum(call.output_tokens)}</div>
-      <div style={{ color: UX.ink4 }}>{call.latency_ms ? `${call.latency_ms}ms` : '—'}</div>
-      <div style={{ textAlign: 'right' as const, color: ok ? UX.ink2 : '#b91c1c', fontWeight: 500 }}>
+      <div style={{ color: UXP.ink4 }}>{fmtNum(call.input_tokens)}</div>
+      <div style={{ color: UXP.ink4 }}>{fmtNum(call.output_tokens)}</div>
+      <div style={{ color: UXP.ink4 }}>{call.latency_ms ? `${call.latency_ms}ms` : '—'}</div>
+      <div style={{ textAlign: 'right' as const, color: ok ? UXP.ink2 : UXP.roseText, fontWeight: 500 }}>
         {fmtCost(call.cost_usd ?? 0)}
       </div>
     </div>
@@ -355,15 +355,15 @@ function LlmRow({ call }: { call: LlmCall }) {
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `1px solid ${UX.border}`,
+      background:   UXP.cardBg,
+      border:       `1px solid ${UXP.border}`,
       borderRadius: 10,
       padding:      '14px 16px',
       marginBottom: 12,
     }}>
       <div style={{ marginBottom: 10 }}>
-        <h2 style={{ fontSize: 14, fontWeight: 600, color: UX.ink1, margin: 0 }}>{title}</h2>
-        {subtitle && <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>{subtitle}</div>}
+        <h2 style={{ fontSize: 14, fontWeight: 600, color: UXP.ink1, margin: 0 }}>{title}</h2>
+        {subtitle && <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 2 }}>{subtitle}</div>}
       </div>
       {children}
     </div>
@@ -374,19 +374,19 @@ function EmptyRow({ text }: { text: string }) {
   return (
     <div style={{
       padding:    '14px',
-      background: UX.pageBg,
-      border:     `0.5px dashed ${UX.border}`,
+      background: UXP.pageBg,
+      border:     `0.5px dashed ${UXP.border}`,
       borderRadius: 6,
-      fontSize:   12, color: UX.ink4, textAlign: 'center' as const,
+      fontSize:   12, color: UXP.ink4, textAlign: 'center' as const,
     }}>{text}</div>
   )
 }
 
 function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string }) {
   const T = {
-    good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d' },
-    warn: { bg: '#fef3c7', border: '#fde68a', fg: '#92400e' },
-    bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' },
+    good: { bg: UXP.greenFill, border: UXP.green, fg: UXP.greenDeep },
+    warn: { bg: UXP.lavFill, border: UXP.lavMid, fg: UXP.coral },
+    bad:  { bg: UXP.roseFill, border: UXP.rose, fg: UXP.roseText },
   }[tone]
   return (
     <div style={{
@@ -398,7 +398,7 @@ function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string })
 }
 
 function Empty({ text }: { text: string }) {
-  return <div style={{ padding: 36, textAlign: 'center' as const, color: UX.ink4, fontSize: 12 }}>{text}</div>
+  return <div style={{ padding: 36, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{text}</div>
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────
