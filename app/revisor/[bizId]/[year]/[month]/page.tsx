@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { UX } from '@/lib/constants/tokens'
+import { fmtKr } from '@/lib/format'
 
 const MONTH_NAMES_SV = [
   'januari', 'februari', 'mars', 'april', 'maj', 'juni',
@@ -497,10 +498,6 @@ function td(): React.CSSProperties {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function fmtKr(n: number | null | undefined): string {
-  if (n == null) return '—'
-  return Math.round(Number(n) || 0).toLocaleString('sv-SE') + ' kr'
-}
 function pctOf(n: number | null | undefined, total: number | null | undefined): string | null {
   if (n == null || total == null || total === 0) return null
   return ((Number(n) / Number(total)) * 100).toFixed(1) + '% av oms.'

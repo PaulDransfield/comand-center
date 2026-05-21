@@ -4,6 +4,26 @@ import CookieConsent from '@/components/CookieConsent'
 import FragmentAuthRedirector from '@/components/FragmentAuthRedirector'
 import { NextIntlClientProvider } from 'next-intl'
 import { getLocale, getMessages } from 'next-intl/server'
+import { Spline_Sans, Fraunces } from 'next/font/google'
+
+// next/font/google bundles + self-hosts the fonts at build time and
+// exposes them as CSS variables. Phase 1 of the UI overhaul — the
+// redesigned app surfaces render in Spline Sans / Fraunces; the public
+// landing page in app/page.tsx keeps its own DM Sans + Fraunces stack
+// because its <style> block sets body{ font-family } after globals.css.
+const fontSans = Spline_Sans({
+  subsets:  ['latin', 'latin-ext'],
+  weight:   ['300', '400', '500', '600', '700'],
+  display:  'swap',
+  variable: '--font-sans',
+})
+const fontDisplay = Fraunces({
+  subsets:  ['latin', 'latin-ext'],
+  weight:   ['300', '400', '500', '600'],
+  axes:     ['opsz'],
+  display:  'swap',
+  variable: '--font-display',
+})
 
 // next-intl resolves the locale from cookies/headers in i18n/request.ts,
 // which makes the root layout inherently request-scoped. Static prerender
@@ -46,7 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   }
 
   return (
-    <html lang={locale}>
+    <html lang={locale} className={`${fontSans.variable} ${fontDisplay.variable}`}>
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -63,7 +83,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="preconnect" href="https://llzmixkrysduztsvmfzi.supabase.co" />
         <link rel="dns-prefetch" href="https://llzmixkrysduztsvmfzi.supabase.co" />
       </head>
-      <body style={{ margin: 0, padding: 0, background: '#f8f9fa', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+      {/* Body font-family deliberately set via globals.css (not inline
+          style), so the public landing page in app/page.tsx can override
+          it via its own <style> block — inline style on <body> would beat
+          any later CSS rule and lock the landing page to Spline Sans. */}
+      <body style={{ margin: 0, padding: 0, background: '#f8f9fa' }}>
         {/*
           CookieConsent uses useTranslations() and MUST live inside the
           provider — when it was a sibling, the SSR render had no next-intl

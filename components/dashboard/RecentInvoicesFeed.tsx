@@ -14,6 +14,7 @@
 // invoice in Fortnox's web UI.
 
 import { useEffect, useState, useMemo } from 'react'
+import { fmtKr as formatKr } from '@/lib/format'
 
 interface RecentInvoice {
   supplier_name:    string
@@ -282,7 +283,4 @@ function formatLongDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00Z')
   if (Number.isNaN(d.getTime())) return iso
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(d)
-}
-function formatKr(n: number): string {
-  return Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
 }

@@ -12,6 +12,7 @@
 
 import { useEffect, useState } from 'react'
 import { UX } from '@/lib/constants/tokens'
+import { fmtKr } from '@/lib/format'
 
 interface Business {
   id:         string
@@ -251,9 +252,6 @@ function Footer() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function fmtKr(n: number): string {
-  return Math.round(Number(n) || 0).toLocaleString('sv-SE') + ' kr'
-}
 function formatOrgNr(s: string): string {
   // 5560000000 → 556000-0000
   const clean = s.replace(/\D/g, '')

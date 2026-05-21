@@ -12,6 +12,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { fmtKr } from '@/lib/format'
 
 interface ProjectionEvent {
   type:   'supplier_due' | 'customer_due' | 'salary' | 'fskatt' | 'vat'
@@ -49,12 +50,6 @@ interface CashFlowResponse {
 
 interface Props {
   businessId: string
-}
-
-function fmtKr(n: number | null | undefined, currency: string = 'SEK'): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  const unit = currency.toLowerCase() === 'sek' ? 'kr' : currency
-  return `${Math.round(n).toLocaleString('sv-SE')} ${unit}`
 }
 
 function fmtShortDate(iso: string): string {

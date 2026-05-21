@@ -18,6 +18,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { fmtKrSigned as fmtKr } from '@/lib/format'
 
 interface BankPositionResponse {
   business_id: string
@@ -57,12 +58,6 @@ interface BankPositionResponse {
 
 interface Props {
   businessId: string
-}
-
-function fmtKr(n: number | null | undefined, currency: string = 'SEK'): string {
-  if (n == null || !Number.isFinite(n)) return '—'
-  const sign = n >= 0 ? '+' : ''
-  return `${sign}${Math.round(n).toLocaleString('sv-SE')} ${currency.toLowerCase() === 'sek' ? 'kr' : currency}`
 }
 
 export default function CashPositionTile({ businessId }: Props) {

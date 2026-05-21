@@ -1,5 +1,12 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+
+/* App body font — Spline Sans via next/font. The public landing page
+   (app/page.tsx) overrides this in its own <style> block, which loads
+   later in the cascade so its DM Sans rule wins for "/". */
+body {
+  font-family: var(--font-sans, -apple-system), BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
 /* Reserve scrollbar space so pages that don't scroll don't shift left/right
    when switching to pages that do. scrollbar-gutter has the best UX on modern
    browsers; overflow-y:scroll forces a scrollbar as the fallback. */
@@ -9,8 +16,13 @@ input, button, select, textarea { font-family: inherit; }
 
 /* ── CSS VARIABLES — used by login/auth pages ─────────────────── */
 :root {
-  --font:       system-ui, -apple-system, sans-serif;
-  --display:    system-ui, -apple-system, sans-serif;
+  /* Phase 1 overhaul — next/font defines --font-sans + --font-display
+     on the <html> element via the Spline_Sans + Fraunces imports in
+     app/layout.tsx. The fallback chain here covers the edge cases
+     where the font fails to load (offline build / SSR for the root
+     before next/font hydrates). */
+  --font:       var(--font-sans, system-ui), -apple-system, sans-serif;
+  --display:    var(--font-display, Georgia), serif;
 
   /* Colours */
   --navy:       #1a1f2e;

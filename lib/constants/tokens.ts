@@ -6,6 +6,54 @@
 //
 // Source of truth: DESIGN.md § Design tokens.
 
+// ── Pastel-lavender system (UXP) — ADDITIVE ALONGSIDE `UX` ──────────
+//
+// Phase 1 of the UI overhaul. New surfaces consume `UXP.*`; legacy
+// surfaces continue on `UX.*` and `colors.ts` until each page is
+// migrated. Do NOT edit `UX` or `colors.ts` while migrating.
+export const UXP = {
+  pageBg:     '#f1eff9',
+  cardBg:     '#ffffff',
+  subtleBg:   '#faf9fd',
+  border:     'rgba(58,53,80,0.08)',
+  borderSoft: 'rgba(58,53,80,0.05)',
+
+  ink1: '#3a3550',
+  ink2: 'rgba(58,53,80,0.62)',
+  ink3: 'rgba(58,53,80,0.45)',
+  ink4: 'rgba(58,53,80,0.38)',
+
+  lav:     '#a99ce6',
+  lavDeep: '#7d6cc9',
+  lavText: '#564a8a',
+  lavFill: '#ece8f8',
+  lavMid:  '#c4b8ec',
+  lavPale: '#d8d2f0',
+
+  green:     '#5f9e7e',
+  greenDeep: '#477f60',
+  greenFill: '#eef4f0',
+  greenBar:  '#4f9b76',
+
+  coral:     '#c0703a',
+  coralLine: '#e7a37e',
+  costAmber: '#b0883c',
+
+  rose:     '#c06a72',
+  roseFill: '#f7dee0',
+  roseText: '#b0454e',
+
+  slate:     '#7a7782',
+  slateFill: '#efeef2',
+
+  r_sm:  6,
+  r_md:  8,
+  r_lg:  12,
+  railW: 46,
+} as const
+
+export type UxpToken = keyof typeof UXP
+
 export const UX = {
   // Surfaces
   pageBg:      '#f9fafb',

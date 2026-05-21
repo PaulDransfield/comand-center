@@ -5,6 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { fmtKr } from '@/lib/format'
 
 interface Alert {
   org_id:         string
@@ -334,7 +335,7 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
           alert_type: 'revenue_drop',
           severity: severity(revDev, [15, 25, 35]), // low: 15%, medium: 25%, high: 35%, critical: 35%+
           title: `Revenue down ${Math.abs(revDev).toFixed(0)}% — ${bizName}`,
-          description: `Revenue is ${Math.round(curRevenue).toLocaleString('en-GB')} kr vs ${Math.round(avgRevenue).toLocaleString('en-GB')} kr average over the last 4 months.`,
+          description: `Revenue is ${fmtKr(curRevenue)} vs ${fmtKr(avgRevenue)} average over the last 4 months.`,
           metric_value: curRevenue, expected_value: avgRevenue,
           deviation_pct: revDev, period_date: periodDate,
         })
@@ -409,7 +410,7 @@ async function checkBusiness(db: any, orgId: string, bizId: string, bizName: str
           alert_type: 'ob_supplement_spike',
           severity: severity(obDev, [40, 60, 80]), // low: 40%, medium: 60%, high: 80%, critical: 80%+
           title: `OB supplement spike +${obDev.toFixed(0)}% — ${bizName}`,
-          description: `OB supplement is ${Math.round(recentAvg).toLocaleString('en-GB')} kr/shift vs ${Math.round(historicAvg).toLocaleString('en-GB')} kr/shift average. Check for unplanned overtime.`,
+          description: `OB supplement is ${fmtKr(recentAvg)}/shift vs ${fmtKr(historicAvg)}/shift average. Check for unplanned overtime.`,
           metric_value: recentAvg, expected_value: historicAvg,
           deviation_pct: obDev, period_date: today.toISOString().slice(0, 10),
         })

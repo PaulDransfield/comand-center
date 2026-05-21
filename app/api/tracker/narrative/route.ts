@@ -19,6 +19,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { SCOPE_NOTE } from '@/lib/ai/scope'
+import { fmtKr } from '@/lib/format'
 import { logAiRequest } from '@/lib/ai/usage'
 import { aiLocaleFromRequest } from '@/lib/ai/locale'
 import { requireFinanceAccess, requireBusinessAccess } from '@/lib/auth/require-role'
@@ -240,6 +241,3 @@ Write the paragraph now.`
   }
 }
 
-function fmtKr(n: number): string {
-  return Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-}

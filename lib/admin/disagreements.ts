@@ -10,6 +10,8 @@
 // One source of truth for the classification keeps the email + the UI in
 // sync as new sources land (Caspeco etc).
 
+import { fmtKr } from '@/lib/format'
+
 export type DisagreementCategory =
   | 'critical'    // PK and Fortnox materially disagree (> 30 % gap on staff)
   | 'warning'     // partial-coverage scenarios
@@ -185,7 +187,7 @@ function buildDetail(kind: DisagreementKind, r: any, tracker: any | undefined): 
 
 function buildSummary(kind: DisagreementKind, r: any, tracker: any | undefined, bizLabel: string): string {
   const period = `${r.year}-${String(r.month).padStart(2, '0')}`
-  const fmt = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
+  const fmt = fmtKr
   switch (kind) {
     case 'staff_pk_vs_fortnox_disagrees': {
       const tStaff = Number(tracker?.staff_cost ?? 0)

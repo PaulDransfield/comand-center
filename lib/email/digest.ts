@@ -1,6 +1,8 @@
 // lib/email/digest.ts
 // Generates the Monday morning digest email HTML
 
+import { fmtKr } from '@/lib/format'
+
 export interface DigestData {
   orgName:        string
   weekLabel:      string
@@ -25,7 +27,6 @@ export interface BusinessDigest {
   topSuppliers:    { vendor: string; amount: number; category: string }[]
 }
 
-const fmtKr  = (n: number) => Math.round(n).toLocaleString('en-GB') + ' kr'
 const fmtPct = (n: number) => n.toFixed(1) + '%'
 
 function trendArrow(current: number, previous: number): string {

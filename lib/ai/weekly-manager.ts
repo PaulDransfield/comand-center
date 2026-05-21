@@ -13,6 +13,7 @@ import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
 import { logAiRequest }          from '@/lib/ai/usage'
 import { SCOPE_NOTE }            from '@/lib/ai/scope'
 import { SCHEDULING_ASYMMETRY, VOICE, INDUSTRY_BENCHMARKS } from '@/lib/ai/rules'
+import { fmtKr }                 from '@/lib/format'
 import { getForecast, coordsFor, DailyWeather, weatherBucket } from '@/lib/weather/forecast'
 import { computeDemandForecast, type DemandForecast }           from '@/lib/weather/demand'
 import { getUpcomingHolidays } from '@/lib/holidays'
@@ -494,9 +495,7 @@ Constraints — NON-NEGOTIABLE:
 - Call the submit_memo tool with the finished memo. narrative is the full 150–200 word prose with the 3 numbered actions inline; actions is the structured breakdown (title ≤ 6 words, impact as "+X kr/wk" or similar, one-sentence reasoning); facts_cited is an array of specific numeric facts from the data above that you referenced.`
 }
 
-function fmt(n: number): string {
-  return Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-}
+const fmt = fmtKr
 function delta(curr: number, prev: number): string {
   if (prev <= 0) return '—'
   const p = ((curr - prev) / prev) * 100

@@ -19,6 +19,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { fetchAllPaged } from '@/lib/supabase/page'
 import { decrypt }                    from '@/lib/integrations/encryption'
+import { fmtKr }                      from '@/lib/format'
 import { getWorkPeriods }              from '@/lib/pos/personalkollen'
 import { weatherBucket, getForecast, coordsFor } from '@/lib/weather/forecast'
 import { weightedAvg, thisWeekScaler, RECENCY, adaptiveRecencyParams } from '@/lib/forecast/recency'
@@ -1085,6 +1086,3 @@ function stockholmLocalHourOf(d: Date): number {
   }
 }
 
-function fmtKr(n: number): string {
-  return Math.round(n).toLocaleString('en-GB') + ' kr'
-}

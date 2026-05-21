@@ -17,6 +17,7 @@
 // metadata.label) within the same month.
 
 import { AI_MODELS, MAX_TOKENS } from '@/lib/ai/models'
+import { fmtKr } from '@/lib/format'
 
 export interface LineItemAnomaliesInput {
   orgId:      string
@@ -99,7 +100,7 @@ export async function runLineItemAnomalies({ orgId, businessId, db }: LineItemAn
       if (med > 0 && latestVal > med * 3) {
         findings.push({
           kind: 'spike', label, subcategory: v.sub,
-          detail: `${Math.round(latestVal)} kr in ${latestMonth} vs typical ${Math.round(med)} kr — ${(latestVal / med).toFixed(1)}× normal.`,
+          detail: `${fmtKr(latestVal)} in ${latestMonth} vs typical ${fmtKr(med)} — ${(latestVal / med).toFixed(1)}× normal.`,
           severity: latestVal > 10_000 ? 'high' : 'medium',
         })
       }

@@ -24,6 +24,7 @@
 // report shape on the apply route).
 
 import { normaliseOrgNr } from '@/lib/sweden/orgnr'
+import { fmtKr }           from '@/lib/format'
 
 export type Severity = 'error' | 'warning' | 'info'
 
@@ -406,9 +407,6 @@ function checkSubsetCaps(e: ExtractionForValidation): ValidationFinding[] {
 
 // ── small helpers ─────────────────────────────────────────────────────
 
-function fmtKr(n: number): string {
-  return Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
-}
 function formatOrgNr(s: string): string {
   return s.length === 10 ? `${s.slice(0, 6)}-${s.slice(6)}` : s
 }

@@ -66,7 +66,7 @@
   .notebook-shell[data-tab="studio"]  .notebook-studio  { display: flex !important; }
 
   /* ── Bottom navigation ────────────────────────────────────────── */
-  /* The bottom nav is rendered by <MobileBottomNav> component on mobile screens */
+  /* The bottom nav is rendered by <MobileNav> (components/MobileNav.tsx) on mobile screens */
 
   .mobile-bottom-nav {
     position:    fixed;
