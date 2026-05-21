@@ -14,7 +14,6 @@
 // UXP.lavDeep colour; the glyph picks up via currentColor.
 
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
 import { UXP } from '@/lib/constants/tokens'
 import { AREAS, defaultPageFor, resolveActiveNav, type Area, type AreaIcon } from '@/lib/nav/areas'
 import { RailIcon, type RailIconName } from '@/components/RailIcon/RailIcon'
@@ -77,13 +76,6 @@ export default function RailNav({ footer }: RailNavProps) {
 
       <div style={{ height: 6 }} />
 
-      {/* Theme toggle pinned at the top of the rail, ABOVE the area
-          buttons. Wires data-theme + localStorage now so the dark-mode
-          CSS layer (TBD) can just plug in. */}
-      <ThemeToggleButton />
-
-      <div style={{ height: 2 }} />
-
       {top.map(area => (
         <RailButton
           key={area.key}
@@ -136,60 +128,6 @@ function Brand() {
     >
       CC
     </div>
-  )
-}
-
-// Theme toggle — crescent moon glyph. Reads/writes `cc_theme` in
-// localStorage and reflects via document.documentElement.dataset.theme.
-// The dark-mode CSS layer isn't wired yet (that's a separate piece of
-// work), but the toggle persists state cleanly so dropping that layer
-// in later is purely additive.
-function ThemeToggleButton() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light')
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('cc_theme')
-      if (saved === 'dark' || saved === 'light') {
-        setTheme(saved)
-        document.documentElement.dataset.theme = saved
-      }
-    } catch { /* SSR / no-localStorage */ }
-  }, [])
-
-  function toggle() {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    try {
-      localStorage.setItem('cc_theme', next)
-      document.documentElement.dataset.theme = next
-    } catch { /* ignore */ }
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-      style={{
-        width:          32,
-        height:         30,
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'center',
-        borderRadius:   UXP.r_md,
-        background:     'transparent',
-        color:          UXP.ink4,
-        border:         'none',
-        cursor:         'pointer',
-        padding:        0,
-        marginBottom:   2,
-        fontFamily:     'inherit',
-      }}
-    >
-      <RailIcon name="darkmode" />
-    </button>
   )
 }
 
