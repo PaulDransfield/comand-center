@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   // Themes — primary source (persistent). Newest first.
   const { data: themes, error: themesErr } = await db
     .from('review_themes')
-    .select('external_id, rating, published_at, themes, sentiment, key_phrase, language, llm_model')
+    .select('external_id, rating, published_at, themes, sentiment, key_phrase, language, llm_model, replied_at, reply_text, reply_tone')
     .eq('business_id', businessId)
     .eq('source', 'google_places')
     .order('published_at', { ascending: false })
@@ -78,6 +78,10 @@ export async function GET(req: NextRequest) {
       author_name:  rawByExt[r.external_id]?.author_name ?? null,
       // Raw text only present within the 30-day TTL window
       text:         rawByExt[r.external_id]?.text ?? null,
+      // Reply state (M077)
+      replied_at:   r.replied_at  ?? null,
+      reply_text:   r.reply_text  ?? null,
+      reply_tone:   r.reply_tone  ?? null,
     })),
   }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
 }

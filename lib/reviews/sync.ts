@@ -45,6 +45,17 @@ export async function syncReviewsForBusiness(db: any, biz: BizSyncTarget): Promi
     return summary
   }
   summary.fetched_reviews = fetched.reviews.length
+
+  // M077: persist the summary fields BEFORE we early-return on the
+  // "0 new reviews this sync" path. Owner-facing surface relies on
+  // google_review_count + google_overall_rating to render the real
+  // total (e.g. "278 reviews") even when no new review content lands.
+  await db.from('businesses').update({
+    google_review_count:   fetched.rating_count   ?? null,
+    google_overall_rating: fetched.overall_rating ?? null,
+    google_last_sync_at:   new Date().toISOString(),
+  }).eq('id', biz.id).then(() => {}, () => {})
+
   if (fetched.reviews.length === 0) return summary
 
   // Upsert into review_raw

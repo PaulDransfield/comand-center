@@ -68,6 +68,25 @@ interface Review {
   llm_model:    string | null
   author_name:  string | null
   text:         string | null
+  // Reply state (M077)
+  replied_at:   string | null
+  reply_text:   string | null
+  reply_tone:   'warm' | 'professional' | 'apologetic' | null
+}
+
+// /api/reviews/summary (M077) — the real Google totals + reply KPIs.
+interface SummaryShape {
+  business_id:             string
+  business_name:           string
+  place_id_set:            boolean
+  last_sync_at:            string | null
+  overall_rating:          number | null
+  total_reviews_on_google: number | null
+  reviews_in_db:           number
+  replied_count:           number
+  needs_reply_count:       number
+  avg_response_hours:      number | null
+  star_distribution_in_db: Record<'1'|'2'|'3'|'4'|'5', number>
 }
 
 type PlatformKey = 'google'
@@ -91,6 +110,10 @@ export default function ReviewsPage() {
   const [placeId,    setPlaceId]    = useState<string | null>(null)
   const [themes,     setThemes]     = useState<ThemesResp | null>(null)
   const [reviews,    setReviews]    = useState<Review[]>([])
+  // Summary endpoint payload (M077). Carries the real total from Google
+  // — separate from the per-review rows we ingested (capped at 5 by
+  // Google Places' per-call limit).
+  const [summary,    setSummary]    = useState<SummaryShape | null>(null)
   const [windowDays, setWindowDays] = useState(90)
   const [platform,   setPlatform]   = useState<PlatformKey>('google')
   const [loading,    setLoading]    = useState(true)
@@ -118,12 +141,14 @@ export default function ReviewsPage() {
   async function loadData(business_id: string, win: number) {
     setLoading(true); setError('')
     try {
-      const [tr, lr] = await Promise.all([
+      const [tr, lr, sr] = await Promise.all([
         fetch(`/api/reviews/themes?business_id=${business_id}&window=${win}`, { cache: 'no-store' }),
         fetch(`/api/reviews/list?business_id=${business_id}&limit=30`,        { cache: 'no-store' }),
+        fetch(`/api/reviews/summary?business_id=${business_id}`,              { cache: 'no-store' }),
       ])
-      if (tr.ok) setThemes(await tr.json()); else setThemes(null)
+      if (tr.ok) setThemes(await tr.json());        else setThemes(null)
       if (lr.ok) setReviews((await lr.json()).reviews ?? []); else setReviews([])
+      if (sr.ok) setSummary(await sr.json());       else setSummary(null)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -216,17 +241,33 @@ export default function ReviewsPage() {
               />
             )}
 
+            {/* Google API-limit callout — only when we actually have a
+                wide gap between Google's total and what we ingested. */}
+            {!loading && summary && summary.total_reviews_on_google && summary.total_reviews_on_google > summary.reviews_in_db && (
+              <GoogleApiLimitCallout
+                totalOnGoogle={summary.total_reviews_on_google}
+                inDb={summary.reviews_in_db}
+              />
+            )}
+
+            {!loading && summary && (
+              <SummaryStrip summary={summary} />
+            )}
+
             {!loading && themes && themes.sample_size > 0 && (
               <>
-                <SummaryStrip themes={themes} />
                 <RatingTrendChart trend={themes.weekly_trend} />
                 <StarDistribution reviews={reviews} />
                 <ThemesPanel themes={themes.top_themes} />
               </>
             )}
 
-            {!loading && reviews.length > 0 && (
-              <RecentReviewsPanel reviews={reviews} />
+            {!loading && reviews.length > 0 && bizId && (
+              <RecentReviewsPanel
+                reviews={reviews}
+                businessId={bizId}
+                onReplyMarked={() => bizId && loadData(bizId, windowDays)}
+              />
             )}
           </>
         )}
@@ -578,14 +619,15 @@ function Spinner() {
 // KPI strip
 // ════════════════════════════════════════════════════════════════════
 
-function SummaryStrip({ themes }: { themes: ThemesResp }) {
-  const positiveCount = themes.top_themes.reduce((s, t) => s + t.positive_count, 0)
-  const negativeCount = themes.top_themes.reduce((s, t) => s + t.negative_count, 0)
-  const rating        = themes.avg_rating
-  const ratingDelta   = rating != null
-    ? (rating >= 4.5 ? '+' : '') + (rating - 4.5).toFixed(1) + '★ vs target'
-    : null
-  const total = positiveCount + negativeCount
+// Phase 3 spec — four KpiCards: rating · replied · needs-reply · avg-response.
+// `rating` is Google's overall average across ALL their reviews (not just
+// the 5 we ingested); `replied` / `needs_reply` / `avg_response` are
+// computed off the local review_themes rows.
+function SummaryStrip({ summary }: { summary: SummaryShape }) {
+  const rating = summary.overall_rating
+  const total  = summary.total_reviews_on_google
+  const replied = summary.replied_count
+  const needs   = summary.needs_reply_count
 
   return (
     <div style={{
@@ -596,32 +638,47 @@ function SummaryStrip({ themes }: { themes: ThemesResp }) {
       <KpiCardUX
         title="Average rating"
         value={rating != null ? rating.toFixed(1) + '★' : '—'}
-        delta={ratingDelta}
+        microLabel={total != null ? `Across ${total.toLocaleString('sv-SE')} reviews on Google` : 'Hit Sync now to populate'}
+      />
+      <KpiCardUX
+        title="Replied"
+        value={String(replied)}
         deltaGood
-        microLabel={`${themes.window_days}-day window`}
+        microLabel={`Of ${summary.reviews_in_db} ingested`}
       />
       <KpiCardUX
-        title="Reviews analysed"
-        value={themes.sample_size.toString()}
-        microLabel={`${themes.window_days}-day window`}
+        title="Needs reply"
+        value={String(needs)}
+        deltaGood={needs === 0}
+        delta={needs > 0 ? `${needs} pending` : null}
+        microLabel={needs > 0 ? 'Open the AI drafter on each' : 'All caught up'}
       />
       <KpiCardUX
-        title="Sentiment mix"
-        value={total > 0 ? `${Math.round((positiveCount / total) * 100)}%` : '—'}
-        variant="stacked"
-        stackedBars={total > 0 ? [
-          { label: 'Positive', value: positiveCount, max: total, color: UXP.green },
-          { label: 'Negative', value: negativeCount, max: total, color: UXP.rose  },
-        ] : undefined}
-        microLabel={`${positiveCount} positive · ${negativeCount} negative`}
+        title="Avg response time"
+        value={summary.avg_response_hours != null ? `${summary.avg_response_hours}h` : '—'}
+        microLabel={summary.avg_response_hours != null ? 'From posted to replied' : 'Nothing replied yet'}
       />
-      <KpiCardUX
-        title="Flagged for follow-up"
-        value={String(negativeCount)}
-        deltaGood={false}
-        delta={negativeCount > positiveCount ? '+ trending bad' : null}
-        microLabel={negativeCount > 0 ? 'Negative mentions' : 'Nothing flagged'}
-      />
+    </div>
+  )
+}
+
+// Honest callout for the Google Places API limit. Surfaced only when
+// Google's total > the rows we have. Explains why the recent-reviews
+// list doesn't match the headline number, so the owner doesn't think
+// we dropped data.
+function GoogleApiLimitCallout({ totalOnGoogle, inDb }: { totalOnGoogle: number; inDb: number }) {
+  return (
+    <div style={{
+      background:   UXP.lavFill,
+      border:       `0.5px solid ${UXP.lavMid}`,
+      borderRadius: UXP.r_md,
+      padding:      '10px 14px',
+      fontSize:     12,
+      color:        UXP.ink2,
+      lineHeight:   1.6,
+    }}>
+      <strong style={{ color: UXP.lavText }}>You have {totalOnGoogle.toLocaleString('sv-SE')} reviews on Google</strong>
+      {' '}— Google&apos;s public API only exposes the {inDb} most recent. The rating, theme analysis and reply-time KPIs above are based on what we have access to. To bring in full review history we&apos;d need a Google Business Profile connection (planned).
     </div>
   )
 }
@@ -800,7 +857,13 @@ function ThemeRow({ theme: t }: { theme: ThemeAgg }) {
 // Recent reviews list
 // ════════════════════════════════════════════════════════════════════
 
-function RecentReviewsPanel({ reviews }: { reviews: Review[] }) {
+function RecentReviewsPanel({
+  reviews, businessId, onReplyMarked,
+}: {
+  reviews:       Review[]
+  businessId:    string
+  onReplyMarked: () => void
+}) {
   if (reviews.length === 0) return null
   return (
     <div style={cardStyle()}>
@@ -811,13 +874,38 @@ function RecentReviewsPanel({ reviews }: { reviews: Review[] }) {
         </div>
       </div>
       <div style={{ display: 'grid', gap: 8 }}>
-        {reviews.map(r => <ReviewRow key={r.external_id} review={r} />)}
+        {reviews.map(r => (
+          <ReviewRow
+            key={r.external_id}
+            review={r}
+            businessId={businessId}
+            onReplyMarked={onReplyMarked}
+          />
+        ))}
       </div>
     </div>
   )
 }
 
-function ReviewRow({ review: r }: { review: Review }) {
+function ReviewRow({
+  review: r, businessId, onReplyMarked,
+}: {
+  review:        Review
+  businessId:    string
+  onReplyMarked: () => void
+}) {
+  const [draftOpen,    setDraftOpen]    = useState(false)
+  const [tone,         setTone]         = useState<'warm' | 'professional' | 'apologetic'>(
+    r.rating != null && r.rating <= 3 ? 'apologetic' : 'warm'
+  )
+  const [draft,        setDraft]        = useState<string>(r.reply_text ?? '')
+  const [drafting,     setDrafting]     = useState(false)
+  const [draftError,   setDraftError]   = useState<string | null>(null)
+  const [markBusy,     setMarkBusy]     = useState(false)
+  const [copied,       setCopied]       = useState(false)
+
+  const isReplied = !!r.replied_at
+
   const ratingTone = r.rating == null    ? UXP.ink4
                    : r.rating >= 4       ? UXP.greenDeep
                    : r.rating === 3      ? UXP.coral
@@ -827,15 +915,68 @@ function ReviewRow({ review: r }: { review: Review }) {
     .sort(([_a, a], [_b, b]) => Number((b as any).confidence ?? 0) - Number((a as any).confidence ?? 0))
     .slice(0, 4)
 
+  async function generateDraft(nextTone?: 'warm' | 'professional' | 'apologetic') {
+    setDrafting(true); setDraftError(null)
+    try {
+      const res = await fetch('/api/reviews/draft-reply', {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({
+          business_id: businessId,
+          external_id: r.external_id,
+          tone:        nextTone ?? tone,
+        }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.message ?? j.error ?? `HTTP ${res.status}`)
+      setDraft(String(j.draft ?? ''))
+      if (nextTone) setTone(nextTone)
+    } catch (e: any) {
+      setDraftError(e.message)
+    } finally {
+      setDrafting(false)
+    }
+  }
+
+  async function copyDraft() {
+    if (!draft) return
+    try {
+      await navigator.clipboard.writeText(draft)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch { /* ignore */ }
+  }
+
+  async function markReplied(undo = false) {
+    setMarkBusy(true)
+    try {
+      await fetch('/api/reviews/mark-replied', {
+        method:  'POST',
+        headers: { 'content-type': 'application/json' },
+        body:    JSON.stringify({
+          business_id: businessId,
+          external_id: r.external_id,
+          reply_text:  undo ? null : (draft || null),
+          reply_tone:  undo ? null : tone,
+          undo,
+        }),
+      })
+      onReplyMarked()
+    } finally {
+      setMarkBusy(false)
+    }
+  }
+
   return (
     <div style={{
-      background:    UXP.subtleBg,
-      border:        `0.5px solid ${UXP.borderSoft}`,
+      background:    isReplied ? UXP.greenFill : UXP.subtleBg,
+      border:        `0.5px solid ${isReplied ? UXP.green : UXP.borderSoft}`,
       borderRadius:  UXP.r_md,
       padding:       '10px 12px',
     }}>
+      {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' as const }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: ratingTone, letterSpacing: '0.05em' }}>
             {r.rating != null ? '★'.repeat(r.rating) + '☆'.repeat(5 - r.rating) : ''}
           </span>
@@ -851,6 +992,23 @@ function ReviewRow({ review: r }: { review: Review }) {
               borderRadius:  4,
             }}>{r.language}</span>
           )}
+          {isReplied ? (
+            <span style={{
+              fontSize: 10, fontWeight: 600, color: UXP.greenDeep,
+              background: 'white', border: `0.5px solid ${UXP.green}`,
+              padding: '1px 6px', borderRadius: 999, letterSpacing: '0.03em',
+            }}>
+              ✓ Replied {r.replied_at ? fmtDate(r.replied_at) : ''}
+            </span>
+          ) : (
+            <span style={{
+              fontSize: 10, fontWeight: 600, color: UXP.coral,
+              background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+              padding: '1px 6px', borderRadius: 999, letterSpacing: '0.03em',
+            }}>
+              Needs reply
+            </span>
+          )}
         </div>
         <span style={{ fontSize: 10, color: UXP.ink4 }}>{fmtDate(r.published_at)}</span>
       </div>
@@ -865,14 +1023,10 @@ function ReviewRow({ review: r }: { review: Review }) {
         <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 4, marginBottom: 6 }}>
           {themeChips.map(([cat, t]) => {
             const v = t as any
-            const tone: 'good' | 'warning' | 'bad' =
-              v.polarity === '+' ? 'good' :
-              v.polarity === '-' ? 'bad'  : 'warning'
-            const palette = {
-              good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
-              warning: { bg: UXP.lavFill,   fg: UXP.coral     },
-              bad:     { bg: UXP.roseFill,  fg: UXP.roseText  },
-            }[tone]
+            const palette =
+              v.polarity === '+' ? { bg: UXP.greenFill, fg: UXP.greenDeep } :
+              v.polarity === '-' ? { bg: UXP.roseFill,  fg: UXP.roseText  } :
+                                   { bg: UXP.lavFill,   fg: UXP.coral     }
             return (
               <span key={cat} style={{
                 fontSize: 10,
@@ -902,8 +1056,188 @@ function ReviewRow({ review: r }: { review: Review }) {
           {r.text.length > 280 ? r.text.slice(0, 280) + '…' : r.text}
         </div>
       )}
+
+      {/* Action row */}
+      <div style={{
+        display:    'flex',
+        gap:        6,
+        marginTop:  8,
+        paddingTop: 8,
+        borderTop:  `0.5px dashed ${UXP.borderSoft}`,
+        alignItems: 'center',
+        flexWrap:   'wrap' as const,
+      }}>
+        {!draftOpen && !isReplied && (
+          <button
+            type="button"
+            onClick={() => { setDraftOpen(true); if (!draft) generateDraft() }}
+            style={primaryPillStyle()}
+          >
+            ✦ Draft a reply
+          </button>
+        )}
+        {!draftOpen && isReplied && (
+          <>
+            <button type="button" onClick={() => setDraftOpen(true)} style={ghostPillStyle()}>
+              View draft
+            </button>
+            <button
+              type="button"
+              onClick={() => markReplied(true)}
+              disabled={markBusy}
+              style={{ ...ghostPillStyle(), color: UXP.coral, opacity: markBusy ? 0.5 : 1 }}
+            >
+              Undo replied
+            </button>
+          </>
+        )}
+        {draftOpen && (
+          <button
+            type="button"
+            onClick={() => setDraftOpen(false)}
+            style={{ ...ghostPillStyle(), marginLeft: 'auto' }}
+          >
+            Close
+          </button>
+        )}
+      </div>
+
+      {/* Drafter panel */}
+      {draftOpen && (
+        <div style={{
+          marginTop:    8,
+          background:   'white',
+          border:       `0.5px solid ${UXP.border}`,
+          borderRadius: UXP.r_md,
+          padding:      10,
+        }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+            <span style={{ fontSize: 10, color: UXP.ink3, marginRight: 4 }}>Tone:</span>
+            {(['warm', 'professional', 'apologetic'] as const).map(tk => (
+              <button
+                key={tk}
+                type="button"
+                onClick={() => { setTone(tk); generateDraft(tk) }}
+                disabled={drafting}
+                style={{
+                  ...togglePillStyle(tone === tk),
+                  opacity: drafting ? 0.6 : 1,
+                  textTransform: 'capitalize' as const,
+                }}
+              >
+                {tk}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => generateDraft()}
+              disabled={drafting}
+              style={{ ...ghostPillStyle(), marginLeft: 'auto', opacity: drafting ? 0.6 : 1 }}
+              title="Regenerate the draft"
+            >
+              {drafting ? 'Drafting…' : '↻ Regenerate'}
+            </button>
+          </div>
+
+          {draftError && (
+            <div style={{
+              fontSize: 11, color: UXP.roseText,
+              background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`,
+              padding: '6px 10px', borderRadius: 6, marginBottom: 8,
+            }}>{draftError}</div>
+          )}
+
+          <textarea
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder={drafting ? 'Drafting your reply…' : 'AI draft will appear here. Edit before copying.'}
+            style={{
+              width:        '100%',
+              minHeight:    100,
+              padding:      '8px 10px',
+              border:       `0.5px solid ${UXP.border}`,
+              borderRadius: 6,
+              fontSize:     12,
+              lineHeight:   1.5,
+              fontFamily:   'inherit',
+              color:        UXP.ink1,
+              background:   UXP.subtleBg,
+              resize:       'vertical' as const,
+              boxSizing:    'border-box' as const,
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+            <button
+              type="button"
+              onClick={copyDraft}
+              disabled={!draft.trim()}
+              style={{ ...ghostPillStyle(), opacity: draft.trim() ? 1 : 0.4 }}
+            >
+              {copied ? '✓ Copied' : 'Copy'}
+            </button>
+            {!isReplied ? (
+              <button
+                type="button"
+                onClick={() => markReplied(false)}
+                disabled={markBusy || !draft.trim()}
+                style={{ ...primaryPillStyle(), opacity: (markBusy || !draft.trim()) ? 0.5 : 1 }}
+              >
+                {markBusy ? 'Saving…' : 'Mark as replied'}
+              </button>
+            ) : (
+              <span style={{ fontSize: 10, color: UXP.ink3 }}>
+                Marked replied {r.replied_at ? `· ${fmtDate(r.replied_at)}` : ''}
+              </span>
+            )}
+            <span style={{ fontSize: 10, color: UXP.ink4, marginLeft: 'auto' }}>
+              Paste into Google Maps · this UI tracks state only
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+function primaryPillStyle(): React.CSSProperties {
+  return {
+    fontSize:    11,
+    fontWeight:  600,
+    padding:     '5px 12px',
+    background:  UXP.lavDeep,
+    color:       'white',
+    border:      'none',
+    borderRadius: 999,
+    cursor:      'pointer',
+    fontFamily:  'inherit',
+  }
+}
+function ghostPillStyle(): React.CSSProperties {
+  return {
+    fontSize:    11,
+    fontWeight:  500,
+    padding:     '5px 10px',
+    background:  'transparent',
+    color:       UXP.ink2,
+    border:      `0.5px solid ${UXP.border}`,
+    borderRadius: 999,
+    cursor:      'pointer',
+    fontFamily:  'inherit',
+  }
+}
+function togglePillStyle(active: boolean): React.CSSProperties {
+  return {
+    fontSize:    10,
+    fontWeight:  active ? 600 : 500,
+    padding:     '4px 10px',
+    background:  active ? UXP.lavFill : 'transparent',
+    color:       active ? UXP.lavText : UXP.ink3,
+    border:      `0.5px solid ${active ? UXP.lavMid : UXP.borderSoft}`,
+    borderRadius: 999,
+    cursor:      'pointer',
+    fontFamily:  'inherit',
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════

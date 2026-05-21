@@ -6,6 +6,20 @@
 
 ## Pending — apply when ready
 
+### M077 — Reviews summary persistence + reply tracking ⏳ pending application
+**File:** `sql/M077-REVIEWS-SUMMARY-AND-REPLIES.sql`
+**Purpose:** Two gaps from M074:
+1. Google Places returns total review count (`userRatingCount`) + overall rating in the same payload as the per-review rows, but `lib/reviews/sync.ts` only stored the rows — the summary was thrown away. Result: a business with 278 reviews on Google showed "5 reviews" on the page (Places API caps content at the 5 most recent). Adds 3 columns on `businesses`: `google_review_count`, `google_overall_rating`, `google_last_sync_at`.
+2. The original `/reviews` design calls for `replied / needs-reply / avg-response` KPIs. Adds 3 columns on `review_themes`: `replied_at`, `reply_text`, `reply_tone`. Owner manually marks each review as replied via a "Mark replied" button (until Google Business Profile OAuth lands and we can detect replies automatically).
+**Companion code:**
+- `lib/reviews/sync.ts` persists the summary every sync.
+- `/api/reviews/summary` — new endpoint returning the 4 spec KPIs (rating · replied · needs-reply · avg-response) + the real Google total.
+- `/api/reviews/draft-reply` — Haiku-4.5 AI reply drafter. Tones: warm / professional / apologetic. Subject to the per-org daily AI quota.
+- `/api/reviews/mark-replied` — toggle replied_at on a review (`undo:true` clears).
+- `/api/reviews/list` extended with reply state (replied_at / reply_text / reply_tone).
+- `/reviews` page surgically updated: new SummaryStrip with spec-aligned KPIs, `GoogleApiLimitCallout` explaining the 5-vs-278 gap, AI-reply popover per review card (tone toggle, regenerate, edit, copy, mark-as-replied), visual replied/needs-reply state on each card.
+**Idempotent.** All ALTERs are IF NOT EXISTS.
+
 ### M076 — Inventory backfill state ⏳ pending application
 **File:** `sql/M076-INVENTORY-BACKFILL-STATE.sql`
 **Purpose:** Phase A follow-up. The original /api/inventory/lines/backfill ran synchronously and timed out (HTTP 504) on businesses with >~60 invoices. Adds `inventory_backfill_state` table so the kick endpoint can write progress, fire a `waitUntil` background worker, and return instantly while the admin UI polls for live counts. Same pattern as `fortnox_backfill_state`. One row per business via UNIQUE(business_id); kicks UPSERT.
