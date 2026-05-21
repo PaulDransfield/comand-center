@@ -1,38 +1,40 @@
 'use client'
 // @ts-nocheck
-// app/overheads/page.tsx
+// app/overheads/page.tsx — full rebuild on the new system
 //
-// The overheads *presentation*.  Upload UI moved to /overheads/upload.
-// This page consumes tracker_line_items via /api/overheads/line-items
-// and renders:
-//   - Hero with this-period overheads total + count
-//   - Subcategory breakdown card (horizontal stacked bars, ranked)
-//   - Full line-item table, filterable by month, sortable by amount
-//   - AttentionPanel surfacing AI cost insights (filled later by the
-//     cost-intel agent in the next phase)
+// Same treatment as the other rebuilds. Every surface lives on UXP +
+// KpiCardUX / BreakdownTable; the legacy PageHero / SupportingStats /
+// TopBar / AttentionPanel / SegmentedToggle are gone from this page.
+//
+// Year nav lives in the AppShell toolbar's date stepper. The Cost
+// Review + Upload PDFs actions sit in a header pill row.
+//
+// Data unchanged:
+//   /api/overheads/line-items (curr + prev year)  — tracker_line_items rows
+//   /api/metrics/monthly                          — for revenue base in % calcs
+//   /api/cost-insights                            — AI cost intelligence items
+//   /api/overheads/benchmarks                     — industry medians per subcat
+//   /api/overheads/reconciliation                 — invoice vs Fortnox findings
+//   /api/overheads/vat-projection                 — next-filing estimate
+//   /api/overheads/projection                     — review queue + savings
+//
+// The /overheads/review and /overheads/upload subpages are separate
+// rebuild targets — they're heavy interactive workflows on their own.
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
-import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
-// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
-const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import TopBar from '@/components/ui/TopBar'
-import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-// Phase 5 — Bookkeeping migration. Add a 3-card KPI strip above the
-// existing hero. Cost-review workflow + upload action stay where they are.
-import KpiCardUX from '@/components/ux/KpiCard'
 
-interface Business { id: string; name: string; city: string | null }
+const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
+
+import AppShell from '@/components/AppShell'
+import KpiCardUX from '@/components/ux/KpiCard'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
+
 interface LineItem {
   id:              string
   period_year:     number
@@ -46,81 +48,43 @@ interface LineItem {
   created_at:      string
 }
 interface Subcategory {
-  key:           string
-  subcategory:   string | null
-  label:         string
-  total_kr:      number
-  months_seen:   number
+  key:         string
+  subcategory: string | null
+  label:       string
+  total_kr:    number
+  months_seen: number
 }
+interface ReconItem  { tone: 'good' | 'warning' | 'bad'; entity: string; message: string }
+interface InsightItem { tone: 'good' | 'warning' | 'bad'; entity: string; message: string }
 
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const MONTHS       = ['January','February','March','April','May','June','July','August','September','October','November','December']
 
-// Tone per subcategory — rough semantic colouring so the stacked bar has meaning.
-const SUB_TONE: Record<string, string> = {
-  rent:           '#1a1f2e',   // navy (fixed overhead, biggest)
-  utilities:      '#3730a3',
-  software:       '#6366f1',
-  telecom:        '#8b5cf6',
-  accounting:     '#d97706',   // amber (professional fees)
-  audit:          '#d97706',
-  consulting:     '#d97706',
-  bank_fees:      '#dc2626',   // red (costs worth hunting)
-  insurance:      '#7c3aed',
-  marketing:      '#059669',   // green (growth-investment)
-  cleaning:       '#0891b2',
-  repairs:        '#6b7280',
-  consumables:    '#6b7280',
-  office_supplies:'#6b7280',
-  postage:        '#6b7280',
-  shipping:       '#6b7280',
-  entertainment:  '#a16207',
-  vehicles:       '#6b7280',
-  other:          '#9ca3af',
-}
-
 export default function OverheadsPage() {
   const router = useRouter()
-  const t      = useTranslations('financials.overheads')
-  const [businesses, setBusinesses] = useState<Business[]>([])
-  const [bizId,      setBizId]      = useState<string | null>(null)
-  const [rows,       setRows]       = useState<LineItem[]>([])
-  const [subs,       setSubs]       = useState<Subcategory[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [year,       setYear]       = useState<number>(new Date().getFullYear())
-  const [monthFilter, setMonthFilter] = useState<'all' | number>('all')
-  const [insights,   setInsights]   = useState<AttentionItem[]>([])
-  // KPI inputs — revenue + covers per month from monthly_metrics
-  const [metrics,    setMetrics]    = useState<any[]>([])
-  // YoY drift — line items from the previous year for comparison
-  const [prevSubs,   setPrevSubs]   = useState<Subcategory[]>([])
-  // Industry benchmarks — anonymised cross-tenant medians per subcategory
-  const [benchmarks, setBenchmarks] = useState<Record<string, { sample_size: number; median_kr: number }>>({})
-  // Invoice ↔ Fortnox reconciliation findings
-  const [recon,      setRecon]      = useState<AttentionItem[]>([])
-  // VAT projection — next filing estimate
-  const [vat,        setVat]        = useState<any>(null)
-  // Overhead-review projection (PR 3) — current vs after-cancel numbers
-  const [reviewProj, setReviewProj] = useState<any>(null)
+  const now    = new Date()
+  const [bizId,        setBizId]        = useState<string | null>(null)
+  const [year,         setYear]         = useState<number>(now.getFullYear())
+  const [monthFilter,  setMonthFilter]  = useState<'all' | number>('all')
+  const [rows,         setRows]         = useState<LineItem[]>([])
+  const [subs,         setSubs]         = useState<Subcategory[]>([])
+  const [prevSubs,     setPrevSubs]     = useState<Subcategory[]>([])
+  const [metrics,      setMetrics]      = useState<any[]>([])
+  const [insights,     setInsights]     = useState<InsightItem[]>([])
+  const [benchmarks,   setBenchmarks]   = useState<Record<string, { sample_size: number; median_kr: number }>>({})
+  const [recon,        setRecon]        = useState<ReconItem[]>([])
+  const [vat,          setVat]          = useState<any>(null)
+  const [reviewProj,   setReviewProj]   = useState<any>(null)
+  const [loading,      setLoading]      = useState(true)
 
-  // Hydrate selected business from sidebar
+  // Subscribe to BizPicker
   useEffect(() => {
-    fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
-      if (!Array.isArray(data) || !data.length) return
-      setBusinesses(data)
-      const saved = localStorage.getItem('cc_selected_biz')
-      const id = (saved && data.find(b => b.id === saved)) ? saved : data[0].id
-      setBizId(id)
-    }).catch(() => {})
-    const onStorage = () => {
-      const s = localStorage.getItem('cc_selected_biz')
-      if (s) setBizId(s)
-    }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
+    const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
+    sync()
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
   }, [])
 
-  // Load overhead line items + monthly metrics + prior-year for YoY drift
   const load = useCallback(async () => {
     if (!bizId) return
     setLoading(true)
@@ -135,40 +99,38 @@ export default function OverheadsPage() {
         fetch(`/api/overheads/vat-projection?business_id=${bizId}`, { cache: 'no-store' }),
         fetch(`/api/overheads/projection?business_id=${bizId}`, { cache: 'no-store' }),
       ])
-      const lj = await liRes.json().catch(() => ({}))
-      const pj = await prevRes.json().catch(() => ({}))
-      const mj = await mmRes.json().catch(() => ({}))
-      const cj = await ciRes.json().catch(() => ({}))
-      const bj = await bRes.json().catch(() => ({}))
-      const rj = await rRes.json().catch(() => ({}))
-      const vj = await vRes.json().catch(() => ({}))
-      const opj = await opRes.json().catch(() => ({}))
-      setReviewProj(opj && !opj.error ? opj : null)
-      setVat(vj && !vj.error ? vj : null)
+      const lj  = await liRes.json().catch(()  => ({}))
+      const pj  = await prevRes.json().catch(() => ({}))
+      const mj  = await mmRes.json().catch(()  => ({}))
+      const cj  = await ciRes.json().catch(()  => ({}))
+      const bj  = await bRes.json().catch(()   => ({}))
+      const rj  = await rRes.json().catch(()   => ({}))
+      const vj  = await vRes.json().catch(()   => ({}))
+      const opj = await opRes.json().catch(()  => ({}))
       setRows(Array.isArray(lj.rows) ? lj.rows : [])
       setSubs(Array.isArray(lj.subcategories) ? lj.subcategories : [])
       setPrevSubs(Array.isArray(pj.subcategories) ? pj.subcategories : [])
       setMetrics(Array.isArray(mj.rows) ? mj.rows : [])
       setInsights(Array.isArray(cj.items) ? cj.items : [])
       setRecon(Array.isArray(rj.items) ? rj.items : [])
+      setVat(vj && !vj.error ? vj : null)
+      setReviewProj(opj && !opj.error ? opj : null)
       const bm: Record<string, { sample_size: number; median_kr: number }> = {}
       for (const b of (bj.benchmarks ?? [])) bm[b.subcategory] = { sample_size: b.sample_size, median_kr: b.median_kr }
       setBenchmarks(bm)
     } catch {}
     setLoading(false)
   }, [bizId, year])
-
   useEffect(() => { if (bizId) load() }, [bizId, load])
 
-  // ── Derived metrics ────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    return monthFilter === 'all' ? rows : rows.filter(r => r.period_month === monthFilter)
-  }, [rows, monthFilter])
-
+  // Derived
+  const filtered = useMemo(
+    () => monthFilter === 'all' ? rows : rows.filter(r => r.period_month === monthFilter),
+    [rows, monthFilter],
+  )
   const total      = filtered.reduce((s, r) => s + Number(r.amount ?? 0), 0)
   const subsInView = useMemo(() => {
     if (monthFilter === 'all') return subs
-    // Re-compute subs for the selected month only
     const map: Record<string, { label: string; subcategory: string | null; total: number; months: Set<number> }> = {}
     for (const r of filtered) {
       const key = r.subcategory ?? r.label_sv ?? 'other'
@@ -180,667 +142,550 @@ export default function OverheadsPage() {
       .map(([key, v]) => ({ key, subcategory: v.subcategory, label: v.label, total_kr: Math.round(v.total), months_seen: v.months.size }))
       .sort((a, b) => b.total_kr - a.total_kr)
   }, [filtered, subs, monthFilter])
-
   const monthsCovered = useMemo(() => {
     const s = new Set<number>()
     for (const r of rows) s.add(r.period_month)
     return s
   }, [rows])
 
-  const selectedBiz = businesses.find(b => b.id === bizId) ?? null
-
-  const hero = (() => {
-    if (loading) return <>{t('loading')}</>
-    if (!rows.length) {
-      return <>
-        No Fortnox overhead data for <span style={{ fontWeight: UX.fwMedium }}>{year}</span> yet.{' '}
-        <a href="/overheads/upload" style={{ color: UX.indigo }}>Upload your Fortnox P&amp;L PDFs →</a>
-      </>
+  // YoY drift — for the largest category compare current vs prev-year monthly average
+  const yoyDrift = useMemo(() => {
+    const ranked: Array<{ key: string; label: string; pct: number; deltaKr: number }> = []
+    for (const sub of subsInView.slice(0, 8)) {
+      const prev = prevSubs.find(p => p.key === sub.key)
+      if (!prev || prev.total_kr === 0) continue
+      const pct = ((sub.total_kr - prev.total_kr) / prev.total_kr) * 100
+      ranked.push({ key: sub.key, label: sub.label, pct, deltaKr: sub.total_kr - prev.total_kr })
     }
-    const topSub = subsInView[0]
-    const topShare = total > 0 && topSub ? Math.round((topSub.total_kr / total) * 100) : 0
-    return (
-      <>
-        <span style={{ fontWeight: UX.fwMedium }}>{fmtKr(total)}</span> in overheads
-        {monthFilter === 'all' ? ` across ${monthsCovered.size} month${monthsCovered.size === 1 ? '' : 's'}` : ` in ${MONTHS[Number(monthFilter) - 1]} ${year}`}
-        {topSub && <>
-          {' '}— largest category <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{topSub.label} ({topShare}%)</span>
-        </>}.
-      </>
-    )
-  })()
+    return ranked.sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))
+  }, [subsInView, prevSubs])
+  const biggestDrift = yoyDrift[0] ?? null
+
+  // Total revenue from monthly_metrics — gives an "overheads % of revenue" anchor
+  const totalRevenue = metrics.reduce((s: number, r: any) => s + Number(r.revenue ?? 0), 0)
+  const overheadsPctOfRev = totalRevenue > 0 ? (total / totalRevenue) * 100 : null
+
+  const pendingCount    = Number(reviewProj?.pending_count ?? 0)
+  const potentialMonthly = Number(reviewProj?.savings?.total_sek ?? 0)
+
+  // Year nav
+  const canStepNext = year < now.getFullYear() + 1
+  function step(dir: -1 | 1) { setYear(y => y + dir) }
+
+  // Honesty: page is genuinely useful only when there's overhead data
+  const hasAnyData = rows.length > 0
+  const noData     = !loading && !hasAnyData
 
   return (
-    <AppShell>
-      <div style={{ maxWidth: 1100 }}>
+    <AppShell
+      dateLabel={String(year)}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
+    >
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        <TopBar
-          crumbs={[{ label: t('crumb.financials') }, { label: t('crumb.overheads'), active: true }]}
-          rightSlot={
-            <>
-              <select value={year} onChange={e => setYear(Number(e.target.value))}
-                style={{ padding: '5px 9px', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody, background: UX.cardBg, color: UX.ink1 }}>
-                {[2023, 2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <button
-                onClick={() => router.push('/overheads/review')}
-                style={{
-                  padding: '5px 11px', background: 'white',
-                  border: `1px solid ${UX.border}`, borderRadius: UX.r_md, fontSize: UX.fsBody,
-                  fontWeight: UX.fwMedium, color: UX.ink2, cursor: 'pointer',
-                  position: 'relative' as const,
-                }}
-                title="Open the cost-review queue"
-              >
-                Cost review
-                {Number(reviewProj?.pending_count ?? 0) > 0 && (
-                  <span style={{
-                    marginLeft: 6, padding: '1px 7px', borderRadius: 999,
-                    background: '#1e40af', color: 'white',
-                    fontSize: 10, fontWeight: 700,
-                  }}>
-                    {reviewProj.pending_count}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => router.push('/overheads/upload')}
-                style={{
-                  padding: '5px 11px', background: UX.indigo, color: 'white',
-                  border: 'none', borderRadius: UX.r_md, fontSize: UX.fsBody,
-                  fontWeight: UX.fwMedium, cursor: 'pointer',
-                }}
-              >
-                + Upload Fortnox PDFs
-              </button>
-            </>
-          }
-        />
-
-        {/* Phase 5 KPI strip — Total overheads · Categories · Line items
-            (+ pending review count when there's a queue). Reads the same
-            line-item totals that power the SupportingStats inside PageHero. */}
-        {rows.length > 0 && (() => {
-          const pending = Number(reviewProj?.pending_count ?? 0)
-          const potential = Number(reviewProj?.savings?.total_sek ?? 0)
-          const topShare = (() => {
-            const sorted = [...subsInView].sort((a, b) => b.total_kr - a.total_kr)
-            const topVal = sorted[0]?.total_kr ?? 0
-            return total > 0 ? (topVal / total) * 100 : 0
-          })()
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginTop:           12,
-                marginBottom:        12,
-              }}
-            >
-              <KpiCardUX
-                title="Overheads"
-                value={fmtKr(total)}
-                microLabel={monthFilter === 'all' ? `${monthsCovered.size} months` : MONTHS_SHORT[Number(monthFilter) - 1]}
-              />
-              <KpiCardUX
-                title="Largest share"
-                value={topShare > 0 ? fmtPct(topShare) : '—'}
-                variant="stacked"
-                stackedBars={subsInView.length >= 2 ? [
-                  { label: subsInView.sort((a, b) => b.total_kr - a.total_kr)[0]?.label ?? '—', value: topShare, max: 100, color: UXP.lav },
-                  { label: 'Rest',                                                                value: 100 - topShare, max: 100, color: UXP.lavMid },
-                ] : undefined}
-                microLabel={`${subsInView.length} categories`}
-              />
-              <KpiCardUX
-                title={pending > 0 ? 'Pending review' : 'Line items'}
-                value={pending > 0 ? String(pending) : String(filtered.length)}
-                deltaGood={false}
-                delta={pending > 0 && potential > 0 ? `~${fmtKr(potential)}/mo` : null}
-                microLabel={pending > 0 ? 'Flagged by AI' : 'All Fortnox'}
-              />
-            </div>
-          )
-        })()}
-
-        <PageHero
-          eyebrow={`OVERHEADS — ${year}${selectedBiz ? ` · ${selectedBiz.name.toUpperCase()}` : ''}`}
-          headline={hero}
-          context={rows.length > 0
-            ? `${rows.length} line item${rows.length === 1 ? '' : 's'} · ${monthsCovered.size} month${monthsCovered.size === 1 ? '' : 's'} of detail · business-wide, not split by department`
-            : undefined
-          }
-          right={rows.length > 0 ? (
-            <SupportingStats items={[
-              {
-                label: 'Overheads',
-                value: fmtKr(total),
-                sub: monthFilter === 'all' ? `${monthsCovered.size} months` : MONTHS_SHORT[Number(monthFilter) - 1],
-              },
-              {
-                label: 'Categories',
-                value: String(subsInView.length),
-                sub: subsInView.length > 0 ? 'drilled out' : undefined,
-              },
-              {
-                label: 'Line items',
-                value: String(filtered.length),
-                sub: filtered.length > 0 ? 'all Fortnox' : undefined,
-              },
-            ]} />
-          ) : undefined}
-        />
-
-        {/* Review queue + projection cards (PR 3 — overhead-review feature) */}
-        {reviewProj && Number(reviewProj?.pending_count ?? 0) > 0 && (
-          <div
+        {/* Header row — Cost review badge + Upload action */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
+          <button
+            type="button"
             onClick={() => router.push('/overheads/review')}
             style={{
-              background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,
-              padding: '12px 16px', marginBottom: 12, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14,
+              display:      'inline-flex',
+              alignItems:   'center',
+              gap:          6,
+              padding:      '5px 12px',
+              background:   pendingCount > 0 ? UXP.lavFill : UXP.cardBg,
+              color:        pendingCount > 0 ? UXP.lavText : UXP.ink2,
+              border:       `0.5px solid ${UXP.border}`,
+              borderRadius: 999,
+              fontSize:     11,
+              fontWeight:   500,
+              fontFamily:   'inherit',
+              cursor:       'pointer',
             }}
           >
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#1e3a8a' }}>
-                {reviewProj.pending_count} flag{reviewProj.pending_count === 1 ? '' : 's'} pending review
-              </div>
-              <div style={{ fontSize: 12, color: '#1e40af', marginTop: 2 }}>
-                ~{fmtKr(reviewProj?.savings?.total_sek ?? 0)}/mo potential savings
-              </div>
-            </div>
-            <div style={{ fontSize: 13, color: '#1e3a8a', fontWeight: 500 }}>Review →</div>
-          </div>
-        )}
+            Cost review
+            {pendingCount > 0 && (
+              <span style={{
+                padding:      '1px 7px',
+                background:   UXP.lavDeep,
+                color:        '#fff',
+                borderRadius: 999,
+                fontSize:     9,
+                fontWeight:   600,
+                fontVariantNumeric: 'tabular-nums' as const,
+              }}>
+                {pendingCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push('/overheads/upload')}
+            style={{
+              padding:      '5px 12px',
+              background:   UXP.lav,
+              color:        '#fff',
+              border:       'none',
+              borderRadius: 999,
+              fontSize:     11,
+              fontWeight:   500,
+              fontFamily:   'inherit',
+              cursor:       'pointer',
+            }}
+          >
+            + Upload Fortnox PDFs
+          </button>
+        </div>
 
-        {reviewProj && Number(reviewProj?.current?.overheads_sek ?? 0) > 0 && (
-          <div style={{
-            background: 'white', border: `1px solid ${UX.borderSoft}`, borderRadius: 10,
-            padding: '14px 18px', marginBottom: 12,
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, alignItems: 'baseline',
-          }}>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>Current overheads</div>
-              <div style={{ fontSize: 18, fontWeight: 500, color: UX.ink1, marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(reviewProj.current.overheads_sek)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>After cancelling dismissed</div>
-              <div style={{ fontSize: 18, fontWeight: 500, color: UX.greenInk, marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(reviewProj.projected.overheads_sek)}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>Saving</div>
-              <div style={{ fontSize: 18, fontWeight: 500, color: UX.greenInk, marginTop: 2, fontVariantNumeric: 'tabular-nums' as const }}>
-                {Number(reviewProj?.savings?.total_sek ?? 0) > 0 ? `–${fmtKr(reviewProj.savings.total_sek)}/mo` : '—'}
-              </div>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: UX.ink4 }}>Net margin</div>
-              <div style={{ fontSize: 18, fontWeight: 500, color: UX.ink1, marginTop: 2 }}>
-                {Math.round(reviewProj.current.margin_pct)}% → <span style={{ color: UX.greenInk }}>{Math.round(reviewProj.projected.margin_pct)}%</span>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* KPI strip */}
+        <KpiStrip
+          year={year}
+          total={total}
+          monthsCovered={monthsCovered.size}
+          overheadsPctOfRev={overheadsPctOfRev}
+          pendingCount={pendingCount}
+          potentialMonthly={potentialMonthly}
+          biggestDrift={biggestDrift}
+          subsCount={subsInView.length}
+          topSub={subsInView[0] ?? null}
+        />
 
-        {/* Month filter */}
-        {rows.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginBottom: 12 }}>
-            <button onClick={() => setMonthFilter('all')} style={monthBtn(monthFilter === 'all')}>All months</button>
-            {Array.from(monthsCovered).sort((a,b) => a - b).map(m => (
-              <button key={m} onClick={() => setMonthFilter(m)} style={monthBtn(monthFilter === m)}>
-                {MONTHS_SHORT[m - 1]}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loadingPanel')}</div>
-        ) : rows.length === 0 ? (
-          <AttentionPanel
-            title="No overhead data yet"
-            items={[
-              { tone: 'warning', entity: 'Upload',  message: 'drop your monthly Fortnox P&L PDFs — the AI extracts every line item including rent, software subs, bank fees.' },
-              { tone: 'warning', entity: 'Why',     message: 'övriga externa kostnader is where margin quietly disappears. We surface duplicates, creep, and renegotiation candidates.' },
-            ]}
+        {/* Cost-review banner (when pending) */}
+        {pendingCount > 0 && (
+          <CostReviewBanner
+            pending={pendingCount}
+            potential={potentialMonthly}
+            onClick={() => router.push('/overheads/review')}
           />
-        ) : (
+        )}
+
+        {/* Month filter row */}
+        {hasAnyData && (
+          <MonthFilter value={monthFilter} onChange={setMonthFilter} availableMonths={Array.from(monthsCovered).sort((a, b) => a - b)} />
+        )}
+
+        {/* Loading + empty states */}
+        {loading && (
+          <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>Loading overheads…</div>
+        )}
+        {noData && (
+          <EmptyCard
+            title={`No Fortnox overhead data for ${year} yet`}
+            body={<>Upload your annual Resultatrapport to surface the line-by-line overhead breakdown. <a href="/overheads/upload" style={{ color: UXP.lavText, textDecoration: 'underline' }}>Upload now →</a></>}
+          />
+        )}
+
+        {hasAnyData && (
           <>
-            {/* Overhead health KPIs — rent %, per-cover, software ratio */}
-            <OverheadKpis
+            {/* Subcategory breakdown */}
+            <SubcategoryBreakdown
               subs={subsInView}
+              prevSubs={prevSubs}
+              benchmarks={benchmarks}
               total={total}
-              metrics={metrics}
-              monthFilter={monthFilter}
+              monthsCovered={monthsCovered.size}
             />
 
-            {/* Subcategory breakdown */}
-            <SubcategoryBreakdown subs={subsInView} total={total} benchmarks={benchmarks} monthsInView={monthFilter === 'all' ? monthsCovered.size : 1} />
+            {/* Line-item table */}
+            <LineItemTable rows={filtered} total={total} />
 
-            {/* Year-over-year drift — only when previous year has data */}
-            {prevSubs.length > 0 && (
-              <YoyDrift thisYear={subs} prevYear={prevSubs} year={year} />
-            )}
+            {/* AI cost insights */}
+            {insights.length > 0 && <AttentionCard title="AI cost intelligence" items={insights} />}
 
-            {/* VAT projection — estimate for the current quarter */}
-            {vat && vat.projected_quarter_payable != null && (
-              <VatCard vat={vat} />
-            )}
+            {/* Reconciliation findings */}
+            {recon.length > 0 && <AttentionCard title="Invoice reconciliation" items={recon} />}
 
-            {/* AI insights — filled by cost-intel agent */}
-            {insights.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <AttentionPanel
-                  title="AI cost insights"
-                  items={insights}
-                />
-              </div>
-            )}
-
-            {/* Invoice ↔ Fortnox reconciliation findings */}
-            {recon.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <AttentionPanel
-                  title="Invoice reconciliation"
-                  items={recon}
-                  maxItems={6}
-                  moreHref="/invoices"
-                />
-              </div>
-            )}
-
-            {/* Live operational view — recent supplier invoices arriving in
-                Fortnox. Independent of the year filter / monthly P&L slicing
-                above; shows raw activity day-to-day with PDF links per row. */}
-            <div style={{ marginTop: 12 }}>
-              <RecentInvoicesFeed businessId={bizId} days={30} maxRows={50} />
-            </div>
-
-            {/* Full line-item table */}
-            <div style={{ marginTop: 12 }}>
-              <LineItemsTable rows={filtered} showMonth={monthFilter === 'all'} />
-            </div>
+            {/* VAT projection */}
+            {vat && <VatCard vat={vat} />}
           </>
         )}
       </div>
 
       <AskAI
         page="overheads"
-        context={
-          rows.length > 0
-            ? `Year: ${year}. Overheads total: ${fmtKr(total)} across ${rows.length} line items.\nTop subcategories: ${subsInView.slice(0, 5).map(s => `${s.label} ${fmtKr(s.total_kr)}`).join(', ')}`
-            : 'No overhead data yet.'
-        }
+        context={hasAnyData ? [
+          `Year ${year} overheads`,
+          `Total ${fmtKr(total)} across ${rows.length} line items in ${monthsCovered.size} months${overheadsPctOfRev != null ? ` (~${fmtPct(overheadsPctOfRev)} of revenue)` : ''}.`,
+          subsInView[0] ? `Largest category: ${subsInView[0].label} at ${fmtKr(subsInView[0].total_kr)}.` : null,
+          pendingCount > 0 ? `${pendingCount} flag${pendingCount === 1 ? '' : 's'} pending review (${fmtKr(potentialMonthly)}/mo potential savings).` : null,
+        ].filter(Boolean).join('\n') : `No overheads logged for ${year}.`}
       />
     </AppShell>
   )
 }
 
-// ─── Subcategory stacked bar + list ────────────────────────────────────
-// ─── Overhead health KPIs ──────────────────────────────────────────────
-// Classic restaurant-management ratios: rent % of revenue (8-12% healthy),
-// overheads per cover, software as % of overheads, overhead % of revenue.
-// All computed at the business scope — these are business-wide metrics.
-function OverheadKpis({ subs, total, metrics, monthFilter }: { subs: Subcategory[]; total: number; metrics: any[]; monthFilter: 'all' | number }) {
-  const inScope = monthFilter === 'all' ? metrics : metrics.filter(m => m.month === monthFilter)
-  const revenue = inScope.reduce((s, m) => s + Number(m.revenue ?? 0), 0)
-  const covers  = inScope.reduce((s, m) => s + Number(m.covers  ?? 0), 0)
+// ════════════════════════════════════════════════════════════════════
+// Sub-components
+// ════════════════════════════════════════════════════════════════════
 
-  const rent = subs.find(s => s.subcategory === 'rent')?.total_kr ?? 0
-  const sw   = subs.find(s => s.subcategory === 'software')?.total_kr ?? 0
-  const bank = subs.find(s => s.subcategory === 'bank_fees')?.total_kr ?? 0
-
-  const rentPct      = revenue > 0 ? (rent / revenue) * 100 : null
-  const overheadPct  = revenue > 0 ? (total / revenue) * 100 : null
-  const ovhPerCover  = covers  > 0 ? total / covers : null
-  const swPct        = total   > 0 ? (sw / total) * 100 : null
-  const bankPct      = revenue > 0 ? (bank / revenue) * 100 : null
-
-  // Tone thresholds — restaurant industry norms from DESIGN.md and
-  // common Swedish operator benchmarks.
-  const rentTone  = rentPct == null ? 'neutral' : rentPct <= 12 ? 'good' : rentPct <= 15 ? 'warning' : 'bad'
-  const ovhTone   = overheadPct == null ? 'neutral' : overheadPct <= 20 ? 'good' : overheadPct <= 30 ? 'warning' : 'bad'
-  const swTone    = swPct == null ? 'neutral' : swPct <= 3 ? 'good' : swPct <= 6 ? 'warning' : 'bad'
-  const bankTone  = bankPct == null ? 'neutral' : bankPct <= 0.5 ? 'good' : bankPct <= 1 ? 'warning' : 'bad'
-
-  const items = [
-    { label: 'Rent % of revenue', value: rentPct != null ? fmtPct(rentPct) : '—', sub: rent ? `${fmtKr(rent)} paid` : 'no rent recorded', tone: rentTone,
-      help: 'Industry healthy: ≤12%. Above 15% starts to bite margin.' },
-    { label: 'Overhead % of rev',  value: overheadPct != null ? fmtPct(overheadPct) : '—', sub: `${fmtKr(total)} total overheads`, tone: ovhTone,
-      help: 'All non-food, non-staff costs. Healthy ≤20%.' },
-    { label: 'Overhead / cover',   value: ovhPerCover != null ? fmtKr(ovhPerCover) : '—', sub: covers > 0 ? `${covers.toLocaleString('en-GB')} covers` : 'no cover data', tone: 'neutral' },
-    { label: 'Software share',     value: swPct != null ? fmtPct(swPct) : '—', sub: sw ? `${fmtKr(sw)} in subs` : 'no software costs', tone: swTone,
-      help: 'Industry median ≈ 1.5% of overheads. >6% = audit tools.' },
-    { label: 'Bank fees / rev',    value: bankPct != null ? fmtPct(bankPct) : '—', sub: bank ? fmtKr(bank) : 'no fees recorded', tone: bankTone,
-      help: 'Healthy ≤0.5%. >1% means negotiate card acquirer rates.' },
-  ]
-
+function KpiStrip({ year, total, monthsCovered, overheadsPctOfRev, pendingCount, potentialMonthly, biggestDrift, subsCount, topSub }: any) {
+  const driftValue = biggestDrift
+    ? `${biggestDrift.pct >= 0 ? '+' : ''}${biggestDrift.pct.toFixed(1)}%`
+    : '—'
   return (
     <div style={{
-      background:   UX.cardBg,
-      border:       `0.5px solid ${UX.border}`,
-      borderRadius: UX.r_lg,
-      padding:      '12px 14px',
-      marginBottom: 12,
-      display:      'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-      gap:          10,
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
     }}>
-      {items.map(it => (
-        <div key={it.label} title={(it as any).help}
-             style={{ padding: '8px 10px', borderRight: `0.5px solid ${UX.borderSoft}`, cursor: (it as any).help ? 'help' : 'default' }}>
-          <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const, marginBottom: 3 }}>
-            {it.label}
-          </div>
-          <div style={{ fontSize: 18, fontWeight: UX.fwMedium, color:
-              it.tone === 'good'    ? UX.greenInk
-            : it.tone === 'warning' ? UX.amberInk
-            : it.tone === 'bad'     ? UX.redInk
-            :                         UX.ink1,
-            fontVariantNumeric: 'tabular-nums' as const,
-          }}>{it.value}</div>
-          <div style={{ fontSize: 10, color: UX.ink4, marginTop: 2 }}>{it.sub}</div>
+      <KpiCardUX
+        title={`Overheads ${year}`}
+        value={fmtKr(total)}
+        microLabel={`${monthsCovered} month${monthsCovered === 1 ? '' : 's'} · ${subsCount} categor${subsCount === 1 ? 'y' : 'ies'}`}
+      />
+      <KpiCardUX
+        title="% of revenue"
+        value={overheadsPctOfRev != null ? fmtPct(overheadsPctOfRev) : '—'}
+        variant={overheadsPctOfRev != null ? 'targetBand' : 'plain'}
+        targetBand={overheadsPctOfRev != null ? {
+          actualPct:    Math.min(100, overheadsPctOfRev),
+          targetMinPct: 10,
+          targetMaxPct: 25,
+        } : undefined}
+        microLabel="Target 10-25%"
+      />
+      <KpiCardUX
+        title="YoY drift"
+        value={driftValue}
+        deltaGood={false}
+        delta={biggestDrift ? `${biggestDrift.deltaKr >= 0 ? '+' : '−'}${fmtKr(Math.abs(biggestDrift.deltaKr))}` : null}
+        microLabel={biggestDrift ? biggestDrift.label : 'No prior-year data'}
+      />
+      <KpiCardUX
+        title={pendingCount > 0 ? 'Pending review' : 'Largest category'}
+        value={pendingCount > 0
+          ? String(pendingCount)
+          : (topSub ? fmtKr(topSub.total_kr) : '—')}
+        deltaGood={pendingCount === 0}
+        delta={pendingCount > 0 ? `~${fmtKr(potentialMonthly)}/mo` : null}
+        microLabel={pendingCount > 0 ? 'Potential savings' : (topSub?.label ?? '')}
+      />
+    </div>
+  )
+}
+
+// ── Cost-review CTA banner ─────────────────────────────────────────
+function CostReviewBanner({ pending, potential, onClick }: { pending: number; potential: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background:    UXP.lavFill,
+        border:        `0.5px solid ${UXP.lavMid}`,
+        borderRadius:  UXP.r_lg,
+        padding:       '12px 16px',
+        display:       'flex',
+        alignItems:    'center',
+        justifyContent: 'space-between',
+        gap:           12,
+        cursor:        'pointer',
+        fontFamily:    'inherit',
+        textAlign:     'left' as const,
+        color:         UXP.lavText,
+      }}
+    >
+      <div>
+        <div style={{ fontSize: 12, fontWeight: 500 }}>
+          {pending} flag{pending === 1 ? '' : 's'} pending review
         </div>
+        <div style={{ fontSize: 10, marginTop: 2, color: UXP.lavText, opacity: 0.85 }}>
+          {potential > 0 ? `~${fmtKr(potential)}/mo potential savings if dismissed.` : 'Open the queue to confirm or dismiss.'}
+        </div>
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 500 }}>Review →</span>
+    </button>
+  )
+}
+
+// ── Month filter ───────────────────────────────────────────────────
+function MonthFilter({ value, onChange, availableMonths }: any) {
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+      <FilterPill active={value === 'all'} onClick={() => onChange('all')}>All months</FilterPill>
+      {availableMonths.map((m: number) => (
+        <FilterPill key={m} active={value === m} onClick={() => onChange(m)}>
+          {MONTHS_SHORT[m - 1]}
+        </FilterPill>
       ))}
     </div>
   )
 }
 
-// ─── Year-over-year drift — per subcategory ──────────────────────────
-function YoyDrift({ thisYear, prevYear, year }: { thisYear: Subcategory[]; prevYear: Subcategory[]; year: number }) {
-  // Build a merged lookup by subcategory key so every category we saw in
-  // either year shows up (new and dropped lines are the biggest signals).
-  const map = new Map<string, { label: string; subcategory: string | null; thisKr: number; prevKr: number }>()
-  for (const s of thisYear) map.set(s.key, { label: s.label, subcategory: s.subcategory, thisKr: s.total_kr, prevKr: 0 })
-  for (const s of prevYear) {
-    const ex = map.get(s.key)
-    if (ex) ex.prevKr = s.total_kr
-    else     map.set(s.key, { label: s.label, subcategory: s.subcategory, thisKr: 0, prevKr: s.total_kr })
-  }
-
-  // Rank by absolute drift (either direction) — biggest surprises first.
-  const rows = Array.from(map.values())
-    .map(r => {
-      const delta   = r.thisKr - r.prevKr
-      const pct     = r.prevKr > 0 ? (delta / r.prevKr) * 100 : (r.thisKr > 0 ? 100 : 0)
-      const isNew   = r.prevKr === 0 && r.thisKr > 0
-      const dropped = r.thisKr === 0 && r.prevKr > 0
-      return { ...r, delta, pct, isNew, dropped }
-    })
-    .filter(r => Math.abs(r.delta) > 100)   // noise floor — ignore ±100 kr
-    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-    .slice(0, 12)
-
-  if (!rows.length) return null
-
+function FilterPill({ active, onClick, children }: any) {
   return (
-    <div style={{
-      background:   UX.cardBg,
-      border:       `0.5px solid ${UX.border}`,
-      borderRadius: UX.r_lg,
-      overflow:     'hidden' as const,
-      marginTop:    12,
-    }}>
-      <div style={{ padding: '12px 16px', borderBottom: `0.5px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <div style={{ fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>Year over year drift</div>
-        <div style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>{year} vs {year - 1}</div>
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding:      '4px 10px',
+        background:   active ? UXP.lavFill : UXP.cardBg,
+        color:        active ? UXP.lavText : UXP.ink2,
+        border:       `0.5px solid ${active ? UXP.lav : UXP.border}`,
+        borderRadius: 999,
+        fontSize:     10,
+        fontWeight:   500,
+        fontFamily:   'inherit',
+        cursor:       'pointer',
+        letterSpacing: '0.02em',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ── Subcategory breakdown ──────────────────────────────────────────
+function SubcategoryBreakdown({ subs, prevSubs, benchmarks, total, monthsCovered }: any) {
+  if (!subs || subs.length === 0) return null
+  const top = subs.slice(0, 12)
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Subcategory breakdown</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          Ranked by spend · YoY chip when prior-year data exists
+        </div>
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsBody }}>
-        <thead>
-          <tr style={{ background: UX.subtleBg, borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-            <th style={{ padding: '8px 14px', textAlign: 'left' as const, fontSize: UX.fsNano, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>Subcategory</th>
-            <th style={{ padding: '8px 14px', textAlign: 'right' as const, fontSize: UX.fsNano, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>{year - 1}</th>
-            <th style={{ padding: '8px 14px', textAlign: 'right' as const, fontSize: UX.fsNano, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>{year}</th>
-            <th style={{ padding: '8px 14px', textAlign: 'right' as const, fontSize: UX.fsNano, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>Δ kr</th>
-            <th style={{ padding: '8px 14px', textAlign: 'right' as const, fontSize: UX.fsNano, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.06em', textTransform: 'uppercase' as const }}>Δ %</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => {
-            const color = SUB_TONE[r.subcategory ?? 'other'] ?? '#9ca3af'
-            const deltaColor = r.isNew          ? UX.redInk
-                             : r.dropped        ? UX.greenInk
-                             : Math.abs(r.pct) >= 10 && r.delta > 0 ? UX.redInk
-                             : Math.abs(r.pct) >= 10 && r.delta < 0 ? UX.greenInk
-                             :                                        UX.ink3
+      <BreakdownTable
+        columns={[
+          { key: 'label', header: 'Category', align: 'left', render: (r: any) => (
+            <span style={{ color: UXP.ink1, fontWeight: 500, textTransform: 'capitalize' as const }}>{r.label}</span>
+          ) },
+          { key: 'bar', header: 'Share', align: 'right', render: (r: any) => {
+            const pct = total > 0 ? (r.total_kr / total) * 100 : 0
             return (
-              <tr key={r.label} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-                <td style={{ padding: '7px 14px', color: UX.ink1 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: 2, background: color }} />
-                    {r.label}
-                    {r.isNew   && <span style={{ fontSize: 9, background: UX.redBg,   color: UX.redInk2,   padding: '1px 5px', borderRadius: 3, letterSpacing: '.04em' }}>NEW</span>}
-                    {r.dropped && <span style={{ fontSize: 9, background: UX.greenBg, color: UX.greenInk,  padding: '1px 5px', borderRadius: 3, letterSpacing: '.04em' }}>DROPPED</span>}
-                  </span>
-                </td>
-                <td style={{ padding: '7px 14px', textAlign: 'right' as const, color: UX.ink3, fontVariantNumeric: 'tabular-nums' as const }}>{r.prevKr > 0 ? fmtKr(r.prevKr) : '—'}</td>
-                <td style={{ padding: '7px 14px', textAlign: 'right' as const, color: UX.ink1, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const }}>{r.thisKr > 0 ? fmtKr(r.thisKr) : '—'}</td>
-                <td style={{ padding: '7px 14px', textAlign: 'right' as const, color: deltaColor, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const }}>
-                  {r.delta > 0 ? '+' : r.delta < 0 ? '−' : ''}{fmtKr(Math.abs(r.delta))}
-                </td>
-                <td style={{ padding: '7px 14px', textAlign: 'right' as const, color: deltaColor, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const }}>
-                  {r.isNew ? 'new' : r.dropped ? 'dropped' : `${r.pct > 0 ? '+' : ''}${r.pct.toFixed(0)}%`}
-                </td>
-              </tr>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                <span style={{
+                  display: 'inline-block', width: 80, height: 4, background: UXP.lavFill,
+                  borderRadius: 2, overflow: 'hidden',
+                }}>
+                  <span style={{ display: 'block', height: '100%', width: `${Math.min(100, pct)}%`, background: UXP.lav }} />
+                </span>
+                <span style={{ fontSize: 10, color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const, minWidth: 36, textAlign: 'right' as const }}>
+                  {pct.toFixed(1)}%
+                </span>
+              </span>
             )
-          })}
-        </tbody>
-      </table>
+          } },
+          { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => fmtKr(r.total_kr) },
+          { key: 'months', header: 'Months', align: 'right', render: (r: any) => `${r.months_seen} of ${monthsCovered}` },
+          { key: 'yoy', header: 'YoY', align: 'right', render: (r: any) => {
+            const prev = prevSubs?.find((p: any) => p.key === r.key)
+            if (!prev || prev.total_kr === 0) return <span style={{ color: UXP.ink4 }}>—</span>
+            const pct = ((r.total_kr - prev.total_kr) / prev.total_kr) * 100
+            return <DeltaChip value={`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`} positiveIsGood={false} />
+          } },
+          { key: 'bench', header: 'vs median', align: 'right', render: (r: any) => {
+            const bm = benchmarks?.[r.subcategory ?? '']
+            if (!bm || !bm.sample_size) return <span style={{ color: UXP.ink4 }}>—</span>
+            const median = bm.median_kr
+            const diff = median > 0 ? ((r.total_kr - median) / median) * 100 : 0
+            const tone = Math.abs(diff) < 15 ? 'good' : diff > 0 ? 'bad' : 'good'
+            return (
+              <span style={{
+                display:      'inline-block',
+                fontSize:     9,
+                fontWeight:   500,
+                padding:      '2px 7px',
+                borderRadius: 6,
+                background:   tone === 'good' ? UXP.greenFill : UXP.roseFill,
+                color:        tone === 'good' ? UXP.greenDeep : UXP.roseText,
+                fontVariantNumeric: 'tabular-nums' as const,
+              }}>
+                {diff >= 0 ? '+' : ''}{diff.toFixed(0)}%
+              </span>
+            )
+          } },
+        ]}
+        sections={[{ rows: top }]}
+        footer={{
+          label: 'Total',
+          cells: {
+            bar:    '',
+            amount: fmtKr(total),
+            months: '',
+            yoy:    '',
+            bench:  '',
+          },
+        }}
+        rowKey={(row: any) => row.key}
+      />
     </div>
   )
 }
 
-// ─── VAT projection card ──────────────────────────────────────────────
+// ── Line-item table ────────────────────────────────────────────────
+function LineItemTable({ rows, total }: { rows: LineItem[]; total: number }) {
+  if (!rows || rows.length === 0) return null
+  const sorted = [...rows].sort((a, b) => {
+    if (a.period_year !== b.period_year) return b.period_year - a.period_year
+    if (a.period_month !== b.period_month) return b.period_month - a.period_month
+    return Number(b.amount ?? 0) - Number(a.amount ?? 0)
+  })
+  // Cap at 80 visible to keep render light
+  const visible = sorted.slice(0, 80)
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Line items</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {sorted.length} item{sorted.length === 1 ? '' : 's'}
+          {sorted.length > visible.length ? ` · showing top ${visible.length}` : ''}
+        </div>
+      </div>
+      <BreakdownTable<LineItem>
+        columns={[
+          { key: 'month', header: 'Month', align: 'left', render: (r) => (
+            <span style={{ color: UXP.ink2 }}>{MONTHS_SHORT[r.period_month - 1]}</span>
+          ) },
+          { key: 'label', header: 'Description', align: 'left', render: (r) => (
+            <span>
+              <span style={{ color: UXP.ink1, fontWeight: 500 }}>{r.label_sv ?? '—'}</span>
+              {r.subcategory && (
+                <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, marginTop: 1, textTransform: 'capitalize' as const }}>
+                  {r.subcategory}
+                </span>
+              )}
+            </span>
+          ) },
+          { key: 'account', header: 'BAS', align: 'right', render: (r) =>
+            r.fortnox_account ? <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, color: UXP.ink3 }}>{r.fortnox_account}</span> : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'amount', header: 'Amount', align: 'right', render: (r) => fmtKr(Number(r.amount ?? 0)) },
+        ]}
+        sections={[{ rows: visible }]}
+        footer={{
+          label: 'Total (visible)',
+          cells: {
+            label:   '',
+            account: '',
+            amount:  fmtKr(visible.reduce((s, r) => s + Number(r.amount ?? 0), 0)),
+          },
+        }}
+        rowKey={(row, idx) => row.id ?? String(idx)}
+      />
+    </div>
+  )
+}
+
+// ── Attention card (AI insights + reconciliation) ──────────────────
+function AttentionCard({ title, items }: { title: string; items: Array<{ tone: 'good' | 'warning' | 'bad'; entity: string; message: string }> }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div style={cardStyle()}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {items.length} item{items.length === 1 ? '' : 's'}
+        </div>
+      </div>
+      {items.map((it, idx) => {
+        const palette = it.tone === 'good' ? { bar: UXP.green, fg: UXP.greenDeep }
+                       : it.tone === 'bad' ? { bar: UXP.rose,  fg: UXP.roseText  }
+                       :                      { bar: UXP.coral, fg: UXP.coral    }
+        return (
+          <div key={idx} style={{
+            display:             'grid',
+            gridTemplateColumns: '4px auto 1fr',
+            gap:                 12,
+            alignItems:          'center',
+            padding:             '10px 0',
+            borderBottom:        idx < items.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+          }}>
+            <span style={{ width: 4, height: '100%', minHeight: 24, background: palette.bar, borderRadius: 2 }} />
+            <span style={{
+              fontSize:      9,
+              fontWeight:    600,
+              letterSpacing: '0.04em',
+              color:         palette.fg,
+              textTransform: 'uppercase' as const,
+              minWidth:      72,
+            }}>{it.entity}</span>
+            <span style={{ fontSize: 11, color: UXP.ink2, lineHeight: 1.4 }}>{it.message}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── VAT projection ─────────────────────────────────────────────────
 function VatCard({ vat }: { vat: any }) {
-  const urgent = vat.days_to_due <= 14 && vat.days_to_due >= 0
   return (
-    <div style={{
-      marginTop:    12,
-      background:   urgent ? UX.amberBg : UX.cardBg,
-      border:       `0.5px solid ${urgent ? UX.amberInk : UX.border}`,
-      borderRadius: UX.r_lg,
-      padding:      '14px 16px',
-      display:      'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-      gap:          14,
-    }}>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Next VAT filing</div>
-        <div style={{ fontSize: 16, fontWeight: UX.fwMedium, color: UX.ink1, marginTop: 3 }}>Q{vat.period.quarter} {vat.period.year}</div>
-        <div style={{ fontSize: 10, color: UX.ink4, marginTop: 2 }}>{vat.period.from} → {vat.period.to}</div>
-      </div>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Due date</div>
-        <div style={{ fontSize: 16, fontWeight: UX.fwMedium, color: urgent ? UX.redInk : UX.ink1, marginTop: 3 }}>{vat.due_date}</div>
-        <div style={{ fontSize: 10, color: urgent ? UX.redInk : UX.ink4, marginTop: 2 }}>
-          {vat.days_to_due > 0 ? `${vat.days_to_due} days away` : vat.days_to_due === 0 ? 'Due today' : `${Math.abs(vat.days_to_due)} days overdue`}
+    <div style={cardStyle()}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>VAT projection</div>
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            {vat.period_label ?? 'Next filing'}
+          </div>
         </div>
+        <span style={{
+          fontFamily:         'var(--font-display)',
+          fontSize:           20,
+          fontWeight:         500,
+          color:              Number(vat.net_due ?? 0) >= 0 ? UXP.rose : UXP.green,
+          letterSpacing:      '-0.02em',
+          fontVariantNumeric: 'tabular-nums' as const,
+        }}>
+          {Number(vat.net_due ?? 0) >= 0 ? '−' : '+'}{fmtKr(Math.abs(Number(vat.net_due ?? 0)))}
+        </span>
       </div>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Projected payable</div>
-        <div style={{ fontSize: 18, fontWeight: UX.fwMedium, color: UX.redInk, marginTop: 3, fontVariantNumeric: 'tabular-nums' as const }}>
-          {fmtKr(vat.projected_quarter_payable)}
-        </div>
-        <div style={{ fontSize: 10, color: UX.ink4, marginTop: 2 }}>estimate — verify with your accountant</div>
-      </div>
-      <div>
-        <div style={{ fontSize: 10, fontWeight: UX.fwMedium, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const }}>Breakdown</div>
-        <div style={{ fontSize: 12, color: UX.ink2, marginTop: 3, lineHeight: 1.5, fontVariantNumeric: 'tabular-nums' as const }}>
-          Output {fmtKr(vat.output_vat)}<br />
-          Input {fmtKr(vat.input_vat)}<br />
-          So far {fmtKr(vat.payable_mtd)}
-        </div>
+      <div style={{
+        display:             'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+        gap:                 10,
+      }}>
+        <MiniStat label="Out-VAT (sales)" value={vat.out_vat != null ? fmtKr(vat.out_vat) : '—'} />
+        <MiniStat label="In-VAT (costs)"  value={vat.in_vat  != null ? fmtKr(vat.in_vat)  : '—'} />
+        {vat.notes && (
+          <div style={{ gridColumn: '1 / -1', fontSize: 11, color: UXP.ink3, lineHeight: 1.5 }}>
+            {vat.notes}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function SubcategoryBreakdown({ subs, total, benchmarks, monthsInView }: { subs: Subcategory[]; total: number; benchmarks: Record<string, { sample_size: number; median_kr: number }>; monthsInView: number }) {
-  if (!subs.length) return null
-  const top = subs.slice(0, 10)
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{
-      background:   UX.cardBg,
-      border:       `0.5px solid ${UX.border}`,
-      borderRadius: UX.r_lg,
-      overflow:     'hidden' as const,
-    }}>
-      <div style={{ padding: '12px 16px', borderBottom: `0.5px solid ${UX.borderSoft}`, fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-        Where the money goes
-      </div>
-      <div style={{ padding: 16 }}>
-        {/* Stacked bar */}
-        <div style={{ display: 'flex', height: 14, borderRadius: 3, overflow: 'hidden' as const, background: UX.borderSoft, marginBottom: 12 }}>
-          {top.map(s => {
-            const pct = total > 0 ? (s.total_kr / total) * 100 : 0
-            const color = SUB_TONE[s.subcategory ?? 'other'] ?? '#9ca3af'
-            return <div key={s.key} title={`${s.label} — ${fmtKr(s.total_kr)} (${pct.toFixed(1)}%)`}
-                         style={{ width: `${pct}%`, background: color }} />
-          })}
-        </div>
-        {/* Legend rows with benchmark chip when available */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '6px 14px', fontSize: UX.fsBody }}>
-          {top.map(s => {
-            const pct = total > 0 ? (s.total_kr / total) * 100 : 0
-            const color = SUB_TONE[s.subcategory ?? 'other'] ?? '#9ca3af'
-            const bm = s.subcategory ? benchmarks[s.subcategory] : null
-            // Our monthly spend for this sub (average across months in view)
-            // vs the benchmark median (which is a monthly figure).
-            const ourMonthly = monthsInView > 0 ? s.total_kr / monthsInView : 0
-            const medMonthly = bm ? Number(bm.median_kr) : 0
-            const ratio      = medMonthly > 0 ? ourMonthly / medMonthly : null
-            const bmTone     = ratio == null ? 'neutral'
-                             : ratio <= 0.8  ? 'good'
-                             : ratio <= 1.2  ? 'neutral'
-                             :                 'bad'
-            return (
-              <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-                <span style={{ flex: 1, color: UX.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                  {s.label}
-                  {bm && (
-                    <span
-                      title={`Industry median monthly: ${fmtKr(medMonthly)} across ${bm.sample_size} restaurants. Your monthly avg in view: ${fmtKr(ourMonthly)}.`}
-                      style={{
-                        marginLeft:    6,
-                        fontSize:      9,
-                        padding:       '1px 5px',
-                        borderRadius:  3,
-                        letterSpacing: '.04em',
-                        background:    bmTone === 'good' ? UX.greenBg   : bmTone === 'bad' ? UX.redBg    : UX.borderSoft,
-                        color:         bmTone === 'good' ? UX.greenInk  : bmTone === 'bad' ? UX.redInk2  : UX.ink3,
-                        fontWeight:    UX.fwMedium,
-                        whiteSpace:    'nowrap' as const,
-                      }}
-                    >
-                      {ratio! < 1 ? 'below median' : ratio! > 1 ? `${(ratio! * 100).toFixed(0)}% of median` : 'at median'}
-                    </span>
-                  )}
-                </span>
-                <span style={{ color: UX.ink1, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const }}>
-                  {fmtKr(s.total_kr)} <span style={{ color: UX.ink4, fontWeight: UX.fwRegular }}>{fmtPct(pct)}</span>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+    <div style={{ background: UXP.subtleBg, padding: '8px 10px', borderRadius: 8 }}>
+      <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</div>
+      <div style={{
+        fontSize:           14,
+        fontWeight:         500,
+        color:              UXP.ink1,
+        marginTop:          2,
+        fontVariantNumeric: 'tabular-nums' as const,
+      }}>{value}</div>
     </div>
   )
 }
 
-// ─── Line-item table ───────────────────────────────────────────────────
-function LineItemsTable({ rows, showMonth }: { rows: LineItem[]; showMonth: boolean }) {
-  const [sortBy, setSortBy] = useState<'amount' | 'period' | 'label'>('amount')
-  const sorted = useMemo(() => {
-    const cp = [...rows]
-    if (sortBy === 'amount') cp.sort((a, b) => b.amount - a.amount)
-    if (sortBy === 'period') cp.sort((a, b) => (b.period_year - a.period_year) || (b.period_month - a.period_month))
-    if (sortBy === 'label')  cp.sort((a, b) => (a.label_sv ?? '').localeCompare(b.label_sv ?? ''))
-    return cp
-  }, [rows, sortBy])
-
-  return (
-    <div style={{ background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg, overflow: 'hidden' as const }}>
-      <div style={{ padding: '10px 16px', background: UX.subtleBg, borderBottom: `0.5px solid ${UX.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1 }}>
-        <span>Line items ({rows.length})</span>
-        <SegmentedToggle
-          options={[
-            { value: 'amount', label: 'Amount' },
-            { value: 'period', label: 'Period' },
-            { value: 'label',  label: 'A–Z' },
-          ]}
-          value={sortBy}
-          onChange={v => setSortBy(v as any)}
-        />
-      </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsBody }}>
-        <thead>
-          <tr style={{ background: UX.subtleBg, borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-            <th style={thStyle}>Label</th>
-            <th style={thStyle}>Category</th>
-            <th style={thStyle}>Account</th>
-            {showMonth && <th style={thStyle}>Period</th>}
-            <th style={{ ...thStyle, textAlign: 'right' as const }}>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map(r => {
-            const color = SUB_TONE[r.subcategory ?? 'other'] ?? '#9ca3af'
-            return (
-              <tr key={r.id} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-                <td style={{ padding: '7px 14px', color: UX.ink1 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: 2, background: color }} />
-                    {r.label_sv}
-                  </span>
-                </td>
-                <td style={{ padding: '7px 14px', color: UX.ink3, fontSize: UX.fsMicro }}>
-                  {r.subcategory ?? <span style={{ color: UX.ink5 }}>—</span>}
-                </td>
-                <td style={{ padding: '7px 14px', color: UX.ink4, fontSize: UX.fsMicro, fontVariantNumeric: 'tabular-nums' as const }}>
-                  {r.fortnox_account ?? '—'}
-                </td>
-                {showMonth && (
-                  <td style={{ padding: '7px 14px', color: UX.ink3, fontSize: UX.fsMicro }}>
-                    {r.period_month && r.period_month > 0 ? `${MONTHS_SHORT[r.period_month - 1]} ${r.period_year}` : `${r.period_year} (annual)`}
-                  </td>
-                )}
-                <td style={{ padding: '7px 14px', textAlign: 'right' as const, color: UX.ink1, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const }}>
-                  {fmtKr(r.amount)}
-                </td>
-              </tr>
-            )
-          })}
-          {sorted.length === 0 && (
-            <tr><td colSpan={showMonth ? 5 : 4} style={{ padding: 30, textAlign: 'center' as const, color: UX.ink4 }}>No line items for this filter.</td></tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-const thStyle = {
-  padding: '8px 14px',
-  textAlign: 'left' as const,
-  fontSize: UX.fsNano,
-  fontWeight: UX.fwMedium,
-  color: UX.ink4,
-  letterSpacing: '.06em',
-  textTransform: 'uppercase' as const,
-}
-
-function monthBtn(active: boolean) {
+// ── Atoms ──────────────────────────────────────────────────────────
+function cardStyle(): React.CSSProperties {
   return {
-    padding: '4px 10px',
-    background: active ? UX.navy : UX.cardBg,
-    color: active ? 'white' : UX.ink2,
-    border: `0.5px solid ${active ? UX.navy : UX.border}`,
-    borderRadius: UX.r_md,
-    fontSize: UX.fsMicro,
-    fontWeight: UX.fwMedium,
-    cursor: 'pointer',
-  } as any
+    background:    UXP.cardBg,
+    border:        `0.5px solid ${UXP.border}`,
+    borderRadius:  UXP.r_lg,
+    padding:       '14px 16px',
+  }
+}
+
+function EmptyCard({ title, body }: { title: string; body: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       40,
+      textAlign:     'center' as const,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 11, color: UXP.ink3, maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>{body}</div>
+    </div>
+  )
 }
