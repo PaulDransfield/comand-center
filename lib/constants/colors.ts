@@ -18,14 +18,11 @@ export const STATUS = {
   disconnected: { bg: '#f9fafb', border: '#e5e7eb', text: '#9ca3af', dot: '#d1d5db' },
 }
 
-// ── KPI card style ─────────────────────────────────────────────
-// Use this object for ALL KPI cards across every page
-export const KPI_CARD: React.CSSProperties = {
-  background:   'white',
-  border:       '0.5px solid #e5e7eb',
-  borderRadius: 12,
-  padding:      '14px 16px',
-}
+// Phase 7 (2026-05-21): KPI_CARD / CARD / FONT / BTN style-object
+// exports retired. Every page is on the new system now — KpiCardUX,
+// BreakdownTable, and the UXP token set from lib/constants/tokens
+// replace them. STATUS / DEPT_COLORS / DEPT_PALETTE / deptColor /
+// deptBg are preserved; they're still consumed by department charts.
 
 // ── Department colours ─────────────────────────────────────────
 // Covers ALL known departments across ALL businesses
@@ -82,36 +79,3 @@ export function deptBg(name: string, index: number = 0): string {
   return deptColor(name, index) + '20'
 }
 
-// ── Typography ────────────────────────────────────────────────
-export const FONT = {
-  pageTitle:   { fontSize: 22, fontWeight: 500, color: '#111', margin: 0 },
-  pageSubtitle:{ fontSize: 13, color: '#6b7280', margin: '4px 0 0' },
-  sectionTitle:{ fontSize: 13, fontWeight: 600, color: '#111' },
-  label:       { fontSize: 11, fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '.07em', color: '#9ca3af' },
-  value:       { fontSize: 22, fontWeight: 700, color: '#111' },
-  sub:         { fontSize: 11, color: '#9ca3af' },
-}
-
-// ── Common button styles ──────────────────────────────────────
-export const BTN = {
-  primary: {
-    padding: '9px 18px', background: CC_DARK, color: 'white',
-    border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-  },
-  secondary: {
-    padding: '8px 14px', background: 'white', color: '#374151',
-    border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-  },
-  danger: {
-    padding: '8px 14px', background: 'white', color: '#dc2626',
-    border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, cursor: 'pointer',
-  },
-}
-
-// ── Card style ────────────────────────────────────────────────
-export const CARD: React.CSSProperties = {
-  background:   'white',
-  border:       '0.5px solid #e5e7eb',
-  borderRadius: 12,
-  padding:      '18px 20px',
-}

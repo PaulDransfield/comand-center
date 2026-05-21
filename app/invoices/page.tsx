@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
-import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 import { fmtKr } from '@/lib/format'
 // Phase 5 — Bookkeeping. Replace the inline 3-card grid with 4 KpiCardUX
 // + a "Synkad från Fortnox" indicator near the title.

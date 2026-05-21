@@ -11,7 +11,6 @@ import StatusPill from '@/components/ui/StatusPill'
 import TopBar from '@/components/ui/TopBar'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import { UX, UXP } from '@/lib/constants/tokens'
-import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 import { fmtKr, fmtPct } from '@/lib/format'
 // Phase 3 — Insights migration. Year nav moves to the AppShell date stepper;
 // TopBar reduces to just the Generate-AI action so the toolbar carries the

@@ -10,7 +10,9 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { AdminNav } from '@/components/admin/AdminNav'
+// Phase 7: the V1 AdminNav was deleted alongside V1 admin routes. This
+// page is a standalone QA/demo tool — bouncing back to /admin/v2/overview
+// at the page foot replaces the nav strip.
 
 // Next 14 requires any client component using useSearchParams to be wrapped
 // in a <Suspense> boundary or the static prerender bails out at build time.
@@ -73,7 +75,20 @@ function MemoPreview() {
 
   return (
     <div style={{ background: '#f5f6f8', minHeight: '100vh' }}>
-      <AdminNav />
+      <div style={{
+        background:   '#ffffff',
+        borderBottom: '1px solid #e5e7eb',
+        padding:      '10px 24px',
+        display:      'flex',
+        alignItems:   'center',
+        justifyContent: 'space-between',
+        fontSize:     12,
+      }}>
+        <a href="/admin/v2/overview" style={{ color: '#6b7280', textDecoration: 'none' }}>
+          ← Back to admin
+        </a>
+        <span style={{ color: '#9ca3af' }}>Memo preview · standalone tool</span>
+      </div>
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 32px' }}>
         <div style={{ marginBottom: 20 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, color: '#111', letterSpacing: '-0.02em' }}>Monday memo preview</h1>
