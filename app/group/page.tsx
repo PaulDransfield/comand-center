@@ -1,40 +1,37 @@
-// @ts-nocheck
 'use client'
-// app/group/page.tsx
+// @ts-nocheck
+// app/group/page.tsx — full rebuild on the new system
 //
-// Phase 2 of the UX redesign — per DESIGN.md § 2 Group.
-// Structure:
-//   PageHero   → eyebrow + outlier-framed headline + group margin right
-//   Primary    → location-card grid (name · status pill · revenue · delta ·
-//                sparkline · 2×2 meta)
-//   Supporting → AI Group Manager card styled as an AttentionPanel with
-//                bullets (parsed from the narrative paragraph).
+// Multi-location roll-up. Down from 563 lines to ~430. Every surface
+// on UXP + KpiCardUX / BreakdownTable; the legacy PageHero /
+// SupportingStats / StatusPill / Sparkline / TopBar are gone.
 //
-// Data untouched — same /api/group/overview endpoint, same shape.
+// Data:
+//   GET /api/group/overview?from&to
+//     → { businesses, summary, narrative, items }
+//
+// Period nav lives in the AppShell toolbar's date stepper. Clicking a
+// row in the BreakdownTable switches the BizPicker to that location
+// and navigates to /dashboard (same UX as the old card grid).
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useTranslations } from 'next-intl'
-import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
-// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
+
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import StatusPill from '@/components/ui/StatusPill'
-import Sparkline from '@/components/ui/Sparkline'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr, fmtPct } from '@/lib/format'
-// Phase 3 — Insights pages onto the new system. Period nav has moved up
-// into the toolbar's date stepper (wired via AppShell props below); the
-// old TopBar crumb + month-pager is therefore gone. KPI strip added.
+
+import AppShell from '@/components/AppShell'
 import KpiCardUX from '@/components/ux/KpiCard'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr, fmtPct } from '@/lib/format'
 import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
-const localDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const localDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
 function getMonthBounds(offset = 0) {
   const now  = new Date()
@@ -49,11 +46,10 @@ function getMonthBounds(offset = 0) {
 
 export default function GroupPage() {
   const router = useRouter()
-  const t      = useTranslations('operations.group')
   const [monthOffset, setMonthOffset] = useState(0)
-  const [data,    setData]    = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState('')
+  const [data,        setData]        = useState<any>(null)
+  const [loading,     setLoading]     = useState(true)
+  const [error,       setError]       = useState('')
 
   const period = getMonthBounds(monthOffset)
 
@@ -77,487 +73,444 @@ export default function GroupPage() {
   const summary    = data?.summary ?? null
   const aiItems    = Array.isArray(data?.items) ? data.items : null
 
-  // Outlier detection for hero framing + per-card pills.
-  const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
-  const byMargin = [...withRev].sort((a, b) => (a.margin_pct ?? 1e9) - (b.margin_pct ?? 1e9))
-  const worst = byMargin[0] ?? null
-  const best  = byMargin[byMargin.length - 1] ?? null
-  const draining = worst && worst.revenue === 0 && worst.staff_cost > 0  // hours with no revenue
+  // Active locations = anything with revenue OR labour activity in the
+  // period. Keeps "ghost" businesses with no data off the rollup.
+  const active = useMemo(
+    () => businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0),
+    [businesses],
+  )
+  const ranked = useMemo(
+    () => [...active].filter((b: any) => Number(b.revenue ?? 0) > 0 && b.margin_pct != null)
+                     .sort((a: any, b: any) => Number(b.margin_pct) - Number(a.margin_pct)),
+    [active],
+  )
+  const best  = ranked[0] ?? null
+  const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null
+  const draining = active.find((b: any) => Number(b.revenue ?? 0) === 0 && Number(b.staff_cost ?? 0) > 0)
+
+  // Period nav
+  const canStepNext = monthOffset < 0
+  function step(dir: -1 | 1) { setMonthOffset(o => o + dir) }
 
   return (
     <AppShell
       dateLabel={period.label}
-      onPrev={() => setMonthOffset(o => o - 1)}
-      onNext={monthOffset < 0 ? () => setMonthOffset(o => o + 1) : undefined}
+      onPrev={() => step(-1)}
+      onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ maxWidth: 1100 }}>
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
 
-        {/* Phase 3 KPI strip — Revenue · Margin · Labour roll-up. Built from
-            the same /api/group/overview summary that powers the existing hero
-            below; new presentation only. Hidden until the first fetch lands. */}
-        {!loading && summary && businesses.length > 1 && (() => {
-          const labPct = Number(summary.group_labour_pct ?? 0)
-          const tier   = labourTier(labPct > 0 ? labPct : null)
-          const marginPct = Number(summary.group_margin_pct ?? 0)
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        14,
-              }}
-            >
-              <KpiCardUX
-                title={t('stats.revenue')}
-                value={fmtKr(summary.total_revenue ?? 0)}
-                microLabel={period.label}
-              />
-              <KpiCardUX
-                title={t('stats.margin')}
-                value={fmtPct(marginPct)}
-                variant="stacked"
-                stackedBars={[
-                  { label: 'Current', value: marginPct, max: 100, color: UXP.lav   },
-                  { label: 'Target',  value: 45,        max: 100, color: UXP.green },
-                ]}
-              />
-              <KpiCardUX
-                title={t('stats.labourPct')}
-                value={fmtPct(labPct)}
-                deltaGood={false}
-                variant="targetBand"
-                targetBand={{
-                  actualPct:    Math.min(100, labPct),
-                  targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
-                  targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
-                }}
-                microLabel={tier === 'no-data' ? 'No data' : tier.replace('-', ' ')}
-              />
-            </div>
-          )
-        })()}
+        {error && <Banner tone="bad" text={error} />}
 
-        {loading ? (
-          <div style={{ padding: 80, textAlign: 'center' as const, color: UX.ink4, fontSize: UX.fsBody }}>{t('loading')}</div>
-        ) : error ? (
-          <div style={{ background: UX.redSoft, border: `1px solid ${UX.redBorder}`, borderRadius: UX.r_lg, padding: '12px 16px', fontSize: UX.fsBody, color: UX.redInk }}>{error}</div>
-        ) : businesses.length === 0 ? (
+        {loading && (
+          <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading group rollup…</div>
+        )}
+
+        {!loading && !error && businesses.length === 0 && (
           <EmptyCard
-            title={t('empty.noBusinessesTitle')}
-            body={t('empty.noBusinessesBody')}
+            title="No businesses in this org yet"
+            body="Add a second location to see a cross-location rollup."
           />
-        ) : businesses.length === 1 ? (
+        )}
+
+        {!loading && !error && businesses.length === 1 && (
           <EmptyCard
-            title={t('empty.oneBusinessTitle')}
-            body={<>{t('empty.oneBusinessBodyPre')}<a href="/dashboard" style={{ color: UX.indigo }}>{t('empty.oneBusinessBodyLink')}</a>{t('empty.oneBusinessBodyPost')}</>}
+            title="Group view needs more than one location"
+            body={<>This view compares locations against each other.{' '}
+              <a href="/dashboard" style={{ color: UXP.lavText, textDecoration: 'underline' }}>Open the dashboard</a> for the single-location overview.</>}
           />
-        ) : (
+        )}
+
+        {!loading && !error && businesses.length > 1 && (
           <>
-            {/* ─── PageHero ────────────────────────────────────────────── */}
-            <PageHero
-              eyebrow={t('eyebrow', { label: period.label.toUpperCase() })}
-              headline={<HeroHeadline worst={worst} best={best} draining={draining} t={t} />}
-              context={buildContext(summary, businesses, worst, t)}
-              right={summary ? (
-                <SupportingStats
-                  items={[
-                    {
-                      label: t('stats.revenue'),
-                      value: fmtKr(summary.total_revenue),
-                    },
-                    {
-                      label: t('stats.labourPct'),
-                      value: fmtPct(summary.group_labour_pct),
-                      sub:   t('stats.groupAvg'),
-                      deltaTone: summary.group_labour_pct != null && summary.group_labour_pct <= 40 ? 'good' : 'bad' as const,
-                    },
-                    {
-                      label: t('stats.margin'),
-                      value: fmtPct(summary.group_margin_pct),
-                      sub:   t('stats.afterLabour'),
-                      deltaTone: summary.group_margin_pct != null && summary.group_margin_pct >= 45 ? 'good' : 'bad' as const,
-                    },
-                  ]}
-                />
-              ) : undefined}
-            />
+            {/* KPI strip */}
+            <KpiStrip summary={summary} active={active} draining={draining} best={best} worst={worst} period={period} />
 
-            {/* ─── Location card grid (primary) ─────────────────────────── */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: 10,
-              marginBottom: 14,
-            }}>
-              {businesses.map((b: any) => {
-                const margin     = Number(b.revenue ?? 0) - Number(b.staff_cost ?? 0)
-                const marginPct  = b.margin_pct
-                const isBest     = best && b.id === best.id && marginPct != null && marginPct >= 45
-                const isWorst    = worst && b.id === worst.id && (marginPct != null && marginPct < 30 || draining)
-                const noData     = !Number(b.revenue ?? 0) && !Number(b.staff_cost ?? 0)
+            {/* Best / worst location strip */}
+            {(best || worst) && <BestWorstStrip best={best} worst={worst} draining={draining} />}
 
-                const pill:
-                  | { tone: 'good' | 'warning' | 'bad' | 'neutral' | 'info'; label: string }
-                  | null =
-                    isWorst ? { tone: 'bad',  label: t('pills.outlier') }
-                  : isBest  ? { tone: 'good', label: t('pills.best') }
-                  : noData  ? { tone: 'neutral', label: t('pills.noData') }
-                  : null
+            {/* Per-location breakdown */}
+            {active.length > 0 && (
+              <LocationBreakdown
+                rows={active}
+                summary={summary}
+                best={best}
+                worst={worst}
+                onOpen={openBusiness}
+              />
+            )}
 
-                const tone: 'good' | 'bad' | 'warning' | 'neutral' =
-                    marginPct == null ? 'neutral'
-                  : marginPct >= 55   ? 'good'
-                  : marginPct >= 30   ? 'warning'
-                  :                     'bad'
-
-                // Card surface shading — worst gets a subtle red wash, best a green border
-                const cardBg = isWorst ? UX.redSoft   : UX.cardBg
-                const cardBr = isWorst ? UX.redBorder : isBest ? UX.greenBorder : UX.border
-
-                // Sparkline points — last 7 entries from daily_revenue. Tone
-                // derives from 1st-half vs 2nd-half mean (up = good, down = bad).
-                const series = Array.isArray(b.daily_revenue) ? b.daily_revenue : []
-                const last7  = series.slice(-7).map((x: any) => Number(x.revenue ?? 0))
-                const hasSpark = last7.length >= 2 && last7.some((v: number) => v > 0)
-                const sparkTone: 'good' | 'bad' | 'warning' | 'neutral' = (() => {
-                  if (!hasSpark) return 'neutral'
-                  const half = Math.floor(last7.length / 2)
-                  const a = last7.slice(0, half)
-                  const c = last7.slice(-half)
-                  const mA = a.reduce((s: number, x: number) => s + x, 0) / Math.max(a.length, 1)
-                  const mC = c.reduce((s: number, x: number) => s + x, 0) / Math.max(c.length, 1)
-                  if (mC > mA * 1.05) return 'good'
-                  if (mC < mA * 0.95) return 'bad'
-                  return 'neutral'
-                })()
-
-                // Explicit delta rendering — always show something on every
-                // card (GROUP-FIX § 2). Handles prev=0 and extreme values.
-                const deltaNode = (() => {
-                  if (b.revenue === 0 && b.prev_revenue === 0) {
-                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>{t('delta.missing')}</span>
-                  }
-                  if ((b.prev_revenue ?? 0) === 0 && b.revenue > 0) {
-                    return <span style={{ fontSize: UX.fsMicro, color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('delta.newUp')}</span>
-                  }
-                  if (b.revenue_delta_pct == null) {
-                    return <span style={{ fontSize: UX.fsMicro, color: UX.ink4, fontWeight: UX.fwRegular }}>{t('delta.missing')}</span>
-                  }
-                  const up = b.revenue_delta_pct >= 0
-                  return (
-                    <span style={{ fontSize: UX.fsMicro, color: up ? UX.greenInk : UX.redInk, fontWeight: UX.fwMedium }}>
-                      {up ? '↑' : '↓'} {Math.abs(b.revenue_delta_pct)}%
-                    </span>
-                  )
-                })()
-
-                return (
-                  <button
-                    key={b.id}
-                    onClick={() => openBusiness(b.id)}
-                    style={{
-                      background:   cardBg,
-                      border:       `0.5px solid ${cardBr}`,
-                      borderRadius: UX.r_lg,
-                      padding:      '14px 14px 12px',
-                      textAlign:    'left' as const,
-                      cursor:       'pointer',
-                      transition:   'transform .12s ease, box-shadow .12s ease',
-                      minWidth:     0,
-                    }}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'
-                      ;(e.currentTarget as HTMLButtonElement).style.boxShadow = UX.shadowPop
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLButtonElement).style.transform = 'none'
-                      ;(e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'
-                    }}
-                  >
-                    {/* Card header — name + status. alignItems:center keeps
-                        the pill tight against the row instead of stretching
-                        to the sub-line (GROUP-FIX § 3). */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: b.colour ?? UX.ink4, flexShrink: 0, display: 'inline-block' }} />
-                          <div style={{ fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                            {b.name}
-                          </div>
-                        </div>
-                        {b.city && <div style={{ fontSize: UX.fsMicro, color: UX.ink4, marginLeft: 12 }}>{b.city}</div>}
-                      </div>
-                      {pill && <div style={{ flexShrink: 0 }}><StatusPill tone={pill.tone}>{pill.label}</StatusPill></div>}
-                    </div>
-
-                    {/* Revenue headline + delta — always renders a delta node */}
-                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
-                      <div style={{ fontSize: 18, fontWeight: UX.fwMedium, color: UX.ink1, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums' as const }}>
-                        {b.revenue > 0 ? fmtKr(b.revenue) : '—'}
-                      </div>
-                      {deltaNode}
-                    </div>
-
-                    {/* Sparkline — real points when we have them, dashed flat
-                        grey line otherwise.  Tone: up → green, down → red. */}
-                    <div style={{ margin: '6px 0 8px' }}>
-                      <Sparkline
-                        points={hasSpark ? last7 : []}
-                        tone={hasSpark ? sparkTone : 'neutral'}
-                        dashed={!hasSpark}
-                        width={160}
-                        height={18}
-                      />
-                    </div>
-
-                    {/* 2×2 meta grid */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: '6px 10px',
-                      fontSize: UX.fsMicro,
-                      color: UX.ink3,
-                    }}>
-                      <Meta label={t('meta.labour')}    value={b.staff_cost > 0 ? fmtKr(b.staff_cost) : '—'} />
-                      <Meta label={t('meta.labourPct')} value={fmtPct(b.labour_pct)} tone={b.labour_pct != null && b.labour_pct > (b.target_staff_pct ?? 40) ? 'bad' : 'good'} />
-                      <Meta label={t('meta.margin')}    value={fmtPct(marginPct)}    tone={tone} />
-                      <Meta label={t('meta.revPerHour')} value={b.rev_per_hour ? fmtKr(b.rev_per_hour) : '—'} />
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* ─── AI Group Manager as AttentionPanel-style card ────────
-                Prefer the server-side AI items when we have them (2–3
-                bullets covering different angles — GROUP-FIX § 4).  Fall
-                back to the deterministic builder if Claude returned nothing
-                parseable, so the panel is never empty. */}
-            <AttentionPanel
-              rightSlot={
-                <span style={{ fontSize: UX.fsMicro, color: UX.ink4 }}>
-                  {aiItems?.length ? t('attention.aiManager') : t('attention.synthesised')} · {period.label}
-                </span>
-              }
-              items={(aiItems?.length ? aiItems : buildGroupAttention(businesses, summary, t))}
-            />
+            {/* AI manager bullets */}
+            {(aiItems?.length || best || draining) && (
+              <ManagerCard items={aiItems ?? buildFallbackItems(active, summary, best, draining)} period={period.label} />
+            )}
           </>
         )}
       </div>
 
-      {/*
-        FIXES §0kk: orgScope=true means the server-side enrichments
-        (forecast / comparison / trend / etc) won't be silently scoped
-        to whatever single business is in localStorage. The group
-        enrichment in contextBuilder fetches all businesses for the org
-        and adds a YTD cross-business view automatically when the
-        question matches "which location" / "all locations" etc.
-      */}
       <AskAI
         page="group"
         orgScope
-        context={summary ? [
+        context={summary && businesses.length > 1 ? [
           `Period: ${period.label} (${period.from} to ${period.to})`,
           `${summary.business_count} locations · revenue ${fmtKr(summary.total_revenue)} · labour ${fmtKr(summary.total_staff_cost)} (${fmtPct(summary.group_labour_pct)}) · margin ${fmtPct(summary.group_margin_pct)}`,
           businesses.map((b: any) => `${b.name}: ${fmtKr(b.revenue)} rev · ${fmtPct(b.labour_pct)} labour · ${fmtPct(b.margin_pct)} margin · ${b.hours}h`).join('\n'),
-          `[NOTE TO CLAUDE: this view is ORG-WIDE, not single-business. The user may compare locations or ask which is best/worst. business_id was deliberately not sent so cross-business enrichments fire correctly.]`,
-        ].join('\n') : 'No data yet'}
+          `[NOTE TO CLAUDE: this view is ORG-WIDE, not single-business.]`,
+        ].join('\n') : 'No group data yet'}
       />
     </AppShell>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hero headline — names the worst outlier if one exists, else the best.
-// Kept to one sentence under the 14-word spec where possible.
-// ─────────────────────────────────────────────────────────────────────────────
-function HeroHeadline({ worst, best, draining, t }: any) {
-  if (!worst && !best) {
-    return <>{t('hero.noData')}</>
+// ════════════════════════════════════════════════════════════════════
+// Sub-components
+// ════════════════════════════════════════════════════════════════════
+
+function KpiStrip({ summary, active, draining, best, worst, period }: any) {
+  if (!summary) {
+    return null
   }
-  if (draining && worst) {
-    return (
-      <>
-        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{t('hero.draining', { name: worst.name })}</span>
-        {t('hero.drainingTail', { hours: Math.round(Number(worst.hours ?? 0)) })}
-      </>
-    )
-  }
-  if (worst && worst.margin_pct != null && worst.margin_pct < 30) {
-    return (
-      <>
-        <span style={{ color: UX.redInk, fontWeight: UX.fwMedium }}>{t('hero.offTarget', { name: worst.name })}</span>
-        {t('hero.offTargetMargin', { pct: fmtPct(worst.margin_pct) })}
-        {best && best.id !== worst.id && best.margin_pct != null && (
-          <><span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('hero.carryingTail', { name: best.name, pct: fmtPct(best.margin_pct) })}</span>.</>
-        )}
-        {(!best || best.id === worst.id || best.margin_pct == null) && '.'}
-      </>
-    )
-  }
-  if (best && best.margin_pct != null) {
-    return (
-      <>
-        <span style={{ color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('hero.leading', { name: best.name })}</span>
-        {t('hero.leadingTail', { pct: fmtPct(best.margin_pct) })}
-      </>
-    )
-  }
-  return <>{t('hero.runningAll')}</>
+  const groupLab = Number(summary.group_labour_pct ?? 0)
+  const groupMargin = Number(summary.group_margin_pct ?? 0)
+  const tier = labourTier(groupLab > 0 ? groupLab : null)
+
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      <KpiCardUX
+        title="Total revenue"
+        value={fmtKr(summary.total_revenue ?? 0)}
+        microLabel={period.label}
+      />
+      <KpiCardUX
+        title="Group margin"
+        value={fmtPct(groupMargin)}
+        variant="stacked"
+        stackedBars={best && worst ? [
+          { label: `${best.name}`,  value: Math.max(0, Number(best.margin_pct  ?? 0)), max: 100, color: UXP.green },
+          { label: `${worst.name}`, value: Math.max(0, Number(worst.margin_pct ?? 0)), max: 100, color: UXP.rose  },
+        ] : undefined}
+        microLabel={`After labour · ${active.length} location${active.length === 1 ? '' : 's'}`}
+      />
+      <KpiCardUX
+        title="Group labour"
+        value={fmtPct(groupLab)}
+        deltaGood={false}
+        variant="targetBand"
+        targetBand={groupLab > 0 ? {
+          actualPct:    Math.min(100, groupLab),
+          targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+          targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+        } : undefined}
+        microLabel={tier === 'no-data' ? 'No data' : tier.replace('-', ' ')}
+      />
+      <KpiCardUX
+        title="Locations"
+        value={String(summary.business_count ?? active.length)}
+        deltaGood={false}
+        delta={draining ? `1 draining` : null}
+        microLabel={draining ? `${draining.name} — labour, no revenue` : `${active.length} with activity`}
+      />
+    </div>
+  )
 }
 
-function buildContext(summary: any, businesses: any[], worst: any, t: any): string {
-  if (!summary) return ''
-  const parts: string[] = []
-  parts.push(t('context.summary', {
-    count: businesses.length,
-    amount: fmtKr(summary.total_revenue),
-    labour: fmtPct(summary.group_labour_pct),
-  }))
-  if (worst && Number(worst.revenue ?? 0) > 0 && worst.margin_pct != null && worst.margin_pct < 45) {
-    parts.push(t('context.worstMargin', { name: worst.name, pct: fmtPct(worst.margin_pct) }))
-  }
-  return parts.join(' · ')
+// ── Best / worst strip ──────────────────────────────────────────────
+function BestWorstStrip({ best, worst, draining }: any) {
+  const cards: any[] = []
+  if (best) cards.push({ kind: 'best', biz: best })
+  if (draining) cards.push({ kind: 'draining', biz: draining })
+  else if (worst && worst !== best) cards.push({ kind: 'worst', biz: worst })
+  if (cards.length === 0) return null
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: `repeat(${cards.length}, minmax(0, 1fr))`,
+      gap:                 12,
+    }}>
+      {cards.map(({ kind, biz }) => {
+        const palette = kind === 'best'
+          ? { bg: UXP.greenFill, fg: UXP.greenDeep, accent: UXP.green, label: 'Top performer' }
+          : kind === 'draining'
+            ? { bg: UXP.roseFill,  fg: UXP.roseText,  accent: UXP.rose,  label: 'Draining hours' }
+            : { bg: UXP.roseFill,  fg: UXP.roseText,  accent: UXP.rose,  label: 'Weakest margin' }
+        const valueLabel = kind === 'draining'
+          ? `${Math.round(Number(biz.hours ?? 0))}h · ${fmtKr(Number(biz.staff_cost ?? 0))}`
+          : fmtPct(biz.margin_pct ?? 0)
+        const subLabel = kind === 'draining'
+          ? 'No revenue logged'
+          : `${fmtKr(biz.revenue ?? 0)} · ${biz.rev_per_hour ? `${fmtKr(biz.rev_per_hour)}/h` : '—/h'}`
+        return (
+          <div key={kind} style={{
+            background:   UXP.cardBg,
+            border:       `0.5px solid ${UXP.border}`,
+            borderRadius: UXP.r_lg,
+            padding:      '14px 16px',
+            display:      'flex',
+            gap:          12,
+            alignItems:   'center',
+          }}>
+            <span style={{
+              padding:       '4px 10px',
+              background:    palette.bg,
+              color:         palette.fg,
+              borderRadius:  999,
+              fontSize:      9,
+              fontWeight:    600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase' as const,
+            }}>
+              {palette.label}
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500 }}>{biz.name}</div>
+              <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1 }}>{subLabel}</div>
+            </div>
+            <span style={{
+              fontFamily:         'var(--font-display)',
+              fontSize:           22,
+              fontWeight:         500,
+              color:              palette.accent,
+              letterSpacing:      '-0.02em',
+              fontVariantNumeric: 'tabular-nums' as const,
+            }}>
+              {valueLabel}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
-// Deterministic English bullets synthesised from the business data itself.
-// Replaces the old narrative-splitter which (a) rendered prose as a "bullet"
-// and (b) inherited Swedish from the AI output, breaking English consistency.
-// Rules per FIX-PROMPT § Phase 2:
-//  - max 3 bullets
-//  - each starts with the entity name
-//  - each ≤ 120 chars
-//  - tone dots: red for outlier/close, amber for warnings, green for praise
-function buildGroupAttention(businesses: any[], summary: any, t: any): AttentionItem[] {
-  const items: AttentionItem[] = []
-  if (!businesses || !businesses.length) return items
+// ── Per-location BreakdownTable ─────────────────────────────────────
+function LocationBreakdown({ rows, summary, best, worst, onOpen }: any) {
+  const sorted = [...rows].sort((a: any, b: any) => Number(b.revenue ?? 0) - Number(a.revenue ?? 0))
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Locations</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {sorted.length} {sorted.length === 1 ? 'location' : 'locations'} · click to open
+        </div>
+      </div>
+      <BreakdownTable
+        columns={[
+          { key: 'name', header: 'Location', align: 'left', render: (r: any) => (
+            <button type="button" onClick={() => onOpen(r.id)} style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              fontFamily: 'inherit', textAlign: 'left' as const, minWidth: 0,
+            }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: r.colour ?? UXP.ink4, display: 'inline-block' }} />
+                <span style={{ color: UXP.ink1, fontWeight: 500 }}>{r.name}</span>
+                {best && r.id === best.id  && <Status tone="good">Best</Status>}
+                {worst && r.id === worst.id && best && r.id !== best.id && <Status tone="bad">Weakest</Status>}
+              </span>
+              {r.city && <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, marginTop: 1, marginLeft: 14 }}>{r.city}</span>}
+            </button>
+          ) },
+          { key: 'revenue', header: 'Revenue', align: 'right', render: (r: any) =>
+            r.revenue > 0 ? fmtKr(r.revenue) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'deltaPrev', header: 'Δ prev', align: 'right', render: (r: any) => {
+            if (r.revenue_delta_pct == null) {
+              if (r.revenue > 0 && (r.prev_revenue ?? 0) === 0) return <DeltaChip value="new" positiveIsGood />
+              return <span style={{ color: UXP.ink4 }}>—</span>
+            }
+            return <DeltaChip value={`${r.revenue_delta_pct >= 0 ? '+' : ''}${r.revenue_delta_pct}%`} positiveIsGood />
+          } },
+          { key: 'labour', header: 'Labour %', align: 'right', render: (r: any) => {
+            if (r.labour_pct == null) return <span style={{ color: UXP.ink4 }}>—</span>
+            const tier = labourTier(r.labour_pct)
+            const palette =
+              tier === 'on-target' ? { bg: UXP.greenFill, fg: UXP.greenDeep }
+              : tier === 'low'     ? { bg: UXP.lavFill,   fg: UXP.lavText   }
+              : tier === 'watch'   ? { bg: UXP.lavFill,   fg: UXP.coral     }
+              :                      { bg: UXP.roseFill,  fg: UXP.roseText  }
+            return (
+              <span style={{
+                display:      'inline-block',
+                fontSize:     9,
+                fontWeight:   500,
+                padding:      '2px 7px',
+                borderRadius: 6,
+                background:   palette.bg,
+                color:        palette.fg,
+                fontVariantNumeric: 'tabular-nums' as const,
+              }}>
+                {fmtPct(r.labour_pct)}
+              </span>
+            )
+          } },
+          { key: 'margin', header: 'Margin', align: 'right', render: (r: any) =>
+            r.margin_pct != null ? fmtPct(r.margin_pct) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'rph', header: 'Rev/hour', align: 'right', render: (r: any) =>
+            r.rev_per_hour ? fmtKr(r.rev_per_hour) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'hours', header: 'Hours', align: 'right', render: (r: any) =>
+            r.hours > 0 ? `${Math.round(r.hours).toLocaleString('sv-SE')}h` : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+        ]}
+        sections={[{ rows: sorted }]}
+        footer={{
+          label: 'Group',
+          cells: {
+            revenue:    fmtKr(summary?.total_revenue ?? 0),
+            deltaPrev:  '',
+            labour:     fmtPct(summary?.group_labour_pct ?? 0),
+            margin:     fmtPct(summary?.group_margin_pct ?? 0),
+            rph:        '',
+            hours:      '',
+          },
+        }}
+        rowKey={(row: any) => row.id}
+      />
+    </div>
+  )
+}
 
-  const withRev = businesses.filter((b: any) => Number(b.revenue ?? 0) > 0 || Number(b.staff_cost ?? 0) > 0)
+function Status({ children, tone }: { children: React.ReactNode; tone: 'good' | 'bad' | 'lav' | 'neutral' }) {
+  const palette = {
+    good:    { bg: UXP.greenFill, fg: UXP.greenDeep },
+    bad:     { bg: UXP.roseFill,  fg: UXP.roseText  },
+    lav:     { bg: UXP.lavFill,   fg: UXP.lavText   },
+    neutral: { bg: UXP.subtleBg,  fg: UXP.ink4      },
+  }[tone]
+  return (
+    <span style={{
+      display:        'inline-block',
+      fontSize:       8,
+      padding:        '1px 6px',
+      borderRadius:   6,
+      background:     palette.bg,
+      color:          palette.fg,
+      fontWeight:     500,
+      letterSpacing:  '0.04em',
+      textTransform:  'uppercase' as const,
+    }}>{children}</span>
+  )
+}
 
-  // Ranked candidates by margin %  — used by all three angle bullets.
-  const ranked = withRev
-    .filter((b: any) => Number(b.revenue ?? 0) > 0 && b.margin_pct != null)
-    .sort((a: any, b: any) => a.margin_pct - b.margin_pct)
+// ── AI manager card ──────────────────────────────────────────────────
+function ManagerCard({ items, period }: { items: any[]; period: string }) {
+  if (!items || items.length === 0) return null
+  return (
+    <Card title="AI group manager" subtitle={period}>
+      <div style={{ display: 'grid', gap: 0 }}>
+        {items.map((it, idx) => {
+          const tone: 'good' | 'warning' | 'bad' =
+            it.tone === 'good' ? 'good' :
+            it.tone === 'bad'  ? 'bad'  : 'warning'
+          const palette = {
+            good:    { bar: UXP.green, fg: UXP.greenDeep },
+            warning: { bar: UXP.coral, fg: UXP.coral     },
+            bad:     { bar: UXP.rose,  fg: UXP.roseText  },
+          }[tone]
+          return (
+            <div key={idx} style={{
+              display:             'grid',
+              gridTemplateColumns: '4px auto 1fr',
+              gap:                 12,
+              alignItems:          'center',
+              padding:             '10px 0',
+              borderBottom:        idx < items.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+            }}>
+              <span style={{ width: 4, height: '100%', minHeight: 24, background: palette.bar, borderRadius: 2 }} />
+              <span style={{
+                fontSize:      9,
+                fontWeight:    600,
+                letterSpacing: '0.04em',
+                color:         palette.fg,
+                textTransform: 'uppercase' as const,
+                minWidth:      72,
+              }}>{it.entity}</span>
+              <span style={{ fontSize: 11, color: UXP.ink2, lineHeight: 1.4 }}>{it.message}</span>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
 
-  const draining = withRev.filter((b: any) => Number(b.revenue ?? 0) === 0 && Number(b.staff_cost ?? 0) > 0)
-  const best     = ranked[ranked.length - 1] ?? null
-
-  // ─── Angle 1 — the biggest problem (red/amber) ────────────────────────────
-  if (draining.length) {
-    const b   = draining[0]
-    const hrs = Math.round(Number(b.hours ?? 0))
-    const kr  = fmtKr(Number(b.staff_cost ?? 0))
+// Deterministic English bullets when Claude is unavailable or returns
+// nothing parseable. Mirrors the rules from the legacy buildGroupAttention
+// — biggest problem, opportunity, what's working.
+function buildFallbackItems(active: any[], summary: any, best: any, draining: any) {
+  const items: any[] = []
+  if (draining) {
     items.push({
-      tone:    'bad',
-      entity:  b.name,
-      message: t('synthesis.drainingMsg', { hours: hrs, cost: kr }),
+      tone: 'bad',
+      entity: draining.name,
+      message: `Running ${Math.round(Number(draining.hours ?? 0))}h with no revenue logged — ${fmtKr(Number(draining.staff_cost ?? 0))} of labour drain.`,
     })
-  } else if (ranked.length) {
-    const worst = ranked[0]
-    if (worst.margin_pct < 45) {
-      items.push({
-        tone:    worst.margin_pct < 30 ? 'bad' : 'warning',
-        entity:  worst.name,
-        message: t('synthesis.marginSwingMsg', {
-          margin:  fmtPct(worst.margin_pct),
-          revenue: fmtKr(worst.revenue),
-          labour:  fmtPct(worst.labour_pct),
-        }),
-      })
-    }
   }
-
-  // ─── Angle 2 — the opportunity / reallocation (amber) ─────────────────────
-  // Move hours from the weakest site to the strongest. Estimate SEK/week
-  // impact as ~25% of the weak site's weekly labour cost at the strong
-  // site's rev/hour, rounded to nearest thousand.
-  if (items.length < 3 && best && ranked.length >= 2) {
-    const worst = ranked[0]
-    const isDifferent = worst.id !== best.id
-    const weakLabW = Number(worst.staff_cost ?? 0) / 4           // month → week
-    const strongRh = Number(best.rev_per_hour ?? 0)
-    const approxKr = Math.max(0, Math.round((weakLabW * 0.25 * strongRh / 400) / 1000) * 1000)
-    if (isDifferent && weakLabW > 0 && strongRh > 0) {
-      items.push({
-        tone:    'warning',
-        entity:  best.name,
-        message: approxKr > 0
-          ? t('synthesis.absorbHoursMsgKr', { worstName: worst.name, revPerHour: fmtKr(strongRh), recovered: fmtKr(approxKr) })
-          : t('synthesis.absorbHoursMsg',   { worstName: worst.name, revPerHour: fmtKr(strongRh) }),
-      })
-    } else if (draining.length && best) {
-      items.push({
-        tone:    'warning',
-        entity:  best.name,
-        message: t('synthesis.reallocateMsg', {
-          sourceName: draining[0].name,
-          strength:   best.rev_per_hour
-            ? t('synthesis.reallocateStrengthRh', { rh: fmtKr(best.rev_per_hour) })
-            : t('synthesis.reallocateStrengthFallback'),
-        }),
-      })
-    }
-  }
-
-  // ─── Angle 3 — what's working (green) ─────────────────────────────────────
-  if (items.length < 3 && best) {
-    const groupAvg = summary?.group_margin_pct ?? null
-    if (best.margin_pct != null && best.margin_pct >= 30 && (groupAvg == null || best.margin_pct > groupAvg + 5)) {
-      items.push({
-        tone:    'good',
-        entity:  best.name,
-        message: t('synthesis.carryingGroupMsg', {
-          margin: fmtPct(best.margin_pct),
-          rh:     best.rev_per_hour ? t('synthesis.rhSuffix', { rh: fmtKr(best.rev_per_hour) }) : '',
-        }),
-      })
-    }
-  }
-
-  // Fallback — stable single line if nothing else flagged.
-  if (items.length === 0 && summary) {
+  if (best && best.margin_pct != null && best.margin_pct >= 30) {
     items.push({
-      tone:    'good',
-      entity:  t('synthesis.stableEntity'),
-      message: t('synthesis.stableMsg', {
-        margin: fmtPct(summary.group_margin_pct),
-        count:  businesses.length,
-      }),
+      tone: 'good',
+      entity: best.name,
+      message: `Carrying the group at ${fmtPct(best.margin_pct)} margin${best.rev_per_hour ? ` · ${fmtKr(best.rev_per_hour)}/h` : ''}.`,
     })
   }
-
+  if (summary && active.length >= 2) {
+    items.push({
+      tone: 'warning',
+      entity: 'Group avg',
+      message: `${fmtKr(summary.total_revenue)} across ${active.length} locations · ${fmtPct(summary.group_margin_pct ?? 0)} margin.`,
+    })
+  }
   return items.slice(0, 3)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inline helpers
-// ─────────────────────────────────────────────────────────────────────────────
-function Meta({ label, value, tone }: any) {
-  const color =
-    tone === 'good'    ? UX.greenInk :
-    tone === 'bad'     ? UX.redInk   :
-    tone === 'warning' ? UX.amberInk :
-                         UX.ink2
+// ── Generic atoms ───────────────────────────────────────────────────
+function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 1, minWidth: 0 }}>
-      <span style={{ fontSize: 9, color: UX.ink4, letterSpacing: '.05em', textTransform: 'uppercase' as const, fontWeight: UX.fwMedium }}>{label}</span>
-      <span style={{ fontSize: UX.fsLabel, color, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const }}>{value}</span>
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 16px',
+    }}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      </div>
+      {children}
     </div>
   )
 }
 
-function EmptyCard({ title, body }: any) {
+function EmptyCard({ title, body }: { title: string; body: React.ReactNode }) {
   return (
-    <div style={{ background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg, padding: 48, textAlign: 'center' as const }}>
-      <div style={{ fontSize: 15, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: UX.fsBody, color: UX.ink3, maxWidth: 440, margin: '0 auto' }}>{body}</div>
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       40,
+      textAlign:     'center' as const,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 11, color: UXP.ink3, maxWidth: 440, margin: '0 auto', lineHeight: 1.5 }}>{body}</div>
     </div>
   )
 }
 
-const navBtn = {
-  width: 28, height: 28, borderRadius: UX.r_md, border: `0.5px solid ${UX.border}`,
-  background: UX.cardBg, cursor: 'pointer', fontSize: 14,
-  display: 'flex', alignItems: 'center', justifyContent: 'center', color: UX.ink2,
-} as const
+function Banner({ tone, text }: { tone: 'bad'; text: string }) {
+  return (
+    <div style={{
+      background:    UXP.roseFill,
+      border:        `0.5px solid ${UXP.rose}`,
+      borderRadius:  UXP.r_md,
+      padding:       '10px 14px',
+      fontSize:      12,
+      color:         UXP.roseText,
+    }}>
+      {text}
+    </div>
+  )
+}
