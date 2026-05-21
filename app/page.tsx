@@ -14,7 +14,6 @@
 // route to /login. The previous i18n wiring is dropped on this page;
 // the mockup's English is the canonical copy.
 
-import { useEffect, useState } from 'react'
 import Link from 'next/link'
 // Language selector lives in the marketing nav so visitors can switch
 // languages before signing up. Inline variant + light tone (paper bg).
@@ -45,20 +44,7 @@ const F = {
   mono:    `'DM Mono', 'Menlo', monospace`,
 }
 
-// ── Screen tour ── 8 screens auto-cycle every 4s ───────────────────
-const TOUR_LABELS = ['Sales', 'Flash P&L', 'Cash', 'Labour', 'Reviews', 'Bookkeeping', 'Recipes', 'Scheduling']
-const TOUR_DURATION = 4000
-
 export default function LandingPage() {
-  const [idx, setIdx]         = useState(0)
-  const [playing, setPlaying] = useState(true)
-
-  useEffect(() => {
-    if (!playing) return
-    const t = setTimeout(() => setIdx(i => (i + 1) % TOUR_LABELS.length), TOUR_DURATION)
-    return () => clearTimeout(t)
-  }, [idx, playing])
-
   return (
     <>
       <style>{`
@@ -81,14 +67,6 @@ export default function LandingPage() {
           letter-spacing: -0.02em;
           line-height: 1.05;
         }
-
-        @keyframes ccFill { from { width: 0 } to { width: 100% } }
-        .cc-pbar-fill {
-          display: block; height: 100%; background: ${C.lavDeep};
-          border-radius: 2px;
-        }
-        .cc-pbar-active .cc-pbar-fill { animation: ccFill 4s linear forwards; }
-        .cc-pbar-done   .cc-pbar-fill { width: 100% !important; }
 
         @media (max-width: 880px) {
           .cc-hero        { grid-template-columns: 1fr !important; gap: 32px !important; }
@@ -147,12 +125,7 @@ export default function LandingPage() {
           </div>
         </div>
 
-        <TourPlayer
-          idx={idx}
-          playing={playing}
-          onTogglePlay={() => setPlaying(p => !p)}
-          onPickBar={(n) => setIdx(n)}
-        />
+        <TourPlayer />
       </header>
 
       {/* ── Integrations marquee ───────────────────────────────── */}
@@ -372,14 +345,12 @@ export default function LandingPage() {
 // Tour player
 // ════════════════════════════════════════════════════════════════════
 
-interface TourPlayerProps {
-  idx:          number
-  playing:      boolean
-  onTogglePlay: () => void
-  onPickBar:    (n: number) => void
-}
-
-function TourPlayer({ idx, playing, onTogglePlay, onPickBar }: TourPlayerProps) {
+// Looping product-promo video inside a faux-browser frame. Muted +
+// playsInline + autoPlay together satisfy every modern browser's
+// autoplay policy (Chrome / Safari / Firefox / mobile). `loop` keeps
+// it cycling forever. No user controls — visitors can scroll or
+// click through to /login if they want more.
+function TourPlayer() {
   return (
     <div style={{
       background:    '#fff',
@@ -405,395 +376,25 @@ function TourPlayer({ idx, playing, onTogglePlay, onPickBar }: TourPlayerProps) 
         </span>
       </div>
 
-      {/* Screens */}
-      <div style={{
-        position:     'relative',
-        aspectRatio:  '16 / 10.4',
-        background:   '#f1eff9',
-        overflow:     'hidden',
-      }}>
-        {TOUR_SCREENS.map((Screen, i) => (
-          <div
-            key={i}
-            style={{
-              position:    'absolute',
-              inset:       0,
-              opacity:     i === idx ? 1 : 0,
-              transition:  'opacity .6s ease',
-              display:     'flex',
-              flexDirection: 'column',
-              pointerEvents: i === idx ? 'auto' : 'none',
-            }}
-          >
-            <Screen />
-          </div>
-        ))}
-      </div>
-
-      {/* Progress bars */}
-      <div style={{
-        display: 'flex', gap: 5,
-        padding: '11px 14px', background: '#faf9f6',
-        borderTop: `1px solid ${C.line}`,
-      }}>
-        {TOUR_LABELS.map((_, i) => {
-          const state = i === idx ? (playing ? 'active' : 'done') : i < idx ? 'done' : 'idle'
-          return (
-            <div
-              key={i}
-              onClick={() => onPickBar(i)}
-              className={state === 'active' ? 'cc-pbar-active' : state === 'done' ? 'cc-pbar-done' : ''}
-              style={{
-                flex: 1, height: 3, background: C.paper2,
-                borderRadius: 2, overflow: 'hidden', cursor: 'pointer',
-              }}
-            >
-              <span className="cc-pbar-fill" />
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Play / pause + label */}
-      <div style={{
-        display:     'flex',
-        alignItems:  'center',
-        gap:         10,
-        padding:     '0 14px 11px',
-        background:  '#faf9f6',
-        fontSize:    11,
-        color:       C.ink2,
-      }}>
-        <button
-          type="button"
-          onClick={onTogglePlay}
-          style={{
-            background: 'none',
-            border:     'none',
-            cursor:     'pointer',
-            color:      C.ink,
-            fontSize:   13,
-            display:    'flex',
-            alignItems: 'center',
-            gap:        5,
-            fontFamily: 'inherit',
-          }}
-        >
-          {playing ? '⏸ Pause' : '▶ Play'}
-        </button>
-        <span>{TOUR_LABELS[idx]}</span>
-      </div>
+      {/* Promo video */}
+      <video
+        src="/commandcenter-promo.mp4"
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="auto"
+        style={{
+          display:    'block',
+          width:      '100%',
+          aspectRatio: '16 / 10.4',
+          objectFit:  'cover',
+          background: '#f1eff9',
+        }}
+      />
     </div>
   )
 }
-
-// ════════════════════════════════════════════════════════════════════
-// 8 tour screens — direct ports of the mockup's .screen blocks
-// ════════════════════════════════════════════════════════════════════
-
-function ScreenShell({ chips, title, children, caption, captionIco }: any) {
-  return (
-    <>
-      <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column' as const,
-        background: '#f1eff9', fontSize: 9, color: '#3a3550',
-      }}>
-        <div style={{
-          display: 'flex', gap: 5,
-          padding: '7px 10px',
-          borderBottom: `1px solid ${C.lineSoft}`,
-          alignItems: 'center',
-        }}>
-          {chips.map((c: any, i: number) => (
-            <span key={i} style={{
-              background: c.lav ? C.lav : '#fff',
-              color:      c.lav ? '#fff' : '#3a3550',
-              border:     c.lav ? `1px solid ${C.lav}` : `1px solid rgba(58,53,80,0.1)`,
-              borderRadius: 5, padding: '3px 7px', fontSize: 8.5,
-              marginLeft: c.lav ? 'auto' : undefined,
-            }}>{c.text}</span>
-          ))}
-        </div>
-        <div style={{ padding: 10, flex: 1 }}>
-          <div style={{ fontFamily: F.display, fontSize: 14, fontWeight: 500, marginBottom: 9 }}>
-            {title}
-          </div>
-          {children}
-        </div>
-      </div>
-      <div style={{
-        position: 'absolute', left: 14, right: 14, bottom: 14,
-        background: 'rgba(38,34,46,0.92)', color: '#fff',
-        borderRadius: 10, padding: '11px 15px',
-        fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 9,
-        backdropFilter: 'blur(4px)',
-      }}>
-        <span style={{
-          width: 22, height: 22, borderRadius: 6, background: C.lav,
-          flexShrink: 0, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', fontSize: 12,
-        }}>{captionIco}</span>
-        {caption}
-      </div>
-    </>
-  )
-}
-
-function Kpi({ label, value, color, bar, barBg }: any) {
-  return (
-    <div style={{ flex: 1, background: '#fff', borderRadius: 9, padding: '9px 10px' }}>
-      <div style={{ fontSize: 8, color: 'rgba(58,53,80,0.55)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.display, color: color ?? '#3a3550' }}>{value}</div>
-      {bar != null && (
-        <div style={{ height: 6, background: '#efedf8', borderRadius: 3, marginTop: 7, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${bar}%`, background: barBg ?? C.lav }} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function BarsRow({ bars }: { bars: Array<{ a: number; b: number }> }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 74, paddingTop: 6 }}>
-      {bars.map((g, i) => (
-        <div key={i} style={{ flex: 1, display: 'flex', gap: 2, alignItems: 'flex-end', height: '100%' }}>
-          <span style={{ flex: 1, borderRadius: '2px 2px 0 0', height: `${g.a}%`, background: C.lav }} />
-          <span style={{ flex: 1, borderRadius: '2px 2px 0 0', height: `${g.b}%`, background: '#d8d2f0' }} />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function Row({ label, value, kind, highlight }: any) {
-  return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-between',
-      padding: '5px 0',
-      borderBottom: `1px solid ${C.lineSoft}`,
-      fontSize: 9,
-      background: highlight ? '#f4f2fa' : undefined,
-      margin: highlight ? '0 -4px' : undefined,
-      borderRadius: highlight ? 4 : undefined,
-      paddingLeft: highlight ? 4 : undefined,
-      paddingRight: highlight ? 4 : undefined,
-    }}>
-      <span>{label}</span>
-      <span style={{
-        color: kind === 'pos' ? C.green
-             : kind === 'neg' ? C.rose
-             : kind === 'amber' ? '#b0883c'
-             : kind === 'muted' ? C.ink2
-             : '#3a3550',
-      }}>{value}</span>
-    </div>
-  )
-}
-
-// ── Tour screen components ───────────────────────────────────────
-const SalesScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Insights ▾' }, { text: 'Sales ▾' }, { text: '19–25 May' }, { text: '✦ Ask CC', lav: true }]}
-    title="Sales — Vero Italiano"
-    captionIco="📊"
-    caption="Every channel, every day — actual vs forecast, at a glance."
-  >
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-      <Kpi label="Revenue"      value={<span>487 240 kr <span style={{ fontSize: 9, color: C.green }}>↗ 8,2%</span></span>} bar={84} />
-      <Kpi label="Gross margin" value="68,1%" bar={68} barBg={C.green} />
-      <Kpi label="Labour"       value="32,4%" color={C.green} bar={32} barBg={C.green} />
-    </div>
-    <div style={{ background: '#fff', borderRadius: 9, padding: 11 }}>
-      <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 9 }}>Sales v forecast</div>
-      <BarsRow bars={[{ a: 42, b: 46 }, { a: 50, b: 52 }, { a: 55, b: 58 }, { a: 62, b: 60 }, { a: 86, b: 80 }, { a: 100, b: 92 }, { a: 4, b: 4 }]} />
-    </div>
-  </ScreenShell>
-)
-
-const FlashPlScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Insights ▾' }, { text: 'Flash P&L ▾' }, { text: 'Best · Worst · All' }, { text: '✦ Ask CC', lav: true }]}
-    title="Flash P&L"
-    captionIco="🧾"
-    caption="A live P&L per location — profit by end of day, not end of month."
-  >
-    <div style={{ display: 'flex', gap: 8 }}>
-      <div style={{ flex: 1, background: '#fff', borderRadius: 9, padding: 10 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9.5 }}>Vero Italiano</div>
-        <Row label={<>Sales <span style={{ color: C.green }}>↗8%</span></>} value="487 240 kr" />
-        <Row label={<>CoGS <span style={{ color: C.rose }}>↗6%</span></>}  value={<>155 369 <span style={{ fontSize: 9, color: C.ink2 }}>31,9%</span></>} />
-        <Row label={<>Labour <span style={{ color: C.green }}>↘5%</span></>} value={<span style={{ color: C.green }}>157 866 <span style={{ fontSize: 9 }}>32,4%</span></span>} />
-        <Row label="Flash profit" value={<span style={{ color: C.lavText, fontWeight: 600 }}>62 480 kr</span>} />
-      </div>
-      <div style={{ flex: 1, background: '#fff', borderRadius: 9, padding: 10, border: `1.5px solid rgba(95,158,126,0.5)` }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9.5 }}>Rosali Deli</div>
-        <Row label={<>Sales <span style={{ color: C.green }}>↗1%</span></>} value="128 470 kr" />
-        <Row label={<>CoGS <span style={{ color: C.rose }}>↗5%</span></>}  value={<>37 256 <span style={{ fontSize: 9, color: C.ink2 }}>29%</span></>} />
-        <Row label={<>Labour <span style={{ color: C.green }}>↘3%</span></>} value={<span style={{ color: C.green }}>35 968 <span style={{ fontSize: 9 }}>28%</span></span>} />
-        <Row label="Flash profit" value={<span style={{ color: C.lavText, fontWeight: 600 }}>55 246 kr</span>} />
-      </div>
-    </div>
-  </ScreenShell>
-)
-
-const CashScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Insights ▾' }, { text: 'Cash ▾' }, { text: 'Next 30 days' }, { text: '✦ Ask CC', lav: true }]}
-    title="Cash position"
-    captionIco="💰"
-    caption="See your cash 30 days out — the view your accounting software won't give you."
-  >
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-      <Kpi label="Today"        value="312 400 kr" />
-      <Kpi label="In 30 days"   value="468 900 kr" color={C.green} />
-      <Kpi label="Lowest point" value="286 100 kr" />
-    </div>
-    <div style={{ background: '#fff', borderRadius: 9, padding: 11 }}>
-      <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9 }}>Projected from your Fortnox transactions</div>
-      <svg viewBox="0 0 320 70" style={{ width: '100%', height: 70 }}>
-        <polyline points="6,46 70,42 130,44 190,38 210,36" fill="none" stroke={C.lavDeep} strokeWidth="2.5" />
-        <polyline points="210,36 250,28 280,46 310,22" fill="none" stroke={C.lav} strokeWidth="2" strokeDasharray="4,3" />
-        <circle cx="210" cy="36" r="4" fill={C.lavDeep} />
-      </svg>
-    </div>
-  </ScreenShell>
-)
-
-const LabourScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Insights ▾' }, { text: 'Labour ▾' }, { text: '% · kr · h' }, { text: '✦ Ask CC', lav: true }]}
-    title="Labour — All locations"
-    captionIco="👥"
-    caption="Labour read first, kroner second — exactly how you think about a shift."
-  >
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-      <Kpi label="Sales"          value="487 240" />
-      <Kpi label="Actual labour"  value="32,4%" color={C.green} />
-      <Kpi label="Projected"      value="38,2%" color={C.rose} />
-    </div>
-    <div style={{ background: '#fff', borderRadius: 9, padding: 11 }}>
-      <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 9 }}>Labour over time</div>
-      <BarsRow bars={[{ a: 48, b: 42 }, { a: 40, b: 36 }, { a: 20, b: 24 }, { a: 80, b: 84 }, { a: 66, b: 70 }, { a: 52, b: 56 }, { a: 60, b: 64 }]} />
-    </div>
-  </ScreenShell>
-)
-
-const ReviewsScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Insights ▾' }, { text: 'Reviews ▾' }, { text: 'Google' }, { text: '✦ Ask CC', lav: true }]}
-    title="Customer reviews"
-    captionIco="⭐"
-    caption="AI replies in your voice — and tells you why the review happened."
-  >
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-      <Kpi label="Rating"      value="4,6 ★" />
-      <Kpi label="Replied"     value="93%" />
-      <Kpi label="Needs reply" value="2" color={C.coral} />
-    </div>
-    <div style={{ background: '#fff', borderRadius: 9, padding: 11 }}>
-      <div style={{ fontSize: 9, color: C.lavText, marginBottom: 4 }}>✦ OPERATIONAL INSIGHT</div>
-      <div style={{ fontSize: 9.5, lineHeight: 1.5, color: '#3a3550', marginBottom: 8 }}>
-        "Slow service Friday night" — matches the data: you ran 1 server short Fri 20:00–22:00.
-      </div>
-      <div style={{
-        background: '#faf9fd', border: '1px solid rgba(58,53,80,0.08)',
-        borderRadius: 7, padding: 7, fontSize: 9, fontStyle: 'italic' as const, color: C.ink2,
-      }}>
-        Tack Johan! Tråkigt att väntan blev lång — vi ser över bemanningen på fredagskvällar…
-      </div>
-    </div>
-  </ScreenShell>
-)
-
-const BookkeepingScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Bookkeeping ▾' }, { text: 'Overheads ▾' }, { text: '✦ Ask CC', lav: true }]}
-    title="Flagged costs"
-    captionIco="🏗️"
-    caption="Fortnox-deep: every cost classified to the right BAS account, overruns flagged."
-  >
-    <div style={{ display: 'flex', gap: 8 }}>
-      <div style={{ flex: 0.9, background: '#fff', borderRadius: 9, padding: 10 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9.5 }}>Flags</div>
-        <Row label={<><b>El — Fortum</b></>} value="+34%" kind="neg" highlight />
-        <Row label="Försäkring — IF"          value="ny"    kind="amber" />
-        <Row label="Internet — Telia"         value="?"     kind="muted" />
-      </div>
-      <div style={{ flex: 1, background: '#fff', borderRadius: 9, padding: 10 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9.5 }}>El — Fortum</div>
-        <div style={{ display: 'flex', gap: 10, marginBottom: 7 }}>
-          <span style={{ fontSize: 8, color: 'rgba(58,53,80,0.5)' }}>Belopp<br /><b style={{ fontSize: 12, color: '#3a3550' }}>14 280</b></span>
-          <span style={{ fontSize: 8, color: 'rgba(58,53,80,0.5)', textAlign: 'right' as const }}>Snitt<br /><b style={{ fontSize: 12 }}>10 650</b></span>
-        </div>
-        <div style={{ background: '#faf9fd', borderRadius: 6, padding: 6, fontSize: 8.5, color: C.lavText, marginBottom: 7 }}>
-          ✦ Klassas <b>5020 · El</b>. Matchar kall april — säsong, inte fel.
-        </div>
-        <div style={{ display: 'flex', gap: 5 }}>
-          <span style={{ background: '#3a3550', color: '#fff', borderRadius: 5, padding: '4px 10px', fontSize: 8.5 }}>Bekräfta</span>
-          <span style={{ border: '1px solid rgba(58,53,80,0.15)', borderRadius: 5, padding: '4px 10px', fontSize: 8.5 }}>PDF</span>
-        </div>
-      </div>
-    </div>
-  </ScreenShell>
-)
-
-const RecipesScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Inventory ▾' }, { text: 'Recipes ▾' }, { text: 'On the roadmap' }]}
-    title="Recipe costings"
-    captionIco="🍝"
-    caption="Every dish costed to the gram — true margin, plate by plate."
-  >
-    <div style={{ display: 'flex', gap: 8 }}>
-      <div style={{ flex: 1.3, background: '#fff', borderRadius: 9, padding: 10 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9.5 }}>Menu</div>
-        <Row label="Tagliatelle tartufo" value="74,6%" kind="pos" />
-        <Row label="Pizza margherita"    value="78,6%" kind="pos" />
-        <Row label="Burrata starter"     value="66,7%" kind="amber" />
-      </div>
-      <div style={{ flex: 1, background: '#fff', borderRadius: 9, padding: 10 }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 9.5 }}>Tagliatelle tartufo</div>
-        <div style={{
-          background: C.greenFill, borderRadius: 6, padding: 7, marginBottom: 7,
-          display: 'flex', justifyContent: 'space-between',
-        }}>
-          <span style={{ fontSize: 8, color: 'rgba(58,53,80,0.55)' }}>Cost<br /><b style={{ fontSize: 12, color: '#3a3550' }}>48 kr</b></span>
-          <span style={{ fontSize: 8, color: '#477f60', textAlign: 'right' as const }}>GP 74,6%<br /><b style={{ fontSize: 12 }}>121 kr</b></span>
-        </div>
-        <Row label="Tagliatelle 0,18kg" value="14 kr" />
-        <Row label="Tryffel 0,008kg"    value="22 kr" />
-      </div>
-    </div>
-  </ScreenShell>
-)
-
-const SchedulingScreen = () => (
-  <ScreenShell
-    chips={[{ text: 'Schedule ▾' }, { text: 'Week 22' }, { text: 'On the roadmap' }]}
-    title="Your plan vs AI applied"
-    captionIco="📅"
-    caption="Builds the rota against forecast demand — then writes it to Personalkollen."
-  >
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-      <Kpi label="Your plan"        value="38,2%" color={C.rose} />
-      <div style={{ flex: 1, background: '#fff', borderRadius: 9, padding: '9px 10px', border: '1.5px solid rgba(169,156,230,0.5)' }}>
-        <div style={{ fontSize: 8, color: 'rgba(58,53,80,0.55)', marginBottom: 4 }}>With AI applied</div>
-        <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.display, color: C.green }}>32,9%</div>
-      </div>
-      <div style={{ flex: 1, background: C.lavFill, borderRadius: 9, padding: '9px 10px' }}>
-        <div style={{ fontSize: 8, color: C.lavText, marginBottom: 4 }}>You save</div>
-        <div style={{ fontSize: 15, fontWeight: 600, fontFamily: F.display, color: C.lavText }}>25 810 kr</div>
-      </div>
-    </div>
-    <div style={{ background: '#fff', borderRadius: 9, padding: 11 }}>
-      <Row label={<><b>Sun 25</b> — closed for Pingst, full cut</>} value="−9 400 kr" kind="pos" />
-      <Row label={<><b>Sat 24</b> — peak 20:00, add a chef</>}      value={<span style={{ color: C.coral }}>+640 kr</span>} highlight />
-    </div>
-  </ScreenShell>
-)
-
-const TOUR_SCREENS = [SalesScreen, FlashPlScreen, CashScreen, LabourScreen, ReviewsScreen, BookkeepingScreen, RecipesScreen, SchedulingScreen]
 
 // ════════════════════════════════════════════════════════════════════
 // Pricing card

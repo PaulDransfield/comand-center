@@ -199,10 +199,26 @@ If owners say "where did X go?" — start here.
 
 ### `/landing` (`app/page.tsx`, commits `011f815` + `a905b16` + `21208b5`)
 - The simple original landing page. The new landing is a full port
-  of `commandcenter-landing.html` (2-column hero, 8-screen
-  auto-cycling product tour, integrations marquee, dark Problem
-  card, 9-card platform grid, pricing). The OLD landing was a
-  single hero + feature list — easy to find at SHA `cbd0e88^`.
+  of `commandcenter-landing.html` (2-column hero, integrations
+  marquee, dark Problem card, 9-card platform grid, pricing). The
+  OLD landing was a single hero + feature list — easy to find at
+  SHA `cbd0e88^`.
+
+### `/landing` 8-screen product tour (this branch, post-merge)
+- The 8-screen auto-cycling product tour in the hero (Sales · Flash P&L
+  · Cash · Labour · Reviews · Bookkeeping · Recipes · Scheduling). Each
+  screen was a ~25-line `ScreenShell` block with fake KPI cards + bar
+  charts + caption pill. Helpers `ScreenShell`, `Kpi`, `BarsRow`, `Row`
+  plus the 8 screen consts + `TOUR_SCREENS` array (~308 lines).
+- Replaced by a looping `<video src="/commandcenter-promo.mp4" autoPlay
+  loop muted playsInline>` inside the same browser-chrome frame.
+- Also removed: the `cc-pbar-active` / `cc-pbar-done` / `@keyframes
+  ccFill` CSS for the progress bars + the play/pause button + the
+  `idx` / `playing` useState/useEffect cycle logic in the page.
+- Recovery: easy. The 8-screen carousel + helpers are at
+  `git show <pre-video-SHA>:app/page.tsx`. Replace `<TourPlayer />`
+  with the parameterised version + restore the useState/useEffect
+  cycle in the page body.
 
 ---
 
