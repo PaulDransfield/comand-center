@@ -1,0 +1,106 @@
+/* CommandCenter rail icons — idle loop + hover action + click pop.
+   No JS. Hover/active fire from the nearest button / a / [data-icon-trigger]
+   OR the svg itself, so the whole rail row animates, not just the glyph. */
+
+.icon {
+  display: block;
+  overflow: visible;
+  transition: transform 0.15s ease;
+}
+
+:where(button, a, [data-icon-trigger]):active .icon,
+.icon:active {
+  transform: scale(0.86);
+}
+
+.still * {
+  animation: none !important;
+}
+
+/* ============ darkmode (crescent) ============ */
+.darkmode .moon { transform-box: fill-box; transform-origin: center; animation: moonIdle 6s ease-in-out infinite; }
+.darkmode .mstar { opacity: 0; }
+.darkmode .ms1 { animation: starBlink 4s ease-in-out infinite; }
+.darkmode .ms2 { animation: starBlink 4s 2s ease-in-out infinite; }
+@keyframes moonIdle { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(-6deg); } }
+@keyframes starBlink { 0%, 100% { opacity: 0; } 50% { opacity: 0.9; } }
+:where(button, a, [data-icon-trigger]):hover .darkmode .moon, .darkmode:hover .moon { animation: moonDip 0.7s cubic-bezier(0.34,1.3,0.5,1); }
+@keyframes moonDip { 0% { transform: rotate(0) scale(1); } 45% { transform: rotate(-22deg) scale(1.08); } 100% { transform: rotate(0) scale(1); } }
+:where(button, a, [data-icon-trigger]):hover .darkmode .mstar, .darkmode:hover .mstar { animation: twk 0.7s ease; }
+:where(button, a, [data-icon-trigger]):hover .darkmode .ms2, .darkmode:hover .ms2 { animation: twk 0.7s 0.15s ease; }
+
+/* ============ insights (grid) ============ */
+.insights rect { transform-box: fill-box; transform-origin: center; }
+.insights .t1 { animation: tileBreath 4s ease-in-out infinite; }
+.insights .t3 { animation: tileBreath 4s 0.6s ease-in-out infinite; }
+@keyframes tileBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.96); } }
+:where(button, a, [data-icon-trigger]):hover .insights .t1, .insights:hover .t1 { animation: tileIn 0.5s cubic-bezier(0.34,1.5,0.5,1); }
+:where(button, a, [data-icon-trigger]):hover .insights .t2, .insights:hover .t2 { animation: tileIn 0.5s 0.06s cubic-bezier(0.34,1.5,0.5,1); }
+:where(button, a, [data-icon-trigger]):hover .insights .t3, .insights:hover .t3 { animation: tileIn 0.5s 0.12s cubic-bezier(0.34,1.5,0.5,1); }
+:where(button, a, [data-icon-trigger]):hover .insights .t4, .insights:hover .t4 { animation: tileIn 0.5s 0.18s cubic-bezier(0.34,1.5,0.5,1); }
+@keyframes tileIn { 0% { transform: scale(0.4); opacity: 0.4; } 100% { transform: scale(1); opacity: 1; } }
+
+/* ============ workforce (people) ============ */
+.workforce .p1 { transform-box: fill-box; transform-origin: center; animation: pBob 3.8s ease-in-out infinite; }
+.workforce .p2 { opacity: 0.55; transform-box: fill-box; transform-origin: center; }
+@keyframes pBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.6px); } }
+:where(button, a, [data-icon-trigger]):hover .workforce .p2, .workforce:hover .p2 { animation: pIn 0.6s cubic-bezier(0.34,1.4,0.5,1) forwards; }
+@keyframes pIn { 0% { opacity: 0; transform: translateX(-3px) scale(0.85); } 100% { opacity: 1; transform: translateX(0) scale(1); } }
+
+/* ============ inventory (box) ============ */
+.inventory .lid { transform-box: fill-box; transform-origin: bottom center; animation: boxIdle 4s ease-in-out infinite; }
+.inventory .pop { transform-box: fill-box; transform-origin: bottom center; opacity: 0; }
+@keyframes boxIdle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.5px); } }
+:where(button, a, [data-icon-trigger]):hover .inventory .lid, .inventory:hover .lid { animation: lidOpen 0.7s cubic-bezier(0.34,1.3,0.5,1); }
+@keyframes lidOpen { 0% { transform: translateY(0) rotate(0); } 45% { transform: translateY(-3px) rotate(-7deg); } 100% { transform: translateY(0) rotate(0); } }
+:where(button, a, [data-icon-trigger]):hover .inventory .pop, .inventory:hover .pop { animation: itemPop 0.7s cubic-bezier(0.34,1.5,0.5,1); }
+@keyframes itemPop { 0% { opacity: 0; transform: translateY(3px) scale(0.5); } 50% { opacity: 1; transform: translateY(-3px) scale(1); } 100% { opacity: 0; transform: translateY(0) scale(0.8); } }
+
+/* ============ bookkeeping (ledger) ============ */
+.bookkeeping .hl { opacity: 0; transform-box: fill-box; transform-origin: left center; }
+.bookkeeping .r2 { animation: rowIdle 4.5s ease-in-out infinite; }
+@keyframes rowIdle { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+:where(button, a, [data-icon-trigger]):hover .bookkeeping .hl, .bookkeeping:hover .hl { animation: rowSweep 0.6s cubic-bezier(0.4,0,0.2,1); }
+@keyframes rowSweep { 0% { opacity: 0; transform: scaleX(0); } 50% { opacity: 1; transform: scaleX(1); } 100% { opacity: 0.6; transform: scaleX(1); } }
+
+/* ============ alerts (triangle) ============ */
+.alerts .tri { transform-box: fill-box; transform-origin: center; animation: triIdle 5s ease-in-out infinite; }
+.alerts .bang { transform-box: fill-box; transform-origin: center; }
+@keyframes triIdle { 0%, 90%, 100% { transform: translateX(0); } 93% { transform: translateX(0.6px); } 96% { transform: translateX(-0.6px); } }
+:where(button, a, [data-icon-trigger]):hover .alerts .tri, .alerts:hover .tri { animation: triShake 0.6s ease; }
+@keyframes triShake { 0%, 100% { transform: translateX(0) rotate(0); } 20% { transform: translateX(-1.5px) rotate(-3deg); } 40% { transform: translateX(1.5px) rotate(3deg); } 60% { transform: translateX(-1px) rotate(-2deg); } 80% { transform: translateX(1px) rotate(1deg); } }
+:where(button, a, [data-icon-trigger]):hover .alerts .bang, .alerts:hover .bang { animation: bangPop 0.5s cubic-bezier(0.34,1.6,0.5,1); }
+@keyframes bangPop { 0% { transform: scale(0.4); } 60% { transform: scale(1.35); } 100% { transform: scale(1); } }
+
+/* ============ ask (sparkle) ============ */
+.ask .big { transform-box: fill-box; transform-origin: center; animation: askTwinkle 3s ease-in-out infinite; }
+.ask .sm1 { transform-box: fill-box; transform-origin: center; animation: twkLoop 2.4s ease-in-out infinite; }
+.ask .sm2 { transform-box: fill-box; transform-origin: center; animation: twkLoop 2.4s 1.2s ease-in-out infinite; }
+@keyframes askTwinkle { 0%, 100% { transform: rotate(0) scale(1); } 50% { transform: rotate(45deg) scale(0.92); } }
+@keyframes twkLoop { 0%, 100% { opacity: 0.2; transform: scale(0.5); } 50% { opacity: 1; transform: scale(1); } }
+:where(button, a, [data-icon-trigger]):hover .ask .big, .ask:hover .big { animation: askSpin 0.8s cubic-bezier(0.4,0,0.2,1); }
+@keyframes askSpin { 0% { transform: rotate(0) scale(1); } 100% { transform: rotate(180deg) scale(1.15); } }
+
+/* ============ settings (gear) ============ */
+.settings .gear { transform-box: fill-box; transform-origin: center; animation: gearIdle 14s linear infinite; }
+@keyframes gearIdle { 0% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+:where(button, a, [data-icon-trigger]):hover .settings .gear, .settings:hover .gear { animation: gearSnap 0.7s cubic-bezier(0.4,0,0.2,1); }
+@keyframes gearSnap { 0% { transform: rotate(0); } 100% { transform: rotate(90deg); } }
+
+/* ============ chat (floating bubble) ============ */
+.chat .bubble { transform-box: fill-box; transform-origin: bottom left; animation: bubbleIdle 4s ease-in-out infinite; }
+.chat .typ { transform-box: fill-box; transform-origin: center; animation: typing 1.4s ease-in-out infinite; }
+.chat .d2 { animation-delay: 0.2s; }
+.chat .d3 { animation-delay: 0.4s; }
+@keyframes bubbleIdle { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.6px); } }
+@keyframes typing { 0%, 60%, 100% { opacity: 0.35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-1.4px); } }
+:where(button, a, [data-icon-trigger]):hover .chat .bubble, .chat:hover .bubble { animation: bubblePop 0.6s cubic-bezier(0.34,1.5,0.5,1); }
+@keyframes bubblePop { 0% { transform: scale(1); } 40% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+/* shared twinkle */
+@keyframes twk { 0%, 100% { opacity: 0; transform: scale(0.4); } 50% { opacity: 1; transform: scale(1); } }
+
+/* reduced motion: kill all motion, keep static state */
+@media (prefers-reduced-motion: reduce) {
+  .icon *, .icon { animation: none !important; }
+}
