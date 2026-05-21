@@ -11,7 +11,7 @@
 // just a renderer.
 
 import { useEffect, useState } from 'react'
-import { UX } from '@/lib/constants/tokens'
+import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 
 interface Business {
@@ -62,15 +62,15 @@ export default function RevisorLanding() {
   }, [])
 
   return (
-    <div style={{ minHeight: '100vh', background: UX.pageBg }}>
+    <div style={{ minHeight: '100vh', background: UXP.pageBg }}>
       <Header />
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 24px 80px' }}>
         <div style={{ marginBottom: 16 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 600, color: UX.ink1, margin: 0 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
             Månadsavslut · revisor-vy
           </h1>
-          <p style={{ fontSize: 13, color: UX.ink3, marginTop: 4 }}>
+          <p style={{ fontSize: 13, color: UXP.ink3, marginTop: 4 }}>
             Skrivskyddad vy av månadsavstämningar för de verksamheter du har behörighet till.
             Klicka på en månad för fullständig P&amp;L, BAS-klassificerade transaktioner och
             kostnadsflaggor med drill-down till källfaktura.
@@ -103,22 +103,22 @@ function Header() {
   return (
     <header style={{
       background:    'white',
-      borderBottom:  `1px solid ${UX.border}`,
+      borderBottom:  `1px solid ${UXP.border}`,
       padding:       '12px 24px',
       display:       'flex',
       alignItems:    'center',
       justifyContent: 'space-between',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: UX.ink1 }}>CommandCenter</span>
+        <span style={{ fontSize: 14, fontWeight: 700, color: UXP.ink1 }}>CommandCenter</span>
         <span style={{
           fontSize:      9,
           fontWeight:    700,
           letterSpacing: '0.07em',
           padding:       '2px 6px',
           borderRadius:  3,
-          background:    '#eef2ff',
-          color:         '#4338ca',
+          background:    UXP.lavFill,
+          color:         UXP.lavText,
         }}>
           REVISOR
         </span>
@@ -126,7 +126,7 @@ function Header() {
       <a
         href="/login?logout=1"
         style={{
-          fontSize: 12, color: UX.ink3, textDecoration: 'none',
+          fontSize: 12, color: UXP.ink3, textDecoration: 'none',
         }}
       >
         Logga ut
@@ -139,17 +139,17 @@ function BusinessSection({ biz, months }: { biz: Business; months: MonthRow[] })
   return (
     <section style={{
       background:   'white',
-      border:       `1px solid ${UX.border}`,
+      border:       `1px solid ${UXP.border}`,
       borderRadius: 10,
       padding:      '16px 18px',
       marginBottom: 14,
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: UX.ink1 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>
             {biz.name}
           </div>
-          <div style={{ fontSize: 11, color: UX.ink4, marginTop: 2 }}>
+          <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 2 }}>
             {biz.org_number ? `Org.nr ${formatOrgNr(biz.org_number)}` : 'Org.nr saknas — be ägaren komplettera'}
             {biz.city && <span> · {biz.city}</span>}
           </div>
@@ -176,33 +176,33 @@ function BusinessSection({ biz, months }: { biz: Business; months: MonthRow[] })
 function MonthCard({ biz, m }: { biz: Business; m: MonthRow }) {
   const href = `/revisor/${biz.id}/${m.period_year}/${m.period_month}`
   const margin = m.margin_pct != null ? Number(m.margin_pct) : null
-  const marginColour = margin == null ? UX.ink3
-    : margin >= 10 ? UX.greenInk
-    : margin >=  5 ? UX.amberInk
-    : '#b91c1c'
+  const marginColour = margin == null ? UXP.ink3
+    : margin >= 10 ? UXP.greenDeep
+    : margin >=  5 ? UXP.coral
+    : UXP.roseText
   return (
     <a
       href={href}
       style={{
         display:        'block',
         padding:        '10px 12px',
-        background:     UX.pageBg,
-        border:         `1px solid ${UX.border}`,
+        background:     UXP.pageBg,
+        border:         `1px solid ${UXP.border}`,
         borderRadius:   8,
         textDecoration: 'none',
         color:          'inherit',
       }}
     >
-      <div style={{ fontSize: 11, color: UX.ink3, fontWeight: 500 }}>
+      <div style={{ fontSize: 11, color: UXP.ink3, fontWeight: 500 }}>
         {MONTH_NAMES_SV[m.period_month - 1]} {m.period_year}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 500, color: UX.ink1, marginTop: 4 }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1, marginTop: 4 }}>
         {fmtKr(m.revenue ?? 0)}
       </div>
       <div style={{ fontSize: 11, color: marginColour, marginTop: 2 }}>
         Marginal {margin != null ? margin.toFixed(1) + '%' : '—'}
       </div>
-      <div style={{ fontSize: 10, color: UX.ink4, marginTop: 4 }}>
+      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>
         Källa: {m.source ?? '—'}
       </div>
     </a>
@@ -213,9 +213,9 @@ function MonthCard({ biz, m }: { biz: Business; m: MonthRow }) {
 
 function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string }) {
   const T = {
-    good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d' },
-    warn: { bg: '#fef3c7', border: '#fde68a', fg: '#92400e' },
-    bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' },
+    good: { bg: UXP.greenFill, border: UXP.green,  fg: UXP.greenDeep },
+    warn: { bg: UXP.lavFill,   border: UXP.lavMid, fg: UXP.coral     },
+    bad:  { bg: UXP.roseFill,  border: UXP.rose,   fg: UXP.roseText  },
   }[tone]
   return (
     <div style={{
@@ -229,7 +229,7 @@ function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string })
 }
 function Empty({ text }: { text: string }) {
   return (
-    <div style={{ padding: 36, textAlign: 'center' as const, color: UX.ink4, fontSize: 12 }}>
+    <div style={{ padding: 36, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>
       {text}
     </div>
   )
@@ -241,11 +241,11 @@ function Footer() {
       margin:     '0 auto',
       padding:    '20px 24px 40px',
       fontSize:   10,
-      color:      UX.ink4,
-      borderTop:  `1px solid ${UX.border}`,
+      color:      UXP.ink4,
+      borderTop:  `1px solid ${UXP.border}`,
     }}>
       Genererad av CommandCenter ·{' '}
-      <a href="/security" style={{ color: UX.ink3, textDecoration: 'underline' }}>säkerhet &amp; data</a>
+      <a href="/security" style={{ color: UXP.ink3, textDecoration: 'underline' }}>säkerhet &amp; data</a>
     </footer>
   )
 }

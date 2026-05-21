@@ -135,19 +135,19 @@ export default function RevisorMonthDetail() {
         <div style={{
           marginBottom:   24,
           paddingBottom:  18,
-          borderBottom:   `1px solid ${UX.border}`,
+          borderBottom:   `1px solid ${UXP.border}`,
         }}>
           <a
             href="/revisor"
             style={{
-              fontSize: 12, color: UX.ink3, textDecoration: 'none',
+              fontSize: 12, color: UXP.ink3, textDecoration: 'none',
               display: 'inline-block', marginBottom: 8,
             }}
             className="cc-no-print"
           >
             ← Alla månader
           </a>
-          <h1 style={{ fontSize: 24, fontWeight: 600, color: UX.ink1, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
+          <h1 style={{ fontSize: 24, fontWeight: 600, color: UXP.ink1, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
             <span>Månadsavslut · {periodLabel}</span>
             {t && (t.source === 'fortnox_pdf' || t.source === 'fortnox_apply') && (
               <span style={{
@@ -164,7 +164,7 @@ export default function RevisorMonthDetail() {
               </span>
             )}
           </h1>
-          <div style={{ fontSize: 13, color: UX.ink3, marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: UXP.ink3, marginTop: 4 }}>
             <strong>{data.business.name}</strong>
             {data.business.org_number && <> · Org.nr {formatOrgNr(data.business.org_number)}</>}
             {data.business.city && <> · {data.business.city}</>}
@@ -255,19 +255,19 @@ export default function RevisorMonthDetail() {
               <div style={{
                 marginTop:    4,
                 padding:      '10px 12px',
-                background:   UX.pageBg,
+                background:   UXP.pageBg,
                 borderRadius: 6,
                 fontSize:     12,
-                color:        UX.ink3,
+                color:        UXP.ink3,
               }}>
-                <strong style={{ color: UX.ink2 }}>Intäktsfördelning enligt momssats:</strong>{' '}
+                <strong style={{ color: UXP.ink2 }}>Intäktsfördelning enligt momssats:</strong>{' '}
                 Servering 12% {fmtKr(t.dine_in_revenue)} ·
                 Take-away 6% {fmtKr(t.takeaway_revenue)} ·
                 Alkohol 25% {fmtKr(t.alcohol_revenue)}
               </div>
             ) : null}
 
-            <div style={{ marginTop: 6, fontSize: 11, color: UX.ink4 }}>
+            <div style={{ marginTop: 6, fontSize: 11, color: UXP.ink4 }}>
               Källa: <strong>{t.source ?? '—'}</strong>
               {t.created_via && <> · Inläst via {t.created_via}</>}
               {t.updated_at  && <> · Uppdaterad {fmtDateTime(t.updated_at)}</>}
@@ -300,9 +300,9 @@ export default function RevisorMonthDetail() {
         <div style={{
           marginTop:   28,
           paddingTop:  14,
-          borderTop:   `1px solid ${UX.border}`,
+          borderTop:   `1px solid ${UXP.border}`,
           fontSize:    10,
-          color:       UX.ink4,
+          color:       UXP.ink4,
         }}>
           Genererad av CommandCenter för revisor-vy · {fmtDateTime(data.generated_at)}.
           {' '}Avstämning bör jämföras mot bokföringen i Fortnox.
@@ -336,7 +336,7 @@ function BasTable({ items }: { items: LineItem[] }) {
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
       <thead>
-        <tr style={{ color: UX.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UX.border}` }}>
+        <tr style={{ color: UXP.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UXP.border}` }}>
           <th style={th()}>Konto</th>
           <th style={th()}>Beskrivning</th>
           <th style={{ ...th(), textAlign: 'right' as const }}>Belopp</th>
@@ -348,15 +348,15 @@ function BasTable({ items }: { items: LineItem[] }) {
           if (!g || g.length === 0) return []
           const subtotal = g.reduce((s, i) => s + Number(i.amount ?? 0), 0)
           return [
-            <tr key={`hdr-${cls}`} style={{ background: UX.pageBg }}>
-              <td colSpan={2} style={{ ...td(), fontWeight: 600, color: UX.ink2 }}>{classLabel[cls]}</td>
-              <td style={{ ...td(), textAlign: 'right' as const, fontWeight: 600, color: UX.ink2 }}>
+            <tr key={`hdr-${cls}`} style={{ background: UXP.pageBg }}>
+              <td colSpan={2} style={{ ...td(), fontWeight: 600, color: UXP.ink2 }}>{classLabel[cls]}</td>
+              <td style={{ ...td(), textAlign: 'right' as const, fontWeight: 600, color: UXP.ink2 }}>
                 {fmtKr(subtotal)}
               </td>
             </tr>,
             ...g.map((i, idx) => (
-              <tr key={`${cls}-${idx}`} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-                <td style={td()}><code style={{ fontSize: 11, color: UX.ink3 }}>{i.account_number}</code></td>
+              <tr key={`${cls}-${idx}`} style={{ borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+                <td style={td()}><code style={{ fontSize: 11, color: UXP.ink3 }}>{i.account_number}</code></td>
                 <td style={td()}>{i.account_description}</td>
                 <td style={{ ...td(), textAlign: 'right' as const }}>{fmtKr(i.amount)}</td>
               </tr>
@@ -372,7 +372,7 @@ function FlagsTable({ flags, bizId, year, month }: { flags: OverheadFlag[]; bizI
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
       <thead>
-        <tr style={{ color: UX.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UX.border}` }}>
+        <tr style={{ color: UXP.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UXP.border}` }}>
           <th style={th()}>Kategori</th>
           <th style={th()}>Anledning</th>
           <th style={{ ...th(), textAlign: 'right' as const }}>Belopp</th>
@@ -382,16 +382,16 @@ function FlagsTable({ flags, bizId, year, month }: { flags: OverheadFlag[]; bizI
       </thead>
       <tbody>
         {flags.map((f, idx) => (
-          <tr key={f.id ?? idx} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
+          <tr key={f.id ?? idx} style={{ borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
             <td style={td()}>{f.category ?? '—'}</td>
             <td style={td()}>{f.reason ?? '—'}</td>
             <td style={{ ...td(), textAlign: 'right' as const }}>{fmtKr(f.amount_kr)}</td>
-            <td style={{ ...td(), textAlign: 'right' as const, color: UX.ink3 }}>{fmtKr(f.baseline_kr)}</td>
+            <td style={{ ...td(), textAlign: 'right' as const, color: UXP.ink3 }}>{fmtKr(f.baseline_kr)}</td>
             <td style={td()}>
               {f.category && (
                 <a
                   href={`/api/integrations/fortnox/drilldown?business_id=${bizId}&year=${year}&month=${month}&category=${encodeURIComponent(f.category)}`}
-                  style={{ fontSize: 11, color: UX.ink3 }}
+                  style={{ fontSize: 11, color: UXP.ink3 }}
                   className="cc-no-print"
                   target="_blank"
                   rel="noopener"
@@ -415,7 +415,7 @@ function TrendTable({ history, currentPeriod }: { history: HistoryRow[]; current
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
       <thead>
-        <tr style={{ color: UX.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UX.border}` }}>
+        <tr style={{ color: UXP.ink3, textAlign: 'left' as const, borderBottom: `1px solid ${UXP.border}` }}>
           <th style={th()}>Period</th>
           <th style={{ ...th(), textAlign: 'right' as const }}>Omsättning</th>
           <th style={{ ...th(), textAlign: 'right' as const }}>Personal</th>
@@ -432,8 +432,8 @@ function TrendTable({ history, currentPeriod }: { history: HistoryRow[]; current
             <tr
               key={`${r.period_year}-${r.period_month}`}
               style={{
-                borderBottom: `0.5px solid ${UX.borderSoft}`,
-                background:   isCurrent ? '#eef2ff' : 'transparent',
+                borderBottom: `0.5px solid ${UXP.borderSoft}`,
+                background:   isCurrent ? UXP.lavFill : 'transparent',
                 fontWeight:   isCurrent ? 600 : 400,
               }}
             >
@@ -442,7 +442,7 @@ function TrendTable({ history, currentPeriod }: { history: HistoryRow[]; current
               <td style={{ ...td(), textAlign: 'right' as const }}>{fmtKr(r.staff_cost)}</td>
               <td style={{ ...td(), textAlign: 'right' as const }}>{fmtKr(r.food_cost)}</td>
               <td style={{ ...td(), textAlign: 'right' as const }}>{fmtKr(r.other_cost)}</td>
-              <td style={{ ...td(), textAlign: 'right' as const, color: (r.net_profit ?? 0) >= 0 ? UX.greenInk : '#b91c1c' }}>
+              <td style={{ ...td(), textAlign: 'right' as const, color: (r.net_profit ?? 0) >= 0 ? UXP.greenDeep : UXP.roseText }}>
                 {fmtKr(r.net_profit)}
               </td>
               <td style={{ ...td(), textAlign: 'right' as const }}>
@@ -460,29 +460,29 @@ function TrendTable({ history, currentPeriod }: { history: HistoryRow[]; current
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ minHeight: '100vh', background: UX.pageBg }}>
+    <div style={{ minHeight: '100vh', background: UXP.pageBg }}>
       <header style={{
         background:    'white',
-        borderBottom:  `1px solid ${UX.border}`,
+        borderBottom:  `1px solid ${UXP.border}`,
         padding:       '12px 24px',
         display:       'flex',
         alignItems:    'center',
         justifyContent: 'space-between',
       }} className="cc-no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: UX.ink1 }}>CommandCenter</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: UXP.ink1 }}>CommandCenter</span>
           <span style={{
             fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
             padding: '2px 6px', borderRadius: 3,
-            background: '#eef2ff', color: '#4338ca',
+            background: UXP.lavFill, color: UXP.lavText,
           }}>REVISOR</span>
         </div>
         <button
           onClick={() => window.print()}
           style={{
             padding: '6px 12px', background: 'white',
-            border: `1px solid ${UX.border}`, borderRadius: 7,
-            fontSize: 12, fontWeight: 500, color: UX.ink2,
+            border: `1px solid ${UXP.border}`, borderRadius: 7,
+            fontSize: 12, fontWeight: 500, color: UXP.ink2,
             cursor: 'pointer',
           }}
         >
@@ -512,12 +512,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <section style={{
       background:   'white',
-      border:       `1px solid ${UX.border}`,
+      border:       `1px solid ${UXP.border}`,
       borderRadius: 10,
       padding:      '14px 16px',
       marginBottom: 14,
     }}>
-      <h2 style={{ fontSize: 13, fontWeight: 600, color: UX.ink1, margin: 0, marginBottom: 10 }}>
+      <h2 style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, margin: 0, marginBottom: 10 }}>
         {title}
       </h2>
       {children}
@@ -526,36 +526,36 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Metric({ label, value, sub, tone }: { label: string; value: string; sub?: string | null; tone: 'good' | 'warn' | 'bad' | 'neutral' }) {
-  const TONE: Record<string, string> = { good: UX.greenInk, warn: UX.amberInk, bad: '#b91c1c', neutral: UX.ink1 }
+  const TONE: Record<string, string> = { good: UXP.greenDeep, warn: UXP.coral, bad: UXP.roseText, neutral: UXP.ink1 }
   return (
     <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: UX.ink4, textTransform: 'uppercase' as const, marginBottom: 3 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: UXP.ink4, textTransform: 'uppercase' as const, marginBottom: 3 }}>
         {label}
       </div>
       <div style={{ fontSize: 18, fontWeight: 500, color: TONE[tone] }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 11, color: UX.ink4, marginTop: 1 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 1 }}>{sub}</div>}
     </div>
   )
 }
 
 function Banner({ tone, text }: { tone: 'good' | 'warn' | 'bad'; text: string }) {
   const T = {
-    good: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d' },
-    warn: { bg: '#fef3c7', border: '#fde68a', fg: '#92400e' },
-    bad:  { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' },
+    good: { bg: UXP.greenFill, border: UXP.green,  fg: UXP.greenDeep },
+    warn: { bg: UXP.lavFill,   border: UXP.lavMid, fg: UXP.coral     },
+    bad:  { bg: UXP.roseFill,  border: UXP.rose,   fg: UXP.roseText  },
   }[tone]
   return (
     <div style={{
       margin: '10px 0', padding: '10px 14px',
-      background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8,
+      background: T.bg, border: `0.5px solid ${T.border}`, borderRadius: 8,
       fontSize: 12, color: T.fg,
     }}>{text}</div>
   )
 }
 function Empty({ text }: { text: string }) {
-  return <div style={{ padding: 36, textAlign: 'center' as const, color: UX.ink4, fontSize: 12 }}>{text}</div>
+  return <div style={{ padding: 36, textAlign: 'center' as const, color: UXP.ink4, fontSize: 12 }}>{text}</div>
 }
 function th(): React.CSSProperties {
   return { padding: '8px 8px', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }
