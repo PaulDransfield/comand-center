@@ -21,22 +21,23 @@ export const dynamic = 'force-dynamic'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import AppShell from '@/components/AppShell'
 import dynamicImport from 'next/dynamic'
-// FIXES §0ll: lazy-load AskAI — see /dashboard for rationale.
+
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
-import { useTranslations } from 'next-intl'
-import TopBar from '@/components/ui/TopBar'
-import PageHero from '@/components/ui/PageHero'
-import SupportingStats from '@/components/ui/SupportingStats'
-import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
-import Sparkline from '@/components/ui/Sparkline'
-import SegmentedToggle from '@/components/ui/SegmentedToggle'
-import { UX, UXP } from '@/lib/constants/tokens'
-import { fmtKr } from '@/lib/format'
-// Phase 3 — Insights migration. Four-card Sales · CoGS · Labour · Flash
-// profit strip lands above the existing waterfall card; the rest of the
-// page is unchanged. The local fmtPct below (line ~99) handles % formatting
-// since lib/format's signature differs from the one this page relies on.
+
 import KpiCardUX from '@/components/ux/KpiCard'
+import PairedBarChart from '@/components/ux/PairedBarChart'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr } from '@/lib/format'
+import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
+
+// Local AttentionItem type — the legacy import is gone but the
+// buildTunableItems helper below still returns this shape.
+interface AttentionItem {
+  tone:    'good' | 'warning' | 'bad'
+  entity:  string
+  message: string
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type Granularity = 'week' | 'month' | 'quarter' | 'ytd'
@@ -418,7 +419,6 @@ interface Business { id: string; name: string; city?: string | null }
 type CompareMode = 'none' | 'prev' | 'yoy' | 'ytd_yoy' | { custom: PeriodKey }
 
 export default function PerformancePage() {
-  const t = useTranslations('financials.performance')
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [bizId,      setBizId]      = useState<string | null>(null)
   const [granularity, setGranularity] = useState<Granularity>('month')
@@ -632,188 +632,62 @@ export default function PerformancePage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '12px 16px 40px' }}>
-        <TopBar
-          crumbs={[{ label: t('crumb.financials') }, { label: t('crumb.performance'), active: true }]}
-          rightSlot={
-            <ControlCluster
-              granularity={granularity}
-              onGranularityChange={g => {
-                setGranularity(g)
-                setPeriod(currentPeriod(g))
-              }}
-              period={period}
-              onPeriodChange={setPeriod}
-              compare={compare}
-              onCompareChange={setCompare}
-            />
-          }
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+
+        {/* Header — granularity + period + compare controls */}
+        <HeaderRow
+          granularity={granularity}
+          period={period}
+          compare={compare}
+          onGranularityChange={g => {
+            setGranularity(g)
+            setPeriod(currentPeriod(g))
+          }}
+          onPeriodStep={dir => setPeriod(stepPeriod(period, dir))}
+          onCompareChange={setCompare}
+          canStepNext={!isFuturePeriod(stepPeriod(period, 1))}
         />
 
-        {/* Phase 3 KPI strip — Sales · CoGS · Labour · Flash profit. Reads
-            the same currentData rollup that powers the hero / waterfall /
-            sparklines below. Spec calls for per-location columns; this page
-            is single-business, so the row is a single business-column
-            stack. */}
-        {currentData && (() => {
-          const cogsPct  = currentData.has_food && currentData.revenue > 0
-            ? (currentData.food_cost / currentData.revenue) * 100
-            : null
-          const labPct   = currentData.staff_pct
-          const marginPct = currentData.margin_pct
-          const revDelta = compareData && compareData.revenue > 0
-            ? `${currentData.revenue - compareData.revenue >= 0 ? '+' : ''}${(((currentData.revenue - compareData.revenue) / compareData.revenue) * 100).toFixed(1)}%`
-            : null
-          const marginDelta = compareData && compareData.margin_pct != null && marginPct != null
-            ? `${marginPct - compareData.margin_pct >= 0 ? '+' : ''}${(marginPct - compareData.margin_pct).toFixed(1)}pp`
-            : null
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginTop:           12,
-                marginBottom:        12,
-              }}
-            >
-              <KpiCardUX
-                title="Sales"
-                value={currentData.revenue > 0 ? fmtKr(currentData.revenue) : '—'}
-                delta={revDelta}
-                deltaGood
-                microLabel={periodLabel(period)}
-              />
-              <KpiCardUX
-                title="CoGS"
-                value={currentData.has_food ? fmtKr(currentData.food_cost) : '—'}
-                deltaGood={false}
-                variant="stacked"
-                stackedBars={cogsPct != null ? [
-                  { label: 'Current', value: cogsPct, max: 100, color: UXP.lav   },
-                  { label: 'Target',  value: 30,      max: 100, color: UXP.green },
-                ] : undefined}
-                microLabel={cogsPct != null ? `${cogsPct.toFixed(1)}% of revenue` : 'No CoGS data'}
-              />
-              <KpiCardUX
-                title="Labour"
-                value={fmtKr(currentData.staff_cost)}
-                deltaGood={false}
-                variant="targetBand"
-                targetBand={labPct != null ? {
-                  actualPct:    Math.min(100, labPct),
-                  targetMinPct: 30,
-                  targetMaxPct: 42,
-                } : undefined}
-                microLabel={labPct != null ? `${labPct.toFixed(1)}% of revenue` : ''}
-              />
-              <KpiCardUX
-                title="Flash profit"
-                value={fmtKr(currentData.net_margin)}
-                delta={marginDelta}
-                deltaGood
-                microLabel={marginPct != null ? `${fmtPct(marginPct)} net margin` : ''}
-              />
-            </div>
-          )
-        })()}
-
-        {/* Hero */}
-        <PageHero
-          eyebrow={compareLabel
-            ? t('eyebrowVs', { period: periodLabelCaps(period), compare: compareLabel.toUpperCase() })
-            : t('eyebrow',   { period: periodLabelCaps(period) })}
-          headline={<HeroHeadline period={period} data={currentData} compare={compareData} compareLabel={compareLabel} t={t} />}
-          context={heroContext(currentData, compareData, compareLabel, t)}
-          right={
-            currentData && (
-              <SupportingStats
-                items={[
-                  {
-                    label: t('stats.revenue'),
-                    value: currentData.revenue > 0 ? fmtKr(currentData.revenue) : '—',
-                    sub:   compareData && compareLabel ? t('stats.vs', { value: fmtKr(compareData.revenue) }) : undefined,
-                  },
-                  {
-                    label: t('stats.netMargin'),
-                    value: fmtPct(currentData.margin_pct),
-                    sub:   compareData && compareLabel ? t('stats.vs', { value: fmtPct(compareData.margin_pct) }) : undefined,
-                    deltaTone: currentData.margin_pct != null && currentData.margin_pct >= 10 ? 'good'
-                             : currentData.margin_pct != null && currentData.margin_pct >=  5 ? 'neutral' : 'bad',
-                  },
-                ]}
-              />
-            )
-          }
-        />
+        {/* KPI strip */}
+        <KpiStrip data={currentData} compare={compareData} compareLabel={compareLabel} />
 
         {loading && !currentData && (
-          <div style={{ padding: 20, fontSize: UX.fsBody, color: UX.ink3 }}>{t('loading')}</div>
+          <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>
+            Loading…
+          </div>
         )}
 
-        {/* Primary: Profit waterfall */}
-        {currentData && (
-          <WaterfallCard
-            period={period} data={currentData}
-            compare={compareData} compareLabel={compareLabel}
+        {!loading && !currentData && (
+          <EmptyCard
+            title={`No data for ${periodLabel(period)}`}
+            body="Period is closed or hasn't been synced yet."
           />
         )}
 
-        {/* Second row: Donut + full breakdown */}
         {currentData && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 1fr', gap: 12, marginTop: 12 }}>
-            <DonutCard  data={currentData} />
-            <BreakdownTable
-              data={currentData} compare={compareData} compareLabel={compareLabel}
-            />
-          </div>
-        )}
+          <>
+            {/* Profit composition — waterfall + donut side-by-side */}
+            <div style={{
+              display:             'grid',
+              gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
+              gap:                 12,
+            }}>
+              <WaterfallCard data={currentData} />
+              <CostMixCard data={currentData} />
+            </div>
 
-        {/* Third row: Trend sparklines */}
-        {currentData && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
-            <TrendCard
-              label={t('trends.netMargin', { gran: t(`gran.${granularity}`) })}
-              value={fmtPct(currentData.margin_pct)}
-              points={sparks.margin}
-              tone={currentData.margin_pct != null && currentData.margin_pct >= 10 ? 'good' : currentData.margin_pct != null && currentData.margin_pct >= 5 ? 'warning' : 'bad'}
-              target={t('trends.targetMargin')}
-            />
-            <TrendCard
-              label={t('trends.labour', { gran: t(`gran.${granularity}`) })}
-              value={fmtPct(currentData.staff_pct)}
-              points={sparks.labour}
-              tone={currentData.staff_pct == null ? 'neutral' : currentData.staff_pct <= 42 ? 'good' : currentData.staff_pct <= 57 ? 'warning' : 'bad'}
-              target={t('trends.targetLabour')}
-              invert
-            />
-            <TrendCard
-              label={t('trends.food', { gran: t(`gran.${granularity}`) })}
-              value={fmtPct(currentData.food_pct)}
-              points={sparks.food}
-              tone={currentData.food_pct == null ? 'neutral' : currentData.food_pct <= 32 ? 'good' : currentData.food_pct <= 38 ? 'warning' : 'bad'}
-              target={t('trends.targetFood')}
-              invert
-            />
-          </div>
-        )}
+            {/* Line-by-line breakdown */}
+            <BreakdownCard data={currentData} compare={compareData} compareLabel={compareLabel} />
 
-        {/* Fourth row: What's tunable */}
-        {currentData && (
-          <div style={{ marginTop: 12 }}>
-            <AttentionPanel
-              title={t('tunable.title')}
-              items={buildTunableItems(period, currentData, compareData, t)}
-              maxItems={4}
-            />
-          </div>
+            {/* Trend strip — 12-period mini history per ratio */}
+            <TrendStrip sparks={sparks} granularity={granularity} current={currentData} />
+
+            {/* What's tunable */}
+            <TunableCard items={buildTunableItems(period, currentData, compareData)} />
+          </>
         )}
       </div>
 
-      {/* Floating Ask AI — plain-text summary of the current view so Claude
-          can answer questions like "why is margin lower than last month?"
-          without needing to re-query the DB. Mirrors the pattern on every
-          other AppShell page (dashboard, revenue, overheads, etc). */}
       <AskAI
         page="performance"
         context={buildAskContext(period, currentData, comparePeriod, compareData, selectedBiz?.name)}
@@ -822,15 +696,648 @@ export default function PerformancePage() {
   )
 }
 
-// Plain-text context passed to /api/ask. Keep under a few hundred chars —
-// the AI already has system-prompt rules + benchmarks baked in; this only
-// needs to carry what's on screen RIGHT NOW.
+// ════════════════════════════════════════════════════════════════════
+// Sub-components — all UXP, 0.5px hairlines, tabular-nums
+// ════════════════════════════════════════════════════════════════════
+
+// ── Header controls ─────────────────────────────────────────────────
+interface HeaderRowProps {
+  granularity:        Granularity
+  period:             PeriodKey
+  compare:            CompareMode
+  onGranularityChange: (g: Granularity) => void
+  onPeriodStep:       (dir: -1 | 1) => void
+  onCompareChange:    (c: CompareMode) => void
+  canStepNext:        boolean
+}
+
+function HeaderRow({ granularity, period, compare, onGranularityChange, onPeriodStep, onCompareChange, canStepNext }: HeaderRowProps) {
+  return (
+    <div style={{
+      display:        'flex',
+      justifyContent: 'space-between',
+      alignItems:     'center',
+      gap:            10,
+      flexWrap:       'wrap' as const,
+    }}>
+      <PeriodStepper label={periodLabel(period)} onPrev={() => onPeriodStep(-1)} onNext={canStepNext ? () => onPeriodStep(1) : undefined} />
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+        <Toggle
+          opts={[
+            { k: 'week',    lab: 'Week'    },
+            { k: 'month',   lab: 'Month'   },
+            { k: 'quarter', lab: 'Quarter' },
+            { k: 'ytd',     lab: 'YTD'     },
+          ]}
+          value={granularity}
+          onChange={(v) => onGranularityChange(v as Granularity)}
+        />
+        <CompareToggle value={compare} onChange={onCompareChange} />
+      </div>
+    </div>
+  )
+}
+
+function PeriodStepper({ label, onPrev, onNext }: { label: string; onPrev?: () => void; onNext?: () => void }) {
+  return (
+    <div style={{
+      display:      'inline-flex',
+      alignItems:   'center',
+      gap:          4,
+      padding:      '4px 6px',
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: 7,
+    }}>
+      <button type="button" onClick={onPrev} disabled={!onPrev} style={stepBtn(!!onPrev)} aria-label="Previous">◄</button>
+      <span style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500, padding: '0 8px', minWidth: 100, textAlign: 'center' as const }}>
+        {label}
+      </span>
+      <button type="button" onClick={onNext} disabled={!onNext} style={stepBtn(!!onNext)} aria-label="Next">►</button>
+    </div>
+  )
+}
+
+function stepBtn(enabled: boolean): React.CSSProperties {
+  return {
+    width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'transparent', border: 'none', cursor: enabled ? 'pointer' : 'not-allowed',
+    color: enabled ? UXP.ink3 : UXP.ink4, fontSize: 11, padding: 0, fontFamily: 'inherit',
+  }
+}
+
+function Toggle({ opts, value, onChange }: { opts: Array<{ k: string; lab: string }>; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{
+      display:      'inline-flex',
+      gap:          2,
+      background:   UXP.cardBg,
+      border:       `0.5px solid ${UXP.border}`,
+      borderRadius: 7,
+      padding:      2,
+    }}>
+      {opts.map(o => (
+        <button
+          key={o.k}
+          type="button"
+          onClick={() => onChange(o.k)}
+          style={{
+            padding:       '4px 12px',
+            background:    value === o.k ? UXP.lavFill : 'transparent',
+            color:         value === o.k ? UXP.lavText : UXP.ink3,
+            border:        'none',
+            borderRadius:  5,
+            fontSize:      10,
+            fontWeight:    500,
+            fontFamily:    'inherit',
+            cursor:        'pointer',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase' as const,
+          }}
+        >
+          {o.lab}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function CompareToggle({ value, onChange }: { value: CompareMode; onChange: (c: CompareMode) => void }) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as any)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const current =
+    value === 'none'    ? 'No compare' :
+    value === 'prev'    ? 'vs Previous' :
+    value === 'yoy'     ? 'vs Last year' :
+    value === 'ytd_yoy' ? 'vs YTD last year' :
+                          'Custom'
+
+  return (
+    <div ref={ref} style={{ position: 'relative' as const }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{
+          padding:      '4px 12px',
+          background:   value === 'none' ? UXP.cardBg : UXP.lavFill,
+          color:        value === 'none' ? UXP.ink2   : UXP.lavText,
+          border:       `0.5px solid ${UXP.border}`,
+          borderRadius: 7,
+          fontSize:     10,
+          fontWeight:   500,
+          fontFamily:   'inherit',
+          cursor:       'pointer',
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase' as const,
+          display:      'inline-flex',
+          alignItems:   'center',
+          gap:          5,
+        }}
+      >
+        Compare: {current}
+        <span aria-hidden style={{ fontSize: 9 }}>▾</span>
+      </button>
+      {open && (
+        <div style={{
+          position:     'absolute' as const,
+          top:          'calc(100% + 4px)',
+          right:        0,
+          minWidth:     180,
+          background:   UXP.cardBg,
+          border:       `0.5px solid ${UXP.border}`,
+          borderRadius: UXP.r_md,
+          padding:      4,
+          zIndex:       40,
+          boxShadow:    '0 8px 24px rgba(58,53,80,0.12)',
+        }}>
+          {([
+            ['none',    'No compare'],
+            ['prev',    'Previous period'],
+            ['yoy',     'Same period last year'],
+            ['ytd_yoy', 'YTD last year'],
+          ] as Array<[CompareMode, string]>).map(([k, lab]) => (
+            <button
+              key={String(k)}
+              type="button"
+              onClick={() => { onChange(k); setOpen(false) }}
+              style={{
+                display:      'block',
+                width:        '100%',
+                textAlign:    'left' as const,
+                padding:      '7px 9px',
+                background:   value === k ? UXP.lavFill : 'transparent',
+                color:        value === k ? UXP.lavText : UXP.ink1,
+                border:       'none',
+                borderRadius: UXP.r_sm,
+                cursor:       'pointer',
+                fontSize:     11,
+                fontFamily:   'inherit',
+              }}
+            >
+              {lab}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── KPI strip ───────────────────────────────────────────────────────
+function KpiStrip({ data, compare, compareLabel }: any) {
+  if (!data) {
+    return (
+      <div style={{
+        display:             'grid',
+        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gap:                 12,
+      }}>
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{
+            background:    UXP.cardBg,
+            border:        `0.5px solid ${UXP.border}`,
+            borderRadius:  UXP.r_lg,
+            padding:       '20px 16px',
+            color:         UXP.ink4,
+            fontSize:      11,
+          }}>—</div>
+        ))}
+      </div>
+    )
+  }
+
+  const cogsPct  = data.has_food && data.revenue > 0 ? (data.food_cost / data.revenue) * 100 : null
+  const labPct   = data.staff_pct
+  const marginPct = data.margin_pct
+
+  const revDelta = compare && compare.revenue > 0
+    ? `${data.revenue - compare.revenue >= 0 ? '+' : ''}${(((data.revenue - compare.revenue) / compare.revenue) * 100).toFixed(1)}%`
+    : null
+  const marginDelta = compare && compare.margin_pct != null && marginPct != null
+    ? `${marginPct - compare.margin_pct >= 0 ? '+' : ''}${(marginPct - compare.margin_pct).toFixed(1)}pp`
+    : null
+  const cogsDelta = compare && compare.food_pct != null && cogsPct != null
+    ? `${cogsPct - compare.food_pct >= 0 ? '+' : ''}${(cogsPct - compare.food_pct).toFixed(1)}pp`
+    : null
+  const labDelta = compare && compare.staff_pct != null && labPct != null
+    ? `${labPct - compare.staff_pct >= 0 ? '+' : ''}${(labPct - compare.staff_pct).toFixed(1)}pp`
+    : null
+
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      <KpiCardUX
+        title="Sales"
+        value={data.revenue > 0 ? fmtKr(data.revenue) : '—'}
+        delta={revDelta}
+        deltaGood
+        microLabel={compareLabel ? `vs ${compareLabel}` : ''}
+      />
+      <KpiCardUX
+        title="CoGS"
+        value={data.has_food ? fmtKr(data.food_cost) : '—'}
+        delta={cogsDelta}
+        deltaGood={false}
+        variant="stacked"
+        stackedBars={cogsPct != null ? [
+          { label: 'Current', value: cogsPct, max: 100, color: UXP.lav   },
+          { label: 'Target',  value: 30,      max: 100, color: UXP.green },
+        ] : undefined}
+        microLabel={cogsPct != null ? `${cogsPct.toFixed(1)}% of revenue` : 'No CoGS data'}
+      />
+      <KpiCardUX
+        title="Labour"
+        value={data.staff_cost > 0 ? fmtKr(data.staff_cost) : '—'}
+        delta={labDelta}
+        deltaGood={false}
+        variant="targetBand"
+        targetBand={labPct != null ? {
+          actualPct:    Math.min(100, labPct),
+          targetMinPct: DEFAULT_TIER_CONFIG.targetMin,
+          targetMaxPct: DEFAULT_TIER_CONFIG.targetMax,
+        } : undefined}
+        microLabel={labPct != null ? `${labPct.toFixed(1)}% of revenue` : ''}
+      />
+      <KpiCardUX
+        title="Flash profit"
+        value={fmtKr(data.net_margin)}
+        delta={marginDelta}
+        deltaGood
+        microLabel={marginPct != null ? `${marginPct.toFixed(1)}% net margin` : ''}
+      />
+    </div>
+  )
+}
+
+// ── Waterfall ───────────────────────────────────────────────────────
+function WaterfallCard({ data }: { data: PeriodData }) {
+  const steps: Array<{ label: string; kind: 'start' | 'sub' | 'end'; value: number }> = [
+    { label: 'Sales',       kind: 'start', value: data.revenue       },
+    { label: 'CoGS',        kind: 'sub',   value: data.food_cost     },
+    { label: 'Labour',      kind: 'sub',   value: data.staff_cost    },
+    { label: 'Overheads',   kind: 'sub',   value: data.overheads     },
+    { label: 'Flash profit', kind: 'end',  value: data.net_margin    },
+  ]
+  const max = Math.max(1, data.revenue)
+  return (
+    <div style={cardStyleP()}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Profit composition</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          Sales − CoGS − Labour − Overheads
+        </div>
+      </div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {steps.map((s, i) => {
+          const isNeg  = s.kind === 'sub'
+          const isEnd  = s.kind === 'end'
+          const w      = Math.max(0, Math.min(100, (Math.abs(s.value) / max) * 100))
+          const colour = s.kind === 'start' ? UXP.lav
+                       : s.kind === 'end'   ? (s.value >= 0 ? UXP.green : UXP.rose)
+                       :                      UXP.lavMid
+          const valueColour = s.kind === 'end'   ? (s.value >= 0 ? UXP.greenDeep : UXP.roseText)
+                            : s.kind === 'start' ? UXP.lavText
+                            :                      UXP.coral
+          return (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 120px', gap: 10, alignItems: 'center' }}>
+              <span style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{s.label}</span>
+              <span style={{
+                position:     'relative' as const,
+                height:       isEnd ? 16 : 8,
+                background:   UXP.subtleBg,
+                borderRadius: 4,
+                overflow:     'hidden' as const,
+              }}>
+                <span style={{
+                  display:      'block',
+                  height:       '100%',
+                  width:        `${w}%`,
+                  background:   colour,
+                  borderRadius: 4,
+                }} />
+              </span>
+              <span style={{
+                textAlign:          'right' as const,
+                fontSize:           isEnd ? 14 : 11,
+                fontWeight:         isEnd ? 500 : 400,
+                color:              valueColour,
+                fontFamily:         isEnd ? 'var(--font-display)' : 'inherit',
+                fontVariantNumeric: 'tabular-nums' as const,
+                letterSpacing:      isEnd ? '-0.02em' : 0,
+              }}>
+                {isNeg && '−'}{fmtKr(Math.abs(s.value))}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── Cost mix (replaces the legacy donut) ───────────────────────────
+function CostMixCard({ data }: { data: PeriodData }) {
+  const total = data.food_cost + data.staff_cost + data.overheads
+  const items = [
+    { label: 'CoGS',      value: data.food_cost,  color: UXP.lav     },
+    { label: 'Labour',    value: data.staff_cost, color: UXP.lavMid  },
+    { label: 'Overheads', value: data.overheads,  color: UXP.lavPale },
+  ]
+  return (
+    <div style={cardStyleP()}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Cost mix</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {total > 0 ? `${fmtKr(total)} total` : 'No cost data'}
+        </div>
+      </div>
+      {total > 0 && (
+        <>
+          {/* Stacked bar */}
+          <div style={{ display: 'flex', height: 10, borderRadius: 5, overflow: 'hidden' as const, background: UXP.subtleBg, marginBottom: 12 }}>
+            {items.map(it => {
+              const w = (it.value / total) * 100
+              if (w === 0) return null
+              return <span key={it.label} style={{ width: `${w}%`, background: it.color, display: 'inline-block' }} />
+            })}
+          </div>
+          {/* Legend */}
+          <div style={{ display: 'grid', gap: 8 }}>
+            {items.map(it => {
+              const pct = total > 0 ? (it.value / total) * 100 : 0
+              return (
+                <div key={it.label} style={{ display: 'grid', gridTemplateColumns: '12px 1fr auto auto', gap: 8, alignItems: 'center' }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 2, background: it.color, display: 'inline-block' }} />
+                  <span style={{ fontSize: 11, color: UXP.ink2 }}>{it.label}</span>
+                  <span style={{ fontSize: 11, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const, minWidth: 64, textAlign: 'right' as const }}>
+                    {fmtKr(it.value)}
+                  </span>
+                  <span style={{ fontSize: 10, color: UXP.ink4, fontVariantNumeric: 'tabular-nums' as const, minWidth: 40, textAlign: 'right' as const }}>
+                    {pct.toFixed(1)}%
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+      {/* Overhead sub-split when available */}
+      {data.has_overheads && (data.overhead_split.rent + data.overhead_split.utilities + data.overhead_split.other) > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+          <div style={{ fontSize: 9, color: UXP.ink4, marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            Overheads split
+          </div>
+          {[
+            ['Rent',      data.overhead_split.rent],
+            ['Utilities', data.overhead_split.utilities],
+            ['Other',     data.overhead_split.other],
+          ].map(([lab, val]) => {
+            const t = data.overheads
+            return (
+              <div key={lab as string} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: UXP.ink3, padding: '3px 0' }}>
+                <span>{lab as string}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums' as const }}>
+                  {fmtKr(val as number)} <span style={{ color: UXP.ink4 }}>· {t > 0 ? (((val as number) / t) * 100).toFixed(1) : '0'}%</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Line-by-line breakdown ──────────────────────────────────────────
+function BreakdownCard({ data, compare, compareLabel }: { data: PeriodData; compare: PeriodData | null; compareLabel: string | null }) {
+  type Row = { line: string; value: number; pct: number | null; cmp?: number | null; cmpPct?: number | null; positiveIsGood?: boolean }
+  const rows: Row[] = [
+    { line: 'Sales',                       value: data.revenue,    pct: 100,                  cmp: compare?.revenue,    cmpPct: compare && compare.revenue > 0 ? 100 : null, positiveIsGood: true },
+    { line: data.has_alcohol ? 'Food cost'  : 'CoGS', value: data.has_alcohol ? data.food_only_cost : data.food_cost, pct: data.food_pct,    cmp: compare ? (compare.has_alcohol ? compare.food_only_cost : compare.food_cost) : null, cmpPct: compare?.food_pct ?? null, positiveIsGood: false },
+  ]
+  if (data.has_alcohol) {
+    rows.push({ line: 'Alcohol cost', value: data.alcohol_cost, pct: data.alcohol_pct, cmp: compare?.alcohol_cost ?? null, cmpPct: compare?.alcohol_pct ?? null, positiveIsGood: false })
+  }
+  rows.push(
+    { line: 'Labour',    value: data.staff_cost, pct: data.staff_pct,    cmp: compare?.staff_cost   ?? null, cmpPct: compare?.staff_pct   ?? null, positiveIsGood: false },
+    { line: 'Overheads', value: data.overheads,  pct: data.overheads_pct, cmp: compare?.overheads   ?? null, cmpPct: compare?.overheads_pct ?? null, positiveIsGood: false },
+    { line: 'Flash profit', value: data.net_margin, pct: data.margin_pct, cmp: compare?.net_margin ?? null, cmpPct: compare?.margin_pct ?? null, positiveIsGood: true },
+  )
+
+  return (
+    <div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>P&amp;L breakdown</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {compareLabel ? `vs ${compareLabel}` : 'Current period only'}
+        </div>
+      </div>
+      <BreakdownTable<Row>
+        columns={[
+          { key: 'line', header: 'Line',   align: 'left',  render: (r) => (
+            <span style={{ color: UXP.ink1, fontWeight: r.line === 'Sales' || r.line === 'Flash profit' ? 500 : 400 }}>
+              {r.line}
+            </span>
+          ) },
+          { key: 'value', header: 'Amount', align: 'right', render: (r) => fmtKr(r.value) },
+          { key: 'pct',   header: '%',      align: 'right', render: (r) =>
+            r.pct != null ? `${r.pct.toFixed(1)}%` : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'cmp',   header: compareLabel ?? '—', align: 'right', render: (r) =>
+            r.cmp != null ? fmtKr(r.cmp) : <span style={{ color: UXP.ink4 }}>—</span>
+          },
+          { key: 'delta', header: 'Δ', align: 'right', render: (r) => {
+            if (r.cmp == null || r.cmp === 0) return <span style={{ color: UXP.ink4 }}>—</span>
+            const pct = ((r.value - r.cmp) / r.cmp) * 100
+            return <DeltaChip value={`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`} positiveIsGood={r.positiveIsGood !== false} />
+          } },
+        ]}
+        sections={[{ rows }]}
+        rowKey={(row, i) => row.line + i}
+      />
+    </div>
+  )
+}
+
+// ── Trend strip ─────────────────────────────────────────────────────
+function TrendStrip({ sparks, granularity, current }: { sparks: any; granularity: Granularity; current: PeriodData }) {
+  const items: Array<{ label: string; value: string; points: number[]; tone: 'good' | 'warning' | 'bad' | 'neutral'; target: string; invert?: boolean }> = [
+    {
+      label: 'Net margin',
+      value: current.margin_pct != null ? `${current.margin_pct.toFixed(1)}%` : '—',
+      points: sparks.margin,
+      tone: current.margin_pct != null && current.margin_pct >= 10 ? 'good' : current.margin_pct != null && current.margin_pct >= 5 ? 'warning' : 'bad',
+      target: 'Target ≥10%',
+    },
+    {
+      label: 'Labour %',
+      value: current.staff_pct != null ? `${current.staff_pct.toFixed(1)}%` : '—',
+      points: sparks.labour,
+      tone: current.staff_pct == null ? 'neutral' : current.staff_pct <= 42 ? 'good' : current.staff_pct <= 57 ? 'warning' : 'bad',
+      target: 'Target ≤42%',
+      invert: true,
+    },
+    {
+      label: 'CoGS %',
+      value: current.food_pct != null ? `${current.food_pct.toFixed(1)}%` : '—',
+      points: sparks.food,
+      tone: current.food_pct == null ? 'neutral' : current.food_pct <= 32 ? 'good' : current.food_pct <= 38 ? 'warning' : 'bad',
+      target: 'Target ≤32%',
+      invert: true,
+    },
+  ]
+  return (
+    <div style={{
+      display:             'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      gap:                 12,
+    }}>
+      {items.map(it => (
+        <TrendTile key={it.label} {...it} />
+      ))}
+    </div>
+  )
+}
+
+function TrendTile({ label, value, points, tone, target }: any) {
+  const palette: { bar: string; fg: string; bg: string } = (({
+    good:    { bar: UXP.green, fg: UXP.greenDeep, bg: UXP.greenFill },
+    warning: { bar: UXP.coral, fg: UXP.coral,     bg: UXP.lavFill   },
+    bad:     { bar: UXP.rose,  fg: UXP.roseText,  bg: UXP.roseFill  },
+    neutral: { bar: UXP.lav,   fg: UXP.lavText,   bg: UXP.lavFill   },
+  } as Record<string, { bar: string; fg: string; bg: string }>)[tone] ?? { bar: UXP.lav, fg: UXP.lavText, bg: UXP.lavFill })
+  return (
+    <div style={cardStyleP()}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+        <div>
+          <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{label}</div>
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2 }}>{target}</div>
+        </div>
+        <span style={{
+          fontFamily:         'var(--font-display)',
+          fontSize:           18,
+          fontWeight:         500,
+          color:              palette.fg,
+          letterSpacing:      '-0.02em',
+          fontVariantNumeric: 'tabular-nums' as const,
+        }}>{value}</span>
+      </div>
+      <MiniBars points={points} tone={tone} />
+    </div>
+  )
+}
+
+function MiniBars({ points, tone }: { points: number[]; tone: 'good' | 'warning' | 'bad' | 'neutral' }) {
+  if (!points || points.length === 0) return null
+  const max = Math.max(1, ...points.map(v => Math.abs(v)))
+  const colour = tone === 'good' ? UXP.green
+               : tone === 'bad'  ? UXP.rose
+               : tone === 'warning' ? UXP.coral
+               : UXP.lav
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 28 }}>
+      {points.map((v, i) => {
+        const h = Math.max(2, (Math.abs(v) / max) * 26)
+        return (
+          <span key={i} style={{
+            flex:         1,
+            height:       h,
+            background:   i === points.length - 1 ? colour : UXP.lavFill,
+            borderRadius: 1,
+          }} />
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Tunable card ────────────────────────────────────────────────────
+function TunableCard({ items }: { items: AttentionItem[] }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div style={cardStyleP()}>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>What's tunable</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          {items.length} lever{items.length === 1 ? '' : 's'}
+        </div>
+      </div>
+      {items.map((it, idx) => {
+        const palette = it.tone === 'good'    ? { bar: UXP.green, fg: UXP.greenDeep }
+                       : it.tone === 'bad'    ? { bar: UXP.rose,  fg: UXP.roseText  }
+                       :                        { bar: UXP.coral, fg: UXP.coral     }
+        return (
+          <div key={idx} style={{
+            display:             'grid',
+            gridTemplateColumns: '4px auto 1fr',
+            gap:                 12,
+            alignItems:          'center',
+            padding:             '10px 0',
+            borderBottom:        idx < items.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+          }}>
+            <span style={{ width: 4, height: '100%', minHeight: 24, background: palette.bar, borderRadius: 2 }} />
+            <span style={{
+              fontSize:      9,
+              fontWeight:    600,
+              letterSpacing: '0.04em',
+              color:         palette.fg,
+              textTransform: 'uppercase' as const,
+              minWidth:      72,
+            }}>{it.entity}</span>
+            <span style={{ fontSize: 11, color: UXP.ink2, lineHeight: 1.4 }}>{it.message}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Generic helpers ─────────────────────────────────────────────────
+function cardStyleP(): React.CSSProperties {
+  return {
+    background:    UXP.cardBg,
+    border:        `0.5px solid ${UXP.border}`,
+    borderRadius:  UXP.r_lg,
+    padding:       '14px 16px',
+  }
+}
+
+function EmptyCard({ title, body }: { title: string; body: React.ReactNode }) {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      border:        `0.5px solid ${UXP.border}`,
+      borderRadius:  UXP.r_lg,
+      padding:       40,
+      textAlign:     'center' as const,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1, marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 11, color: UXP.ink3, maxWidth: 440, margin: '0 auto', lineHeight: 1.5 }}>{body}</div>
+    </div>
+  )
+}
+
+// ── buildAskContext — kept for AskAI ───────────────────────────────
 function buildAskContext(
-  period:       PeriodKey,
-  data:         PeriodData | null,
+  period:        PeriodKey,
+  data:          PeriodData | null,
   comparePeriod: PeriodKey | null,
-  compare:      PeriodData | null,
-  bizName?:     string | null,
+  compare:       PeriodData | null,
+  bizName?:      string | null,
 ): string {
   if (!data) return `Performance page for ${bizName ?? '—'}. No data for ${periodLabel(period)} yet.`
   const lines: string[] = []
@@ -853,642 +1360,8 @@ function buildAskContext(
   return lines.join('\n')
 }
 
-// ─── Hero headline + context (template-driven) ────────────────────────────
-function HeroHeadline({ period, data, compare, compareLabel, t }: {
-  period: PeriodKey; data: PeriodData | null; compare: PeriodData | null; compareLabel: string | null
-  t: any
-}) {
-  if (!data) return <>{t('noData', { period: periodLabel(period) })}</>
-  const mp = data.margin_pct
-  const marginWord = mp == null ? '—' : fmtPct(mp)
-
-  if (!compare) {
-    // story is still English — pickBiggestStory's text isn't extracted.
-    // The surrounding sentence is translated; story slots in untouched.
-    return <>{t('marginStory', { margin: marginWord, story: pickBiggestStory(data) })}</>
-  }
-  const delta = (mp ?? 0) - (compare.margin_pct ?? 0)
-  const direction = delta >= 0
-    ? t('directionUp',   { pp: Math.abs(delta).toFixed(1) })
-    : t('directionDown', { pp: Math.abs(delta).toFixed(1) })
-  return <>{t('marginVs', {
-    margin:       marginWord,
-    direction,
-    compareLabel,
-    explanation:  pickChangeExplanation(data, compare),
-  })}</>
-}
-
-function heroContext(data: PeriodData | null, compare: PeriodData | null, compareLabel: string | null, t: any): string {
-  if (!data) return t('ctxNoData')
-  const net = data.net_margin
-  const lines: string[] = []
-  lines.push(t('ctxRevenueLine', {
-    revenue: fmtKr(data.revenue),
-    costs:   fmtKr(data.food_cost + data.staff_cost + data.overheads),
-    net:     fmtKr(net),
-  }))
-  if (compare && compareLabel) {
-    const revDelta = data.revenue - compare.revenue
-    if (revDelta !== 0) lines.push(t('ctxRevDelta', {
-      sign:   revDelta >= 0 ? '+' : '−',
-      amount: fmtKr(Math.abs(revDelta)),
-      compareLabel,
-    }))
-  }
-  if (!data.has_overheads) lines.push(t('ctxNoOverheads'))
-  return lines.join(' ')
-}
-
-function pickBiggestStory(d: PeriodData): string {
-  if (d.revenue === 0) return 'no revenue recorded yet'
-  const staffOver = (d.staff_pct ?? 0) - 42
-  const foodOver  = (d.food_pct ?? 0)  - 32
-  if (!d.has_food && !d.has_overheads) return 'revenue and labour in range, cost data still loading'
-  if (staffOver > 5 && staffOver >= foodOver) return `labour ${staffOver.toFixed(1)}pp over target`
-  if (foodOver  > 5) return `food cost ${foodOver.toFixed(1)}pp over target`
-  if (staffOver <= 2 && foodOver <= 2) return 'all three costs in range'
-  return 'costs broadly in range'
-}
-
-function pickChangeExplanation(cur: PeriodData, prev: PeriodData): string {
-  const revDelta    = cur.revenue - prev.revenue
-  const labourDelta = (cur.staff_pct ?? 0) - (prev.staff_pct ?? 0)
-  if (Math.abs(labourDelta) >= 1.5) return labourDelta > 0 ? 'labour ate most of the gain' : 'labour came down'
-  if (Math.abs(revDelta) / Math.max(prev.revenue, 1) > 0.1) return revDelta >= 0 ? 'revenue grew' : 'revenue fell'
-  return 'costs held steady'
-}
-
-// ─── Control cluster (granularity + period + compare) ─────────────────────
-function ControlCluster({
-  granularity, onGranularityChange,
-  period,      onPeriodChange,
-  compare,     onCompareChange,
-}: {
-  granularity: Granularity; onGranularityChange: (g: Granularity) => void
-  period: PeriodKey;         onPeriodChange: (p: PeriodKey) => void
-  compare: CompareMode;      onCompareChange: (c: CompareMode) => void
-}) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <SegmentedToggle
-        ariaLabel="Granularity"
-        options={[
-          { value: 'week',    label: 'Week'    },
-          { value: 'month',   label: 'Month'   },
-          { value: 'quarter', label: 'Quarter' },
-          { value: 'ytd',     label: 'YTD'     },
-        ]}
-        value={granularity}
-        onChange={v => onGranularityChange(v as Granularity)}
-      />
-      <PeriodPicker period={period} onChange={onPeriodChange} />
-      <CompareButton period={period} compare={compare} onChange={onCompareChange} />
-    </div>
-  )
-}
-
-function PeriodPicker({ period, onChange }: { period: PeriodKey; onChange: (p: PeriodKey) => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [])
-  const canNext = !isFuturePeriod(stepPeriod(period, 1))
-  return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, background: UX.cardBg }}>
-      <button onClick={() => onChange(stepPeriod(period, -1))}
-              aria-label="Previous period"
-              style={arrowBtn()}>◂</button>
-      <button onClick={() => setOpen(o => !o)} style={labelBtn()}>{periodLabel(period)} ▾</button>
-      <button onClick={() => canNext && onChange(stepPeriod(period, 1))}
-              aria-label="Next period"
-              disabled={!canNext}
-              style={arrowBtn(!canNext)}>▸</button>
-      {open && <PeriodMenu period={period} onPick={p => { onChange(p); setOpen(false) }} />}
-    </div>
-  )
-}
-
-function arrowBtn(disabled = false) {
-  return {
-    padding:   '5px 9px', fontSize: UX.fsBody, color: disabled ? UX.ink5 : UX.ink3,
-    background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer',
-  } as const
-}
-function labelBtn() {
-  return {
-    padding: '5px 10px', fontSize: UX.fsBody, color: UX.ink1, fontWeight: UX.fwMedium,
-    background: 'transparent', border: 'none', borderLeft: `0.5px solid ${UX.border}`,
-    borderRight: `0.5px solid ${UX.border}`, cursor: 'pointer',
-  } as const
-}
-
-function PeriodMenu({ period, onPick }: { period: PeriodKey; onPick: (p: PeriodKey) => void }) {
-  const [viewYear, setViewYear] = useState(period.year)
-  const now = new Date()
-  const cur = currentPeriod(period.granularity)
-
-  return (
-    <div style={{
-      position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 20,
-      background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md,
-      padding: 14, minWidth: 260, boxShadow: UX.shadowPop,
-    }}>
-      {/* Year header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 10 }}>
-        <button onClick={() => setViewYear(y => y - 1)} style={yearArrowBtn()}>◂</button>
-        <div style={{ fontSize: UX.fsBody, fontWeight: UX.fwMedium, color: UX.ink1 }}>{viewYear}</div>
-        <button onClick={() => setViewYear(y => y + 1)} disabled={viewYear >= now.getFullYear()} style={yearArrowBtn(viewYear >= now.getFullYear())}>▸</button>
-      </div>
-
-      {/* Grid based on granularity */}
-      {period.granularity === 'month' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-          {MONTHS_SHORT.map((m, i) => {
-            const pk: PeriodKey = { granularity: 'month', year: viewYear, month: i + 1 }
-            const disabled = isFuturePeriod(pk)
-            const isCurrent = cur.granularity === 'month' && viewYear === cur.year && (i + 1) === cur.month
-            const selected  = period.year === viewYear && period.month === i + 1
-            return (
-              <button key={m} disabled={disabled}
-                onClick={() => onPick(pk)}
-                style={gridCellBtn({ disabled, selected, current: isCurrent })}>{m}</button>
-            )
-          })}
-        </div>
-      )}
-      {period.granularity === 'quarter' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-          {QUARTERS.map((q, i) => {
-            const pk: PeriodKey = { granularity: 'quarter', year: viewYear, quarter: i + 1 }
-            const disabled = isFuturePeriod(pk)
-            const isCurrent = cur.granularity === 'quarter' && viewYear === cur.year && (i + 1) === cur.quarter
-            const selected  = period.year === viewYear && period.quarter === i + 1
-            return (
-              <button key={q} disabled={disabled}
-                onClick={() => onPick(pk)}
-                style={gridCellBtn({ disabled, selected, current: isCurrent })}>{q}</button>
-            )
-          })}
-        </div>
-      )}
-      {period.granularity === 'week' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4, maxHeight: 240, overflowY: 'auto' as const }}>
-          {Array.from({ length: 53 }, (_, i) => i + 1).map(w => {
-            const pk: PeriodKey = { granularity: 'week', year: viewYear, week: w }
-            const disabled = isFuturePeriod(pk)
-            const isCurrent = cur.granularity === 'week' && viewYear === cur.year && w === cur.week
-            const selected  = period.year === viewYear && period.week === w
-            return (
-              <button key={w} disabled={disabled}
-                onClick={() => onPick(pk)}
-                style={gridCellBtn({ disabled, selected, current: isCurrent, small: true })}>{w}</button>
-            )
-          })}
-        </div>
-      )}
-      {period.granularity === 'ytd' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-          {Array.from({ length: 4 }, (_, i) => now.getFullYear() - 3 + i).map(y => {
-            const pk: PeriodKey = { granularity: 'ytd', year: y }
-            const disabled = y > now.getFullYear()
-            const selected = period.year === y
-            return (
-              <button key={y} disabled={disabled}
-                onClick={() => onPick(pk)}
-                style={gridCellBtn({ disabled, selected, current: y === now.getFullYear() })}>{y}</button>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Quick buttons */}
-      <div style={{ marginTop: 12, paddingTop: 10, borderTop: `0.5px solid ${UX.borderSoft}` }}>
-        <div style={{ fontSize: UX.fsNano, color: UX.ink4, textTransform: 'uppercase' as const, letterSpacing: '.08em', marginBottom: 6 }}>Quick</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap' as const, gap: 6 }}>
-          <QuickPill onClick={() => onPick(currentPeriod(period.granularity))}>This {period.granularity === 'ytd' ? 'year' : period.granularity}</QuickPill>
-          <QuickPill onClick={() => onPick(previousPeriod(currentPeriod(period.granularity)))}>Last {period.granularity === 'ytd' ? 'year' : period.granularity}</QuickPill>
-          {period.granularity !== 'ytd' && <QuickPill onClick={() => onPick({ granularity: 'ytd', year: now.getFullYear() })}>YTD {now.getFullYear()}</QuickPill>}
-          <QuickPill onClick={() => onPick({ granularity: 'ytd', year: now.getFullYear() - 1 })}>{now.getFullYear() - 1}</QuickPill>
-        </div>
-      </div>
-    </div>
-  )
-}
-function yearArrowBtn(disabled = false) {
-  return { padding: '3px 8px', fontSize: UX.fsBody, color: disabled ? UX.ink5 : UX.ink3, background: 'transparent', border: 'none', cursor: disabled ? 'default' : 'pointer' } as const
-}
-function gridCellBtn({ disabled, selected, current, small }: { disabled?: boolean; selected?: boolean; current?: boolean; small?: boolean }) {
-  return {
-    padding: small ? '4px 0' : '6px 0',
-    fontSize: small ? UX.fsLabel : UX.fsBody,
-    background: selected ? UX.navy : 'transparent',
-    color: disabled ? UX.ink5 : selected ? 'white' : UX.ink1,
-    border: current && !selected ? `1px solid ${UX.indigo}` : `0.5px solid ${UX.border}`,
-    borderRadius: UX.r_sm,
-    cursor: disabled ? 'default' : 'pointer',
-    fontWeight: UX.fwMedium,
-    fontFamily: 'inherit',
-  } as const
-}
-function QuickPill({ onClick, children }: any) {
-  return (
-    <button onClick={onClick} style={{
-      padding: '4px 10px', fontSize: UX.fsLabel, border: `0.5px solid ${UX.border}`,
-      borderRadius: UX.r_md, background: UX.cardBg, color: UX.ink2, cursor: 'pointer',
-    }}>{children}</button>
-  )
-}
-
-function CompareButton({ period, compare, onChange }: {
-  period: PeriodKey; compare: CompareMode; onChange: (c: CompareMode) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey) }
-  }, [])
-
-  const label = compare === 'none' ? '+ Compare'
-              : compare === 'prev' ? `vs ${periodLabel(previousPeriod(period))}`
-              : compare === 'yoy'  ? `vs ${periodLabel(samePeriodLastYear(period))}`
-              : compare === 'ytd_yoy' ? `vs YTD ${period.year - 1}`
-              : typeof compare === 'object' && compare?.custom ? `vs ${periodLabel(compare.custom)}` : '+ Compare'
-  const active = compare !== 'none'
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        padding: '5px 10px', fontSize: UX.fsBody,
-        background: active ? UX.indigoBg : UX.cardBg,
-        color: active ? '#4338ca' : UX.ink2,
-        border: `0.5px solid ${active ? UX.indigo : UX.border}`,
-        borderRadius: UX.r_md, cursor: 'pointer', fontFamily: 'inherit',
-      }}>{label}</button>
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 20, background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_md, padding: 6, minWidth: 200, boxShadow: UX.shadowPop }}>
-          <MenuRow onClick={() => { onChange('none'); setOpen(false) }}>No comparison</MenuRow>
-          <MenuRow onClick={() => { onChange('prev'); setOpen(false) }}>Previous {period.granularity === 'ytd' ? 'year' : period.granularity}</MenuRow>
-          <MenuRow onClick={() => { onChange('yoy'); setOpen(false) }}>Same period last year</MenuRow>
-          {period.granularity === 'ytd' && <MenuRow onClick={() => { onChange('ytd_yoy'); setOpen(false) }}>YTD last year</MenuRow>}
-          {/* Pick custom — simple: steps back one more period at a time */}
-          <MenuRow onClick={() => {
-            const target = previousPeriod(previousPeriod(period))   // 2 periods back as starting point
-            onChange({ custom: target })
-            setOpen(false)
-          }}>Pick custom (2 {period.granularity}s ago)</MenuRow>
-        </div>
-      )}
-    </div>
-  )
-}
-function MenuRow({ onClick, children }: any) {
-  return (
-    <button onClick={onClick} style={{
-      display: 'block', width: '100%', padding: '6px 10px', textAlign: 'left' as const,
-      background: 'transparent', border: 'none', fontSize: UX.fsBody, color: UX.ink2,
-      borderRadius: UX.r_sm, cursor: 'pointer', fontFamily: 'inherit',
-    }}>{children}</button>
-  )
-}
-
-// ─── Waterfall ─────────────────────────────────────────────────────────────
-function WaterfallCard({ period, data, compare, compareLabel }: {
-  period: PeriodKey; data: PeriodData; compare: PeriodData | null; compareLabel: string | null
-}) {
-  const t = useTranslations('financials.performance')
-  const { revenue, food_cost, staff_cost, overheads, net_margin } = data
-  const maxVal = Math.max(revenue, 1)
-  const W = 700, H = 240
-  const padX = 40, padY = 30
-  // 5-bar layout: Revenue → Food cost (TOTAL incl. alcohol) → Labour →
-  // Overheads → Net. Alcohol is NOT a separate bar in the waterfall — the
-  // food/alcohol split lives in the breakdown table as an indented sub-row
-  // under Food cost. Showing alcohol as a separate bar made "Food cost"
-  // read as food-only (66 k = 4.7 %) which contradicts what owners expect
-  // when they see "Food cost" — they expect total cost-of-goods.
-  const BAR_COUNT = 5
-  const innerW = W - padX - 20, innerH = H - padY - 30
-  const yBase  = padY + innerH            // baseline (value = 0)
-  const xFor  = (i: number) => padX + (innerW / BAR_COUNT) * (i + 0.5)
-  // Clamp y into the chart area so bars can't overflow the x-axis when a
-  // cumulative value goes negative (e.g. overheads push afterOh < 0).
-  const yFor  = (v: number) => Math.max(padY, Math.min(yBase, padY + innerH - (v / maxVal) * innerH))
-  const barW  = (innerW / BAR_COUNT) * 0.6
-
-  // Stepping heights.
-  const afterRev   = revenue
-  const afterFood  = afterRev - food_cost
-  const afterStaff = afterFood - staff_cost
-  const afterOh    = afterStaff - overheads
-
-  const grid = [0, maxVal * 0.33, maxVal * 0.66, maxVal]
-  // `key` is a stable identifier (used by branching logic — terminal vs non-
-  // terminal, compare overlay step heights). `label` is the i18n display
-  // string. Decoupling the two keeps the maths locale-neutral.
-  const bars: any[] = [
-    { key: 'Revenue',   label: t('waterfall.barRevenue'),   value: revenue,    top: yFor(revenue),   bot: yFor(0),         fill: UX.navy,                            x: xFor(0) },
-    { key: 'Food cost', label: t('waterfall.barFood'),      value: food_cost,  top: yFor(afterRev),  bot: yFor(afterFood), fill: UX.burnt,                           x: xFor(1), show: data.has_food },
-    { key: 'Labour',    label: t('waterfall.barLabour'),    value: staff_cost, top: yFor(afterFood), bot: yFor(afterStaff),fill: UX.burnt, opacity: 0.75, x: xFor(2) },
-    { key: 'Overheads', label: t('waterfall.barOverheads'), value: overheads,  top: yFor(afterStaff),bot: yFor(afterOh),   fill: UX.burnt, opacity: 0.45, x: xFor(3), show: data.has_overheads },
-    { key: 'Net',       label: t('waterfall.barNet'),       value: net_margin, top: yFor(Math.max(net_margin, 0)), bot: yFor(0), fill: net_margin >= 0 ? UX.marginLine : UX.redInk, x: xFor(4) },
-  ]
-
-  return (
-    <div style={cardStyle()}>
-      <div style={titleRowStyle()}>
-        <span>{t('waterfall.title', { period: periodLabel(period) })}</span>
-        {compareLabel && (
-          <span style={{ fontSize: UX.fsLabel, color: '#4338ca', background: UX.indigoBg, padding: '2px 7px', borderRadius: UX.r_sm, border: `0.5px solid ${UX.indigo}` }}>{t('waterfall.compareTag', { label: compareLabel })}</span>
-        )}
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('waterfall.ariaLabel', { period: periodLabel(period) })} style={{ width: '100%', height: 260 }}>
-        {grid.map((g, i) => (
-          <g key={i}>
-            <line x1={padX} x2={W - 20} y1={yFor(g)} y2={yFor(g)} stroke={UX.borderSoft} strokeDasharray="3 3" strokeWidth="0.5" />
-            <text x={padX - 6} y={yFor(g) + 3} textAnchor="end" fontSize="9" fill={UX.ink4}>{fmtShortKr(g)}</text>
-          </g>
-        ))}
-        {/* Connectors */}
-        {bars.slice(0, -1).map((b, i) => (
-          <line key={`c${i}`} x1={b.x + barW / 2} x2={bars[i + 1].x - barW / 2} y1={b.top} y2={b.top} stroke={UX.ink5} strokeDasharray="3 2" strokeWidth="0.5" />
-        ))}
-        {bars.map((b) => {
-          const isTerminal = b.key === 'Revenue' || b.key === 'Net'
-          const show = (b.show ?? true) && (b.value !== 0 || isTerminal)
-          return (
-            <g key={b.key}>
-              {show ? (
-                <rect x={b.x - barW / 2} y={Math.min(b.top, b.bot)} width={barW} height={Math.abs(b.bot - b.top) || 1} fill={b.fill} opacity={(b as any).opacity ?? 1} rx={2} />
-              ) : (
-                <rect x={b.x - barW / 2} y={yFor(maxVal * 0.05)} width={barW} height={2} fill={UX.ink5} />
-              )}
-              <text x={b.x} y={(show ? Math.min(b.top, b.bot) : yFor(maxVal * 0.05)) - 5} textAnchor="middle" fontSize="10" fontWeight="500" fill={UX.ink1}>
-                {show ? (isTerminal ? fmtShortKr(b.value) + ' kr' : '−' + fmtShortKr(b.value)) : '—'}
-              </text>
-              <text x={b.x} y={H - 12} textAnchor="middle" fontSize="11" fill={UX.ink2}>{b.label}</text>
-              <text x={b.x} y={H - 1}  textAnchor="middle" fontSize="9"  fill={UX.ink4}>
-                {b.key === 'Revenue' ? '100%' :
-                  b.key === 'Net'    ? fmtPct(data.margin_pct) :
-                  show && revenue > 0  ? fmtPct((b.value / revenue) * 100) : '—'}
-              </text>
-              {/* Compare overlay — compute running total at this bar's
-                  position on the compare series, mirroring the deduction
-                  order of the current bars so the dashed line sits at the
-                  comparable step height. */}
-              {compare && show && (() => {
-                const cRev = compare.revenue, cFood = compare.food_cost,
-                      cStaff = compare.staff_cost, cOh = compare.overheads, cNet = compare.net_margin
-                let yTopCompare: number
-                switch (b.key) {
-                  case 'Revenue':   yTopCompare = yFor(cRev); break
-                  case 'Food cost': yTopCompare = yFor(cRev); break
-                  case 'Labour':    yTopCompare = yFor(cRev - cFood); break
-                  case 'Overheads': yTopCompare = yFor(cRev - cFood - cStaff); break
-                  case 'Net':       yTopCompare = yFor(Math.max(cNet, 0)); break
-                  default:          yTopCompare = b.top
-                }
-                return <line x1={b.x - barW / 2 - 3} x2={b.x + barW / 2 + 3} y1={yTopCompare} y2={yTopCompare} stroke={UX.indigo} strokeDasharray="3 2" strokeWidth="1.2" />
-              })()}
-            </g>
-          )
-        })}
-      </svg>
-      <Legend compare={!!compare} />
-    </div>
-  )
-}
-function Legend({ compare }: { compare: boolean }) {
-  const t = useTranslations('financials.performance.waterfall')
-  return (
-    <div style={{ display: 'flex', gap: 14, paddingTop: 8, fontSize: UX.fsLabel, color: UX.ink3 }}>
-      <LegendSwatch colour={UX.navy}   label={t('legendRevenue')} />
-      <LegendSwatch colour={UX.burnt}  label={t('legendCosts')} />
-      <LegendSwatch colour={UX.marginLine} label={t('legendNet')} />
-      {compare && <LegendSwatch colour={UX.indigo} label={t('legendCompare')} dashed />}
-    </div>
-  )
-}
-function LegendSwatch({ colour, label, dashed }: { colour: string; label: string; dashed?: boolean }) {
-  return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <span style={{ width: 14, height: 2, background: dashed ? 'transparent' : colour, borderTop: dashed ? `2px dashed ${colour}` : 'none' }} />
-      {label}
-    </div>
-  )
-}
-
-// ─── Donut ─────────────────────────────────────────────────────────────────
-function DonutCard({ data }: { data: PeriodData }) {
-  const t      = useTranslations('financials.performance.donut')
-  const tWater = useTranslations('financials.performance.waterfall')
-  const total = data.food_cost + data.staff_cost + data.overheads
-  // Three top-level cost categories. Food cost is the FULL cost-of-goods
-  // (food + alcohol). The food/alcohol split lives in the breakdown table
-  // as an indented sub-row — matching how Revenue is split there.
-  // Pre-fix the donut sliced food_cost into food-only + alcohol, but the
-  // "Food cost" label next to a 5 % slice contradicted owner expectation
-  // when COGS is actually 32 % (FIXES.md §0p).
-  const slices = [
-    // Reuse the Waterfall bar labels for consistency — same three categories.
-    { label: tWater('barLabour'),    value: data.staff_cost, opacity: 0.75 },
-    { label: tWater('barFood'),      value: data.food_cost,  opacity: 1    },
-    { label: tWater('barOverheads'), value: data.overheads,  opacity: 0.45 },
-  ].filter(s => s.value > 0)
-  // SVG stroke straddles the path radius, so the donut actually extends
-  // from (R - strokeWidth/2) to (R + strokeWidth/2). With R=55 and
-  // strokeWidth=20, outer edge is at radius 65 from centre. Centring at
-  // (75,75) inside a 150×150 viewBox gives 10 px of safe padding on all
-  // sides — no clipping, regardless of renderer anti-aliasing.
-  const R = 55, r = 35
-  const strokeW = R - r
-  const circumference = 2 * Math.PI * R
-  let offset = 0
-  const arcs = slices.map(s => {
-    const frac = total > 0 ? s.value / total : 0
-    const len  = frac * circumference
-    const arc  = { ...s, dashArray: `${len} ${circumference - len}`, dashOffset: -offset, fraction: frac }
-    offset += len
-    return arc
-  })
-
-  return (
-    <div style={cardStyle()}>
-      <div style={titleRowStyle()}>
-        <span>{t('title')}</span>
-        <span style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>
-          {total > 0 ? `${fmtKr(total)} · ${data.revenue > 0 ? fmtPct((total / data.revenue) * 100) : '—'}` : '—'}
-        </span>
-      </div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '6px 0' }}>
-        <svg viewBox="0 0 150 150" width="150" height="150" role="img" aria-label={t('ariaLabel')} style={{ flexShrink: 0 }}>
-          <circle cx="75" cy="75" r={R} fill="none" stroke={UX.borderSoft} strokeWidth={strokeW} />
-          {arcs.map((a, i) => (
-            <circle key={i} cx="75" cy="75" r={R} fill="none"
-              stroke={UX.burnt} strokeOpacity={a.opacity}
-              strokeWidth={strokeW}
-              strokeDasharray={a.dashArray}
-              strokeDashoffset={a.dashOffset}
-              transform="rotate(-90 75 75)" />
-          ))}
-          <text x="75" y="71" textAnchor="middle" fontSize="16" fontWeight="500" fill={UX.ink1}>{fmtShortKr(total)}</text>
-          <text x="75" y="86" textAnchor="middle" fontSize="10" fill={UX.ink4}>{t('totalCost')}</text>
-        </svg>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {slices.map(s => (
-            <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: UX.fsLabel }}>
-              <span style={{ width: 10, height: 10, background: UX.burnt, opacity: s.opacity, borderRadius: 2 }} />
-              <span style={{ flex: 1, color: UX.ink2 }}>{s.label}</span>
-              <span style={{ color: UX.ink1, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' }}>{fmtKr(s.value)}</span>
-              <span style={{ color: UX.ink4, width: 48, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' }}>
-                {total > 0 ? fmtPct((s.value / total) * 100) : '—'}
-              </span>
-            </div>
-          ))}
-          {slices.length === 0 && <div style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>{t('empty')}</div>}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Breakdown table ───────────────────────────────────────────────────────
-function BreakdownTable({ data, compare, compareLabel }: {
-  data: PeriodData; compare: PeriodData | null; compareLabel: string | null
-}) {
-  const t = useTranslations('financials.performance.breakdown')
-  // Food cost = TOTAL cost-of-goods (food_cost rollup, includes alcohol).
-  // Alcohol is shown as an indented sub-row underneath — same pattern as
-  // the Revenue VAT split. Pre-fix the row labelled "Food cost" carried
-  // food_only_cost (food − alcohol), so for an alcohol-heavy business
-  // "Food cost" read as 4 % when COGS was actually 32 % (FIXES.md §0p).
-  // Same key/label split as the Waterfall: `key` is the locale-neutral row
-  // identifier used by branching logic ("Revenue" / "Labour" rows are
-  // always rendered with kr regardless of `compareable`); `label` is the
-  // i18n display string.
-  const rows: any[] = [
-    { key: 'Revenue',    label: t('row.revenue'),    kr: data.revenue,    swatch: UX.navy, ccKr: compare?.revenue, compareable: true },
-  ]
-  if (data.has_revenue_split) {
-    rows.push(
-      { key: 'DineIn',     label: t('row.dineIn'),     kr: data.revenue_dine_in,  swatch: 'transparent', ccKr: compare?.revenue_dine_in,  compareable: true, indented: true },
-    )
-    if (data.has_takeaway || (compare?.revenue_takeaway ?? 0) > 0) {
-      rows.push(
-        { key: 'Takeaway', label: t('row.takeaway'),    kr: data.revenue_takeaway, swatch: 'transparent', ccKr: compare?.revenue_takeaway, compareable: true, indented: true },
-      )
-    }
-    rows.push(
-      { key: 'AlcoholRev', label: t('row.alcoholRev'),  kr: data.revenue_alcohol,  swatch: 'transparent', ccKr: compare?.revenue_alcohol,  compareable: true, indented: true },
-    )
-  }
-  rows.push(
-    { key: 'FoodCost', label: t('row.foodCost'), kr: data.food_cost, swatch: UX.burnt, ccKr: compare?.food_cost, compareable: data.has_food },
-  )
-  if (data.has_alcohol) {
-    rows.push(
-      { key: 'FoodOnly',    label: t('row.foodOnly'),    kr: data.food_only_cost, swatch: 'transparent', ccKr: compare?.food_only_cost, compareable: true, indented: true },
-      { key: 'AlcoholCost', label: t('row.alcoholCost'), kr: data.alcohol_cost,   swatch: 'transparent', ccKr: compare?.alcohol_cost,   compareable: true, indented: true },
-    )
-  }
-  rows.push(
-    { key: 'Labour',  label: t('row.labour'),   kr: data.staff_cost, swatch: UX.burnt, opacity: 0.75, ccKr: compare?.staff_cost, compareable: true },
-    { key: 'RentUtil',label: t('row.rentUtil'), kr: data.overhead_split.rent + data.overhead_split.utilities, swatch: UX.burnt, opacity: 0.45, ccKr: (compare?.overhead_split.rent ?? 0) + (compare?.overhead_split.utilities ?? 0), compareable: data.has_overheads },
-    { key: 'OtherOh', label: t('row.otherOh'),  kr: data.overhead_split.other, swatch: UX.burnt, opacity: 0.45, ccKr: compare?.overhead_split.other, compareable: data.has_overheads },
-  )
-  return (
-    <div style={cardStyle()}>
-      <div style={titleRowStyle()}>
-        <span>{t('title')}</span>
-        <span style={{ fontSize: UX.fsLabel, color: UX.ink4 }}>{compareLabel ? t('vsLabel', { label: compareLabel }) : t('ofRevenue')}</span>
-      </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: UX.fsBody }}>
-        <thead>
-          <tr style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-            <th style={thStyle()}></th>
-            <th style={thStyle()}>{t('th.category')}</th>
-            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? t('th.current') : t('th.amount')}</th>
-            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? t('th.compare') : t('th.pctRev')}</th>
-            <th style={{ ...thStyle(), textAlign: 'right' as const }}>{compareLabel ? t('th.delta') : ''}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => {
-            const pct = data.revenue > 0 ? (r.kr / data.revenue) * 100 : null
-            const delta = r.ccKr != null ? r.kr - (r.ccKr ?? 0) : null
-            const deltaGood = r.key === 'Revenue' ? (delta ?? 0) >= 0 : (delta ?? 0) <= 0
-            const compareShow = r.compareable
-            return (
-              <tr key={r.key} style={{ borderBottom: `0.5px solid ${UX.borderSoft}` }}>
-                <td style={tdStyle({ width: 14 })}><span style={{ display: 'inline-block', width: 10, height: 10, background: r.swatch, opacity: (r as any).opacity ?? 1, borderRadius: 2 }} /></td>
-                <td style={tdStyle()}>{r.label}</td>
-                <td style={{ ...tdStyle(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' }}>{r.compareable || r.key === 'Revenue' || r.key === 'Labour' ? fmtKr(r.kr) : '—'}</td>
-                <td style={{ ...tdStyle(), textAlign: 'right' as const, color: UX.ink3, fontVariantNumeric: 'tabular-nums' }}>
-                  {compareLabel
-                    ? (compareShow ? (r.ccKr != null ? fmtKr(r.ccKr) : '—') : '—')
-                    : (pct != null ? fmtPct(pct) : '—')}
-                </td>
-                <td style={{ ...tdStyle(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums',
-                             color: compareLabel ? (delta == null || !compareShow ? UX.ink4 : deltaGood ? UX.greenInk : UX.redInk) : UX.ink4 }}>
-                  {compareLabel ? (compareShow && delta != null ? `${delta >= 0 ? '+' : '−'}${fmtShortKr(Math.abs(delta))}` : '—') : ''}
-                </td>
-              </tr>
-            )
-          })}
-          <tr>
-            <td style={tdStyle()}></td>
-            <td style={{ ...tdStyle(), color: UX.greenInk, fontWeight: UX.fwMedium }}>{t('row.netMargin')}</td>
-            <td style={{ ...tdStyle(), textAlign: 'right' as const, color: UX.greenInk, fontWeight: UX.fwMedium, fontVariantNumeric: 'tabular-nums' }}>{fmtKr(data.net_margin)}</td>
-            <td style={{ ...tdStyle(), textAlign: 'right' as const, color: UX.ink3, fontVariantNumeric: 'tabular-nums' }}>{fmtPct(data.margin_pct)}</td>
-            <td style={tdStyle()}></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-// ─── Trend cards ───────────────────────────────────────────────────────────
-function TrendCard({ label, value, points, tone, target, invert }: {
-  label: string; value: string; points: { value: number }[] | number[]; tone: 'good' | 'bad' | 'warning' | 'neutral'; target: string; invert?: boolean
-}) {
-  const arr = Array.isArray(points) ? (typeof points[0] === 'number' ? (points as number[]) : (points as any[]).map(p => p.value ?? 0)) : []
-  const avg = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0
-  const latest = arr.length ? arr[arr.length - 1] : 0
-  const delta  = arr.length > 1 ? latest - arr[arr.length - 2] : 0
-  const up    = delta >= 0
-  const deltaGood = invert ? !up : up
-  return (
-    <div style={cardStyle()}>
-      <div style={{ fontSize: UX.fsNano, color: UX.ink4, letterSpacing: '.08em', textTransform: 'uppercase' as const, marginBottom: 6 }}>{label}</div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-        <div style={{ fontSize: 22, fontWeight: UX.fwMedium, color: tone === 'good' ? UX.greenInk : tone === 'warning' ? UX.amberInk : tone === 'bad' ? UX.redInk : UX.ink1, fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-        <div style={{ fontSize: UX.fsLabel, color: deltaGood ? UX.greenInk : UX.redInk }}>{up ? '↑' : '↓'} {Math.abs(delta).toFixed(1)}pp</div>
-      </div>
-      <div style={{ marginTop: 4 }}>
-        <Sparkline points={arr} tone={tone} width={240} height={36} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: UX.fsNano, color: UX.ink4 }}>
-        <span>{target}</span>
-        <span>12-period avg {avg.toFixed(1)}%</span>
-      </div>
-    </div>
-  )
-}
-function granLabel(g: Granularity): string {
-  return g === 'week' ? 'WEEKS' : g === 'month' ? 'MONTHS' : g === 'quarter' ? 'QUARTERS' : 'YEARS'
-}
-
-// ─── Template "What's tunable" items ──────────────────────────────────────
-function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData | null, t: any): AttentionItem[] {
+// ── buildTunableItems — heuristic lever-flagger ────────────────────
+function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData | null): AttentionItem[] {
   const items: AttentionItem[] = []
   // Labour lever
   if (cur.revenue > 0 && cur.staff_pct != null) {
@@ -1497,55 +1370,35 @@ function buildTunableItems(period: PeriodKey, cur: PeriodData, prev: PeriodData 
     if (over > 2) {
       items.push({
         tone: over > 10 ? 'bad' : 'warning',
-        entity: t('tunable.labour'),
-        message: t('tunable.labourOver', { pp: over.toFixed(1), amount: fmtShortKr(onePpKr) }),
+        entity: 'Labour',
+        message: `Labour at ${fmtPct(cur.staff_pct)} — ${over.toFixed(1)}pp over the 42% target. Each percentage point ≈ ${fmtShortKr(onePpKr)} on this period's revenue.`,
       })
     } else {
-      items.push({ tone: 'good', entity: t('tunable.labour'), message: t('tunable.labourOnTarget', { pct: fmtPct(cur.staff_pct) }) })
+      items.push({ tone: 'good', entity: 'Labour', message: `Labour at ${fmtPct(cur.staff_pct)} — within target.` })
     }
   }
   // Food
   if (cur.has_food && cur.food_pct != null) {
     const over = cur.food_pct - 32
     if (over > 2) {
-      items.push({ tone: over > 6 ? 'bad' : 'warning', entity: t('tunable.food'), message: t('tunable.foodOver', { pct: fmtPct(cur.food_pct), pp: over.toFixed(1) }) })
+      items.push({ tone: over > 6 ? 'bad' : 'warning', entity: 'Food cost', message: `CoGS at ${fmtPct(cur.food_pct)} — ${over.toFixed(1)}pp above the 32% target.` })
     } else if (prev && prev.food_pct != null && cur.food_pct < prev.food_pct - 1) {
-      items.push({ tone: 'good', entity: t('tunable.food'), message: t('tunable.foodImproved', { prev: fmtPct(prev.food_pct), cur: fmtPct(cur.food_pct) }) })
+      items.push({ tone: 'good', entity: 'Food cost', message: `CoGS improved from ${fmtPct(prev.food_pct)} to ${fmtPct(cur.food_pct)} — keep the procurement discipline.` })
     } else {
-      items.push({ tone: 'good', entity: t('tunable.food'), message: t('tunable.foodOnTarget', { pct: fmtPct(cur.food_pct) }) })
+      items.push({ tone: 'good', entity: 'Food cost', message: `CoGS at ${fmtPct(cur.food_pct)} — within target.` })
     }
   } else if (!cur.has_food) {
-    items.push({ tone: 'warning', entity: t('tunable.food'), message: t('tunable.foodNoData') })
+    items.push({ tone: 'warning', entity: 'Food cost', message: 'No food cost in this period — upload the Fortnox Resultatrapport to surface CoGS.' })
   }
   // Overheads
   if (cur.has_overheads && cur.overheads_pct != null) {
     if (cur.overheads_pct > 25) {
-      items.push({ tone: 'warning', entity: t('tunable.overheads'), message: t('tunable.ohHigh', { pct: fmtPct(cur.overheads_pct) }) })
+      items.push({ tone: 'warning', entity: 'Overheads', message: `Overheads at ${fmtPct(cur.overheads_pct)} — high enough to review subscriptions, rent and utility deals.` })
     } else {
-      items.push({ tone: 'good', entity: t('tunable.overheads'), message: t('tunable.ohOnTarget', { pct: fmtPct(cur.overheads_pct) }) })
+      items.push({ tone: 'good', entity: 'Overheads', message: `Overheads at ${fmtPct(cur.overheads_pct)} — within typical band.` })
     }
   } else if (period.granularity === 'week') {
-    items.push({ tone: 'warning', entity: t('tunable.weekView'), message: t('tunable.weekViewMsg') })
+    items.push({ tone: 'warning', entity: 'Weekly view', message: 'Food cost and overheads are tracked monthly in Fortnox — switch to Month to see those rows.' })
   }
   return items.slice(0, 4)
-}
-
-// ─── Shared card styles ───────────────────────────────────────────────────
-function cardStyle() {
-  return {
-    background: UX.cardBg, border: `0.5px solid ${UX.border}`, borderRadius: UX.r_lg,
-    padding: '14px 16px',
-  } as const
-}
-function titleRowStyle() {
-  return {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    fontSize: UX.fsSection, fontWeight: UX.fwMedium, color: UX.ink1, marginBottom: 8,
-  } as const
-}
-function thStyle() {
-  return { padding: '6px 8px', fontSize: UX.fsNano, fontWeight: 500, color: UX.ink4, textAlign: 'left' as const, textTransform: 'uppercase' as const, letterSpacing: '.06em' } as const
-}
-function tdStyle(extra: any = {}) {
-  return { padding: '8px', color: UX.ink2, ...extra } as const
 }
