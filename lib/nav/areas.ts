@@ -77,6 +77,7 @@ export const AREAS: Area[] = [
     icon:  'calendar-event',
     pages: [
       { key: 'scheduling',  label: 'Scheduling',  href: '/scheduling' },
+      { key: 'grid',        label: 'Schedule grid', href: '/scheduling/grid' },
       { key: 'staff',       label: 'Staff',       href: '/staff' },
       { key: 'departments', label: 'Departments', href: '/departments' },
     ],
@@ -85,10 +86,15 @@ export const AREAS: Area[] = [
     key:   'inventory',
     label: 'Inventory setup',
     icon:  'box',
-    // Phase 6 will land items / recipes / counts / waste. Kept here so the
-    // rail icon renders today and the area resolves to /dashboard-style
-    // "coming soon" when clicked (current pages array is empty).
-    pages: [],
+    // Phase 6 vision pages — currently demo data behind a DemoDataBanner.
+    // The pages stay here when a real /api/inventory/* lands; the only
+    // change at that point is removing the banner.
+    pages: [
+      { key: 'items',   label: 'Artiklar',     href: '/inventory/items' },
+      { key: 'recipes', label: 'Menyrecept',   href: '/inventory/recipes' },
+      { key: 'counts',  label: 'Lagerräkning', href: '/inventory/counts' },
+      { key: 'waste',   label: 'Svinn',        href: '/inventory/waste' },
+    ],
   },
   {
     key:   'bookkeeping',
