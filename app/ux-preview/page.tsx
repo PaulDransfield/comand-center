@@ -1,5 +1,5 @@
 'use client'
-// app/_ux-preview/page.tsx
+// app/ux-preview/page.tsx
 //
 // Phase 1 robustness preview. Each `components/ux/*` component rendered
 // against the four ugly-data cases the Phase 1 prompt mandates:
@@ -8,9 +8,10 @@
 //   3. Null values (must render as "—")
 //   4. Negative deltas (must render rose, not green)
 //
-// Not linked from nav. Visit /_ux-preview directly on the preview
-// deployment. Underscore prefix is convention for "internal — not for
-// customers"; the App Router still serves it.
+// Not linked from nav. Visit /ux-preview directly on the preview
+// deployment. (Originally lived at /_ux-preview, but Next.js App Router
+// treats folders prefixed with `_` as PRIVATE — they opt out of routing
+// entirely — so the route 404'd. Renamed to remove the underscore.)
 //
 // Auth: none. The page renders only the new presentational components,
 // no live data, so showing it without auth is safe.
