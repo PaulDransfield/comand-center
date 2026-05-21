@@ -1,83 +1,87 @@
 'use client'
 // @ts-nocheck
+// app/invoices/page.tsx — full rebuild on the new system
+//
+// Phase 5 only added the KPI strip on top of the legacy navy table +
+// drop-zone + filter tabs. This is the body rebuild — every surface
+// lives on UXP + KpiCardUX + BreakdownTable.
+//
+// Data:
+//   GET    /api/invoices?business_id      — list invoices
+//   POST   /api/invoices/extract          — PDF → extracted invoice
+//   PATCH  /api/invoices                  — update status
+//   DELETE /api/invoices?id=              — delete
+
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
+
 import AppShell from '@/components/AppShell'
-import { fmtKr } from '@/lib/format'
-// Phase 5 — Bookkeeping. Replace the inline 3-card grid with 4 KpiCardUX
-// + a "Synkad från Fortnox" indicator near the title.
 import KpiCardUX from '@/components/ux/KpiCard'
+import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { UXP } from '@/lib/constants/tokens'
+import { fmtKr } from '@/lib/format'
 
 interface Invoice {
-  id: string; vendor: string; amount: number; date: string
-  category: string; status: string; notes: string | null
-  created_at: string; file_url: string | null
+  id:         string
+  vendor:     string
+  amount:     number
+  date:       string
+  category:   string
+  status:     'paid' | 'pending' | 'overdue' | string
+  notes:      string | null
+  created_at: string
+  file_url:   string | null
 }
-interface Business { id: string; name: string }
 
-const fmtDate = (s: string) => new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+const fmtDate = (s: string) =>
+  s ? new Date(s).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
-const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
-  paid:    { bg: '#f0fdf4', color: '#15803d' },
-  overdue: { bg: '#fef2f2', color: '#dc2626' },
-  pending: { bg: '#fef3c7', color: '#d97706' },
-}
+type StatusFilter = 'all' | 'paid' | 'pending' | 'overdue'
 
 export default function InvoicesPage() {
   const t = useTranslations('alerts.invoices')
-  const [businesses, setBusinesses] = useState<Business[]>([])
-  const [selected,   setSelected]   = useState('')
-  const [invoices,   setInvoices]   = useState<Invoice[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [uploading,  setUploading]  = useState(false)
-  const [dragging,   setDragging]   = useState(false)
-  const [filter,     setFilter]     = useState('all')
+
+  const [bizId,     setBizId]     = useState<string | null>(null)
+  const [invoices,  setInvoices]  = useState<Invoice[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [dragging,  setDragging]  = useState(false)
+  const [filter,    setFilter]    = useState<StatusFilter>('all')
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // BizPicker
   useEffect(() => {
-    fetch('/api/businesses').then(r => r.json()).then((data: any[]) => {
-      if (!Array.isArray(data) || !data.length) return
-      setBusinesses(data)
-      const sync = () => {
-        const saved = localStorage.getItem('cc_selected_biz')
-        const id = (saved && data.find((b: any) => b.id === saved)) ? saved : data[0].id
-        setSelected(id)
-      }
-      sync()
-      window.addEventListener('storage', sync)
-    }).catch(() => {})
+    const sync = () => { const s = localStorage.getItem('cc_selected_biz'); if (s) setBizId(s) }
+    sync()
+    window.addEventListener('storage', sync)
+    return () => window.removeEventListener('storage', sync)
   }, [])
 
   const load = useCallback(async () => {
-    if (!selected) return
+    if (!bizId) return
     setLoading(true)
-    const res  = await fetch(`/api/invoices?business_id=${selected}`)
-    const data = await res.json()
-    if (Array.isArray(data)) setInvoices(data)
+    try {
+      const res  = await fetch(`/api/invoices?business_id=${bizId}`)
+      const data = await res.json()
+      if (Array.isArray(data)) setInvoices(data)
+    } catch {}
     setLoading(false)
-  }, [selected])
-
-  useEffect(() => { if (selected) load() }, [selected])
+  }, [bizId])
+  useEffect(() => { if (bizId) load() }, [bizId, load])
 
   async function uploadFile(file: File) {
+    if (!bizId) return
     setUploading(true)
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('business_id', selected)
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('business_id', bizId)
     try {
-      const res = await fetch('/api/invoices/extract', { method: 'POST', body: formData })
+      const res = await fetch('/api/invoices/extract', { method: 'POST', body: fd })
       if (res.ok) load()
     } catch {}
     setUploading(false)
-  }
-
-  async function deleteInvoice(id: string) {
-    if (!confirm(t('table.deleteConfirm'))) return
-    await fetch(`/api/invoices?id=${id}`, { method: 'DELETE' })
-    load()
   }
 
   async function updateStatus(id: string, status: string) {
@@ -89,90 +93,112 @@ export default function InvoicesPage() {
     load()
   }
 
-  const filtered   = filter === 'all' ? invoices : invoices.filter(i => i.status === filter)
-  const total      = invoices.reduce((s, i) => s + Number(i.amount ?? 0), 0)
-  const overdue    = invoices.filter(i => i.status === 'overdue')
+  async function deleteInvoice(id: string) {
+    if (!confirm(t('table.deleteConfirm'))) return
+    await fetch(`/api/invoices?id=${id}`, { method: 'DELETE' })
+    load()
+  }
+
+  // Filter + derived stats
+  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter)
+  const total    = invoices.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+  const overdue  = invoices.filter(i => i.status === 'overdue')
+  const pending  = invoices.filter(i => i.status === 'pending')
   const overdueAmt = overdue.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+  const pendingAmt = pending.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+
+  const largestSupplier = (() => {
+    if (invoices.length === 0) return null
+    const byVendor: Record<string, number> = {}
+    invoices.forEach(i => { byVendor[i.vendor] = (byVendor[i.vendor] ?? 0) + Number(i.amount ?? 0) })
+    const top = Object.entries(byVendor).sort((a, b) => b[1] - a[1])[0]
+    return top ? { name: top[0], amount: top[1] } : null
+  })()
 
   return (
     <AppShell>
-      <div style={{ padding: '28px', maxWidth: 1000 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' as const }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>{t('page.title')}</h1>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1 }}>{t('page.title')}</h1>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>{t('page.subtitle')}</p>
             <span style={{
-              display:      'inline-flex',
-              alignItems:   'center',
-              gap:          5,
-              marginTop:    8,
-              padding:      '3px 8px',
-              background:   UXP.lavFill,
-              color:        UXP.lavText,
-              borderRadius: 999,
-              fontSize:     10,
-              fontWeight:   500,
-              letterSpacing: '0.02em',
+              display:        'inline-flex',
+              alignItems:     'center',
+              gap:            5,
+              marginTop:      8,
+              padding:        '3px 10px',
+              background:     UXP.lavFill,
+              color:          UXP.lavText,
+              borderRadius:   999,
+              fontSize:       10,
+              fontWeight:     500,
+              letterSpacing:  '0.02em',
             }}>
               <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: UXP.green, display: 'inline-block' }} />
               Synkad från Fortnox
             </span>
           </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
-            <select value={selected} onChange={e => setSelected(e.target.value)}
-              style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 13, background: 'white' }}>
-              {businesses.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-            <input ref={fileRef} type="file" accept=".pdf" style={{ display: 'none' }}
-              onChange={e => { if (e.target.files?.[0]) uploadFile(e.target.files[0]) }} />
-            <button onClick={() => fileRef.current?.click()}
-              style={{ padding: '8px 16px', background: '#1a1f2e', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf"
+              style={{ display: 'none' }}
+              onChange={e => { if (e.target.files?.[0]) uploadFile(e.target.files[0]) }}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              style={{
+                padding:      '8px 16px',
+                background:   UXP.lavDeep,
+                color:        '#fff',
+                border:       'none',
+                borderRadius: 999,
+                fontSize:     12,
+                fontWeight:   500,
+                fontFamily:   'inherit',
+                cursor:       'pointer',
+              }}
+            >
               {t('page.uploadPdf')}
             </button>
           </div>
         </div>
 
-        {/* Phase 5 KPI strip — Count · Total · Due-soon (pending) · Flagged
-            (overdue). Spec called for due-soon based on a due_date, but the
-            invoices table doesn't carry one; pending count is the closest
-            actionable signal until that column lands. */}
-        {(() => {
-          const pending = invoices.filter(i => i.status === 'pending')
-          const pendingAmt = pending.reduce((s, i) => s + Number(i.amount ?? 0), 0)
-          return (
-            <div
-              style={{
-                display:             'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                gap:                 12,
-                marginBottom:        16,
-              }}
-            >
-              <KpiCardUX
-                title={t('kpi.invoicesCount', { count: invoices.length })}
-                value={String(invoices.length)}
-                microLabel="In current view"
-              />
-              <KpiCardUX
-                title={t('kpi.totalThisMonth')}
-                value={fmtKr(total)}
-                microLabel={`${invoices.length} invoices`}
-              />
-              <KpiCardUX
-                title="Pending"
-                value={String(pending.length)}
-                microLabel={pendingAmt > 0 ? fmtKr(pendingAmt) : 'None pending'}
-              />
-              <KpiCardUX
-                title={t('kpi.overdue')}
-                value={String(overdue.length)}
-                deltaGood={false}
-                delta={overdue.length > 0 ? `${fmtKr(overdueAmt)} outstanding` : null}
-                microLabel={overdue.length === 0 ? t('kpi.noneOverdue') : 'Needs action'}
-              />
-            </div>
-          )
-        })()}
+        {/* KPI strip */}
+        <div style={{
+          display:             'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap:                 12,
+        }}>
+          <KpiCardUX
+            title={t('kpi.invoicesCount', { count: invoices.length })}
+            value={String(invoices.length)}
+            microLabel="In current view"
+          />
+          <KpiCardUX
+            title={t('kpi.totalThisMonth')}
+            value={fmtKr(total)}
+            microLabel={largestSupplier ? `Largest: ${largestSupplier.name}` : ''}
+          />
+          <KpiCardUX
+            title="Pending"
+            value={String(pending.length)}
+            microLabel={pendingAmt > 0 ? fmtKr(pendingAmt) : 'None pending'}
+          />
+          <KpiCardUX
+            title={t('kpi.overdue')}
+            value={String(overdue.length)}
+            deltaGood={false}
+            delta={overdue.length > 0 ? `${fmtKr(overdueAmt)} outstanding` : null}
+            microLabel={overdue.length === 0 ? t('kpi.noneOverdue') : 'Needs action'}
+          />
+        </div>
 
         {/* Drop zone */}
         <div
@@ -180,83 +206,211 @@ export default function InvoicesPage() {
           onDragLeave={() => setDragging(false)}
           onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) uploadFile(f) }}
           onClick={() => fileRef.current?.click()}
-          style={{ background: dragging ? '#ede9fe' : '#f0f9ff', border: `1.5px dashed ${dragging ? '#6366f1' : '#bae6fd'}`, borderRadius: 12, padding: '16px 20px', textAlign: 'center', cursor: 'pointer', marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#0369a1' }}>
+          style={{
+            background:    dragging ? UXP.lavFill : UXP.subtleBg,
+            border:        `1.5px dashed ${dragging ? UXP.lav : UXP.lavMid}`,
+            borderRadius:  UXP.r_lg,
+            padding:       '16px 20px',
+            textAlign:     'center' as const,
+            cursor:        'pointer',
+          }}
+        >
+          <div style={{ fontSize: 12, fontWeight: 500, color: UXP.lavText }}>
             {uploading ? t('drop.extracting') : t('drop.drop')}
           </div>
-          <div style={{ fontSize: 11, color: '#0284c7', marginTop: 3 }}>
+          <div style={{ fontSize: 10, color: UXP.lavText, opacity: 0.75, marginTop: 3 }}>
             {t('drop.hint')}
           </div>
         </div>
 
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: 4, background: '#f3f4f6', borderRadius: 8, padding: 3, width: 'fit-content', marginBottom: 14 }}>
-          {(['all','paid','pending','overdue'] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '5px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: filter === f ? 600 : 400,
-                background: filter === f ? 'white' : 'transparent', color: filter === f ? '#111' : '#6b7280' }}>
+        {/* Filter pills */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+          {(['all', 'paid', 'pending', 'overdue'] as const).map(f => (
+            <FilterPill key={f} active={filter === f} onClick={() => setFilter(f)}>
               {t(`filter.${f}`)}
-            </button>
+            </FilterPill>
           ))}
         </div>
 
-        {/* Invoice table */}
-        <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, overflow: 'hidden' }}>
-          {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>{t('table.loading')}</div>
-          ) : filtered.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#9ca3af' }}>
-              {invoices.length === 0 ? t('table.emptyAll') : t('table.emptyFilter')}
-            </div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: '#fafafa', borderBottom: '1px solid #e5e7eb' }}>
-                  {[
-                    { key: 'supplier', label: t('table.supplier') },
-                    { key: 'date',     label: t('table.date') },
-                    { key: 'amount',   label: t('table.amount') },
-                    { key: 'category', label: t('table.category') },
-                    { key: 'status',   label: t('table.status') },
-                    { key: 'actions',  label: '' },
-                  ].map(h => (
-                    <th key={h.key} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '.06em' }}>{h.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(inv => {
-                  const ss = STATUS_STYLE[inv.status] ?? STATUS_STYLE.pending
-                  return (
-                    <tr key={inv.id} style={{ borderBottom: '0.5px solid #f3f4f6' }}>
-                      <td style={{ padding: '11px 14px', fontWeight: 600, color: '#111' }}>{inv.vendor}</td>
-                      <td style={{ padding: '11px 14px', color: '#6b7280' }}>{fmtDate(inv.date || inv.created_at)}</td>
-                      <td style={{ padding: '11px 14px', fontWeight: 600 }}>{fmtKr(Number(inv.amount))}</td>
-                      <td style={{ padding: '11px 14px' }}>
-                        <span style={{ background: '#f3f4f6', color: '#374151', padding: '2px 8px', borderRadius: 4, fontSize: 12 }}>{inv.category}</span>
-                      </td>
-                      <td style={{ padding: '11px 14px' }}>
-                        <select value={inv.status} onChange={e => updateStatus(inv.id, e.target.value)}
-                          style={{ padding: '3px 8px', background: ss.bg, color: ss.color, border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                          <option value="pending">{t('status.pending')}</option>
-                          <option value="paid">{t('status.paid')}</option>
-                          <option value="overdue">{t('status.overdue')}</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '11px 14px' }}>
-                        <button onClick={() => deleteInvoice(inv.id)}
-                          style={{ padding: '3px 10px', background: '#fef2f2', color: '#dc2626', border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer' }}>
-                          {t('table.delete')}
-                        </button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {/* Table */}
+        {loading ? (
+          <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>{t('table.loading')}</div>
+        ) : filtered.length === 0 ? (
+          <Empty>{invoices.length === 0 ? t('table.emptyAll') : t('table.emptyFilter')}</Empty>
+        ) : (
+          <BreakdownTable<Invoice>
+            columns={[
+              {
+                key: 'supplier', header: t('table.supplier'), align: 'left',
+                render: (inv) => <span style={{ color: UXP.ink1, fontWeight: 500 }}>{inv.vendor}</span>,
+              },
+              {
+                key: 'date', header: t('table.date'), align: 'left',
+                render: (inv) => <span style={{ color: UXP.ink3 }}>{fmtDate(inv.date || inv.created_at)}</span>,
+              },
+              {
+                key: 'amount', header: t('table.amount'), align: 'right',
+                render: (inv) => (
+                  <span style={{ color: UXP.ink1, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const }}>
+                    {fmtKr(Number(inv.amount))}
+                  </span>
+                ),
+              },
+              {
+                key: 'category', header: t('table.category'), align: 'left',
+                render: (inv) => (
+                  <span style={{
+                    display:       'inline-block',
+                    fontSize:      10,
+                    padding:       '2px 7px',
+                    background:    UXP.subtleBg,
+                    color:         UXP.ink2,
+                    borderRadius:  6,
+                    border:        `0.5px solid ${UXP.border}`,
+                  }}>{inv.category}</span>
+                ),
+              },
+              {
+                key: 'status', header: t('table.status'), align: 'right',
+                render: (inv) => (
+                  <select
+                    value={inv.status}
+                    onChange={e => updateStatus(inv.id, e.target.value)}
+                    style={{
+                      padding:       '3px 8px',
+                      background:    statusBg(inv.status),
+                      color:         statusFg(inv.status),
+                      border:        `0.5px solid ${statusBorder(inv.status)}`,
+                      borderRadius:  6,
+                      fontSize:      10,
+                      fontWeight:    500,
+                      cursor:        'pointer',
+                      fontFamily:    'inherit',
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase' as const,
+                    }}
+                  >
+                    <option value="pending">{t('status.pending')}</option>
+                    <option value="paid">{t('status.paid')}</option>
+                    <option value="overdue">{t('status.overdue')}</option>
+                  </select>
+                ),
+              },
+              {
+                key: 'actions', header: '', align: 'right',
+                render: (inv) => (
+                  <div style={{ display: 'inline-flex', gap: 6 }}>
+                    {inv.file_url && (
+                      <a
+                        href={inv.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          padding:        '3px 10px',
+                          background:     UXP.lavFill,
+                          color:          UXP.lavText,
+                          border:         'none',
+                          borderRadius:   999,
+                          fontSize:       10,
+                          fontWeight:     500,
+                          textDecoration: 'none',
+                          letterSpacing:  '0.02em',
+                        }}
+                      >PDF</a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => deleteInvoice(inv.id)}
+                      style={{
+                        padding:      '3px 10px',
+                        background:   UXP.roseFill,
+                        color:        UXP.roseText,
+                        border:       'none',
+                        borderRadius: 999,
+                        fontSize:     10,
+                        fontWeight:   500,
+                        cursor:       'pointer',
+                        fontFamily:   'inherit',
+                      }}
+                    >
+                      {t('table.delete')}
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+            sections={[{ rows: filtered }]}
+            footer={filter === 'all' ? {
+              label: 'Total',
+              cells: {
+                date:     '',
+                amount:   fmtKr(total),
+                category: '',
+                status:   '',
+                actions:  '',
+              },
+            } : null}
+            rowKey={(row) => row.id}
+          />
+        )}
       </div>
     </AppShell>
+  )
+}
+
+// ── Status palette ─────────────────────────────────────────────────
+function statusBg(status: string) {
+  if (status === 'paid')    return UXP.greenFill
+  if (status === 'overdue') return UXP.roseFill
+  return UXP.lavFill
+}
+function statusFg(status: string) {
+  if (status === 'paid')    return UXP.greenDeep
+  if (status === 'overdue') return UXP.roseText
+  return UXP.coral
+}
+function statusBorder(status: string) {
+  if (status === 'paid')    return UXP.green
+  if (status === 'overdue') return UXP.rose
+  return UXP.lavMid
+}
+
+// ── Atoms ──────────────────────────────────────────────────────────
+
+function FilterPill({ active, onClick, children }: any) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding:       '4px 10px',
+        background:    active ? UXP.lavFill : UXP.cardBg,
+        color:         active ? UXP.lavText : UXP.ink2,
+        border:        `0.5px solid ${active ? UXP.lav : UXP.border}`,
+        borderRadius:  999,
+        fontSize:      10,
+        fontWeight:    500,
+        fontFamily:    'inherit',
+        cursor:        'pointer',
+        letterSpacing: '0.02em',
+        textTransform: 'capitalize' as const,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      padding:       40,
+      textAlign:     'center' as const,
+      color:         UXP.ink4,
+      fontSize:      12,
+      background:    UXP.cardBg,
+      borderRadius:  UXP.r_lg,
+      border:        `0.5px solid ${UXP.border}`,
+    }}>{children}</div>
   )
 }
