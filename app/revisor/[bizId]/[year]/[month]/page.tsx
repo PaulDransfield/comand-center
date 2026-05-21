@@ -15,8 +15,13 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
+// Phase 5 — Bookkeeping. Accountant close-the-month KpiCardUX strip:
+// Intäkter (3xxx) · Kostnader (4-7xxx) · Resultat · Marginal. Avstämd
+// chip beside the title when the period sourced from a Fortnox PDF
+// (the human-reviewed path) — see CLAUDE.md Session 17 invariants.
+import KpiCardUX from '@/components/ux/KpiCard'
 
 const MONTH_NAMES_SV = [
   'januari', 'februari', 'mars', 'april', 'maj', 'juni',
@@ -142,8 +147,22 @@ export default function RevisorMonthDetail() {
           >
             ← Alla månader
           </a>
-          <h1 style={{ fontSize: 24, fontWeight: 600, color: UX.ink1, margin: 0 }}>
-            Månadsavslut · {periodLabel}
+          <h1 style={{ fontSize: 24, fontWeight: 600, color: UX.ink1, margin: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
+            <span>Månadsavslut · {periodLabel}</span>
+            {t && (t.source === 'fortnox_pdf' || t.source === 'fortnox_apply') && (
+              <span style={{
+                fontSize:      10,
+                fontWeight:    600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase' as const,
+                padding:       '3px 8px',
+                background:    UXP.greenFill,
+                color:         UXP.greenDeep,
+                borderRadius:  999,
+              }}>
+                Avstämd
+              </span>
+            )}
           </h1>
           <div style={{ fontSize: 13, color: UX.ink3, marginTop: 4 }}>
             <strong>{data.business.name}</strong>
@@ -151,6 +170,55 @@ export default function RevisorMonthDetail() {
             {data.business.city && <> · {data.business.city}</>}
           </div>
         </div>
+
+        {/* Phase 5 KPI strip — accountant close-the-month roll-up. Reads
+            the same tracker_data row that powers the resultaträkning
+            grid below; presentation only. */}
+        {t && (() => {
+          const intakter = Number(t.revenue ?? 0)
+          const kostnader = Number(t.food_cost ?? 0) + Number(t.staff_cost ?? 0) + Number(t.other_cost ?? 0)
+          const resultat = Number(t.net_profit ?? 0)
+          const marginal = t.margin_pct != null ? Number(t.margin_pct) : null
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap:                 12,
+                marginBottom:        18,
+              }}
+            >
+              <KpiCardUX
+                title="Intäkter (3xxx)"
+                value={fmtKr(intakter)}
+                microLabel={periodLabel}
+              />
+              <KpiCardUX
+                title="Kostnader (4-7xxx)"
+                value={fmtKr(kostnader)}
+                deltaGood={false}
+                microLabel={intakter > 0 ? `${((kostnader / intakter) * 100).toFixed(1)}% av oms` : ''}
+              />
+              <KpiCardUX
+                title="Resultat"
+                value={fmtKr(resultat)}
+                deltaGood
+                delta={resultat >= 0 ? '+' : '−'}
+              />
+              <KpiCardUX
+                title="Marginal"
+                value={marginal != null ? marginal.toFixed(1) + '%' : '—'}
+                variant="targetBand"
+                targetBand={marginal != null ? {
+                  actualPct:    Math.max(0, Math.min(100, marginal)),
+                  targetMinPct: 5,
+                  targetMaxPct: 15,
+                } : undefined}
+                microLabel="Mål 5-15%"
+              />
+            </div>
+          )
+        })()}
 
         {/* ── P&L summary card ────────────────────────────────────── */}
         {t == null ? (

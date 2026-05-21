@@ -67,6 +67,7 @@ export const AREAS: Area[] = [
       { key: 'forecast',    label: 'Forecast',    href: '/forecast' },
       { key: 'budget',      label: 'Budget',      href: '/budget' },
       { key: 'revenue',     label: 'Revenue',     href: '/revenue' },
+      { key: 'suppliers',   label: 'Suppliers',   href: '/suppliers' },
       { key: 'reviews',     label: 'Reviews',     href: '/reviews' },
     ],
   },

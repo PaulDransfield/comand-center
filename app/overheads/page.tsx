@@ -26,8 +26,11 @@ import TopBar from '@/components/ui/TopBar'
 import AttentionPanel, { AttentionItem } from '@/components/ui/AttentionPanel'
 import SegmentedToggle from '@/components/ui/SegmentedToggle'
 import RecentInvoicesFeed from '@/components/dashboard/RecentInvoicesFeed'
-import { UX } from '@/lib/constants/tokens'
+import { UX, UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
+// Phase 5 — Bookkeeping migration. Add a 3-card KPI strip above the
+// existing hero. Cost-review workflow + upload action stay where they are.
+import KpiCardUX from '@/components/ux/KpiCard'
 
 interface Business { id: string; name: string; city: string | null }
 interface LineItem {
@@ -253,6 +256,53 @@ export default function OverheadsPage() {
             </>
           }
         />
+
+        {/* Phase 5 KPI strip — Total overheads · Categories · Line items
+            (+ pending review count when there's a queue). Reads the same
+            line-item totals that power the SupportingStats inside PageHero. */}
+        {rows.length > 0 && (() => {
+          const pending = Number(reviewProj?.pending_count ?? 0)
+          const potential = Number(reviewProj?.savings?.total_sek ?? 0)
+          const topShare = (() => {
+            const sorted = [...subsInView].sort((a, b) => b.total_kr - a.total_kr)
+            const topVal = sorted[0]?.total_kr ?? 0
+            return total > 0 ? (topVal / total) * 100 : 0
+          })()
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginTop:           12,
+                marginBottom:        12,
+              }}
+            >
+              <KpiCardUX
+                title="Overheads"
+                value={fmtKr(total)}
+                microLabel={monthFilter === 'all' ? `${monthsCovered.size} months` : MONTHS_SHORT[Number(monthFilter) - 1]}
+              />
+              <KpiCardUX
+                title="Largest share"
+                value={topShare > 0 ? fmtPct(topShare) : '—'}
+                variant="stacked"
+                stackedBars={subsInView.length >= 2 ? [
+                  { label: subsInView.sort((a, b) => b.total_kr - a.total_kr)[0]?.label ?? '—', value: topShare, max: 100, color: UXP.lav },
+                  { label: 'Rest',                                                                value: 100 - topShare, max: 100, color: UXP.lavMid },
+                ] : undefined}
+                microLabel={`${subsInView.length} categories`}
+              />
+              <KpiCardUX
+                title={pending > 0 ? 'Pending review' : 'Line items'}
+                value={pending > 0 ? String(pending) : String(filtered.length)}
+                deltaGood={false}
+                delta={pending > 0 && potential > 0 ? `~${fmtKr(potential)}/mo` : null}
+                microLabel={pending > 0 ? 'Flagged by AI' : 'All Fortnox'}
+              />
+            </div>
+          )
+        })()}
 
         <PageHero
           eyebrow={`OVERHEADS — ${year}${selectedBiz ? ` · ${selectedBiz.name.toUpperCase()}` : ''}`}

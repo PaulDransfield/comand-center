@@ -7,6 +7,10 @@ import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { deptColor, deptBg, KPI_CARD, CARD, BTN, CC_DARK, CC_PURPLE, CC_GREEN, CC_RED } from '@/lib/constants/colors'
 import { fmtKr } from '@/lib/format'
+// Phase 5 — Bookkeeping. Replace the inline 3-card grid with 4 KpiCardUX
+// + a "Synkad från Fortnox" indicator near the title.
+import KpiCardUX from '@/components/ux/KpiCard'
+import { UXP } from '@/lib/constants/tokens'
 
 interface Invoice {
   id: string; vendor: string; amount: number; date: string
@@ -94,10 +98,26 @@ export default function InvoicesPage() {
   return (
     <AppShell>
       <div style={{ padding: '28px', maxWidth: 1000 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: '#111' }}>{t('page.title')}</h1>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#6b7280' }}>{t('page.subtitle')}</p>
+            <span style={{
+              display:      'inline-flex',
+              alignItems:   'center',
+              gap:          5,
+              marginTop:    8,
+              padding:      '3px 8px',
+              background:   UXP.lavFill,
+              color:        UXP.lavText,
+              borderRadius: 999,
+              fontSize:     10,
+              fontWeight:   500,
+              letterSpacing: '0.02em',
+            }}>
+              <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: UXP.green, display: 'inline-block' }} />
+              Synkad från Fortnox
+            </span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={selected} onChange={e => setSelected(e.target.value)}
@@ -113,29 +133,47 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        {/* KPIs */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12, marginBottom: 16 }}>
-          <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{t('kpi.totalThisMonth')}</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: '#111' }}>{fmtKr(total)}</div>
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>{t('kpi.invoicesCount', { count: invoices.length })}</div>
-          </div>
-          <div style={{ background: 'white', border: `0.5px solid ${overdue.length > 0 ? '#fecaca' : '#e5e7eb'}`, borderRadius: 12, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{t('kpi.overdue')}</div>
-            <div style={{ fontSize: 22, fontWeight: 600, color: overdue.length > 0 ? '#dc2626' : '#111' }}>{t('kpi.overdueCount', { count: overdue.length })}</div>
-            <div style={{ fontSize: 11, color: overdue.length > 0 ? '#dc2626' : '#9ca3af', marginTop: 3 }}>{overdueAmt > 0 ? t('kpi.outstanding', { amount: fmtKr(overdueAmt) }) : t('kpi.noneOverdue')}</div>
-          </div>
-          <div style={{ background: 'white', border: '0.5px solid #e5e7eb', borderRadius: 12, padding: '16px 18px' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.07em', color: '#9ca3af', marginBottom: 6 }}>{t('kpi.largestSupplier')}</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#111' }}>
-              {invoices.length > 0 ? (() => {
-                const byVendor: Record<string, number> = {}
-                invoices.forEach(i => { byVendor[i.vendor] = (byVendor[i.vendor] ?? 0) + Number(i.amount) })
-                return Object.entries(byVendor).sort((a,b) => b[1]-a[1])[0]?.[0] ?? '--'
-              })() : '--'}
+        {/* Phase 5 KPI strip — Count · Total · Due-soon (pending) · Flagged
+            (overdue). Spec called for due-soon based on a due_date, but the
+            invoices table doesn't carry one; pending count is the closest
+            actionable signal until that column lands. */}
+        {(() => {
+          const pending = invoices.filter(i => i.status === 'pending')
+          const pendingAmt = pending.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+          return (
+            <div
+              style={{
+                display:             'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap:                 12,
+                marginBottom:        16,
+              }}
+            >
+              <KpiCardUX
+                title={t('kpi.invoicesCount', { count: invoices.length })}
+                value={String(invoices.length)}
+                microLabel="In current view"
+              />
+              <KpiCardUX
+                title={t('kpi.totalThisMonth')}
+                value={fmtKr(total)}
+                microLabel={`${invoices.length} invoices`}
+              />
+              <KpiCardUX
+                title="Pending"
+                value={String(pending.length)}
+                microLabel={pendingAmt > 0 ? fmtKr(pendingAmt) : 'None pending'}
+              />
+              <KpiCardUX
+                title={t('kpi.overdue')}
+                value={String(overdue.length)}
+                deltaGood={false}
+                delta={overdue.length > 0 ? `${fmtKr(overdueAmt)} outstanding` : null}
+                microLabel={overdue.length === 0 ? t('kpi.noneOverdue') : 'Needs action'}
+              />
             </div>
-          </div>
-        </div>
+          )
+        })()}
 
         {/* Drop zone */}
         <div
