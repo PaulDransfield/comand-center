@@ -224,6 +224,16 @@ export default function ToolsPage() {
   // and overlay the latest status/progress on top of the kick response.
   const [opsPollSnapshot, setOpsPollSnapshot] = useState<any>(null)
 
+  // Inventory backfill (Phase A of INVENTORY-CATALOGUE-PLAN.md) — separate
+  // pipeline from Fortnox PDF backfill. POSTs /api/inventory/lines/backfill
+  // which walks supplier invoices, persists rows, runs the matcher.
+  // Uses the same opsBizId/opsRunning to keep the UI simple. Cookies carry
+  // the owner-side auth (Paul is logged in as the customer in the same
+  // browser tab); the endpoint authorises via requireBusinessAccess.
+  const [invRunning, setInvRunning] = useState<boolean>(false)
+  const [invResult,  setInvResult]  = useState<any>(null)
+  const [invError,   setInvError]   = useState<string | null>(null)
+
   async function kickFortnoxBackfill() {
     if (opsRunning || !opsBizId.trim()) return
     setOpsRunning(true)
@@ -268,6 +278,35 @@ export default function ToolsPage() {
       setOpsError(e?.message ?? 'Resume failed')
     } finally {
       setOpsRunning(false)
+    }
+  }
+
+  // Inventory backfill — kicks /api/inventory/lines/backfill which pulls
+  // 12 months of Fortnox supplier invoices, persists every row to
+  // supplier_invoice_lines, and runs the matcher inline. ~2 min for Vero.
+  // Uses plain `fetch` (not adminFetch) because the endpoint authorises
+  // via the owner-side session cookie, not the admin secret.
+  async function kickInventoryBackfill() {
+    if (invRunning || !opsBizId.trim()) return
+    setInvRunning(true)
+    setInvResult(null)
+    setInvError(null)
+    try {
+      const res = await fetch('/api/inventory/lines/backfill', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: opsBizId.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setInvError(json?.message ?? json?.error ?? `HTTP ${res.status}`)
+      } else {
+        setInvResult(json)
+      }
+    } catch (e: any) {
+      setInvError(e?.message ?? 'Inventory backfill failed')
+    } finally {
+      setInvRunning(false)
     }
   }
 
@@ -488,6 +527,44 @@ export default function ToolsPage() {
             </div>
           )
         })()}
+
+        {/* ── Inventory backfill row (Phase A of INVENTORY-CATALOGUE-PLAN.md) ── */}
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12, color: '#374151', minWidth: 220 }}>
+            Kick inventory backfill (12 months):
+          </label>
+          <span style={{ fontSize: 11, color: '#6b7280', flex: 1, minWidth: 280 }}>
+            Reuses the business_id field above. Pulls supplier-invoice rows from Fortnox, persists to
+            <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3, marginLeft: 4 }}>supplier_invoice_lines</code>,
+            runs the matching ladder. ~2 min for ~150 invoices. Idempotent.
+          </span>
+          <button
+            onClick={kickInventoryBackfill}
+            disabled={invRunning || !opsBizId.trim()}
+            style={btnPrimary(invRunning || !opsBizId.trim())}
+            title="POST /api/inventory/lines/backfill — uses owner session cookies"
+          >
+            {invRunning ? 'Running…' : 'Kick inventory backfill'}
+          </button>
+        </div>
+
+        {(invResult || invError) && (
+          <div style={{
+            position:   'relative' as const,
+            marginTop: 10, padding: 10, paddingRight: 70,
+            background: invError ? '#fef2f2' : '#f0fdf4',
+            border:     `1px solid ${invError ? '#fecaca' : '#bbf7d0'}`,
+            borderRadius: 6,
+            fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            color:    invError ? '#991b1b' : '#111',
+            whiteSpace: 'pre-wrap' as const,
+            wordBreak:  'break-word' as const,
+            maxHeight:  600, overflowY: 'auto' as const,
+          }}>
+            <CopyTextButton text={invError ?? JSON.stringify(invResult, null, 2)} />
+            {invError ?? JSON.stringify(invResult, null, 2)}
+          </div>
+        )}
 
         {/* ── Diagnose vouchers row (read-only translator check) ────────── */}
         <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
