@@ -50,6 +50,7 @@ export default function SuppliersPage() {
   const [data,     setData]     = useState<SuppliersRollupPayload | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
+  const [needsReauth, setNeedsReauth] = useState(false)
   const [filter,   setFilter]   = useState<CategoryFilter>('all')
   const [openRow,  setOpenRow]  = useState<SupplierRollupRow | null>(null)
   const [hideZero, setHideZero] = useState(true)
@@ -64,16 +65,23 @@ export default function SuppliersPage() {
   useEffect(() => {
     if (!bizId) { setLoading(false); return }
     let cancelled = false
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setNeedsReauth(false)
     fetch(`/api/suppliers/rollup?business_id=${bizId}`, { cache: 'no-store' })
       .then(async r => {
         if (!r.ok) {
           const j = await r.json().catch(() => ({}))
+          // Either the refresh token is dead (server flipped the row to
+          // needs_reauth and threw) or no Fortnox connection exists for
+          // this business yet. Both resolve via /integrations OAuth.
+          if (j.error === 'fortnox_token_refresh_failed' || j.error === 'no_fortnox_connection') {
+            if (!cancelled) setNeedsReauth(true)
+            return null
+          }
           throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`)
         }
         return r.json() as Promise<SuppliersRollupPayload>
       })
-      .then(j => { if (!cancelled) setData(j) })
+      .then(j => { if (!cancelled && j) setData(j) })
       .catch(e => { if (!cancelled) setError(String(e?.message ?? e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -166,11 +174,14 @@ export default function SuppliersPage() {
         {loading && (
           <Empty>Loading supplier rollup…</Empty>
         )}
-        {error && (
+        {!loading && needsReauth && (
+          <ReconnectCard />
+        )}
+        {!loading && !needsReauth && error && (
           <Banner tone="bad" text={error} />
         )}
-        {!loading && !error && all.length === 0 && bizId && (
-          <Empty>No Fortnox suppliers found. Connect Fortnox or wait for the next sync.</Empty>
+        {!loading && !error && !needsReauth && all.length === 0 && bizId && (
+          <Empty>No Fortnox suppliers found. Wait for the next sync or check the connection in Settings.</Empty>
         )}
         {!loading && !error && !bizId && (
           <Empty>Pick a business in the top toolbar to view supplier intelligence.</Empty>
@@ -580,6 +591,77 @@ function Empty({ children }: { children: React.ReactNode }) {
       marginBottom:  12,
     }}>
       {children}
+    </div>
+  )
+}
+
+// Shown when Fortnox responds invalid_grant — the refresh token was
+// rotated, revoked, or expired. The server has already flipped the
+// integration row to status='needs_reauth' so other endpoints will
+// short-circuit cleanly; the owner just needs to re-OAuth.
+function ReconnectCard() {
+  return (
+    <div style={{
+      background:    UXP.cardBg,
+      borderRadius:  UXP.r_lg,
+      border:        `0.5px solid ${UXP.lavMid}`,
+      padding:       28,
+      textAlign:     'center' as const,
+      marginBottom:  12,
+    }}>
+      <div style={{
+        display:        'inline-flex',
+        padding:        '4px 10px',
+        background:     UXP.lavFill,
+        color:          UXP.lavText,
+        border:         `0.5px solid ${UXP.lavMid}`,
+        borderRadius:   999,
+        fontSize:       10,
+        fontWeight:     600,
+        letterSpacing:  '0.08em',
+        textTransform:  'uppercase',
+        marginBottom:   12,
+      }}>
+        Reconnect needed
+      </div>
+      <h2 style={{
+        margin:       '0 0 6px',
+        fontSize:     18,
+        fontWeight:   500,
+        color:        UXP.ink1,
+        letterSpacing: '-0.01em',
+      }}>
+        Fortnox connection expired
+      </h2>
+      <p style={{
+        margin:    '0 auto 18px',
+        fontSize:  12,
+        color:     UXP.ink3,
+        lineHeight: 1.55,
+        maxWidth:  420,
+      }}>
+        The refresh token Fortnox issued has been rotated or revoked,
+        so we can&apos;t pull supplier data right now. Reconnecting takes
+        about 30 seconds and restores access to invoices, suppliers,
+        and overhead drilldowns.
+      </p>
+      <a
+        href="/integrations"
+        style={{
+          display:        'inline-flex',
+          alignItems:     'center',
+          gap:            6,
+          padding:        '9px 18px',
+          background:     UXP.lavDeep,
+          color:          'white',
+          borderRadius:   10,
+          fontSize:       12,
+          fontWeight:     600,
+          textDecoration: 'none',
+        }}
+      >
+        Reconnect Fortnox →
+      </a>
     </div>
   )
 }

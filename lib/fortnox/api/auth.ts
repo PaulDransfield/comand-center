@@ -100,6 +100,26 @@ export async function refreshFortnoxToken(
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
+    // Fortnox returns invalid_grant when the refresh token has been
+    // rotated (a previous refresh response wasn't persisted), revoked
+    // by the customer, or expired (45 days idle). Any of these mean
+    // the only path forward is owner re-OAuth — so flip the integration
+    // to status='needs_reauth' and stop pretending the connection is
+    // healthy. Without this flip, every subsequent request hits the
+    // same dead token and re-throws the same HTTP 400 in a loop.
+    const isInvalidGrant =
+      res.status === 400 || res.status === 401 || /invalid_grant/i.test(text)
+    if (isInvalidGrant) {
+      try {
+        await db.from('integrations')
+          .update({
+            status:     'needs_reauth',
+            last_error: `Fortnox refresh token rejected: ${text.slice(0, 200)}`,
+          })
+          .eq('id', integ.id)
+      } catch { /* best-effort — the throw below is still the loud signal */ }
+      throw new Error('FORTNOX_NEEDS_REAUTH')
+    }
     throw new Error(`Fortnox token refresh failed: HTTP ${res.status} — ${text.slice(0, 200)}`)
   }
   const tok: any = await res.json()
