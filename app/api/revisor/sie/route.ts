@@ -21,7 +21,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { canAccessBusiness }                 from '@/lib/auth/permissions'
-import { fetchVouchersForRange }             from '@/lib/fortnox/api/vouchers'
+import { getCachedVouchersForRange }         from '@/lib/fortnox/voucher-cache'
 import { generateSie4 }                      from '@/lib/revisor/sie-export'
 
 export const runtime     = 'nodejs'
@@ -81,7 +81,7 @@ export async function GET(req: NextRequest) {
 
   let voucherFetch
   try {
-    voucherFetch = await fetchVouchersForRange({
+    voucherFetch = await getCachedVouchersForRange({
       db,
       orgId:      biz.org_id,
       businessId: bizId,

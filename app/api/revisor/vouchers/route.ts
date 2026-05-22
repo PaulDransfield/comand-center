@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { canAccessBusiness }                 from '@/lib/auth/permissions'
-import { fetchVouchersForRange }             from '@/lib/fortnox/api/vouchers'
+import { getCachedVouchersForRange }         from '@/lib/fortnox/voucher-cache'
 import { basAccountDescription }             from '@/lib/revisor/bas-chart'
 
 export const runtime     = 'nodejs'
@@ -84,14 +84,20 @@ export async function GET(req: NextRequest) {
     return `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`
   })()
 
+  // Force-refresh on demand via ?refresh=1 — e.g. owner just posted a
+  // voucher in Fortnox web and wants to see it without waiting for the
+  // daily cron.
+  const refreshCurrent = url.searchParams.get('refresh') === '1'
+
   let fetchResult
   try {
-    fetchResult = await fetchVouchersForRange({
+    fetchResult = await getCachedVouchersForRange({
       db,
       orgId:      biz.org_id,
       businessId: bizId,
       fromDate:   monthStart,
       toDate:     monthEnd,
+      refreshCurrent,
     })
   } catch (e: any) {
     return NextResponse.json({
@@ -150,5 +156,14 @@ export async function GET(req: NextRequest) {
     vouchers,
     voucher_count: vouchers.length,
     trans_count:   transCount,
-  }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
+  }, {
+    headers: {
+      'Cache-Control':       'no-store, max-age=0, must-revalidate',
+      // Diagnostic — tells us whether the request was cache-served
+      'X-Voucher-Source':     fetchResult.source,
+      'X-Voucher-Cache-Hits': String(fetchResult.cache_hits),
+      'X-Voucher-Cache-Miss': String(fetchResult.cache_misses),
+      'X-Voucher-Duration':   String(fetchResult.duration_ms) + 'ms',
+    },
+  })
 }

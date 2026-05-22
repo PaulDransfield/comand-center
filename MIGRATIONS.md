@@ -6,6 +6,22 @@
 
 ## Pending — apply when ready
 
+### M080 — fortnox_vouchers_cache ⏳ pending application
+**File:** `sql/M080-FORTNOX-VOUCHERS-CACHE.sql`
+**Purpose:** Local cache of Fortnox voucher data so /api/revisor/vouchers (R3 verifikationslista) and /api/revisor/sie (R2 SIE export) don't pay the 90-120s Fortnox API round-trip on every page load. First fetch of a month still slow; subsequent reads <50ms. Closed periods cached indefinitely; current + previous month refreshed by daily cron (separate commit).
+**Schema:**
+- One row per Fortnox voucher, keyed UNIQUE (business_id, period_year, voucher_series, voucher_number)
+- Header columns: transaction_date, description, reference_number/type, comments, fortnox_year
+- rows JSONB stores the full FortnoxVoucherRow[] array with all per-row fields
+- Aggregates: rows_count, debit_total, credit_total (pre-computed for grand-totals queries)
+- Indexes: (business_id, period_year, period_month, transaction_date) for primary read path; GIN on rows for "find vouchers touching account N" future queries; (business_id, period_year, period_month, fetched_at DESC) for freshness checks
+- RLS via current_user_org_ids() (same M018 pattern)
+**Companion code:**
+- `lib/fortnox/voucher-cache.ts` — `getCachedVouchersForRange()` wrapper around fetchVouchersForRange. Reads cache per-month; if any month is missing, fetches its full range from Fortnox + writes back. ?refresh=1 query param force-evicts the range before re-fetching.
+- /api/revisor/vouchers + /api/revisor/sie both swapped to the cached fetcher
+- X-Voucher-Source / X-Voucher-Cache-Hits / X-Voucher-Cache-Miss / X-Voucher-Duration response headers on the vouchers endpoint for observability
+**Idempotent.**
+
 ### M079 — businesses.legal_name + legal_city ⏳ pending application
 **File:** `sql/M079-BUSINESSES-LEGAL-NAME.sql`
 **Purpose:** Distinguish legal entity name (e.g. "Aglianico i Örebro AB" from Fortnox) from owner-set display/trading name (e.g. "Chicce Slotsgatan"). Both are correct; they answer different questions. Per BFL 7 kap. the LEGAL entity name MUST appear on archival print-outs. Adds two nullable TEXT columns.
