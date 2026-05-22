@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
   // Business info
   const { data: biz } = await db
     .from('businesses')
-    .select('id, name, city, country, org_number')
+    .select('id, name, city, country, org_number, legal_name, legal_city')
     .eq('id', bizId)
     .maybeSingle()
   if (!biz || biz.org_number == null) {
