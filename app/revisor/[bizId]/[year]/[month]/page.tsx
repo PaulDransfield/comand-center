@@ -362,6 +362,11 @@ export default function RevisorMonthDetail() {
           </Section>
         )}
 
+        {/* ── Balansräkning (Phase R4) — ABL 6 kap. balance sheet ─── */}
+        <Section title="Balansräkning">
+          <BalanceSheetCard bizId={data.business.id} year={y} month={m} />
+        </Section>
+
         {/* ── Verifikationslista (Phase R3) — BFL 5 kap. journal ──── */}
         <Section title="Verifikationslista">
           <VerifikationsList bizId={data.business.id} year={y} month={m} />
@@ -481,6 +486,179 @@ function FlagsTable({ flags, bizId, year, month }: { flags: OverheadFlag[]; bizI
         ))}
       </tbody>
     </table>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════
+// Phase R4 — Balansräkning (ABL 6 kap. balance sheet)
+// ═════════════════════════════════════════════════════════════════
+
+interface BalanceSheetLineDto {
+  account:     number
+  description: string
+  amount:      number
+}
+interface BalanceSheetGroupDto {
+  title:  string
+  lines:  BalanceSheetLineDto[]
+  total:  number
+}
+interface BalanceSheetSectionDto {
+  title:  string
+  groups: BalanceSheetGroupDto[]
+  total:  number
+}
+interface BalanceSheetDto {
+  period_end_date:              string
+  fiscal_year_from:             string
+  fiscal_year_to:               string
+  assets:                       BalanceSheetSectionDto
+  equity:                       BalanceSheetSectionDto
+  liabilities:                  BalanceSheetSectionDto
+  total_assets:                 number
+  total_equity_and_liabilities: number
+  imbalance:                    number
+  ytd_result:                   number
+  voucher_count:                number
+}
+
+function BalanceSheetCard({ bizId, year, month }: { bizId: string; year: number; month: number }) {
+  const [bs,      setBs]      = useState<BalanceSheetDto | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setError(null); setBs(null)
+    fetch(`/api/revisor/balance-sheet?business_id=${bizId}&year=${year}&month=${month}`, { cache: 'no-store' })
+      .then(async r => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}))
+          throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`)
+        }
+        return r.json()
+      })
+      .then(j => { if (!cancelled) setBs(j) })
+      .catch(e => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [bizId, year, month])
+
+  if (loading) return <Empty text="Beräknar balansräkning… (snabbt om verifikationslistan redan laddats för denna månad)" />
+  if (error)   return <Banner tone="bad" text={`Kunde inte beräkna balansräkningen: ${error}`} />
+  if (!bs)     return <Empty text="Ingen balansdata för perioden." />
+
+  const balanced = Math.abs(bs.imbalance) < 0.5
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 10 }}>
+        Per {bs.period_end_date} · Räkenskapsår {bs.fiscal_year_from} – {bs.fiscal_year_to} · Underlag från {bs.voucher_count.toLocaleString('sv-SE')} verifikationer
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        {/* LEFT: Assets */}
+        <BalanceSheetColumn section={bs.assets} grandLabel="Summa tillgångar" grandValue={bs.total_assets} />
+        {/* RIGHT: Equity + Liabilities */}
+        <div>
+          <BalanceSheetColumn section={bs.equity}      grandLabel={null} grandValue={null} />
+          <div style={{ marginTop: 14 }}>
+            <BalanceSheetColumn section={bs.liabilities} grandLabel="Summa eget kapital och skulder" grandValue={bs.total_equity_and_liabilities} />
+          </div>
+        </div>
+      </div>
+
+      {/* Balance check banner */}
+      <div style={{
+        marginTop:   14,
+        padding:     '10px 14px',
+        background:  balanced ? UXP.greenFill : UXP.roseFill,
+        border:      `0.5px solid ${balanced ? UXP.green : UXP.rose}`,
+        borderRadius: 8,
+        fontSize:    12,
+        color:       balanced ? UXP.greenDeep : UXP.roseText,
+      }}>
+        {balanced ? (
+          <>
+            <strong>✓ Balanserar.</strong> Tillgångar {fmtKr(bs.total_assets)} = Eget kapital + skulder {fmtKr(bs.total_equity_and_liabilities)}.
+            {Math.abs(bs.ytd_result) > 0.5 && <> Inkluderar årets resultat YTD <strong>{fmtKr(bs.ytd_result)}</strong>.</>}
+          </>
+        ) : (
+          <>
+            <strong>⚠ Obalans: {fmtKr(bs.imbalance)}.</strong>{' '}
+            Tillgångar {fmtKr(bs.total_assets)} ≠ Eget kapital + skulder {fmtKr(bs.total_equity_and_liabilities)}.
+            Kan bero på att ingående balans saknas i Fortnox eller att vissa konton inte hämtades. Kontrollera mot Fortnox direkt.
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function BalanceSheetColumn({
+  section, grandLabel, grandValue,
+}: {
+  section:    BalanceSheetSectionDto
+  grandLabel: string | null
+  grandValue: number | null
+}) {
+  return (
+    <div>
+      <div style={{
+        fontSize:      10,
+        fontWeight:    700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase' as const,
+        color:         UXP.ink4,
+        paddingBottom: 4,
+        borderBottom:  `1px solid ${UXP.border}`,
+        marginBottom:  6,
+      }}>
+        {section.title}
+      </div>
+      {section.groups.length === 0 ? (
+        <div style={{ fontSize: 11, color: UXP.ink4, padding: '8px 0' }}>Inga poster.</div>
+      ) : (
+        section.groups.map((g, gi) => (
+          <div key={gi} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, marginBottom: 4, marginTop: gi > 0 ? 8 : 0 }}>
+              {g.title}
+            </div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
+              <tbody>
+                {g.lines.map((l, li) => (
+                  <tr key={li}>
+                    <td style={{ padding: '2px 4px', fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink3, width: 50 }}>{l.account}</td>
+                    <td style={{ padding: '2px 6px', color: UXP.ink2 }}>{l.description}</td>
+                    <td style={{ padding: '2px 4px', textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1 }}>{fmtKr(l.amount)}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+                  <td style={{ padding: '4px' }}></td>
+                  <td style={{ padding: '4px 6px', fontSize: 10, color: UXP.ink3, fontStyle: 'italic' as const }}>Delsumma</td>
+                  <td style={{ padding: '4px', textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500, color: UXP.ink2 }}>{fmtKr(g.total)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ))
+      )}
+      {grandLabel !== null && grandValue !== null && (
+        <div style={{
+          marginTop:    8,
+          paddingTop:   6,
+          borderTop:    `1px solid ${UXP.ink2}`,
+          display:      'flex',
+          justifyContent: 'space-between',
+          fontSize:     12,
+          fontWeight:   600,
+          color:        UXP.ink1,
+        }}>
+          <span>{grandLabel}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(grandValue)}</span>
+        </div>
+      )}
+    </div>
   )
 }
 
