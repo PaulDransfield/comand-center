@@ -350,6 +350,50 @@ export default function ToolsPage() {
   const [idSyncResult,   setIdSyncResult]   = useState<any>(null)
   const [idSyncError,    setIdSyncError]    = useState<string | null>(null)
 
+  // Voucher cache refresh (Phase R3 follow-on, M080). Force-evicts the
+  // cache for a (business, year, month) tuple and re-fetches from
+  // Fortnox. Useful when owner edits a voucher in Fortnox web and
+  // wants instant visibility (the daily cron at /api/cron/voucher-
+  // cache-refresh would otherwise pick it up next morning).
+  const [vcYear,        setVcYear]        = useState<number>(new Date().getFullYear())
+  const [vcMonth,       setVcMonth]       = useState<number>(new Date().getMonth() + 1)
+  const [vcRunning,     setVcRunning]     = useState<boolean>(false)
+  const [vcResult,      setVcResult]      = useState<any>(null)
+  const [vcError,       setVcError]       = useState<string | null>(null)
+
+  async function refreshVoucherCache() {
+    if (vcRunning || !opsBizId.trim()) return
+    setVcRunning(true); setVcResult(null); setVcError(null)
+    try {
+      const u = new URL('/api/revisor/vouchers', window.location.origin)
+      u.searchParams.set('business_id', opsBizId.trim())
+      u.searchParams.set('year',  String(vcYear))
+      u.searchParams.set('month', String(vcMonth))
+      u.searchParams.set('refresh', '1')
+      const t0 = Date.now()
+      const res = await fetch(u.toString(), { cache: 'no-store' })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setVcError(j?.message ?? j?.error ?? `HTTP ${res.status}`)
+        return
+      }
+      setVcResult({
+        ok: true,
+        period: `${vcYear}-${String(vcMonth).padStart(2, '0')}`,
+        voucher_count: j.voucher_count,
+        trans_count:   j.trans_count,
+        source:        res.headers.get('X-Voucher-Source'),
+        cache_hits:    res.headers.get('X-Voucher-Cache-Hits'),
+        cache_miss:    res.headers.get('X-Voucher-Cache-Miss'),
+        duration_ms:   Date.now() - t0,
+      })
+    } catch (e: any) {
+      setVcError(e?.message ?? 'Voucher cache refresh failed')
+    } finally {
+      setVcRunning(false)
+    }
+  }
+
   async function syncBusinessIdentity() {
     if (idSyncRunning || !opsBizId.trim()) return
     setIdSyncRunning(true); setIdSyncResult(null); setIdSyncError(null)
@@ -723,6 +767,64 @@ export default function ToolsPage() {
           }}>
             <CopyTextButton text={idSyncError ?? JSON.stringify(idSyncResult, null, 2)} />
             {idSyncError ?? JSON.stringify(idSyncResult, null, 2)}
+          </div>
+        )}
+
+        {/* ── Voucher cache refresh (M080 — force evict + re-fetch) ── */}
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12, color: '#374151', minWidth: 220 }}>
+            Refresh voucher cache:
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            Year
+            <input
+              type="number"
+              value={vcYear}
+              onChange={e => setVcYear(Math.max(2020, Math.min(2099, parseInt(e.target.value || '2026', 10) || 2026)))}
+              min={2020}
+              max={2099}
+              style={{ width: 70, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
+            Month
+            <input
+              type="number"
+              value={vcMonth}
+              onChange={e => setVcMonth(Math.max(1, Math.min(12, parseInt(e.target.value || '1', 10) || 1)))}
+              min={1}
+              max={12}
+              style={{ width: 50, padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 12, fontFamily: 'ui-monospace, monospace' }}
+            />
+          </label>
+          <span style={{ fontSize: 11, color: '#6b7280', flex: 1, minWidth: 220 }}>
+            Force-evicts <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>fortnox_vouchers_cache</code> rows for the period + re-fetches from Fortnox. ~90s for a busy month. Useful when owner edits a voucher in Fortnox web and wants instant visibility (daily cron at 06:15 UTC does this automatically for current + previous month).
+          </span>
+          <button
+            onClick={refreshVoucherCache}
+            disabled={vcRunning || !opsBizId.trim()}
+            style={btnPrimary(vcRunning || !opsBizId.trim())}
+            title="GET /api/revisor/vouchers?refresh=1 — evict + re-fetch"
+          >
+            {vcRunning ? 'Refreshing…' : 'Refresh voucher cache'}
+          </button>
+        </div>
+
+        {(vcResult || vcError) && (
+          <div style={{
+            position:   'relative' as const,
+            marginTop: 10, padding: 10, paddingRight: 70,
+            background: vcError ? '#fef2f2' : '#f0fdf4',
+            border:     `1px solid ${vcError ? '#fecaca' : '#bbf7d0'}`,
+            borderRadius: 6,
+            fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            color:    vcError ? '#991b1b' : '#111',
+            whiteSpace: 'pre-wrap' as const,
+            wordBreak:  'break-word' as const,
+            maxHeight:  300, overflowY: 'auto' as const,
+          }}>
+            <CopyTextButton text={vcError ?? JSON.stringify(vcResult, null, 2)} />
+            {vcError ?? JSON.stringify(vcResult, null, 2)}
           </div>
         )}
 
