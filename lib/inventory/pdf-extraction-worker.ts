@@ -203,37 +203,47 @@ async function findCandidates(db: any, businessId: string, limit: number): Promi
   // line in supplier_invoice_lines AND aren't already terminal in
   // invoice_pdf_extractions.
   //
-  // We page through supplier_invoice_lines grouped by invoice number.
-  // Keeping the query simple — performance is fine at our scale.
-
-  const { data } = await db
-    .from('supplier_invoice_lines')
-    .select('fortnox_invoice_number, invoice_date, supplier_fortnox_number, supplier_name_snapshot, total_excl_vat, raw_description')
-    .eq('business_id', businessId)
-    .order('invoice_date', { ascending: false })
-    .limit(5000)                                  // generous; per-business
+  // CRITICAL: Supabase's PostgREST caps queries at 1000 rows server-side
+  // even when .limit(N) requests more. See feedback_supabase_max_rows.
+  // Paginate via .range() so we see ALL of Chicce's 3218-row dataset,
+  // not just the most recent 1000 lines.
 
   const byInvoice = new Map<string, CandidateInvoice & { has_empty: boolean }>()
-  for (const r of (data ?? []) as any[]) {
-    const key = r.fortnox_invoice_number
-    if (!key) continue
-    let entry = byInvoice.get(key)
-    if (!entry) {
-      entry = {
-        fortnox_invoice_number:  key,
-        invoice_date:            r.invoice_date,
-        supplier_fortnox_number: r.supplier_fortnox_number ?? null,
-        supplier_name_snapshot:  r.supplier_name_snapshot  ?? null,
-        pdf_file_id:             null,
-        invoice_total_header:    Number(r.total_excl_vat ?? 0),
-        has_empty:               false,
+  const PAGE = 1000
+  let from = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data } = await db
+      .from('supplier_invoice_lines')
+      .select('fortnox_invoice_number, invoice_date, supplier_fortnox_number, supplier_name_snapshot, total_excl_vat, raw_description')
+      .eq('business_id', businessId)
+      .order('invoice_date', { ascending: false })
+      .range(from, from + PAGE - 1)
+    const rows = (data ?? []) as any[]
+    if (rows.length === 0) break
+    for (const r of rows) {
+      const key = r.fortnox_invoice_number
+      if (!key) continue
+      let entry = byInvoice.get(key)
+      if (!entry) {
+        entry = {
+          fortnox_invoice_number:  key,
+          invoice_date:            r.invoice_date,
+          supplier_fortnox_number: r.supplier_fortnox_number ?? null,
+          supplier_name_snapshot:  r.supplier_name_snapshot  ?? null,
+          pdf_file_id:             null,
+          invoice_total_header:    0,
+          has_empty:               false,
+        }
+        byInvoice.set(key, entry)
       }
-      byInvoice.set(key, entry)
+      entry.invoice_total_header = (entry.invoice_total_header ?? 0) + Number(r.total_excl_vat ?? 0)
+      if (!r.raw_description || String(r.raw_description).trim() === '') {
+        entry.has_empty = true
+      }
     }
-    entry.invoice_total_header = (entry.invoice_total_header ?? 0) + Number(r.total_excl_vat ?? 0)
-    if (!r.raw_description || String(r.raw_description).trim() === '') {
-      entry.has_empty = true
-    }
+    if (rows.length < PAGE) break
+    from += PAGE
   }
 
   const needsExtraction = Array.from(byInvoice.values()).filter(e => e.has_empty)
@@ -284,18 +294,27 @@ async function findCandidates(db: any, businessId: string, limit: number): Promi
 }
 
 async function countRemaining(db: any, businessId: string): Promise<number> {
-  // Cheap proxy: number of invoice numbers in supplier_invoice_lines
-  // that have at least one empty-description row.
-  const { data } = await db
-    .from('supplier_invoice_lines')
-    .select('fortnox_invoice_number, raw_description')
-    .eq('business_id', businessId)
-    .limit(5000)
+  // Same Supabase 1000-row cap workaround as findCandidates. Paginate
+  // with .range() so we see all distinct invoice numbers.
   const empties = new Set<string>()
-  for (const r of (data ?? []) as any[]) {
-    if (!r.raw_description || String(r.raw_description).trim() === '') {
-      empties.add(r.fortnox_invoice_number)
+  const PAGE = 1000
+  let from = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data } = await db
+      .from('supplier_invoice_lines')
+      .select('fortnox_invoice_number, raw_description')
+      .eq('business_id', businessId)
+      .range(from, from + PAGE - 1)
+    const rows = (data ?? []) as any[]
+    if (rows.length === 0) break
+    for (const r of rows) {
+      if (!r.raw_description || String(r.raw_description).trim() === '') {
+        empties.add(r.fortnox_invoice_number)
+      }
     }
+    if (rows.length < PAGE) break
+    from += PAGE
   }
 
   // Subtract terminal jobs.
