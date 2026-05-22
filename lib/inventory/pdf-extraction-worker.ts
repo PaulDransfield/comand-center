@@ -420,6 +420,14 @@ async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: strin
     return { kind: 'lookup_failed', reason: 'no_token_available' }
   }
 
+  // Two-step lookup. Fortnox's /supplierinvoices/{n} detail response
+  // INCONSISTENTLY embeds SupplierInvoiceFileConnections — often empty
+  // even when files exist (Chicce's 784 invoices: 100% empty). The
+  // dedicated /3/supplierinvoicefileconnections?supplierinvoicenumber=N
+  // resource is the reliable path. We try inline first (saves a Fortnox
+  // call when populated) and fall through to the dedicated endpoint
+  // otherwise. Same pattern as
+  // app/api/integrations/fortnox/invoice-pdf/route.ts.
   let res: Response
   try {
     res = await fortnoxFetch(
@@ -440,12 +448,48 @@ async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: strin
     return { kind: 'lookup_failed', reason: `json_parse: ${e?.message ?? e}` }
   }
 
-  const conns: any[] = json?.SupplierInvoice?.SupplierInvoiceFileConnections ?? []
-  const fileId = conns[0]?.FileId ? String(conns[0].FileId) : null
-  if (fileId) {
-    return { kind: 'has_pdf', file_id: fileId }
+  // Step 1 — inline connections from the detail response.
+  let conns: any[] = json?.SupplierInvoice?.SupplierInvoiceFileConnections
+                  ?? json?.SupplierInvoiceFileConnections
+                  ?? []
+  let inlineFileId = Array.isArray(conns) && conns.length > 0
+    ? (conns[0]?.FileId ? String(conns[0].FileId) : null)
+    : null
+  if (inlineFileId) {
+    return { kind: 'has_pdf', file_id: inlineFileId }
   }
-  // Fortnox returned 200 with no FileConnections → genuinely no attachment.
+
+  // Step 2 — fallback to the dedicated file-connections resource.
+  let fcRes: Response
+  try {
+    fcRes = await fortnoxFetch(
+      `https://api.fortnox.se/3/supplierinvoicefileconnections/?supplierinvoicenumber=${encodeURIComponent(invoiceNumber)}`,
+      token,
+    )
+  } catch (e: any) {
+    return { kind: 'lookup_failed', reason: `fc_fetch_threw: ${e?.message ?? e}` }
+  }
+  if (!fcRes.ok) {
+    // 401 / 403 here usually means the `connectfile` scope wasn't
+    // granted. Bubble as lookup_failed so the row is retryable after
+    // re-OAuth rather than silently terminal.
+    return { kind: 'lookup_failed', reason: `fc_http_${fcRes.status}` }
+  }
+  let fcJson: any
+  try {
+    fcJson = await fcRes.json()
+  } catch (e: any) {
+    return { kind: 'lookup_failed', reason: `fc_json_parse: ${e?.message ?? e}` }
+  }
+  const fcConns: any[] = fcJson?.SupplierInvoiceFileConnections ?? []
+  const fcFileId = Array.isArray(fcConns) && fcConns.length > 0
+    ? (fcConns[0]?.FileId ? String(fcConns[0].FileId) : null)
+    : null
+  if (fcFileId) {
+    return { kind: 'has_pdf', file_id: fcFileId }
+  }
+
+  // Fortnox confirmed via BOTH endpoints — genuinely no attachment.
   return { kind: 'no_pdf' }
 }
 
