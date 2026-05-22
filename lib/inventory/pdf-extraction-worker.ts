@@ -57,8 +57,16 @@ interface CandidateInvoice {
 // Previously lookupPdfFileId silently collapsed all three into "string | null",
 // so any Fortnox 401/429/5xx looked identical to "no PDF" — and got marked
 // terminal. Chicce's first 784 invoices all hit this trap.
+//
+// `has_pdf` also carries the invoice header's net total (excl. VAT) read
+// directly from Fortnox. Critical: do NOT compute this by summing the
+// placeholder supplier_invoice_lines rows — Chicce's placeholder rows are
+// balanced debit-credit pairs that net to ~0 (machine-epsilon noise),
+// which causes the validator's |extracted - header| / header ratio to
+// blow up to 10^16. Use the Fortnox header value or null (validator
+// skips the ratio check on null).
 export type PdfLookupResult =
-  | { kind: 'has_pdf';      file_id: string }
+  | { kind: 'has_pdf';      file_id: string; header_total_excl_vat: number | null }
   | { kind: 'no_pdf' }
   | { kind: 'lookup_failed'; reason: string }
 
@@ -174,6 +182,13 @@ export async function runPdfExtractionBatch(
 
     // lookup.kind === 'has_pdf' — proceed with extraction.
     const fileId = lookup.file_id
+    // Prefer the header total from Fortnox over the placeholder-row
+    // sum we computed in findCandidates. The placeholder-sum is
+    // unreliable (Chicce's rows are debit-credit balanced to ~0).
+    const headerTotalForValidator =
+      lookup.header_total_excl_vat != null && Number.isFinite(lookup.header_total_excl_vat)
+        ? lookup.header_total_excl_vat
+        : inv.invoice_total_header
 
     // Pre-write the job row in 'extracting' state.
     await db.from('invoice_pdf_extractions').upsert({
@@ -199,7 +214,7 @@ export async function runPdfExtractionBatch(
         supplier_fortnox_number: inv.supplier_fortnox_number,
         supplier_name_snapshot:  inv.supplier_name_snapshot,
         pdf_file_id:             fileId,
-        invoice_total_header:    inv.invoice_total_header,
+        invoice_total_header:    headerTotalForValidator,
       })
     } catch (e: any) {
       // Unexpected throw — treat as failed, will retry on a future kick.
@@ -207,7 +222,7 @@ export async function runPdfExtractionBatch(
         status: 'failed',
         rows_extracted: 0,
         total_extracted: null,
-        total_header: inv.invoice_total_header,
+        total_header: headerTotalForValidator,
         total_delta_pct: null,
         validation_warnings: [{ code: 'unhandled', message: String(e?.message ?? e), severity: 'block' }],
         ai_model: null,
@@ -448,6 +463,21 @@ async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: strin
     return { kind: 'lookup_failed', reason: `json_parse: ${e?.message ?? e}` }
   }
 
+  // Header total (excl. VAT) for the validator. Fortnox SupplierInvoice
+  // header carries `Total` (inc. VAT) and `VAT` (the VAT amount). Some
+  // responses also include `Net` directly. We compute `Total - VAT`
+  // when both are present, falling back to whichever is available.
+  const header = json?.SupplierInvoice
+  const headerTotalExclVat = (() => {
+    if (!header) return null
+    if (typeof header.Net === 'number' && Number.isFinite(header.Net)) return Number(header.Net)
+    const total = typeof header.Total === 'number' ? header.Total : Number(header.Total ?? NaN)
+    const vat   = typeof header.VAT   === 'number' ? header.VAT   : Number(header.VAT   ?? NaN)
+    if (Number.isFinite(total) && Number.isFinite(vat)) return total - vat
+    if (Number.isFinite(total)) return total              // best-effort: incl-VAT total
+    return null
+  })()
+
   // Step 1 — inline connections from the detail response.
   let conns: any[] = json?.SupplierInvoice?.SupplierInvoiceFileConnections
                   ?? json?.SupplierInvoiceFileConnections
@@ -456,7 +486,7 @@ async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: strin
     ? (conns[0]?.FileId ? String(conns[0].FileId) : null)
     : null
   if (inlineFileId) {
-    return { kind: 'has_pdf', file_id: inlineFileId }
+    return { kind: 'has_pdf', file_id: inlineFileId, header_total_excl_vat: headerTotalExclVat }
   }
 
   // Step 2 — fallback to the dedicated file-connections resource.
@@ -486,7 +516,7 @@ async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: strin
     ? (fcConns[0]?.FileId ? String(fcConns[0].FileId) : null)
     : null
   if (fcFileId) {
-    return { kind: 'has_pdf', file_id: fcFileId }
+    return { kind: 'has_pdf', file_id: fcFileId, header_total_excl_vat: headerTotalExclVat }
   }
 
   // Fortnox confirmed via BOTH endpoints — genuinely no attachment.

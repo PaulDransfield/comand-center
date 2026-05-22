@@ -165,7 +165,15 @@ export async function extractInvoicePdf(
   const totalExtracted = validRows.reduce((s, r) => s + Number(r.total_excl_vat ?? 0), 0)
   const headerTotal    = input.invoice_total_header ?? modelResponse.header?.invoice_total_excl_vat ?? null
   let totalDeltaPct: number | null = null
-  if (headerTotal != null && headerTotal !== 0) {
+  // Guard against floating-point near-zero noise. Chicce's placeholder
+  // supplier_invoice_lines rows summed to numbers like -2.8e-13 which
+  // are mathematically zero but not strictly `=== 0`. Treating those
+  // as a real total produced 10^16 % delta percentages and dumped
+  // every extraction into needs_review. Anything below 1 öre (0.01 SEK)
+  // is treated as "no real header total".
+  const HEADER_NOISE_THRESHOLD = 0.01
+  const headerIsReal = headerTotal != null && Math.abs(headerTotal) >= HEADER_NOISE_THRESHOLD
+  if (headerIsReal) {
     totalDeltaPct = Math.abs(totalExtracted - headerTotal) / Math.abs(headerTotal)
     if (totalDeltaPct > TOTAL_MATCH_TOL_PCT) {
       warnings.push({
