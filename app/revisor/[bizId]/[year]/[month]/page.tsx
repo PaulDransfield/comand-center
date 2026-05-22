@@ -211,6 +211,37 @@ export default function RevisorMonthDetail() {
             {data.business.org_number && <> · Org.nr {formatOrgNr(data.business.org_number)}</>}
             {displayCity && <> · {displayCity}</>}
           </div>
+
+          {/* Phase R2 — SIE 4 download. Hidden in print (cc-no-print).
+              On click: navigates to the API route which streams the
+              SIE file as application/x-sie. The browser handles the
+              download attribute + Content-Disposition combination
+              transparently. */}
+          <div className="cc-no-print" style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const }}>
+            <a
+              href={`/api/revisor/sie?business_id=${encodeURIComponent(data.business.id)}&year=${y}&month=${m}`}
+              download
+              style={{
+                display:        'inline-flex',
+                alignItems:     'center',
+                gap:            6,
+                padding:        '7px 14px',
+                background:     UXP.lavDeep,
+                color:          'white',
+                border:         'none',
+                borderRadius:   8,
+                fontSize:       12,
+                fontWeight:     600,
+                textDecoration: 'none',
+              }}
+              title="Ladda ner verifikationsfil i SIE 4-format (ISO-8859-1, för import till Visma, Capego, Wolters Kluwer m.fl.)"
+            >
+              ⇩ Ladda ner SIE-fil
+            </a>
+            <span style={{ fontSize: 10, color: UXP.ink4 }}>
+              Importeras i revisorns verktyg (Visma, Capego, Wolters Kluwer, Fortnox, m.fl.)
+            </span>
+          </div>
         </div>
 
         {/* Phase 5 KPI strip — accountant close-the-month roll-up. Reads
