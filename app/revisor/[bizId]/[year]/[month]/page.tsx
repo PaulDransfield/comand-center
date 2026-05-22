@@ -637,14 +637,15 @@ function ComplianceFooter({
         </div>
       )}
       <div>
-        <strong>Räkenskapsperiod:</strong> {periodStart} till {periodEnd}
+        <strong>Räkenskapsperiod:</strong>{' '}
+        <span style={{ whiteSpace: 'nowrap' as const }}>{periodStart}{' till '}{periodEnd}</span>
       </div>
       <div>
         <strong>Datakälla:</strong> {sourceLabel} · <strong>Valuta:</strong> SEK
       </div>
-      <div style={{ marginTop: 6, fontSize: 9, color: UXP.ink4, fontStyle: 'italic' as const }}>
-        Denna sammanställning utgör inte ersättning för formell verifikationslista per Bokföringslagen 5 kap. För revisorsbruk:
-        ladda ner SIE-fil eller använd Fortnox direkt för fullständig verifikationsåtkomst.
+      <div style={{ marginTop: 6, fontSize: 9, color: UXP.ink4, fontStyle: 'italic' as const, lineHeight: 1.55 }}>
+        Denna sammanställning utgör inte ersättning för formell verifikationslista per Bokföringslagen 5&nbsp;kap.
+        {' '}För revisorsbruk: ladda ner SIE-fil eller använd Fortnox direkt för fullständig verifikationsåtkomst.
       </div>
     </section>
   )
