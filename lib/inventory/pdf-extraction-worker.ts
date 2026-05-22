@@ -45,9 +45,22 @@ interface CandidateInvoice {
   invoice_date:             string
   supplier_fortnox_number:  string | null
   supplier_name_snapshot:   string | null
-  pdf_file_id:              string | null
+  pdf_lookup:               PdfLookupResult
   invoice_total_header:     number | null
 }
+
+// Tagged result so the worker can tell the THREE outcomes apart:
+//   has_pdf       → Fortnox returned a SupplierInvoiceFileConnections[].FileId
+//   no_pdf        → Fortnox returned 200 with empty FileConnections (truly no file)
+//   lookup_failed → HTTP non-200 / network error / token problem (retryable)
+//
+// Previously lookupPdfFileId silently collapsed all three into "string | null",
+// so any Fortnox 401/429/5xx looked identical to "no PDF" — and got marked
+// terminal. Chicce's first 784 invoices all hit this trap.
+export type PdfLookupResult =
+  | { kind: 'has_pdf';      file_id: string }
+  | { kind: 'no_pdf' }
+  | { kind: 'lookup_failed'; reason: string }
 
 export async function runPdfExtractionBatch(
   db: any,
@@ -106,6 +119,61 @@ export async function runPdfExtractionBatch(
 
   for (let i = 0; i < candidates.length; i++) {
     const inv = candidates[i]
+    const lookup = inv.pdf_lookup
+
+    // Three-way branch on the tagged lookup result. Critical: a
+    // lookup_failed status must NEVER persist as 'no_pdf' (terminal).
+    // That was the corruption pattern on Chicce's 784 invoices.
+    if (lookup.kind === 'no_pdf') {
+      summary.no_pdf += 1
+      await db.from('invoice_pdf_extractions').upsert({
+        org_id:                  input.org_id,
+        business_id:             input.business_id,
+        fortnox_invoice_number:  inv.fortnox_invoice_number,
+        invoice_date:            inv.invoice_date,
+        supplier_fortnox_number: inv.supplier_fortnox_number,
+        supplier_name_snapshot:  inv.supplier_name_snapshot,
+        pdf_file_id:             null,
+        status:                  'no_pdf',
+        attempts:                1,
+        started_at:              new Date().toISOString(),
+        completed_at:            new Date().toISOString(),
+      }, { onConflict: 'business_id,fortnox_invoice_number' })
+      continue
+    }
+
+    if (lookup.kind === 'lookup_failed') {
+      // Retryable — bump attempts but don't write a terminal status.
+      // After 3 attempts the worker's candidate filter will skip it
+      // so we don't loop forever; until then the next kick re-tries.
+      summary.failed += 1
+      const { data: existing } = await db
+        .from('invoice_pdf_extractions')
+        .select('attempts')
+        .eq('business_id', input.business_id)
+        .eq('fortnox_invoice_number', inv.fortnox_invoice_number)
+        .maybeSingle()
+      const newAttempts = (existing?.attempts ?? 0) + 1
+      const isTerminal = newAttempts >= 3
+      await db.from('invoice_pdf_extractions').upsert({
+        org_id:                  input.org_id,
+        business_id:             input.business_id,
+        fortnox_invoice_number:  inv.fortnox_invoice_number,
+        invoice_date:            inv.invoice_date,
+        supplier_fortnox_number: inv.supplier_fortnox_number,
+        supplier_name_snapshot:  inv.supplier_name_snapshot,
+        pdf_file_id:             null,
+        status:                  isTerminal ? 'failed' : 'pending',
+        attempts:                newAttempts,
+        error_message:           `pdf_lookup_failed: ${lookup.reason}`,
+        started_at:              new Date().toISOString(),
+        completed_at:            isTerminal ? new Date().toISOString() : null,
+      }, { onConflict: 'business_id,fortnox_invoice_number' })
+      continue
+    }
+
+    // lookup.kind === 'has_pdf' — proceed with extraction.
+    const fileId = lookup.file_id
 
     // Pre-write the job row in 'extracting' state.
     await db.from('invoice_pdf_extractions').upsert({
@@ -115,22 +183,11 @@ export async function runPdfExtractionBatch(
       invoice_date:            inv.invoice_date,
       supplier_fortnox_number: inv.supplier_fortnox_number,
       supplier_name_snapshot:  inv.supplier_name_snapshot,
-      pdf_file_id:             inv.pdf_file_id,
-      status:                  inv.pdf_file_id ? 'extracting' : 'no_pdf',
+      pdf_file_id:             fileId,
+      status:                  'extracting',
       attempts:                1,
       started_at:              new Date().toISOString(),
     }, { onConflict: 'business_id,fortnox_invoice_number' })
-
-    if (!inv.pdf_file_id) {
-      summary.no_pdf += 1
-      await db.from('invoice_pdf_extractions').update({
-        status:       'no_pdf',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('business_id', input.business_id)
-      .eq('fortnox_invoice_number', inv.fortnox_invoice_number)
-      continue
-    }
 
     let result: ExtractResult
     try {
@@ -141,7 +198,7 @@ export async function runPdfExtractionBatch(
         invoice_date:            inv.invoice_date,
         supplier_fortnox_number: inv.supplier_fortnox_number,
         supplier_name_snapshot:  inv.supplier_name_snapshot,
-        pdf_file_id:             inv.pdf_file_id,
+        pdf_file_id:             fileId,
         invoice_total_header:    inv.invoice_total_header,
       })
     } catch (e: any) {
@@ -231,7 +288,7 @@ async function findCandidates(db: any, businessId: string, limit: number): Promi
           invoice_date:            r.invoice_date,
           supplier_fortnox_number: r.supplier_fortnox_number ?? null,
           supplier_name_snapshot:  r.supplier_name_snapshot  ?? null,
-          pdf_file_id:             null,
+          pdf_lookup:              { kind: 'lookup_failed', reason: 'not_yet_attempted' },
           invoice_total_header:    0,
           has_empty:               false,
         }
@@ -276,18 +333,17 @@ async function findCandidates(db: any, businessId: string, limit: number): Promi
       invoice_date:            e.invoice_date,
       supplier_fortnox_number: e.supplier_fortnox_number,
       supplier_name_snapshot:  e.supplier_name_snapshot,
-      pdf_file_id:             null,         // we look this up just-in-time during extraction
+      pdf_lookup:              { kind: 'lookup_failed', reason: 'not_yet_attempted' },
       invoice_total_header:    e.invoice_total_header,
     })
     if (candidates.length >= limit) break
   }
 
-  // For each candidate, fetch the PDF file_id via the existing drilldown
-  // pattern (look at the invoice header's SupplierInvoiceFileConnections).
-  // We fetch in a tight loop because Fortnox is rate-limited; the
-  // existing skip-already-ingested optimisation isn't applicable here.
+  // For each candidate, fetch the PDF file_id. Tagged-union result
+  // (has_pdf / no_pdf / lookup_failed) so the worker can distinguish
+  // terminal vs retryable in the loop below.
   await Promise.all(candidates.map(async c => {
-    c.pdf_file_id = await lookupPdfFileId(db, businessId, c.fortnox_invoice_number)
+    c.pdf_lookup = await lookupPdfFileId(db, businessId, c.fortnox_invoice_number)
   }))
 
   return candidates
@@ -333,11 +389,12 @@ async function countRemaining(db: any, businessId: string): Promise<number> {
   return Math.max(0, empties.size - terminal)
 }
 
-async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: string): Promise<string | null> {
+async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: string): Promise<PdfLookupResult> {
   // Hit Fortnox's /supplierinvoices/{n} detail to pull
-  // SupplierInvoiceFileConnections[0].FileId. We do this inline rather
-  // than relying on the existing Phase A backfill data because the
-  // backfill didn't persist FileIds (it stored row data only).
+  // SupplierInvoiceFileConnections[0].FileId. Returns a tagged union so
+  // the worker can distinguish "Fortnox confirmed no attachment"
+  // (terminal) from "Fortnox call failed" (retryable). Mixing the two
+  // is what corrupted Chicce's 784 invoices on the first Path B kick.
   const { getFreshFortnoxAccessToken } = await import('@/lib/fortnox/api/auth')
   const { fortnoxFetch } = await import('@/lib/fortnox/api/fetch')
 
@@ -347,23 +404,49 @@ async function lookupPdfFileId(db: any, businessId: string, invoiceNumber: strin
     .eq('business_id', businessId)
     .eq('provider', 'fortnox')
     .maybeSingle()
-  if (!integ?.org_id) return null
+  if (!integ?.org_id) {
+    return { kind: 'lookup_failed', reason: 'no_fortnox_integration_row' }
+  }
 
-  const token = await getFreshFortnoxAccessToken(db, integ.org_id, businessId)
-  if (!token) return null
-
+  let token: string | null = null
   try {
-    const res = await fortnoxFetch(
+    token = await getFreshFortnoxAccessToken(db, integ.org_id, businessId)
+  } catch (e: any) {
+    // FORTNOX_NEEDS_REAUTH or any other token-refresh failure: lift
+    // explicitly so the worker can mark the row for retry (not no_pdf).
+    return { kind: 'lookup_failed', reason: `token_refresh: ${e?.message ?? e}` }
+  }
+  if (!token) {
+    return { kind: 'lookup_failed', reason: 'no_token_available' }
+  }
+
+  let res: Response
+  try {
+    res = await fortnoxFetch(
       `https://api.fortnox.se/3/supplierinvoices/${encodeURIComponent(invoiceNumber)}`,
       token,
     )
-    if (!res.ok) return null
-    const json: any = await res.json()
-    const conns: any[] = json?.SupplierInvoice?.SupplierInvoiceFileConnections ?? []
-    return conns[0]?.FileId ? String(conns[0].FileId) : null
-  } catch {
-    return null
+  } catch (e: any) {
+    return { kind: 'lookup_failed', reason: `fetch_threw: ${e?.message ?? e}` }
   }
+  if (!res.ok) {
+    return { kind: 'lookup_failed', reason: `http_${res.status}` }
+  }
+
+  let json: any
+  try {
+    json = await res.json()
+  } catch (e: any) {
+    return { kind: 'lookup_failed', reason: `json_parse: ${e?.message ?? e}` }
+  }
+
+  const conns: any[] = json?.SupplierInvoice?.SupplierInvoiceFileConnections ?? []
+  const fileId = conns[0]?.FileId ? String(conns[0].FileId) : null
+  if (fileId) {
+    return { kind: 'has_pdf', file_id: fileId }
+  }
+  // Fortnox returned 200 with no FileConnections → genuinely no attachment.
+  return { kind: 'no_pdf' }
 }
 
 async function flushProgress(
