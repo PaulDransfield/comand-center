@@ -277,6 +277,18 @@ async function handleCallback(req: NextRequest) {
     req,
   })
 
+  // Pull company identity (org-nr, name, city, country) from Fortnox
+  // immediately on connect. Fortnox is the source of truth for legal
+  // identity per REVISOR-COMPLIANCE-PLAN.md §1.1; we want the businesses
+  // row populated before the customer prints anything from /revisor.
+  // Best-effort — failures don't block the OAuth flow (worker can be
+  // re-run via /admin/v2/tools or the daily cron once that lands).
+  if (businessId) {
+    (await import('@/lib/fortnox/company-identity'))
+      .syncBusinessIdentityFromFortnox(supabase, orgId, businessId)
+      .catch(err => console.error('Failed to sync company identity from Fortnox:', err))
+  }
+
   // Kick the Fortnox 12-month backfill worker immediately so the customer
   // doesn't wait for the cron tick. Worker auths via CRON_SECRET; matches
   // the dispatcher pattern used by /api/fortnox/extract.

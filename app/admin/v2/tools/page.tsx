@@ -342,6 +342,30 @@ export default function ToolsPage() {
     }
   }
 
+  // Sync business identity (org-nr, name, city, country) from Fortnox.
+  // Fast — single Fortnox call + DB update + optional alert insert.
+  // Used to backfill missing org-nr on existing businesses and to force-
+  // reconcile after a re-OAuth. See lib/fortnox/company-identity.ts.
+  const [idSyncRunning,  setIdSyncRunning]  = useState<boolean>(false)
+  const [idSyncResult,   setIdSyncResult]   = useState<any>(null)
+  const [idSyncError,    setIdSyncError]    = useState<string | null>(null)
+
+  async function syncBusinessIdentity() {
+    if (idSyncRunning || !opsBizId.trim()) return
+    setIdSyncRunning(true); setIdSyncResult(null); setIdSyncError(null)
+    try {
+      const res = await adminFetch<any>('/api/admin/business/sync-identity', {
+        method: 'POST',
+        body:   JSON.stringify({ business_id: opsBizId.trim() }),
+      })
+      setIdSyncResult(res)
+    } catch (e: any) {
+      setIdSyncError(e?.message ?? 'Identity sync failed')
+    } finally {
+      setIdSyncRunning(false)
+    }
+  }
+
   // PDF extraction (Path B). Same waitUntil + poll pattern; the worker
   // identifies invoices with empty-description rows, fetches the PDF,
   // runs Sonnet 4.6 vision + tool use, validates against the Fortnox
@@ -665,6 +689,42 @@ export default function ToolsPage() {
             ✦ Extract PDFs (Path B)
           </button>
         </div>
+
+        {/* ── Sync business identity from Fortnox (org-nr, name, city) ── */}
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px dashed #e5e7eb', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12, color: '#374151', minWidth: 220 }}>
+            Sync identity from Fortnox:
+          </label>
+          <span style={{ fontSize: 11, color: '#6b7280', flex: 1, minWidth: 280 }}>
+            Pulls <code style={{ background: '#f3f4f6', padding: '1px 4px', borderRadius: 3 }}>/3/companyinformation</code> and reconciles org-nr (auto-corrects), name + city (flags divergence as alert). Backfill for businesses with NULL org-nr, and force-reconcile after re-OAuth.
+          </span>
+          <button
+            onClick={syncBusinessIdentity}
+            disabled={idSyncRunning || !opsBizId.trim()}
+            style={btnPrimary(idSyncRunning || !opsBizId.trim())}
+            title="POST /api/admin/business/sync-identity"
+          >
+            {idSyncRunning ? 'Syncing…' : 'Sync identity'}
+          </button>
+        </div>
+
+        {(idSyncResult || idSyncError) && (
+          <div style={{
+            position:   'relative' as const,
+            marginTop: 10, padding: 10, paddingRight: 70,
+            background: idSyncError ? '#fef2f2' : (idSyncResult?.ok ? '#f0fdf4' : '#fef2f2'),
+            border:     `1px solid ${idSyncError ? '#fecaca' : (idSyncResult?.ok ? '#bbf7d0' : '#fecaca')}`,
+            borderRadius: 6,
+            fontSize: 11, fontFamily: 'ui-monospace, monospace',
+            color:    idSyncError ? '#991b1b' : '#111',
+            whiteSpace: 'pre-wrap' as const,
+            wordBreak:  'break-word' as const,
+            maxHeight:  500, overflowY: 'auto' as const,
+          }}>
+            <CopyTextButton text={idSyncError ?? JSON.stringify(idSyncResult, null, 2)} />
+            {idSyncError ?? JSON.stringify(idSyncResult, null, 2)}
+          </div>
+        )}
 
         {(invSnapshot || invError) && (() => {
           const status = invSnapshot?.status as string | undefined
