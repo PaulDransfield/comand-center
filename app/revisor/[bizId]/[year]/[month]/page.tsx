@@ -362,6 +362,11 @@ export default function RevisorMonthDetail() {
           </Section>
         )}
 
+        {/* ── Verifikationslista (Phase R3) — BFL 5 kap. journal ──── */}
+        <Section title="Verifikationslista">
+          <VerifikationsList bizId={data.business.id} year={y} month={m} />
+        </Section>
+
         {/* ── 12-month trend ───────────────────────────────────────── */}
         {data.history.length > 1 && (
           <Section title="12-månaders trend">
@@ -476,6 +481,211 @@ function FlagsTable({ flags, bizId, year, month }: { flags: OverheadFlag[]; bizI
         ))}
       </tbody>
     </table>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════
+// Phase R3 — Verifikationslista (BFL 5 kap. journal-by-date)
+// ═════════════════════════════════════════════════════════════════
+
+interface VoucherRowDto {
+  account:             number
+  account_description: string
+  debit:               number
+  credit:              number
+  description:         string | null
+}
+interface VoucherDto {
+  series:        string
+  number:        number
+  date:          string
+  description:   string | null
+  rows:          VoucherRowDto[]
+  debit_total:   number
+  credit_total:  number
+}
+
+function VerifikationsList({ bizId, year, month }: { bizId: string; year: number; month: number }) {
+  const [vouchers,  setVouchers]  = useState<VoucherDto[] | null>(null)
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState<string | null>(null)
+  const [showAll,   setShowAll]   = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setError(null); setVouchers(null)
+    fetch(`/api/revisor/vouchers?business_id=${bizId}&year=${year}&month=${month}`, { cache: 'no-store' })
+      .then(async r => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}))
+          throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`)
+        }
+        return r.json()
+      })
+      .then(j => { if (!cancelled) setVouchers(j.vouchers ?? []) })
+      .catch(e => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [bizId, year, month])
+
+  if (loading) {
+    return (
+      <div style={{ padding: 20, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>
+        Hämtar verifikationer från Fortnox… (kan ta upp till en minut för en aktiv månad)
+      </div>
+    )
+  }
+  if (error) {
+    return (
+      <div style={{ padding: 12, background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`, borderRadius: 8, fontSize: 12, color: UXP.roseText }}>
+        Kunde inte hämta verifikationer: {error}
+      </div>
+    )
+  }
+  if (!vouchers || vouchers.length === 0) {
+    return <Empty text="Inga verifikationer för perioden." />
+  }
+
+  // On-screen we collapse to the first 50 by default to keep the page
+  // responsive; print always shows all. The cc-print-only class is
+  // injected in PrintStyles so the print version uses the full list.
+  const visibleOnScreen = showAll ? vouchers : vouchers.slice(0, 50)
+  const hiddenCount     = vouchers.length - visibleOnScreen.length
+
+  // Period grand totals (for the BFL 5 kap. footer row)
+  const grandDebit  = vouchers.reduce((s, v) => s + v.debit_total,  0)
+  const grandCredit = vouchers.reduce((s, v) => s + v.credit_total, 0)
+  const transTotal  = vouchers.reduce((s, v) => s + v.rows.length, 0)
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 8 }}>
+        {vouchers.length.toLocaleString('sv-SE')} verifikationer ·{' '}
+        {transTotal.toLocaleString('sv-SE')} transaktioner ·{' '}
+        Debet {fmtKr(grandDebit)} = Kredit {fmtKr(grandCredit)}
+        {Math.abs(grandDebit - grandCredit) > 0.5 && (
+          <span style={{ color: UXP.roseText, marginLeft: 6 }}>
+            (obalans {fmtKr(Math.abs(grandDebit - grandCredit))})
+          </span>
+        )}
+      </div>
+
+      {/* Toggle is screen-only — print always renders all */}
+      {hiddenCount > 0 && (
+        <div className="cc-no-print" style={{ marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            style={{
+              fontSize: 11, padding: '5px 11px',
+              background: UXP.lavFill, color: UXP.lavText,
+              border: `0.5px solid ${UXP.lavMid}`, borderRadius: 6,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            Visa alla {vouchers.length} verifikationer (just nu visas {visibleOnScreen.length})
+          </button>
+        </div>
+      )}
+
+      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
+        <thead>
+          <tr style={{ background: UXP.subtleBg }}>
+            <th style={{ ...th(), width: 90  }}>Datum</th>
+            <th style={{ ...th(), width: 70  }}>Ver.</th>
+            <th style={{ ...th(), width: 70  }}>Konto</th>
+            <th style={{ ...th(), textAlign: 'left' as const }}>Beskrivning</th>
+            <th style={{ ...th(), width: 110, textAlign: 'right' as const }}>Debet</th>
+            <th style={{ ...th(), width: 110, textAlign: 'right' as const }}>Kredit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {/* On screen — the visible slice. Print — see <PrintAllVouchers> below */}
+          {visibleOnScreen.map(v => (
+            <VoucherBlock key={`${v.series}-${v.number}`} voucher={v} />
+          ))}
+        </tbody>
+        {/* Period grand totals footer */}
+        <tfoot>
+          <tr style={{ background: UXP.subtleBg, fontWeight: 600 }}>
+            <td style={td()} colSpan={4}>
+              Period totalt ({vouchers.length} verifikationer · {transTotal} transaktioner)
+            </td>
+            <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(grandDebit)}</td>
+            <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(grandCredit)}</td>
+          </tr>
+        </tfoot>
+      </table>
+
+      {/* Print-only: ALWAYS render the full list when printing, regardless
+          of the on-screen toggle state. cc-print-only is a class we
+          haven't defined yet — PrintStyles handles screen/print swap. */}
+      {!showAll && hiddenCount > 0 && (
+        <table className="cc-print-only" style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11, marginTop: -4 /* sit right under the on-screen table for clean print flow */ }}>
+          <tbody>
+            {vouchers.slice(50).map(v => (
+              <VoucherBlock key={`${v.series}-${v.number}-print`} voucher={v} />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
+function VoucherBlock({ voucher: v }: { voucher: VoucherDto }) {
+  return (
+    <>
+      {/* Per-voucher header row */}
+      <tr style={{ background: 'white' }}>
+        <td style={{ ...td(), fontWeight: 500, paddingTop: 10, borderTop: `1px solid ${UXP.border}`, color: UXP.ink1 }}>
+          {v.date}
+        </td>
+        <td style={{ ...td(), fontWeight: 600, paddingTop: 10, borderTop: `1px solid ${UXP.border}`, color: UXP.ink1, fontFamily: 'ui-monospace, monospace' }}>
+          {v.series}&nbsp;{v.number}
+        </td>
+        <td style={{ ...td(), paddingTop: 10, borderTop: `1px solid ${UXP.border}` }} colSpan={4}>
+          <span style={{ fontWeight: 500, color: UXP.ink2 }}>{v.description ?? '(ingen beskrivning)'}</span>
+        </td>
+      </tr>
+      {/* Per-row #TRANS lines */}
+      {v.rows.map((r, i) => (
+        <tr key={i}>
+          <td style={td()}></td>
+          <td style={td()}></td>
+          <td style={{ ...td(), fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink2 }}>
+            {r.account}
+          </td>
+          <td style={{ ...td(), color: UXP.ink3 }}>
+            <span style={{ color: UXP.ink2 }}>{r.account_description}</span>
+            {r.description && (
+              <span style={{ color: UXP.ink4, marginLeft: 8, fontStyle: 'italic' as const }}>· {r.description}</span>
+            )}
+          </td>
+          <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink2 }}>
+            {r.debit  > 0 ? fmtKr(r.debit)  : ''}
+          </td>
+          <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink2 }}>
+            {r.credit > 0 ? fmtKr(r.credit) : ''}
+          </td>
+        </tr>
+      ))}
+      {/* Per-voucher subtotal */}
+      <tr style={{ background: UXP.subtleBg }}>
+        <td style={td()}></td>
+        <td style={td()}></td>
+        <td style={td()}></td>
+        <td style={{ ...td(), fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const }}>
+          {v.rows.length} transaktion{v.rows.length === 1 ? '' : 'er'}
+        </td>
+        <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500, color: UXP.ink2 }}>
+          {fmtKr(v.debit_total)}
+        </td>
+        <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500, color: UXP.ink2 }}>
+          {fmtKr(v.credit_total)}
+        </td>
+      </tr>
+    </>
   )
 }
 
@@ -607,8 +817,13 @@ function PrintStyles({
         @bottom-left   { content: "${footerLeft}";  font-family: 'Spline Sans', system-ui, sans-serif; font-size: 8pt; color: #9ca3af; }
         @bottom-right  { content: "${footerRight}"; font-family: 'Spline Sans', system-ui, sans-serif; font-size: 8pt; color: #9ca3af; }
       }
+      /* Print-only elements: hidden on screen, visible on paper. The
+         verifikationslista uses this to render its overflow rows in
+         print without forcing the screen to scroll forever. */
+      .cc-print-only { display: none; }
       @media print {
         .cc-no-print          { display: none !important; }
+        .cc-print-only        { display: table !important; }   /* tables only */
         body                  { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .cc-revisor-content   { max-width: 100% !important; }
         /* Keep cards/sections from being split awkwardly across pages */
