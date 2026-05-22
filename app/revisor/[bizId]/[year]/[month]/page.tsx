@@ -126,9 +126,40 @@ export default function RevisorMonthDetail() {
   const periodLabel = `${MONTH_NAMES_SV[m - 1]} ${y}`
   const t = data.tracker
 
+  // Phase R1 (REVISOR-COMPLIANCE-PLAN.md) — Bokföringslagen 7 kap. archival
+  // compliance: every printed page carries identifying business + period
+  // + source + timestamp. Format the period as a strict ISO date range so
+  // it's audit-trail unambiguous.
+  const periodStart = `${y}-${String(m).padStart(2, '0')}-01`
+  const periodEnd   = (() => {
+    // Last day of the month — use the JS Date trick (day 0 of next month).
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+    return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`
+  })()
+  const generatedAt = new Date().toLocaleString('sv-SE', {
+    year:   'numeric', month: '2-digit', day:    '2-digit',
+    hour:   '2-digit', minute: '2-digit',
+    hour12: false,
+  })
+  const sourceLabel = (() => {
+    const src = t?.source ?? null
+    if (src === 'fortnox_pdf')   return 'Fortnox (manuellt avstämd PDF)'
+    if (src === 'fortnox_apply') return 'Fortnox (apply-pipeline)'
+    if (src === 'fortnox_api')   return 'Fortnox API'
+    if (src === 'manual')        return 'Manuellt inmatat'
+    return src ?? 'okänd'
+  })()
+
   return (
     <Layout>
-      <PrintStyles />
+      <PrintStyles
+        businessName={data.business.name}
+        orgNumber={data.business.org_number}
+        periodStart={periodStart}
+        periodEnd={periodEnd}
+        periodLabel={periodLabel}
+        generatedAt={generatedAt}
+      />
 
       <div className="cc-revisor-content">
         {/* ── Header ───────────────────────────────────────────────── */}
@@ -296,17 +327,15 @@ export default function RevisorMonthDetail() {
           </Section>
         )}
 
-        {/* ── Footer ───────────────────────────────────────────────── */}
-        <div style={{
-          marginTop:   28,
-          paddingTop:  14,
-          borderTop:   `1px solid ${UXP.border}`,
-          fontSize:    10,
-          color:       UXP.ink4,
-        }}>
-          Genererad av CommandCenter för revisor-vy · {fmtDateTime(data.generated_at)}.
-          {' '}Avstämning bör jämföras mot bokföringen i Fortnox.
-        </div>
+        {/* ── BFL 7 kap. compliance footer ─────────────────────────── */}
+        <ComplianceFooter
+          businessName={data.business.name}
+          orgNumber={data.business.org_number}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          generatedAt={generatedAt}
+          sourceLabel={sourceLabel}
+        />
       </div>
     </Layout>
   )
@@ -496,15 +525,110 @@ function Layout({ children }: { children: React.ReactNode }) {
   )
 }
 
-function PrintStyles() {
+// Bokföringslagen 7 kap. compliance: a printed monthly-close document
+// must carry identifying business + period + system source + generation
+// timestamp + page count on every page, and a currency declaration.
+// Phase R1 of REVISOR-COMPLIANCE-PLAN.md.
+//
+// CSS @page runners (@top-left etc.) are populated via string content
+// injected into a <style> tag at render time. The runners apply to
+// every printed page automatically — no per-section markup needed.
+// JS string escaping: CSS content() values are double-quoted, so any "
+// in the business name gets backslash-escaped.
+function PrintStyles({
+  businessName, orgNumber, periodStart, periodEnd, periodLabel, generatedAt,
+}: {
+  businessName: string
+  orgNumber:    string | null
+  periodStart:  string                // YYYY-MM-DD
+  periodEnd:    string                // YYYY-MM-DD
+  periodLabel:  string                // e.g. "mars 2026"
+  generatedAt:  string                // formatted local timestamp
+}) {
+  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  const headerLeft  = orgNumber
+    ? `${esc(businessName)} · Org.nr ${formatOrgNr(orgNumber)}`
+    : esc(businessName)
+  const headerRight = `Räkenskapsperiod ${periodStart} — ${periodEnd}`
+  const footerLeft  = `Skapad ${esc(generatedAt)} av CommandCenter · commandcenter.se`
+  const footerRight = 'Alla belopp i SEK om inget annat anges'
+
   return (
     <style>{`
+      @page {
+        size: A4 portrait;
+        margin: 24mm 16mm 26mm 16mm;
+        @top-left      { content: "${headerLeft}";  font-family: 'Spline Sans', system-ui, sans-serif; font-size: 9pt; color: #6b7280; }
+        @top-right     { content: "${headerRight}"; font-family: 'Spline Sans', system-ui, sans-serif; font-size: 9pt; color: #6b7280; }
+        @bottom-center { content: "Sida " counter(page) " av " counter(pages); font-family: 'Spline Sans', system-ui, sans-serif; font-size: 9pt; color: #6b7280; }
+        @bottom-left   { content: "${footerLeft}";  font-family: 'Spline Sans', system-ui, sans-serif; font-size: 8pt; color: #9ca3af; }
+        @bottom-right  { content: "${footerRight}"; font-family: 'Spline Sans', system-ui, sans-serif; font-size: 8pt; color: #9ca3af; }
+      }
       @media print {
-        .cc-no-print { display: none !important; }
-        body { background: white !important; }
-        .cc-revisor-content { max-width: 100% !important; }
+        .cc-no-print          { display: none !important; }
+        body                  { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .cc-revisor-content   { max-width: 100% !important; }
+        /* Keep cards/sections from being split awkwardly across pages */
+        section, .cc-revisor-section { break-inside: avoid; }
+        /* Table rules: header rows repeat on every page; row breaks safely */
+        table { page-break-inside: auto; }
+        tr    { page-break-inside: avoid; page-break-after: auto; }
+        thead { display: table-header-group; }
+        tfoot { display: table-footer-group; }
+        /* The compliance footer is always visible but doesn't need a page-
+           break in print — it sits at the end of the document body. */
+        .cc-compliance-footer { break-inside: avoid; }
       }
     `}</style>
+  )
+}
+
+// Visible-everywhere compliance footer block. Sits at the end of the
+// document body so it's the last thing on screen AND the last thing on
+// the final printed page. Carries the legal acknowledgment that this
+// summary is not itself the formal verifikationslista required by
+// Bokföringslagen 5 kap. — that lives in the SIE export (Phase R2) or
+// in the customer's Fortnox account.
+function ComplianceFooter({
+  businessName, orgNumber, periodStart, periodEnd, generatedAt, sourceLabel,
+}: {
+  businessName: string
+  orgNumber:    string | null
+  periodStart:  string
+  periodEnd:    string
+  generatedAt:  string
+  sourceLabel:  string                // 'Fortnox (manuellt avstämd)' | 'Manuellt inmatat' | etc.
+}) {
+  return (
+    <section
+      className="cc-compliance-footer"
+      style={{
+        marginTop:    24,
+        paddingTop:   16,
+        borderTop:    `1px solid ${UXP.border}`,
+        fontSize:     10,
+        color:        UXP.ink3,
+        lineHeight:   1.7,
+      }}
+    >
+      <div style={{ fontWeight: 600, color: UXP.ink2, marginBottom: 4 }}>
+        Genererad av CommandCenter (commandcenter.se) · {generatedAt}
+      </div>
+      <div>
+        <strong>Företag:</strong> {businessName}
+        {orgNumber && <> · <strong>Org.nr:</strong> {formatOrgNr(orgNumber)}</>}
+      </div>
+      <div>
+        <strong>Räkenskapsperiod:</strong> {periodStart} till {periodEnd}
+      </div>
+      <div>
+        <strong>Datakälla:</strong> {sourceLabel} · <strong>Valuta:</strong> SEK
+      </div>
+      <div style={{ marginTop: 6, fontSize: 9, color: UXP.ink4, fontStyle: 'italic' as const }}>
+        Denna sammanställning utgör inte ersättning för formell verifikationslista per Bokföringslagen 5 kap. För revisorsbruk:
+        ladda ner SIE-fil eller använd Fortnox direkt för fullständig verifikationsåtkomst.
+      </div>
+    </section>
   )
 }
 
