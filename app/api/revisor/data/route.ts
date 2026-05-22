@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     // Get businesses the subject can see
     const { data: allBiz } = await db
       .from('businesses')
-      .select('id, name, city, country, org_number')
+      .select('id, name, city, country, org_number, legal_name, legal_city')
       .eq('org_id', auth.orgId)
       .eq('is_active', true)
       .order('name')

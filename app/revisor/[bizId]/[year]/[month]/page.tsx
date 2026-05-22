@@ -30,10 +30,12 @@ const MONTH_NAMES_SV = [
 
 interface Business {
   id:         string
-  name:       string
+  name:       string                  // owner-set display / trading name (e.g. "Chicce Slotsgatan")
   city:       string | null
   country:    string | null
   org_number: string | null
+  legal_name: string | null           // legal entity per Fortnox (e.g. "Aglianico i Örebro AB")
+  legal_city: string | null
 }
 
 interface Tracker {
@@ -150,10 +152,16 @@ export default function RevisorMonthDetail() {
     return src ?? 'okänd'
   })()
 
+  // BFL 7 kap. requires the LEGAL entity name on archival print-outs.
+  // Fall back to the display name only when Fortnox hasn't given us
+  // a legal_name yet (pre-identity-sync businesses).
+  const legalEntityName = data.business.legal_name?.trim() || data.business.name
+  const displayCity     = data.business.legal_city?.trim() || data.business.city || null
+
   return (
     <Layout>
       <PrintStyles
-        businessName={data.business.name}
+        businessName={legalEntityName}
         orgNumber={data.business.org_number}
         periodStart={periodStart}
         periodEnd={periodEnd}
@@ -196,9 +204,12 @@ export default function RevisorMonthDetail() {
             )}
           </h1>
           <div style={{ fontSize: 13, color: UXP.ink3, marginTop: 4 }}>
-            <strong>{data.business.name}</strong>
+            <strong>{legalEntityName}</strong>
+            {data.business.legal_name && data.business.legal_name !== data.business.name && (
+              <> <span style={{ color: UXP.ink4 }}>(handelsnamn: {data.business.name})</span></>
+            )}
             {data.business.org_number && <> · Org.nr {formatOrgNr(data.business.org_number)}</>}
-            {data.business.city && <> · {data.business.city}</>}
+            {displayCity && <> · {displayCity}</>}
           </div>
         </div>
 
@@ -329,7 +340,8 @@ export default function RevisorMonthDetail() {
 
         {/* ── BFL 7 kap. compliance footer ─────────────────────────── */}
         <ComplianceFooter
-          businessName={data.business.name}
+          businessName={legalEntityName}
+          tradingName={data.business.legal_name ? data.business.name : null}
           orgNumber={data.business.org_number}
           periodStart={periodStart}
           periodEnd={periodEnd}
@@ -590,9 +602,10 @@ function PrintStyles({
 // Bokföringslagen 5 kap. — that lives in the SIE export (Phase R2) or
 // in the customer's Fortnox account.
 function ComplianceFooter({
-  businessName, orgNumber, periodStart, periodEnd, generatedAt, sourceLabel,
+  businessName, tradingName, orgNumber, periodStart, periodEnd, generatedAt, sourceLabel,
 }: {
-  businessName: string
+  businessName: string                // legal entity name (e.g. "Aglianico i Örebro AB")
+  tradingName:  string | null         // owner-set display name (e.g. "Chicce Slotsgatan"), only set when different from businessName
   orgNumber:    string | null
   periodStart:  string
   periodEnd:    string
@@ -618,6 +631,11 @@ function ComplianceFooter({
         <strong>Företag:</strong> {businessName}
         {orgNumber && <> · <strong>Org.nr:</strong> {formatOrgNr(orgNumber)}</>}
       </div>
+      {tradingName && (
+        <div>
+          <strong>Verksamhet (handelsnamn):</strong> {tradingName}
+        </div>
+      )}
       <div>
         <strong>Räkenskapsperiod:</strong> {periodStart} till {periodEnd}
       </div>

@@ -6,6 +6,18 @@
 
 ## Pending — apply when ready
 
+### M079 — businesses.legal_name + legal_city ⏳ pending application
+**File:** `sql/M079-BUSINESSES-LEGAL-NAME.sql`
+**Purpose:** Distinguish legal entity name (e.g. "Aglianico i Örebro AB" from Fortnox) from owner-set display/trading name (e.g. "Chicce Slotsgatan"). Both are correct; they answer different questions. Per BFL 7 kap. the LEGAL entity name MUST appear on archival print-outs. Adds two nullable TEXT columns.
+**Companion code:**
+- `lib/fortnox/company-identity.ts` revised policy:
+  · legal_name: Fortnox always wins (auto-populated; alert only if Fortnox now disagrees with a previously-set legal_name — re-OAuth-to-wrong-company case)
+  · name: owner-controlled display name; never overwritten by Fortnox after initial backfill; not_alerted on dual-identity case
+  · legal_city / city: same shape
+- `/revisor/[bizId]/[year]/[month]` uses `legal_name ?? name` as the print/compliance entity name; shows trading name as a parenthetical when different.
+- `/api/revisor/data` returns legal_name + legal_city.
+**Idempotent.** ALTER TABLE … ADD COLUMN IF NOT EXISTS.
+
 ### M078 — Invoice PDF extractions (Path B) ⏳ pending application
 **File:** `sql/M078-INVOICE-PDF-EXTRACTIONS.sql`
 **Purpose:** Path B of inventory catalogue (INVENTORY-PATH-B-PDF-EXTRACTION.md). Chicce's first backfill returned 3218/3218 rows with `raw_description=''` because Fortnox doesn't post per-line product data for invoices booked as single-line payables. Path B parses the attached PDFs via Claude Sonnet 4.6 vision + tool use, validates against the Fortnox header total (±2%), and replaces placeholder rows atomically.

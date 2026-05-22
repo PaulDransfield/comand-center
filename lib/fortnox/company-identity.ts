@@ -88,15 +88,17 @@ export interface IdentitySyncResult {
   fortnox_info_present: boolean
 }
 
+type IdentityField = 'org_number' | 'name' | 'legal_name' | 'city' | 'legal_city' | 'country'
+
 interface FieldChange {
-  field:        'org_number' | 'name' | 'city' | 'country'
+  field:        IdentityField
   previous:     string | null
   applied:      string | null
   reason:       'auto_populated' | 'fortnox_wins'
 }
 
 interface FieldDivergence {
-  field:        'org_number' | 'name' | 'city' | 'country'
+  field:        IdentityField
   our_value:    string | null
   fortnox_value: string | null
 }
@@ -141,7 +143,7 @@ export async function syncBusinessIdentityFromFortnox(
   // 3. Load current business row
   const { data: biz, error: bizErr } = await db
     .from('businesses')
-    .select('id, name, org_number, city, country')
+    .select('id, name, org_number, city, country, legal_name, legal_city')
     .eq('id', businessId)
     .maybeSingle()
   if (bizErr || !biz) {
@@ -178,10 +180,41 @@ export async function syncBusinessIdentityFromFortnox(
     }
   }
 
-  // ── name: Fortnox wins only when our value is empty ──────────────
-  const fortnoxName = (info.name ?? '').trim() || null
-  const ourName     = (biz.name ?? '').trim() || null
-  if (fortnoxName && !ourName) {
+  // ── legal_name: Fortnox ALWAYS wins (this is the LEGAL entity name,
+  //     used by the revisor surface + SIE export + every archival doc).
+  //     The "Aglianico i Örebro AB" vs "Chicce Slotsgatan" case is the
+  //     standard Swedish AB pattern — both are correct, they answer
+  //     different questions. So we silently keep legal_name in sync
+  //     with Fortnox and only ALERT if legal_name was non-empty AND
+  //     diverged (which would mean Fortnox now points at a different
+  //     legal entity — re-OAuth-to-wrong-company case).
+  const fortnoxName  = (info.name ?? '').trim() || null
+  const ourLegalName = (biz.legal_name ?? '').trim() || null
+  if (fortnoxName && fortnoxName !== ourLegalName) {
+    updates.legal_name = fortnoxName
+    if (ourLegalName) {
+      // We had a legal_name; Fortnox now disagrees. This is suspicious
+      // (likely a re-OAuth to the wrong company). Surface as alert.
+      result.divergences.push({
+        field:         'legal_name',
+        our_value:     ourLegalName,
+        fortnox_value: fortnoxName,
+      })
+    }
+    result.changes.push({
+      field:    'legal_name',
+      previous: ourLegalName,
+      applied:  fortnoxName,
+      reason:   ourLegalName ? 'fortnox_wins' : 'auto_populated',
+    })
+  }
+
+  // ── name: stays owner-controlled. Backfill ONLY when both name AND
+  //     legal_name are empty (first-time onboarding before owner had
+  //     a chance to set a display name). After that, Fortnox != name
+  //     is the expected dual-identity case — no alert, no action.
+  const ourName = (biz.name ?? '').trim() || null
+  if (fortnoxName && !ourName && !ourLegalName) {
     updates.name = fortnoxName
     result.changes.push({
       field:    'name',
@@ -189,31 +222,38 @@ export async function syncBusinessIdentityFromFortnox(
       applied:  fortnoxName,
       reason:   'auto_populated',
     })
-  } else if (fortnoxName && ourName && fortnoxName !== ourName) {
-    // Don't auto-overwrite — but surface as divergence.
-    result.divergences.push({
-      field:         'name',
-      our_value:     ourName,
-      fortnox_value: fortnoxName,
+  }
+
+  // ── legal_city: same shape as legal_name ────────────────────────
+  const fortnoxCity   = (info.city ?? '').trim() || null
+  const ourLegalCity  = (biz.legal_city ?? '').trim() || null
+  if (fortnoxCity && fortnoxCity !== ourLegalCity) {
+    updates.legal_city = fortnoxCity
+    if (ourLegalCity && normaliseCity(fortnoxCity) !== normaliseCity(ourLegalCity)) {
+      result.divergences.push({
+        field:         'legal_city',
+        our_value:     ourLegalCity,
+        fortnox_value: fortnoxCity,
+      })
+    }
+    result.changes.push({
+      field:    'legal_city',
+      previous: ourLegalCity,
+      applied:  fortnoxCity,
+      reason:   ourLegalCity ? 'fortnox_wins' : 'auto_populated',
     })
   }
 
-  // ── city: Fortnox wins only when our value is empty ──────────────
-  const fortnoxCity = (info.city ?? '').trim() || null
-  const ourCity     = (biz.city ?? '').trim() || null
-  if (fortnoxCity && !ourCity) {
+  // ── city: owner-controlled display value. Backfill only when both
+  //     city and legal_city are empty.
+  const ourCity = (biz.city ?? '').trim() || null
+  if (fortnoxCity && !ourCity && !ourLegalCity) {
     updates.city = fortnoxCity
     result.changes.push({
       field:    'city',
       previous: null,
       applied:  fortnoxCity,
       reason:   'auto_populated',
-    })
-  } else if (fortnoxCity && ourCity && normaliseCity(fortnoxCity) !== normaliseCity(ourCity)) {
-    result.divergences.push({
-      field:         'city',
-      our_value:     ourCity,
-      fortnox_value: fortnoxCity,
     })
   }
 
@@ -244,11 +284,18 @@ export async function syncBusinessIdentityFromFortnox(
     }
   }
 
-  // 6. Generate alerts for divergences (high severity for org_number,
-  //    medium for name/city since the owner may have intentionally
-  //    overridden them).
+  // 6. Generate alerts for divergences. After M079:
+  //    - 'org_number'  → high severity. Auto-corrected to Fortnox value.
+  //    - 'legal_name'  → high severity. Means Fortnox now points at a
+  //                      different legal entity than before — re-OAuth-
+  //                      to-wrong-company scenario. Suspicious.
+  //    - 'legal_city'  → medium severity. Probably an address update.
+  //    - 'name'/'city' → NEVER reach this loop after M079 (dual-identity
+  //                      case is silent). Defensive default kept.
   for (const div of result.divergences) {
-    const severity = div.field === 'org_number' ? 'high' : 'medium'
+    const severity = (div.field === 'org_number' || div.field === 'legal_name')
+      ? 'high'
+      : 'medium'
     const alertType = `business_identity_drift_${div.field}`
     const today = new Date().toISOString().slice(0, 10)
 
@@ -263,20 +310,23 @@ export async function syncBusinessIdentityFromFortnox(
     if (existing) continue
 
     const title = div.field === 'org_number'
-      ? `Org-nr i Fortnox skiljer sig från CommandCenter`
-      : div.field === 'name'
-        ? `Företagsnamn i Fortnox skiljer sig från CommandCenter`
-        : div.field === 'city'
-          ? `Ort i Fortnox skiljer sig från CommandCenter`
+      ? 'Org-nr i Fortnox skiljer sig från CommandCenter'
+      : div.field === 'legal_name'
+        ? 'Företagsnamn (juridiskt) i Fortnox skiljer sig från tidigare'
+        : div.field === 'legal_city'
+          ? 'Registrerad ort i Fortnox skiljer sig från tidigare'
           : `${div.field} i Fortnox skiljer sig från CommandCenter`
 
     const description = div.field === 'org_number'
-      ? `Fortnox: ${div.fortnox_value} · CommandCenter: ${div.our_value}. ` +
-        `Org-numret är CommandCenter-uppdaterat till Fortnox-värdet. ` +
-        `Kontrollera att rätt företag är anslutet via Fortnox OAuth.`
-      : `Fortnox: "${div.fortnox_value}" · CommandCenter: "${div.our_value}". ` +
-        `Ingen automatisk uppdatering — ägaren kan ha valt ett annat visningsnamn. ` +
-        `Bekräfta eller uppdatera i Inställningar → Företagsinfo.`
+      ? `Fortnox: ${div.fortnox_value} · CommandCenter (gammalt värde): ${div.our_value}. ` +
+        `Org-numret är auto-uppdaterat till Fortnox-värdet. ` +
+        `Kontrollera att rätt företag är anslutet via Fortnox OAuth — ett annat org-nr betyder antingen byte av juridiskt företag eller felkopplad OAuth.`
+      : div.field === 'legal_name'
+        ? `Fortnox: "${div.fortnox_value}" · CommandCenter (gammalt värde): "${div.our_value}". ` +
+          `Det juridiska företagsnamnet har ändrats sedan tidigare sync — kan vara namnbyte hos Bolagsverket eller felkopplad OAuth. ` +
+          `Värdet är auto-uppdaterat; bekräfta att rätt företag är anslutet.`
+        : `Fortnox: "${div.fortnox_value}" · CommandCenter: "${div.our_value}". ` +
+          `Värdet är auto-uppdaterat till Fortnox-värdet.`
 
     const { error: alertErr } = await db.from('anomaly_alerts').insert({
       org_id:        orgId,
@@ -290,12 +340,16 @@ export async function syncBusinessIdentityFromFortnox(
         field:         div.field,
         our_value:     div.our_value,
         fortnox_value: div.fortnox_value,
-        action:        div.field === 'org_number' ? 'auto_corrected' : 'manual_review',
+        action:        'auto_corrected',
       },
       is_read:       false,
       is_dismissed:  false,
     })
-    if (!alertErr) result.alerts_created += 1
+    if (alertErr) {
+      console.warn('[fortnox/company-identity] alert insert failed:', alertErr.message)
+    } else {
+      result.alerts_created += 1
+    }
   }
 
   return result
