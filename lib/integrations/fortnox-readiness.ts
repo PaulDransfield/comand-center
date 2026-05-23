@@ -58,7 +58,7 @@ export async function evaluateFortnoxReadiness(
   // Pull the businesses row once — used by identity + revenue checks.
   const { data: biz } = await db
     .from('businesses')
-    .select('id, name, legal_name, legal_city, org_number, country')
+    .select('id, name, legal_name, legal_city, org_number, country, vat_filing_cadence, org_id')
     .eq('id', businessId)
     .maybeSingle()
 
@@ -81,6 +81,8 @@ export async function evaluateFortnoxReadiness(
     revenueClass,
     backfill,
     freshness,
+    multiBusiness,
+    vatCadence,
   ] = await Promise.all([
     checkIdentity(biz),
     checkFiscalYear(accessToken),
@@ -92,23 +94,52 @@ export async function evaluateFortnoxReadiness(
     checkRevenueClassification(db, businessId, accessToken),
     checkBackfillProgress(db, businessId),
     checkBookkeepingFreshness(db, businessId),
+    checkMultiBusinessConnections(db, orgId, businessId),
+    checkVatFilingCadence(biz),
   ])
 
   const checks = [identity, fiscalYear, accountsChart, voucherCache, openingBalance,
-    balanceSheet, vatCoverage, revenueClass, backfill, freshness]
+    balanceSheet, vatCoverage, revenueClass, backfill, freshness, multiBusiness, vatCadence]
 
   const hasFail    = checks.some(c => c.status === 'fail')
   const hasWarn    = checks.some(c => c.status === 'warn')
   const hasPending = checks.some(c => c.status === 'pending')
   const overall: CheckStatus = hasFail ? 'fail' : hasPending ? 'pending' : hasWarn ? 'warn' : 'ok'
 
-  return {
+  const result: ReadinessResult = {
     business_id:  businessId,
     overall,
     ready_to_use: !hasFail,
     checks,
     duration_ms:  Date.now() - t0,
   }
+
+  // Persist a compact summary back to businesses so the dashboard widget
+  // can render instantly without paying the 3-5 s cost of re-running the
+  // full validator on every page load. Best-effort write — failure to
+  // persist doesn't fail the request.
+  try {
+    const counts = { ok: 0, warn: 0, fail: 0, pending: 0 } as Record<CheckStatus, number>
+    for (const c of checks) counts[c.status]++
+    const failing = checks
+      .filter(c => c.status === 'fail' || c.status === 'warn')
+      .map(c => ({ key: c.key, label: c.label, status: c.status, detail: c.detail }))
+    await db
+      .from('businesses')
+      .update({
+        setup_health_summary: {
+          overall,
+          ready_to_use: !hasFail,
+          counts,
+          failing_checks: failing,
+          evaluated_at: new Date().toISOString(),
+        },
+        setup_health_updated_at: new Date().toISOString(),
+      })
+      .eq('id', businessId)
+  } catch { /* swallow */ }
+
+  return result
 }
 
 // ─── 1. Identity ─────────────────────────────────────────────────────
@@ -542,6 +573,91 @@ async function checkBookkeepingFreshness(db: any, businessId: string): Promise<R
   } catch (e: any) {
     return { key: 'freshness', label: 'Bokföringsfärskhet', status: 'warn',
              detail: `Kunde inte bedöma: ${String(e?.message ?? e).slice(0, 120)}` }
+  }
+}
+
+// ─── 11. Multi-business connection coverage ───────────────────────────
+
+async function checkMultiBusinessConnections(
+  db: any, orgId: string, businessId: string,
+): Promise<ReadinessCheck> {
+  // If the org has multiple businesses (multi-restaurant group), each
+  // legal entity needs its own Fortnox OAuth — Fortnox is single-entity
+  // per subscription. Catch the common signature of "owner connected
+  // ONE restaurant, assumed it covers the others."
+  try {
+    const { data: siblings } = await db
+      .from('businesses')
+      .select('id, name, is_active')
+      .eq('org_id', orgId)
+      .eq('is_active', true)
+
+    if (!siblings || siblings.length <= 1) {
+      // Single-restaurant org — no multi-business risk.
+      return {
+        key: 'multi_business', label: 'Övriga verksamheter',
+        status: 'ok',
+        detail: 'Enda verksamheten i organisationen — ingen extra koppling behövs.',
+      }
+    }
+
+    // Check which siblings have a connected Fortnox integration.
+    const { data: ints } = await db
+      .from('integrations')
+      .select('business_id, status')
+      .eq('org_id', orgId)
+      .eq('provider', 'fortnox')
+      .in('status', ['connected', 'warning'])
+
+    const connectedIds = new Set((ints ?? []).map((i: any) => i.business_id).filter(Boolean))
+    const missing = siblings.filter((s: any) => !connectedIds.has(s.id) && s.id !== businessId)
+
+    if (missing.length === 0) {
+      return {
+        key: 'multi_business', label: 'Övriga verksamheter',
+        status: 'ok',
+        detail: `Alla ${siblings.length} verksamheter har Fortnox-koppling.`,
+        evidence: { total: siblings.length, connected: siblings.length },
+      }
+    }
+    const sample = missing.slice(0, 3).map((s: any) => s.name).join(', ')
+    return {
+      key: 'multi_business', label: 'Övriga verksamheter',
+      status: 'warn',
+      detail: `${missing.length} verksamhet(er) saknar Fortnox-koppling: ${sample}${missing.length > 3 ? ' …' : ''}`,
+      evidence: { missing_business_ids: missing.map((s: any) => s.id) },
+    }
+  } catch (e: any) {
+    return { key: 'multi_business', label: 'Övriga verksamheter', status: 'warn',
+             detail: `Kunde inte bedöma: ${String(e?.message ?? e).slice(0, 120)}` }
+  }
+}
+
+// ─── 12. VAT filing cadence ───────────────────────────────────────────
+
+async function checkVatFilingCadence(biz: any): Promise<ReadinessCheck> {
+  // Filing cadence isn't queryable from Fortnox — it's a Skatteverket
+  // registration property. We store it on businesses.vat_filing_cadence
+  // (set via /settings/setup-health or onboarding). Defaults to quarterly
+  // for restaurants in the 1-40 MSEK turnover band (~95 % of our market).
+  if (!biz) {
+    return { key: 'vat_cadence', label: 'Momsperiod', status: 'pending',
+             detail: 'Väntar på verksamhetsdata.' }
+  }
+  const c = biz.vat_filing_cadence as string | null
+  if (c === null) {
+    return {
+      key: 'vat_cadence', label: 'Momsperiod', status: 'warn',
+      detail: 'Inte vald ännu — sätt månadsvis / kvartalsvis / årsvis i Inställningar → Setup-status.',
+      evidence: { current: null },
+    }
+  }
+  const label = c === 'monthly' ? 'Månadsvis' : c === 'quarterly' ? 'Kvartalsvis' : 'Årsvis'
+  return {
+    key: 'vat_cadence', label: 'Momsperiod',
+    status: 'ok',
+    detail: `${label}. Driver omfånget på momsrapporten.`,
+    evidence: { current: c },
   }
 }
 

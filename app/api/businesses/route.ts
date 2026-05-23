@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
   const { data: businesses } = await adminDb
     .from('businesses')
-    .select('id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active')
+    .select('id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at')
     .eq('org_id', orgId)
     .order('name')
 

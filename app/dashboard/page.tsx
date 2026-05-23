@@ -344,10 +344,12 @@ function DashboardInner() {
 
   const selectedBiz = businesses.find(b => b.id === bizId)
 
-  // ── Attention items — derived from aiSched + overheadProj + alerts
+  // ── Attention items — derived from aiSched + overheadProj + alerts + setup health
   const attentionItems = useMemo(() => buildAttentionItems({
     aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount,
-  }), [aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount])
+    setupHealth: selectedBiz?.setup_health_summary ?? null,
+    selectedBizId: bizId,
+  }), [aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount, selectedBiz, bizId])
 
   // ── Render ───────────────────────────────────────────────────────
   return (
@@ -640,8 +642,31 @@ interface AttentionItem {
 
 function buildAttentionItems({
   aiSched, overheadProj, alerts, dailyRows, totalRev, totalLabour, labourPct, dayCount,
+  setupHealth, selectedBizId,
 }: any): AttentionItem[] {
   const items: AttentionItem[] = []
+
+  // Setup health — surface first when not green. Owner sees data-quality
+  // issues before treating dashboard numbers as fact.
+  if (setupHealth && setupHealth.overall && setupHealth.overall !== 'ok') {
+    const counts = setupHealth.counts ?? {}
+    const failCount = (counts.fail ?? 0)
+    const warnCount = (counts.warn ?? 0)
+    const pending   = (counts.pending ?? 0)
+    const total     = (counts.ok ?? 0) + failCount + warnCount + pending
+    const tone: AttentionItem['tone'] = failCount > 0 ? 'bad' : warnCount > 0 ? 'warning' : 'warning'
+    const titleSuffix =
+      failCount > 0 ? `${failCount} kritiska${failCount === 1 ? '' : ' problem'}` :
+      warnCount > 0 ? `${warnCount} observation${warnCount === 1 ? '' : 'er'}` :
+                      `${pending} pågående kontroll${pending === 1 ? '' : 'er'}`
+    items.push({
+      id:     'setup-health',
+      tone,
+      title:  `Setup-status — ${titleSuffix}`,
+      detail: `${counts.ok ?? 0} av ${total} kontroller godkända. Visa detaljer i Inställningar.`,
+      cta:    { label: 'Öppna →', href: `/settings/setup-health?business_id=${selectedBizId ?? ''}` },
+    })
+  }
 
   const saving = Number(aiSched?.summary?.saving_kr ?? 0)
   if (saving > 0) {
