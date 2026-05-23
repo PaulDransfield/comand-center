@@ -40,9 +40,14 @@ export default function FortnoxVerifyPage() {
   const router = useRouter()
   const bizId = params.get('business_id') ?? ''
 
-  const [result,  setResult]  = useState<ReadinessResult | null>(null)
-  const [error,   setError]   = useState<string | null>(null)
-  const [polling, setPolling] = useState(true)
+  const [result,    setResult]    = useState<ReadinessResult | null>(null)
+  const [error,     setError]     = useState<string | null>(null)
+  const [polling,   setPolling]   = useState(true)
+  const [reloading, setReloading] = useState(false)
+
+  // Bumped on manual re-run to retrigger the effect even when all checks
+  // have settled (polling stopped).
+  const [runEpoch, setRunEpoch] = useState(0)
 
   useEffect(() => {
     if (!bizId) { setError('Saknar business_id i URL'); return }
@@ -60,6 +65,7 @@ export default function FortnoxVerifyPage() {
         const j: ReadinessResult = await r.json()
         if (cancelled) return
         setResult(j)
+        setReloading(false)
         const hasPending = j.checks.some(c => c.status === 'pending')
         const stillPolling = hasPending
         setPolling(stillPolling)
@@ -70,6 +76,7 @@ export default function FortnoxVerifyPage() {
         if (cancelled) return
         setError(e.message)
         setPolling(false)
+        setReloading(false)
       }
     }
     fetchOnce()
@@ -77,7 +84,13 @@ export default function FortnoxVerifyPage() {
       cancelled = true
       if (timer) clearTimeout(timer)
     }
-  }, [bizId])
+  }, [bizId, runEpoch])
+
+  const rerun = () => {
+    setReloading(true)
+    setPolling(true)
+    setRunEpoch(x => x + 1)
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: UXP.pageBg, padding: '40px 20px' }}>
@@ -88,14 +101,34 @@ export default function FortnoxVerifyPage() {
         padding: 32,
         boxShadow: '0 1px 3px rgba(58,53,80,0.04)',
       }}>
-        <div style={{ marginBottom: 24 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
-            Verifierar din Fortnox-anslutning
-          </h1>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: UXP.ink3, lineHeight: 1.5 }}>
-            Vi kontrollerar att all data är på plats så att din balansräkning, momsrapport och dashboard fungerar
-            korrekt från första stund. Brukar ta 1–10 minuter beroende på hur mycket historik Fortnox skickar oss.
-          </p>
+        <div style={{ marginBottom: 24, display: 'flex', gap: 12, alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+              Verifierar din Fortnox-anslutning
+            </h1>
+            <p style={{ margin: '6px 0 0', fontSize: 13, color: UXP.ink3, lineHeight: 1.5 }}>
+              Vi kontrollerar att all data är på plats så att din balansräkning, momsrapport och dashboard fungerar
+              korrekt från första stund. Brukar ta 1–10 minuter beroende på hur mycket historik Fortnox skickar oss.
+            </p>
+          </div>
+          <button
+            onClick={rerun}
+            disabled={reloading}
+            style={{
+              padding:      '7px 14px',
+              fontSize:     12,
+              fontWeight:   500,
+              background:   UXP.cardBg,
+              color:        UXP.ink2,
+              border:       `0.5px solid ${UXP.border}`,
+              borderRadius: 6,
+              cursor:       reloading ? 'wait' : 'pointer',
+              whiteSpace:   'nowrap' as const,
+              flexShrink:   0,
+            }}
+          >
+            {reloading ? 'Kör…' : 'Kör om'}
+          </button>
         </div>
 
         {error && (
