@@ -266,10 +266,36 @@ export async function computeBalanceSheet(
   }
   equityLines.sort((a, b) => a.account - b.account)
 
-  // Append the YTD result line (only if it differs from any 2099 row
-  // that's already present — to avoid double-counting).
-  const has2099 = equityLines.some(l => l.account === 2099 || l.account === 2019)
-  if (!has2099 && Math.abs(ytdResult) > 0.5) {
+  // Append the "Årets resultat (YTD)" line — the current-period P&L
+  // result computed from the voucher walk over 3xxx-8xxx accounts.
+  //
+  // IMPORTANT: 2099 / 2019 / 2098 (Årets resultat / Föregående års
+  // resultat) typically carry NON-ZERO opening balances representing
+  // PRIOR year's result transferred from 8999 at year-end close. That
+  // opening balance is NOT current-year YTD — it's history.
+  //
+  // We only suppress the appended YTD line when 2099/2019 has MOVEMENT
+  // in the requested period (i.e. the bookkeeper has booked an explicit
+  // current-year YTD-result entry, which only happens at year-end close
+  // when the closing voucher debits 8999 / credits 2099 to roll the
+  // result into equity). At any mid-year point, current YTD lives on
+  // 8999, not 2099 — so we must add it as a derived line.
+  //
+  // Pre-2026-05-23 we checked `equityLines.some(l => l.account === 2099)`
+  // which was true whenever 2099 had a non-zero closing balance — even
+  // from carryover IB alone. Result: for any customer with a prior-year
+  // close booked through 2099 (i.e. every established AB), we'd silently
+  // DROP the current-year YTD result, breaking the balance equation by
+  // exactly that amount. Chicce Slotsgatan exposed this: April 2026
+  // imbalance was -313 636 SEK = exactly the YTD loss we dropped.
+  const has2099Activity = (() => {
+    for (const accNum of [2099, 2019, 2098]) {
+      const entry = accumByAccount.get(accNum)
+      if (entry && (entry.debit + entry.credit) > 0.5) return true
+    }
+    return false
+  })()
+  if (!has2099Activity && Math.abs(ytdResult) > 0.5) {
     equityLines.push({
       account:     2099,
       description: 'Årets resultat (YTD)',
