@@ -72,18 +72,28 @@ export async function matchInvoiceLine(
 ): Promise<MatchOutcome> {
   // Gate 0 — does this line look like inventory at all?
   //
-  // Two passes, first hit wins:
-  //   (a) BAS account routing (lib/inventory/categories.ts). Most
+  // Three passes, first hit wins:
+  //   (a) Per-business supplier_classifications override (M083). Owner
+  //       has explicitly said "all invoices from this supplier are
+  //       overhead" — trust that over the universal classifier.
+  //   (b) BAS account routing (lib/inventory/categories.ts). Most
   //       reliable when present — Fortnox posts AccountNumber once an
   //       invoice is bokförd.
-  //   (b) Supplier-name routing (lib/inventory/suppliers.ts). Fallback
+  //   (c) Supplier-name routing (lib/inventory/suppliers.ts). Fallback
   //       for businesses whose Fortnox setup doesn't post the GL
   //       account at supplier-invoice receipt time (Chicce's case:
   //       100% of 3218 rows had account_number = NULL on 2026-05-21).
   //
-  // categoryForSupplier can also explicitly return 'not_inventory' for
-  // known non-inventory suppliers (Fortnox SaaS, E.ON, accountants) —
-  // those skip the review queue entirely.
+  // The (a) override is per-business so a marketing agency that's
+  // overhead for restaurant A might still be inventory for restaurant B.
+  const ownerOverride = await getSupplierOverride(db, line.business_id, line.supplier_fortnox_number)
+  if (ownerOverride === 'not_inventory') {
+    return {
+      status: 'not_inventory', product_id: null, alias_id: null,
+      method: null, confidence: null, candidates: [],
+    }
+  }
+
   const basCategory = categoryForBasAccount(line.account_number)
   const resolved: SupplierClassification | null =
     basCategory ?? categoryForSupplier(line.supplier_name_snapshot)
@@ -261,6 +271,24 @@ function toCandidateRows(rows: TrigramRow[]): MatchCandidate[] {
     raw_description: r.raw_description,
     similarity:      r.similarity,
   }))
+}
+
+// Per-business override lookup (M083). Returns 'not_inventory' if the
+// owner has explicitly skipped this supplier, otherwise null. Cached
+// per-call via the supabase client's internal connection pool — this
+// is a single indexed lookup on (business_id, supplier_fortnox_number)
+// against a small table, so we don't bother caching across calls. If
+// matcher throughput ever becomes a bottleneck, the caller can pre-
+// load the map and short-circuit.
+async function getSupplierOverride(db: any, business_id: string, supplier_fortnox_number: string): Promise<string | null> {
+  if (!supplier_fortnox_number) return null
+  const { data } = await db
+    .from('supplier_classifications')
+    .select('classification')
+    .eq('business_id', business_id)
+    .eq('supplier_fortnox_number', supplier_fortnox_number)
+    .maybeSingle()
+  return data?.classification ?? null
 }
 
 async function touchAlias(db: any, alias_id: string): Promise<void> {

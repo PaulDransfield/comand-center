@@ -227,7 +227,10 @@
       "approved":          "Saved ✓",
       "skip":              "Skip",
       "skipped":           "Skipped",
-      "skipHint":          "Not inventory — mark as overhead (rent, electricity, SaaS, laundry, etc.) and hide from the catalogue."
+      "skipHint":          "Not inventory — mark as overhead (rent, electricity, SaaS, laundry, etc.) and hide from the catalogue.",
+      "skipSupplier":      "Skip ALL from supplier",
+      "skipSupplierHint":  "Mark this supplier as always non-inventory. Future invoices from them auto-skip without showing in this queue.",
+      "skipSupplierConfirm": "Skip ALL {count} lines from {supplier}, and auto-skip future invoices from this supplier too?"
     }
   }
 }

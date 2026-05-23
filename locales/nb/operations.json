@@ -227,7 +227,10 @@
       "approved":          "Lagret ✓",
       "skip":              "Hopp over",
       "skipped":           "Hoppet over",
-      "skipHint":          "Ikke varelager — merk som overhead (husleie, strøm, SaaS, vask osv.) og skjul fra katalogen."
+      "skipHint":          "Ikke varelager — merk som overhead (husleie, strøm, SaaS, vask osv.) og skjul fra katalogen.",
+      "skipSupplier":      "Hopp over ALLE fra leverandøren",
+      "skipSupplierHint":  "Merk leverandøren som alltid ikke-varelager. Fremtidige fakturaer fra dem hoppes over automatisk.",
+      "skipSupplierConfirm": "Hopp over ALLE {count} linjer fra {supplier}, og hopp over fremtidige fakturaer fra denne leverandøren automatisk?"
     }
   }
 }

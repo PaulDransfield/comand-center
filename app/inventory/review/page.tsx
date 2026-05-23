@@ -132,6 +132,61 @@ export default function InventoryReviewPage() {
     }
   }
 
+  async function skipSupplier(group: ReviewGroup) {
+    if (!bizId) return
+    const supplierLabel = group.supplier_name ?? `#${group.supplier_fortnox_number}`
+    const lineCount = allGroups
+      .filter(x => x.supplier_fortnox_number === group.supplier_fortnox_number)
+      .reduce((s, x) => s + x.line_count, 0)
+    if (!confirm(t('skipSupplierConfirm', { supplier: supplierLabel, count: String(lineCount) }))) return
+
+    // Mark every visible group for this supplier as busy so the UI freezes them.
+    setEdits(prev => {
+      const next = { ...prev }
+      for (const g of allGroups) {
+        if (g.supplier_fortnox_number === group.supplier_fortnox_number) {
+          next[g.group_key] = { ...next[g.group_key], busy: true, err: undefined }
+        }
+      }
+      return next
+    })
+
+    try {
+      const r = await fetch('/api/inventory/needs-review/skip-supplier', {
+        method:  'POST',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          business_id:             bizId,
+          supplier_fortnox_number: group.supplier_fortnox_number,
+          supplier_name:           group.supplier_name,
+        }),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      // Mark every group for this supplier as skipped.
+      setEdits(prev => {
+        const next = { ...prev }
+        for (const g of allGroups) {
+          if (g.supplier_fortnox_number === group.supplier_fortnox_number) {
+            next[g.group_key] = { ...next[g.group_key], busy: false, skipped: true }
+          }
+        }
+        return next
+      })
+    } catch (err: any) {
+      setEdits(prev => {
+        const next = { ...prev }
+        for (const g of allGroups) {
+          if (g.supplier_fortnox_number === group.supplier_fortnox_number) {
+            next[g.group_key] = { ...next[g.group_key], busy: false, err: err.message }
+          }
+        }
+        return next
+      })
+    }
+  }
+
   const allGroups = data?.groups ?? []
   const visible = allGroups
     .filter(g => filter === 'all' || g.suggested_category === filter)
@@ -244,10 +299,25 @@ export default function InventoryReviewPage() {
                           border: `0.5px solid ${UXP.border}`, borderRadius: 5,
                           color: UXP.ink1, fontFamily: 'inherit',
                         }} />
-                      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 5, lineHeight: 1.4 }}>
+                      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 5, lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ fontWeight: 500, color: UXP.ink3 }}>{g.supplier_name ?? `#${g.supplier_fortnox_number}`}</span>
-                        {g.unit && <span> · /{g.unit}</span>}
-                        {g.most_common_account && <span> · BAS {g.most_common_account}</span>}
+                        {g.unit && <span>· /{g.unit}</span>}
+                        {g.most_common_account && <span>· BAS {g.most_common_account}</span>}
+                        {!isResolved && !e.busy && (
+                          <button
+                            type="button"
+                            onClick={() => skipSupplier(g)}
+                            title={t('skipSupplierHint')}
+                            style={{
+                              padding: '1px 7px', fontSize: 9, fontWeight: 500,
+                              background: 'transparent', color: UXP.ink3,
+                              border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                              letterSpacing: '0.02em',
+                            }}>
+                            {t('skipSupplier')}
+                          </button>
+                        )}
                       </div>
                       <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2, fontStyle: 'italic' as const,
                                     overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
