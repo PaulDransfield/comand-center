@@ -284,27 +284,84 @@ interface NewAliasArgs {
 }
 
 async function insertAlias(db: any, args: NewAliasArgs): Promise<string> {
-  // Use insert + ON CONFLICT DO NOTHING via the unique indexes on
-  // product_aliases. Concurrent matchers racing on the same SKU will both
-  // attempt the insert; whichever loses gets the existing row via the
-  // RETURNING fallback below.
+  // SELECT-first-then-INSERT, with 23505-aware re-SELECT on race.
+  //
+  // We CAN'T use supabase-js `.upsert({ onConflict })` here because the
+  // two unique indexes on product_aliases are both partial (one
+  // WHERE article_number IS NULL, one WHERE article_number IS NOT NULL,
+  // and the NULL branch wraps `unit` in COALESCE). PostgREST validates
+  // the onConflict target against full constraints/indexes only — it
+  // rejects partial + expression indexes with "no unique or exclusion
+  // constraint matching the ON CONFLICT specification".
+  //
+  // The partial indexes still enforce uniqueness at the DB layer; this
+  // helper just stops trying to drive them via upsert. Race window:
+  // SELECT→INSERT can be beaten by a concurrent insert, which raises
+  // 23505 — we then re-SELECT and return the winning row's id.
+
+  const existing = await findExistingAlias(db, args)
+  if (existing) return existing
+
   const { data, error } = await db
     .from('product_aliases')
-    .upsert(args, {
-      onConflict: args.article_number
-        ? 'business_id,supplier_fortnox_number,article_number'
-        : 'business_id,supplier_fortnox_number,normalised_description,unit',
-      ignoreDuplicates: false,
-    })
+    .insert(args)
     .select('id')
     .single()
-  if (error) {
-    // Diagnostic — if this fires, the unique constraints are misaligned
-    // with the upsert onConflict spec. That's the load-bearing invariant
-    // breaking — surface loudly.
-    throw new Error(`inventory matcher insertAlias failed: ${error.message}`)
+
+  if (!error) return data.id
+
+  // 23505 = unique_violation. Could be either partial index. Re-SELECT.
+  if ((error as any).code === '23505') {
+    const winner = await findExistingAlias(db, args)
+    if (winner) return winner
   }
-  return data.id
+
+  throw new Error(`inventory matcher insertAlias failed: ${error.message}`)
+}
+
+async function findExistingAlias(db: any, args: NewAliasArgs): Promise<string | null> {
+  // Mirror the two partial indexes: article_number path or normalised-
+  // description path, depending on whether article_number is set.
+  if (args.article_number) {
+    const { data } = await db
+      .from('product_aliases')
+      .select('id')
+      .eq('business_id', args.business_id)
+      .eq('supplier_fortnox_number', args.supplier_fortnox_number)
+      .eq('article_number', args.article_number)
+      .maybeSingle()
+    return data?.id ?? null
+  }
+  // article_number IS NULL branch — matches COALESCE(unit, '') in the index.
+  const unitKey = args.unit ?? ''
+  let q = db
+    .from('product_aliases')
+    .select('id, unit')
+    .eq('business_id', args.business_id)
+    .eq('supplier_fortnox_number', args.supplier_fortnox_number)
+    .eq('normalised_description', args.normalised_description)
+    .is('article_number', null)
+  // .eq('unit', null) doesn't fly — supabase translates that to ?unit=eq.null
+  // which IS NOT how SQL NULL equality works. Use .is() for the null case,
+  // .eq() for the non-null case.
+  q = args.unit == null ? q.is('unit', null) : q.eq('unit', args.unit)
+  const { data } = await q.maybeSingle()
+  if (data) return data.id
+  // Edge case: index treats NULL and '' as the same key via COALESCE, but
+  // SELECT above is strict. Look for the sibling form too.
+  if (unitKey === '') {
+    const { data: alt } = await db
+      .from('product_aliases')
+      .select('id')
+      .eq('business_id', args.business_id)
+      .eq('supplier_fortnox_number', args.supplier_fortnox_number)
+      .eq('normalised_description', args.normalised_description)
+      .is('article_number', null)
+      .or('unit.is.null,unit.eq.')
+      .maybeSingle()
+    return alt?.id ?? null
+  }
+  return null
 }
 
 /**
