@@ -456,12 +456,27 @@ Return JSON only, no prose outside JSON, no markdown code fence:
     // the user's language. Forced tool_use means we cannot use
     // extended thinking, but a system prompt is allowed.
     const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
+
+    // Inject business-state snapshot so budget generation knows whether
+    // the books are clean (setup health), what the YTD result is, and
+    // whether to be aggressive or conservative on stretch targets.
+    let snapshot = ''
+    try {
+      const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+      snapshot = await buildBusinessSnapshot(db, auth.orgId, businessId, { inventory: false })
+    } catch { /* soft-fail */ }
+
     const response = await (claude as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: 2500,
       tools:      [submitBudgetTool],
       tool_choice: { type: 'tool', name: 'submit_budget' },
-      system:     localeFragment,
+      system: snapshot
+        ? [
+            { type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: localeFragment },
+          ]
+        : localeFragment,
       messages:   [{ role: 'user', content: prompt }],
     })
 

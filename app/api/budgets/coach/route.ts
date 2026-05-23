@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
   // 3 days of data in the month (pacing math is noisy).
   let narrative: string | null = null
   if (dayOfMonth >= 3 && process.env.ANTHROPIC_API_KEY) {
-    narrative = await generateNarrative(db, auth.orgId, {
+    narrative = await generateNarrative(db, auth.orgId, bizId, {
       businessName: biz.name,
       year, month, dayOfMonth, daysInMonth,
       budget: {
@@ -174,7 +174,7 @@ export async function GET(req: NextRequest) {
   })
 }
 
-async function generateNarrative(db: any, orgId: string, ctx: any): Promise<string | null> {
+async function generateNarrative(db: any, orgId: string, businessId: string, ctx: any): Promise<string | null> {
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
   const fmtKr = (n: number) => Math.round(n).toLocaleString('en-GB').replace(/,/g, ' ') + ' kr'
   const fmtPct = (n: number) => (Math.round(n * 10) / 10).toFixed(1) + '%'
@@ -206,29 +206,40 @@ Write the paragraph now.`
 
   const started = Date.now()
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    const { runAgent } = await import('@/lib/ai/agent-runner')
     const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
-    const response  = await claude.messages.create({
-      model:      AI_MODELS.AGENT,
-      max_tokens: MAX_TOKENS.AGENT_SUMMARY,
-      system:     localeFragment,
-      messages:   [{ role: 'user', content: prompt }],
+    const r = await runAgent({
+      db,
+      orgId,
+      businessId,
+      model:          AI_MODELS.AGENT,
+      maxTokens:      MAX_TOKENS.AGENT_SUMMARY,
+      // Pass an empty system here — the actual task prompt already
+      // contains SCOPE_NOTE + benchmarks inline. agent-runner re-adds
+      // SCOPE_NOTE as the first cache_control block but the duplicate
+      // is harmless and tiny vs. the prompt itself. Long-term we'd
+      // strip SCOPE_NOTE from the inline prompt.
+      system:         'You are the budget coach. Reply with a single 2-3 sentence paragraph in plain language. Use the BUSINESS STATE snapshot to ground claims; call tools only when the snapshot is insufficient.',
+      prompt,
+      localeFragment,
+      // Budget coach is read-mostly variance commentary — give it the
+      // explanation tools (vouchers / supplier invoices) so it can
+      // name specific cost drivers when needed.
+      toolsAllowList: ['search_vouchers', 'search_supplier_invoices', 'get_account_balance', 'get_balance_sheet'],
     })
-    const text = (response.content?.[0] as any)?.text?.trim() ?? ''
 
     try {
       await logAiRequest(db, {
         org_id:        orgId,
         request_type:  'budget_coach',
         model:         AI_MODELS.AGENT,
-        input_tokens:  response.usage?.input_tokens ?? 0,
-        output_tokens: response.usage?.output_tokens ?? 0,
+        input_tokens:  r.input_tokens,
+        output_tokens: r.output_tokens,
         duration_ms:   Date.now() - started,
       })
     } catch { /* non-fatal */ }
 
-    return text || null
+    return r.answer?.trim() || null
   } catch (e: any) {
     console.error('[budgets/coach] Claude failed:', e.message)
     return null

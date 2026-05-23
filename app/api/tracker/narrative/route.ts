@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
     .map((a: any) => `- [${a.severity}] ${a.title} — ${a.description ?? ''}`)
     .join('\n')
 
-  const narrative = await generateNarrative(db, auth.orgId, {
+  const narrative = await generateNarrative(db, auth.orgId, bizId, {
     businessName: biz.name,
     year, month,
     current:  { revenue, staffCost, foodCost, rentCost, otherCost, netProfit, marginPct, labourPct, foodPct, covers: cm.covers ?? 0, hours: cm.hours_worked ?? 0, shifts: cm.shifts ?? 0 },
@@ -169,7 +169,7 @@ export async function GET(req: NextRequest) {
   })
 }
 
-async function generateNarrative(db: any, orgId: string, ctx: any): Promise<string | null> {
+async function generateNarrative(db: any, orgId: string, businessId: string, ctx: any): Promise<string | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null
 
   const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
@@ -212,29 +212,34 @@ Write the paragraph now.`
 
   const started = Date.now()
   try {
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const claude    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+    const { runAgent } = await import('@/lib/ai/agent-runner')
     const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
-    const response  = await claude.messages.create({
+    const r = await runAgent({
+      db,
+      orgId,
+      businessId,
       model:      AI_MODELS.AGENT,
-      max_tokens: MAX_TOKENS.AGENT_SUMMARY,
-      system:     localeFragment,
-      messages:   [{ role: 'user', content: prompt }],
+      maxTokens:  MAX_TOKENS.AGENT_SUMMARY,
+      system:     'You are the P&L narrator. Reply with 2-3 sentence plain-language explanation. Use the BUSINESS STATE snapshot to ground claims; call retrieval tools (search_vouchers, search_supplier_invoices) only when the snapshot is insufficient to name a specific cost driver.',
+      prompt,
+      localeFragment,
+      // Narrative is "why did this swing happen" — give it the explanation
+      // tools so it can name suppliers, voucher detail, account balances.
+      toolsAllowList: ['search_vouchers', 'search_supplier_invoices', 'get_account_balance', 'get_balance_sheet', 'get_momsrapport'],
     })
-    const text = (response.content?.[0] as any)?.text?.trim() ?? ''
 
     try {
       await logAiRequest(db, {
         org_id:        orgId,
         request_type:  'tracker_narrative',
         model:         AI_MODELS.AGENT,
-        input_tokens:  response.usage?.input_tokens ?? 0,
-        output_tokens: response.usage?.output_tokens ?? 0,
+        input_tokens:  r.input_tokens,
+        output_tokens: r.output_tokens,
         duration_ms:   Date.now() - started,
       })
     } catch { /* non-fatal */ }
 
-    return text || null
+    return r.answer?.trim() || null
   } catch (e: any) {
     console.error('[tracker/narrative] Claude failed:', e.message)
     return null

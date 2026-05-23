@@ -220,12 +220,28 @@ Return JSON only, no markdown fence, no prose outside JSON:
 
     const startedAt = Date.now()
     const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
+
+    // Inject the business-state snapshot into the system prompt so the
+    // analyser is aware of setup health, balance sheet status, cash
+    // position, etc. when judging the month. Forced tool_use means we
+    // can't run the retrieval-tool loop here, so snapshot-only.
+    let snapshot = ''
+    try {
+      const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+      snapshot = await buildBusinessSnapshot(db, auth.orgId, businessId, { inventory: false })
+    } catch { /* soft-fail */ }
+
     const response = await (claude as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: 800,
       tools:      [submitAnalysisTool],
       tool_choice: { type: 'tool', name: 'submit_analysis' },
-      system:     localeFragment,
+      system: snapshot
+        ? [
+            { type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: localeFragment },
+          ]
+        : localeFragment,
       messages:   [{ role: 'user', content: prompt }],
     })
 
