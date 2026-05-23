@@ -367,6 +367,11 @@ export default function RevisorMonthDetail() {
           <BalanceSheetCard bizId={data.business.id} year={y} month={m} />
         </Section>
 
+        {/* ── Momsrapport (Phase R5) — Skatteverket SKV 4700 ──────── */}
+        <Section title="Momsrapport (SKV 4700)">
+          <MomsrapportCard bizId={data.business.id} year={y} month={m} />
+        </Section>
+
         {/* ── Verifikationslista (Phase R3) — BFL 5 kap. journal ──── */}
         <Section title="Verifikationslista">
           <VerifikationsList bizId={data.business.id} year={y} month={m} />
@@ -659,6 +664,257 @@ function BalanceSheetColumn({
         </div>
       )}
     </div>
+  )
+}
+
+// ═════════════════════════════════════════════════════════════════
+// Phase R5 — Momsrapport (Skatteverket SKV 4700 VAT report)
+// ═════════════════════════════════════════════════════════════════
+
+interface MomsrapportLineDto {
+  account:     number
+  description: string
+  amount:      number
+}
+interface MomsrapportBoxDto {
+  box:         number
+  label:       string
+  amount:      number
+  lines:       MomsrapportLineDto[]
+}
+interface MomsrapportDto {
+  period_label:        string
+  period_from:         string
+  period_to:           string
+  box_05:              MomsrapportBoxDto
+  box_06:              MomsrapportBoxDto
+  box_07:              MomsrapportBoxDto
+  box_08:              MomsrapportBoxDto
+  box_10:              MomsrapportBoxDto
+  box_11:              MomsrapportBoxDto
+  box_12:              MomsrapportBoxDto
+  box_30:              MomsrapportBoxDto
+  box_31:              MomsrapportBoxDto
+  box_32:              MomsrapportBoxDto
+  box_48:              MomsrapportBoxDto
+  box_35:              MomsrapportBoxDto
+  box_36:              MomsrapportBoxDto
+  box_38:              MomsrapportBoxDto
+  box_39:              MomsrapportBoxDto
+  box_40:              MomsrapportBoxDto
+  total_output_vat:    number
+  total_input_vat:     number
+  box_49:              number
+  implied_sales_25:    number
+  implied_sales_12:    number
+  implied_sales_06:    number
+  implied_sales_total: number
+  reconciliation: {
+    declared_sales: number
+    implied_sales:  number
+    diff_kr:        number
+    diff_pct:       number
+    in_tolerance:   boolean
+  }
+  voucher_count:       number
+}
+
+function MomsrapportCard({ bizId, year, month }: { bizId: string; year: number; month: number }) {
+  const [m,       setM]       = useState<MomsrapportDto | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true); setError(null); setM(null)
+    fetch(`/api/revisor/momsrapport?business_id=${bizId}&year=${year}&month=${month}`, { cache: 'no-store' })
+      .then(async r => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}))
+          throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`)
+        }
+        return r.json()
+      })
+      .then(j => { if (!cancelled) setM(j) })
+      .catch(e => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [bizId, year, month])
+
+  if (loading) return <Empty text="Beräknar momsrapport…" />
+  if (error)   return <Banner tone="bad" text={`Kunde inte beräkna momsrapporten: ${error}`} />
+  if (!m)      return <Empty text="Ingen momsdata för perioden." />
+
+  const isRefund = m.box_49 < 0
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 10 }}>
+        Period {m.period_from} – {m.period_to} · {m.period_label} · Underlag från {m.voucher_count.toLocaleString('sv-SE')} verifikationer
+      </div>
+
+      {/* Two-column main layout: A (sales excl. VAT + EU/utland) left,  B+D+E+G (VAT figures) right */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        {/* LEFT: A. Försäljning + F. EU / utland */}
+        <div>
+          <MomsSection title="A. Momspliktig försäljning (exkl. moms)">
+            <MomsBoxRow b={m.box_05} />
+            {m.box_06.amount !== 0 && <MomsBoxRow b={m.box_06} />}
+            {m.box_07.amount !== 0 && <MomsBoxRow b={m.box_07} />}
+            {m.box_08.amount !== 0 && <MomsBoxRow b={m.box_08} />}
+          </MomsSection>
+
+          {(m.box_35.amount + m.box_36.amount + m.box_38.amount + m.box_39.amount + m.box_40.amount !== 0) && (
+            <div style={{ marginTop: 14 }}>
+              <MomsSection title="F. Försäljning till utlandet">
+                {m.box_35.amount !== 0 && <MomsBoxRow b={m.box_35} />}
+                {m.box_36.amount !== 0 && <MomsBoxRow b={m.box_36} />}
+                {m.box_38.amount !== 0 && <MomsBoxRow b={m.box_38} />}
+                {m.box_39.amount !== 0 && <MomsBoxRow b={m.box_39} />}
+                {m.box_40.amount !== 0 && <MomsBoxRow b={m.box_40} />}
+              </MomsSection>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: B + D + E (VAT figures) */}
+        <div>
+          <MomsSection title="B. Utgående moms på försäljning">
+            <MomsBoxRow b={m.box_10} />
+            <MomsBoxRow b={m.box_11} />
+            <MomsBoxRow b={m.box_12} />
+          </MomsSection>
+
+          {(m.box_30.amount + m.box_31.amount + m.box_32.amount !== 0) && (
+            <div style={{ marginTop: 14 }}>
+              <MomsSection title="D. Utgående moms omvänd skattskyldighet">
+                {m.box_30.amount !== 0 && <MomsBoxRow b={m.box_30} />}
+                {m.box_31.amount !== 0 && <MomsBoxRow b={m.box_31} />}
+                {m.box_32.amount !== 0 && <MomsBoxRow b={m.box_32} />}
+              </MomsSection>
+            </div>
+          )}
+
+          <div style={{ marginTop: 14 }}>
+            <MomsSection title="E. Ingående moms">
+              <MomsBoxRow b={m.box_48} />
+            </MomsSection>
+          </div>
+        </div>
+      </div>
+
+      {/* G. Net VAT — full-width banner */}
+      <div style={{
+        marginTop:    14,
+        padding:      '12px 14px',
+        background:   isRefund ? UXP.greenFill : UXP.lavFill,
+        border:       `0.5px solid ${isRefund ? UXP.green : UXP.lavMid}`,
+        borderRadius: 8,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 10, color: UXP.ink3, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>
+              G. Ruta 49 — Moms att {isRefund ? 'få tillbaka' : 'betala'}
+            </div>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
+              Utgående moms {fmtKr(m.total_output_vat)} − ingående moms {fmtKr(m.total_input_vat)}
+            </div>
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: UXP.ink1, fontVariantNumeric: 'tabular-nums' as const }}>
+            {fmtKr(Math.abs(m.box_49))}
+          </div>
+        </div>
+      </div>
+
+      {/* Reconciliation diagnostic */}
+      <div style={{
+        marginTop:    10,
+        padding:      '8px 12px',
+        background:   m.reconciliation.in_tolerance ? UXP.greenFill : UXP.roseFill,
+        border:       `0.5px solid ${m.reconciliation.in_tolerance ? UXP.green : UXP.rose}`,
+        borderRadius: 6,
+        fontSize:     11,
+        color:        m.reconciliation.in_tolerance ? UXP.greenDeep : UXP.roseText,
+      }}>
+        {m.reconciliation.in_tolerance ? (
+          <>
+            <strong>✓ Avstämning OK.</strong>{' '}
+            Försäljning i ruta 05 ({fmtKr(m.reconciliation.declared_sales)}) stämmer med implicit försäljning från utgående moms ({fmtKr(m.reconciliation.implied_sales)}).
+            Avvikelse {m.reconciliation.diff_pct.toFixed(2)} %.
+          </>
+        ) : (
+          <>
+            <strong>⚠ Avstämningsavvikelse.</strong>{' '}
+            Ruta 05 ({fmtKr(m.reconciliation.declared_sales)}) skiljer sig från implicit försäljning ({fmtKr(m.reconciliation.implied_sales)}) med {fmtKr(Math.abs(m.reconciliation.diff_kr))} ({m.reconciliation.diff_pct.toFixed(1)} %).
+            Implicerat: 25 % {fmtKr(m.implied_sales_25)} · 12 % {fmtKr(m.implied_sales_12)} · 6 % {fmtKr(m.implied_sales_06)}.
+            Kan bero på momsfri försäljning bokförd i taxable konton eller saknade utgående moms-rader.
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MomsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{
+        fontSize:      10,
+        fontWeight:    700,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase' as const,
+        color:         UXP.ink4,
+        paddingBottom: 4,
+        borderBottom:  `1px solid ${UXP.border}`,
+        marginBottom:  6,
+      }}>
+        {title}
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  )
+}
+
+function MomsBoxRow({ b }: { b: MomsrapportBoxDto }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <tr style={{ borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+        <td style={{ padding: '4px 4px', width: 40, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 600 }}>
+          {b.box}
+        </td>
+        <td style={{ padding: '4px 6px', color: UXP.ink2 }}>{b.label}</td>
+        <td style={{ padding: '4px 4px', textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink1, width: 100, fontWeight: 500 }}>
+          {fmtKr(b.amount)}
+        </td>
+        <td style={{ padding: '4px 4px', width: 36 }} className="cc-no-print">
+          {b.lines.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setOpen(o => !o)}
+              style={{ fontSize: 10, padding: '2px 6px', background: 'transparent', border: `0.5px solid ${UXP.borderSoft}`, borderRadius: 4, cursor: 'pointer', color: UXP.ink3 }}
+              title={open ? 'Dölj konton' : 'Visa konton'}
+            >
+              {open ? '−' : '+'}
+            </button>
+          )}
+        </td>
+      </tr>
+      {(open || b.lines.length > 0) && open && b.lines.map((l, i) => (
+        <tr key={i} style={{ background: UXP.subtleBg }}>
+          <td style={{ padding: '2px 4px', width: 40 }}></td>
+          <td style={{ padding: '2px 6px', fontSize: 10, color: UXP.ink3 }}>
+            <code style={{ fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink3 }}>{l.account}</code> {l.description}
+          </td>
+          <td style={{ padding: '2px 4px', textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink3, fontSize: 10 }}>
+            {fmtKr(l.amount)}
+          </td>
+          <td style={{ padding: '2px 4px' }}></td>
+        </tr>
+      ))}
+    </>
   )
 }
 

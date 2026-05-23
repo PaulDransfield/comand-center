@@ -106,9 +106,9 @@ Auth surface (audit pending — see §9):
 
 | # | Requirement | Current state |
 |---|---|---|
-| 10 | SIE 4 download button | ❌ |
-| 11 | Balansräkning (balance sheet) | ❌ |
-| 12 | Momsrapport (VAT report) | ❌ (revenue VAT-split exists but not Skatteverket format) |
+| 10 | SIE 4 download button | ✅ R2 |
+| 11 | Balansräkning (balance sheet) | ✅ R4 |
+| 12 | Momsrapport (VAT report) | ✅ R5 |
 | 13 | YTD / full-year resultaträkning | ❌ (monthly only) |
 | 14 | Bankavstämning report | ❌ (M069 added cash position but no recon report) |
 | 15 | Period-locked indicator + signature | ❌ (no concept) |
