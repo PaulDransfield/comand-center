@@ -37,17 +37,54 @@ import { runInventoryBackfill } from '@/lib/inventory/backfill-worker'
 export async function POST(req: NextRequest) {
   noStore()
 
-  const auth = await getRequestAuth(req)
-  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  // Two auth paths:
+  //   - User session (owner clicking 'Kick inventory backfill' from /admin/v2/tools)
+  //   - CRON_SECRET / ADMIN_SECRET (server-to-server from OAuth callback,
+  //     periodic sweep, ops scripts). The cron path needs an explicit
+  //     business_id since there's no session to derive org from.
+  const headerAuth = req.headers.get('authorization') ?? ''
+  const cronSecret  = process.env.CRON_SECRET
+  const adminSecret = process.env.ADMIN_SECRET
+  const isCronCall =
+    (cronSecret  && headerAuth === `Bearer ${cronSecret}`) ||
+    (adminSecret && headerAuth === `Bearer ${adminSecret}`)
+
+  let userOrgId: string | null = null
+  let userIdentity: string = 'cron'
+  if (!isCronCall) {
+    const auth = await getRequestAuth(req)
+    if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    userOrgId   = auth.orgId
+    userIdentity = auth.userId
+  }
 
   const body = await req.json().catch(() => ({}))
   const businessId = String(body.business_id ?? '').trim()
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
-  const forbidden = requireBusinessAccess(auth, businessId)
-  if (forbidden) return forbidden
+  // User-session calls go through the existing business-access gate.
+  // Cron calls trust the secret + the explicit business_id.
+  if (!isCronCall) {
+    const auth = await getRequestAuth(req)
+    if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    const forbidden = requireBusinessAccess(auth, businessId)
+    if (forbidden) return forbidden
+  }
 
   const db = createAdminClient()
+
+  // Cron path needs the org_id from the businesses table directly.
+  let orgId = userOrgId
+  if (!orgId) {
+    const { data: biz } = await db
+      .from('businesses')
+      .select('org_id')
+      .eq('id', businessId)
+      .maybeSingle()
+    if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
+    orgId = biz.org_id
+  }
+  if (!orgId) return NextResponse.json({ error: 'business has no org_id' }, { status: 500 })
 
   // Initial state row — UPSERT so re-kicks replace the previous run's
   // status/progress cleanly. The supplier_invoice_lines rows from any
@@ -56,12 +93,12 @@ export async function POST(req: NextRequest) {
   const initialProgress = {
     phase:        'enqueued',
     triggered_at: new Date().toISOString(),
-    triggered_by: auth.userId,
+    triggered_by: userIdentity,
   }
   const { error: upsertErr } = await db
     .from('inventory_backfill_state')
     .upsert({
-      org_id:        auth.orgId,
+      org_id:        orgId,
       business_id:   businessId,
       status:        'pending',
       progress:      initialProgress,
@@ -83,7 +120,7 @@ export async function POST(req: NextRequest) {
   // something throws before the worker's own try/catch fires.
   waitUntil(
     runInventoryBackfill(db, {
-      org_id:      auth.orgId,
+      org_id:      orgId,
       business_id: businessId,
     }).catch(err =>
       db.from('inventory_backfill_state').update({

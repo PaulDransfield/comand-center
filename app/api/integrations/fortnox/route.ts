@@ -328,6 +328,18 @@ async function handleCallback(req: NextRequest) {
     console.error('Failed to trigger weather backfill:', err)
   )
 
+  // Phase B.3 — inventory pipeline on connect.
+  // Sequence: backfill (gets supplier-invoice metadata + placeholder
+  // lines) → kick PDF extraction with chain_rematch=true so the matcher
+  // runs automatically when extraction completes. The periodic sweep
+  // cron will keep nudging the extractor if the per-call Vercel budget
+  // runs out before the full backlog drains.
+  if (businessId) {
+    triggerInventoryBackfill(businessId).catch(err =>
+      console.error('Failed to trigger inventory backfill:', err)
+    )
+  }
+
   // Redirect to the Day-1 verification screen so the customer SEES what
   // wired up and what's still completing. The screen polls /api/integrations/
   // fortnox/readiness every ~3 s and surfaces any data-quality issues
@@ -378,6 +390,54 @@ async function triggerVoucherCacheWarm(businessId: string): Promise<void> {
     },
     body: JSON.stringify({ business_id: businessId, trigger: 'oauth_callback' }),
   }).catch(() => {})
+}
+
+// Phase B.3 — kick the inventory pipeline on OAuth connect.
+//
+// Step 1: hit the inventory-lines backfill (gets supplier invoice
+// metadata, writes placeholder rows). When the backfill worker finishes
+// it doesn't auto-chain into PDF extraction, so we ALSO kick the
+// extract endpoint with chain_rematch=true. The extract endpoint's
+// candidate finder looks at supplier_invoice_lines with empty
+// descriptions — so it'll pick up rows as the backfill writes them.
+// If extract runs first and finds nothing, the periodic sweep cron
+// catches it on the next half-hour tick.
+//
+// Idempotent: re-running on a customer that's already populated is
+// a no-op. The state row prevents concurrent backfill collisions.
+async function triggerInventoryBackfill(businessId: string): Promise<void> {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !process.env.CRON_SECRET) return
+
+  // 1) Backfill (supplier invoice metadata → placeholder lines)
+  fetch(`${base}/api/inventory/lines/backfill`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ business_id: businessId, trigger: 'oauth_callback' }),
+  }).catch(() => {})
+
+  // 2) Kick the PDF extractor + chain rematch when done.
+  //    Small delay so the backfill has a head start writing the
+  //    candidate rows the extractor looks for.
+  setTimeout(() => {
+    fetch(`${base}/api/cron/inventory-pdf-extract-business`, {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+      },
+      body: JSON.stringify({
+        business_id:       businessId,
+        reset_extracting:  true,
+        chain_rematch:     true,
+      }),
+    }).catch(() => {})
+  }, 5_000)
 }
 
 // Auto-trigger the historical weather backfill so /dashboard's weather

@@ -10,6 +10,7 @@
     { "path": "/api/cron/fortnox-backfill-worker",         "schedule": "0 6 * * *" },
     { "path": "/api/cron/voucher-cache-refresh",           "schedule": "15 6 * * *" },
     { "path": "/api/cron/inventory-lines-sync",            "schedule": "30 6 * * *" },
+    { "path": "/api/cron/inventory-pdf-extract-sweep",     "schedule": "0,30 6-22 * * *" },
     { "path": "/api/cron/weekly-digest",                   "schedule": "30 6 * * 1" },
     { "path": "/api/cron/cost-intelligence",               "schedule": "30 6 2 * *" },
     { "path": "/api/cron/setup-health-refresh",            "schedule": "0 7 * * *" },
