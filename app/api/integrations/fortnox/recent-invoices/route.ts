@@ -152,13 +152,37 @@ export async function GET(req: NextRequest) {
   // rate-limit, 5xx, etc.) we still want to return data if we have ANY
   // cached payload — staleness is far better than the dashboard widget
   // saying 'No recent invoices' when 19 are sitting in the cache.
-  // Pre-2026-05-23 we'd 401 / 502 and the UI rendered the empty state.
-  const fallbackToStale = (reason: string, status = 200) => {
+  //
+  // Two layers:
+  //  1. Use the cache entry that EXACTLY matches the requested key.
+  //  2. If that's empty (e.g. page requested days=90 but only days=14
+  //     is cached), look at any __recent_invoices_*__ entry for this
+  //     business and pick the freshest one. Returns SOME invoices to
+  //     the UI even when the exact window isn't cached.
+  const fallbackToStale = async (reason: string) => {
     if (cached?.payload) {
       return NextResponse.json(
         { ...(cached.payload as any), cache: 'stale', stale_reason: reason },
         { headers: { 'Cache-Control': 'no-store' } },
       )
+    }
+    // Broader lookup: any recent-invoices cache for this business.
+    const { data: anyCached } = await db
+      .from('overhead_drilldown_cache')
+      .select('payload, fetched_at, category')
+      .eq('business_id', cacheKey.business_id)
+      .eq('period_year',  0)
+      .eq('period_month', 0)
+      .like('category', '__recent_invoices_%')
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (anyCached?.payload) {
+      return NextResponse.json({
+        ...(anyCached.payload as any),
+        cache:        'stale_alt',
+        stale_reason: `${reason}; using ${anyCached.category}`,
+      }, { headers: { 'Cache-Control': 'no-store' } })
     }
     return null
   }
@@ -171,7 +195,7 @@ export async function GET(req: NextRequest) {
   try {
     accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
   } catch (err: any) {
-    const stale = fallbackToStale(`token_refresh_failed: ${err?.message ?? err}`)
+    const stale = await fallbackToStale(`token_refresh_failed: ${err?.message ?? err}`)
     if (stale) return stale
     return NextResponse.json({
       error:   'fortnox_token_refresh_failed',
@@ -179,7 +203,7 @@ export async function GET(req: NextRequest) {
     }, { status: 401 })
   }
   if (!accessToken) {
-    const stale = fallbackToStale('no_token')
+    const stale = await fallbackToStale('no_token')
     if (stale) return stale
     return NextResponse.json({
       error:   'no_fortnox_connection',
@@ -217,7 +241,7 @@ export async function GET(req: NextRequest) {
     const res = await fortnoxFetch(url, accessToken)
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      const stale = fallbackToStale(`fortnox_${res.status}: ${text.slice(0, 80)}`)
+      const stale = await fallbackToStale(`fortnox_${res.status}: ${text.slice(0, 80)}`)
       if (stale) return stale
       return NextResponse.json({
         error:  `Fortnox /supplierinvoices failed: HTTP ${res.status}`,
