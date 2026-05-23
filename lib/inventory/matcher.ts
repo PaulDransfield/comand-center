@@ -393,38 +393,88 @@ async function findExistingAlias(db: any, args: NewAliasArgs): Promise<string | 
 }
 
 /**
- * Helper exposed to the route handlers so they can create a NEW product
- * + alias in one transaction when the owner clicks "Create as new
- * product" in the review queue. Routes through the same conflict logic
- * as auto-matching, so re-running on a duplicate description is a no-op.
+ * Helper exposed to the route handlers so they can create-or-link a
+ * product + alias when the owner approves a group in the bulk-review
+ * queue.
+ *
+ * IDEMPOTENT against the products UNIQUE(business_id, name) constraint:
+ *   - If a product with this name already exists in this business, we
+ *     link a new alias for the current supplier under that existing
+ *     product. This is the right thing when two different suppliers
+ *     sell the same SKU (cross-supplier merge that the matcher's
+ *     step 4 missed because trigram similarity fell under 0.85), or
+ *     when the owner approves the same canonical name twice from
+ *     different groups.
+ *   - Otherwise, INSERT a new product then a new alias.
+ *
+ * Returns `reused: true` when the product was found rather than created
+ * so the caller can communicate "Linked to existing X" instead of
+ * "Created new X" in the UI.
  */
 export async function createProductFromLine(
   db: any,
   line: InvoiceLineForMatching,
   productName: string,
   category: ReturnType<typeof categoryForBasAccount>,
-): Promise<{ product_id: string; alias_id: string }> {
+): Promise<{ product_id: string; alias_id: string; reused: boolean }> {
   const normalised = normaliseDescription(line.raw_description)
   const effectiveCategory = category ?? categoryForBasAccount(line.account_number) ?? 'other'
 
-  const { data: prod, error: prodErr } = await db
+  // Find-or-create the product. Race-aware: SELECT-then-INSERT, retry
+  // SELECT on 23505 in case another approve landed first.
+  let productId:   string
+  let wasExisting = false
+
+  const { data: existing } = await db
     .from('products')
-    .insert({
-      org_id:                 line.org_id,
-      business_id:             line.business_id,
-      name:                    productName,
-      category:                effectiveCategory,
-      invoice_unit:            line.unit,
-      default_supplier_fortnox_number: line.supplier_fortnox_number,
-      default_supplier_name:   line.supplier_name_snapshot,
-      created_via:             'owner_review',
-    })
     .select('id')
-    .single()
-  if (prodErr) throw new Error(`createProductFromLine product insert: ${prodErr.message}`)
+    .eq('business_id', line.business_id)
+    .eq('name',        productName)
+    .maybeSingle()
+
+  if (existing?.id) {
+    productId   = existing.id
+    wasExisting = true
+  } else {
+    const { data: prod, error: prodErr } = await db
+      .from('products')
+      .insert({
+        org_id:                 line.org_id,
+        business_id:             line.business_id,
+        name:                    productName,
+        category:                effectiveCategory,
+        invoice_unit:            line.unit,
+        default_supplier_fortnox_number: line.supplier_fortnox_number,
+        default_supplier_name:   line.supplier_name_snapshot,
+        created_via:             'owner_review',
+      })
+      .select('id')
+      .single()
+    if (prodErr) {
+      // 23505 = SELECT lost the race vs concurrent approve. Re-SELECT.
+      if ((prodErr as any).code === '23505') {
+        const { data: raceWinner } = await db
+          .from('products')
+          .select('id')
+          .eq('business_id', line.business_id)
+          .eq('name',        productName)
+          .maybeSingle()
+        if (raceWinner?.id) {
+          productId   = raceWinner.id
+          wasExisting = true
+        } else {
+          throw new Error(`createProductFromLine product insert: ${prodErr.message}`)
+        }
+      } else {
+        throw new Error(`createProductFromLine product insert: ${prodErr.message}`)
+      }
+    } else {
+      productId = prod.id
+    }
+  }
 
   const alias_id = await insertAlias(db, {
-    product_id:               prod.id,
+    product_id:               productId,
     business_id:              line.business_id,
     supplier_fortnox_number:  line.supplier_fortnox_number,
     supplier_name_snapshot:   line.supplier_name_snapshot,
@@ -436,5 +486,5 @@ export async function createProductFromLine(
     match_confidence:         null,
   })
 
-  return { product_id: prod.id, alias_id }
+  return { product_id: productId, alias_id, reused: wasExisting }
 }

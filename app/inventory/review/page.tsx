@@ -66,6 +66,7 @@ export default function InventoryReviewPage() {
     busy?: boolean;
     done?: boolean;
     skipped?: boolean;
+    was_existing?: boolean;     // approve linked to an existing product (idempotent)
     product_id?: string;
     alias_id?: string;
     err?: string;
@@ -123,6 +124,7 @@ export default function InventoryReviewPage() {
         ...prev[group.group_key],
         busy: false, done: true,
         product_id: j.product_id, alias_id: j.alias_id,
+        was_existing: !!j.was_existing,
       } }))
     } catch (err: any) {
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
@@ -418,8 +420,11 @@ export default function InventoryReviewPage() {
                           cursor: isResolved || e.busy ? 'default' : 'pointer',
                           fontFamily: 'inherit',
                           minWidth: 80,
-                        }}>
-                        {isDone ? t('approved') : (e.busy ? t('approving') : t('approve'))}
+                        }}
+                        title={isDone && e.was_existing ? t('linkedHint') : undefined}>
+                        {isDone
+                          ? (e.was_existing ? t('linked') : t('approved'))
+                          : (e.busy ? t('approving') : t('approve'))}
                       </button>
                       <button
                         type="button"

@@ -110,9 +110,12 @@ export async function POST(req: NextRequest) {
   // The matcher's createProductFromLine seeds the product + alias from
   // its raw values — supplier + first-spelling description go onto the
   // alias row; the canonical product name is what the owner typed.
+  // `reused: true` means we linked to an existing product instead of
+  // creating a new one (idempotent vs same-name collisions).
   const seed = matching[0]
-  let product_id: string
-  let alias_id:   string
+  let product_id:   string
+  let alias_id:     string
+  let was_existing: boolean
   try {
     const created = await createProductFromLine(
       db,
@@ -130,8 +133,9 @@ export async function POST(req: NextRequest) {
       productName,
       category,
     )
-    product_id = created.product_id
-    alias_id   = created.alias_id
+    product_id   = created.product_id
+    alias_id     = created.alias_id
+    was_existing = created.reused
   } catch (err: any) {
     return NextResponse.json({ error: `createProduct failed: ${err?.message ?? err}` }, { status: 500 })
   }
@@ -168,5 +172,6 @@ export async function POST(req: NextRequest) {
     product_id,
     alias_id,
     lines_linked: updated,
+    was_existing,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }

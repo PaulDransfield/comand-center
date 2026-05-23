@@ -232,7 +232,9 @@
       "skipSupplierHint":  "Merk leverandøren som alltid ikke-varelager. Fremtidige fakturaer fra dem hoppes over automatisk.",
       "skipSupplierConfirm": "Hopp over ALLE {count} linjer fra {supplier}, og hopp over fremtidige fakturaer fra denne leverandøren automatisk?",
       "undo":              "Angre",
-      "undoHint":          "Tilbakestill handlingen. For Godkjenn slettes produktet + aliaset og linjene flagges som trenger-gjennomgang. For Hopp over gjenopprettes linjene til køen."
+      "undoHint":          "Tilbakestill handlingen. For Godkjenn slettes produktet + aliaset og linjene flagges som trenger-gjennomgang. For Hopp over gjenopprettes linjene til køen.",
+      "linked":            "Lenket ✓",
+      "linkedHint":        "Et produkt med dette navnet fantes allerede i katalogen. Lenket denne leverandørens variant under det i stedet for å lage en duplikat."
     }
   }
 }
