@@ -232,7 +232,7 @@ export async function POST(req: NextRequest) {
             kind:                       'creep',
             tone:                       avgChange >= 0.10 ? 'bad' : 'warning',
             entity:                     supplierHits[0].supplier,
-            message:                    `${supplierHits[0].supplier} höjde priser på ${supplierHits.length} artikel(s) — snitt +${(avgChange * 100).toFixed(1)}% (de senaste 30d vs föregående 60d).`,
+            message:                    `${supplierHits[0].supplier} raised prices on ${supplierHits.length} item${supplierHits.length === 1 ? '' : 's'} — avg +${(avgChange * 100).toFixed(1)}% (last 30d vs prior 60d).`,
             estimated_saving_kr_annual: null,  // hard to estimate without volume
             evidence:                   {
               suppliers:    [supplierHits[0].supplier],

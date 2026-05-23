@@ -79,7 +79,7 @@ export default function ProductDetailPage() {
   if (loading || !data) return (
     <AppShell>
       <div style={{ padding: 30, color: UXP.ink3, fontSize: 13 }}>
-        {error ? <span style={{ color: UXP.roseText }}>{error}</span> : 'Hämtar artikel…'}
+        {error ? <span style={{ color: UXP.roseText }}>{error}</span> : 'Loading item…'}
       </div>
     </AppShell>
   )
@@ -100,7 +100,7 @@ export default function ProductDetailPage() {
           onClick={() => router.push('/inventory/items')}
           style={{ background: 'transparent', border: 'none', color: UXP.ink3,
                    fontSize: 12, cursor: 'pointer', marginBottom: 14, padding: 0 }}
-        >← Tillbaka till katalog</button>
+        >← Back to catalogue</button>
 
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
@@ -108,18 +108,18 @@ export default function ProductDetailPage() {
           </h1>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
             {labelForCategory(product.category)}
-            {product.default_supplier_name && <> · vanligen från {product.default_supplier_name}</>}
-            {product.invoice_unit && <> · enhet {product.invoice_unit}</>}
+            {product.default_supplier_name && <> · usually from {product.default_supplier_name}</>}
+            {product.invoice_unit && <> · unit {product.invoice_unit}</>}
           </p>
         </div>
 
         {/* Aggregate tiles */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>
-          <Stat label="Observationer" value={String(aggregates.observation_count)} />
-          <Stat label="Senaste pris" value={fmtKr(aggregates.latest_price)} bold />
-          <Stat label="Lägsta" value={fmtKr(aggregates.min_price)} />
-          <Stat label="Högsta" value={fmtKr(aggregates.max_price)} />
-          <Stat label="Genomsnitt" value={fmtKr(aggregates.avg_price)} />
+          <Stat label="Observations" value={String(aggregates.observation_count)} />
+          <Stat label="Latest price" value={fmtKr(aggregates.latest_price)} bold />
+          <Stat label="Lowest" value={fmtKr(aggregates.min_price)} />
+          <Stat label="Highest" value={fmtKr(aggregates.max_price)} />
+          <Stat label="Average" value={fmtKr(aggregates.avg_price)} />
         </div>
 
         {/* Sparkline */}
@@ -130,7 +130,7 @@ export default function ProductDetailPage() {
           }}>
             <div style={{ fontSize: 11, color: UXP.ink4, marginBottom: 8, fontWeight: 600,
                           letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-              Pristrend
+              Price trend
             </div>
             <Sparkline points={sparkPoints} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: UXP.ink4 }}>
@@ -148,7 +148,7 @@ export default function ProductDetailPage() {
           }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink3, marginBottom: 8,
                           letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-              Alias ({aliases.length}) — alternativa beskrivningar AI:n har sett
+              Aliases ({aliases.length}) — alternate descriptions the AI has seen
             </div>
             {aliases.map(a => (
               <div key={a.id} style={{ fontSize: 12, color: UXP.ink2, padding: '3px 0', display: 'flex', justifyContent: 'space-between' }}>
@@ -167,18 +167,18 @@ export default function ProductDetailPage() {
           <div style={{ padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
                         fontSize: 11, fontWeight: 600, color: UXP.ink3,
                         letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-            Prishistorik ({history.length} rader)
+            Price history ({history.length} rows)
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
             <thead>
               <tr style={{ background: UXP.subtleBg }}>
-                <th style={th()}>Datum</th>
-                <th style={th()}>Leverantör</th>
-                <th style={th()}>Faktura</th>
-                <th style={th()}>Beskrivning</th>
-                <th style={{ ...th(), textAlign: 'right' as const }}>Antal</th>
-                <th style={{ ...th(), textAlign: 'right' as const }}>À-pris</th>
-                <th style={{ ...th(), textAlign: 'right' as const }}>Summa</th>
+                <th style={th()}>Date</th>
+                <th style={th()}>Supplier</th>
+                <th style={th()}>Invoice</th>
+                <th style={th()}>Description</th>
+                <th style={{ ...th(), textAlign: 'right' as const }}>Qty</th>
+                <th style={{ ...th(), textAlign: 'right' as const }}>Unit price</th>
+                <th style={{ ...th(), textAlign: 'right' as const }}>Total</th>
                 <th style={th()}></th>
               </tr>
             </thead>
@@ -257,9 +257,9 @@ function Stat({ label, value, bold = false }: { label: string; value: string; bo
 
 function labelForCategory(c: string): string {
   return {
-    food: 'Mat', beverage: 'Dryck', alcohol: 'Alkohol',
-    cleaning: 'Rengöring', takeaway_material: 'Take-away',
-    disposables: 'Förbrukning', other: 'Övrigt',
+    food: 'Food', beverage: 'Beverage', alcohol: 'Alcohol',
+    cleaning: 'Cleaning', takeaway_material: 'Take-away',
+    disposables: 'Disposables', other: 'Other',
   }[c] ?? c
 }
 

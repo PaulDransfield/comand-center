@@ -39,12 +39,12 @@ interface ListResponse {
 }
 
 const STATUSES = [
-  { key: 'needs_review', label: 'Behöver granskning' },
-  { key: 'extracted',    label: 'Klar' },
-  { key: 'failed',       label: 'Misslyckades' },
-  { key: 'pending',      label: 'Väntar' },
-  { key: 'no_pdf',       label: 'Ingen PDF' },
-  { key: 'all',          label: 'Alla' },
+  { key: 'needs_review', label: 'Needs review' },
+  { key: 'extracted',    label: 'Extracted' },
+  { key: 'failed',       label: 'Failed' },
+  { key: 'pending',      label: 'Pending' },
+  { key: 'no_pdf',       label: 'No PDF' },
+  { key: 'all',          label: 'All' },
 ]
 
 export default function InventoryExtractionsPage() {
@@ -83,10 +83,10 @@ export default function InventoryExtractionsPage() {
     <AppShell>
       <div style={{ maxWidth: 1100, padding: '20px 24px' }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
-          PDF-extraktioner — granskningskö
+          PDF extractions — review queue
         </h1>
         <p style={{ margin: '6px 0 20px', fontSize: 13, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
-          Leverantörsfakturor där AI:n hittade rader men summan inte stämmer mot Fortnox-totalen, eller där läsningen misslyckades. Granska, redigera vid behov och godkänn så hamnar raderna i katalogen.
+          Supplier invoices where the AI extracted rows but the totals don't match the Fortnox header, or where reading failed. Review, edit if needed, and approve to add the lines to your catalogue.
         </p>
 
         {/* Status filter tabs + counts */}
@@ -124,7 +124,7 @@ export default function InventoryExtractionsPage() {
 
         {loading && (
           <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13 }}>
-            Hämtar extraktioner…
+            Loading extractions…
           </div>
         )}
 
@@ -133,7 +133,7 @@ export default function InventoryExtractionsPage() {
             padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13,
             background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8,
           }}>
-            Inga extraktioner med status "{STATUSES.find(s => s.key === filter)?.label ?? filter}".
+            No extractions with status "{STATUSES.find(s => s.key === filter)?.label ?? filter}".
           </div>
         )}
 
@@ -145,11 +145,11 @@ export default function InventoryExtractionsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
               <thead>
                 <tr style={{ background: UXP.subtleBg }}>
-                  <th style={th()}>Datum</th>
-                  <th style={th()}>Leverantör</th>
-                  <th style={th()}>Faktura nr</th>
-                  <th style={{ ...th(), textAlign: 'right' as const }}>Rader</th>
-                  <th style={{ ...th(), textAlign: 'right' as const }}>Extr. total</th>
+                  <th style={th()}>Date</th>
+                  <th style={th()}>Supplier</th>
+                  <th style={th()}>Invoice #</th>
+                  <th style={{ ...th(), textAlign: 'right' as const }}>Rows</th>
+                  <th style={{ ...th(), textAlign: 'right' as const }}>Extracted total</th>
                   <th style={{ ...th(), textAlign: 'right' as const }}>Fortnox total</th>
                   <th style={{ ...th(), textAlign: 'right' as const }}>Δ</th>
                   <th style={th()}>Status</th>
@@ -198,12 +198,12 @@ export default function InventoryExtractionsPage() {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string; color: string; label: string }> = {
-    needs_review: { bg: UXP.roseFill, color: UXP.roseText, label: 'Granskning' },
-    extracted:    { bg: UXP.greenFill, color: UXP.greenDeep, label: 'Klar' },
-    failed:       { bg: UXP.roseFill, color: UXP.roseText, label: 'Misslyckad' },
-    pending:      { bg: UXP.lavFill, color: UXP.lavText, label: 'Väntar' },
-    extracting:   { bg: UXP.lavFill, color: UXP.lavText, label: 'Bearbetar' },
-    no_pdf:       { bg: UXP.subtleBg, color: UXP.ink3, label: 'Ingen PDF' },
+    needs_review: { bg: UXP.roseFill, color: UXP.roseText, label: 'Review' },
+    extracted:    { bg: UXP.greenFill, color: UXP.greenDeep, label: 'Extracted' },
+    failed:       { bg: UXP.roseFill, color: UXP.roseText, label: 'Failed' },
+    pending:      { bg: UXP.lavFill, color: UXP.lavText, label: 'Pending' },
+    extracting:   { bg: UXP.lavFill, color: UXP.lavText, label: 'Processing' },
+    no_pdf:       { bg: UXP.subtleBg, color: UXP.ink3, label: 'No PDF' },
   }
   const s = map[status] ?? { bg: UXP.subtleBg, color: UXP.ink3, label: status }
   return (

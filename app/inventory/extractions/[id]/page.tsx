@@ -110,8 +110,8 @@ export default function ExtractionDetailPage() {
       const j = await r.json()
       if (!r.ok) throw new Error(j.error + (j.detail ? `: ${j.detail}` : ''))
       setToast(action === 'apply'
-        ? `Godkänd. ${j.rows_persisted} rader sparade${j.matcher_kicked ? ' · matcher startad i bakgrund' : ''}.`
-        : `Re-extraherad. Ny status: ${j.new_status}, ${j.rows_extracted} rader.`)
+        ? `Approved. ${j.rows_persisted} rows saved${j.matcher_kicked ? ' · matcher started in background' : ''}.`
+        : `Re-extracted. New status: ${j.new_status}, ${j.rows_extracted} rows.`)
       await load()
     } catch (e: any) {
       setToast(`Fel: ${e.message}`)
@@ -123,7 +123,7 @@ export default function ExtractionDetailPage() {
   if (loading || !data) return (
     <AppShell>
       <div style={{ padding: 30, color: UXP.ink3, fontSize: 13 }}>
-        {error ? <span style={{ color: UXP.roseText }}>{error}</span> : 'Hämtar extraktion…'}
+        {error ? <span style={{ color: UXP.roseText }}>{error}</span> : 'Loading extraction…'}
       </div>
     </AppShell>
   )
@@ -136,7 +136,7 @@ export default function ExtractionDetailPage() {
           onClick={() => router.push('/inventory/extractions')}
           style={{ background: 'transparent', border: 'none', color: UXP.ink3,
                    fontSize: 12, cursor: 'pointer', marginBottom: 14, padding: 0 }}
-        >← Tillbaka till granskningskön</button>
+        >← Back to review queue</button>
 
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
@@ -146,7 +146,7 @@ export default function ExtractionDetailPage() {
             {data.invoice_date}
             {' · '}
             <a href={data.fortnox_url} target="_blank" rel="noopener noreferrer" style={{ color: UXP.lavText, textDecoration: 'none' }}>
-              Öppna i Fortnox →
+              Open in Fortnox →
             </a>
             {data.pdf_proxy_url && (
               <>
@@ -163,9 +163,9 @@ export default function ExtractionDetailPage() {
         {toast && (
           <div style={{
             padding: '10px 14px', marginBottom: 14,
-            background: toast.startsWith('Fel:') ? UXP.roseFill : UXP.greenFill,
-            border:     `0.5px solid ${toast.startsWith('Fel:') ? UXP.rose : UXP.green}`,
-            color:      toast.startsWith('Fel:') ? UXP.roseText : UXP.greenDeep,
+            background: toast.startsWith('Error:') ? UXP.roseFill : UXP.greenFill,
+            border:     `0.5px solid ${toast.startsWith('Error:') ? UXP.rose : UXP.green}`,
+            color:      toast.startsWith('Error:') ? UXP.roseText : UXP.greenDeep,
             borderRadius: 8, fontSize: 12,
           }}>{toast}</div>
         )}
@@ -173,10 +173,10 @@ export default function ExtractionDetailPage() {
         {/* Headline totals */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
           <Stat label="Fortnox header" value={fmtKr(data.total_header)} tone="ink" />
-          <Stat label="AI-extraherat" value={fmtKr(data.total_extracted)} tone="ink" />
-          <Stat label="Efter dina ändringar" value={fmtKr(newTotalExtracted)}
+          <Stat label="AI-extracted" value={fmtKr(data.total_extracted)} tone="ink" />
+          <Stat label="After your edits" value={fmtKr(newTotalExtracted)}
                 tone={newDeltaPct != null && newDeltaPct < 0.02 ? 'green' : 'coral'} />
-          <Stat label="Avvikelse mot Fortnox" value={newDeltaPct != null ? `${(newDeltaPct * 100).toFixed(2)} %` : '—'}
+          <Stat label="Variance vs Fortnox" value={newDeltaPct != null ? `${(newDeltaPct * 100).toFixed(2)} %` : '—'}
                 tone={newDeltaPct != null && newDeltaPct < 0.02 ? 'green' : 'coral'} />
         </div>
 
@@ -188,7 +188,7 @@ export default function ExtractionDetailPage() {
           }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink3, marginBottom: 8,
                           letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-              Validatorvarningar
+              Validator warnings
             </div>
             {data.validation_warnings.map((w, i) => (
               <div key={i} style={{
@@ -209,20 +209,20 @@ export default function ExtractionDetailPage() {
         }}>
           {rows.length === 0 ? (
             <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13 }}>
-              Inga rader cachelagrade. Klicka <strong>Re-extrahera</strong> nedan för att köra Claude på PDF:en igen.
+              No rows cached. Click <strong>Re-extract</strong> below to run Claude on the PDF again.
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
               <thead>
                 <tr style={{ background: UXP.subtleBg }}>
                   <th style={{ ...thS(), width: 30 }}>#</th>
-                  <th style={thS()}>Beskrivning</th>
-                  <th style={{ ...thS(), width: 90 }}>Art.nr</th>
-                  <th style={{ ...thS(), width: 70, textAlign: 'right' as const }}>Antal</th>
-                  <th style={{ ...thS(), width: 60 }}>Enhet</th>
-                  <th style={{ ...thS(), width: 90, textAlign: 'right' as const }}>À-pris</th>
-                  <th style={{ ...thS(), width: 110, textAlign: 'right' as const }}>Summa (exkl. moms)</th>
-                  <th style={{ ...thS(), width: 60, textAlign: 'right' as const }}>Moms %</th>
+                  <th style={thS()}>Description</th>
+                  <th style={{ ...thS(), width: 90 }}>Article #</th>
+                  <th style={{ ...thS(), width: 70, textAlign: 'right' as const }}>Qty</th>
+                  <th style={{ ...thS(), width: 60 }}>Unit</th>
+                  <th style={{ ...thS(), width: 90, textAlign: 'right' as const }}>Unit price</th>
+                  <th style={{ ...thS(), width: 110, textAlign: 'right' as const }}>Total (excl. VAT)</th>
+                  <th style={{ ...thS(), width: 60, textAlign: 'right' as const }}>VAT %</th>
                   <th style={{ ...thS(), width: 30 }}></th>
                 </tr>
               </thead>
@@ -266,7 +266,7 @@ export default function ExtractionDetailPage() {
                              style={{ ...cellInput(), textAlign: 'right' as const, width: 50 }} />
                     </td>
                     <td style={tdS()}>
-                      <button onClick={() => removeRow(idx)} title="Ta bort rad"
+                      <button onClick={() => removeRow(idx)} title="Remove row"
                               style={{ background: 'transparent', border: 'none', cursor: 'pointer',
                                        color: UXP.roseText, fontSize: 14, padding: '0 6px' }}>×</button>
                     </td>
@@ -280,7 +280,7 @@ export default function ExtractionDetailPage() {
               padding: '4px 10px', fontSize: 11, background: 'transparent',
               border: `0.5px dashed ${UXP.border}`, borderRadius: 6, color: UXP.ink3,
               cursor: 'pointer', fontFamily: 'inherit',
-            }}>+ Lägg till rad</button>
+            }}>+ Add row</button>
           </div>
         </div>
 
@@ -288,19 +288,19 @@ export default function ExtractionDetailPage() {
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => doAction('apply')} disabled={busy !== null || rows.length === 0}
                   style={btnPrimary(busy === 'apply')}>
-            {busy === 'apply' ? 'Sparar…' : `Godkänn & spara ${rows.length} rader`}
+            {busy === 'apply' ? 'Saving…' : `Approve & save ${rows.length} rows`}
           </button>
           <button onClick={() => doAction('reextract')} disabled={busy !== null || !data.pdf_file_id}
                   style={btnSecondary(busy === 'reextract')}
-                  title={!data.pdf_file_id ? 'Ingen PDF kopplad — kan inte re-extrahera' : 'Kör Claude på PDF:en igen'}>
-            {busy === 'reextract' ? 'Kör Claude…' : 'Re-extrahera från PDF'}
+                  title={!data.pdf_file_id ? 'No PDF attached — cannot re-extract' : 'Run Claude on the PDF again'}>
+            {busy === 'reextract' ? 'Running Claude…' : 'Re-extract from PDF'}
           </button>
         </div>
 
         {/* Meta */}
         {data.completed_at && (
           <div style={{ marginTop: 14, fontSize: 11, color: UXP.ink4 }}>
-            Senast bearbetad {new Date(data.completed_at).toLocaleString('sv-SE')}
+            Last processed {new Date(data.completed_at).toLocaleString('en-GB')}
             {data.ai_model && <> · {data.ai_model}</>}
             {data.cost_usd != null && <> · ${data.cost_usd.toFixed(4)} USD</>}
           </div>

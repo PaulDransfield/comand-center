@@ -183,7 +183,7 @@ export default function InvoicesPage() {
             color:        UXP.lavText,
             lineHeight:   1.5,
           }}>
-            <strong>Live från Fortnox.</strong> Visar leverantörsfakturor de senaste 90 dagarna direkt från Fortnox. Statusändringar (markera som betald, snooza) lagras inte ännu — det kommer när Fortnox-synken aktiveras.
+            <strong>Live from Fortnox.</strong> Showing supplier invoices from the last 90 days pulled directly from Fortnox. Status changes (mark paid, snooze) aren't stored yet — coming when the Fortnox sync goes live.
           </div>
         )}
 
@@ -391,7 +391,7 @@ export default function InvoicesPage() {
                         href={inv.fortnox_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        title="Öppna fakturan i Fortnox"
+                        title="Open invoice in Fortnox"
                         style={{
                           padding:        '3px 10px',
                           background:     UXP.subtleBg,
@@ -403,7 +403,7 @@ export default function InvoicesPage() {
                           textDecoration: 'none',
                           letterSpacing:  '0.02em',
                         }}
-                      >Visa i Fortnox →</a>
+                      >View in Fortnox →</a>
                     )}
                     <button
                       type="button"

@@ -38,14 +38,14 @@ interface CatalogueResponse {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  all:               'Alla',
-  food:              'Mat',
-  beverage:          'Dryck',
-  alcohol:           'Alkohol',
-  cleaning:          'Rengöring',
+  all:               'All',
+  food:              'Food',
+  beverage:          'Beverage',
+  alcohol:           'Alcohol',
+  cleaning:          'Cleaning',
   takeaway_material: 'Take-away',
-  disposables:       'Förbrukning',
-  other:             'Övrigt',
+  disposables:       'Disposables',
+  other:             'Other',
 }
 
 type SortKey = 'name' | 'latest_price' | 'change_pct' | 'observation_count' | 'latest_date'
@@ -105,21 +105,21 @@ export default function InventoryItemsPage() {
     <AppShell>
       <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
-          Artiklar
+          Items
         </h1>
         <p style={{ margin: '4px 0 18px', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
-          Katalog byggd från leverantörsfakturor. Senaste pris jämförs mot medianpris de senaste 90 dagarna —
-          orange/rosa stigning = prishöjning du kanske vill prata med leverantören om.
+          Catalogue built from supplier invoices. Latest price compared against the median over the prior 90 days —
+          orange/rose increases flag price hikes worth raising with the supplier.
         </p>
 
         {/* KPI strip */}
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16,
         }}>
-          <Stat label="Artiklar" value={String(data?.counts?.all ?? 0)} />
-          <Stat label="Observationer" value={totalObservations.toLocaleString('sv-SE')} />
-          <Stat label="Senaste priser totalt" value={fmtKr(totalRecent)} />
-          <Stat label="Med prishöjning ≥5 %" value={String(creeping)}
+          <Stat label="Items" value={String(data?.counts?.all ?? 0)} />
+          <Stat label="Observations" value={totalObservations.toLocaleString('en-GB')} />
+          <Stat label="Latest prices total" value={fmtKr(totalRecent)} />
+          <Stat label="With price hike ≥5 %" value={String(creeping)}
                 tone={creeping > 0 ? 'coral' : 'ink'} />
         </div>
 
@@ -145,7 +145,7 @@ export default function InventoryItemsPage() {
           })}
           <input
             type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Sök artikel…"
+            placeholder="Search items…"
             style={{
               marginLeft: 'auto', padding: '5px 10px', fontSize: 12,
               background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
@@ -164,7 +164,7 @@ export default function InventoryItemsPage() {
         )}
         {loading && (
           <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13 }}>
-            Hämtar katalog…
+            Loading catalogue…
           </div>
         )}
 
@@ -174,7 +174,7 @@ export default function InventoryItemsPage() {
             fontSize: 13, background: UXP.cardBg,
             border: `0.5px solid ${UXP.border}`, borderRadius: 8,
           }}>
-            {data.message ?? 'Inga artiklar hittade.'}
+            {data.message ?? 'No items found.'}
           </div>
         )}
 
@@ -186,13 +186,13 @@ export default function InventoryItemsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
               <thead>
                 <tr style={{ background: UXP.subtleBg }}>
-                  <Th label="Artikel"  k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} />
-                  <Th label="Kategori" k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
-                  <Th label="Senast"   k="latest_date"     sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="left" />
-                  <Th label="Pris"     k="latest_price"    sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label="Item"     k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} />
+                  <Th label="Category" k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
+                  <Th label="Last seen" k="latest_date"    sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="left" />
+                  <Th label="Price"    k="latest_price"    sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
                   <Th label="vs 90d"   k="change_pct"      sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
-                  <Th label="Antal"    k="observation_count" sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
-                  <Th label="Leverantör" k="name"          sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
+                  <Th label="Obs."     k="observation_count" sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label="Supplier" k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
                 </tr>
               </thead>
               <tbody>
