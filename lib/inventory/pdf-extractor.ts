@@ -51,6 +51,20 @@ export interface ExtractResult {
   tokens_output:       number
   cost_usd:            number
   error_message:       string | null
+  /** The raw rows Claude extracted, preserved on EVERY outcome (success,
+   *  needs_review, failed). Phase B.4 review UI reads this so the owner
+   *  can edit + re-apply rows that hit the validator. Null when the
+   *  extractor returned before Claude was called (e.g. no_pdf). */
+  extracted_rows:      Array<{
+    row_number:     number
+    description:    string
+    article_number: string | null
+    quantity:       number | null
+    unit:           string | null
+    price_per_unit: number | null
+    total_excl_vat: number | null
+    vat_rate:       number | null
+  }> | null
 }
 
 // ── Configuration ───────────────────────────────────────────────────
@@ -123,6 +137,7 @@ export async function extractInvoicePdf(
       tokens_output: tokensOut,
       cost_usd: aiCost,
       error_message: null,
+      extracted_rows: [],
     }
   }
 
@@ -158,6 +173,7 @@ export async function extractInvoicePdf(
       tokens_output: tokensOut,
       cost_usd: aiCost,
       error_message: null,
+      extracted_rows: normalizeExtractedRows(modelResponse.rows),
     }
   }
 
@@ -216,6 +232,7 @@ export async function extractInvoicePdf(
       tokens_output: tokensOut,
       cost_usd: aiCost,
       error_message: null,
+      extracted_rows: normalizeExtractedRows(validRows),
     }
   }
 
@@ -256,7 +273,25 @@ export async function extractInvoicePdf(
     tokens_output:       tokensOut,
     cost_usd:            aiCost,
     error_message:       null,
+    extracted_rows:      normalizeExtractedRows(validRows),
   }
+}
+
+// Project the Claude-returned rows into the JSONB shape we persist on
+// invoice_pdf_extractions.extracted_rows_json. Same shape as what the
+// apply_invoice_pdf_extraction RPC accepts so the review-UI apply
+// endpoint can pass it through unchanged.
+function normalizeExtractedRows(rows: any[]): NonNullable<ExtractResult['extracted_rows']> {
+  return rows.map((r, idx) => ({
+    row_number:     idx + 1,
+    description:    String(r.description ?? '').trim(),
+    article_number: r.article_number ? String(r.article_number).trim() : null,
+    quantity:       r.quantity       != null ? Number(r.quantity)       : null,
+    unit:           r.unit           ? String(r.unit).trim()            : null,
+    price_per_unit: r.price_per_unit != null ? Number(r.price_per_unit) : null,
+    total_excl_vat: r.total_excl_vat != null ? Number(r.total_excl_vat) : null,
+    vat_rate:       r.vat_rate       != null ? Number(r.vat_rate)       : null,
+  }))
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -276,6 +311,7 @@ function fail(code: string, message: string): ExtractResult {
     tokens_output:       0,
     cost_usd:            0,
     error_message:       message,
+    extracted_rows:      null,
   }
 }
 

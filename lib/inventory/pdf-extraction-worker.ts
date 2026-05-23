@@ -230,6 +230,7 @@ export async function runPdfExtractionBatch(
         tokens_output: 0,
         cost_usd: 0,
         error_message: String(e?.message ?? e),
+        extracted_rows: null,
       }
     }
 
@@ -239,8 +240,11 @@ export async function runPdfExtractionBatch(
     summary.rows_persisted += result.rows_extracted
     summary.total_cost_usd += Number(result.cost_usd ?? 0)
 
-    // Update the job row with the outcome.
-    await db.from('invoice_pdf_extractions').update({
+    // Update the job row with the outcome. Try with the M082 column
+    // (extracted_rows_json) first; if the column doesn't exist yet,
+    // retry without it. This keeps the worker forward-compatible with
+    // the M082 SQL apply order — code can ship before the SQL.
+    const baseUpdate: any = {
       status:               result.status,
       rows_extracted:       result.rows_extracted,
       total_extracted:      result.total_extracted,
@@ -253,9 +257,18 @@ export async function runPdfExtractionBatch(
       cost_usd:             result.cost_usd,
       error_message:        result.error_message,
       completed_at:         new Date().toISOString(),
+    }
+    const { error: updateErr } = await db.from('invoice_pdf_extractions').update({
+      ...baseUpdate,
+      extracted_rows_json:  result.extracted_rows,
     })
     .eq('business_id', input.business_id)
     .eq('fortnox_invoice_number', inv.fortnox_invoice_number)
+    if (updateErr && updateErr.message?.includes('extracted_rows_json')) {
+      await db.from('invoice_pdf_extractions').update(baseUpdate)
+        .eq('business_id', input.business_id)
+        .eq('fortnox_invoice_number', inv.fortnox_invoice_number)
+    }
 
     if ((i + 1) % FLUSH_EVERY_N === 0) {
       await flushProgress(db, input.business_id, summary, 'running')
