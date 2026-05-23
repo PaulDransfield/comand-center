@@ -12,6 +12,7 @@
     { "path": "/api/cron/inventory-lines-sync",            "schedule": "30 6 * * *" },
     { "path": "/api/cron/weekly-digest",                   "schedule": "30 6 * * 1" },
     { "path": "/api/cron/cost-intelligence",               "schedule": "30 6 2 * *" },
+    { "path": "/api/cron/setup-health-refresh",            "schedule": "0 7 * * *" },
     { "path": "/api/cron/ai-accuracy-reconciler",          "schedule": "0 7 * * *" },
     { "path": "/api/cron/onboarding-success",              "schedule": "30 7 * * *" },
     { "path": "/api/cron/ai-daily-report",                 "schedule": "0 8 * * *" },
