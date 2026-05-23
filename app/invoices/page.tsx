@@ -24,15 +24,16 @@ import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 
 interface Invoice {
-  id:         string
-  vendor:     string
-  amount:     number
-  date:       string
-  category:   string
-  status:     'paid' | 'pending' | 'overdue' | string
-  notes:      string | null
-  created_at: string
-  file_url:   string | null
+  id:          string
+  vendor:      string
+  amount:      number
+  date:        string
+  category:    string
+  status:      'paid' | 'pending' | 'overdue' | string
+  notes:       string | null
+  created_at:  string
+  file_url:    string | null
+  fortnox_url: string | null
 }
 
 const fmtDate = (s: string) =>
@@ -88,19 +89,20 @@ export default function InvoicesPage() {
           if (Array.isArray(j?.invoices) && j.invoices.length > 0) {
             setFortnoxFallback(true)
             setInvoices(j.invoices.map((inv: any) => ({
-              id:         `fortnox_${inv.given_number || inv.invoice_number}`,
-              vendor:     inv.supplier_name,
-              amount:     Number(inv.total ?? 0),
-              date:       inv.invoice_date,
-              category:   'fortnox',
+              id:          `fortnox_${inv.given_number || inv.invoice_number}`,
+              vendor:      inv.supplier_name,
+              amount:      Number(inv.total ?? 0),
+              date:        inv.invoice_date,
+              category:    'fortnox',
               // Use real status derived from Fortnox payment signals:
               // Balance=0 / FinalPayDate set → paid; DueDate < today & balance > 0 → overdue;
               // otherwise pending. Falls back to 'pending' for old payloads
               // that don't carry the status field yet.
-              status:     (inv.status as 'paid' | 'pending' | 'overdue') ?? 'pending',
-              notes:      inv.comments,
-              created_at: inv.invoice_date,
-              file_url:   inv.file_id ? `/api/integrations/fortnox/file?file_id=${inv.file_id}&business_id=${bizId}` : null,
+              status:      (inv.status as 'paid' | 'pending' | 'overdue') ?? 'pending',
+              notes:       inv.comments,
+              created_at:  inv.invoice_date,
+              file_url:    inv.file_id ? `/api/integrations/fortnox/file?file_id=${inv.file_id}&business_id=${bizId}` : null,
+              fortnox_url: inv.fortnox_url ?? null,
             })))
           }
         }
@@ -383,6 +385,25 @@ export default function InvoicesPage() {
                           letterSpacing:  '0.02em',
                         }}
                       >PDF</a>
+                    )}
+                    {!inv.file_url && inv.fortnox_url && (
+                      <a
+                        href={inv.fortnox_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Öppna fakturan i Fortnox"
+                        style={{
+                          padding:        '3px 10px',
+                          background:     UXP.subtleBg,
+                          color:          UXP.ink2,
+                          border:         `0.5px solid ${UXP.border}`,
+                          borderRadius:   999,
+                          fontSize:       10,
+                          fontWeight:     500,
+                          textDecoration: 'none',
+                          letterSpacing:  '0.02em',
+                        }}
+                      >Visa i Fortnox →</a>
                     )}
                     <button
                       type="button"
