@@ -22,8 +22,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
-import { AREAS, resolveActiveNav, type Area, type AreaPage } from '@/lib/nav/areas'
+// pageLabel collides with this component's own `pageLabel` prop; alias on import.
+import { AREAS, areaLabel, pageLabel as pageLabelFor, resolveActiveNav, type Area, type AreaPage } from '@/lib/nav/areas'
 import type { ReactNode } from 'react'
 
 export interface AppShellUXProps {
@@ -56,10 +58,11 @@ export default function AppShellUX({
   children,
 }: AppShellUXProps) {
   const pathname = usePathname()
+  const tSidebar = useTranslations('sidebar')
   const { area: activeArea, page: activePage } = resolveActiveNav(pathname)
 
-  const sectionLabel = section ?? activeArea?.label ?? 'CommandCenter'
-  const pageDisplay  = pageLabel ?? activePage?.label ?? null
+  const sectionLabel = section ?? (activeArea ? areaLabel(activeArea, tSidebar) : 'CommandCenter')
+  const pageDisplay  = pageLabel ?? (activeArea && activePage ? pageLabelFor(activeArea, activePage, tSidebar) : null)
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
@@ -133,6 +136,7 @@ interface AreaDropdownProps {
 
 function AreaDropdown({ activeArea, fallbackLabel }: AreaDropdownProps) {
   const router = useRouter()
+  const t      = useTranslations('sidebar')
   const ref    = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -177,7 +181,7 @@ function AreaDropdown({ activeArea, fallbackLabel }: AreaDropdownProps) {
           gap:          4,
         }}
       >
-        {activeArea.label}
+        {areaLabel(activeArea, t)}
         <span aria-hidden style={{ color: UXP.ink3, fontSize: 10 }}>▾</span>
       </button>
 
@@ -219,7 +223,7 @@ function AreaDropdown({ activeArea, fallbackLabel }: AreaDropdownProps) {
                 fontFamily:   'inherit',
               }}
             >
-              {area.label}
+              {areaLabel(area, t)}
             </button>
           ))}
         </div>
@@ -236,6 +240,7 @@ interface PageDropdownProps {
 
 function PageDropdown({ activeArea, activePage, fallbackLabel }: PageDropdownProps) {
   const router = useRouter()
+  const t      = useTranslations('sidebar')
   const ref    = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
 
@@ -321,7 +326,7 @@ function PageDropdown({ activeArea, activePage, fallbackLabel }: PageDropdownPro
                 fontFamily:   'inherit',
               }}
             >
-              {p.label}
+              {pageLabelFor(activeArea, p, t)}
             </button>
           ))}
         </div>

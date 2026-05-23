@@ -164,3 +164,35 @@ export function resolveActiveNav(pathname: string | null | undefined): ActiveNav
 export function defaultPageFor(area: Area): AreaPage | null {
   return area.pages[0] ?? null
 }
+
+// ── i18n helpers ────────────────────────────────────────────────────
+//
+// Consumers pass a `t` function bound to the `sidebar` namespace (e.g.
+// `useTranslations('sidebar')`). These helpers look up the translated
+// label, with a soft-fail to the hardcoded English label baked into
+// AREAS — so a missing locale key never crashes the rail, it just
+// renders the English fallback. The next-intl onError handler
+// (configured in i18n/request.ts) logs the missing key for follow-up.
+
+type SidebarT = (key: string) => string
+
+export function areaLabel(area: Area, t: SidebarT): string {
+  try {
+    const v = t(`areas.${area.key}.label`)
+    // next-intl returns the wrapped key `{areas.foo.label[MISSING_MESSAGE]}`
+    // when a key is missing (per i18n/request.ts getMessageFallback).
+    // Detect + fall back to the hardcoded English.
+    return v.startsWith('{') ? area.label : v
+  } catch {
+    return area.label
+  }
+}
+
+export function pageLabel(area: Area, page: AreaPage, t: SidebarT): string {
+  try {
+    const v = t(`areas.${area.key}.pages.${page.key}`)
+    return v.startsWith('{') ? page.label : v
+  } catch {
+    return page.label
+  }
+}

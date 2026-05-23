@@ -38,5 +38,66 @@
     "primary":          "Primary",
     "expandSidebar":    "Expand sidebar",
     "collapseSidebar":  "Collapse sidebar"
+  },
+  "areas": {
+    "insights": {
+      "label": "Insights",
+      "pages": {
+        "overview":    "Overview",
+        "group":       "Group",
+        "performance": "Flash P&L",
+        "tracker":     "P&L tracker",
+        "forecast":    "Forecast",
+        "budget":      "Budget",
+        "revenue":     "Revenue",
+        "suppliers":   "Suppliers",
+        "reviews":     "Reviews"
+      }
+    },
+    "schedule": {
+      "label": "Schedule & workforce",
+      "pages": {
+        "scheduling":  "Scheduling",
+        "grid":        "Schedule grid",
+        "staff":       "Staff",
+        "departments": "Departments"
+      }
+    },
+    "inventory": {
+      "label": "Inventory",
+      "pages": {
+        "items":       "Catalogue",
+        "extractions": "PDF review",
+        "recipes":     "Recipes",
+        "counts":      "Stock counts",
+        "waste":       "Waste"
+      }
+    },
+    "bookkeeping": {
+      "label": "Bookkeeping",
+      "pages": {
+        "invoices":  "Invoices",
+        "overheads": "Overheads",
+        "revisor":   "Revisor"
+      }
+    },
+    "alerts": {
+      "label": "Alerts",
+      "pages": {
+        "alerts": "Alerts"
+      }
+    },
+    "ask": {
+      "label": "Ask CC",
+      "pages": {
+        "notebook": "Notebook"
+      }
+    },
+    "settings": {
+      "label": "Settings",
+      "pages": {
+        "settings": "Settings"
+      }
+    }
   }
 }

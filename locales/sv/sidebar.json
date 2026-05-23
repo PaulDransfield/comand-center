@@ -38,5 +38,66 @@
     "primary":          "Primär",
     "expandSidebar":    "Expandera sidofält",
     "collapseSidebar":  "Fäll ihop sidofält"
+  },
+  "areas": {
+    "insights": {
+      "label": "Insikter",
+      "pages": {
+        "overview":    "Översikt",
+        "group":       "Grupp",
+        "performance": "Flash-resultat",
+        "tracker":     "Resultatrapport",
+        "forecast":    "Prognos",
+        "budget":      "Budget",
+        "revenue":     "Intäkter",
+        "suppliers":   "Leverantörer",
+        "reviews":     "Recensioner"
+      }
+    },
+    "schedule": {
+      "label": "Schema & personal",
+      "pages": {
+        "scheduling":  "Schemaläggning",
+        "grid":        "Schema-rutnät",
+        "staff":       "Personal",
+        "departments": "Avdelningar"
+      }
+    },
+    "inventory": {
+      "label": "Lager",
+      "pages": {
+        "items":       "Katalog",
+        "extractions": "PDF-granskning",
+        "recipes":     "Recept",
+        "counts":      "Lagerräkning",
+        "waste":       "Svinn"
+      }
+    },
+    "bookkeeping": {
+      "label": "Bokföring",
+      "pages": {
+        "invoices":  "Fakturor",
+        "overheads": "Omkostnader",
+        "revisor":   "Revisor"
+      }
+    },
+    "alerts": {
+      "label": "Varningar",
+      "pages": {
+        "alerts": "Varningar"
+      }
+    },
+    "ask": {
+      "label": "Fråga CC",
+      "pages": {
+        "notebook": "Anteckningsbok"
+      }
+    },
+    "settings": {
+      "label": "Inställningar",
+      "pages": {
+        "settings": "Inställningar"
+      }
+    }
   }
 }

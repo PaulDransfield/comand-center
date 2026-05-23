@@ -38,5 +38,66 @@
     "primary":          "Primær",
     "expandSidebar":    "Utvid sidefelt",
     "collapseSidebar":  "Fold sammen sidefelt"
+  },
+  "areas": {
+    "insights": {
+      "label": "Innsikt",
+      "pages": {
+        "overview":    "Oversikt",
+        "group":       "Gruppe",
+        "performance": "Flash-resultat",
+        "tracker":     "Resultatrapport",
+        "forecast":    "Prognose",
+        "budget":      "Budsjett",
+        "revenue":     "Inntekter",
+        "suppliers":   "Leverandører",
+        "reviews":     "Anmeldelser"
+      }
+    },
+    "schedule": {
+      "label": "Skjema & personell",
+      "pages": {
+        "scheduling":  "Skjemalegging",
+        "grid":        "Skjemarutenett",
+        "staff":       "Personell",
+        "departments": "Avdelinger"
+      }
+    },
+    "inventory": {
+      "label": "Lager",
+      "pages": {
+        "items":       "Katalog",
+        "extractions": "PDF-gjennomgang",
+        "recipes":     "Oppskrifter",
+        "counts":      "Lagertelling",
+        "waste":       "Svinn"
+      }
+    },
+    "bookkeeping": {
+      "label": "Regnskap",
+      "pages": {
+        "invoices":  "Fakturaer",
+        "overheads": "Faste kostnader",
+        "revisor":   "Revisor"
+      }
+    },
+    "alerts": {
+      "label": "Varsler",
+      "pages": {
+        "alerts": "Varsler"
+      }
+    },
+    "ask": {
+      "label": "Spør CC",
+      "pages": {
+        "notebook": "Notatbok"
+      }
+    },
+    "settings": {
+      "label": "Innstillinger",
+      "pages": {
+        "settings": "Innstillinger"
+      }
+    }
   }
 }

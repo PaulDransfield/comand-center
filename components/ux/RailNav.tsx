@@ -13,8 +13,9 @@
 // slot for SyncIndicator (collapsed/icon mode).
 
 import { usePathname, useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
-import { AREAS, defaultPageFor, resolveActiveNav, type Area, type AreaIcon } from '@/lib/nav/areas'
+import { AREAS, areaLabel, defaultPageFor, resolveActiveNav, type Area, type AreaIcon } from '@/lib/nav/areas'
 import type { ReactNode } from 'react'
 
 export interface RailNavProps {
@@ -25,6 +26,7 @@ export interface RailNavProps {
 export default function RailNav({ footer }: RailNavProps) {
   const pathname = usePathname()
   const router   = useRouter()
+  const t        = useTranslations('sidebar')
   const { area: activeArea } = resolveActiveNav(pathname)
 
   function handleClick(area: Area) {
@@ -65,6 +67,7 @@ export default function RailNav({ footer }: RailNavProps) {
         <RailButton
           key={area.key}
           area={area}
+          label={areaLabel(area, t)}
           active={activeArea?.key === area.key}
           onClick={() => handleClick(area)}
         />
@@ -76,6 +79,7 @@ export default function RailNav({ footer }: RailNavProps) {
         <RailButton
           key={area.key}
           area={area}
+          label={areaLabel(area, t)}
           active={activeArea?.key === area.key}
           onClick={() => handleClick(area)}
         />
@@ -121,17 +125,18 @@ function Brand() {
 
 interface RailButtonProps {
   area:    Area
+  label:   string                // resolved via areaLabel(area, t)
   active:  boolean
   onClick: () => void
 }
 
-function RailButton({ area, active, onClick }: RailButtonProps) {
+function RailButton({ area, label, active, onClick }: RailButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      title={area.label}
-      aria-label={area.label}
+      title={label}
+      aria-label={label}
       aria-current={active ? 'page' : undefined}
       style={{
         width:          32,
