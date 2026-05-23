@@ -53,12 +53,16 @@ interface FortnoxSupplierInvoice {
   SupplierNumber?: string
   InvoiceDate?:    string
   BookKeepingDate?:string
+  DueDate?:        string
+  FinalPayDate?:   string
   Total?:          number | string
+  Balance?:        number | string         // remaining to pay; 0 = fully paid
   Currency?:       string
   Comments?:       string
   VoucherSeries?:  string
   VoucherNumber?:  number | string
   Cancelled?:      boolean
+  Booked?:         boolean
   SupplierInvoiceFileConnections?: Array<{ FileId: string }>
 }
 
@@ -67,7 +71,11 @@ export interface RecentInvoice {
   given_number:     string
   invoice_number:   string
   invoice_date:     string         // YYYY-MM-DD (or BookKeepingDate fallback)
+  due_date:         string | null
+  final_pay_date:   string | null
   total:            number | null
+  balance:          number | null  // remaining to pay; 0 = fully paid
+  status:           'paid' | 'overdue' | 'pending'
   currency:         string | null
   file_id:          string | null
   fortnox_url:      string
@@ -266,17 +274,41 @@ export async function GET(req: NextRequest) {
       })
     : collected
 
+  // Today (Stockholm-local) for overdue determination.
+  const todayLocalIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
+
   // Map to display shape, sort newest first
   const invoices: RecentInvoice[] = filtered
     .map(inv => {
       const date = String(inv.InvoiceDate ?? inv.BookKeepingDate ?? '').slice(0, 10)
+      const dueDate = String(inv.DueDate ?? '').slice(0, 10) || null
+      const finalPay = String(inv.FinalPayDate ?? '').slice(0, 10) || null
       const total = parseAmount(inv.Total)
+      const balance = parseAmount(inv.Balance)
+
+      // Derive status from Fortnox's payment signals:
+      //   - FinalPayDate set OR Balance === 0  → paid
+      //   - DueDate in the past AND balance > 0 → overdue
+      //   - otherwise → pending
+      // Fortnox doesn't ship a single 'status' field on supplier invoices;
+      // the convention above is what their own UI uses to color-code rows.
+      let status: 'paid' | 'overdue' | 'pending' = 'pending'
+      if (finalPay || (balance != null && Math.abs(balance) < 0.01)) {
+        status = 'paid'
+      } else if (dueDate && dueDate < todayLocalIso && (balance == null || balance > 0.5)) {
+        status = 'overdue'
+      }
+
       return {
         supplier_name:  String(inv.SupplierName ?? '—'),
         given_number:   String(inv.GivenNumber ?? ''),
         invoice_number: String(inv.InvoiceNumber ?? inv.GivenNumber ?? '—'),
         invoice_date:   date,
+        due_date:       dueDate,
+        final_pay_date: finalPay,
         total,
+        balance,
+        status,
         currency:       inv.Currency ? String(inv.Currency) : 'SEK',
         file_id:        inv.SupplierInvoiceFileConnections?.[0]?.FileId ?? null,
         fortnox_url:    `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(String(inv.GivenNumber ?? ''))}`,

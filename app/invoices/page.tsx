@@ -93,7 +93,11 @@ export default function InvoicesPage() {
               amount:     Number(inv.total ?? 0),
               date:       inv.invoice_date,
               category:   'fortnox',
-              status:     'pending',
+              // Use real status derived from Fortnox payment signals:
+              // Balance=0 / FinalPayDate set → paid; DueDate < today & balance > 0 → overdue;
+              // otherwise pending. Falls back to 'pending' for old payloads
+              // that don't carry the status field yet.
+              status:     (inv.status as 'paid' | 'pending' | 'overdue') ?? 'pending',
               notes:      inv.comments,
               created_at: inv.invoice_date,
               file_url:   inv.file_id ? `/api/integrations/fortnox/file?file_id=${inv.file_id}&business_id=${bizId}` : null,

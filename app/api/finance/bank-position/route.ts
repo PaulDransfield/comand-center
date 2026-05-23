@@ -166,21 +166,35 @@ export async function GET(req: NextRequest) {
   let fiscalYearTo: string | null = null
   let balanceFetchOk = false
 
-  // Preferred path: use the accounts list (24-h cache, fetched on Phase 1
-  // readiness + Fortnox connect) as the source of truth for cash position.
-  // It already carries opening + current balances for EVERY account, so
-  // we never need to hit Fortnox per-account at request time.
+  // Preferred path: use the accounts list cache directly. The Phase 1
+  // readiness check + the OAuth-connect hook + the daily cron all
+  // populate __accounts_list_fy{N}__ rows in overhead_drilldown_cache
+  // with opening + current balances for every account, so a Fortnox-
+  // connected customer always has this data available — even when their
+  // access token has expired between the cache write and now.
+  //
+  // Important: cache-FIRST. We don't call getFreshFortnoxAccessToken
+  // because we don't need a token to read a Postgres row, and forcing
+  // one creates a false dependency: if the token refresh fails (re-auth
+  // pending, rate limit, etc.) the cash position tile would otherwise
+  // render zero even though we already have the data on disk.
   try {
-    const { fetchAccountsList } = await import('@/lib/fortnox/api/accounts-list')
-    const { getFreshFortnoxAccessToken } = await import('@/lib/fortnox/api/auth')
-    const token = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
-    if (token) {
-      const al = await fetchAccountsList(db, auth.orgId, businessId, token)
+    const { data: alRow } = await db
+      .from('overhead_drilldown_cache')
+      .select('payload, fetched_at, category')
+      .eq('business_id', businessId)
+      .eq('period_month', 0)
+      .like('category', '__accounts_list_fy%')
+      .order('fetched_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (alRow?.payload) {
+      const al = alRow.payload as any
       let sum = 0
-      for (const a of Object.values(al.accounts)) {
+      for (const a of Object.values(al.accounts ?? {}) as any[]) {
         // 1900-1989 = cash + bank + payment-provider settlement accounts.
-        // Strict upper bound excludes 1990 (interimsfordringar etc.) which
-        // aren't cash even though they live in the 19xx range.
+        // Strict upper bound excludes 1990 (interimsfordringar etc.).
         if (a.number < 1900 || a.number > 1989) continue
         const opening = Number(a.opening_balance ?? 0)
         const current = Number(a.current_balance ?? 0)
@@ -196,8 +210,8 @@ export async function GET(req: NextRequest) {
       if (Object.keys(currentBalancesByAccount).length > 0) {
         absoluteBalance = Math.round(sum)
         balanceFetchOk = true
-        fiscalYearFrom = al.fiscal_year_from
-        fiscalYearTo   = al.fiscal_year_to
+        fiscalYearFrom = al.fiscal_year_from ?? null
+        fiscalYearTo   = al.fiscal_year_to   ?? null
       }
     }
   } catch { /* fall through to the legacy per-account fetcher below */ }
