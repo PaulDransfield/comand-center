@@ -115,3 +115,73 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     aggregates,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
+
+// PATCH — rename a product (and optionally change its category). Used by
+// the detail page's inline edit affordance when the auto-suggested name
+// from the bulk-review queue needs a fix.
+//
+// Body: { name?: string, category?: InventoryCategory }
+// Returns: { ok, product }
+//
+// Collision: products has UNIQUE (business_id, name). If the new name
+// already exists for another product in this business, returns 409 with
+// a useful message — owner can either pick a different name or, in a
+// future iteration, merge the two products.
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  noStore()
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  const id = params.id
+  let body: any
+  try { body = await req.json() } catch { body = {} }
+
+  const patch: Record<string, any> = {}
+  if (typeof body.name === 'string') {
+    const trimmed = body.name.trim()
+    if (!trimmed) return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
+    if (trimmed.length > 200) return NextResponse.json({ error: 'name too long (max 200)' }, { status: 400 })
+    patch.name = trimmed
+  }
+  if (typeof body.category === 'string') {
+    const valid = ['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other']
+    if (!valid.includes(body.category)) {
+      return NextResponse.json({ error: `category must be one of: ${valid.join(', ')}` }, { status: 400 })
+    }
+    patch.category = body.category
+  }
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
+  }
+
+  const db = createAdminClient()
+
+  // Auth: load the product first so we can verify business ownership.
+  const { data: existing, error: exErr } = await db
+    .from('products')
+    .select('id, business_id')
+    .eq('id', id)
+    .maybeSingle()
+  if (exErr)     return NextResponse.json({ error: exErr.message }, { status: 500 })
+  if (!existing) return NextResponse.json({ error: 'product not found' }, { status: 404 })
+  const forbidden = requireBusinessAccess(auth, existing.business_id)
+  if (forbidden) return forbidden
+
+  const { data, error } = await db
+    .from('products')
+    .update(patch)
+    .eq('id', id)
+    .select('id, name, category, default_supplier_name, invoice_unit, count_unit')
+    .single()
+
+  if (error) {
+    if ((error as any).code === '23505') {
+      return NextResponse.json({
+        error: `A product called "${patch.name}" already exists in this business — pick a different name, or merge the two products manually.`,
+      }, { status: 409 })
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, product: data }, { headers: { 'Cache-Control': 'no-store' } })
+}

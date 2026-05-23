@@ -61,6 +61,11 @@ export default function ProductDetailPage() {
   const [data,    setData]    = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
+  // Inline rename state
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [saveErr, setSaveErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,6 +80,27 @@ export default function ProductDetailPage() {
     }
   }, [params.id])
   useEffect(() => { load() }, [load])
+
+  async function saveRename() {
+    if (!draft.trim() || !data) return
+    setSaving(true); setSaveErr(null)
+    try {
+      const r = await fetch(`/api/inventory/items/${params.id}`, {
+        method:  'PATCH',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ name: draft.trim() }),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setData({ ...data, product: { ...data.product, name: j.product.name } })
+      setEditing(false)
+    } catch (err: any) {
+      setSaveErr(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   if (loading || !data) return (
     <AppShell>
@@ -103,9 +129,71 @@ export default function ProductDetailPage() {
         >← Back to catalogue</button>
 
         <div style={{ marginBottom: 18 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
-            {product.name}
-          </h1>
+          {editing ? (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const }}>
+              <input
+                type="text" value={draft} autoFocus disabled={saving}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') saveRename()
+                  if (e.key === 'Escape') { setEditing(false); setSaveErr(null) }
+                }}
+                style={{
+                  fontSize: 20, fontWeight: 600, color: UXP.ink1,
+                  padding: '4px 10px', minWidth: 360, fontFamily: 'inherit',
+                  border: `0.5px solid ${UXP.lavMid}`, borderRadius: 6,
+                  background: '#fff', letterSpacing: '-0.01em',
+                }}
+              />
+              <button
+                type="button" onClick={saveRename} disabled={saving || !draft.trim()}
+                style={{
+                  padding: '6px 14px', fontSize: 12, fontWeight: 600,
+                  background: UXP.lavDeep, color: '#fff',
+                  border: 'none', borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                type="button" onClick={() => { setEditing(false); setSaveErr(null) }}
+                disabled={saving}
+                style={{
+                  padding: '6px 10px', fontSize: 12,
+                  background: 'transparent', color: UXP.ink3,
+                  border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+                {product.name}
+              </h1>
+              <button
+                type="button"
+                onClick={() => { setDraft(product.name); setEditing(true); setSaveErr(null) }}
+                title="Rename product"
+                style={{
+                  padding: '3px 9px', fontSize: 11, fontWeight: 500,
+                  background: 'transparent', color: UXP.ink3,
+                  border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                Rename
+              </button>
+            </div>
+          )}
+          {saveErr && (
+            <div style={{
+              marginTop: 8, padding: '6px 10px',
+              background: UXP.roseFill, color: UXP.roseText,
+              fontSize: 12, borderRadius: 5, maxWidth: 600,
+            }}>
+              {saveErr}
+            </div>
+          )}
           <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
             {labelForCategory(product.category)}
             {product.default_supplier_name && <> · usually from {product.default_supplier_name}</>}
