@@ -22,11 +22,27 @@ export async function GET(req: NextRequest) {
   const month   = now.getMonth() + 1
   const showAll = new URL(req.url).searchParams.get('all') === 'true'
 
-  const { data: businesses } = await adminDb
+  // Try the SELECT with M081's new columns first; fall back to the
+  // legacy SELECT if the columns don't exist yet (migration not yet
+  // applied in this environment). Without this fallback the entire
+  // dashboard goes empty because Supabase returns null on column-not-
+  // found and downstream code has no bizId → no data fetched.
+  const SELECT_FULL = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at'
+  const SELECT_LEGACY = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active'
+
+  let { data: businesses, error: selectErr } = await adminDb
     .from('businesses')
-    .select('id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at')
+    .select(SELECT_FULL)
     .eq('org_id', orgId)
     .order('name')
+  if (selectErr) {
+    const r = await adminDb
+      .from('businesses')
+      .select(SELECT_LEGACY)
+      .eq('org_id', orgId)
+      .order('name')
+    businesses = r.data
+  }
 
   if (!businesses?.length) return NextResponse.json([])
 
