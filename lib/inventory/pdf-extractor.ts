@@ -261,6 +261,25 @@ export async function extractInvoicePdf(
     return fail('rpc_failed', `apply_invoice_pdf_extraction: ${rpcErr.message}`)
   }
 
+  // Currency post-pass. The RPC defaults currency to SEK (the column
+  // default). When the extractor detected a non-SEK invoice, update
+  // every row we just inserted. Whole-invoice scope — Claude returns
+  // one currency per invoice, not per row.
+  const VALID_CURRENCIES = ['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP']
+  const detected = (modelResponse.header?.currency ?? '').toString().trim().toUpperCase()
+  if (detected && detected !== 'SEK' && VALID_CURRENCIES.includes(detected)) {
+    await db
+      .from('supplier_invoice_lines')
+      .update({ currency: detected })
+      .eq('business_id', input.business_id)
+      .eq('fortnox_invoice_number', input.fortnox_invoice_number)
+      // Don't try/catch — if this fails the rows are still good in SEK,
+      // owner can fix via the line PATCH endpoint. Log and continue.
+      .then((res: any) => {
+        if (res?.error) console.error('[pdf-extractor] currency post-update failed:', res.error.message)
+      }, (err: any) => console.error('[pdf-extractor] currency post-update threw:', err?.message ?? err))
+  }
+
   return {
     status:              'extracted',
     rows_extracted:      validRows.length,
@@ -353,6 +372,7 @@ interface ClaudeRecordedRows {
     invoice_total_inc_vat?:  number
     supplier_org_number?:    string | null
     invoice_date?:           string | null
+    currency?:               string | null   // ISO 4217 — null/missing → caller defaults to SEK
   }
 }
 
@@ -383,6 +403,19 @@ Hard rules:
 - Negative quantities/totals for credit notes — preserve the sign.
 - If a line is illegible OR the PDF is unreadable, return rows: [] and let
   the calling system flag it for owner review. Never invent rows.
+
+Currency detection (header.currency):
+- Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
+- Use the ISO 4217 code when you see a different currency:
+    €  / EUR / Euro            → EUR
+    $  / USD / U.S. dollar     → USD
+    kr / NOK / norska kronor   → NOK
+    kr / DKK / danska kronor   → DKK (don't confuse with SEK — DKK invoices
+                                       usually say "DKK" or "Danmark" explicitly)
+    £  / GBP / pund sterling   → GBP
+- If you cannot tell, return null and the caller defaults to SEK.
+- All numeric amounts MUST be in the invoice's native currency — DO NOT
+  pre-convert to SEK. Conversion happens server-side.
 `.trim()
 
 const RECORD_TOOL = {
@@ -415,6 +448,7 @@ const RECORD_TOOL = {
           invoice_total_inc_vat:  { type: ['number', 'null'] },
           supplier_org_number:    { type: ['string', 'null'] },
           invoice_date:           { type: ['string', 'null'] },
+          currency:               { type: ['string', 'null'], description: 'ISO 4217 code (SEK / EUR / USD / NOK / DKK / GBP). Default SEK if unclear.' },
         },
       },
     },

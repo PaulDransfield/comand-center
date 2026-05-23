@@ -41,6 +41,7 @@ interface Detail {
     price_per_unit:   number | null
     total_excl_vat:   number | null
     vat_rate:         number | null
+    currency:         string | null
     fortnox_url:      string
   }>
   aggregates: {
@@ -99,6 +100,42 @@ export default function ProductDetailPage() {
       setSaveErr(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function patchProduct(patch: Record<string, any>) {
+    if (!data) return
+    setSaveErr(null)
+    try {
+      const r = await fetch(`/api/inventory/items/${params.id}`, {
+        method:  'PATCH',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(patch),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setData({ ...data, product: { ...data.product, ...j.product } })
+    } catch (err: any) {
+      setSaveErr(err.message)
+    }
+  }
+
+  async function patchLine(lineId: string, patch: Record<string, any>) {
+    if (!data) return
+    try {
+      const r = await fetch(`/api/inventory/lines/${lineId}`, {
+        method:  'PATCH',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(patch),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      // Patch the row in place, then re-derive aggregates by reloading.
+      load()
+    } catch (err: any) {
+      alert(err.message)
     }
   }
 
@@ -194,11 +231,42 @@ export default function ProductDetailPage() {
               {saveErr}
             </div>
           )}
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
-            {labelForCategory(product.category)}
-            {product.default_supplier_name && <> · usually from {product.default_supplier_name}</>}
-            {product.invoice_unit && <> · unit {product.invoice_unit}</>}
-          </p>
+          <div style={{ display: 'flex', gap: 14, marginTop: 8, fontSize: 12, color: UXP.ink3, alignItems: 'center', flexWrap: 'wrap' as const }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>Category</span>
+              <select
+                value={product.category}
+                onChange={e => patchProduct({ category: e.target.value })}
+                style={{
+                  padding: '3px 6px', fontSize: 12,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                }}>
+                {['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other'].map(k => (
+                  <option key={k} value={k}>{labelForCategory(k)}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>Unit</span>
+              <input
+                type="text"
+                defaultValue={product.invoice_unit ?? ''}
+                onBlur={e => {
+                  const v = e.target.value.trim()
+                  if (v !== (product.invoice_unit ?? '')) patchProduct({ invoice_unit: v || null })
+                }}
+                placeholder="kg"
+                style={{
+                  padding: '3px 6px', fontSize: 12, width: 80,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                }} />
+            </label>
+            {product.default_supplier_name && (
+              <span style={{ color: UXP.ink4 }}>· usually from {product.default_supplier_name}</span>
+            )}
+          </div>
         </div>
 
         {/* Aggregate tiles */}
@@ -265,34 +333,16 @@ export default function ProductDetailPage() {
                 <th style={th()}>Invoice</th>
                 <th style={th()}>Description</th>
                 <th style={{ ...th(), textAlign: 'right' as const }}>Qty</th>
+                <th style={th()}>Unit</th>
                 <th style={{ ...th(), textAlign: 'right' as const }}>Unit price</th>
                 <th style={{ ...th(), textAlign: 'right' as const }}>Total</th>
+                <th style={th()}>Cur.</th>
                 <th style={th()}></th>
               </tr>
             </thead>
             <tbody>
               {history.map(h => (
-                <tr key={h.id} style={{ borderTop: `0.5px solid ${UXP.borderSoft}` }}>
-                  <td style={td()}>{h.invoice_date}</td>
-                  <td style={td()}>{h.supplier}</td>
-                  <td style={{ ...td(), fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink3 }}>
-                    #{h.invoice_number}
-                  </td>
-                  <td style={{ ...td(), color: UXP.ink3 }}>{h.raw_description}</td>
-                  <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
-                    {h.quantity ?? '—'}{h.unit ? ` ${h.unit}` : ''}
-                  </td>
-                  <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500 }}>
-                    {fmtKr(h.price_per_unit)}
-                  </td>
-                  <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
-                    {fmtKr(h.total_excl_vat)}
-                  </td>
-                  <td style={td()}>
-                    <a href={h.fortnox_url} target="_blank" rel="noopener noreferrer"
-                       style={{ fontSize: 10, color: UXP.lavText, textDecoration: 'none' }}>↗</a>
-                  </td>
-                </tr>
+                <HistoryRow key={h.id} h={h} onPatch={(patch) => patchLine(h.id, patch)} />
               ))}
             </tbody>
           </table>
@@ -300,6 +350,78 @@ export default function ProductDetailPage() {
       </div>
     </AppShell>
   )
+}
+
+// Editable price-history row. Each numeric cell is an inline input that
+// commits on blur; if the value didn't change, no request is sent.
+// Currency is a select. Description column stays read-only — fixing OCR
+// text would require an alias-link reshuffle (out of scope).
+function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, any>) => void }) {
+  const CURRENCIES = ['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP']
+  return (
+    <tr style={{ borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+      <td style={td()}>{h.invoice_date}</td>
+      <td style={td()}>{h.supplier}</td>
+      <td style={{ ...td(), fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink3 }}>#{h.invoice_number}</td>
+      <td style={{ ...td(), color: UXP.ink3 }}>{h.raw_description}</td>
+      <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, padding: '4px 8px' }}>
+        <input type="number" step="0.001" defaultValue={h.quantity ?? ''}
+          onBlur={e => {
+            const v = e.target.value === '' ? null : Number(e.target.value)
+            if (v !== h.quantity) onPatch({ quantity: v })
+          }}
+          style={cellInput(60)}
+        />
+      </td>
+      <td style={{ ...td(), padding: '4px 8px' }}>
+        <input type="text" defaultValue={h.unit ?? ''}
+          onBlur={e => {
+            const v = e.target.value.trim()
+            if (v !== (h.unit ?? '')) onPatch({ unit: v || null })
+          }}
+          style={cellInput(48)}
+        />
+      </td>
+      <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500, padding: '4px 8px' }}>
+        <input type="number" step="0.01" defaultValue={h.price_per_unit ?? ''}
+          onBlur={e => {
+            const v = e.target.value === '' ? null : Number(e.target.value)
+            if (v !== h.price_per_unit) onPatch({ price_per_unit: v })
+          }}
+          style={cellInput(70, true)}
+        />
+      </td>
+      <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, padding: '4px 8px' }}>
+        <input type="number" step="0.01" defaultValue={h.total_excl_vat ?? ''}
+          onBlur={e => {
+            const v = Number(e.target.value)
+            if (Number.isFinite(v) && v !== h.total_excl_vat) onPatch({ total_excl_vat: v })
+          }}
+          style={cellInput(80, true)}
+        />
+      </td>
+      <td style={{ ...td(), padding: '4px 8px' }}>
+        <select defaultValue={h.currency ?? 'SEK'}
+          onChange={e => { if (e.target.value !== h.currency) onPatch({ currency: e.target.value }) }}
+          style={{ ...cellInput(56), padding: '2px 4px' }}>
+          {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </td>
+      <td style={td()}>
+        <a href={h.fortnox_url} target="_blank" rel="noopener noreferrer"
+           style={{ fontSize: 10, color: UXP.lavText, textDecoration: 'none' }}>↗</a>
+      </td>
+    </tr>
+  )
+}
+
+function cellInput(width: number, rightAlign = false): React.CSSProperties {
+  return {
+    width, padding: '3px 6px', fontSize: 11, fontFamily: 'inherit',
+    border: `0.5px solid transparent`, borderRadius: 3,
+    background: 'transparent', color: UXP.ink1,
+    textAlign: rightAlign ? 'right' as const : 'left' as const,
+  }
 }
 
 function Sparkline({ points }: { points: Array<{ date: string; price: number }> }) {

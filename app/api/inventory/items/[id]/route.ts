@@ -72,7 +72,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       while (true) {
         const { data, error } = await db
           .from('supplier_invoice_lines')
-          .select('id, invoice_date, fortnox_invoice_number, supplier_name_snapshot, supplier_fortnox_number, raw_description, article_number, quantity, unit, price_per_unit, total_excl_vat, vat_rate')
+          .select('id, invoice_date, fortnox_invoice_number, supplier_name_snapshot, supplier_fortnox_number, raw_description, article_number, quantity, unit, price_per_unit, total_excl_vat, vat_rate, currency')
           .eq('business_id', product.business_id)
           .in('product_alias_id', slice)
           .order('invoice_date', { ascending: false })
@@ -127,17 +127,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       price_per_unit:  h.price_per_unit,
       total_excl_vat:  h.total_excl_vat,
       vat_rate:        h.vat_rate,
+      currency:        h.currency ?? 'SEK',
       fortnox_url:     `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(h.fortnox_invoice_number)}`,
     })),
     aggregates,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
-// PATCH — rename a product (and optionally change its category). Used by
-// the detail page's inline edit affordance when the auto-suggested name
-// from the bulk-review queue needs a fix.
+// PATCH — edit product header fields. Used by the detail page's inline
+// edit affordances (Rename, change category, change invoice unit).
 //
-// Body: { name?: string, category?: InventoryCategory }
+// Body: { name?, category?, invoice_unit? }
 // Returns: { ok, product }
 //
 // Collision: products has UNIQUE (business_id, name). If the new name
@@ -167,6 +167,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
     patch.category = body.category
   }
+  if (body.invoice_unit !== undefined) {
+    patch.invoice_unit = body.invoice_unit ? String(body.invoice_unit).trim() : null
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }
@@ -188,7 +191,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('products')
     .update(patch)
     .eq('id', id)
-    .select('id, name, category, default_supplier_name, invoice_unit, count_unit')
+    .select('id, name, category, default_supplier_name, invoice_unit, count_unit, updated_at')
     .single()
 
   if (error) {
