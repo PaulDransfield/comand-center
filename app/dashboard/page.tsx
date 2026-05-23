@@ -797,7 +797,15 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv }: any) {
       gap:                 12,
     }}>
       {/* Cash position */}
-      <Card title="Cash position" subtitle={absBalance != null ? 'Absolute balance' : 'Net since tracking'}>
+      <Card
+        title="Cash position"
+        subtitle={absBalance != null ? 'Absolute balance' : 'Net since tracking'}
+        info={
+          absBalance != null
+            ? `Summa av Fortnox-konton 1900–1989 (kassa, bank, kortinlösen, betalleverantörer) per senaste bokförda verifikation. Visar exakt det som Fortnox visar i webbappen — uppdateras när bokföringen rör sig. Kan släpa efter den faktiska banksaldot om bokföraren ligger efter.`
+            : `Nettoförändring sedan vi började synka data. Vi har inga ingående balanser från Fortnox ännu — så detta är bara förändringen, inte den absoluta positionen. Anslut Fortnox för att se det verkliga saldot.`
+        }
+      >
         {bankPos ? (
           <div>
             <BigNumber value={fmtKr(absBalance ?? cashPosition)} tone={(absBalance ?? cashPosition) >= 0 ? 'ink' : 'rose'} />
@@ -959,18 +967,77 @@ function StaleDataBanner({ dataAsOf, loading, viewMode, weekOffset, monthOffset 
 }
 
 // ── Generic card primitive ──────────────────────────────────────────
-function Card({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+function Card({ title, subtitle, info, children }: {
+  title:    string
+  subtitle?: string
+  info?:    string                     // optional tooltip explaining the metric source
+  children: React.ReactNode
+}) {
+  const [showInfo, setShowInfo] = useState(false)
   return (
     <div style={{
       background:    UXP.cardBg,
       border:        `0.5px solid ${UXP.border}`,
       borderRadius:  UXP.r_lg,
       padding:       '14px 16px',
+      position:      'relative' as const,
     }}>
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
-        {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+      <div style={{ marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>{title}</div>
+          {subtitle && <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{subtitle}</div>}
+        </div>
+        {info && (
+          <button
+            type="button"
+            onClick={() => setShowInfo(s => !s)}
+            onBlur={() => setShowInfo(false)}
+            aria-label="Visa förklaring"
+            title={showInfo ? 'Dölj förklaring' : 'Visa förklaring'}
+            style={{
+              width:         16,
+              height:        16,
+              borderRadius:  '50%',
+              background:    showInfo ? UXP.lavFill : 'transparent',
+              border:        `0.5px solid ${UXP.border}`,
+              color:         UXP.ink3,
+              fontSize:      10,
+              fontWeight:    600,
+              cursor:        'pointer',
+              display:       'inline-flex',
+              alignItems:    'center',
+              justifyContent: 'center',
+              padding:       0,
+              lineHeight:    1,
+              flexShrink:    0,
+            }}
+          >
+            ?
+          </button>
+        )}
       </div>
+      {info && showInfo && (
+        <div
+          role="tooltip"
+          style={{
+            position:     'absolute' as const,
+            top:          38,
+            right:        12,
+            zIndex:       10,
+            maxWidth:     280,
+            background:   UXP.ink1,
+            color:        UXP.cardBg,
+            padding:      '8px 11px',
+            borderRadius: 6,
+            fontSize:     11,
+            lineHeight:   1.55,
+            boxShadow:    '0 4px 14px rgba(58,53,80,0.18)',
+            whiteSpace:   'normal' as const,
+          }}
+        >
+          {info}
+        </div>
+      )}
       {children}
     </div>
   )
