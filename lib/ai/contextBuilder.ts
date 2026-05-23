@@ -115,7 +115,7 @@ export async function buildAskContext(
       const { buildBusinessSnapshot } = await import('./snapshot')
       snapshotBlock = await buildBusinessSnapshot(db, opts.orgId, opts.businessId, {
         inventory: true,
-        toolCatalogue: false,   // tools come in Phase 2
+        toolCatalogue: true,    // Phase 2 tools are live
       })
     } catch (e: any) {
       warnings.push(`business snapshot failed: ${String(e?.message ?? e).slice(0, 120)}`)

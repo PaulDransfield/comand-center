@@ -133,7 +133,18 @@ export async function POST(req: NextRequest) {
   const model     = tier === 'light' ? AI_MODELS.AGENT                : AI_MODELS.ASSISTANT
   const maxTokens = tier === 'light' ? MAX_TOKENS.AGENT_RECOMMENDATION : MAX_TOKENS.ASSISTANT
 
+  // Tool catalogue (Phase 2). Only available when a businessId is in scope
+  // because every tool needs (orgId, businessId) to query the right rows.
+  // 'light' tier (Haiku) doesn't get tools — the cost/latency trade-off
+  // doesn't make sense for a quick-answer agent. ASSISTANT (Sonnet) does.
+  const { TOOL_CATALOGUE, runToolLoop } = await import('@/lib/ai/tools')
+  const useTools = !!businessId && tier !== 'light'
+  const toolsForApi = useTools ? TOOL_CATALOGUE : undefined
+
   let answer: string
+  let totalInputTokens  = 0
+  let totalOutputTokens = 0
+  let toolsCalled: Array<{ name: string; args: any; result_chars: number }> = []
   const startedAt = Date.now()
   try {
     // Prompt caching: SYSTEM_PROMPT is identical across every call, so
@@ -146,21 +157,44 @@ export async function POST(req: NextRequest) {
     // hit even when users query in different languages — without this
     // the cache would bust on every locale switch.
     const { promptFragment: localeFragment } = aiLocaleFromRequest(req)
-    const response = await (claude as any).messages.create({
+    const conversation: any[] = [{ role: 'user', content: userMessage }]
+
+    const requestBuilder = (msgs: any[]) => (claude as any).messages.create({
       model,
       max_tokens: maxTokens,
       system: [
         { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
         { type: 'text', text: localeFragment },
       ],
-      messages:   [{ role: 'user', content: userMessage }],
+      tools:    toolsForApi,
+      messages: msgs,
     })
-    answer = (response.content[0] as any).text ?? 'No response'
+
+    const response = await requestBuilder(conversation)
+
+    if (useTools) {
+      const ctx = { db: supabaseForCtx, orgId: auth.orgId, businessId: businessId! }
+      const loop = await runToolLoop(ctx, claude, response, requestBuilder, conversation)
+      answer            = loop.answer
+      totalInputTokens  = loop.total_input_tokens
+      totalOutputTokens = loop.total_output_tokens
+      toolsCalled       = loop.tools_called
+      if (loop.iterations > 0) {
+        console.log('[ask] tool loop:', { iterations: loop.iterations, tools: loop.tools_called.map(t => t.name) })
+      }
+    } else {
+      const textBlock = (response.content ?? []).find((b: any) => b.type === 'text')
+      answer = textBlock?.text ?? 'No response'
+      totalInputTokens  = (response as any).usage?.input_tokens  ?? 0
+      totalOutputTokens = (response as any).usage?.output_tokens ?? 0
+    }
 
     // ── 5. (Counter was already incremented atomically in step 3.) ────
     // ── 6. Write full audit row — tokens, cost, user, duration ─
-    const inputTokens  = (response as any).usage?.input_tokens  ?? 0
-    const outputTokens = (response as any).usage?.output_tokens ?? 0
+    // Tool-loop accumulates tokens across all sub-requests so the audit
+    // captures the real cost, not just the first call's tokens.
+    const inputTokens  = totalInputTokens
+    const outputTokens = totalOutputTokens
     await logAiRequest(supabase, {
       org_id:           auth.orgId,
       user_id:          auth.userId,
