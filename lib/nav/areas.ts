@@ -84,16 +84,18 @@ export const AREAS: Area[] = [
   },
   {
     key:   'inventory',
-    label: 'Inventory setup',
+    label: 'Inventory',
     icon:  'box',
-    // Phase 6 vision pages — currently demo data behind a DemoDataBanner.
-    // The pages stay here when a real /api/inventory/* lands; the only
-    // change at that point is removing the banner.
+    // Catalogue is real (built from supplier invoices). Extractions is
+    // the review queue (Phase B.4). Recipes / counts / waste remain
+    // vision-stage behind a DemoDataBanner — kept here so the area is
+    // discoverable; will pull through useTranslations in a later pass.
     pages: [
-      { key: 'items',   label: 'Artiklar',     href: '/inventory/items' },
-      { key: 'recipes', label: 'Menyrecept',   href: '/inventory/recipes' },
-      { key: 'counts',  label: 'Lagerräkning', href: '/inventory/counts' },
-      { key: 'waste',   label: 'Svinn',        href: '/inventory/waste' },
+      { key: 'items',       label: 'Catalogue',      href: '/inventory/items' },
+      { key: 'extractions', label: 'PDF review',     href: '/inventory/extractions' },
+      { key: 'recipes',     label: 'Recipes',        href: '/inventory/recipes' },
+      { key: 'counts',      label: 'Stock counts',   href: '/inventory/counts' },
+      { key: 'waste',       label: 'Waste',          href: '/inventory/waste' },
     ],
   },
   {
