@@ -230,7 +230,9 @@
       "skipHint":          "Not inventory — mark as overhead (rent, electricity, SaaS, laundry, etc.) and hide from the catalogue.",
       "skipSupplier":      "Skip ALL from supplier",
       "skipSupplierHint":  "Mark this supplier as always non-inventory. Future invoices from them auto-skip without showing in this queue.",
-      "skipSupplierConfirm": "Skip ALL {count} lines from {supplier}, and auto-skip future invoices from this supplier too?"
+      "skipSupplierConfirm": "Skip ALL {count} lines from {supplier}, and auto-skip future invoices from this supplier too?",
+      "undo":              "Undo",
+      "undoHint":          "Reverse this action. For Approve, deletes the product + alias and re-flags the lines as needs-review. For Skip, restores the lines to the queue."
     }
   }
 }

@@ -230,7 +230,9 @@
       "skipHint":          "Ikke varelager — merk som overhead (husleie, strøm, SaaS, vask osv.) og skjul fra katalogen.",
       "skipSupplier":      "Hopp over ALLE fra leverandøren",
       "skipSupplierHint":  "Merk leverandøren som alltid ikke-varelager. Fremtidige fakturaer fra dem hoppes over automatisk.",
-      "skipSupplierConfirm": "Hopp over ALLE {count} linjer fra {supplier}, og hopp over fremtidige fakturaer fra denne leverandøren automatisk?"
+      "skipSupplierConfirm": "Hopp over ALLE {count} linjer fra {supplier}, og hopp over fremtidige fakturaer fra denne leverandøren automatisk?",
+      "undo":              "Angre",
+      "undoHint":          "Tilbakestill handlingen. For Godkjenn slettes produktet + aliaset og linjene flagges som trenger-gjennomgang. For Hopp over gjenopprettes linjene til køen."
     }
   }
 }

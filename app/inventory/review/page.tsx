@@ -58,7 +58,18 @@ export default function InventoryReviewPage() {
   const [search,   setSearch]   = useState('')
   // per-row local state for the editable name + category + busy flag
   // `done` is set on success (Approve) and `skipped` on Skip.
-  const [edits, setEdits] = useState<Record<string, { name: string; category: string; busy?: boolean; done?: boolean; skipped?: boolean; err?: string }>>({})
+  // `product_id` + `alias_id` are returned by the approve endpoint and
+  // needed to drive Undo (delete-and-revert).
+  const [edits, setEdits] = useState<Record<string, {
+    name: string;
+    category: string;
+    busy?: boolean;
+    done?: boolean;
+    skipped?: boolean;
+    product_id?: string;
+    alias_id?: string;
+    err?: string;
+  }>>({})
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -108,7 +119,52 @@ export default function InventoryReviewPage() {
       })
       const j = await r.json().catch(() => ({} as any))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
-      setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, done: true } }))
+      setEdits(prev => ({ ...prev, [group.group_key]: {
+        ...prev[group.group_key],
+        busy: false, done: true,
+        product_id: j.product_id, alias_id: j.alias_id,
+      } }))
+    } catch (err: any) {
+      setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
+    }
+  }
+
+  async function undoApprove(group: ReviewGroup) {
+    if (!bizId) return
+    const e = edits[group.group_key]
+    if (!e?.product_id || !e?.alias_id) return
+    setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: true, err: undefined } }))
+    try {
+      const r = await fetch('/api/inventory/needs-review/approve/undo', {
+        method:  'POST',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId, product_id: e.product_id, alias_id: e.alias_id }),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setEdits(prev => ({ ...prev, [group.group_key]: {
+        ...prev[group.group_key],
+        busy: false, done: false, product_id: undefined, alias_id: undefined,
+      } }))
+    } catch (err: any) {
+      setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
+    }
+  }
+
+  async function undoSkip(group: ReviewGroup) {
+    if (!bizId) return
+    setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: true, err: undefined } }))
+    try {
+      const r = await fetch('/api/inventory/needs-review/skip/undo', {
+        method:  'POST',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId, group_key: group.group_key }),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, skipped: false } }))
     } catch (err: any) {
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
     }
@@ -381,6 +437,21 @@ export default function InventoryReviewPage() {
                         }}>
                         {isSkipped ? t('skipped') : t('skip')}
                       </button>
+                      {isResolved && !e.busy && (
+                        <button
+                          type="button"
+                          onClick={() => (isDone ? undoApprove(g) : undoSkip(g))}
+                          title={t('undoHint')}
+                          style={{
+                            padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                            background: 'transparent', color: UXP.ink2,
+                            border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                            cursor: 'pointer', fontFamily: 'inherit',
+                            minWidth: 60,
+                          }}>
+                          {t('undo')}
+                        </button>
+                      )}
                     </div>
                   </div>
                   {e.err && (

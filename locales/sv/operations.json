@@ -230,7 +230,9 @@
       "skipHint":          "Inte varulager — markera som omkostnad (hyra, el, SaaS, tvätt etc.) och göm från katalogen.",
       "skipSupplier":      "Hoppa över ALLA från leverantören",
       "skipSupplierHint":  "Markera leverantören som alltid icke-lager. Framtida fakturor från dem hoppas över automatiskt.",
-      "skipSupplierConfirm": "Hoppa över ALLA {count} rader från {supplier}, och hoppa över framtida fakturor från denna leverantör automatiskt?"
+      "skipSupplierConfirm": "Hoppa över ALLA {count} rader från {supplier}, och hoppa över framtida fakturor från denna leverantör automatiskt?",
+      "undo":              "Ångra",
+      "undoHint":          "Återställ åtgärden. För Godkänn raderas produkten + aliaset och raderna flaggas som behöver-granskning. För Hoppa över återställs raderna till kön."
     }
   }
 }
