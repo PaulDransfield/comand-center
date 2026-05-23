@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
 
   let body: any
   try { body = await req.json() } catch { body = {} }
-  const businessId      = String(body.business_id ?? '').trim()
-  const resetExtracting = body.reset_extracting === true
+  const businessId       = String(body.business_id ?? '').trim()
+  const resetExtracting  = body.reset_extracting  === true
+  const chainRematch     = body.chain_rematch     === true
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
   const db = createAdminClient()
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     }, { onConflict: 'business_id' })
 
   waitUntil(
-    runWithAutoChain(db, biz.org_id, businessId).catch(err =>
+    runWithAutoChain(db, biz.org_id, businessId, chainRematch).catch(err =>
       db.from('inventory_backfill_state').update({
         status:        'failed',
         error_message: `pdf extraction worker crashed: ${err?.message ?? err}`,
@@ -103,7 +104,11 @@ export async function POST(req: NextRequest) {
 // Auto-chain batches until no candidates remain. Bounded total time
 // is capped by Vercel's 800 s maxDuration on this function; the worker
 // runs its own ~750 s budget per chained call.
-async function runWithAutoChain(db: any, orgId: string, businessId: string): Promise<void> {
+//
+// When chainRematch=true and extraction reaches remaining=0, fire-and-
+// forget kicks the rematch admin endpoint so the catalogue populates
+// without a second manual call. Onboarding hook (Phase B.3) uses this.
+async function runWithAutoChain(db: any, orgId: string, businessId: string, chainRematch: boolean = false): Promise<void> {
   const STARTED = Date.now()
   const BUDGET_MS = 750_000   // leave 50 s safety margin under maxDuration
   let chained = 0
@@ -127,6 +132,23 @@ async function runWithAutoChain(db: any, orgId: string, businessId: string): Pro
           final_summary: summary,
         },
       }).eq('business_id', businessId)
+
+      // Phase B.3 chain: kick the matcher now that extraction is done.
+      if (chainRematch) {
+        const base = process.env.NEXT_PUBLIC_APP_URL ??
+                     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+        const secret = process.env.CRON_SECRET
+        if (base && secret) {
+          fetch(`${base}/api/cron/inventory-rematch-business`, {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${secret}`,
+            },
+            body: JSON.stringify({ business_id: businessId, chained_from: 'pdf_extract' }),
+          }).catch(err => console.error('[inventory-pdf-extract] chain rematch failed:', err))
+        }
+      }
       return
     }
   }
