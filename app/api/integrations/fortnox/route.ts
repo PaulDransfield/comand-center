@@ -287,6 +287,20 @@ async function handleCallback(req: NextRequest) {
     (await import('@/lib/fortnox/company-identity'))
       .syncBusinessIdentityFromFortnox(supabase, orgId, businessId)
       .catch(err => console.error('Failed to sync company identity from Fortnox:', err))
+
+    // Default VAT filing cadence to 'quarterly' if unset — the dominant
+    // case for restaurants (1-40 MSEK turnover band ≈ 95 % of our market).
+    // Owner can change to 'monthly' / 'annually' on /settings/setup-health
+    // any time. Only writes when currently NULL so we don't overwrite an
+    // explicit choice the customer or admin already made.
+    supabase
+      .from('businesses')
+      .update({ vat_filing_cadence: 'quarterly' })
+      .eq('id', businessId)
+      .is('vat_filing_cadence', null)
+      .then(({ error }: any) => {
+        if (error) console.error('Failed to default vat_filing_cadence:', error)
+      })
   }
 
   // Kick the Fortnox 12-month backfill worker immediately so the customer
