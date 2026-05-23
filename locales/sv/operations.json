@@ -290,7 +290,15 @@
         "missingPricesWarn": "{count} ingredien(s) saknar pris ännu — råvarukostnaden underskattas.",
         "unitMismatchWarn":  "{count} ingredien(s) använder en annan enhet än produktens fakturaenhet — räkna om manuellt tills vidare (enhetskonvertering kommer senare).",
         "noPrice":           "inget pris registrerat",
-        "unitMismatchLabel": "enhet: recept {recipe} vs faktura {product}"
+        "unitMismatchLabel": "enhet: recept {recipe} vs faktura {product}",
+        "editProduct":       "Redigera produkt",
+        "editProductHint":   "Redigera produktnamn, fakturaenhet och senaste pris/valuta direkt i denna panel.",
+        "editName":          "Produktnamn",
+        "editInvoiceUnit":   "Fakturaenhet",
+        "editPrice":         "Senaste pris",
+        "editCurrency":      "Valuta",
+        "noPriceLineErr":    "Ingen fakturarad kopplad till denna produkt ännu — lägg till från /inventory/items eller vänta på en extraherad faktura.",
+        "noPriceToEdit":     "Ingen senaste fakturarad ännu — namn och enhet kan redigeras, men priset fylls i när en faktura kommer."
       },
       "picker": {
         "title":     "Välj ingrediens",

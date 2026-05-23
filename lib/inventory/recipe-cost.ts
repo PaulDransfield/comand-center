@@ -23,10 +23,12 @@ export interface IngredientForCosting {
 }
 
 export interface ProductLatestPrice {
-  product_id:    string
-  latest_price:  number | null
-  invoice_unit:  string | null
-  latest_date:   string | null
+  product_id:      string
+  latest_price:    number | null
+  invoice_unit:    string | null
+  latest_date:     string | null
+  latest_line_id:  string | null    // for inline edit-the-price from the recipe drawer
+  latest_currency: string | null
 }
 
 export interface CostedIngredient extends IngredientForCosting {
@@ -35,6 +37,8 @@ export interface CostedIngredient extends IngredientForCosting {
   line_cost:       number | null     // quantity × unit_price
   unit_mismatch:   boolean           // true when ingredient.unit != invoice_unit (and both non-empty)
   no_price:        boolean           // true when product has no observed price yet
+  latest_line_id:  string | null     // the supplier_invoice_lines row the price came from — for inline edits
+  latest_currency: string | null     // ISO 4217 of that line
 }
 
 export interface RecipeCostSummary {
@@ -64,11 +68,13 @@ export function computeRecipeCost(
     const lineCost = noPrice ? null : Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
     return {
       ...ing,
-      invoice_unit:  invoiceUnit,
-      unit_price:    unitPrice,
-      line_cost:     lineCost,
-      unit_mismatch: unitMismatch,
-      no_price:      noPrice,
+      invoice_unit:    invoiceUnit,
+      unit_price:      unitPrice,
+      line_cost:       lineCost,
+      unit_mismatch:   unitMismatch,
+      no_price:        noPrice,
+      latest_line_id:  p?.latest_line_id  ?? null,
+      latest_currency: p?.latest_currency ?? null,
     }
   })
 
@@ -113,10 +119,12 @@ export async function getProductLatestPrices(
       .in('id', slice)
     for (const p of prods ?? []) {
       out.set(p.id, {
-        product_id:   p.id,
-        latest_price: null,
-        invoice_unit: p.invoice_unit ?? null,
-        latest_date:  null,
+        product_id:      p.id,
+        latest_price:    null,
+        invoice_unit:    p.invoice_unit ?? null,
+        latest_date:     null,
+        latest_line_id:  null,
+        latest_currency: null,
       })
     }
   }
@@ -147,7 +155,7 @@ export async function getProductLatestPrices(
     while (from <= 50_000) {
       const { data } = await db
         .from('supplier_invoice_lines')
-        .select('product_alias_id, price_per_unit, unit, invoice_date')
+        .select('id, product_alias_id, price_per_unit, unit, invoice_date, currency')
         .eq('business_id', businessId)
         .eq('match_status', 'matched')
         .in('product_alias_id', slice)
@@ -167,10 +175,12 @@ export async function getProductLatestPrices(
     if (existing && existing.latest_date) continue   // already have a newer hit (input sorted DESC)
     if (l.price_per_unit == null) continue
     out.set(productId, {
-      product_id:   productId,
-      latest_price: Number(l.price_per_unit),
-      invoice_unit: existing?.invoice_unit ?? l.unit ?? null,
-      latest_date:  l.invoice_date,
+      product_id:      productId,
+      latest_price:    Number(l.price_per_unit),
+      invoice_unit:    existing?.invoice_unit ?? l.unit ?? null,
+      latest_date:     l.invoice_date,
+      latest_line_id:  l.id,
+      latest_currency: l.currency ?? 'SEK',
     })
   }
 

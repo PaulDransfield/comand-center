@@ -290,7 +290,15 @@
         "missingPricesWarn": "{count} ingredient(s) have no observed price yet — food cost will be understated.",
         "unitMismatchWarn":  "{count} ingredient(s) use a unit different from the product's invoice unit — convert manually for now (unit conversion is a follow-up).",
         "noPrice":           "no price observed",
-        "unitMismatchLabel": "unit: recipe {recipe} vs invoice {product}"
+        "unitMismatchLabel": "unit: recipe {recipe} vs invoice {product}",
+        "editProduct":       "Edit product",
+        "editProductHint":   "Inline-edit the product name, invoice unit, and latest observed price/currency without leaving this drawer.",
+        "editName":          "Product name",
+        "editInvoiceUnit":   "Invoice unit",
+        "editPrice":         "Latest price",
+        "editCurrency":      "Currency",
+        "noPriceLineErr":    "No invoice line linked to this product yet — add it from /inventory/items or wait for an extracted invoice.",
+        "noPriceToEdit":     "No latest invoice line yet — name and unit are editable, but price will fill in once an invoice arrives."
       },
       "picker": {
         "title":     "Pick an ingredient",

@@ -231,6 +231,7 @@ interface DetailIngredient {
   quantity: number; unit: string | null; notes: string | null; position: number
   invoice_unit: string | null; unit_price: number | null; line_cost: number | null
   unit_mismatch: boolean; no_price: boolean
+  latest_line_id: string | null; latest_currency: string | null
 }
 interface DetailResponse {
   recipe: { id: string; name: string; type: string | null; menu_price: number | null; portions: number; notes: string | null; updated_at: string }
@@ -332,6 +333,7 @@ function RecipeDrawer({ recipeId, bizId, onClose }: { recipeId: string; bizId: s
                   ing={ing}
                   onRemove={() => removeIngredient(ing.id)}
                   onChange={(patch) => updateIngredient(ing.id, patch)}
+                  onProductEdit={load}
                 />
               ))}
             </div>
@@ -351,44 +353,127 @@ function RecipeDrawer({ recipeId, bizId, onClose }: { recipeId: string; bizId: s
   )
 }
 
-function IngredientRow({ ing, onRemove, onChange }: { ing: DetailIngredient; onRemove: () => void; onChange: (patch: { quantity?: number; unit?: string }) => void }) {
+function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
+  ing: DetailIngredient
+  onRemove: () => void
+  onChange: (patch: { quantity?: number; unit?: string }) => void
+  onProductEdit: () => void
+}) {
   const t = useTranslations('operations.inventory.recipes')
   const [qty, setQty] = useState(String(ing.quantity))
+  const [expanded, setExpanded] = useState(false)
+  const [busy,   setBusy]   = useState(false)
+  const [err,    setErr]    = useState<string | null>(null)
   useEffect(() => { setQty(String(ing.quantity)) }, [ing.quantity])
+
+  async function patchProduct(patch: Record<string, any>) {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch(`/api/inventory/items/${ing.product_id}`, {
+        method: 'PATCH', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      onProductEdit()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  async function patchLatestLine(patch: Record<string, any>) {
+    if (!ing.latest_line_id) { setErr(t('detail.noPriceLineErr')); return }
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch(`/api/inventory/lines/${ing.latest_line_id}`, {
+        method: 'PATCH', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      onProductEdit()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: '1fr 80px 60px 90px auto', gap: 10,
-      alignItems: 'center', padding: '8px 0',
-      borderBottom: `0.5px solid ${UXP.borderSoft}`, fontSize: 12,
-    }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-          {ing.product_name}
+    <div style={{ borderBottom: `0.5px solid ${UXP.borderSoft}`, padding: '8px 0' }}>
+      <div style={{
+        display: 'grid', gridTemplateColumns: '1fr 80px 60px 90px auto auto', gap: 10,
+        alignItems: 'center', fontSize: 12,
+      }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            {ing.product_name}
+          </div>
+          <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>
+            {ing.unit_price != null
+              ? `${ing.latest_currency && ing.latest_currency !== 'SEK' ? `${ing.unit_price.toFixed(2)} ${ing.latest_currency}` : fmtKr(ing.unit_price)}/${ing.invoice_unit ?? '?'}`
+              : t('detail.noPrice')}
+            {ing.unit_mismatch && (
+              <span style={{ marginLeft: 6, color: UXP.coral, fontWeight: 500 }}>
+                {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.invoice_unit ?? '?' })}
+              </span>
+            )}
+          </div>
         </div>
-        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>
-          {ing.unit_price != null
-            ? `${fmtKr(ing.unit_price)}/${ing.invoice_unit ?? '?'}`
-            : t('detail.noPrice')}
-          {ing.unit_mismatch && (
-            <span style={{ marginLeft: 6, color: UXP.coral, fontWeight: 500 }}>
-              {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.invoice_unit ?? '?' })}
-            </span>
+        <input type="number" min="0" step="0.01" value={qty}
+          onChange={e => setQty(e.target.value)}
+          onBlur={() => { const v = Number(qty); if (Number.isFinite(v) && v > 0 && v !== ing.quantity) onChange({ quantity: v }) }}
+          style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }}
+        />
+        <div style={{ color: UXP.ink3, fontSize: 11 }}>{ing.unit ?? ing.invoice_unit ?? ''}</div>
+        <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500 }}>
+          {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
+        </div>
+        <button onClick={() => setExpanded(v => !v)} aria-label={t('detail.editProduct')}
+          title={t('detail.editProductHint')}
+          style={{
+            background: 'transparent', border: 'none', color: expanded ? UXP.lavDeep : UXP.ink4,
+            cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
+          }}>{expanded ? '▾' : '✎'}</button>
+        <button onClick={onRemove} aria-label="Remove" style={{
+          background: 'transparent', border: 'none', color: UXP.ink4, cursor: 'pointer',
+          padding: '2px 6px', fontSize: 14,
+        }}>×</button>
+      </div>
+
+      {expanded && (
+        <div style={{
+          marginTop: 8, padding: 10,
+          background: UXP.subtleBg, borderRadius: 6,
+          display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 8,
+        }}>
+          <Field label={t('detail.editName')}>
+            <input type="text" defaultValue={ing.product_name} disabled={busy}
+              onBlur={e => { const v = e.target.value.trim(); if (v && v !== ing.product_name) patchProduct({ name: v }) }}
+              style={{ ...inputStyle, padding: '3px 6px', fontSize: 11 }} />
+          </Field>
+          <Field label={t('detail.editInvoiceUnit')}>
+            <input type="text" defaultValue={ing.invoice_unit ?? ''} disabled={busy}
+              onBlur={e => { const v = e.target.value.trim(); if (v !== (ing.invoice_unit ?? '')) patchProduct({ invoice_unit: v || null }) }}
+              style={{ ...inputStyle, padding: '3px 6px', fontSize: 11 }} />
+          </Field>
+          <Field label={t('detail.editPrice')}>
+            <input type="number" min="0" step="0.01" defaultValue={ing.unit_price ?? ''} disabled={busy || !ing.latest_line_id}
+              onBlur={e => {
+                const v = e.target.value === '' ? null : Number(e.target.value)
+                if (v !== ing.unit_price) patchLatestLine({ price_per_unit: v })
+              }}
+              style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }} />
+          </Field>
+          <Field label={t('detail.editCurrency')}>
+            <select defaultValue={ing.latest_currency ?? 'SEK'} disabled={busy || !ing.latest_line_id}
+              onChange={e => { if (e.target.value !== ing.latest_currency) patchLatestLine({ currency: e.target.value }) }}
+              style={{ ...inputStyle, padding: '3px 6px', fontSize: 11 }}>
+              {['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP'].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          {err && <div style={{ ...errBanner, gridColumn: '1 / -1' }}>{err}</div>}
+          {!ing.latest_line_id && (
+            <div style={{ gridColumn: '1 / -1', fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const }}>
+              {t('detail.noPriceToEdit')}
+            </div>
           )}
         </div>
-      </div>
-      <input type="number" min="0" step="0.01" value={qty}
-        onChange={e => setQty(e.target.value)}
-        onBlur={() => { const v = Number(qty); if (Number.isFinite(v) && v > 0 && v !== ing.quantity) onChange({ quantity: v }) }}
-        style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }}
-      />
-      <div style={{ color: UXP.ink3, fontSize: 11 }}>{ing.unit ?? ing.invoice_unit ?? ''}</div>
-      <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500 }}>
-        {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
-      </div>
-      <button onClick={onRemove} aria-label="Remove" style={{
-        background: 'transparent', border: 'none', color: UXP.ink4, cursor: 'pointer',
-        padding: '2px 6px', fontSize: 14,
-      }}>×</button>
+      )}
     </div>
   )
 }
