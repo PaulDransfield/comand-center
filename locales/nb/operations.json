@@ -203,6 +203,28 @@
         "disposables":       "Forbruksvarer",
         "other":             "Annet"
       }
+    },
+    "review": {
+      "title":             "Massegjennomgang",
+      "subtitle":          "Hver rad grupperer identiske beskrivelser fra alle fakturalinjer som venter på gjennomgang. Når du godkjenner opprettes ETT produkt og alle matchende linjer kobles i én batch — katalogen vokser raskt.",
+      "kpiGroups":         "Grupper",
+      "kpiLines":          "Linjer som venter",
+      "kpiSpend":          "Total kostnad",
+      "kpiApproved":       "Godkjent i denne økten",
+      "searchPlaceholder": "Søk navn eller leverandør…",
+      "loading":           "Laster gjennomgangskø…",
+      "emptyAll":          "Ingen linjer venter på gjennomgang. Katalogen er fullt matchet, eller ekstraksjonen har ennå ikke funnet noen varelinjer.",
+      "emptyFiltered":     "Ingen grupper matcher filteret.",
+      "filterAll":         "Alle",
+      "seenAs":            "Vises som",
+      "lines":             "Linjer / fakt",
+      "linesHint":         "Linjer / unike fakturaer",
+      "totalKr":           "Totalt",
+      "latestKr":          "Siste",
+      "rangeKr":           "Spenn",
+      "approve":           "Godkjenn",
+      "approving":         "Lagrer…",
+      "approved":          "Lagret ✓"
     }
   }
 }

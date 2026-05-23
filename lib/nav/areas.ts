@@ -92,6 +92,7 @@ export const AREAS: Area[] = [
     // discoverable; will pull through useTranslations in a later pass.
     pages: [
       { key: 'items',       label: 'Catalogue',      href: '/inventory/items' },
+      { key: 'review',      label: 'Bulk review',    href: '/inventory/review' },
       { key: 'extractions', label: 'PDF review',     href: '/inventory/extractions' },
       { key: 'recipes',     label: 'Recipes',        href: '/inventory/recipes' },
       { key: 'counts',      label: 'Stock counts',   href: '/inventory/counts' },

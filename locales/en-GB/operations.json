@@ -203,6 +203,28 @@
         "disposables":       "Disposables",
         "other":             "Other"
       }
+    },
+    "review": {
+      "title":             "Bulk review",
+      "subtitle":          "Each row groups identical descriptions across every needs-review invoice line. Approving creates ONE product and links every matching line in one batch — your catalogue grows fast.",
+      "kpiGroups":         "Groups",
+      "kpiLines":          "Lines waiting",
+      "kpiSpend":          "Total spend",
+      "kpiApproved":       "Approved this session",
+      "searchPlaceholder": "Search by name or supplier…",
+      "loading":           "Loading review queue…",
+      "emptyAll":          "No lines waiting for review. The catalogue is fully matched, or extraction hasn't surfaced any inventory lines yet.",
+      "emptyFiltered":     "No groups match the current filter.",
+      "filterAll":         "All",
+      "seenAs":            "Seen as",
+      "lines":             "Lines / inv",
+      "linesHint":         "Lines / unique invoices",
+      "totalKr":           "Total",
+      "latestKr":          "Latest",
+      "rangeKr":           "Range",
+      "approve":           "Approve",
+      "approving":         "Saving…",
+      "approved":          "Saved ✓"
     }
   }
 }

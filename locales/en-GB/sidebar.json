@@ -67,6 +67,7 @@
       "label": "Inventory",
       "pages": {
         "items":       "Catalogue",
+        "review":      "Bulk review",
         "extractions": "PDF review",
         "recipes":     "Recipes",
         "counts":      "Stock counts",

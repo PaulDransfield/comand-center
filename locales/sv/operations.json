@@ -203,6 +203,28 @@
         "disposables":       "Förbrukning",
         "other":             "Övrigt"
       }
+    },
+    "review": {
+      "title":             "Massgranskning",
+      "subtitle":          "Varje rad grupperar identiska beskrivningar från alla fakturarader som väntar på granskning. När du godkänner skapas EN produkt och alla matchande rader länkas i en batch — katalogen växer snabbt.",
+      "kpiGroups":         "Grupper",
+      "kpiLines":          "Rader att granska",
+      "kpiSpend":          "Total kostnad",
+      "kpiApproved":       "Godkända denna session",
+      "searchPlaceholder": "Sök namn eller leverantör…",
+      "loading":           "Laddar granskningskö…",
+      "emptyAll":          "Inga rader väntar på granskning. Katalogen är helt matchad, eller så har extraktionen ännu inte hittat några varurader.",
+      "emptyFiltered":     "Inga grupper matchar filtret.",
+      "filterAll":         "Alla",
+      "seenAs":            "Visas som",
+      "lines":             "Rader / fakt",
+      "linesHint":         "Rader / unika fakturor",
+      "totalKr":           "Totalt",
+      "latestKr":          "Senaste",
+      "rangeKr":           "Spann",
+      "approve":           "Godkänn",
+      "approving":         "Sparar…",
+      "approved":          "Sparad ✓"
     }
   }
 }

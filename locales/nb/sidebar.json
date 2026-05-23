@@ -67,6 +67,7 @@
       "label": "Lager",
       "pages": {
         "items":       "Katalog",
+        "review":      "Massegjennomgang",
         "extractions": "PDF-gjennomgang",
         "recipes":     "Oppskrifter",
         "counts":      "Lagertelling",

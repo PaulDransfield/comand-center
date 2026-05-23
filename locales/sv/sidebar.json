@@ -67,6 +67,7 @@
       "label": "Lager",
       "pages": {
         "items":       "Katalog",
+        "review":      "Massgranskning",
         "extractions": "PDF-granskning",
         "recipes":     "Recept",
         "counts":      "Lagerräkning",
