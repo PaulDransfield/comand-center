@@ -519,14 +519,26 @@ async function checkBackfillProgress(db: any, businessId: string): Promise<Readi
   // tracker_data is the canonical P&L store. After OAuth, the Fortnox
   // 12-month backfill worker writes one row per closed month. The dash-
   // board / forecast / budget surfaces all depend on this.
+  //
+  // tracker_data schema uses period_year (int) + period_month (int),
+  // NOT a period_date column. Pre-2026-05-23 we filtered on period_date
+  // which doesn't exist — count came back null → reported 0 → check
+  // stuck on 'pending' even for customers whose backfill had completed.
   try {
-    const cutoff = new Date()
-    cutoff.setUTCMonth(cutoff.getUTCMonth() - 12)
+    const now = new Date()
+    const curYear  = now.getUTCFullYear()
+    const curMonth = now.getUTCMonth() + 1   // 1-12
+    // Cutoff = exactly 12 months ago (this month, last year)
+    const cutoffYear  = curMonth === 12 ? curYear : curYear - 1
+    const cutoffMonth = curMonth === 12 ? 1       : curMonth
+
     const { count } = await db
       .from('tracker_data')
       .select('*', { count: 'exact', head: true })
       .eq('business_id', businessId)
-      .gte('period_date', cutoff.toISOString().slice(0, 10))
+      .or(`period_year.gt.${cutoffYear},and(period_year.eq.${cutoffYear},period_month.gte.${cutoffMonth})`)
+      .or('is_provisional.is.null,is_provisional.eq.false')
+
     const have = count ?? 0
     if (have >= 10) {
       return { key: 'backfill', label: '12-månaders backfill',
