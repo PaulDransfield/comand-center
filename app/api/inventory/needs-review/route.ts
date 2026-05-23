@@ -169,9 +169,17 @@ function tidyName(raw: string | null | undefined): string {
   // The prefix MUST contain at least one digit — otherwise we'd strip
   // legitimate first words like "Tomat" or "Filet".
   s = s.replace(/^([A-Z0-9-]*\d[A-Z0-9-]*)\s+/i, '')
-  // Title-case the first letter of each word, but only if input was ALL CAPS
+  // Title-case the first letter of each word, but only if input was ALL CAPS.
   if (/^[A-ZÅÄÖ0-9\s\W]+$/.test(s) && s.length > 4) {
-    s = s.toLowerCase().replace(/\b([a-zåäö])/g, m => m.toUpperCase())
+    s = s.toLowerCase()
+    // NOT using `\b` here: JS word boundaries treat å/ä/ö as non-word
+    // (\w is ASCII-only), so `\b[a-zåäö]` mis-fires on "ägg" → matches
+    // the 'g' after 'ä' instead of the 'ä' itself, yielding "äGg".
+    // Explicit lookbehind via capture group works for any letter at
+    // start-of-string or after a non-letter-non-digit character. Digits
+    // are included so "5kg" stays "5kg" (unit suffix) instead of "5Kg".
+    s = s.replace(/(^|[^a-zåäöA-ZÅÄÖ0-9])([a-zåäö])/g,
+                  (_m, prefix: string, letter: string) => prefix + letter.toUpperCase())
   }
   return s.trim()
 }
