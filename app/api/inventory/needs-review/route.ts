@@ -159,13 +159,16 @@ export async function GET(req: NextRequest) {
 }
 
 // Cleaner for the suggested product name. Removes the supplier's
-// auto-attached SKU codes, trailing unit specs, and weird casing.
-// Leaves the result still readable; owner can rename in-place anyway.
+// auto-attached SKU codes (numeric or alphanumeric WITH at least one
+// digit — never strips plain words like "Tomat"), and title-cases
+// ALL-CAPS rows. Owner can rename in-place anyway.
 function tidyName(raw: string | null | undefined): string {
   if (!raw) return ''
   let s = String(raw).trim()
-  // Strip leading SKU-like prefixes "12345 " or "ART-9988 "
-  s = s.replace(/^[A-Z0-9-]{4,}\s+/i, '')
+  // Strip leading SKU-like prefixes: "12345 …", "ART-9988 …", "TKW3 …".
+  // The prefix MUST contain at least one digit — otherwise we'd strip
+  // legitimate first words like "Tomat" or "Filet".
+  s = s.replace(/^([A-Z0-9-]*\d[A-Z0-9-]*)\s+/i, '')
   // Title-case the first letter of each word, but only if input was ALL CAPS
   if (/^[A-ZÅÄÖ0-9\s\W]+$/.test(s) && s.length > 4) {
     s = s.toLowerCase().replace(/\b([a-zåäö])/g, m => m.toUpperCase())
