@@ -298,19 +298,27 @@
         "editPrice":         "Siste pris",
         "editCurrency":      "Valuta",
         "noPriceLineErr":    "Ingen fakturalinje koblet til dette produktet ennå — legg til fra /inventory/items eller vent på en ekstrahert faktura.",
-        "noPriceToEdit":     "Ingen siste fakturalinje ennå — navn og enhet kan redigeres, men prisen fylles inn når en faktura kommer."
+        "noPriceToEdit":     "Ingen siste fakturalinje ennå — navn og enhet kan redigeres, men prisen fylles inn når en faktura kommer.",
+        "subrecipeBadge":    "Oppskrift",
+        "cycleLabel":        "Oppskriftssyklus — kostnad hoppet over"
       },
       "picker": {
         "title":     "Velg ingrediens",
+        "tabProduct":"Produkt",
+        "tabRecipe": "Oppskrift",
         "search":    "Søk i katalogen…",
+        "searchRecipes": "Søk oppskrifter…",
         "noResults": "Ingen matchende produkter. Prøv et bredere søk eller godkjenn flere i /inventory/review.",
+        "noRecipeResults": "Ingen matchende oppskrifter. Lag en først så vises den her.",
         "noPrice":   "ingen pris registrert",
         "qty":       "Mengde",
         "unit":      "Enhet",
         "unitHint":  "Tips: angi mengde i produktets fakturaenhet ({unit}) for riktig kostnad.",
+        "subRecipeHint": "Mengden angis i porsjoner av del-oppskriften. Kostnad per porsjon vises over.",
         "qtyInvalid":"Mengde må være et positivt tall.",
         "back":      "← Tilbake",
-        "add":       "Legg til"
+        "add":       "Legg til",
+        "wouldCycle":"vil skape syklus"
       }
     }
   }

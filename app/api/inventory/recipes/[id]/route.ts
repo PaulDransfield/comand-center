@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
-import { computeRecipeCost, getProductLatestPrices, type IngredientForCosting } from '@/lib/inventory/recipe-cost'
+import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -29,27 +29,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, r.business_id)
   if (forbidden) return forbidden
 
-  const { data: rawIngs, error: iErr } = await db
-    .from('recipe_ingredients')
-    .select('id, product_id, quantity, unit, notes, position, products!inner(name, category)')
-    .eq('recipe_id', r.id)
-    .order('position')
-  if (iErr) return NextResponse.json({ error: `ingredients lookup: ${iErr.message}` }, { status: 500 })
+  // Load full business recipe index so cost can recurse through sub-recipes.
+  const recipeIndex = await loadRecipeIndex(db, r.business_id)
+  const entry = recipeIndex.get(r.id)
+  const ings = entry?.ingredients ?? []
 
-  const ings: IngredientForCosting[] = (rawIngs ?? []).map((i: any) => ({
-    id:           i.id,
-    product_id:   i.product_id,
-    product_name: i.products?.name ?? '?',
-    category:     i.products?.category ?? null,
-    quantity:     Number(i.quantity),
-    unit:         i.unit,
-    notes:        i.notes,
-    position:     i.position,
-  }))
-
-  const productIds = ings.map(i => i.product_id)
-  const priceMap   = await getProductLatestPrices(db, r.business_id, productIds)
-  const summary    = computeRecipeCost(ings, priceMap, r.menu_price != null ? Number(r.menu_price) : null)
+  // Latest prices for every product anywhere in the dependency tree.
+  const allProductIds = new Set<string>()
+  for (const e of recipeIndex.values()) {
+    for (const ing of e.ingredients) if (ing.product_id) allProductIds.add(ing.product_id)
+  }
+  const priceMap = await getProductLatestPrices(db, r.business_id, Array.from(allProductIds))
+  const summary  = computeRecipeCost(
+    ings, priceMap,
+    r.menu_price != null ? Number(r.menu_price) : null,
+    { recipeIndex, recipeId: r.id },
+  )
 
   return NextResponse.json({
     recipe: {

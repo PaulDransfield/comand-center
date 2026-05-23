@@ -227,11 +227,13 @@ function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: ()
 
 // ── Recipe detail drawer ──────────────────────────────────────────────
 interface DetailIngredient {
-  id: string; product_id: string; product_name: string; category: string | null;
+  id: string; product_id: string | null; product_name: string | null; category: string | null;
   quantity: number; unit: string | null; notes: string | null; position: number
   invoice_unit: string | null; unit_price: number | null; line_cost: number | null
   unit_mismatch: boolean; no_price: boolean
   latest_line_id: string | null; latest_currency: string | null
+  subrecipe_id: string | null; subrecipe_name: string | null
+  is_subrecipe: boolean; cycle: boolean
 }
 interface DetailResponse {
   recipe: { id: string; name: string; type: string | null; menu_price: number | null; portions: number; notes: string | null; updated_at: string }
@@ -393,6 +395,8 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
+  const displayName = ing.is_subrecipe ? (ing.subrecipe_name ?? '?') : (ing.product_name ?? '?')
+
   return (
     <div style={{ borderBottom: `0.5px solid ${UXP.borderSoft}`, padding: '8px 0' }}>
       <div style={{
@@ -400,14 +404,27 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
         alignItems: 'center', fontSize: 12,
       }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-            {ing.product_name}
+          <div style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {ing.is_subrecipe && (
+              <span style={{
+                fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                padding: '1px 6px', background: UXP.lavFill, color: UXP.lavText,
+                borderRadius: 3, textTransform: 'uppercase' as const,
+              }}>{t('detail.subrecipeBadge')}</span>
+            )}
+            <span>{displayName}</span>
           </div>
           <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>
-            {ing.unit_price != null
-              ? `${ing.latest_currency && ing.latest_currency !== 'SEK' ? `${ing.unit_price.toFixed(2)} ${ing.latest_currency}` : fmtKr(ing.unit_price)}/${ing.invoice_unit ?? '?'}`
-              : t('detail.noPrice')}
-            {ing.unit_mismatch && (
+            {ing.cycle
+              ? <span style={{ color: UXP.coral, fontWeight: 500 }}>{t('detail.cycleLabel')}</span>
+              : ing.is_subrecipe
+                ? (ing.unit_price != null
+                    ? `${fmtKr(ing.unit_price)}/portion`
+                    : t('detail.noPrice'))
+                : (ing.unit_price != null
+                    ? `${ing.latest_currency && ing.latest_currency !== 'SEK' ? `${ing.unit_price.toFixed(2)} ${ing.latest_currency}` : fmtKr(ing.unit_price)}/${ing.invoice_unit ?? '?'}`
+                    : t('detail.noPrice'))}
+            {!ing.is_subrecipe && ing.unit_mismatch && (
               <span style={{ marginLeft: 6, color: UXP.coral, fontWeight: 500 }}>
                 {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.invoice_unit ?? '?' })}
               </span>
@@ -423,12 +440,18 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
         <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500 }}>
           {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
         </div>
-        <button onClick={() => setExpanded(v => !v)} aria-label={t('detail.editProduct')}
-          title={t('detail.editProductHint')}
-          style={{
-            background: 'transparent', border: 'none', color: expanded ? UXP.lavDeep : UXP.ink4,
-            cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
-          }}>{expanded ? '▾' : '✎'}</button>
+        {ing.is_subrecipe ? (
+          // Sub-recipe row: no "edit product" affordance. (Future: link to
+          // the sub-recipe drawer so owner can jump straight to editing it.)
+          <span style={{ width: 22 }} />
+        ) : (
+          <button onClick={() => setExpanded(v => !v)} aria-label={t('detail.editProduct')}
+            title={t('detail.editProductHint')}
+            style={{
+              background: 'transparent', border: 'none', color: expanded ? UXP.lavDeep : UXP.ink4,
+              cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
+            }}>{expanded ? '▾' : '✎'}</button>
+        )}
         <button onClick={onRemove} aria-label="Remove" style={{
           background: 'transparent', border: 'none', color: UXP.ink4, cursor: 'pointer',
           padding: '2px 6px', fontSize: 14,
@@ -442,7 +465,7 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
           display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 8,
         }}>
           <Field label={t('detail.editName')}>
-            <input type="text" defaultValue={ing.product_name} disabled={busy}
+            <input type="text" defaultValue={ing.product_name ?? ''} disabled={busy}
               onBlur={e => { const v = e.target.value.trim(); if (v && v !== ing.product_name) patchProduct({ name: v }) }}
               style={{ ...inputStyle, padding: '3px 6px', fontSize: 11 }} />
           </Field>
@@ -481,6 +504,7 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
 // ── Ingredient picker (modal-in-drawer) ────────────────────────────────
 function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string; recipeId: string; onClose: () => void; onAdded: () => void }) {
   const t = useTranslations('operations.inventory.recipes')
+  const [tab,       setTab]       = useState<'product' | 'recipe'>('product')
   const [q,         setQ]         = useState('')
   const [results,   setResults]   = useState<any[]>([])
   const [picked,    setPicked]    = useState<any | null>(null)
@@ -489,15 +513,22 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
   const [busy,      setBusy]      = useState(false)
   const [err,       setErr]       = useState<string | null>(null)
 
-  // Debounced search
+  // Debounced search — switches endpoint based on the active tab.
   useEffect(() => {
     const timer = setTimeout(async () => {
-      const r = await fetch(`/api/inventory/products/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(q)}`, { cache: 'no-store' })
+      const path = tab === 'product'
+        ? `/api/inventory/products/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(q)}`
+        : `/api/inventory/recipes/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(q)}&exclude_recipe_id=${encodeURIComponent(recipeId)}`
+      const r = await fetch(path, { cache: 'no-store' })
       const j = await r.json().catch(() => ({}))
-      setResults(j.products ?? [])
+      setResults(tab === 'product' ? (j.products ?? []) : (j.recipes ?? []))
     }, 200)
     return () => clearTimeout(timer)
-  }, [q, bizId])
+  }, [q, bizId, recipeId, tab])
+
+  function switchTab(next: 'product' | 'recipe') {
+    setTab(next); setQ(''); setResults([]); setPicked(null); setErr(null); setUnit(''); setQty('')
+  }
 
   async function add() {
     if (!picked || !qty) return
@@ -505,10 +536,18 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
     if (!Number.isFinite(qn) || qn <= 0) { setErr(t('picker.qtyInvalid')); return }
     setBusy(true); setErr(null)
     try {
+      const payload: any = { quantity: qn }
+      if (tab === 'product') {
+        payload.product_id = picked.product_id
+        payload.unit       = unit || picked.invoice_unit
+      } else {
+        payload.subrecipe_id = picked.recipe_id
+        payload.unit         = 'portion'
+      }
       const r = await fetch(`/api/inventory/recipes/${recipeId}/ingredients`, {
         method: 'POST', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: picked.product_id, quantity: qn, unit: unit || picked.invoice_unit }),
+        body: JSON.stringify(payload),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
@@ -522,26 +561,49 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
         <div style={{ fontSize: 15, fontWeight: 600, color: UXP.ink1, marginBottom: 10 }}>{t('picker.title')}</div>
         {!picked && (
           <>
+            {/* Tab switcher */}
+            <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderBottom: `0.5px solid ${UXP.border}` }}>
+              <TabBtn active={tab === 'product'} onClick={() => switchTab('product')}>{t('picker.tabProduct')}</TabBtn>
+              <TabBtn active={tab === 'recipe'}  onClick={() => switchTab('recipe')}>{t('picker.tabRecipe')}</TabBtn>
+            </div>
             <input type="text" value={q} onChange={e => setQ(e.target.value)} autoFocus
-                   placeholder={t('picker.search')} style={inputStyle} />
+                   placeholder={tab === 'product' ? t('picker.search') : t('picker.searchRecipes')} style={inputStyle} />
             <div style={{ maxHeight: 280, overflowY: 'auto' as const, marginTop: 8, border: `0.5px solid ${UXP.border}`, borderRadius: 6 }}>
               {results.length === 0 && (
-                <div style={{ padding: 14, color: UXP.ink4, fontSize: 12, textAlign: 'center' as const }}>{t('picker.noResults')}</div>
+                <div style={{ padding: 14, color: UXP.ink4, fontSize: 12, textAlign: 'center' as const }}>
+                  {tab === 'product' ? t('picker.noResults') : t('picker.noRecipeResults')}
+                </div>
               )}
               {results.map((p: any) => (
-                <button key={p.product_id} onClick={() => { setPicked(p); setUnit(p.invoice_unit ?? '') }}
+                <button key={p.product_id ?? p.recipe_id}
+                        onClick={() => {
+                          if (tab === 'product') { setPicked(p); setUnit(p.invoice_unit ?? '') }
+                          else if (!p.would_cycle) { setPicked(p); setUnit('portion') }
+                        }}
+                        disabled={tab === 'recipe' && p.would_cycle}
                         style={{
                           display: 'block', width: '100%', textAlign: 'left' as const,
                           padding: '8px 10px', background: 'transparent', border: 'none',
-                          borderBottom: `0.5px solid ${UXP.borderSoft}`, cursor: 'pointer',
+                          borderBottom: `0.5px solid ${UXP.borderSoft}`,
+                          cursor: (tab === 'recipe' && p.would_cycle) ? 'not-allowed' : 'pointer',
                           fontFamily: 'inherit',
+                          opacity: (tab === 'recipe' && p.would_cycle) ? 0.5 : 1,
                         }}
-                        onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
+                        onMouseEnter={e => { if (!(tab === 'recipe' && p.would_cycle)) e.currentTarget.style.background = UXP.subtleBg }}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1 }}>{p.name}</div>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1 }}>
+                    {p.name}
+                    {tab === 'recipe' && p.would_cycle && (
+                      <span style={{ marginLeft: 6, fontSize: 10, color: UXP.coral, fontWeight: 500 }}>
+                        {t('picker.wouldCycle')}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>
-                    {p.category ?? '?'} · {p.latest_price != null ? `${fmtKr(p.latest_price)}/${p.invoice_unit ?? '?'}` : t('picker.noPrice')}
-                    {p.supplier && <> · {p.supplier}</>}
+                    {tab === 'product'
+                      ? <>{p.category ?? '?'} · {p.latest_price != null ? `${fmtKr(p.latest_price)}/${p.invoice_unit ?? '?'}` : t('picker.noPrice')}{p.supplier && <> · {p.supplier}</>}</>
+                      : <>{p.type ?? '—'} · {p.portions} portions · {p.cost_per_portion != null ? `${fmtKr(p.cost_per_portion)}/portion` : '—'}</>
+                    }
                   </div>
                 </button>
               ))}
@@ -553,7 +615,9 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
             <div style={{ padding: 10, background: UXP.subtleBg, borderRadius: 6, fontSize: 12, marginBottom: 10 }}>
               <div style={{ fontWeight: 500, color: UXP.ink1 }}>{picked.name}</div>
               <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
-                {picked.latest_price != null ? `${fmtKr(picked.latest_price)}/${picked.invoice_unit ?? '?'}` : t('picker.noPrice')}
+                {tab === 'product'
+                  ? (picked.latest_price != null ? `${fmtKr(picked.latest_price)}/${picked.invoice_unit ?? '?'}` : t('picker.noPrice'))
+                  : `${picked.portions} portions · ${picked.cost_per_portion != null ? `${fmtKr(picked.cost_per_portion)}/portion` : '—'}`}
               </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -561,12 +625,14 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                 <input type="number" min="0" step="0.01" value={qty} autoFocus onChange={e => setQty(e.target.value)} disabled={busy} style={inputStyle} />
               </Field>
               <Field label={t('picker.unit')}>
-                <input type="text" value={unit} onChange={e => setUnit(e.target.value)} disabled={busy} style={inputStyle}
-                       placeholder={picked.invoice_unit ?? ''} />
+                <input type="text" value={unit} onChange={e => setUnit(e.target.value)} disabled={busy || tab === 'recipe'} style={inputStyle}
+                       placeholder={tab === 'product' ? (picked.invoice_unit ?? '') : 'portion'} />
               </Field>
             </div>
             <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>
-              {t('picker.unitHint', { unit: picked.invoice_unit ?? '?' })}
+              {tab === 'product'
+                ? t('picker.unitHint',    { unit: picked.invoice_unit ?? '?' })
+                : t('picker.subRecipeHint')}
             </div>
             {err && <div style={errBanner}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
@@ -580,6 +646,18 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
         )}
       </div>
     </Backdrop>
+  )
+}
+
+function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} style={{
+      padding: '6px 14px', fontSize: 12, fontWeight: 500,
+      background: 'transparent', color: active ? UXP.ink1 : UXP.ink3,
+      border: 'none',
+      borderBottom: active ? `2px solid ${UXP.lavDeep}` : '2px solid transparent',
+      cursor: 'pointer', fontFamily: 'inherit',
+    }}>{children}</button>
   )
 }
 

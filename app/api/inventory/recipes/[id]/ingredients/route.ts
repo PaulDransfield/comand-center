@@ -1,18 +1,18 @@
 // app/api/inventory/recipes/[id]/ingredients/route.ts
 //
-// POST — add an ingredient (product_id + quantity + unit) to a recipe.
+// POST — add an ingredient to a recipe. Accepts EITHER a product OR a
+//        sub-recipe (mutually exclusive per DB CHECK).
 //
-// Body: { product_id, quantity, unit?, notes? }
+// Body: { product_id?, subrecipe_id?, quantity, unit?, notes? }
 //
-// UNIQUE(recipe_id, product_id) means re-POSTing the same product UPDATEs
-// the existing row (sum-quantity? no — overwrite, owner expectation).
-// Use PATCH on the specific ingredient id if you want to bump quantity
-// instead of overwrite.
+// Cycle prevention: if subrecipe_id transitively contains the parent
+// recipe id, returns 409 with a useful message.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { loadRecipeIndex, wouldCreateCycle } from '@/lib/inventory/recipe-cost'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,11 +24,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   let body: any
   try { body = await req.json() } catch { body = {} }
-  const productId = String(body.product_id ?? '').trim()
-  const quantity  = Number(body.quantity ?? 0)
-  const unit      = body.unit  ? String(body.unit).trim()  : null
-  const notes     = body.notes ? String(body.notes).trim() : null
-  if (!productId) return NextResponse.json({ error: 'product_id required' }, { status: 400 })
+  const productId    = body.product_id    ? String(body.product_id).trim()    : null
+  const subrecipeId  = body.subrecipe_id  ? String(body.subrecipe_id).trim()  : null
+  const quantity     = Number(body.quantity ?? 0)
+  const unit         = body.unit  ? String(body.unit).trim()  : null
+  const notes        = body.notes ? String(body.notes).trim() : null
+
+  if ((!productId && !subrecipeId) || (productId && subrecipeId)) {
+    return NextResponse.json({ error: 'exactly one of product_id or subrecipe_id required' }, { status: 400 })
+  }
   if (!Number.isFinite(quantity) || quantity <= 0) {
     return NextResponse.json({ error: 'quantity must be > 0' }, { status: 400 })
   }
@@ -45,18 +49,43 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const forbidden = requireBusinessAccess(auth, recipe.business_id)
   if (forbidden) return forbidden
 
-  // Verify the product belongs to the same business (defence in depth)
-  const { data: product } = await db
-    .from('products')
-    .select('id, business_id, name, invoice_unit')
-    .eq('id', productId)
-    .maybeSingle()
-  if (!product)                            return NextResponse.json({ error: 'product not found' }, { status: 404 })
-  if (product.business_id !== recipe.business_id) {
-    return NextResponse.json({ error: 'product belongs to a different business' }, { status: 403 })
+  let defaultUnit: string | null = null
+
+  if (productId) {
+    const { data: product } = await db
+      .from('products')
+      .select('id, business_id, name, invoice_unit')
+      .eq('id', productId)
+      .maybeSingle()
+    if (!product) return NextResponse.json({ error: 'product not found' }, { status: 404 })
+    if (product.business_id !== recipe.business_id) {
+      return NextResponse.json({ error: 'product belongs to a different business' }, { status: 403 })
+    }
+    defaultUnit = product.invoice_unit
+  } else {
+    // subrecipeId — verify same business + no cycle
+    if (subrecipeId === params.id) {
+      return NextResponse.json({ error: 'A recipe cannot include itself.' }, { status: 409 })
+    }
+    const { data: sub } = await db
+      .from('recipes')
+      .select('id, business_id, name')
+      .eq('id', subrecipeId!)
+      .maybeSingle()
+    if (!sub) return NextResponse.json({ error: 'sub-recipe not found' }, { status: 404 })
+    if (sub.business_id !== recipe.business_id) {
+      return NextResponse.json({ error: 'sub-recipe belongs to a different business' }, { status: 403 })
+    }
+    const idx = await loadRecipeIndex(db, recipe.business_id)
+    if (wouldCreateCycle(params.id, subrecipeId!, idx)) {
+      return NextResponse.json({
+        error: `Cannot add "${sub.name}" — it would create a recipe cycle (this recipe is already used inside it, directly or transitively).`,
+      }, { status: 409 })
+    }
+    defaultUnit = 'portion'
   }
 
-  // Determine next position (last + 1) — small query, recipes rarely have >50 ingredients.
+  // Position = last + 1
   const { data: last } = await db
     .from('recipe_ingredients')
     .select('position')
@@ -66,20 +95,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .maybeSingle()
   const nextPos = ((last as any)?.position ?? -1) + 1
 
-  // SELECT-then-INSERT or UPDATE to honour UNIQUE(recipe_id, product_id).
-  // upsert with onConflict 'recipe_id,product_id' is fine here — it's a
-  // full unique constraint (not partial), unlike product_aliases.
+  const row = {
+    recipe_id:    params.id,
+    product_id:   productId,
+    subrecipe_id: subrecipeId,
+    quantity,
+    unit:         unit ?? defaultUnit,
+    notes,
+    position:     nextPos,
+  }
+  // Upserts target the matching partial unique index. Both indexes are
+  // single-column (recipe_id + the one non-null id field) so the right
+  // onConflict spec depends on which path we're on.
+  const onConflict = productId ? 'recipe_id,product_id' : 'recipe_id,subrecipe_id'
   const { data, error } = await db
     .from('recipe_ingredients')
-    .upsert({
-      recipe_id:  params.id,
-      product_id: productId,
-      quantity,
-      unit:       unit ?? product.invoice_unit,    // default to product's invoice unit
-      notes,
-      position:   nextPos,
-    }, { onConflict: 'recipe_id,product_id' })
-    .select('id, product_id, quantity, unit, notes, position')
+    .upsert(row, { onConflict })
+    .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

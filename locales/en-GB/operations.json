@@ -298,19 +298,27 @@
         "editPrice":         "Latest price",
         "editCurrency":      "Currency",
         "noPriceLineErr":    "No invoice line linked to this product yet — add it from /inventory/items or wait for an extracted invoice.",
-        "noPriceToEdit":     "No latest invoice line yet — name and unit are editable, but price will fill in once an invoice arrives."
+        "noPriceToEdit":     "No latest invoice line yet — name and unit are editable, but price will fill in once an invoice arrives.",
+        "subrecipeBadge":    "Recipe",
+        "cycleLabel":        "Recipe cycle — cost skipped"
       },
       "picker": {
         "title":     "Pick an ingredient",
+        "tabProduct":"Product",
+        "tabRecipe": "Recipe",
         "search":    "Search the catalogue…",
+        "searchRecipes": "Search recipes…",
         "noResults": "No matching products. Try a broader search or approve more from /inventory/review.",
+        "noRecipeResults": "No matching recipes. Create one first and it'll show up here.",
         "noPrice":   "no price observed",
         "qty":       "Quantity",
         "unit":      "Unit",
         "unitHint":  "Tip: enter quantity in the product's invoice unit ({unit}) for accurate cost.",
+        "subRecipeHint": "Quantity is in portions of the sub-recipe. Sub-recipe cost per portion shows above.",
         "qtyInvalid":"Quantity must be a positive number.",
         "back":      "← Back",
-        "add":       "Add"
+        "add":       "Add",
+        "wouldCycle":"would create cycle"
       }
     }
   }

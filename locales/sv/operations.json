@@ -298,19 +298,27 @@
         "editPrice":         "Senaste pris",
         "editCurrency":      "Valuta",
         "noPriceLineErr":    "Ingen fakturarad kopplad till denna produkt ännu — lägg till från /inventory/items eller vänta på en extraherad faktura.",
-        "noPriceToEdit":     "Ingen senaste fakturarad ännu — namn och enhet kan redigeras, men priset fylls i när en faktura kommer."
+        "noPriceToEdit":     "Ingen senaste fakturarad ännu — namn och enhet kan redigeras, men priset fylls i när en faktura kommer.",
+        "subrecipeBadge":    "Recept",
+        "cycleLabel":        "Receptcykel — kostnad hoppas över"
       },
       "picker": {
         "title":     "Välj ingrediens",
+        "tabProduct":"Produkt",
+        "tabRecipe": "Recept",
         "search":    "Sök i katalogen…",
+        "searchRecipes": "Sök recept…",
         "noResults": "Inga matchande produkter. Försök med en bredare sökning eller godkänn fler i /inventory/review.",
+        "noRecipeResults": "Inga matchande recept. Skapa ett först så syns det här.",
         "noPrice":   "inget pris registrerat",
         "qty":       "Mängd",
         "unit":      "Enhet",
         "unitHint":  "Tips: ange mängd i produktens fakturaenhet ({unit}) för korrekt kostnad.",
+        "subRecipeHint": "Mängden anges i portioner av delreceptet. Kostnad per portion visas ovan.",
         "qtyInvalid":"Mängd måste vara ett positivt tal.",
         "back":      "← Tillbaka",
-        "add":       "Lägg till"
+        "add":       "Lägg till",
+        "wouldCycle":"skulle skapa cykel"
       }
     }
   }

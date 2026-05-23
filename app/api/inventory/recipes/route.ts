@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
-import { computeRecipeCost, getProductLatestPrices, type IngredientForCosting } from '@/lib/inventory/recipe-cost'
+import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,39 +41,29 @@ export async function GET(req: NextRequest) {
     }, { headers: { 'Cache-Control': 'no-store' } })
   }
 
-  // Pull every ingredient for these recipes in one batch.
-  const recipeIds = recipes.map((r: any) => r.id)
-  const { data: rawIngs, error: iErr } = await db
-    .from('recipe_ingredients')
-    .select('id, recipe_id, product_id, quantity, unit, notes, position, products!inner(name, category)')
-    .in('recipe_id', recipeIds)
-    .order('position')
-  if (iErr) return NextResponse.json({ error: `ingredients lookup: ${iErr.message}` }, { status: 500 })
+  // Load the full recipe index so the cost computer can recurse through
+  // sub-recipe references. Two batched queries; cheap even at 500+ recipes.
+  const recipeIndex = await loadRecipeIndex(db, businessId)
 
-  // Distinct product IDs → batch latest-price fetch.
-  const productIds = Array.from(new Set((rawIngs ?? []).map((i: any) => i.product_id)))
-  const priceMap = await getProductLatestPrices(db, businessId, productIds)
-
-  // Group ingredients by recipe and cost them.
-  const byRecipe = new Map<string, IngredientForCosting[]>()
-  for (const i of rawIngs ?? []) {
-    const arr = byRecipe.get(i.recipe_id) ?? []
-    arr.push({
-      id:           i.id,
-      product_id:   i.product_id,
-      product_name: (i.products as any)?.name ?? '?',
-      category:     (i.products as any)?.category ?? null,
-      quantity:     Number(i.quantity),
-      unit:         i.unit,
-      notes:        i.notes,
-      position:     i.position,
-    })
-    byRecipe.set(i.recipe_id, arr)
+  // Distinct product IDs across the WHOLE business (so sub-recipe leaf
+  // products price too, not just the ones in the top-level recipes).
+  const allProductIds = new Set<string>()
+  for (const entry of recipeIndex.values()) {
+    for (const ing of entry.ingredients) {
+      if (ing.product_id) allProductIds.add(ing.product_id)
+    }
   }
+  const priceMap = await getProductLatestPrices(db, businessId, Array.from(allProductIds))
 
   const enriched = recipes.map((r: any) => {
-    const ings = byRecipe.get(r.id) ?? []
-    const summary = computeRecipeCost(ings, priceMap, r.menu_price != null ? Number(r.menu_price) : null)
+    const entry = recipeIndex.get(r.id)
+    const ings  = entry?.ingredients ?? []
+    const summary = computeRecipeCost(
+      ings,
+      priceMap,
+      r.menu_price != null ? Number(r.menu_price) : null,
+      { recipeIndex, recipeId: r.id },
+    )
     return {
       id:         r.id,
       name:       r.name,
@@ -89,6 +79,7 @@ export async function GET(req: NextRequest) {
       ingredient_count: ings.length,
       missing_prices:  summary.missing_prices,
       unit_mismatches: summary.unit_mismatches,
+      subrecipe_count: ings.filter(i => i.subrecipe_id != null).length,
     }
   })
 

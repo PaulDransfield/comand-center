@@ -13,14 +13,24 @@
 
 export interface IngredientForCosting {
   id:           string
-  product_id:   string
-  product_name: string
+  product_id:   string | null        // null when this row is a sub-recipe reference
+  product_name: string | null        // null for sub-recipe rows
   category:     string | null
   quantity:     number
   unit:         string | null
   notes:        string | null
   position:     number
+  // Sub-recipe fields (mutually exclusive with product_id per the DB CHECK)
+  subrecipe_id:    string | null
+  subrecipe_name:  string | null
 }
+
+export interface RecipeContextEntry {
+  id:          string
+  portions:    number
+  ingredients: IngredientForCosting[]
+}
+export type RecipeIndex = Map<string, RecipeContextEntry>
 
 export interface ProductLatestPrice {
   product_id:      string
@@ -33,12 +43,14 @@ export interface ProductLatestPrice {
 
 export interface CostedIngredient extends IngredientForCosting {
   invoice_unit:    string | null
-  unit_price:      number | null     // per product.invoice_unit
+  unit_price:      number | null     // per product.invoice_unit for products; per portion for sub-recipes
   line_cost:       number | null     // quantity × unit_price
-  unit_mismatch:   boolean           // true when ingredient.unit != invoice_unit (and both non-empty)
-  no_price:        boolean           // true when product has no observed price yet
-  latest_line_id:  string | null     // the supplier_invoice_lines row the price came from — for inline edits
-  latest_currency: string | null     // ISO 4217 of that line
+  unit_mismatch:   boolean           // true when ingredient.unit != invoice_unit (products only)
+  no_price:        boolean           // true when product has no observed price yet OR sub-recipe couldn't cost
+  latest_line_id:  string | null     // products only; null for sub-recipes
+  latest_currency: string | null     // products only; null for sub-recipes
+  is_subrecipe:    boolean           // true if this ingredient is a sub-recipe reference
+  cycle:           boolean           // true if cost couldn't be computed because of a recipe cycle
 }
 
 export interface RecipeCostSummary {
@@ -55,9 +67,77 @@ export function computeRecipeCost(
   ingredients: IngredientForCosting[],
   prices:      Map<string, ProductLatestPrice>,
   menuPrice:   number | null,
+  options?: { recipeIndex?: RecipeIndex; recipeId?: string; ancestors?: Set<string> },
 ): RecipeCostSummary {
+  const index     = options?.recipeIndex
+  const ancestors = options?.ancestors ?? new Set<string>()
+  // Add current recipe to the ancestor stack so any descendant lookup
+  // that hits this id is detected as a cycle.
+  if (options?.recipeId) ancestors.add(options.recipeId)
+
   const costed: CostedIngredient[] = ingredients.map(ing => {
-    const p = prices.get(ing.product_id)
+    // ── Sub-recipe branch ───────────────────────────────────────────
+    if (ing.subrecipe_id) {
+      // Cycle: the sub-recipe IS one of our ancestors. Don't recurse.
+      if (ancestors.has(ing.subrecipe_id)) {
+        return {
+          ...ing,
+          invoice_unit:    'portion',
+          unit_price:      null,
+          line_cost:       null,
+          unit_mismatch:   false,
+          no_price:        true,
+          latest_line_id:  null,
+          latest_currency: null,
+          is_subrecipe:    true,
+          cycle:           true,
+        }
+      }
+      const subEntry = index?.get(ing.subrecipe_id)
+      if (!subEntry || subEntry.portions <= 0) {
+        return {
+          ...ing,
+          invoice_unit:    'portion',
+          unit_price:      null,
+          line_cost:       null,
+          unit_mismatch:   false,
+          no_price:        true,
+          latest_line_id:  null,
+          latest_currency: null,
+          is_subrecipe:    true,
+          cycle:           false,
+        }
+      }
+      // Recurse — pass a copy of ancestors so siblings can re-enter the
+      // same sub-recipe legitimately (diamond dependency is fine).
+      const subSummary = computeRecipeCost(
+        subEntry.ingredients,
+        prices,
+        null,
+        {
+          recipeIndex: index,
+          recipeId:    ing.subrecipe_id,
+          ancestors:   new Set(ancestors),
+        },
+      )
+      const perPortion = subSummary.food_cost / subEntry.portions
+      const lineCost = Math.round(ing.quantity * perPortion * 100) / 100
+      return {
+        ...ing,
+        invoice_unit:    'portion',
+        unit_price:      Math.round(perPortion * 100) / 100,
+        line_cost:       lineCost,
+        unit_mismatch:   false,
+        no_price:        subSummary.food_cost === 0 && subSummary.missing_prices > 0,
+        latest_line_id:  null,
+        latest_currency: null,
+        is_subrecipe:    true,
+        cycle:           false,
+      }
+    }
+
+    // ── Product branch (unchanged behaviour) ────────────────────────
+    const p = ing.product_id ? prices.get(ing.product_id) : undefined
     const unitPrice = p?.latest_price ?? null
     const invoiceUnit = p?.invoice_unit ?? null
     const noPrice = unitPrice == null
@@ -75,6 +155,8 @@ export function computeRecipeCost(
       no_price:        noPrice,
       latest_line_id:  p?.latest_line_id  ?? null,
       latest_currency: p?.latest_currency ?? null,
+      is_subrecipe:    false,
+      cycle:           false,
     }
   })
 
@@ -96,6 +178,74 @@ export function computeRecipeCost(
     gp_pct:          gpPct,
     gp_kr:           gpKr,
   }
+}
+
+// Load every recipe + its ingredients for a business into a RecipeIndex
+// so cost computation can recurse through sub-recipes cheaply. Two
+// batched queries — fine even at 500+ recipes per business.
+export async function loadRecipeIndex(
+  db: any,
+  businessId: string,
+): Promise<RecipeIndex> {
+  const idx: RecipeIndex = new Map()
+  const { data: recipes } = await db
+    .from('recipes')
+    .select('id, portions')
+    .eq('business_id', businessId)
+    .is('archived_at', null)
+  if (!recipes || recipes.length === 0) return idx
+  for (const r of recipes) {
+    idx.set(r.id, { id: r.id, portions: r.portions ?? 1, ingredients: [] })
+  }
+  const recipeIds = recipes.map((r: any) => r.id)
+  const { data: ings } = await db
+    .from('recipe_ingredients')
+    .select('id, recipe_id, product_id, subrecipe_id, quantity, unit, notes, position, products(name, category), subrecipe:subrecipe_id(name)')
+    .in('recipe_id', recipeIds)
+    .order('position')
+  for (const i of ings ?? []) {
+    const entry = idx.get(i.recipe_id)
+    if (!entry) continue
+    entry.ingredients.push({
+      id:             i.id,
+      product_id:     i.product_id,
+      product_name:   (i.products as any)?.name ?? null,
+      category:       (i.products as any)?.category ?? null,
+      quantity:       Number(i.quantity),
+      unit:           i.unit,
+      notes:          i.notes,
+      position:       i.position,
+      subrecipe_id:   i.subrecipe_id,
+      subrecipe_name: (i.subrecipe as any)?.name ?? null,
+    })
+  }
+  return idx
+}
+
+// Cycle prevention helper for POST /api/inventory/recipes/[id]/ingredients.
+// Returns true if adding subrecipeId as an ingredient of parentRecipeId
+// would create a cycle (i.e. subrecipeId's transitive ingredients
+// include parentRecipeId).
+export function wouldCreateCycle(
+  parentRecipeId: string,
+  subrecipeId:    string,
+  index:          RecipeIndex,
+): boolean {
+  if (parentRecipeId === subrecipeId) return true
+  const seen = new Set<string>()
+  const stack = [subrecipeId]
+  while (stack.length > 0) {
+    const cur = stack.pop()!
+    if (seen.has(cur)) continue
+    seen.add(cur)
+    if (cur === parentRecipeId) return true
+    const entry = index.get(cur)
+    if (!entry) continue
+    for (const ing of entry.ingredients) {
+      if (ing.subrecipe_id && !seen.has(ing.subrecipe_id)) stack.push(ing.subrecipe_id)
+    }
+  }
+  return false
 }
 
 // One-shot batch fetch: given a set of product_ids, return the latest
