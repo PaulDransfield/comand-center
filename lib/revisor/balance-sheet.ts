@@ -25,7 +25,8 @@
 // dynamic equity row.
 
 import { getCachedVouchersForRange }       from '@/lib/fortnox/voucher-cache'
-import { fetchBankAccountBalances }        from '@/lib/fortnox/api/account-balance'
+import { fetchAccountsList }               from '@/lib/fortnox/api/accounts-list'
+import { getFreshFortnoxAccessToken }      from '@/lib/fortnox/api/auth'
 import { basAccountDescription }           from './bas-chart'
 
 // ── Public types ───────────────────────────────────────────────────
@@ -105,19 +106,37 @@ export async function computeBalanceSheet(
     return `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`
   })()
 
-  // 1a. Determine the actual fiscal-year start. Pre-2026-05-23 we assumed
-  //     calendar year (`${year}-01-01`) — that BROKE for any customer with
-  //     a broken fiscal year. Chicce Slotsgatan's FY runs 2025-09-01 →
-  //     2026-08-31 so calendar-year math missed Sept-Dec 2025 voucher
-  //     activity, producing a negative-asset imbalance of ~4 MSEK.
+  // 1a. Fetch Fortnox access token + FULL accounts list for the FY
+  //     containing the requested period end. The list response gives us:
+  //       - real fiscal-year start (used to scope the voucher walk)
+  //       - opening balance (BalanceBroughtForward) for EVERY account
+  //         the customer has — including ones that don't move in the
+  //         requested period.
   //
-  //     We pre-fetch the opening balances with a small probe (single
-  //     account — 1910 Kassa, almost always exists) so we learn the FY
-  //     range before deciding how far back to walk vouchers.
-  const probeForFy = await fetchBankAccountBalances(db, orgId, businessId, [1910])
-  const fyStart = (probeForFy.fiscal_year_from && probeForFy.fiscal_year_from <= monthEnd)
-    ? probeForFy.fiscal_year_from
-    : `${year}-01-01`   // soft fallback if Fortnox didn't return a FY
+  //     Pre-2026-05-23 we only fetched IBs for accounts referenced in
+  //     vouchers. That dropped fixed-asset accounts (e.g. 1220 Inventarier)
+  //     that have carry-over IB but no current-period movement — so
+  //     their contra (1229 Ackum. avskr.) appeared on the asset side
+  //     alone, dragging assets negative by the magnitude of the missing
+  //     cost basis.
+  //
+  //     Soft-fail: if accounts list fails (token issue / Fortnox 5xx /
+  //     timeout), we fall back to the old voucher-only approach via the
+  //     loop below — the balance sheet may be incomplete but at least
+  //     renders.
+  let accountsList: Awaited<ReturnType<typeof fetchAccountsList>> | null = null
+  try {
+    const accessToken = await getFreshFortnoxAccessToken(db, orgId, businessId)
+    if (accessToken) {
+      accountsList = await fetchAccountsList(db, orgId, businessId, accessToken, {
+        anchorDate: monthEnd,
+      })
+    }
+  } catch { /* soft-fail to fallback path */ }
+
+  const fyStart = accountsList?.fiscal_year_from && accountsList.fiscal_year_from <= monthEnd
+    ? accountsList.fiscal_year_from
+    : `${year}-01-01`
 
   const fetchResult = await getCachedVouchersForRange({
     db,
@@ -149,47 +168,36 @@ export async function computeBalanceSheet(
     }
   }
 
-  // 3. Collect the BALANCE-SHEET accounts (1xxx-2xxx). P&L accounts
-  //    feed årets resultat separately.
-  const balanceSheetAccounts: number[] = []
-  for (const acc of accumByAccount.keys()) {
-    const cls = classifyAccount(acc)
-    if (cls !== 'pl') balanceSheetAccounts.push(acc)
-  }
-
-  // 4. Fetch opening balances for those accounts from Fortnox (cached
-  //    24h via overhead_drilldown_cache). Reuses the helper from
-  //    lib/fortnox/api/account-balance.ts despite its 'Bank' name —
-  //    it's generic on the accounts list.
-  const openingFetch = await fetchBankAccountBalances(db, orgId, businessId, balanceSheetAccounts)
+  // 3. Build opening-balance map. Prefer the accounts-list response —
+  //    it covers EVERY account the customer has including ones with no
+  //    period movement. Fall back to zero if the list call soft-failed.
   const openingBalances: Record<number, number> = {}
-  for (const [acc, bal] of Object.entries(openingFetch.balances)) {
-    openingBalances[Number(acc)] = Number(bal.opening_balance ?? 0)
+  if (accountsList) {
+    for (const [accStr, a] of Object.entries(accountsList.accounts)) {
+      openingBalances[Number(accStr)] = Number(a.opening_balance ?? 0)
+    }
   }
 
-  // 5. Compute closing balance per account.
-  //    closing = opening + (debits - credits)  (debit-positive convention)
+  // 4. Compute closing balance per account. closing = opening + delta.
+  //    Walk the union of (accounts with movement) and (accounts with
+  //    opening balance) — either path can contribute to the balance sheet.
   const closingByAccount = new Map<number, number>()
-  for (const [acc, entry] of accumByAccount.entries()) {
+  const allAccounts = new Set<number>([
+    ...accumByAccount.keys(),
+    ...Object.keys(openingBalances).map(Number),
+  ])
+  for (const acc of allAccounts) {
     const cls = classifyAccount(acc)
-    if (cls === 'pl') continue
+    if (cls === 'pl') continue                                 // P&L feeds Årets resultat, not balance sheet
     const opening = openingBalances[acc] ?? 0
-    const delta   = entry.debit - entry.credit
+    const entry   = accumByAccount.get(acc)
+    const delta   = entry ? entry.debit - entry.credit : 0
     closingByAccount.set(acc, opening + delta)
-  }
 
-  // Some accounts may have opening balances but no movement in the
-  // period — they still belong on the balance sheet.
-  for (const [accStr, bal] of Object.entries(openingFetch.balances)) {
-    const acc = Number(accStr)
-    if (!closingByAccount.has(acc) && Number(bal.opening_balance ?? 0) !== 0) {
-      closingByAccount.set(acc, Number(bal.opening_balance))
-      if (!accumByAccount.has(acc)) {
-        accumByAccount.set(acc, {
-          debit: 0, credit: 0,
-          description: bal.description ?? basAccountDescription(acc),
-        })
-      }
+    // Ensure we have a description even for accounts with no movement.
+    if (!accumByAccount.has(acc)) {
+      const desc = accountsList?.accounts[acc]?.description ?? basAccountDescription(acc)
+      accumByAccount.set(acc, { debit: 0, credit: 0, description: desc })
     }
   }
 
@@ -315,8 +323,8 @@ export async function computeBalanceSheet(
     period_year:                  year,
     period_month:                 month,
     period_end_date:              monthEnd,
-    fiscal_year_from:             openingFetch.fiscal_year_from || fyStart,
-    fiscal_year_to:               openingFetch.fiscal_year_to   || `${year}-12-31`,
+    fiscal_year_from:             accountsList?.fiscal_year_from || fyStart,
+    fiscal_year_to:               accountsList?.fiscal_year_to   || `${year}-12-31`,
     assets:                       assetsSection,
     equity:                       equitySection,
     liabilities:                  liabSection,
