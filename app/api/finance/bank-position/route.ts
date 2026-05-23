@@ -166,55 +166,67 @@ export async function GET(req: NextRequest) {
   let fiscalYearTo: string | null = null
   let balanceFetchOk = false
 
-  // Preferred path: use the accounts list cache directly. The Phase 1
-  // readiness check + the OAuth-connect hook + the daily cron all
-  // populate __accounts_list_fy{N}__ rows in overhead_drilldown_cache
-  // with opening + current balances for every account, so a Fortnox-
-  // connected customer always has this data available — even when their
-  // access token has expired between the cache write and now.
+  // Preferred path: read the per-account v2 balance cache directly from
+  // Postgres. These rows are populated by historical fetchBankAccountBalances
+  // calls and carry both opening + current balances per account.
   //
-  // Important: cache-FIRST. We don't call getFreshFortnoxAccessToken
-  // because we don't need a token to read a Postgres row, and forcing
-  // one creates a false dependency: if the token refresh fails (re-auth
-  // pending, rate limit, etc.) the cash position tile would otherwise
-  // render zero even though we already have the data on disk.
+  // IMPORTANT: Fortnox's BULK /3/accounts?financialyear=X endpoint
+  // returns BalanceCarriedForward = 0 for every account — only the
+  // PER-ACCOUNT endpoint returns the live closing balance. So the
+  // __accounts_list_fy*__ cache (used elsewhere for opening balances)
+  // is NOT a valid source for current balances. Pre-2026-05-23 we
+  // tried reading from it and got Σ current = 0 → tile rendered 0 kr
+  // for Chicce despite 320 k SEK actually being present.
+  //
+  // The per-account v2 cache (__bank_balance_v2_{acc}_fy{fyId}__) IS
+  // populated correctly. We read that directly, no token / refresh /
+  // Fortnox network call needed for the dashboard tile.
   try {
-    const { data: alRow } = await db
+    const { data: v2Rows } = await db
       .from('overhead_drilldown_cache')
-      .select('payload, fetched_at, category')
+      .select('category, payload, fetched_at')
       .eq('business_id', businessId)
       .eq('period_month', 0)
-      .like('category', '__accounts_list_fy%')
+      .like('category', '__bank_balance_v2_%')
       .order('fetched_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
-    if (alRow?.payload) {
-      const al = alRow.payload as any
-      let sum = 0
-      for (const a of Object.values(al.accounts ?? {}) as any[]) {
-        // 1900-1989 = cash + bank + payment-provider settlement accounts.
-        // Strict upper bound excludes 1990 (interimsfordringar etc.).
-        if (a.number < 1900 || a.number > 1989) continue
-        const opening = Number(a.opening_balance ?? 0)
-        const current = Number(a.current_balance ?? 0)
-        if (Math.abs(opening) < 0.5 && Math.abs(current) < 0.5) continue
-        openingBalancesByAccount[a.number] = opening
-        currentBalancesByAccount[a.number] = {
-          description: a.description,
-          current,
-          opening,
-        }
-        sum += current
+    let sum = 0
+    let mostRecentFy = 0
+    let mostRecentFyFrom: string | null = null
+    let mostRecentFyTo: string | null = null
+    for (const r of (v2Rows ?? [])) {
+      const p = (r as any).payload
+      if (!p || typeof p.account !== 'number') continue
+      const accNum = p.account
+      if (accNum < 1900 || accNum > 1989) continue
+      // De-dupe: keep the freshest entry per account (rows are sorted
+      // newest first, so first sighting wins).
+      if (currentBalancesByAccount[accNum]) continue
+      const opening = Number(p.opening_balance ?? 0)
+      const current = Number(p.current_balance ?? 0)
+      if (Math.abs(opening) < 0.5 && Math.abs(current) < 0.5) continue
+      openingBalancesByAccount[accNum] = opening
+      currentBalancesByAccount[accNum] = {
+        description: String(p.description ?? ''),
+        current,
+        opening,
       }
-      if (Object.keys(currentBalancesByAccount).length > 0) {
-        absoluteBalance = Math.round(sum)
-        balanceFetchOk = true
-        fiscalYearFrom = al.fiscal_year_from ?? null
-        fiscalYearTo   = al.fiscal_year_to   ?? null
+      sum += current
+      // Track the FY range of the freshest entry for the response
+      const fyId = Number(p.fiscal_year_id ?? 0)
+      if (fyId > mostRecentFy) {
+        mostRecentFy = fyId
+        mostRecentFyFrom = p.fiscal_year_from ?? null
+        mostRecentFyTo   = p.fiscal_year_to   ?? null
       }
     }
-  } catch { /* fall through to the legacy per-account fetcher below */ }
+    if (Object.keys(currentBalancesByAccount).length > 0) {
+      absoluteBalance = Math.round(sum)
+      balanceFetchOk  = true
+      fiscalYearFrom  = mostRecentFyFrom
+      fiscalYearTo    = mostRecentFyTo
+    }
+  } catch { /* fall through to the legacy live-fetch path below */ }
 
   if (!balanceFetchOk && accountsSeen.size > 0) {
     const result = await fetchBankAccountBalances(db, auth.orgId, businessId, Array.from(accountsSeen))
