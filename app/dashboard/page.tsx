@@ -33,6 +33,7 @@
 export const dynamic = 'force-dynamic'
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useLocale } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamicImport from 'next/dynamic'
 
@@ -781,6 +782,7 @@ function AttentionCard({ items }: { items: AttentionItem[] }) {
 
 // ── Money flow row ──────────────────────────────────────────────────
 function MoneyFlowRow({ bankPos, cashFlow, recentInv }: any) {
+  const locale = useLocale()
   const cashPosition = Number(bankPos?.summary?.current_position_since_tracking ?? 0)
   const cashMtd      = Number(bankPos?.summary?.this_month_change ?? 0)
   const absBalance   = bankPos?.summary?.absolute_balance != null ? Number(bankPos.summary.absolute_balance) : null
@@ -802,8 +804,12 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv }: any) {
         subtitle={absBalance != null ? 'Absolute balance' : 'Net since tracking'}
         info={
           absBalance != null
-            ? `Summa av Fortnox-konton 1900–1989 (kassa, bank, kortinlösen, betalleverantörer) per senaste bokförda verifikation. Visar exakt det som Fortnox visar i webbappen — uppdateras när bokföringen rör sig. Kan släpa efter den faktiska banksaldot om bokföraren ligger efter.`
-            : `Nettoförändring sedan vi började synka data. Vi har inga ingående balanser från Fortnox ännu — så detta är bara förändringen, inte den absoluta positionen. Anslut Fortnox för att se det verkliga saldot.`
+            ? (locale === 'sv'
+                ? `Summa av Fortnox-konton 1900–1989 (kassa, bank, kortinlösen, betalleverantörer) per senaste bokförda verifikation. Visar exakt det som Fortnox visar i webbappen — uppdateras när bokföringen rör sig. Kan släpa efter den faktiska banksaldot om bokföraren ligger efter.`
+                : `Sum of Fortnox accounts 1900–1989 (cash, bank, card-acquirer + payment-provider settlement) as of the latest booked voucher. Matches what Fortnox shows in their web app — refreshes as bookkeeping moves. May lag the real bank balance if the bookkeeper is behind.`)
+            : (locale === 'sv'
+                ? `Nettoförändring sedan vi började synka data. Vi har inga ingående balanser från Fortnox ännu — så detta är bara förändringen, inte den absoluta positionen. Anslut Fortnox för att se det verkliga saldot.`
+                : `Net change since we began syncing data. We don't have opening balances from Fortnox yet — this is the delta, not the absolute position. Connect Fortnox to see the real balance.`)
         }
       >
         {bankPos ? (
