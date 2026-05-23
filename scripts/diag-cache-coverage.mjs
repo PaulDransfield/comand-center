@@ -6,29 +6,27 @@ const db = createClient(url, key, { auth: { persistSession: false } })
 
 const bizId = '63ada0ac-18af-406a-8ad3-4acfd0379f2c'
 
-// Count cached vouchers per month
-const { data, error } = await db
-  .from('fortnox_vouchers_cache')
-  .select('transaction_date')
-  .eq('business_id', bizId)
-  .gte('transaction_date', '2025-09-01')
-  .lte('transaction_date', '2026-08-31')
-  .range(0, 4999)
-
-if (error) { console.error(error); process.exit(1) }
+// Count via count(*) to bypass row-limits
 const months = {}
-for (const r of data) {
-  const m = String(r.transaction_date).slice(0, 7)
-  months[m] = (months[m] ?? 0) + 1
+for (let y = 2025; y <= 2026; y++) {
+  for (let m = 1; m <= 12; m++) {
+    const { count } = await db
+      .from('fortnox_vouchers_cache')
+      .select('*', { count: 'exact', head: true })
+      .eq('business_id', bizId)
+      .eq('period_year', y)
+      .eq('period_month', m)
+    if (count > 0) {
+      months[`${y}-${String(m).padStart(2, '0')}`] = count
+    }
+  }
 }
-
-console.log('Vouchers in cache for Chicce FY 2025-09 → 2026-08:')
 const keys = Object.keys(months).sort()
-for (const k of keys) {
-  console.log(`  ${k}: ${months[k]} vouchers`)
-}
-console.log(`\nMissing months (Sept-Dec 2025 + March 2026):`)
+console.log('Vouchers in cache (per period_year/period_month):')
+for (const k of keys) console.log(`  ${k}: ${months[k]} vouchers`)
+
 const expected = ['2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05']
+console.log('\nFor FY 2025-09 → 2026-08 the picture:')
 for (const m of expected) {
-  if (!months[m]) console.log(`  ${m}: ✗ not in cache`)
+  console.log(`  ${m}: ${months[m] ? `${months[m]} ✓` : '✗ MISSING'}`)
 }
