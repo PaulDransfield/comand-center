@@ -560,7 +560,15 @@ function BalanceSheetCard({ bizId, year, month }: { bizId: string; year: number;
   if (error)   return <Banner tone="bad" text={`Kunde inte beräkna balansräkningen: ${error}`} />
   if (!bs)     return <Empty text="Ingen balansdata för perioden." />
 
-  const balanced = Math.abs(bs.imbalance) < 0.5
+  // Tolerance matches the readiness validator: floor 5 kr OR 0.001 % of
+  // total assets, whichever is larger. Integer-rounding of opening
+  // balances (we round to whole kr in account-balance.ts) generates
+  // typical noise of ±1-3 kr — flagging that as "Obalans" alarms the
+  // owner over what's literally rounding. A real bookkeeping imbalance
+  // crosses this threshold easily.
+  const okTolerance = Math.max(5, Math.abs(bs.total_assets) * 1e-5)
+  const imbalanceAbs = Math.abs(bs.imbalance)
+  const balanced = imbalanceAbs <= okTolerance
 
   return (
     <div>
@@ -592,7 +600,8 @@ function BalanceSheetCard({ bizId, year, month }: { bizId: string; year: number;
       }}>
         {balanced ? (
           <>
-            <strong>✓ Balanserar.</strong> Tillgångar {fmtKr(bs.total_assets)} = Eget kapital + skulder {fmtKr(bs.total_equity_and_liabilities)}.
+            <strong>✓ Balanserar.</strong> Tillgångar {fmtKr(bs.total_assets)} = Eget kapital + skulder {fmtKr(bs.total_equity_and_liabilities)}
+            {imbalanceAbs >= 0.5 ? <> (±{fmtKr(imbalanceAbs)} avrundning)</> : null}.
             {Math.abs(bs.ytd_result) > 0.5 && <> Inkluderar årets resultat YTD <strong>{fmtKr(bs.ytd_result)}</strong>.</>}
           </>
         ) : (
