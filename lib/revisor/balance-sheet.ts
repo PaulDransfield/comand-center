@@ -99,16 +99,25 @@ export async function computeBalanceSheet(
   year:       number,
   month:      number,
 ): Promise<BalanceSheetResult> {
-  // 1. Fetch vouchers from year-start to end-of-requested-month.
-  //    Closing balance at end-of-month-M includes everything booked
-  //    in January through M. We assume calendar fiscal year for now
-  //    (the vast majority of Swedish SMEs); a future helper can clamp
-  //    to the true FY if the customer has a broken year.
-  const fyStart = `${year}-01-01`
+  // 1. Period end (end-of-requested-month).
   const monthEnd = (() => {
     const last = new Date(Date.UTC(year, month, 0)).getUTCDate()
     return `${year}-${String(month).padStart(2, '0')}-${String(last).padStart(2, '0')}`
   })()
+
+  // 1a. Determine the actual fiscal-year start. Pre-2026-05-23 we assumed
+  //     calendar year (`${year}-01-01`) — that BROKE for any customer with
+  //     a broken fiscal year. Chicce Slotsgatan's FY runs 2025-09-01 →
+  //     2026-08-31 so calendar-year math missed Sept-Dec 2025 voucher
+  //     activity, producing a negative-asset imbalance of ~4 MSEK.
+  //
+  //     We pre-fetch the opening balances with a small probe (single
+  //     account — 1910 Kassa, almost always exists) so we learn the FY
+  //     range before deciding how far back to walk vouchers.
+  const probeForFy = await fetchBankAccountBalances(db, orgId, businessId, [1910])
+  const fyStart = (probeForFy.fiscal_year_from && probeForFy.fiscal_year_from <= monthEnd)
+    ? probeForFy.fiscal_year_from
+    : `${year}-01-01`   // soft fallback if Fortnox didn't return a FY
 
   const fetchResult = await getCachedVouchersForRange({
     db,

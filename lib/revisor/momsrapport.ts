@@ -41,24 +41,49 @@ import { basAccountDescription }           from './bas-chart'
 // ── Account → SKV box maps ────────────────────────────────────────
 
 // Output VAT accounts → box (10/11/12/30/31/32).
-// Source: BAS 2024 standard. Restaurant customers occasionally have
-// custom 26xx accounts but the standard suffix encodes the VAT rate.
+// Source: BAS 2024 standard. The chart has multiple variants:
+//   261x = 25 % (2611 standard, 2612 hyresinkomster, 2613 12% hyres ← exception)
+//   262x = 12 % (2621 standard, 2622 hyresinkomster, 2624/2625/2626 special)
+//   263x = 6 %  (2631 standard, 2632 hyresinkomster, 2634/2635/2636 special)
+//
+// Bug pre-2026-05-23: original map only had 2611/2620/2630 → boxes 10/11/12.
+// Chicce (and most modern Fortnox customers) use 2621 and 2631 — the
+// modern BAS 2024 standard accounts. With only 2620/2630 in the map, those
+// 12 % and 6 % output VATs went silently to zero on the momsrapport.
 const OUTPUT_VAT_ACCOUNT_TO_BOX: Record<number, 10 | 11 | 12 | 30 | 31 | 32> = {
-  2610: 10,  // generic Sverige
+  // ── 25 % output VAT (box 10) ──
+  2610: 10,  // generic Sverige (övergripande konto)
   2611: 10,  // Sverige 25 %
-  2612: 11,  // Sverige 12 %
-  2613: 12,  // Sverige 6 %
-  2614: 30,  // omvänd skattskyldighet 25 % (Sverige) → box 30
-  2615: 30,  // import varor 25 %
-  2617: 32,  // omvänd skattskyldighet 6 %
-  2620: 11,  // alt 12 %
-  2630: 12,  // alt 6 %
+  2612: 10,  // Sverige 25 % uthyrning bostäder
+  // ── 12 % output VAT (box 11) ──
+  2613: 11,  // Sverige 12 % uthyrning bostäder (BAS 2024 oddity)
+  2620: 11,  // generic 12 % container account
+  2621: 11,  // Sverige 12 %
+  2622: 11,  // Sverige 12 % uthyrning bostäder
+  // ── 6 % output VAT (box 12) ──
+  2630: 12,  // generic 6 % container account
+  2631: 12,  // Sverige 6 %
+  2632: 12,  // Sverige 6 % uthyrning bostäder
+  // ── Reverse-charge output 25 % (box 30) ──
+  2614: 30,  // omvänd skattskyldighet 25 %
+  2615: 30,  // varuimport 25 %
+  2616: 30,  // VMB 25 %
+  // ── Reverse-charge output 12 % (box 31) ──
+  2624: 31,  // omvänd skattskyldighet 12 %
+  2625: 31,  // varuimport 12 %
+  2626: 31,  // VMB 12 %
+  // ── Reverse-charge output 6 % (box 32) ──
+  2617: 32,  // omvänd skattskyldighet 6 % (older numbering)
+  2634: 32,  // omvänd skattskyldighet 6 %
+  2635: 32,  // varuimport 6 %
+  2636: 32,  // VMB 6 %
+  // 2618 / 2628 / 2638 = "vilande" (pending unposted) — excluded
 }
 
 // Input VAT accounts → box 48. 2648 is "vilande" (pending unposted) and
 // is excluded from the live report — it'll flush into a real 264x when
 // the invoice is actually booked.
-const INPUT_VAT_ACCOUNTS = new Set([2640, 2641, 2642, 2645, 2646, 2647, 2649])
+const INPUT_VAT_ACCOUNTS = new Set([2640, 2641, 2642, 2643, 2644, 2645, 2646, 2647, 2649])
 
 // Revenue accounts → VAT rate. The Standard BAS pattern is xx01/xx11
 // for 25 %, xx02/xx12 for 12 %, xx03/xx13 for 6 %, xx04/xx14 momsfri.
