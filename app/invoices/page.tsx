@@ -59,14 +59,52 @@ export default function InvoicesPage() {
     return () => window.removeEventListener('storage', sync)
   }, [])
 
+  const [fortnoxFallback, setFortnoxFallback] = useState(false)
+
   const load = useCallback(async () => {
     if (!bizId) return
     setLoading(true)
+    let localCount = 0
     try {
       const res  = await fetch(`/api/invoices?business_id=${bizId}`)
       const data = await res.json()
-      if (Array.isArray(data)) setInvoices(data)
+      if (Array.isArray(data)) {
+        setInvoices(data)
+        localCount = data.length
+      }
     } catch {}
+
+    // Fall back to live Fortnox supplier invoices when the local
+    // invoices table is empty (Fortnox-connected customer, sync hasn't
+    // populated local yet, OR they've never used the manual upload
+    // flow). Maps Fortnox shape → local Invoice shape so the rest of
+    // the page renders without branching.
+    if (localCount === 0) {
+      try {
+        const r = await fetch(`/api/integrations/fortnox/recent-invoices?business_id=${bizId}&days=90`,
+                              { cache: 'no-store' })
+        if (r.ok) {
+          const j = await r.json()
+          if (Array.isArray(j?.invoices) && j.invoices.length > 0) {
+            setFortnoxFallback(true)
+            setInvoices(j.invoices.map((inv: any) => ({
+              id:         `fortnox_${inv.given_number || inv.invoice_number}`,
+              vendor:     inv.supplier_name,
+              amount:     Number(inv.total ?? 0),
+              date:       inv.invoice_date,
+              category:   'fortnox',
+              status:     'pending',
+              notes:      inv.comments,
+              created_at: inv.invoice_date,
+              file_url:   inv.file_id ? `/api/integrations/fortnox/file?file_id=${inv.file_id}&business_id=${bizId}` : null,
+            })))
+          }
+        }
+      } catch {}
+    } else {
+      setFortnoxFallback(false)
+    }
+
     setLoading(false)
   }, [bizId])
   useEffect(() => { if (bizId) load() }, [bizId, load])
@@ -118,6 +156,24 @@ export default function InvoicesPage() {
   return (
     <AppShell>
       <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+
+        {/* Fortnox live-fallback banner — only visible when the local
+            invoices table is empty and we're rendering data straight from
+            Fortnox /supplierinvoices. Tells the owner why
+            'Mark paid' etc. won't stick yet. */}
+        {fortnoxFallback && (
+          <div style={{
+            padding:      '10px 14px',
+            background:   UXP.lavFill,
+            border:       `0.5px solid ${UXP.lavMid}`,
+            borderRadius: 8,
+            fontSize:     12,
+            color:        UXP.lavText,
+            lineHeight:   1.5,
+          }}>
+            <strong>Live från Fortnox.</strong> Visar leverantörsfakturor de senaste 90 dagarna direkt från Fortnox. Statusändringar (markera som betald, snooza) lagras inte ännu — det kommer när Fortnox-synken aktiveras.
+          </div>
+        )}
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' as const }}>

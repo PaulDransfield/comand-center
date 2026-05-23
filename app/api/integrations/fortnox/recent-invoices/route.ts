@@ -148,6 +148,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Helper: when Fortnox is unreachable mid-fetch (token refresh fails,
+  // rate-limit, 5xx, etc.) we still want to return data if we have ANY
+  // cached payload — staleness is far better than the dashboard widget
+  // saying 'No recent invoices' when 19 are sitting in the cache.
+  // Pre-2026-05-23 we'd 401 / 502 and the UI rendered the empty state.
+  const fallbackToStale = (reason: string, status = 200) => {
+    if (cached?.payload) {
+      return NextResponse.json(
+        { ...(cached.payload as any), cache: 'stale', stale_reason: reason },
+        { headers: { 'Cache-Control': 'no-store' } },
+      )
+    }
+    return null
+  }
+
   // Resolve a live Fortnox access token. Refreshes via refresh_token if
   // the stored access_token is within 5min of its 60-min expiry. Without
   // this, a dashboard mount more than an hour after OAuth would 401 — the
@@ -156,12 +171,16 @@ export async function GET(req: NextRequest) {
   try {
     accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
   } catch (err: any) {
+    const stale = fallbackToStale(`token_refresh_failed: ${err?.message ?? err}`)
+    if (stale) return stale
     return NextResponse.json({
       error:   'fortnox_token_refresh_failed',
       message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
     }, { status: 401 })
   }
   if (!accessToken) {
+    const stale = fallbackToStale('no_token')
+    if (stale) return stale
     return NextResponse.json({
       error:   'no_fortnox_connection',
       message: 'Connect Fortnox to see recent invoices.',
@@ -198,6 +217,8 @@ export async function GET(req: NextRequest) {
     const res = await fortnoxFetch(url, accessToken)
     if (!res.ok) {
       const text = await res.text().catch(() => '')
+      const stale = fallbackToStale(`fortnox_${res.status}: ${text.slice(0, 80)}`)
+      if (stale) return stale
       return NextResponse.json({
         error:  `Fortnox /supplierinvoices failed: HTTP ${res.status}`,
         detail: text.slice(0, 200),
