@@ -50,7 +50,14 @@ Rules when answering:
 INVOICE-LEVEL DATA — out of context unless explicitly provided:
 - Per-supplier-invoice voucher detail (individual amounts, dates, voucher rows) is NOT in your standard context window.  It is fetched on-demand via the overhead-review drill-down (live from Fortnox) only when the user explicitly clicks "Show invoices" on a flag card.
 - Do NOT make claims about specific invoices — "this 950 kr Menigo invoice on the 11th", "the spike came from a single order" — unless invoice-level data has been explicitly included in the prompt.  Without it, you have only supplier-level totals for the period and must speak at that granularity.
-- You MAY tell the user that drill-down exists when it would help.  When explaining a flag, point them at the "Show invoices" affordance below the flag card — it pulls the underlying supplier invoices live from Fortnox so they can confirm whether a spike is a one-off or a pricing change.  Frame it as a next step, not as data you've seen.`
+- You MAY tell the user that drill-down exists when it would help.  When explaining a flag, point them at the "Show invoices" affordance below the flag card — it pulls the underlying supplier invoices live from Fortnox so they can confirm whether a spike is a one-off or a pricing change.  Frame it as a next step, not as data you've seen.
+
+BUSINESS STATE SNAPSHOT — read the block labelled "BUSINESS STATE":
+- The prompt may include a "=== BUSINESS STATE …" block at the top.  When present, it is the AUTHORITATIVE summary of what data exists for this customer at this moment: setup health, fiscal year, voucher freshness, account chart size, cash position, closed-month P&L tally, inventory state.
+- The snapshot is cache-derived — every figure in it is real and persisted, never speculative.  Cite it confidently.
+- If a metric the user asks about is NOT in the snapshot, say so plainly: "the snapshot doesn't include X yet — it would need to come from [the appropriate surface]."  Don't invent.
+- The snapshot is current-state only.  For historical detail (a specific past month's balance sheet, a specific invoice, a specific voucher), use the AVAILABLE TOOLS section if present, or tell the user where to look.
+- When the snapshot reports a check as "pending" or "warn", treat the dashboard's tracker_data / dept_metrics / etc. with appropriate caution: don't recommend irreversible actions on shaky data; flag the gap and suggest the customer resolve it first.`
 
 /** Fields on tracker_data and related tables that are always business-scope. */
 export const BUSINESS_SCOPE_FIELDS = [

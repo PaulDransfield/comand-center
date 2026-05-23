@@ -104,10 +104,32 @@ export async function buildAskContext(
   const warnings: string[] = []
   let baseTruncated = false
 
+  // BUSINESS STATE snapshot — prepended to EVERY context so the AI always
+  // knows what data exists for this customer (setup health, FY, voucher
+  // freshness, cash position, P&L months on file, inventory). Cache-only
+  // reads — never blocks on Fortnox. Soft-fails to an empty string if
+  // anything goes wrong so a single bad query doesn't break /ask.
+  let snapshotBlock = ''
+  if (opts.businessId) {
+    try {
+      const { buildBusinessSnapshot } = await import('./snapshot')
+      snapshotBlock = await buildBusinessSnapshot(db, opts.orgId, opts.businessId, {
+        inventory: true,
+        toolCatalogue: false,   // tools come in Phase 2
+      })
+    } catch (e: any) {
+      warnings.push(`business snapshot failed: ${String(e?.message ?? e).slice(0, 120)}`)
+    }
+  }
+
   if (context.length > baseBudget) {
     warnings.push(`context truncated — was ${context.length} chars, capped at ${baseBudget}`)
     context = context.slice(0, baseBudget) + '\n\n[context truncated for cost]'
     baseTruncated = true
+  }
+
+  if (snapshotBlock) {
+    context = `${snapshotBlock}\n\n${context}`
   }
 
   const enrichmentsApplied: EnrichmentTag[] = []
