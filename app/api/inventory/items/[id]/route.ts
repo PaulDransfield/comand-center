@@ -36,14 +36,31 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, product.business_id)
   if (forbidden) return forbidden
 
-  // 2. Aliases for this product
-  const { data: aliases } = await db
+  // 2. Aliases for this product. The actual column names in M075 are
+  //    raw_description / supplier_name_snapshot / seen_count — alias them
+  //    so the UI doesn't need to know about the schema-vs-API mapping.
+  //    Error IS checked here now: this query silently returning nothing
+  //    cascades into the price history pull returning nothing, which
+  //    silently rendered an empty product detail page.
+  const { data: aliases, error: aErr } = await db
     .from('product_aliases')
-    .select('id, alias_text, supplier_fortnox_number, supplier_name, observation_count, first_seen_at, last_seen_at')
+    .select('id, raw_description, supplier_fortnox_number, supplier_name_snapshot, seen_count, first_seen_at, last_seen_at')
     .eq('product_id', id)
     .order('last_seen_at', { ascending: false, nullsFirst: false })
+  if (aErr) return NextResponse.json({ error: `aliases lookup failed: ${aErr.message}` }, { status: 500 })
 
-  const aliasIds = (aliases ?? []).map(a => a.id)
+  const aliasIds = (aliases ?? []).map((a: any) => a.id)
+
+  // Reshape to the UI's expected field names.
+  const aliasesOut = (aliases ?? []).map((a: any) => ({
+    id:                a.id,
+    alias_text:        a.raw_description,
+    supplier_fortnox_number: a.supplier_fortnox_number,
+    supplier_name:     a.supplier_name_snapshot,
+    observation_count: a.seen_count ?? 0,
+    first_seen_at:     a.first_seen_at,
+    last_seen_at:      a.last_seen_at,
+  }))
 
   // 3. Price history — every matched supplier_invoice_lines row,
   //    paginated past the 1000-row cap.
@@ -97,7 +114,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   return NextResponse.json({
     product,
-    aliases:    aliases ?? [],
+    aliases:    aliasesOut,
     history:    history.map(h => ({
       id:              h.id,
       invoice_date:    h.invoice_date,
