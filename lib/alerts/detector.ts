@@ -38,6 +38,18 @@ async function explainAnomalyDescriptions(alerts: Alert[], businessName: string,
     const { logAiRequest } = await import('@/lib/ai/usage')
     const db = createAdminClient()
 
+    // Pre-build snapshots per business so we don't rebuild per alert.
+    const uniqueBusinesses = new Map<string, string>()  // bizId → orgId
+    for (const a of alerts) uniqueBusinesses.set(a.business_id, a.org_id)
+    const snapshotByBiz = new Map<string, string>()
+    for (const [bizId, orgIdLocal] of uniqueBusinesses) {
+      try {
+        const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+        const s = await buildBusinessSnapshot(db, orgIdLocal, bizId, { inventory: false })
+        if (s) snapshotByBiz.set(bizId, s)
+      } catch { /* skip */ }
+    }
+
     for (const alert of alerts) {
       const prompt = `You are analysing restaurant financial data for ${businessName}. Write ONE sentence explaining this anomaly to a restaurant owner. Be specific, practical, and suggest a likely cause.
 
@@ -50,11 +62,15 @@ Period: ${alert.period_date}
 
 Write only one sentence. No preamble.`
 
+      const snapshot = snapshotByBiz.get(alert.business_id) ?? ''
       const started = Date.now()
       try {
-        const response = await claude.messages.create({
+        const response = await (claude as any).messages.create({
           model:      AI_MODELS.AGENT,
           max_tokens: MAX_TOKENS.AGENT_EXPLANATION,
+          system: snapshot
+            ? [{ type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } }]
+            : undefined,
           messages:   [{ role: 'user', content: prompt }],
         })
         const text = (response.content?.[0] as any)?.text?.trim()

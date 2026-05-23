@@ -17,8 +17,9 @@
 //   4. Output is JSON-stringified and capped at MAX_TOOL_OUTPUT_CHARS so
 //      a balance sheet with 1000 line items can't blow the prompt budget.
 
-import { runRevisorTool, REVISOR_TOOLS }   from './revisor'
-import { runVoucherTool,  VOUCHER_TOOLS }  from './vouchers'
+import { runRevisorTool,   REVISOR_TOOLS }   from './revisor'
+import { runVoucherTool,   VOUCHER_TOOLS }   from './vouchers'
+import { runInventoryTool, INVENTORY_TOOLS } from './inventory'
 
 const MAX_TOOL_OUTPUT_CHARS = 12_000
 
@@ -47,11 +48,15 @@ export type ToolName =
   | 'get_account_balance'
   | 'search_vouchers'
   | 'search_supplier_invoices'
+  | 'search_inventory_products'
+  | 'get_invoice_lines'
+  | 'get_inventory_summary'
 
 /** Full catalogue exposed to the LLM via the Anthropic API `tools` field. */
 export const TOOL_CATALOGUE: AnthropicToolDef[] = [
   ...REVISOR_TOOLS,
   ...VOUCHER_TOOLS,
+  ...INVENTORY_TOOLS,
 ]
 
 /**
@@ -75,6 +80,11 @@ export async function runTool(
       case 'search_vouchers':
       case 'search_supplier_invoices':
         result = await runVoucherTool(ctx, name as any, args ?? {})
+        break
+      case 'search_inventory_products':
+      case 'get_invoice_lines':
+      case 'get_inventory_summary':
+        result = await runInventoryTool(ctx, name as any, args ?? {})
         break
       default:
         return JSON.stringify({ error: 'unknown_tool', name })

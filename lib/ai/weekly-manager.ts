@@ -551,11 +551,25 @@ export async function generateWeeklyMemo(
       },
     }
 
+    // Inject business-state snapshot so the weekly memo is aware of
+    // setup health, balance sheet status, cash position, inventory. The
+    // memo writer can use these to ground claims and warn the owner when
+    // health is degraded. Snapshot-only (no retrieval loop) — forced
+    // tool_use for the structured memo output.
+    let snapshot = ''
+    try {
+      const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+      snapshot = await buildBusinessSnapshot(db, orgId, businessId, { inventory: false })
+    } catch { /* soft-fail */ }
+
     const response = await (claude as any).messages.create({
       model:       AI_MODELS.AGENT,
       max_tokens:  MAX_TOKENS.AGENT_SUMMARY,
       tools:       [submitMemoTool],
       tool_choice: { type: 'tool', name: 'submit_memo' },
+      system: snapshot
+        ? [{ type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } }]
+        : undefined,
       messages:    [{ role: 'user', content: prompt }],
     })
 

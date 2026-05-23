@@ -185,10 +185,23 @@ Keep it concise (3-4 paragraphs max). Use a warm, helpful tone. Include specific
 Format as plain text email body (no HTML).`
 
           const _started = Date.now()
+          // Inject business-state snapshot so the welcome email can cite
+          // setup-health progress + actual numbers from the customer's
+          // freshly-connected data. Specific numbers > generic copy.
+          let snapshot = ''
+          try {
+            const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+            snapshot = await buildBusinessSnapshot(db, integration.org_id, integration.business_id, { inventory: true })
+          } catch { /* soft-fail */ }
           const response = await claude.messages.create({
             model: AI_MODELS.AGENT, // Uses Haiku 4.5
             max_tokens: MAX_TOKENS.AGENT_SUMMARY,
-            system: localePromptFragment(ownerLocale),
+            system: snapshot
+              ? [
+                  { type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } },
+                  { type: 'text', text: localePromptFragment(ownerLocale) },
+                ]
+              : localePromptFragment(ownerLocale),
             messages: [{ role: 'user', content: prompt }],
           })
 

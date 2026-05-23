@@ -232,7 +232,9 @@ export async function buildBusinessSnapshot(
     lines.push('  search_vouchers({...})               — filter by date/account/supplier')
     lines.push('  search_supplier_invoices({...})      — Fortnox supplier invoice feed')
     lines.push('  get_account_balance(number)          — single Fortnox account')
-    lines.push('  search_inventory_products(query)     — catalogue lookup (Phase 2)')
+    lines.push('  search_inventory_products(query)     — catalogue product/alias lookup')
+    lines.push('  get_invoice_lines(invoice_number)    — line items for one invoice')
+    lines.push('  get_inventory_summary()              — catalogue + PDF-extraction state')
   }
 
   lines.push('=== END BUSINESS STATE ===')

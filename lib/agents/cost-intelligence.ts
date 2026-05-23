@@ -175,12 +175,29 @@ Output ONLY the JSON object.`
     // owner's saved locale so insight `title` + `description` strings
     // appear in the right language when surfaced.
     const ownerLocale = await resolveLocaleForOrg(db, orgId)
+
+    // Inject business-state snapshot so the cost-intel agent is aware
+    // of setup health (don't propose cuts on unstable books), and can
+    // ground its 'subscription duplicate' / 'fee creep' claims against
+    // real cached state. Snapshot-only (no retrieval tool loop) because
+    // we're using forced tool_use for structured output.
+    let snapshot = ''
+    try {
+      const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+      snapshot = await buildBusinessSnapshot(db, orgId, businessId, { inventory: false })
+    } catch { /* soft-fail */ }
+
     const response  = await (client as any).messages.create({
       model:      AI_MODELS.AGENT,
       max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
       tools:      [submitInsightsTool],
       tool_choice: { type: 'tool', name: 'submit_cost_insights' },
-      system:     localePromptFragment(ownerLocale),
+      system: snapshot
+        ? [
+            { type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } },
+            { type: 'text', text: localePromptFragment(ownerLocale) },
+          ]
+        : localePromptFragment(ownerLocale),
       messages:   [{ role: 'user', content: prompt }],
     }, { signal: abort.signal as any })
     const toolUse = (response.content ?? []).find((b: any) => b.type === 'tool_use')

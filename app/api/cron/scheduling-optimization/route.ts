@@ -227,9 +227,22 @@ Provide 3-5 specific scheduling optimization recommendations. Focus on:
 Format as bullet points with concrete actions.`
 
               const _started = Date.now()
+              // Inject business-state snapshot so the scheduling AI is
+              // aware of setup health (don't recommend on shaky data),
+              // P&L state, and inventory situation. No retrieval tools
+              // — scheduling is forward-looking and doesn't need to
+              // drill into past vouchers.
+              let snapshot = ''
+              try {
+                const { buildBusinessSnapshot } = await import('@/lib/ai/snapshot')
+                snapshot = await buildBusinessSnapshot(db, org.id, biz.id, { inventory: false })
+              } catch { /* soft-fail */ }
               const response = await claude.messages.create({
                 model: AI_MODELS.ANALYSIS, // Uses Sonnet 4-6 for scheduling optimization
                 max_tokens: MAX_TOKENS.AGENT_RECOMMENDATION,
+                system: snapshot
+                  ? [{ type: 'text', text: snapshot, cache_control: { type: 'ephemeral' } }]
+                  : undefined,
                 messages: [{ role: 'user', content: prompt }],
               })
 
