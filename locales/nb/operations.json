@@ -173,5 +173,36 @@
       "stableMsg":        "{margin} margin over {count} steder — ingen avvikere denne måneden.",
       "stableEntity":     "Gruppen"
     }
+  },
+
+  "inventory": {
+    "items": {
+      "title":             "Artikler",
+      "subtitle":          "Katalog bygget fra leverandørfakturaer. Siste pris sammenlignes mot medianpris siste 90 dager — oransje/rosa økning = prisøkning du kanskje vil ta opp med leverandøren.",
+      "kpiItems":          "Artikler",
+      "kpiObservations":   "Observasjoner",
+      "kpiLatestTotal":    "Siste priser totalt",
+      "kpiHikes":          "Med prisøkning ≥5 %",
+      "searchPlaceholder": "Søk artikler…",
+      "loading":           "Henter katalog…",
+      "empty":             "Ingen artikler funnet.",
+      "colItem":           "Artikkel",
+      "colCategory":       "Kategori",
+      "colLastSeen":       "Sist sett",
+      "colPrice":          "Pris",
+      "colVs90d":          "vs 90d",
+      "colObs":            "Antall",
+      "colSupplier":       "Leverandør",
+      "categories": {
+        "all":               "Alle",
+        "food":              "Mat",
+        "beverage":          "Drikke",
+        "alcohol":           "Alkohol",
+        "cleaning":          "Renhold",
+        "takeaway_material": "Take-away",
+        "disposables":       "Forbruksvarer",
+        "other":             "Annet"
+      }
+    }
   }
 }

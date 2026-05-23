@@ -173,5 +173,36 @@
       "stableMsg":        "{margin} marginal över {count} platser — inga avvikare denna månad.",
       "stableEntity":     "Gruppen"
     }
+  },
+
+  "inventory": {
+    "items": {
+      "title":             "Artiklar",
+      "subtitle":          "Katalog byggd från leverantörsfakturor. Senaste pris jämförs mot medianpris de senaste 90 dagarna — orange/rosa stigning = prishöjning du kanske vill prata med leverantören om.",
+      "kpiItems":          "Artiklar",
+      "kpiObservations":   "Observationer",
+      "kpiLatestTotal":    "Senaste priser totalt",
+      "kpiHikes":          "Med prishöjning ≥5 %",
+      "searchPlaceholder": "Sök artiklar…",
+      "loading":           "Hämtar katalog…",
+      "empty":             "Inga artiklar hittades.",
+      "colItem":           "Artikel",
+      "colCategory":       "Kategori",
+      "colLastSeen":       "Senast",
+      "colPrice":          "Pris",
+      "colVs90d":          "vs 90d",
+      "colObs":            "Antal",
+      "colSupplier":       "Leverantör",
+      "categories": {
+        "all":               "Alla",
+        "food":              "Mat",
+        "beverage":          "Dryck",
+        "alcohol":           "Alkohol",
+        "cleaning":          "Rengöring",
+        "takeaway_material": "Take-away",
+        "disposables":       "Förbrukning",
+        "other":             "Övrigt"
+      }
+    }
   }
 }

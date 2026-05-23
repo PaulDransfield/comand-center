@@ -173,5 +173,36 @@
       "stableMsg":        "{margin} margin across {count} locations — no outliers this month.",
       "stableEntity":     "Group"
     }
+  },
+
+  "inventory": {
+    "items": {
+      "title":             "Items",
+      "subtitle":          "Catalogue built from supplier invoices. Latest price compared against the median over the prior 90 days — orange/rose increases flag price hikes worth raising with the supplier.",
+      "kpiItems":          "Items",
+      "kpiObservations":   "Observations",
+      "kpiLatestTotal":    "Latest prices total",
+      "kpiHikes":          "With price hike ≥5 %",
+      "searchPlaceholder": "Search items…",
+      "loading":           "Loading catalogue…",
+      "empty":             "No items found.",
+      "colItem":           "Item",
+      "colCategory":       "Category",
+      "colLastSeen":       "Last seen",
+      "colPrice":          "Price",
+      "colVs90d":          "vs 90d",
+      "colObs":            "Obs.",
+      "colSupplier":       "Supplier",
+      "categories": {
+        "all":               "All",
+        "food":              "Food",
+        "beverage":          "Beverage",
+        "alcohol":           "Alcohol",
+        "cleaning":          "Cleaning",
+        "takeaway_material": "Take-away",
+        "disposables":       "Disposables",
+        "other":             "Other"
+      }
+    }
   }
 }

@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic'
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
@@ -37,21 +38,17 @@ interface CatalogueResponse {
   message?: string
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  all:               'All',
-  food:              'Food',
-  beverage:          'Beverage',
-  alcohol:           'Alcohol',
-  cleaning:          'Cleaning',
-  takeaway_material: 'Take-away',
-  disposables:       'Disposables',
-  other:             'Other',
-}
+// Category keys are kept here so the rest of the file iterates a stable list
+// regardless of locale. Labels are resolved via useTranslations at render.
+const CATEGORY_KEYS = [
+  'all', 'food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other',
+] as const
 
 type SortKey = 'name' | 'latest_price' | 'change_pct' | 'observation_count' | 'latest_date'
 
 export default function InventoryItemsPage() {
   const router = useRouter()
+  const t = useTranslations('operations.inventory.items')
   const [bizId,    setBizId]    = useState<string | null>(null)
   const [filter,   setFilter]   = useState<string>('all')
   const [data,     setData]     = useState<CatalogueResponse | null>(null)
@@ -105,27 +102,26 @@ export default function InventoryItemsPage() {
     <AppShell>
       <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
-          Items
+          {t('title')}
         </h1>
         <p style={{ margin: '4px 0 18px', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
-          Catalogue built from supplier invoices. Latest price compared against the median over the prior 90 days —
-          orange/rose increases flag price hikes worth raising with the supplier.
+          {t('subtitle')}
         </p>
 
         {/* KPI strip */}
         <div style={{
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16,
         }}>
-          <Stat label="Items" value={String(data?.counts?.all ?? 0)} />
-          <Stat label="Observations" value={totalObservations.toLocaleString('en-GB')} />
-          <Stat label="Latest prices total" value={fmtKr(totalRecent)} />
-          <Stat label="With price hike ≥5 %" value={String(creeping)}
+          <Stat label={t('kpiItems')} value={String(data?.counts?.all ?? 0)} />
+          <Stat label={t('kpiObservations')} value={totalObservations.toLocaleString('en-GB')} />
+          <Stat label={t('kpiLatestTotal')} value={fmtKr(totalRecent)} />
+          <Stat label={t('kpiHikes')} value={String(creeping)}
                 tone={creeping > 0 ? 'coral' : 'ink'} />
         </div>
 
         {/* Filters + search */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' as const, alignItems: 'center' }}>
-          {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
+          {CATEGORY_KEYS.map((key) => {
             const count = key === 'all' ? (data?.counts?.all ?? 0) : (data?.counts?.[key] ?? 0)
             const active = filter === key
             return (
@@ -139,13 +135,13 @@ export default function InventoryItemsPage() {
                   borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
-                {label} <span style={{ color: active ? UXP.lavText : UXP.ink4, marginLeft: 4 }}>{count}</span>
+                {t(`categories.${key}`)} <span style={{ color: active ? UXP.lavText : UXP.ink4, marginLeft: 4 }}>{count}</span>
               </button>
             )
           })}
           <input
             type="text" value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search items…"
+            placeholder={t('searchPlaceholder')}
             style={{
               marginLeft: 'auto', padding: '5px 10px', fontSize: 12,
               background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
@@ -164,7 +160,7 @@ export default function InventoryItemsPage() {
         )}
         {loading && (
           <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13 }}>
-            Loading catalogue…
+            {t('loading')}
           </div>
         )}
 
@@ -174,7 +170,7 @@ export default function InventoryItemsPage() {
             fontSize: 13, background: UXP.cardBg,
             border: `0.5px solid ${UXP.border}`, borderRadius: 8,
           }}>
-            {data.message ?? 'No items found.'}
+            {data.message ?? t('empty')}
           </div>
         )}
 
@@ -186,13 +182,13 @@ export default function InventoryItemsPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
               <thead>
                 <tr style={{ background: UXP.subtleBg }}>
-                  <Th label="Item"     k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} />
-                  <Th label="Category" k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
-                  <Th label="Last seen" k="latest_date"    sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="left" />
-                  <Th label="Price"    k="latest_price"    sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
-                  <Th label="vs 90d"   k="change_pct"      sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
-                  <Th label="Obs."     k="observation_count" sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
-                  <Th label="Supplier" k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
+                  <Th label={t('colItem')}     k="name"              sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} />
+                  <Th label={t('colCategory')} k="name"              sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
+                  <Th label={t('colLastSeen')} k="latest_date"       sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="left" />
+                  <Th label={t('colPrice')}    k="latest_price"      sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label={t('colVs90d')}    k="change_pct"        sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label={t('colObs')}      k="observation_count" sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label={t('colSupplier')} k="name"              sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
                 </tr>
               </thead>
               <tbody>
@@ -269,7 +265,12 @@ function Stat({ label, value, tone = 'ink' }: { label: string; value: string; to
 }
 
 function CategoryTag({ c }: { c: string }) {
-  const label = CATEGORY_LABELS[c] ?? c
+  const t = useTranslations('operations.inventory.items.categories')
+  // Soft-fail to the raw key if the translation namespace is missing
+  // a value for this category (e.g. a custom future category added by
+  // the matcher before we land its label).
+  let label: string
+  try { label = t(c) } catch { label = c }
   return (
     <span style={{
       display: 'inline-block', padding: '2px 8px',
