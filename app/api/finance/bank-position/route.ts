@@ -136,6 +136,29 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Fallback: if monthly_metrics.bank_accounts hasn't been populated yet
+  // (newly connected customer, aggregator hasn't run, etc.), enumerate
+  // 1900-1989 (cash + bank + payment-provider settlement accounts) from
+  // the cached Fortnox account chart. This guarantees the cash position
+  // tile renders the day a customer connects Fortnox — instead of staying
+  // empty until the aggregator catches up.
+  if (accountsSeen.size === 0) {
+    try {
+      const { fetchAccountsList } = await import('@/lib/fortnox/api/accounts-list')
+      const { getFreshFortnoxAccessToken } = await import('@/lib/fortnox/api/auth')
+      const token = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+      if (token) {
+        const al = await fetchAccountsList(db, auth.orgId, businessId, token)
+        for (const a of Object.values(al.accounts)) {
+          if (a.number >= 1900 && a.number <= 1989 &&
+              (Math.abs(a.current_balance) > 0 || Math.abs(a.opening_balance) > 0)) {
+            accountsSeen.add(a.number)
+          }
+        }
+      }
+    } catch { /* soft-fail — tile falls back to 'no bank data yet' */ }
+  }
+
   let absoluteBalance: number | null = null
   let openingBalancesByAccount: Record<number, number> = {}
   let currentBalancesByAccount: Record<number, { description: string; current: number; opening: number }> = {}
