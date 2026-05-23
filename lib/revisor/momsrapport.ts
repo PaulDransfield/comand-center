@@ -50,7 +50,7 @@ import { basAccountDescription }           from './bas-chart'
 // Chicce (and most modern Fortnox customers) use 2621 and 2631 — the
 // modern BAS 2024 standard accounts. With only 2620/2630 in the map, those
 // 12 % and 6 % output VATs went silently to zero on the momsrapport.
-const OUTPUT_VAT_ACCOUNT_TO_BOX: Record<number, 10 | 11 | 12 | 30 | 31 | 32> = {
+export const OUTPUT_VAT_ACCOUNT_TO_BOX: Record<number, 10 | 11 | 12 | 30 | 31 | 32> = {
   // ── 25 % output VAT (box 10) ──
   2610: 10,  // generic Sverige (övergripande konto)
   2611: 10,  // Sverige 25 %
@@ -83,15 +83,15 @@ const OUTPUT_VAT_ACCOUNT_TO_BOX: Record<number, 10 | 11 | 12 | 30 | 31 | 32> = {
 // Input VAT accounts → box 48. 2648 is "vilande" (pending unposted) and
 // is excluded from the live report — it'll flush into a real 264x when
 // the invoice is actually booked.
-const INPUT_VAT_ACCOUNTS = new Set([2640, 2641, 2642, 2643, 2644, 2645, 2646, 2647, 2649])
+export const INPUT_VAT_ACCOUNTS = new Set([2640, 2641, 2642, 2643, 2644, 2645, 2646, 2647, 2649])
 
 // Revenue accounts → VAT rate. The Standard BAS pattern is xx01/xx11
 // for 25 %, xx02/xx12 for 12 %, xx03/xx13 for 6 %, xx04/xx14 momsfri.
 // Custom charts override this — we expose the classified accounts so
 // the revisor sees which account went into which bucket.
-type VatRate = '25' | '12' | '6' | '0' | 'eu' | 'utland' | 'other'
+export type VatRate = '25' | '12' | '6' | '0' | 'eu' | 'utland' | 'other'
 
-function classifyRevenueAccount(account: number): VatRate {
+export function classifyRevenueAccount(account: number): VatRate {
   const s = String(account)
 
   // BAS 32xx — EU sales

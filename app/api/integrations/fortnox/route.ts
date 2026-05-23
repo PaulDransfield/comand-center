@@ -314,7 +314,19 @@ async function handleCallback(req: NextRequest) {
     console.error('Failed to trigger weather backfill:', err)
   )
 
-  // Redirect back to the integrations page with success
+  // Redirect to the Day-1 verification screen so the customer SEES what
+  // wired up and what's still completing. The screen polls /api/integrations/
+  // fortnox/readiness every ~3 s and surfaces any data-quality issues
+  // before the customer hits an empty/wrong dashboard. Pre-2026-05-23
+  // we redirected straight to /integrations?connected=fortnox — that
+  // hid silent failures (missing IBs, unmapped VAT accounts, etc.) until
+  // the customer happened to open the revisor page weeks later.
+  //
+  // No business_id means a no-business OAuth (admin-concierge link or
+  // legacy flow) — fall back to the old integrations page in that case.
+  if (businessId) {
+    return NextResponse.redirect(`${appUrl}/integrations/fortnox/verify?business_id=${encodeURIComponent(businessId)}`)
+  }
   return NextResponse.redirect(`${appUrl}/integrations?connected=fortnox`)
 }
 
