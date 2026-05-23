@@ -139,7 +139,13 @@ export default function InvoicesPage() {
 
   // Filter + derived stats
   const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter)
-  const total    = invoices.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+  // 'Total this month' must mean the current calendar month, NOT the whole
+  // 90-day Fortnox-fallback window. Pre-fix this tile read sum-of-all and
+  // surfaced 1.75 MSEK for a customer with ~600 k SEK/month revenue —
+  // obviously wrong. Filter to current YYYY-MM before summing.
+  const thisMonthPrefix = new Date().toISOString().slice(0, 7)   // YYYY-MM
+  const thisMonthInvoices = invoices.filter(i => (i.date ?? '').startsWith(thisMonthPrefix))
+  const total    = thisMonthInvoices.reduce((s, i) => s + Number(i.amount ?? 0), 0)
   const overdue  = invoices.filter(i => i.status === 'overdue')
   const pending  = invoices.filter(i => i.status === 'pending')
   const overdueAmt = overdue.reduce((s, i) => s + Number(i.amount ?? 0), 0)

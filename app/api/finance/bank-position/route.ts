@@ -166,7 +166,43 @@ export async function GET(req: NextRequest) {
   let fiscalYearTo: string | null = null
   let balanceFetchOk = false
 
-  if (accountsSeen.size > 0) {
+  // Preferred path: use the accounts list (24-h cache, fetched on Phase 1
+  // readiness + Fortnox connect) as the source of truth for cash position.
+  // It already carries opening + current balances for EVERY account, so
+  // we never need to hit Fortnox per-account at request time.
+  try {
+    const { fetchAccountsList } = await import('@/lib/fortnox/api/accounts-list')
+    const { getFreshFortnoxAccessToken } = await import('@/lib/fortnox/api/auth')
+    const token = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+    if (token) {
+      const al = await fetchAccountsList(db, auth.orgId, businessId, token)
+      let sum = 0
+      for (const a of Object.values(al.accounts)) {
+        // 1900-1989 = cash + bank + payment-provider settlement accounts.
+        // Strict upper bound excludes 1990 (interimsfordringar etc.) which
+        // aren't cash even though they live in the 19xx range.
+        if (a.number < 1900 || a.number > 1989) continue
+        const opening = Number(a.opening_balance ?? 0)
+        const current = Number(a.current_balance ?? 0)
+        if (Math.abs(opening) < 0.5 && Math.abs(current) < 0.5) continue
+        openingBalancesByAccount[a.number] = opening
+        currentBalancesByAccount[a.number] = {
+          description: a.description,
+          current,
+          opening,
+        }
+        sum += current
+      }
+      if (Object.keys(currentBalancesByAccount).length > 0) {
+        absoluteBalance = Math.round(sum)
+        balanceFetchOk = true
+        fiscalYearFrom = al.fiscal_year_from
+        fiscalYearTo   = al.fiscal_year_to
+      }
+    }
+  } catch { /* fall through to the legacy per-account fetcher below */ }
+
+  if (!balanceFetchOk && accountsSeen.size > 0) {
     const result = await fetchBankAccountBalances(db, auth.orgId, businessId, Array.from(accountsSeen))
     if (Object.keys(result.balances).length > 0) {
       balanceFetchOk = true
