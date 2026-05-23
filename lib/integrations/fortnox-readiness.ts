@@ -332,15 +332,24 @@ async function checkBalanceSheetSelfCheck(
     const denom = Math.max(Math.abs(bs.total_assets), Math.abs(bs.total_equity_and_liabilities), 1)
     const pct = (imbalance / denom) * 100
 
-    if (imbalance < 0.5) {
+    // Tolerance: integer-rounding of opening balances (we round to whole
+    // kr in account-balance.ts) introduces typical noise of ±1-3 kr per
+    // account; a healthy customer with 50 BS accounts can accumulate up
+    // to ~5 kr in legitimate rounding. Use the same scheme as the IB-sum
+    // check below: floor 5 kr OR 0.001 % of total assets, whichever is
+    // larger. Anything past 0.5 % is a real issue.
+    const okTolerance   = Math.max(5,  Math.abs(bs.total_assets) * 1e-5)
+    const warnTolerance = Math.max(50, Math.abs(bs.total_assets) * 5e-3)   // 0.5 %
+
+    if (imbalance <= okTolerance) {
       return {
         key: 'balance_sheet', label: 'Balansräkning stämmer',
         status: 'ok',
-        detail: `${y}-${String(m).padStart(2, '0')}: Tillgångar ${formatKr(bs.total_assets)} = EK+skulder ${formatKr(bs.total_equity_and_liabilities)}.`,
-        evidence: { period: `${y}-${String(m).padStart(2, '0')}`, imbalance, total_assets: bs.total_assets },
+        detail: `${y}-${String(m).padStart(2, '0')}: Tillgångar ${formatKr(bs.total_assets)} = EK+skulder ${formatKr(bs.total_equity_and_liabilities)}${imbalance >= 0.5 ? ` (±${formatKr(imbalance)} avrundning)` : ''}.`,
+        evidence: { period: `${y}-${String(m).padStart(2, '0')}`, imbalance, total_assets: bs.total_assets, tolerance: okTolerance },
       }
     }
-    if (pct < 1) {
+    if (imbalance <= warnTolerance) {
       return {
         key: 'balance_sheet', label: 'Balansräkning stämmer',
         status: 'warn',
