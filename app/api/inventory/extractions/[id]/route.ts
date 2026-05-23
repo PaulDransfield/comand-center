@@ -154,11 +154,35 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       await db.from('invoice_pdf_extractions').update(updatePayload).eq('id', id)
     }
 
+    // Chain matcher kick — fire-and-forget so the catalogue picks up
+    // the just-applied rows within seconds instead of waiting for the
+    // next 30-min sweep tick. Uses CRON_SECRET so no user session is
+    // needed for the matcher endpoint.
+    const base = process.env.NEXT_PUBLIC_APP_URL ??
+                 (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    const cronSecret = process.env.CRON_SECRET
+    let matcherKicked = false
+    if (base && cronSecret) {
+      fetch(`${base}/api/cron/inventory-rematch-business`, {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${cronSecret}`,
+        },
+        body: JSON.stringify({
+          business_id:  row.business_id,
+          chained_from: 'review_ui_apply',
+        }),
+      }).catch(err => console.error('[review-apply] chain matcher failed:', err))
+      matcherKicked = true
+    }
+
     return NextResponse.json({
       ok:               true,
       action:           'apply',
       rows_persisted:   rpcRows.length,
       total_extracted:  totalExtracted,
+      matcher_kicked:   matcherKicked,
     })
   }
 

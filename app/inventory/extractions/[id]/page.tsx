@@ -110,7 +110,7 @@ export default function ExtractionDetailPage() {
       const j = await r.json()
       if (!r.ok) throw new Error(j.error + (j.detail ? `: ${j.detail}` : ''))
       setToast(action === 'apply'
-        ? `Godkänd. ${j.rows_persisted} rader sparade.`
+        ? `Godkänd. ${j.rows_persisted} rader sparade${j.matcher_kicked ? ' · matcher startad i bakgrund' : ''}.`
         : `Re-extraherad. Ny status: ${j.new_status}, ${j.rows_extracted} rader.`)
       await load()
     } catch (e: any) {
