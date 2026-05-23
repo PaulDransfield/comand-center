@@ -224,7 +224,10 @@
       "rangeKr":           "Range",
       "approve":           "Approve",
       "approving":         "Saving…",
-      "approved":          "Saved ✓"
+      "approved":          "Saved ✓",
+      "skip":              "Skip",
+      "skipped":           "Skipped",
+      "skipHint":          "Not inventory — mark as overhead (rent, electricity, SaaS, laundry, etc.) and hide from the catalogue."
     }
   }
 }

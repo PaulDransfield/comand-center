@@ -57,7 +57,8 @@ export default function InventoryReviewPage() {
   const [error,    setError]    = useState<string | null>(null)
   const [search,   setSearch]   = useState('')
   // per-row local state for the editable name + category + busy flag
-  const [edits, setEdits] = useState<Record<string, { name: string; category: string; busy?: boolean; done?: boolean; err?: string }>>({})
+  // `done` is set on success (Approve) and `skipped` on Skip.
+  const [edits, setEdits] = useState<Record<string, { name: string; category: string; busy?: boolean; done?: boolean; skipped?: boolean; err?: string }>>({})
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -108,6 +109,24 @@ export default function InventoryReviewPage() {
       const j = await r.json().catch(() => ({} as any))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, done: true } }))
+    } catch (err: any) {
+      setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
+    }
+  }
+
+  async function skip(group: ReviewGroup) {
+    if (!bizId) return
+    setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: true, err: undefined } }))
+    try {
+      const r = await fetch('/api/inventory/needs-review/skip', {
+        method:  'POST',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId, group_key: group.group_key }),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, skipped: true } }))
     } catch (err: any) {
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
     }
@@ -200,20 +219,24 @@ export default function InventoryReviewPage() {
           <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
             {visible.map(g => {
               const e = edits[g.group_key] ?? { name: g.suggested_name, category: g.suggested_category }
-              const isDone = !!e.done
+              const isDone    = !!e.done
+              const isSkipped = !!e.skipped
+              const isResolved = isDone || isSkipped
+              const cardBg = isDone ? UXP.greenFill : (isSkipped ? UXP.subtleBg : UXP.cardBg)
+              const cardBorder = isDone ? UXP.green : (isSkipped ? UXP.border : UXP.border)
               return (
                 <div key={g.group_key} style={{
-                  background: isDone ? UXP.greenFill : UXP.cardBg,
-                  border: `0.5px solid ${isDone ? UXP.green : UXP.border}`,
+                  background: cardBg,
+                  border: `0.5px solid ${cardBorder}`,
                   borderRadius: 10, padding: '12px 14px',
-                  opacity: isDone ? 0.7 : 1,
+                  opacity: isResolved ? 0.6 : 1,
                   transition: 'opacity 200ms, background 200ms',
                 }}>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                     {/* LEFT: name + supplier + sample */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <input
-                        type="text" value={e.name} disabled={isDone || e.busy}
+                        type="text" value={e.name} disabled={isResolved || e.busy}
                         onChange={ev => setEdits(p => ({ ...p, [g.group_key]: { ...p[g.group_key], name: ev.target.value } }))}
                         style={{
                           width: '100%', padding: '4px 8px', fontSize: 13, fontWeight: 500,
@@ -242,9 +265,9 @@ export default function InventoryReviewPage() {
                         : '—'} />
                     </div>
 
-                    {/* RIGHT: category + approve */}
+                    {/* RIGHT: category + approve + skip */}
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <select value={e.category} disabled={isDone || e.busy}
+                      <select value={e.category} disabled={isResolved || e.busy}
                         onChange={ev => setEdits(p => ({ ...p, [g.group_key]: { ...p[g.group_key], category: ev.target.value } }))}
                         style={{
                           padding: '4px 6px', fontSize: 11,
@@ -260,17 +283,33 @@ export default function InventoryReviewPage() {
                       <button
                         type="button"
                         onClick={() => approve(g)}
-                        disabled={isDone || e.busy || !e.name.trim()}
+                        disabled={isResolved || e.busy || !e.name.trim()}
                         style={{
                           padding: '5px 14px', fontSize: 11, fontWeight: 600,
                           background: isDone ? UXP.green : (e.busy ? UXP.subtleBg : UXP.lavDeep),
                           color: '#fff',
                           border: 'none', borderRadius: 5,
-                          cursor: isDone || e.busy ? 'default' : 'pointer',
+                          cursor: isResolved || e.busy ? 'default' : 'pointer',
                           fontFamily: 'inherit',
                           minWidth: 80,
                         }}>
                         {isDone ? t('approved') : (e.busy ? t('approving') : t('approve'))}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => skip(g)}
+                        disabled={isResolved || e.busy}
+                        title={t('skipHint')}
+                        style={{
+                          padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                          background: 'transparent',
+                          color: isSkipped ? UXP.ink3 : UXP.ink2,
+                          border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                          cursor: isResolved || e.busy ? 'default' : 'pointer',
+                          fontFamily: 'inherit',
+                          minWidth: 70,
+                        }}>
+                        {isSkipped ? t('skipped') : t('skip')}
                       </button>
                     </div>
                   </div>

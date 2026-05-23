@@ -224,7 +224,10 @@
       "rangeKr":           "Spann",
       "approve":           "Godkänn",
       "approving":         "Sparar…",
-      "approved":          "Sparad ✓"
+      "approved":          "Sparad ✓",
+      "skip":              "Hoppa över",
+      "skipped":           "Överhoppad",
+      "skipHint":          "Inte varulager — markera som omkostnad (hyra, el, SaaS, tvätt etc.) och göm från katalogen."
     }
   }
 }
