@@ -115,33 +115,49 @@ export async function fetchBankAccountBalances(
                    ?? years[0]   // fallback: most recent year
   const fyId = currentYear.Id
 
-  // 3. For each account, cache lookup → Fortnox if cold
+  // 3. Bulk cache lookup — single SELECT with .in() instead of N round-trips.
+  //    Old code did one SQL hit per account inside the per-account loop;
+  //    for ~30 accounts that's ~3 s of latency before any Fortnox call.
   const balances: Record<number, AccountBalance> = {}
-  let calls = 0
+  const cacheCategoryFor = (acc: number) => `__bank_balance_v2_${acc}_fy${fyId}__`
+  const categories = accounts.map(cacheCategoryFor)
 
-  for (const account of accounts) {
-    // v2 cache key — invalidates the pre-2026-05-11 entries that stored
-    // BalanceCarriedForward under `opening_balance` (wrong field).
-    const cacheCategory = `__bank_balance_v2_${account}_fy${fyId}__`
-    const cacheKey = { business_id: businessId, period_year: fyId, period_month: 0, category: cacheCategory }
+  const freshCutoff = Date.now() - CACHE_TTL_MS
+  const cacheMissAccounts: number[] = []
+  try {
+    const { data: cachedRows } = await db
+      .from('overhead_drilldown_cache')
+      .select('category, payload, fetched_at')
+      .eq('business_id', businessId)
+      .eq('period_year', fyId)
+      .eq('period_month', 0)
+      .in('category', categories)
 
-    // Cache check
-    try {
-      const { data: cached } = await db
-        .from('overhead_drilldown_cache')
-        .select('payload, fetched_at')
-        .eq('business_id', cacheKey.business_id)
-        .eq('period_year', cacheKey.period_year)
-        .eq('period_month', cacheKey.period_month)
-        .eq('category', cacheKey.category)
-        .maybeSingle()
-      if (cached?.fetched_at && (Date.now() - new Date(cached.fetched_at).getTime()) < CACHE_TTL_MS) {
-        const p = cached.payload as AccountBalance
-        if (p) { balances[account] = p; continue }
+    const byCategory = new Map<string, { payload: any; fetched_at: string }>()
+    for (const row of (cachedRows ?? [])) {
+      byCategory.set(row.category as string, row as any)
+    }
+    for (const acc of accounts) {
+      const hit = byCategory.get(cacheCategoryFor(acc))
+      if (hit?.fetched_at && new Date(hit.fetched_at).getTime() >= freshCutoff && hit.payload) {
+        balances[acc] = hit.payload as AccountBalance
+      } else {
+        cacheMissAccounts.push(acc)
       }
-    } catch { /* cache miss / table issue → fall through to fresh fetch */ }
+    }
+  } catch {
+    // If the bulk cache lookup itself failed, just refetch everything.
+    cacheMissAccounts.push(...accounts)
+  }
 
-    // Fresh Fortnox fetch
+  // 4. Fortnox fetch in parallel chunks for cache-miss accounts.
+  //    Concurrency cap of 5 — well under Fortnox's 250-per-5-min cap and
+  //    avoids burst-throttling. Sequential pre-2026-05-23 took ~6 s for
+  //    30 accounts; parallel-5 is ~1.5 s.
+  let calls = 0
+  const PARALLEL = 5
+  const writeBatch: any[] = []
+  const fetchOne = async (account: number) => {
     try {
       const res = await fetch(`${FORTNOX_API}/accounts/${account}?financialyear=${fyId}`, {
         headers: {
@@ -150,22 +166,18 @@ export async function fetchBankAccountBalances(
         },
       })
       calls++
-      if (res.status === 404) continue   // account not used by this customer
-      if (!res.ok) continue              // 5xx etc — skip silently, soft-fail
+      if (res.status === 404) return
+      if (!res.ok) return
       const body: any = await res.json()
       const acc = body?.Account
-      if (!acc) continue
+      if (!acc) return
 
-      // Fortnox field names (terms verified empirically 2026-05-11):
-      //   BalanceBroughtForward = opening balance (Ingående balans, IB) —
-      //     year-start position carried in from prior year close
-      //   BalanceCarriedForward = current closing balance (Utgående balans, UB) —
-      //     live running balance through latest booked voucher
-      // Earlier (pre-2026-05-11) we had these swapped and double-counted YTD
-      // net change on top of "opening_balance" — gave nonsense numbers.
+      // Field semantics verified empirically 2026-05-11:
+      //   BalanceBroughtForward = opening (IB)
+      //   BalanceCarriedForward = current closing (UB)
       const openingBalance = Number(acc.BalanceBroughtForward ?? 0)
       const currentBalance = Number(acc.BalanceCarriedForward ?? 0)
-      if (!Number.isFinite(openingBalance) || !Number.isFinite(currentBalance)) continue
+      if (!Number.isFinite(openingBalance) || !Number.isFinite(currentBalance)) return
 
       const balance: AccountBalance = {
         account,
@@ -178,22 +190,28 @@ export async function fetchBankAccountBalances(
         fetched_at:       new Date().toISOString(),
       }
       balances[account] = balance
+      writeBatch.push({
+        business_id:  businessId,
+        period_year:  fyId,
+        period_month: 0,
+        category:     cacheCategoryFor(account),
+        payload:      balance,
+        fetched_at:   balance.fetched_at,
+      })
+    } catch { /* network error → silent skip per soft-fail contract */ }
+  }
+  for (let i = 0; i < cacheMissAccounts.length; i += PARALLEL) {
+    const chunk = cacheMissAccounts.slice(i, i + PARALLEL)
+    await Promise.all(chunk.map(fetchOne))
+  }
 
-      // Persist to cache
-      try {
-        await db.from('overhead_drilldown_cache').upsert({
-          business_id:  cacheKey.business_id,
-          period_year:  cacheKey.period_year,
-          period_month: cacheKey.period_month,
-          category:     cacheKey.category,
-          payload:      balance,
-          fetched_at:   new Date().toISOString(),
-        }, { onConflict: 'business_id,period_year,period_month,category' })
-      } catch { /* cache write best-effort */ }
-    } catch {
-      // Network / parse error — skip account, soft-fail
-      continue
-    }
+  // 5. Bulk upsert the freshly-fetched payloads in one round-trip.
+  if (writeBatch.length > 0) {
+    try {
+      await db.from('overhead_drilldown_cache').upsert(writeBatch, {
+        onConflict: 'business_id,period_year,period_month,category',
+      })
+    } catch { /* cache write best-effort */ }
   }
 
   return {

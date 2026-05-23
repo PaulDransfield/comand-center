@@ -549,7 +549,14 @@ function BalanceSheetCard({ bizId, year, month }: { bizId: string; year: number;
     return () => { cancelled = true }
   }, [bizId, year, month])
 
-  if (loading) return <Empty text="Beräknar balansräkning… (snabbt om verifikationslistan redan laddats för denna månad)" />
+  if (loading) return (
+    <div style={{ padding: 20, textAlign: 'center' as const, color: UXP.ink3, fontSize: 12 }}>
+      <div style={{ marginBottom: 6 }}>Beräknar balansräkning…</div>
+      <div style={{ fontSize: 10, color: UXP.ink4, maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>
+        Första gången per räkenskapsår hämtar vi verifikationer och ingående balanser från Fortnox — kan ta upp till en minut för aktiva räkenskapsår. Resultatet cachelagras så efterföljande månader laddas direkt.
+      </div>
+    </div>
+  )
   if (error)   return <Banner tone="bad" text={`Kunde inte beräkna balansräkningen: ${error}`} />
   if (!bs)     return <Empty text="Ingen balansdata för perioden." />
 

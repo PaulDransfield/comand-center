@@ -37,6 +37,10 @@ export async function POST(req: NextRequest) {
   const bizId    = String(body.business_id ?? '').trim()
   const fromDate = String(body.from_date   ?? '').trim()
   const toDate   = String(body.to_date     ?? '').trim()
+  // Default false — only fetch months that have zero cached rows.
+  // Pass force=true to delete + refetch the entire range (use sparingly,
+  // it WILL wipe healthy cache before refetching).
+  const force = body.force === true
 
   if (!bizId)    return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fromDate)) return NextResponse.json({ error: 'from_date YYYY-MM-DD required' }, { status: 400 })
@@ -58,7 +62,7 @@ export async function POST(req: NextRequest) {
       businessId:      bizId,
       fromDate,
       toDate,
-      refreshCurrent:  true,
+      refreshCurrent:  force,
     })
     return NextResponse.json({
       ok:             true,
