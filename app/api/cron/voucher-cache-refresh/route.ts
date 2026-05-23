@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getCachedVouchersForRange } from '@/lib/fortnox/voucher-cache'
+import { warmFiscalYearMissing }     from '@/lib/fortnox/voucher-cache-fy-warm'
 
 const PARALLEL_CHUNK = 5
 
@@ -83,6 +84,11 @@ async function handle(req: NextRequest) {
     previous_status: 'ok' | 'failed'
     previous_count?: number
     previous_duration?: number
+    fy_warm_status?:  'ok' | 'failed'
+    fy_warm_months_warmed?:  number
+    fy_warm_skipped_budget?: number
+    fiscal_year_from?: string
+    fiscal_year_to?:   string
     error?:          string
   }> = []
 
@@ -122,6 +128,29 @@ async function handle(req: NextRequest) {
         out.previous_status = 'failed'
         out.error           = (out.error ? `${out.error}; ` : '') + `previous: ${e?.message ?? e}`
       }
+
+      // FY catch-up: opportunistically warm any missing months in the
+      // customer's current fiscal year. Idempotent — no-op once full.
+      // Bounded to 180 s per business so a single broken-FY customer
+      // with empty cache can't starve the rest of the cron run.
+      try {
+        const r3 = await warmFiscalYearMissing({
+          db,
+          orgId:      biz.org_id,
+          businessId: biz.business_id,
+          budgetMs:   180_000,
+          log:        (msg, fields) => console.log(JSON.stringify({ at: msg, ...fields })),
+        })
+        out.fy_warm_status         = r3.ok ? 'ok' : 'failed'
+        out.fy_warm_months_warmed  = r3.months_warmed
+        out.fy_warm_skipped_budget = r3.months_skipped_budget
+        out.fiscal_year_from       = r3.fiscal_year_from
+        out.fiscal_year_to         = r3.fiscal_year_to
+      } catch (e: any) {
+        out.fy_warm_status = 'failed'
+        out.error          = (out.error ? `${out.error}; ` : '') + `fy_warm: ${e?.message ?? e}`
+      }
+
       return out
     }))
     summaries.push(...chunkResults)

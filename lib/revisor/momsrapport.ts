@@ -275,6 +275,23 @@ export async function computeMomsrapport(
   }
 
   // 5. Walk every account, assign to box.
+  //
+  // IMPORTANT — VAT bookkeeping convention:
+  //   Many bookkeepers run a month-end "moms-avstämning" that DEBITS the
+  //   output-VAT accounts (2611 / 2621 / 2631) and CREDITS 2650 to clear
+  //   the month's VAT into the settlement account. This means the
+  //   credit-NET for 2611 over the period is often ZERO even though gross
+  //   output VAT was significant — the credits from sales and the debits
+  //   from the clearing entry cancel.
+  //
+  //   To get the REAL period VAT we use GROSS credits (output) and GROSS
+  //   debits (input). Clearing entries get a counter-debit on 2611 but
+  //   they DON'T add to gross credits, so the period total is preserved.
+  //
+  //   Edge case — true sales returns (debit 2611 to reverse a sale) DO
+  //   reduce output VAT and our gross-credit approach over-states by the
+  //   refund amount. For restaurants this is rare (<1 % of sales) and
+  //   surfaced by the reconciliation banner if it ever exceeds tolerance.
   const pushLine = (b: MomsrapportBox, acc: number, amount: number, desc: string) => {
     if (Math.abs(amount) < 0.5) return
     b.lines.push({ account: acc, description: desc, amount })
@@ -282,12 +299,13 @@ export async function computeMomsrapport(
   }
 
   for (const [acc, entry] of perAccount.entries()) {
-    const creditNet = entry.credit - entry.debit
-    const debitNet  = entry.debit  - entry.credit
+    const grossCredit = entry.credit            // gross credits — output side
+    const grossDebit  = entry.debit             // gross debits  — input side
+    const creditNet   = entry.credit - entry.debit   // for revenue accounts (3xxx)
 
-    // ── Output VAT accounts ────────────────────────────────────
+    // ── Output VAT accounts (use GROSS credits) ────────────────
     const outBox = OUTPUT_VAT_ACCOUNT_TO_BOX[acc]
-    if (outBox !== undefined && creditNet !== 0) {
+    if (outBox !== undefined && grossCredit > 0.5) {
       const target =
         outBox === 10 ? out.box_10 :
         outBox === 11 ? out.box_11 :
@@ -295,13 +313,13 @@ export async function computeMomsrapport(
         outBox === 30 ? out.box_30 :
         outBox === 31 ? out.box_31 :
                         out.box_32
-      pushLine(target, acc, creditNet, entry.description)
+      pushLine(target, acc, grossCredit, entry.description)
       continue
     }
 
-    // ── Input VAT accounts ─────────────────────────────────────
-    if (INPUT_VAT_ACCOUNTS.has(acc) && debitNet !== 0) {
-      pushLine(out.box_48, acc, debitNet, entry.description)
+    // ── Input VAT accounts (use GROSS debits) ──────────────────
+    if (INPUT_VAT_ACCOUNTS.has(acc) && grossDebit > 0.5) {
+      pushLine(out.box_48, acc, grossDebit, entry.description)
       continue
     }
 

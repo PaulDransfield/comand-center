@@ -294,6 +294,17 @@ async function handleCallback(req: NextRequest) {
   // the dispatcher pattern used by /api/fortnox/extract.
   triggerBackfillWorker().catch(err => console.error('Failed to trigger backfill worker:', err))
 
+  // Pre-warm the voucher cache for this business's current fiscal year so
+  // the first /revisor balance sheet load is instant instead of waiting
+  // for a 5-15 minute cold Fortnox fetch. Fire-and-forget — runs in the
+  // background after the redirect. Idempotent: subsequent triggers no-op
+  // once the FY is fully cached.
+  if (businessId) {
+    triggerVoucherCacheWarm(businessId).catch(err =>
+      console.error('Failed to trigger voucher cache warm:', err)
+    )
+  }
+
   // Also fire the historical-weather backfill so the dashboard's weather
   // demand widget has bucket-lift correlation data on first dashboard load
   // instead of "0 historical days matched". Idempotent (upserts by
@@ -319,6 +330,27 @@ async function triggerBackfillWorker(): Promise<void> {
       'Authorization': `Bearer ${process.env.CRON_SECRET}`,
     },
     body: JSON.stringify({ trigger: 'oauth_callback' }),
+  }).catch(() => {})
+}
+
+// Pre-warm the M080 voucher cache for the customer's current fiscal year
+// in the background so the first /revisor balance sheet load doesn't
+// trigger a cold ~5-15 min Fortnox fetch inside the user's request. Uses
+// the new on-connect endpoint that itself runs the FY-warm helper with
+// a generous time budget. Fire-and-forget — failures are logged but
+// don't block the OAuth redirect.
+async function triggerVoucherCacheWarm(businessId: string): Promise<void> {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !process.env.CRON_SECRET) return
+  fetch(`${base}/api/cron/voucher-cache-fy-warm-business`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ business_id: businessId, trigger: 'oauth_callback' }),
   }).catch(() => {})
 }
 
