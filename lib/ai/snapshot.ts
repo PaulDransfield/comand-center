@@ -235,6 +235,7 @@ export async function buildBusinessSnapshot(
     lines.push('  search_inventory_products(query)     — catalogue product/alias lookup')
     lines.push('  get_invoice_lines(invoice_number)    — line items for one invoice')
     lines.push('  get_inventory_summary()              — catalogue + PDF-extraction state')
+    lines.push('  get_product_price_history(product_id)— full price history per product')
   }
 
   lines.push('=== END BUSINESS STATE ===')

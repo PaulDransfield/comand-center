@@ -66,13 +66,84 @@ export const INVENTORY_TOOLS: AnthropicToolDef[] = [
       properties: {},
     },
   },
+  {
+    name: 'get_product_price_history',
+    description:
+      `Return the full price history for one product — every supplier-invoice ` +
+      `line that contained this product, sorted newest first. Includes price ` +
+      `per unit, quantity, supplier, date, and source invoice number.\n\n` +
+      `Use for "has the price of X gone up?", "compare prices across suppliers ` +
+      `for X", "when did we first buy X?". Identify the product by ID (call ` +
+      `search_inventory_products first if you only have a name).`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        product_id: { type: 'string', description: 'Product UUID from search_inventory_products' },
+        limit:      { type: 'integer', description: 'Max history rows to return (default 30, max 100)' },
+      },
+      required: ['product_id'],
+    },
+  },
 ]
 
 export async function runInventoryTool(
   ctx:  ToolContext,
-  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary',
+  name: 'search_inventory_products' | 'get_invoice_lines' | 'get_inventory_summary' | 'get_product_price_history',
   args: any,
 ): Promise<any> {
+  if (name === 'get_product_price_history') {
+    const productId = String(args.product_id ?? '').trim()
+    if (!productId) return { error: 'invalid_args', detail: 'product_id required' }
+    const limit = Math.min(100, Math.max(1, parseInt(String(args.limit ?? 30), 10) || 30))
+
+    const { data: product } = await ctx.db
+      .from('products')
+      .select('id, name, category, default_supplier_name, invoice_unit')
+      .eq('id', productId)
+      .eq('business_id', ctx.businessId)
+      .maybeSingle()
+    if (!product) return { error: 'product_not_found', detail: `No product with id ${productId} for this business` }
+
+    const { data: aliases } = await ctx.db
+      .from('product_aliases')
+      .select('id')
+      .eq('product_id', productId)
+    const aliasIds = (aliases ?? []).map((a: any) => a.id)
+    if (aliasIds.length === 0) {
+      return { product, history: [], message: 'Product has no aliases — never observed on an invoice.' }
+    }
+
+    const { data: history } = await ctx.db
+      .from('supplier_invoice_lines')
+      .select('invoice_date, fortnox_invoice_number, supplier_name_snapshot, raw_description, quantity, unit, price_per_unit, total_excl_vat, vat_rate')
+      .eq('business_id', ctx.businessId)
+      .in('product_alias_id', aliasIds)
+      .order('invoice_date', { ascending: false })
+      .limit(limit)
+
+    const prices = (history ?? []).map((h: any) => h.price_per_unit).filter((p: any) => p != null).map(Number)
+    return {
+      product,
+      observation_count: prices.length,
+      min_price:         prices.length > 0 ? Math.min(...prices) : null,
+      max_price:         prices.length > 0 ? Math.max(...prices) : null,
+      avg_price:         prices.length > 0 ? prices.reduce((s: number, p: number) => s + p, 0) / prices.length : null,
+      latest_price:      history?.[0]?.price_per_unit ?? null,
+      latest_date:       history?.[0]?.invoice_date ?? null,
+      history:           (history ?? []).map((h: any) => ({
+        date:           h.invoice_date,
+        invoice_number: h.fortnox_invoice_number,
+        supplier:       h.supplier_name_snapshot,
+        description:    h.raw_description,
+        quantity:       h.quantity,
+        unit:           h.unit,
+        price_per_unit: h.price_per_unit,
+        total:          h.total_excl_vat,
+        vat_rate:       h.vat_rate,
+      })),
+    }
+  }
+
   if (name === 'get_inventory_summary') {
     const [products, aliases, lines, extByStatus] = await Promise.all([
       ctx.db.from('products').select('*', { count: 'exact', head: true }).eq('business_id', ctx.businessId),

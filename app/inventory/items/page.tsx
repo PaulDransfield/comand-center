@@ -1,199 +1,303 @@
 'use client'
 // app/inventory/items/page.tsx
 //
-// Phase 6 vision page — Inventory item master. Mock data lives in
-// lib/mock/inventory.ts and is rendered through the canonical
-// BreakdownTable + KpiCardUX so swapping to /api/inventory/items later
-// requires no UI work.
+// Inventory catalogue — every product the matcher has built from
+// supplier invoices. Replaces the prior MOCK_INVENTORY_ITEMS surface
+// with live data from /api/inventory/items.
+//
+// Each row shows latest price + change vs the prior 90-day median, so
+// the owner can spot price creep at a glance. Click → per-product
+// detail page with full price history.
 
 export const dynamic = 'force-dynamic'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
-import BreakdownTable from '@/components/ux/BreakdownTable'
-import KpiCardUX from '@/components/ux/KpiCard'
-import DemoDataBanner from '@/components/ux/DemoDataBanner'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
-import {
-  MOCK_INVENTORY_ITEMS,
-  MOCK_INVENTORY_TOTAL,
-  type MockInventoryItem,
-} from '@/lib/mock/inventory'
 
-const TYPE_FILTERS: Array<MockInventoryItem['type'] | 'Alla'> = [
-  'Alla', 'Råvara', 'Förbrukning', 'Dryck', 'Tillagad',
-]
+interface CatalogueItem {
+  product_id:           string
+  name:                 string
+  category:             string
+  default_supplier:     string | null
+  latest_price:         number | null
+  latest_unit:          string | null
+  latest_supplier:      string | null
+  latest_date:          string | null
+  prior_median_price:   number | null
+  change_pct:           number | null
+  observation_count:    number
+}
+
+interface CatalogueResponse {
+  counts:  Record<string, number>
+  items:   CatalogueItem[]
+  message?: string
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  all:               'Alla',
+  food:              'Mat',
+  beverage:          'Dryck',
+  alcohol:           'Alkohol',
+  cleaning:          'Rengöring',
+  takeaway_material: 'Take-away',
+  disposables:       'Förbrukning',
+  other:             'Övrigt',
+}
+
+type SortKey = 'name' | 'latest_price' | 'change_pct' | 'observation_count' | 'latest_date'
 
 export default function InventoryItemsPage() {
-  const [filter, setFilter] = useState<typeof TYPE_FILTERS[number]>('Alla')
-  const [open,   setOpen]   = useState<MockInventoryItem | null>(null)
+  const router = useRouter()
+  const [bizId,    setBizId]    = useState<string | null>(null)
+  const [filter,   setFilter]   = useState<string>('all')
+  const [data,     setData]     = useState<CatalogueResponse | null>(null)
+  const [loading,  setLoading]  = useState(true)
+  const [error,    setError]    = useState<string | null>(null)
+  const [sortKey,  setSortKey]  = useState<SortKey>('change_pct')
+  const [sortDesc, setSortDesc] = useState(true)
+  const [search,   setSearch]   = useState('')
 
-  const filtered = useMemo(() => filter === 'Alla'
-    ? MOCK_INVENTORY_ITEMS
-    : MOCK_INVENTORY_ITEMS.filter(i => i.type === filter),
-    [filter])
+  useEffect(() => {
+    const s = localStorage.getItem('cc_selected_biz')
+    if (s) setBizId(s)
+  }, [])
 
-  const suppliers = useMemo(() => new Set(MOCK_INVENTORY_ITEMS.map(i => i.main_supplier)), [])
-  const avgPrice = useMemo(() => MOCK_INVENTORY_ITEMS.reduce((s, i) => s + i.price_sek, 0) / MOCK_INVENTORY_ITEMS.length, [])
+  const load = useCallback(async () => {
+    if (!bizId) return
+    setLoading(true)
+    setError(null)
+    try {
+      const r = await fetch(`/api/inventory/items?business_id=${encodeURIComponent(bizId)}&category=${encodeURIComponent(filter)}`,
+                            { cache: 'no-store' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({} as any))).error ?? `HTTP ${r.status}`)
+      setData(await r.json())
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [bizId, filter])
+
+  useEffect(() => { if (bizId) load() }, [bizId, filter, load])
+
+  const items = (data?.items ?? [])
+    .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()))
+    .slice()
+    .sort((a, b) => {
+      const av = sortValue(a, sortKey)
+      const bv = sortValue(b, sortKey)
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number)
+      return sortDesc ? -cmp : cmp
+    })
+
+  const totalRecent = items.reduce((s, i) => s + (i.latest_price ?? 0), 0)
+  const creeping = items.filter(i => (i.change_pct ?? 0) >= 0.05).length
+  const totalObservations = items.reduce((s, i) => s + i.observation_count, 0)
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1100 }}>
-        <DemoDataBanner />
+      <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+          Artiklar
+        </h1>
+        <p style={{ margin: '4px 0 18px', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
+          Katalog byggd från leverantörsfakturor. Senaste pris jämförs mot medianpris de senaste 90 dagarna —
+          orange/rosa stigning = prishöjning du kanske vill prata med leverantören om.
+        </p>
 
-        <div style={{ marginBottom: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1 }}>Artiklar</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
-            Råvaror, drycker och förbrukningsartiklar — sorterat per kategori.
-          </p>
-        </div>
-
-        {/* KPI strip — mock totals from the inventory fixture. */}
+        {/* KPI strip */}
         <div style={{
-          display:             'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap:                 12,
-          marginBottom:        14,
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16,
         }}>
-          <KpiCardUX
-            title="Artiklar"
-            value={MOCK_INVENTORY_TOTAL.toLocaleString('sv-SE')}
-            microLabel="Totalt i artikelregistret"
-          />
-          <KpiCardUX
-            title="Leverantörer"
-            value={String(suppliers.size + 12)  /* +12 so the demo looks realistic */}
-            microLabel="Aktiva"
-          />
-          <KpiCardUX
-            title="Snittpris / enhet"
-            value={fmtKr(Math.round(avgPrice))}
-            microLabel="Per beställningsenhet"
-          />
+          <Stat label="Artiklar" value={String(data?.counts?.all ?? 0)} />
+          <Stat label="Observationer" value={totalObservations.toLocaleString('sv-SE')} />
+          <Stat label="Senaste priser totalt" value={fmtKr(totalRecent)} />
+          <Stat label="Med prishöjning ≥5 %" value={String(creeping)}
+                tone={creeping > 0 ? 'coral' : 'ink'} />
         </div>
 
-        {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' as const }}>
-          {TYPE_FILTERS.map(opt => {
-            const active = opt === filter
+        {/* Filters + search */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+          {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
+            const count = key === 'all' ? (data?.counts?.all ?? 0) : (data?.counts?.[key] ?? 0)
+            const active = filter === key
             return (
               <button
-                key={opt}
-                type="button"
-                onClick={() => setFilter(opt)}
+                key={key} onClick={() => setFilter(key)}
                 style={{
-                  padding:      '4px 10px',
-                  background:   active ? UXP.lavFill : UXP.cardBg,
-                  color:        active ? UXP.lavText : UXP.ink2,
-                  border:       `0.5px solid ${active ? UXP.lav : UXP.border}`,
-                  borderRadius: 999,
-                  fontSize:     11,
-                  fontFamily:   'inherit',
-                  cursor:       'pointer',
+                  padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                  background: active ? UXP.lavFill : 'transparent',
+                  color: active ? UXP.lavText : UXP.ink3,
+                  border: `0.5px solid ${active ? UXP.lavMid : UXP.border}`,
+                  borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
-                {opt}
+                {label} <span style={{ color: active ? UXP.lavText : UXP.ink4, marginLeft: 4 }}>{count}</span>
               </button>
             )
           })}
+          <input
+            type="text" value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Sök artikel…"
+            style={{
+              marginLeft: 'auto', padding: '5px 10px', fontSize: 12,
+              background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+              borderRadius: 6, color: UXP.ink1, fontFamily: 'inherit',
+              minWidth: 200,
+            }}
+          />
         </div>
 
-        <BreakdownTable<MockInventoryItem>
-          columns={[
-            { key: 'name',     header: 'Namn',              align: 'left',  render: (r) => (
-              <button
-                type="button"
-                onClick={() => setOpen(r)}
-                style={{
-                  background: 'none', border: 'none', padding: 0,
-                  color: UXP.ink1, fontWeight: 500, cursor: 'pointer',
-                  fontFamily: 'inherit', textAlign: 'left' as const,
-                }}
-              >
-                {r.name}
-              </button>
-            ) },
-            { key: 'type',     header: 'Typ',               align: 'left',  render: (r) => r.type },
-            { key: 'category', header: 'Kategori',          align: 'left',  render: (r) => r.category },
-            { key: 'supplier', header: 'Huvudleverantör',   align: 'left',  render: (r) => r.main_supplier },
-            { key: 'order',    header: 'Beställningsenhet', align: 'left',  render: (r) => r.order_unit },
-            { key: 'price',    header: 'Pris',              align: 'right', render: (r) => fmtKr(r.price_sek) },
-            { key: 'vat',      header: 'Moms',              align: 'right', render: (r) => `${r.vat_pct}%` },
-          ]}
-          sections={[{ rows: filtered }]}
-          footer={{
-            label: `1–${filtered.length} av ${MOCK_INVENTORY_TOTAL.toLocaleString('sv-SE')}`,
-            cells: { type: '', category: '', supplier: '', order: '', price: '', vat: '' },
-          }}
-          rowKey={(row) => row.id}
-        />
+        {error && (
+          <div style={{ padding: '10px 14px', background: UXP.roseFill,
+                        border: `0.5px solid ${UXP.rose}`, borderRadius: 8,
+                        color: UXP.roseText, fontSize: 12, marginBottom: 12 }}>
+            {error}
+          </div>
+        )}
+        {loading && (
+          <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13 }}>
+            Hämtar katalog…
+          </div>
+        )}
 
-        {open && (
-          <ItemDrawer item={open} onClose={() => setOpen(null)} />
+        {!loading && data && items.length === 0 && (
+          <div style={{
+            padding: 30, textAlign: 'center' as const, color: UXP.ink3,
+            fontSize: 13, background: UXP.cardBg,
+            border: `0.5px solid ${UXP.border}`, borderRadius: 8,
+          }}>
+            {data.message ?? 'Inga artiklar hittade.'}
+          </div>
+        )}
+
+        {!loading && items.length > 0 && (
+          <div style={{
+            background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+            borderRadius: 8, overflow: 'hidden',
+          }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: UXP.subtleBg }}>
+                  <Th label="Artikel"  k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} />
+                  <Th label="Kategori" k="name"            sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
+                  <Th label="Senast"   k="latest_date"     sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="left" />
+                  <Th label="Pris"     k="latest_price"    sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label="vs 90d"   k="change_pct"      sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label="Antal"    k="observation_count" sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} align="right" />
+                  <Th label="Leverantör" k="name"          sortKey={sortKey} sortDesc={sortDesc} onSort={setSorting(setSortKey, setSortDesc)} noSort />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(it => (
+                  <tr key={it.product_id}
+                      onClick={() => router.push(`/inventory/items/${it.product_id}`)}
+                      style={{ cursor: 'pointer', borderTop: `0.5px solid ${UXP.borderSoft}` }}
+                      onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <td style={{ ...td(), fontWeight: 500, color: UXP.ink1 }}>{it.name}</td>
+                    <td style={td()}><CategoryTag c={it.category} /></td>
+                    <td style={{ ...td(), color: UXP.ink3, fontSize: 11 }}>{it.latest_date ?? '—'}</td>
+                    <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
+                      {it.latest_price != null
+                        ? <>{fmtKr(it.latest_price)}{it.latest_unit ? <span style={{ fontSize: 10, color: UXP.ink4 }}> /{it.latest_unit}</span> : null}</>
+                        : '—'}
+                    </td>
+                    <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
+                                color: changeColor(it.change_pct), fontWeight: 500 }}>
+                      {it.change_pct != null ? `${it.change_pct >= 0 ? '+' : ''}${(it.change_pct * 100).toFixed(1)} %` : '—'}
+                    </td>
+                    <td style={{ ...td(), textAlign: 'right' as const, color: UXP.ink3 }}>
+                      {it.observation_count}
+                    </td>
+                    <td style={{ ...td(), color: UXP.ink3 }}>
+                      {it.latest_supplier ?? it.default_supplier ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </AppShell>
   )
 }
 
-function ItemDrawer({ item, onClose }: { item: MockInventoryItem; onClose: () => void }) {
-  return (
-    <div
-      role="dialog"
-      aria-label="Artikeldetaljer"
-      style={{
-        position:   'fixed' as const,
-        top:        0, right: 0, bottom: 0,
-        width:      'min(420px, 100%)',
-        background: UXP.cardBg,
-        borderLeft: `0.5px solid ${UXP.border}`,
-        boxShadow:  '-8px 0 24px rgba(58,53,80,0.08)',
-        padding:    '18px 22px',
-        overflow:   'auto',
-        zIndex:     50,
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 10, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-            {item.category}
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 500, color: UXP.ink1, marginTop: 2 }}>
-            {item.name}
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Stäng"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 16 }}
-        >×</button>
-      </div>
+function setSorting(setSortKey: (k: SortKey) => void, setSortDesc: (d: boolean | ((prev: boolean) => boolean)) => void) {
+  return (k: SortKey) => {
+    setSortKey(k)
+    setSortDesc(prev => !prev)
+  }
+}
 
-      <DetailRow label="Typ"               value={item.type} />
-      <DetailRow label="Huvudleverantör"   value={item.main_supplier} />
-      <DetailRow label="Beställningsenhet" value={item.order_unit} />
-      <DetailRow label="Förpackning"       value={item.pack_size} />
-      <DetailRow label="Pris"              value={`${fmtKr(item.price_sek)} · ${item.vat_pct}% moms`} />
-      <DetailRow label="Förvaring"         value={item.storage_areas.join(' · ')} />
-      <DetailRow label="Antal-enheter"     value={item.count_units.join(' · ')} />
+function Th({ label, k, sortKey, sortDesc, onSort, align = 'left', noSort = false }:
+  { label: string; k: SortKey; sortKey: SortKey; sortDesc: boolean; onSort: (k: SortKey) => void; align?: 'left' | 'right'; noSort?: boolean }) {
+  const isActive = !noSort && sortKey === k
+  return (
+    <th style={{
+      padding: '8px 12px', fontSize: 10, fontWeight: 600,
+      color: isActive ? UXP.ink2 : UXP.ink4, letterSpacing: '0.04em',
+      textTransform: 'uppercase' as const, textAlign: align,
+      cursor: noSort ? 'default' : 'pointer', userSelect: 'none' as const,
+    }} onClick={() => !noSort && onSort(k)}>
+      {label}{isActive ? (sortDesc ? ' ↓' : ' ↑') : ''}
+    </th>
+  )
+}
+
+function Stat({ label, value, tone = 'ink' }: { label: string; value: string; tone?: 'ink' | 'coral' }) {
+  return (
+    <div style={{
+      background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+      borderRadius: 8, padding: '10px 14px',
+    }}>
+      <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600,
+                    letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 600,
+                    color: tone === 'coral' ? UXP.coral : UXP.ink1,
+                    marginTop: 4, fontVariantNumeric: 'tabular-nums' as const }}>{value}</div>
     </div>
   )
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function CategoryTag({ c }: { c: string }) {
+  const label = CATEGORY_LABELS[c] ?? c
   return (
-    <div style={{
-      display:      'flex',
-      justifyContent: 'space-between',
-      gap:          12,
-      padding:      '10px 0',
-      borderBottom: `0.5px solid ${UXP.borderSoft}`,
-      fontSize:     12,
-    }}>
-      <span style={{ color: UXP.ink3 }}>{label}</span>
-      <span style={{ color: UXP.ink1, textAlign: 'right' as const }}>{value}</span>
-    </div>
+    <span style={{
+      display: 'inline-block', padding: '2px 8px',
+      background: UXP.subtleBg, color: UXP.ink2,
+      borderRadius: 6, fontSize: 10, fontWeight: 500,
+      border: `0.5px solid ${UXP.border}`,
+    }}>{label}</span>
   )
+}
+
+function sortValue(it: CatalogueItem, k: SortKey): number | string | null {
+  switch (k) {
+    case 'name': return it.name
+    case 'latest_price': return it.latest_price
+    case 'change_pct': return it.change_pct
+    case 'observation_count': return it.observation_count
+    case 'latest_date': return it.latest_date
+  }
+}
+
+function changeColor(d: number | null): string {
+  if (d == null) return UXP.ink3
+  if (d >= 0.1)  return UXP.roseText
+  if (d >= 0.05) return UXP.coral
+  if (d <= -0.05) return UXP.greenDeep
+  return UXP.ink2
+}
+
+function td(): React.CSSProperties {
+  return { padding: '10px 12px', fontSize: 12, color: UXP.ink2 }
 }

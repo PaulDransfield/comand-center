@@ -51,6 +51,7 @@ export type ToolName =
   | 'search_inventory_products'
   | 'get_invoice_lines'
   | 'get_inventory_summary'
+  | 'get_product_price_history'
 
 /** Full catalogue exposed to the LLM via the Anthropic API `tools` field. */
 export const TOOL_CATALOGUE: AnthropicToolDef[] = [
@@ -84,6 +85,7 @@ export async function runTool(
       case 'search_inventory_products':
       case 'get_invoice_lines':
       case 'get_inventory_summary':
+      case 'get_product_price_history':
         result = await runInventoryTool(ctx, name as any, args ?? {})
         break
       default:

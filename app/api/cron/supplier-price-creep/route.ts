@@ -54,29 +54,202 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        // Check if business has Fortnox integration
+        // Check if business has Fortnox integration. Schema is
+        // (provider, status), not (integration_type, is_active).
         const { data: fortnoxIntegration } = await db
           .from('integrations')
-          .select('id, is_active, last_sync_at')
+          .select('id, status, last_sync_at')
           .eq('business_id', biz.id)
-          .eq('integration_type', 'fortnox')
-          .eq('is_active', true)
-          .single()
+          .eq('provider', 'fortnox')
+          .in('status', ['connected', 'warning'])
+          .maybeSingle()
 
         if (!fortnoxIntegration) {
           console.log(`[supplier-price-creep] Skipping ${biz.name} — no active Fortnox integration`)
           continue
         }
 
-        // TODO: When Fortnox OAuth is approved, implement:
-        // 1. Fetch supplier invoices from Fortnox API
-        // 2. Group by supplier and item
-        // 3. Compare prices over last 6 months
-        // 4. Detect price increases >10% month-over-month
-        // 5. Store alerts in supplier_price_alerts table
+        // Reads from supplier_invoice_lines (Phase B of the inventory
+        // catalogue, populated by the PDF extractor + matcher). For
+        // every matched line in the last 6 months, group by product +
+        // supplier, compare latest 30-day median against prior 60-day
+        // median, flag products with >5% increase AND >10 SEK absolute
+        // delta. Roll up per supplier; one cost_insights row per
+        // supplier that has crept on >=2 products. kind='creep'.
+        const SIX_MONTHS_AGO = new Date(today.getTime() - 180 * 86_400_000).toISOString().slice(0, 10)
 
-        // For now, just log that this business would be analyzed
-        console.log(`[supplier-price-creep] Would analyze ${biz.name} — Fortnox integration active`)
+        const allLines: any[] = []
+        let from = 0
+        while (true) {
+          const { data } = await db
+            .from('supplier_invoice_lines')
+            .select('product_alias_id, price_per_unit, invoice_date, supplier_name_snapshot, supplier_fortnox_number, raw_description')
+            .eq('business_id', biz.id)
+            .eq('match_status', 'matched')
+            .not('product_alias_id', 'is', null)
+            .not('price_per_unit', 'is', null)
+            .gte('invoice_date', SIX_MONTHS_AGO)
+            .order('invoice_date', { ascending: false })
+            .range(from, from + 999)
+          if (!data || data.length === 0) break
+          allLines.push(...data)
+          if (data.length < 1000) break
+          from += 1000
+          if (from > 50_000) break
+        }
+
+        if (allLines.length === 0) {
+          console.log(`[supplier-price-creep] ${biz.name} — no matched inventory lines yet`)
+          analyzed++
+          continue
+        }
+
+        // Resolve alias → product
+        const aliasIds = Array.from(new Set(allLines.map(l => l.product_alias_id).filter(Boolean)))
+        const aliasToProduct = new Map<string, string>()
+        const aliasToProductName = new Map<string, string>()
+        for (let i = 0; i < aliasIds.length; i += 500) {
+          const slice = aliasIds.slice(i, i + 500)
+          const { data: aliases } = await db
+            .from('product_aliases')
+            .select('id, product_id, products(name)')
+            .in('id', slice)
+          for (const a of aliases ?? []) {
+            aliasToProduct.set(a.id, (a as any).product_id)
+            aliasToProductName.set(a.id, ((a as any).products?.name) ?? '?')
+          }
+        }
+
+        // Bucket per supplier-product
+        const RECENT_WINDOW_MS = 30 * 86_400_000
+        const PRIOR_WINDOW_MS  = 60 * 86_400_000
+        const NOW = Date.now()
+        type BucketKey = string // `${supplier_fortnox_number ?? supplier_name}_${product_id}`
+        const buckets = new Map<BucketKey, {
+          supplier: string
+          supplier_id: string | null
+          product_id: string
+          product_name: string
+          recent: number[]
+          prior: number[]
+        }>()
+
+        for (const l of allLines) {
+          const productId = aliasToProduct.get(l.product_alias_id)
+          if (!productId) continue
+          const supplierKey = l.supplier_fortnox_number ?? l.supplier_name_snapshot ?? 'unknown'
+          const key: BucketKey = `${supplierKey}_${productId}`
+          if (!buckets.has(key)) {
+            buckets.set(key, {
+              supplier:     l.supplier_name_snapshot ?? l.supplier_fortnox_number ?? 'Okänd',
+              supplier_id:  l.supplier_fortnox_number ?? null,
+              product_id:   productId,
+              product_name: aliasToProductName.get(l.product_alias_id) ?? '?',
+              recent:       [],
+              prior:        [],
+            })
+          }
+          const ts = new Date(l.invoice_date).getTime()
+          const age = NOW - ts
+          if (age <= RECENT_WINDOW_MS)        buckets.get(key)!.recent.push(Number(l.price_per_unit))
+          else if (age <= RECENT_WINDOW_MS + PRIOR_WINDOW_MS) buckets.get(key)!.prior.push(Number(l.price_per_unit))
+        }
+
+        // Find products that crept
+        type CreepHit = {
+          supplier: string
+          supplier_id: string | null
+          product_id: string
+          product_name: string
+          recent_median: number
+          prior_median: number
+          change_pct: number
+          delta_kr: number
+        }
+        const median = (n: number[]) => {
+          if (n.length === 0) return null
+          const s = [...n].sort((a, b) => a - b)
+          const mid = Math.floor(s.length / 2)
+          return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid]
+        }
+
+        const hits: CreepHit[] = []
+        for (const b of buckets.values()) {
+          const rm = median(b.recent)
+          const pm = median(b.prior)
+          if (rm == null || pm == null || pm === 0) continue
+          const change = (rm - pm) / pm
+          const delta = rm - pm
+          if (change >= 0.05 && delta >= 10) {
+            hits.push({
+              supplier:      b.supplier,
+              supplier_id:   b.supplier_id,
+              product_id:    b.product_id,
+              product_name:  b.product_name,
+              recent_median: rm,
+              prior_median:  pm,
+              change_pct:    change,
+              delta_kr:      delta,
+            })
+          }
+        }
+
+        if (hits.length === 0) {
+          console.log(`[supplier-price-creep] ${biz.name} — no creep detected (${buckets.size} buckets analysed)`)
+          analyzed++
+          continue
+        }
+
+        // Roll up per supplier (one insight per supplier with >= 2 products crept;
+        // also surface single-product creeps when the absolute delta is >= 50 SEK)
+        const perSupplier = new Map<string, CreepHit[]>()
+        for (const h of hits) {
+          const k = `${h.supplier_id ?? ''}|${h.supplier}`
+          if (!perSupplier.has(k)) perSupplier.set(k, [])
+          perSupplier.get(k)!.push(h)
+        }
+
+        // Clear stale insights of kind='creep' for this business
+        await db.from('cost_insights')
+          .update({ dismissed_at: new Date().toISOString() })
+          .eq('org_id', biz.org_id)
+          .eq('business_id', biz.id)
+          .eq('kind', 'creep')
+          .is('dismissed_at', null)
+
+        const insights: any[] = []
+        for (const [_, supplierHits] of perSupplier) {
+          if (supplierHits.length < 2 && supplierHits[0].delta_kr < 50) continue
+          const avgChange = supplierHits.reduce((s, h) => s + h.change_pct, 0) / supplierHits.length
+          const totalDelta = supplierHits.reduce((s, h) => s + h.delta_kr, 0)
+          const topProducts = supplierHits
+            .sort((a, b) => b.change_pct - a.change_pct)
+            .slice(0, 5)
+            .map(h => `${h.product_name} +${(h.change_pct * 100).toFixed(0)}% (${h.prior_median.toFixed(2)} → ${h.recent_median.toFixed(2)} kr)`)
+          insights.push({
+            org_id:                     biz.org_id,
+            business_id:                biz.id,
+            kind:                       'creep',
+            tone:                       avgChange >= 0.10 ? 'bad' : 'warning',
+            entity:                     supplierHits[0].supplier,
+            message:                    `${supplierHits[0].supplier} höjde priser på ${supplierHits.length} artikel(s) — snitt +${(avgChange * 100).toFixed(1)}% (de senaste 30d vs föregående 60d).`,
+            estimated_saving_kr_annual: null,  // hard to estimate without volume
+            evidence:                   {
+              suppliers:    [supplierHits[0].supplier],
+              months:       6,
+              products:     topProducts,
+              total_delta_kr: Math.round(totalDelta),
+              hits_count:   supplierHits.length,
+            },
+          })
+        }
+
+        if (insights.length > 0) {
+          await db.from('cost_insights').insert(insights)
+          for (const i of insights) alerts.push({ business: biz.name, supplier: i.entity, message: i.message })
+        }
+
+        console.log(`[supplier-price-creep] ${biz.name} — analysed ${buckets.size} buckets, ${hits.length} hits, ${insights.length} insights`)
         analyzed++
 
       } catch (err: any) {

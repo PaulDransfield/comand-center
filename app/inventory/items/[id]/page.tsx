@@ -1,0 +1,274 @@
+'use client'
+// app/inventory/items/[id]/page.tsx
+//
+// Per-product detail. Time-series sparkline of every observed price +
+// table of every supplier invoice that contained this product. Aliases
+// shown so the owner sees how the AI dedupes different descriptions.
+
+export const dynamic = 'force-dynamic'
+
+import { useCallback, useEffect, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import AppShell from '@/components/AppShell'
+import { UXP } from '@/lib/constants/tokens'
+import { fmtKr } from '@/lib/format'
+
+interface Detail {
+  product: {
+    id:                              string
+    name:                            string
+    category:                        string
+    default_supplier_name:           string | null
+    invoice_unit:                    string | null
+    count_unit:                      string | null
+  }
+  aliases: Array<{
+    id:                       string
+    alias_text:               string
+    supplier_name:            string | null
+    observation_count:        number | null
+    first_seen_at:            string | null
+    last_seen_at:             string | null
+  }>
+  history: Array<{
+    id:               string
+    invoice_date:     string
+    invoice_number:   string
+    supplier:         string
+    raw_description:  string
+    quantity:         number | null
+    unit:             string | null
+    price_per_unit:   number | null
+    total_excl_vat:   number | null
+    vat_rate:         number | null
+    fortnox_url:      string
+  }>
+  aggregates: {
+    observation_count: number
+    min_price:         number | null
+    max_price:         number | null
+    avg_price:         number | null
+    latest_price:      number | null
+    first_seen_date:   string | null
+    last_seen_date:    string | null
+    suppliers_seen:    string[]
+  }
+}
+
+export default function ProductDetailPage() {
+  const params = useParams() as { id: string }
+  const router = useRouter()
+  const [data,    setData]    = useState<Detail | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error,   setError]   = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/inventory/items/${params.id}`, { cache: 'no-store' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({} as any))).error ?? `HTTP ${r.status}`)
+      setData(await r.json())
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [params.id])
+  useEffect(() => { load() }, [load])
+
+  if (loading || !data) return (
+    <AppShell>
+      <div style={{ padding: 30, color: UXP.ink3, fontSize: 13 }}>
+        {error ? <span style={{ color: UXP.roseText }}>{error}</span> : 'Hämtar artikel…'}
+      </div>
+    </AppShell>
+  )
+
+  const { product, aliases, history, aggregates } = data
+
+  // Sparkline points — chronological (oldest first)
+  const sparkPoints = history
+    .slice()
+    .sort((a, b) => (a.invoice_date ?? '').localeCompare(b.invoice_date ?? ''))
+    .map(h => ({ date: h.invoice_date, price: h.price_per_unit != null ? Number(h.price_per_unit) : null }))
+    .filter(p => p.price != null) as Array<{ date: string; price: number }>
+
+  return (
+    <AppShell>
+      <div style={{ maxWidth: 1100, padding: '20px 24px' }}>
+        <button
+          onClick={() => router.push('/inventory/items')}
+          style={{ background: 'transparent', border: 'none', color: UXP.ink3,
+                   fontSize: 12, cursor: 'pointer', marginBottom: 14, padding: 0 }}
+        >← Tillbaka till katalog</button>
+
+        <div style={{ marginBottom: 18 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+            {product.name}
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
+            {labelForCategory(product.category)}
+            {product.default_supplier_name && <> · vanligen från {product.default_supplier_name}</>}
+            {product.invoice_unit && <> · enhet {product.invoice_unit}</>}
+          </p>
+        </div>
+
+        {/* Aggregate tiles */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>
+          <Stat label="Observationer" value={String(aggregates.observation_count)} />
+          <Stat label="Senaste pris" value={fmtKr(aggregates.latest_price)} bold />
+          <Stat label="Lägsta" value={fmtKr(aggregates.min_price)} />
+          <Stat label="Högsta" value={fmtKr(aggregates.max_price)} />
+          <Stat label="Genomsnitt" value={fmtKr(aggregates.avg_price)} />
+        </div>
+
+        {/* Sparkline */}
+        {sparkPoints.length > 1 && (
+          <div style={{
+            background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+            borderRadius: 8, padding: 16, marginBottom: 16,
+          }}>
+            <div style={{ fontSize: 11, color: UXP.ink4, marginBottom: 8, fontWeight: 600,
+                          letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+              Pristrend
+            </div>
+            <Sparkline points={sparkPoints} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: UXP.ink4 }}>
+              <span>{sparkPoints[0].date}</span>
+              <span>{sparkPoints[sparkPoints.length - 1].date}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Aliases */}
+        {aliases.length > 1 && (
+          <div style={{
+            background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+            borderRadius: 8, padding: 14, marginBottom: 16,
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink3, marginBottom: 8,
+                          letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+              Alias ({aliases.length}) — alternativa beskrivningar AI:n har sett
+            </div>
+            {aliases.map(a => (
+              <div key={a.id} style={{ fontSize: 12, color: UXP.ink2, padding: '3px 0', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{a.alias_text}</span>
+                <span style={{ color: UXP.ink4, fontSize: 11 }}>
+                  {a.supplier_name ?? '?'} · {a.observation_count ?? 0}×
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* History table */}
+        <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+                      borderRadius: 8, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+                        fontSize: 11, fontWeight: 600, color: UXP.ink3,
+                        letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+            Prishistorik ({history.length} rader)
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: UXP.subtleBg }}>
+                <th style={th()}>Datum</th>
+                <th style={th()}>Leverantör</th>
+                <th style={th()}>Faktura</th>
+                <th style={th()}>Beskrivning</th>
+                <th style={{ ...th(), textAlign: 'right' as const }}>Antal</th>
+                <th style={{ ...th(), textAlign: 'right' as const }}>À-pris</th>
+                <th style={{ ...th(), textAlign: 'right' as const }}>Summa</th>
+                <th style={th()}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map(h => (
+                <tr key={h.id} style={{ borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+                  <td style={td()}>{h.invoice_date}</td>
+                  <td style={td()}>{h.supplier}</td>
+                  <td style={{ ...td(), fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink3 }}>
+                    #{h.invoice_number}
+                  </td>
+                  <td style={{ ...td(), color: UXP.ink3 }}>{h.raw_description}</td>
+                  <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
+                    {h.quantity ?? '—'}{h.unit ? ` ${h.unit}` : ''}
+                  </td>
+                  <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500 }}>
+                    {fmtKr(h.price_per_unit)}
+                  </td>
+                  <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
+                    {fmtKr(h.total_excl_vat)}
+                  </td>
+                  <td style={td()}>
+                    <a href={h.fortnox_url} target="_blank" rel="noopener noreferrer"
+                       style={{ fontSize: 10, color: UXP.lavText, textDecoration: 'none' }}>↗</a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </AppShell>
+  )
+}
+
+function Sparkline({ points }: { points: Array<{ date: string; price: number }> }) {
+  const W = 1000
+  const H = 80
+  const padding = 6
+  const prices = points.map(p => p.price)
+  const min = Math.min(...prices)
+  const max = Math.max(...prices)
+  const range = max - min || 1
+  const stepX = (W - 2 * padding) / Math.max(1, points.length - 1)
+  const path = points.map((p, i) => {
+    const x = padding + i * stepX
+    const y = padding + ((max - p.price) / range) * (H - 2 * padding)
+    return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`
+  }).join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: H, display: 'block' }} preserveAspectRatio="none">
+      <path d={path} fill="none" stroke={UXP.lavDeep} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      {points.map((p, i) => {
+        const x = padding + i * stepX
+        const y = padding + ((max - p.price) / range) * (H - 2 * padding)
+        return <circle key={i} cx={x} cy={y} r={2.5} fill={UXP.lavDeep} />
+      })}
+    </svg>
+  )
+}
+
+function Stat({ label, value, bold = false }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div style={{
+      background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+      borderRadius: 8, padding: '10px 14px',
+    }}>
+      <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600,
+                    letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</div>
+      <div style={{ fontSize: bold ? 20 : 16, fontWeight: bold ? 600 : 500,
+                    color: UXP.ink1, marginTop: 4,
+                    fontVariantNumeric: 'tabular-nums' as const }}>{value}</div>
+    </div>
+  )
+}
+
+function labelForCategory(c: string): string {
+  return {
+    food: 'Mat', beverage: 'Dryck', alcohol: 'Alkohol',
+    cleaning: 'Rengöring', takeaway_material: 'Take-away',
+    disposables: 'Förbrukning', other: 'Övrigt',
+  }[c] ?? c
+}
+
+function th(): React.CSSProperties {
+  return {
+    padding: '6px 10px', fontSize: 10, fontWeight: 600, color: UXP.ink4,
+    letterSpacing: '0.04em', textTransform: 'uppercase' as const, textAlign: 'left' as const,
+  }
+}
+function td(): React.CSSProperties {
+  return { padding: '6px 10px', fontSize: 11, color: UXP.ink2 }
+}
