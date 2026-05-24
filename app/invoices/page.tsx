@@ -24,16 +24,20 @@ import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 
 interface Invoice {
-  id:          string
-  vendor:      string
-  amount:      number
-  date:        string
-  category:    string
-  status:      'paid' | 'pending' | 'overdue' | string
-  notes:       string | null
-  created_at:  string
-  file_url:    string | null
-  fortnox_url: string | null
+  id:           string
+  vendor:       string
+  amount:       number
+  date:         string
+  category:     string
+  status:       'paid' | 'pending' | 'overdue' | string
+  notes:        string | null
+  created_at:   string
+  file_url:     string | null
+  fortnox_url:  string | null
+  /** Fortnox-sourced invoices: the given_number lets us hit the
+   *  on-demand invoice-pdf endpoint when the list response didn't
+   *  carry file_id. Local invoices leave this null. */
+  given_number: string | null
 }
 
 const fmtDate = (s: string) =>
@@ -50,6 +54,7 @@ export default function InvoicesPage() {
   const [uploading, setUploading] = useState(false)
   const [dragging,  setDragging]  = useState(false)
   const [filter,    setFilter]    = useState<StatusFilter>('all')
+  const [pdfModal,  setPdfModal]  = useState<{ url: string; title: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // BizPicker
@@ -101,8 +106,9 @@ export default function InvoicesPage() {
               status:      (inv.status as 'paid' | 'pending' | 'overdue') ?? 'pending',
               notes:       inv.comments,
               created_at:  inv.invoice_date,
-              file_url:    inv.file_id ? `/api/integrations/fortnox/file?file_id=${inv.file_id}&business_id=${bizId}` : null,
-              fortnox_url: inv.fortnox_url ?? null,
+              file_url:     inv.file_id ? `/api/integrations/fortnox/file?file_id=${inv.file_id}&business_id=${bizId}` : null,
+              fortnox_url:  inv.fortnox_url ?? null,
+              given_number: inv.given_number ?? inv.invoice_number ?? null,
             })))
           }
         }
@@ -368,11 +374,18 @@ export default function InvoicesPage() {
                 key: 'actions', header: '', align: 'right',
                 render: (inv) => (
                   <div style={{ display: 'inline-flex', gap: 6 }}>
-                    {inv.file_url && (
-                      <a
-                        href={inv.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    {/* PDF button — opens inline modal. Stay-in-app: never link
+                        out to Fortnox's web UI. Prefer the direct file proxy URL
+                        when we have a file_id; otherwise call the invoice-pdf
+                        endpoint which does a just-in-time detail-fetch + 302 to
+                        the file proxy. */}
+                    {(inv.file_url || (inv.given_number && bizId)) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = inv.file_url ?? `/api/integrations/fortnox/invoice-pdf?business_id=${encodeURIComponent(bizId!)}&given_number=${encodeURIComponent(inv.given_number!)}`
+                          setPdfModal({ url, title: `${inv.vendor} — ${fmtDate(inv.date)}` })
+                        }}
                         style={{
                           padding:        '3px 10px',
                           background:     UXP.lavFill,
@@ -381,29 +394,11 @@ export default function InvoicesPage() {
                           borderRadius:   999,
                           fontSize:       10,
                           fontWeight:     500,
-                          textDecoration: 'none',
+                          cursor:         'pointer',
+                          fontFamily:     'inherit',
                           letterSpacing:  '0.02em',
                         }}
-                      >PDF</a>
-                    )}
-                    {!inv.file_url && inv.fortnox_url && (
-                      <a
-                        href={inv.fortnox_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title="Open invoice in Fortnox"
-                        style={{
-                          padding:        '3px 10px',
-                          background:     UXP.subtleBg,
-                          color:          UXP.ink2,
-                          border:         `0.5px solid ${UXP.border}`,
-                          borderRadius:   999,
-                          fontSize:       10,
-                          fontWeight:     500,
-                          textDecoration: 'none',
-                          letterSpacing:  '0.02em',
-                        }}
-                      >View in Fortnox →</a>
+                      >PDF</button>
                     )}
                     <button
                       type="button"
@@ -441,7 +436,61 @@ export default function InvoicesPage() {
           />
         )}
       </div>
+      {pdfModal && <PdfModal url={pdfModal.url} title={pdfModal.title} onClose={() => setPdfModal(null)} />}
     </AppShell>
+  )
+}
+
+// Inline PDF viewer — embedded iframe of the Fortnox file proxy (or any
+// PDF URL). Stay-in-app. Footer has "Open in new tab" fallback for
+// browsers that don't render PDFs in iframes (rare; some mobile Chrome).
+function PdfModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose}
+      style={{
+        position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 16,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(960px, 100%)', height: '90vh',
+          background: '#fff', borderRadius: 8, overflow: 'hidden' as const,
+          display: 'flex', flexDirection: 'column' as const,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.40)',
+        }}>
+        <div style={{
+          padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink3,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                textDecoration: 'none', fontFamily: 'inherit',
+              }}>Open in new tab ↗</a>
+            <button onClick={onClose}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: UXP.ink1, color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Close (Esc)</button>
+          </div>
+        </div>
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
+      </div>
+    </div>
   )
 }
 
