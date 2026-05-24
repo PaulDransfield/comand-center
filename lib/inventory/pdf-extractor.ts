@@ -334,12 +334,38 @@ export async function extractInvoicePdf(
   const headerIsReal = headerTotal != null && Math.abs(headerTotal) >= HEADER_NOISE_THRESHOLD
   if (headerIsReal && !selfInvoiceRescued) {
     totalDeltaPct = Math.abs(totalExtracted - headerTotal) / Math.abs(headerTotal)
+
+    // Rebill-loose tolerance. Frimurarholmen-style rebill invoices
+    // (one supplier passes through another supplier's purchase) have
+    // a quirk: the Fortnox header reflects the bookkeeper's allocation
+    // / VAT split / öresavrundning, which can legitimately differ
+    // from the PDF face value by 5-15% in either direction. Claude's
+    // extracted rows are correct per the PDF; the discrepancy isn't
+    // an extraction bug.
+    //
+    // Detection: ALL extracted rows have descriptions matching the
+    // "[OtherSupplier] [InvoiceNumber]" pattern — typical of rebill
+    // lines like "Axfood 0021035252" or "Menigo 12345678". Conservative
+    // — won't accidentally loosen tolerance for genuinely-wrong
+    // extractions on normal invoices.
+    const REBILL_LINE_RE = /^[A-Z][\wåäöÅÄÖ]*(\s+[A-Z][\wåäöÅÄÖ]*)?\s+\d{6,12}$/
+    const allRebillLike  = validRows.length > 0 && validRows.every(r => REBILL_LINE_RE.test(String(r.description ?? '').trim()))
+    const REBILL_TOL_PCT = 0.15
+
     if (totalDeltaPct > TOTAL_MATCH_TOL_PCT) {
-      warnings.push({
-        code: 'total_mismatch',
-        message: `Extracted total ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(totalDeltaPct * 100).toFixed(1)}%, exceeds ${(TOTAL_MATCH_TOL_PCT * 100).toFixed(0)}% tolerance.`,
-        severity: 'block',
-      })
+      if (allRebillLike && totalDeltaPct <= REBILL_TOL_PCT) {
+        warnings.push({
+          code: 'rebill_loose_tolerance',
+          message: `Rebill invoice detected (all rows are '[Supplier] [InvoiceNumber]' format). Extracted ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(totalDeltaPct * 100).toFixed(1)}%. Within rebill 15% tolerance (bookkeeper-side allocation/VAT-split is the usual cause). Accepting.`,
+          severity: 'warn',
+        })
+      } else {
+        warnings.push({
+          code: 'total_mismatch',
+          message: `Extracted total ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(totalDeltaPct * 100).toFixed(1)}%, exceeds ${(TOTAL_MATCH_TOL_PCT * 100).toFixed(0)}% tolerance.`,
+          severity: 'block',
+        })
+      }
     }
   } else if (headerIsReal && selfInvoiceRescued) {
     // Self-invoice rescue already verified the inc-VAT vs ex-VAT match
