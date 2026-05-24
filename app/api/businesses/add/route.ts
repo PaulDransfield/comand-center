@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { rateLimit }                 from '@/lib/middleware/rate-limit'
+import { PLANS }                     from '@/lib/stripe/config'
 
 const getAuth = getRequestAuth
 
@@ -15,6 +16,35 @@ export async function POST(req: NextRequest) {
   // and stops any loop that tries to seed thousands of businesses through the API.
   const gate = rateLimit(`biz-add:${auth.userId}`, { windowMs: 60 * 60_000, max: 20 })
   if (!gate.allowed) return NextResponse.json({ error: 'Too many new businesses — slow down' }, { status: 429 })
+
+  // Plan-limit enforcement (ADD-SECOND-BUSINESS-PLAN.md §B). Read the
+  // org's plan, look up its businesses cap, count active businesses,
+  // 402 with structured payload when at limit so the UI can offer an
+  // upgrade CTA.
+  const dbForCheck = createAdminClient()
+  const [orgRes, countRes] = await Promise.all([
+    dbForCheck.from('organisations').select('plan').eq('id', auth.orgId).maybeSingle(),
+    dbForCheck.from('businesses')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', auth.orgId)
+      .eq('is_active', true),
+  ])
+  const planKey = (orgRes.data?.plan as string | undefined) ?? 'solo'
+  const plan    = PLANS[planKey] ?? PLANS['solo']
+  const cap     = plan?.limits?.businesses ?? 1
+  const active  = countRes.count ?? 0
+  if (Number.isFinite(cap) && active >= cap) {
+    // Suggest the smallest upgrade that lifts the cap.
+    const upgradeTo = (cap <= 1) ? 'group' : 'chain'
+    return NextResponse.json({
+      error:        'plan_limit_reached',
+      current_plan: planKey,
+      cap,
+      current:      active,
+      upgrade_to:   upgradeTo,
+      message:      `Your ${planKey} plan allows ${cap} business${cap === 1 ? '' : 'es'}. Upgrade to ${upgradeTo} to add more.`,
+    }, { status: 402 })
+  }
 
   const body = await req.json()
   const {

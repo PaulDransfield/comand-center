@@ -41,10 +41,20 @@ export default function SettingsPage() {
   const [newCategory, setNewCategory] = useState('food_beverage')
   const [testVendor,  setTestVendor]  = useState('')
   const [testResult,  setTestResult]  = useState<Mapping | null | 'no_match'>(null)
-  const [showAddBiz,  setShowAddBiz]  = useState(false)
-  const [newBizName,  setNewBizName]  = useState('')
-  const [newBizCity,  setNewBizCity]  = useState('')
-  const [newBizType,  setNewBizType]  = useState('restaurant')
+  const [showAddBiz,    setShowAddBiz]    = useState(false)
+  const [newBizName,    setNewBizName]    = useState('')
+  const [newBizCity,    setNewBizCity]    = useState('')
+  const [newBizType,    setNewBizType]    = useState('restaurant')
+  // M046 fields — captured at add time so the budget AI, scheduling AI,
+  // and Fortnox onboarding all have what they need from day 1.
+  const [newBizAddress, setNewBizAddress] = useState('')
+  const [newBizOrgNr,   setNewBizOrgNr]   = useState('')
+  const [newBizStage,   setNewBizStage]   = useState<'new' | 'established_1y' | 'established_3y'>('established_1y')
+  const [newBizCountry, setNewBizCountry] = useState<'SE' | 'NO' | 'GB'>('SE')
+  const [newBizOpenDays, setNewBizOpenDays] = useState<Record<string, boolean>>({
+    mon: true, tue: true, wed: true, thu: true, fri: true, sat: true, sun: true,
+  })
+  const [planLimitInfo, setPlanLimitInfo] = useState<{ current_plan: string; cap: number; upgrade_to: string } | null>(null)
   const [savingBiz,   setSavingBiz]   = useState(false)
   const [bizError,    setBizError]    = useState('')
   const [expandedBiz, setExpandedBiz] = useState<any>(null)
@@ -95,18 +105,41 @@ export default function SettingsPage() {
     if (!newBizName.trim()) return
     setSavingBiz(true)
     setBizError('')
+    setPlanLimitInfo(null)
     try {
+      // Strip non-digits from org_nr client-side; server validates length + checksum.
+      const orgNr = newBizOrgNr.trim() ? newBizOrgNr.replace(/\D/g, '') : null
       const res = await fetch('/api/businesses/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newBizName, city: newBizCity, type: newBizType }),
+        body: JSON.stringify({
+          name:            newBizName,
+          city:            newBizCity,
+          type:            newBizType,
+          address:         newBizAddress.trim() || null,
+          org_number:      orgNr,
+          business_stage:  newBizStage,
+          country:         newBizCountry,
+          opening_days:    newBizOpenDays,
+        }),
       })
       const data = await res.json()
+      if (res.status === 402 && data?.error === 'plan_limit_reached') {
+        setPlanLimitInfo({ current_plan: data.current_plan, cap: data.cap, upgrade_to: data.upgrade_to })
+        setBizError(data.message)
+        setSavingBiz(false)
+        return
+      }
       if (!res.ok) throw new Error(data.error ?? 'Failed')
       setBusinesses(prev => [...prev, data])
       setShowAddBiz(false)
-      setNewBizName('')
-      setNewBizCity('')
+      setNewBizName(''); setNewBizCity(''); setNewBizAddress(''); setNewBizOrgNr('')
+      // Stitch the integration step into the journey: switch the sidebar
+      // to the new business and route to /integrations so the owner
+      // immediately connects Fortnox / Personalkollen instead of being
+      // left on the settings page wondering what to do next.
+      try { localStorage.setItem('cc_selected_biz', data.id) } catch {}
+      window.location.href = '/integrations?from=add_business&business_id=' + encodeURIComponent(data.id)
     } catch (e: any) {
       setBizError(e.message)
     }
@@ -336,16 +369,21 @@ export default function SettingsPage() {
 
         {/* Add business modal */}
         {showAddBiz && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 199, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 199, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, overflowY: 'auto' }}
             onClick={() => setShowAddBiz(false)}>
-            <div style={{ background: UXP.cardBg, borderRadius: 14, padding: 28, width: 420, maxWidth: '94vw', border: `1px solid ${UXP.border}`, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
+            <div style={{ background: UXP.cardBg, borderRadius: 14, padding: 28, width: 520, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${UXP.border}`, boxShadow: '0 20px 50px rgba(0,0,0,0.2)' }}
               onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: UXP.ink1, marginBottom: 20 }}>{t('restaurants.modal.title')}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: UXP.ink1, marginBottom: 6 }}>{t('restaurants.modal.title')}</div>
+              <div style={{ fontSize: 12, color: UXP.ink3, marginBottom: 18 }}>
+                Same data we collect at onboarding — drives budget AI, scheduling AI, Fortnox connection and holiday calendar from day one.
+              </div>
+
               <div style={{ marginBottom: 14 }}>
-                <label style={S.label}>{t('restaurants.modal.name')}</label>
+                <label style={S.label}>{t('restaurants.modal.name')} *</label>
                 <input value={newBizName} onChange={e => setNewBizName(e.target.value)}
                   placeholder={t('restaurants.modal.namePlaceholder')} style={S.input} />
               </div>
+
               <div style={{ ...S.row, marginBottom: 14 }}>
                 <div>
                   <label style={S.label}>{t('restaurants.modal.city')}</label>
@@ -359,11 +397,81 @@ export default function SettingsPage() {
                   </select>
                 </div>
               </div>
-              {bizError && <div style={{ fontSize: 12, color: UXP.roseText, marginBottom: 10 }}>{bizError}</div>}
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={S.label}>Street address</label>
+                <input value={newBizAddress} onChange={e => setNewBizAddress(e.target.value)}
+                  placeholder="Engelbrektsgatan 8" style={S.input} />
+              </div>
+
+              <div style={{ ...S.row, marginBottom: 14 }}>
+                <div>
+                  <label style={S.label}>Organisationsnummer</label>
+                  <input value={newBizOrgNr} onChange={e => setNewBizOrgNr(e.target.value)}
+                    placeholder="556677-8899" style={S.input} />
+                  <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>Required to connect Fortnox for this business.</div>
+                </div>
+                <div>
+                  <label style={S.label}>Country</label>
+                  <select value={newBizCountry} onChange={e => setNewBizCountry(e.target.value as any)} style={S.input}>
+                    <option value="SE">Sweden</option>
+                    <option value="NO">Norway</option>
+                    <option value="GB">United Kingdom</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={S.label}>Business stage</label>
+                <select value={newBizStage} onChange={e => setNewBizStage(e.target.value as any)} style={S.input}>
+                  <option value="new">New (opened &lt; 12 months ago) — budget AI skips historical anchor</option>
+                  <option value="established_1y">Established (1-3 years) — anchor on one prior year</option>
+                  <option value="established_3y">Established (3+ years) — full prior-year history</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={S.label}>Open days</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(['mon','tue','wed','thu','fri','sat','sun'] as const).map(d => (
+                    <button
+                      type="button"
+                      key={d}
+                      onClick={() => setNewBizOpenDays(s => ({ ...s, [d]: !s[d] }))}
+                      style={{
+                        padding: '6px 14px', fontSize: 12, fontWeight: 500,
+                        background: newBizOpenDays[d] ? UXP.lavFill : 'transparent',
+                        color:      newBizOpenDays[d] ? UXP.lavText : UXP.ink3,
+                        border:     `0.5px solid ${newBizOpenDays[d] ? UXP.lav : UXP.border}`,
+                        borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+                        textTransform: 'uppercase' as const,
+                      }}
+                    >{d}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>Closed days are skipped by forecast + scheduling AI.</div>
+              </div>
+
+              {bizError && (
+                <div style={{
+                  fontSize: 12, color: UXP.roseText, marginBottom: 10,
+                  padding: 10, background: UXP.roseFill, borderRadius: 6,
+                  border: `0.5px solid ${UXP.rose}`,
+                }}>
+                  {bizError}
+                  {planLimitInfo && (
+                    <div style={{ marginTop: 8 }}>
+                      <a href={`/upgrade?from=add_business&to=${planLimitInfo.upgrade_to}`} style={{ color: UXP.roseText, fontWeight: 600, textDecoration: 'underline' }}>
+                        Upgrade to {planLimitInfo.upgrade_to} →
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={saveNewBusiness} disabled={!newBizName.trim() || savingBiz}
-                  style={{ ...S.btn, flex: 1, opacity: !newBizName.trim() ? 0.5 : 1 }}>
-                  {savingBiz ? t('restaurants.modal.saving') : t('restaurants.modal.submit')}
+                <button onClick={saveNewBusiness} disabled={!newBizName.trim() || savingBiz || !!planLimitInfo}
+                  style={{ ...S.btn, flex: 1, opacity: !newBizName.trim() || planLimitInfo ? 0.5 : 1 }}>
+                  {savingBiz ? t('restaurants.modal.saving') : 'Save + connect integrations →'}
                 </button>
                 <button onClick={() => setShowAddBiz(false)} style={{ ...S.btnSm, padding: '9px 16px' }}>{tCommon('actions.cancel')}</button>
               </div>
