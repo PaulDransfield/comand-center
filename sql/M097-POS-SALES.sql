@@ -71,7 +71,11 @@ CREATE TABLE IF NOT EXISTS pos_sales (
   business_id    UUID NOT NULL REFERENCES businesses(id)    ON DELETE CASCADE,
   pos_item_id    UUID NOT NULL REFERENCES pos_menu_items(id) ON DELETE CASCADE,
   sold_at        TIMESTAMPTZ NOT NULL,                       -- per-ticket time; manual entry uses Monday-of-week 00:00 UTC
-  sold_date      DATE GENERATED ALWAYS AS (sold_at::date) STORED,
+  -- Generated columns must be IMMUTABLE. `timestamptz::date` depends on
+  -- the session's TimeZone GUC, so Postgres rejects it (42P17). Force
+  -- UTC explicitly — manual-entry rows are already stored as UTC midnight,
+  -- and connector writes should normalise to UTC at write time.
+  sold_date      DATE GENERATED ALWAYS AS ((sold_at AT TIME ZONE 'UTC')::date) STORED,
   quantity       NUMERIC NOT NULL CHECK (quantity >= 0),     -- 0 is legal for "explicitly entered zero"
   net_revenue    NUMERIC,                                    -- optional — sum of (qty × price), VAT-excl
   source         TEXT NOT NULL DEFAULT 'manual'
