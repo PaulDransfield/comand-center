@@ -26,6 +26,7 @@
 import { normaliseDescription } from './normalise'
 import { categoryForBasAccount, type InventoryCategory } from './categories'
 import { categoryForSupplier, type SupplierClassification } from './suppliers'
+import { parseProductPackSize } from './unit-conversion'
 
 const SAME_SUPPLIER_THRESHOLD  = 0.80
 const CROSS_SUPPLIER_THRESHOLD = 0.85
@@ -436,6 +437,11 @@ export async function createProductFromLine(
     productId   = existing.id
     wasExisting = true
   } else {
+    // Auto-detect pack size from the canonical name. Free fill-in for
+    // every product created via owner-review — they land already
+    // priced-per-gram in recipes without owner curation.
+    const parsedPack = parseProductPackSize(productName)
+
     const { data: prod, error: prodErr } = await db
       .from('products')
       .insert({
@@ -447,6 +453,8 @@ export async function createProductFromLine(
         default_supplier_fortnox_number: line.supplier_fortnox_number,
         default_supplier_name:   line.supplier_name_snapshot,
         created_via:             'owner_review',
+        pack_size:               parsedPack?.pack_size ?? null,
+        base_unit:               parsedPack?.base_unit ?? null,
       })
       .select('id')
       .single()
