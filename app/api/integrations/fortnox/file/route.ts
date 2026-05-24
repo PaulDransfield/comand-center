@@ -67,12 +67,14 @@ export async function GET(req: NextRequest) {
     }, { status: 401 })
   }
   if (!accessToken) {
-    // Detect whether the integration exists but is in a dead state
-    // (status='error' / 'needs_reauth' / empty access_token) vs truly
-    // not connected. The diagnostic helps owner know what to do.
+    // Diagnostic — surface BOTH the integration's actual state AND the
+    // current auth context so we can tell which mismatch is firing.
+    // 'No connected Fortnox integration' was previously confusingly
+    // shown even when the row existed with status='connected' — that
+    // means the auth.orgId doesn't match the integration's org_id.
     const { data: integState } = await db
       .from('integrations')
-      .select('status, last_error')
+      .select('status, last_error, org_id')
       .eq('business_id', businessId)
       .eq('provider', 'fortnox')
       .maybeSingle()
@@ -84,7 +86,24 @@ export async function GET(req: NextRequest) {
         detail:  integState.last_error?.slice(0, 200),
       }, { status: 409 })
     }
-    return NextResponse.json({ error: 'No connected Fortnox integration for this business' }, { status: 404 })
+    if (integState && integState.org_id !== auth.orgId) {
+      return NextResponse.json({
+        error:   'auth_org_mismatch',
+        message: 'You are signed in to a different organisation than the one that owns this Fortnox integration. Log out and log in as the correct owner, or switch the sidebar business to one in your own organisation.',
+        auth_org: auth.orgId,
+        biz_org:  integState.org_id,
+      }, { status: 403 })
+    }
+    return NextResponse.json({
+      error: 'No connected Fortnox integration for this business',
+      diagnostic: {
+        biz_id:       businessId,
+        biz_org_id:   biz.org_id,
+        auth_org_id:  auth.orgId,
+        integration_found: !!integState,
+        integration_status: integState?.status ?? null,
+      },
+    }, { status: 404 })
   }
 
   // Try inbox first (where uploaded supplier-invoice files live before being
