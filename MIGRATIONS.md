@@ -1,10 +1,87 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-09 | M022–M047 applied · M048 pending · M052–M058 applied · M059 pending (Piece 1)
+> Last updated: 2026-05-24 | M082-M086 applied · M087 + M088 pending application
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
 
 ---
 
 ## Pending — apply when ready
+
+### M088 — fx_rates table ⏳ pending application
+**File:** `sql/M088-FX-RATES.sql`
+**Purpose:** Daily currency-to-SEK rates so cost calc (recipe-cost.ts) can convert non-SEK invoice lines. ECB daily XML is the source; daily cron at `/api/cron/fx-rates-update` (17:00 UTC) fetches + upserts.
+**Schema:**
+- `fx_rates(id BIGSERIAL, rate_date DATE, currency TEXT, rate_to_sek NUMERIC, source TEXT='ecb', fetched_at)`
+- UNIQUE (rate_date, currency, source) — full constraint, safe for upsert ON CONFLICT
+- Index (currency, rate_date DESC) for at-or-before lookups
+- Seeds SEK=1.0 system row for the trivial case
+**Companion code:**
+- `lib/inventory/fx.ts` — `loadFxIndex` + `getFxRate` + `toSek` helpers
+- `lib/inventory/recipe-cost.ts` — `getProductLatestPrices` accepts optional `FxIndex`, populates `latest_price_sek` + `fx_rate_used` per product
+- `/api/cron/fx-rates-update/route.ts` — daily ECB ingestor, EUR direct + cross-rate USD/NOK/DKK/GBP
+- `vercel.json` — daily cron at 17:00 UTC (after ECB publishes)
+**Idempotent.**
+**Required after apply:** trigger the cron once manually to seed today's rates: `curl -X GET https://comandcenter.se/api/cron/fx-rates-update -H "Authorization: Bearer $CRON_SECRET"`
+
+### M087 — products.pack_size + base_unit ⏳ pending application
+**File:** `sql/M087-PRODUCT-PACK-SIZE.sql`
+**Purpose:** Unit conversion for recipes. Restaurant recipes are in g/ml/st, invoices are per pack (1kg bag at 56 kr per ST). Without pack data, 20g of garlic costs 1118 kr instead of 1.12 kr. Both columns nullable so legacy products fall back to 1:1 + warning.
+**Schema:**
+- `products.pack_size NUMERIC` (how many base units per invoice unit, e.g. 1000 for a 1kg bag where base_unit='g')
+- `products.base_unit TEXT CHECK IN ('g','ml','st')`
+- `products.pack_size CHECK > 0`
+**Companion code:**
+- `lib/inventory/unit-conversion.ts` — `canonicalUnit`, `convertQuantity` (g↔kg, ml↔l), `parseProductPackSize` (regex parses "4,1 kg" etc from product names with Swedish comma decimals)
+- `lib/inventory/recipe-cost.ts` — `costPerBase = unit_price / pack_size`, `line_cost = convertedQty × costPerBase`. Auto-parses name when DB is null.
+- `lib/inventory/matcher.ts` — `createProductFromLine` pre-fills pack_size + base_unit from the canonical name when bulk-review creates a product
+- `app/api/inventory/items/[id]/route.ts` PATCH accepts pack_size + base_unit; GET returns them
+- `app/api/inventory/items/[id]/pack-suggest/route.ts` (NEW) — returns parser suggestion for the per-product "Detect & apply" button
+- `app/api/inventory/items/backfill-pack-size/route.ts` (NEW) — bulk endpoint: walks every product without pack_size, applies the parser, saves
+- `/inventory/items/[id]` page — header gains Pack size + base unit inputs + "Detect & apply" banner when missing
+- `/inventory/items` page — "Detect pack size for all" button (calls backfill-pack-size)
+- `/inventory/recipes` drawer — Edit Product expand on each ingredient gains pack-size + base-unit fields
+**Idempotent.**
+
+---
+
+### M086 — recipe_ingredients sub-recipes ✅ applied 2026-05-24
+**File:** `sql/M086-SUBRECIPES.sql`
+**Purpose:** Recipes-inside-recipes. A dish is built from raw products PLUS several prep recipes (tomato sauce, pizza dough). Each ingredient row now points at EITHER a product OR another recipe.
+**Schema:**
+- `recipe_ingredients.subrecipe_id UUID` nullable, FK to recipes(id) ON DELETE RESTRICT (prep recipes can't be deleted while a dish references them)
+- `product_id` became nullable; CHECK enforces exactly-one-of `(product_id, subrecipe_id)`
+- CHECK `subrecipe_id != recipe_id` (cheapest cycle prevention)
+- Old UNIQUE(recipe_id, product_id) dropped; replaced with TWO partial unique indexes — `WHERE product_id IS NOT NULL` and `WHERE subrecipe_id IS NOT NULL`
+- These partials trigger the PostgREST partial-index trap on `.upsert({ onConflict })` — POST endpoint switched to SELECT-then-INSERT-or-UPDATE (same fix pattern as M075/product_aliases)
+**Cost model:** sub-recipe yield unit is `portions`. Cost per portion = sub.food_cost / sub.portions. Tomato Sauce yields 4 portions @ 60 kr → 15 kr/portion → 0.5 portions of Tomato Sauce in Margherita = 7.50 kr contribution.
+**Cycle detection:** 3 layers — DB CHECK (self-ref), API POST cycle walker (transitive check via `wouldCreateCycle`), cost helper compute-time guard (skip + flag).
+**Companion code:** `lib/inventory/recipe-cost.ts` (recurses with ancestor stack), `lib/inventory/matcher.ts`, recipe drawer + picker UI tabs.
+
+### M085 — supplier_invoice_lines.currency ✅ applied 2026-05-23
+**File:** `sql/M085-INVOICE-LINE-CURRENCY.sql`
+**Purpose:** Track invoice currency. EUR/USD invoices were silently treated as SEK, inflating food cost 11×. Default 'SEK'; PDF extractor detects from invoice header.
+**Schema:** `supplier_invoice_lines.currency TEXT NOT NULL DEFAULT 'SEK' CHECK IN ('SEK','EUR','USD','NOK','DKK','GBP')`. Index on (business_id, currency) WHERE currency != 'SEK'.
+**Companion code:** `lib/inventory/pdf-extractor.ts` SYSTEM_PROMPT + RECORD_TOOL.input_schema.header.currency. After extraction, post-pass UPDATEs all rows for that invoice with detected currency. PATCH `/api/inventory/lines/[id]` accepts currency edits. Product detail history table + recipe drawer expose editable currency dropdown.
+
+### M084 — recipes + recipe_ingredients ✅ applied 2026-05-23
+**File:** `sql/M084-RECIPES.sql`
+**Purpose:** Real persistence for recipe cost calc. Replaces the mock-only `/inventory/recipes` page with live CRUD + per-ingredient cost from latest invoice prices.
+**Schema:**
+- `recipes(id, business_id, org_id, name, type, menu_price, portions, notes, archived_at, created_at, updated_at)`
+- `recipe_ingredients(id, recipe_id, product_id FK, quantity, unit, notes, position)` — UNIQUE(recipe_id, product_id) (later replaced by M086 partials)
+- updated_at trigger on recipes; ingredient changes bump parent updated_at
+- RLS via `org_id = ANY(current_user_org_ids())` for both tables
+**Cost model:** `food_cost = sum(qty × product.latest_price)`; `food_pct = food_cost/menu_price`; `gp_pct = (menu_price-food_cost)/menu_price`. MVP unit assumption: ingredient.unit == product.invoice_unit (superseded by M087 pack_size conversion).
+
+### M083 — supplier_classifications ✅ applied 2026-05-23
+**File:** `sql/M083-SUPPLIER-CLASSIFICATIONS.sql`
+**Purpose:** Per-business override for the matcher's gate-0 classifier. Owner clicks "Skip ALL from supplier" on `/inventory/review` → row inserted here. Matcher checks this table BEFORE the universal supplier-name classifier, so future invoices from the same supplier auto-skip without manual triage.
+**Schema:** `supplier_classifications(id, business_id, supplier_fortnox_number, supplier_name_snapshot, classification CHECK IN ('not_inventory'), classified_at, classified_by)`. UNIQUE(business_id, supplier_fortnox_number) — full constraint. RLS via business_id IN orgs.
+**Companion code:** `/api/inventory/needs-review/skip-supplier` POST + the new `/api/inventory/skipped-suppliers` admin endpoints + `/inventory/skipped` page.
+
+### M082 — invoice_pdf_extractions.extracted_rows_json ✅ applied 2026-05-21
+**File:** `sql/M082-INVOICE-PDF-EXTRACTIONS-ROWS.sql`
+**Purpose:** Persist Claude's raw extracted rows on the PDF extraction row, so the Phase B.4 review UI can show + edit rows that hit validation. Single JSONB column.
+**Schema:** `invoice_pdf_extractions.extracted_rows_json JSONB` (nullable).
 
 ### M080 — fortnox_vouchers_cache ⏳ pending application
 **File:** `sql/M080-FORTNOX-VOUCHERS-CACHE.sql`
