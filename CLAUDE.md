@@ -206,7 +206,7 @@ Customer browser
 | Onboarding success | On first sync | All | ✅ **COMPLETE** | Sends welcome email on first sync |
 | Monday briefing | Monday 07:00 | Pro+ | ⏳ **BLOCKED** | Needs Resend domain verification |
 | Forecast calibration | 1st of month | Pro+ | ✅ **COMPLETE** | Runs at 04:00 UTC, pure arithmetic |
-| Supplier price creep | 1st of month | Pro+ | ✅ **SKELETON** | Waiting for Fortnox OAuth |
+| Supplier price creep | 1st of month | Pro+ | ✅ **COMPLETE** | Per-supplier-per-product detection + marquee monthly digest email |
 | Scheduling optimisation | Weekly | Group | ✅ **COMPLETE** | Monday 07:00 UTC, uses Sonnet 4-6 |
 
 **Total cost at 50 customers**: ~$5/month using Haiku 4.5 (was $15 with Sonnet — 67% saving)

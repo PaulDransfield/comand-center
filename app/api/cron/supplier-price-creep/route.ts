@@ -1,12 +1,22 @@
 // app/api/cron/supplier-price-creep/route.ts
-// Runs 1st of each month at 05:00 UTC — detects supplier price increases
-// Blocked on Fortnox OAuth approval — this is a skeleton
-// Follows spec in claude_code_agents_prompt.md
+//
+// Runs 1st of each month at 09:30 UTC. Detects supplier-by-product
+// price creep over the last 90 days vs the prior 60 days using median
+// prices to absorb single-invoice noise. Writes cost_insights rows
+// (kind='creep') AND emails the primary org owner a digest email
+// for each business with hits. One email per business per month —
+// missing hits → no email (don't spam).
+//
+// Now that Fortnox OAuth + 12-month backfill is shipped, this is the
+// marquee monthly email: "Menigo raised tomato 23% — invoice 4471 went
+// from 18 → 22 kr/kg." Specific, actionable, hard to get from any
+// other tool in the Swedish restaurant stack.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { checkCronSecret }   from '@/lib/admin/check-secret'
 import { log }               from '@/lib/log/structured'
+import { sendEmail }         from '@/lib/email/send'
 
 export const runtime     = 'nodejs'
 export const preferredRegion = 'fra1'  // EU-only; Supabase is Frankfurt
@@ -247,6 +257,33 @@ export async function POST(req: NextRequest) {
         if (insights.length > 0) {
           await db.from('cost_insights').insert(insights)
           for (const i of insights) alerts.push({ business: biz.name, supplier: i.entity, message: i.message })
+
+          // Email the primary org owner. Resolve via organisation_members
+          // (same pattern as integration-health-watchdog).
+          const { data: member } = await db
+            .from('organisation_members')
+            .select('user_id')
+            .eq('org_id', biz.org_id)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle()
+          if (member?.user_id) {
+            const { data: userRes } = await db.auth.admin.getUserById(member.user_id)
+            const ownerEmail = userRes?.user?.email
+            const ownerName  = (userRes?.user?.user_metadata?.full_name as string | undefined) ?? undefined
+            if (ownerEmail) {
+              const subject = `[CommandCenter] ${biz.name}: ${insights.length} supplier price increase${insights.length === 1 ? '' : 's'} this month`
+              const html    = renderCreepEmail({ ownerName, businessName: biz.name, hits, insights })
+              const result  = await sendEmail({
+                from:    'CommandCenter <alerts@comandcenter.se>',
+                to:      ownerEmail,
+                subject,
+                html,
+                context: { route: 'cron/supplier-price-creep', business_id: biz.id, org_id: biz.org_id, hits: hits.length, insights: insights.length },
+              })
+              if (!result.ok) errors.push(`${biz.name} email: ${result.error}`)
+            }
+          }
         }
 
         console.log(`[supplier-price-creep] ${biz.name} — analysed ${buckets.size} buckets, ${hits.length} hits, ${insights.length} insights`)
@@ -275,7 +312,6 @@ export async function POST(req: NextRequest) {
       errors: errors.length > 0 ? errors : undefined,
       month: `${year}-${String(month).padStart(2, '0')}`,
       timestamp: new Date().toISOString(),
-      note: 'Agent skeleton complete — waiting for Fortnox OAuth approval',
     })
 
   } catch (error: any) {
@@ -289,7 +325,6 @@ export async function POST(req: NextRequest) {
       ok: false,
       error: error.message,
       timestamp: new Date().toISOString(),
-      note: 'Agent skeleton complete — waiting for Fortnox OAuth approval',
     }, { status: 500 })
   }
   })
@@ -297,3 +332,100 @@ export async function POST(req: NextRequest) {
 
 // Vercel Cron dispatches GET — delegate to the same handler.
 export const GET = POST
+
+// ─────────────────────────────────────────────────────────────────────
+// Marquee monthly email — one per business per month, only when hits
+// exist. Lists the top suppliers + per-product price moves with
+// specific prior → current prices and the rough SEK delta.
+// ─────────────────────────────────────────────────────────────────────
+
+function renderCreepEmail(args: {
+  ownerName?:    string
+  businessName:  string
+  hits:          Array<{
+    supplier:      string
+    product_name:  string
+    recent_median: number
+    prior_median:  number
+    change_pct:    number
+    delta_kr:      number
+  }>
+  insights:      Array<{ entity: string; message: string; tone: string; evidence: any }>
+}): string {
+  const greet = args.ownerName ? `Hi ${args.ownerName.split(' ')[0]},` : 'Hi,'
+
+  // Group hits by supplier for the body.
+  const bySupplier = new Map<string, typeof args.hits>()
+  for (const h of args.hits) {
+    if (!bySupplier.has(h.supplier)) bySupplier.set(h.supplier, [])
+    bySupplier.get(h.supplier)!.push(h)
+  }
+
+  const supplierBlocks = Array.from(bySupplier.entries())
+    .sort((a, b) => b[1].length - a[1].length)
+    .map(([supplier, hs]) => {
+      const sorted = hs.sort((a, b) => b.change_pct - a.change_pct)
+      const totalDelta = hs.reduce((s, h) => s + h.delta_kr, 0)
+      const rows = sorted.slice(0, 6).map(h => `
+        <tr>
+          <td style="padding:6px 10px;font-size:13px;color:#1a1f2e;">${escapeHtml(h.product_name)}</td>
+          <td style="padding:6px 10px;font-size:13px;color:#6b7280;text-align:right;font-variant-numeric:tabular-nums;">${h.prior_median.toFixed(2)} kr</td>
+          <td style="padding:6px 10px;font-size:13px;color:#1a1f2e;text-align:right;font-variant-numeric:tabular-nums;">${h.recent_median.toFixed(2)} kr</td>
+          <td style="padding:6px 10px;font-size:13px;color:${h.change_pct >= 0.10 ? '#c2410c' : '#a16207'};text-align:right;font-weight:600;font-variant-numeric:tabular-nums;">+${(h.change_pct * 100).toFixed(0)}%</td>
+        </tr>`).join('')
+      const overflow = hs.length > 6 ? `<p style="font-size:11px;color:#9ca3af;margin:4px 0 0;">… and ${hs.length - 6} more product${hs.length - 6 === 1 ? '' : 's'} crept from this supplier.</p>` : ''
+      return `
+      <div style="margin-bottom:24px;border:0.5px solid #e5e7eb;border-radius:8px;overflow:hidden;">
+        <div style="padding:12px 14px;background:#f9fafb;border-bottom:0.5px solid #e5e7eb;">
+          <div style="font-size:14px;font-weight:600;color:#1a1f2e;">${escapeHtml(supplier)}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px;">${hs.length} product${hs.length === 1 ? '' : 's'} up · total +${totalDelta.toFixed(0)} kr per unit / batch</div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#fafafa;">
+              <th style="padding:6px 10px;text-align:left;font-size:10px;color:#6b7280;text-transform:uppercase;font-weight:600;">Product</th>
+              <th style="padding:6px 10px;text-align:right;font-size:10px;color:#6b7280;text-transform:uppercase;font-weight:600;">Was</th>
+              <th style="padding:6px 10px;text-align:right;font-size:10px;color:#6b7280;text-transform:uppercase;font-weight:600;">Now</th>
+              <th style="padding:6px 10px;text-align:right;font-size:10px;color:#6b7280;text-transform:uppercase;font-weight:600;">Change</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${overflow}
+      </div>`
+    }).join('')
+
+  const totalHits = args.hits.length
+  const suppliersCount = bySupplier.size
+
+  return `<!doctype html>
+<html><body style="font-family:-apple-system,system-ui,sans-serif;color:#1a1f2e;line-height:1.55;max-width:640px;margin:24px auto;padding:0 14px;background:#fff;">
+  <h2 style="font-size:20px;margin:0 0 4px;color:#3a3550;font-weight:500;">Supplier price moves this month</h2>
+  <p style="color:#6b7280;font-size:13px;margin:0 0 18px;">${escapeHtml(args.businessName)}</p>
+
+  <p>${greet}</p>
+  <p>Your supplier invoices show <strong>${totalHits} product price increase${totalHits === 1 ? '' : 's'}</strong> across <strong>${suppliersCount} supplier${suppliersCount === 1 ? '' : 's'}</strong> over the last 30 days vs the prior 60.</p>
+
+  ${supplierBlocks}
+
+  <p style="margin-top:24px;text-align:center;">
+    <a href="https://comandcenter.se/inventory/items" style="background:#7c3aed;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;display:inline-block;">Review in CommandCenter</a>
+  </p>
+
+  <p style="color:#6b7280;font-size:11px;margin-top:32px;line-height:1.7;">
+    Methodology: median price per (supplier, product) over the last 30 days vs the 60 days before that. Only flagged when the increase is both ≥5% AND ≥10 SEK absolute.
+    <br>This digest runs once per month on the 1st. To pause it, go to <a href="https://comandcenter.se/settings/ai-agents" style="color:#7c3aed;">/settings/ai-agents</a> and toggle off Supplier price creep.
+    <br><br>
+    <a href="https://comandcenter.se" style="color:#7c3aed;text-decoration:none;">CommandCenter</a>
+  </p>
+</body></html>`
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
