@@ -1,102 +1,209 @@
 'use client'
 // app/inventory/counts/page.tsx
 //
-// Phase 6 — stock-count report vision page. Per-ingredient flow:
-// opening + deliveries + transfers − closing = consumed, side-by-side
-// with theoretical "sold" so the operator sees variance at a glance.
+// List of stock counts for the current business. Click into one to walk
+// the shelves on the detail page. "+ New count" creates a header + jumps
+// straight to the detail.
 
 export const dynamic = 'force-dynamic'
 
+import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import AppShell from '@/components/AppShell'
-import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
-import KpiCardUX from '@/components/ux/KpiCard'
-import DemoDataBanner from '@/components/ux/DemoDataBanner'
 import { UXP } from '@/lib/constants/tokens'
-import {
-  MOCK_COUNT_ROWS,
-  mockCountFooter,
-  type MockCountRow,
-} from '@/lib/mock/counts'
+import { fmtKr } from '@/lib/format'
 
-function fmt(n: number, unit: string) {
-  return `${n.toFixed(unit === 'st' || unit === 'g' ? 0 : 1)}`
+interface CountRow {
+  id:                    string
+  count_date:            string
+  location_id:           string | null
+  location_name:         string | null
+  notes:                 string | null
+  started_at:            string
+  completed_at:          string | null
+  total_value_at_count:  number | null
+  total_lines:           number
+  in_progress:           boolean
 }
 
-export default function InventoryCountsPage() {
-  const footer = mockCountFooter()
-  const flagged = MOCK_COUNT_ROWS.filter(r => Math.abs(r.varians) >= 1.5).length
+interface Location { id: string; name: string }
+
+export default function StockCountsPage() {
+  const router = useRouter()
+  const [bizId,     setBizId]     = useState<string | null>(null)
+  const [counts,    setCounts]    = useState<CountRow[]>([])
+  const [locations, setLocations] = useState<Location[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [error,     setError]     = useState<string | null>(null)
+  const [creating,  setCreating]  = useState(false)
+
+  useEffect(() => {
+    const s = localStorage.getItem('cc_selected_biz')
+    if (s) setBizId(s)
+  }, [])
+
+  const load = useCallback(async () => {
+    if (!bizId) return
+    setLoading(true); setError(null)
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/inventory/counts?business_id=${encodeURIComponent(bizId)}`, { cache: 'no-store' }),
+        fetch(`/api/inventory/stock-locations?business_id=${encodeURIComponent(bizId)}`, { cache: 'no-store' }),
+      ])
+      if (!r1.ok) throw new Error((await r1.json().catch(() => ({}))).error ?? `HTTP ${r1.status}`)
+      const j1 = await r1.json()
+      setCounts(j1.counts ?? [])
+      const j2 = await r2.json().catch(() => ({ locations: [] }))
+      setLocations(j2.locations ?? [])
+    } catch (e: any) { setError(e.message) } finally { setLoading(false) }
+  }, [bizId])
+  useEffect(() => { if (bizId) load() }, [bizId, load])
+
+  async function createCount(locationId: string | null) {
+    if (!bizId) return
+    setCreating(true)
+    try {
+      const r = await fetch('/api/inventory/counts', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId, location_id: locationId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      router.push(`/inventory/counts/${j.count.id}`)
+    } catch (e: any) { alert(e.message); setCreating(false) }
+  }
+
+  async function createLocationAndCount() {
+    if (!bizId) return
+    const name = prompt('Location name (e.g. Walk-in, Bar, Dry store):')?.trim()
+    if (!name) return
+    try {
+      const r = await fetch('/api/inventory/stock-locations', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId, name }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      await createCount(j.location.id)
+    } catch (e: any) { alert(e.message) }
+  }
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1100 }}>
-        <DemoDataBanner />
-
-        <div style={{ marginBottom: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: UXP.ink1 }}>Lagerräkning</h1>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3 }}>
-            Senaste avstämda räkningen — variansrad mot teoretisk förbrukning enligt recept.
-          </p>
+      <div style={{ maxWidth: 980, padding: '20px 24px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' as const }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+              Stock counts
+            </h1>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3, maxWidth: 640, lineHeight: 1.5 }}>
+              Walk the shelves, type counts on your phone. Each count snapshots both the cost at-time-of-count AND the live current value so you can see drift.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' as const }}>
+            <button disabled={creating || !bizId} onClick={() => createCount(null)} style={primaryBtn}>
+              + New count
+            </button>
+            {locations.length > 0 && (
+              <select disabled={creating || !bizId}
+                onChange={e => { if (e.target.value) createCount(e.target.value); e.currentTarget.value = '' }}
+                value=""
+                style={{
+                  padding: '6px 10px', fontSize: 12,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 5, color: UXP.ink2, fontFamily: 'inherit',
+                  cursor: 'pointer',
+                }}>
+                <option value="">New count by location…</option>
+                {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            )}
+            <button disabled={creating || !bizId} onClick={createLocationAndCount}
+              style={{
+                padding: '6px 10px', fontSize: 12, fontWeight: 500,
+                background: 'transparent', color: UXP.ink3,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+              + Location & count
+            </button>
+          </div>
         </div>
 
-        <div style={{
-          display:             'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap:                 12,
-          marginBottom:        14,
-        }}>
-          <KpiCardUX
-            title="Ingredienser räknade"
-            value={String(MOCK_COUNT_ROWS.length)}
-            microLabel="Senaste räkning"
-          />
-          <KpiCardUX
-            title="Avvikelser"
-            value={String(flagged)}
-            deltaGood={false}
-            delta={flagged > 0 ? '|varians| ≥ 1.5' : null}
-            microLabel="Behöver granskning"
-          />
-          <KpiCardUX
-            title="Räkningar i år"
-            value="12"
-            microLabel="En per månad"
-          />
-        </div>
+        {error && (
+          <div style={{ padding: '10px 14px', background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`,
+                        borderRadius: 8, color: UXP.roseText, fontSize: 12, marginBottom: 12 }}>
+            {error}
+          </div>
+        )}
+        {loading && <Empty label="Loading…" />}
+        {!loading && counts.length === 0 && !error && (
+          <Empty label="No counts yet. Click + New count to walk the shelves." />
+        )}
 
-        <BreakdownTable<MockCountRow>
-          columns={[
-            { key: 'article',     header: 'Vara',           align: 'left',  width: 'minmax(180px, 1.6fr)', render: (r) => (
-              <span>
-                <span style={{ color: UXP.ink1, fontWeight: 500 }}>{r.name}</span>
-                <span style={{ display: 'block', fontSize: 9, color: UXP.ink4, marginTop: 1 }}>{r.article}</span>
-              </span>
-            ) },
-            { key: 'varians',     header: 'Varians',        align: 'right', render: (r) =>
-              <DeltaChip value={`${r.varians >= 0 ? '+' : ''}${r.varians.toFixed(1)} ${r.unit}`} positiveIsGood={false} />,
-            },
-            { key: 'ingaende',    header: 'Ingående',       align: 'right', render: (r) => `${fmt(r.ingaende, r.unit)} ${r.unit}` },
-            { key: 'leverans',    header: 'Leverans',       align: 'right', render: (r) => `${fmt(r.leverans, r.unit)} ${r.unit}` },
-            { key: 'overfort_in', header: 'Överfört',       align: 'right', render: (r) => `${fmt(r.overfort_in - r.overfort_ut, r.unit)} ${r.unit}` },
-            { key: 'utgaende',    header: 'Utgående',       align: 'right', render: (r) => `${fmt(r.utgaende, r.unit)} ${r.unit}` },
-            { key: 'forbrukat',   header: 'Förbrukat',      align: 'right', render: (r) => `${fmt(r.forbrukat, r.unit)} ${r.unit}` },
-            { key: 'sald',        header: 'Sålt (recept)',  align: 'right', render: (r) => `${fmt(r.sald, r.unit)} ${r.unit}` },
-          ]}
-          sections={[{ rows: MOCK_COUNT_ROWS }]}
-          footer={{
-            label: 'SUMMA',
-            cells: {
-              varians:     '',
-              ingaende:    String(footer.ingaende),
-              leverans:    String(footer.leverans),
-              overfort_in: String(footer.overfort_in - footer.overfort_ut),
-              utgaende:    String(footer.utgaende),
-              forbrukat:   String(footer.forbrukat),
-              sald:        String(footer.sald),
-            },
-          }}
-          rowKey={(row) => row.item_id}
-        />
+        {!loading && counts.length > 0 && (
+          <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: UXP.subtleBg }}>
+                  <Th label="Date" />
+                  <Th label="Location" />
+                  <Th label="Lines" align="right" />
+                  <Th label="Value at count" align="right" />
+                  <Th label="Status" />
+                </tr>
+              </thead>
+              <tbody>
+                {counts.map(c => (
+                  <tr key={c.id}
+                      onClick={() => router.push(`/inventory/counts/${c.id}`)}
+                      style={{ cursor: 'pointer', borderTop: `0.5px solid ${UXP.borderSoft}` }}
+                      onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <td style={{ ...td(), color: UXP.ink1, fontWeight: 500 }}>{c.count_date}</td>
+                    <td style={{ ...td(), color: UXP.ink3 }}>{c.location_name ?? '— global —'}</td>
+                    <td style={{ ...td(), textAlign: 'right' as const, color: UXP.ink2 }}>{c.total_lines}</td>
+                    <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, fontWeight: 500, color: UXP.ink1 }}>
+                      {c.total_value_at_count != null ? fmtKr(c.total_value_at_count) : '—'}
+                    </td>
+                    <td style={td()}>
+                      {c.in_progress ? (
+                        <span style={{ padding: '2px 8px', background: UXP.lavFill, color: UXP.lavText,
+                                       borderRadius: 4, fontSize: 10, fontWeight: 600 }}>
+                          In progress
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, color: UXP.ink3 }}>Completed {c.completed_at?.slice(0, 10)}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </AppShell>
   )
+}
+
+function Empty({ label }: { label: string }) {
+  return (
+    <div style={{ padding: 36, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13,
+                  background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8 }}>
+      {label}
+    </div>
+  )
+}
+function Th({ label, align = 'left' }: { label: string; align?: 'left' | 'right' }) {
+  return <th style={{ padding: '8px 12px', fontSize: 10, fontWeight: 600, color: UXP.ink4,
+                      letterSpacing: '0.04em', textTransform: 'uppercase' as const, textAlign: align }}>{label}</th>
+}
+function td(): React.CSSProperties { return { padding: '10px 12px', fontSize: 12, color: UXP.ink2 } }
+const primaryBtn: React.CSSProperties = {
+  padding: '6px 14px', fontSize: 12, fontWeight: 600,
+  background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 5,
+  cursor: 'pointer', fontFamily: 'inherit',
 }
