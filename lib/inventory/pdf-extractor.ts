@@ -233,8 +233,36 @@ export async function extractInvoicePdf(
   }
 
   // Total-match validator
-  const totalExtracted = validRows.reduce((s, r) => s + Number(r.total_excl_vat ?? 0), 0)
-  const headerTotal    = input.invoice_total_header ?? modelResponse.header?.invoice_total_excl_vat ?? null
+  let totalExtracted = validRows.reduce((s, r) => s + Number(r.total_excl_vat ?? 0), 0)
+  const headerTotal  = input.invoice_total_header ?? modelResponse.header?.invoice_total_excl_vat ?? null
+
+  // Server-side credit-note sign-flip rescue. Despite the explicit
+  // prompt section, Claude still occasionally returns positive values
+  // for credit notes (signature: header is negative, extracted is
+  // positive, |extracted| ≈ |header|). Catching it here saves the
+  // owner a manual review per credit note. Conditions:
+  //   - header is meaningfully negative (< -10 kr to avoid noise)
+  //   - extracted is positive (sign error in Claude's output)
+  //   - absolute values match within 5 % (so we're not flipping
+  //     genuinely-wrong extractions that happen to have signs reversed)
+  if (
+    headerTotal != null && headerTotal < -10 &&
+    totalExtracted > 10 &&
+    Math.abs(Math.abs(headerTotal) - Math.abs(totalExtracted)) / Math.abs(headerTotal) < 0.05
+  ) {
+    for (const r of validRows) {
+      if (r.quantity       != null) r.quantity       = -Number(r.quantity)
+      if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
+      if (r.price_per_unit != null) r.price_per_unit = -Number(r.price_per_unit)
+    }
+    totalExtracted = -totalExtracted
+    warnings.push({
+      code: 'credit_note_sign_flipped',
+      message: `Credit note detected (header ${headerTotal.toFixed(2)}, extracted +${Math.abs(totalExtracted).toFixed(2)}). Flipped all row signs to negative to match.`,
+      severity: 'warn',
+    })
+  }
+
   let totalDeltaPct: number | null = null
   // Guard against floating-point near-zero noise. Chicce's placeholder
   // supplier_invoice_lines rows summed to numbers like -2.8e-13 which
@@ -504,9 +532,37 @@ Hard rules:
 - vat_rate = 0, 6, 12, or 25 — the Swedish standard rate, taken from what's
   printed on the row (Wolt/Foodora takeaway = 6, dine-in food = 12,
   alcohol/durables = 25).
-- Negative quantities/totals for credit notes — preserve the sign.
 - If a line is illegible OR the PDF is unreadable, return rows: [] and let
   the calling system flag it for owner review. Never invent rows.
+
+CREDIT NOTES — CRITICAL (this is the most common extraction bug):
+- A credit note ("kreditfaktura" / "kreditnota") is the supplier refunding
+  money TO us — usually for returns, mis-shipments, oil/grease recycling
+  pickups, deposit returns, etc.
+- The header total on a credit note is NEGATIVE (e.g. -1 250 kr).
+- EVERY line item on a credit note must ALSO have NEGATIVE values for
+  both quantity AND total_excl_vat. Even if the PDF prints the numbers
+  WITHOUT a minus sign (which is common — only the header carries the
+  sign), you must flip them negative because they represent money
+  coming BACK to the buyer.
+- Indicators that a PDF is a credit note:
+    * Title says "KREDITFAKTURA" or "KREDITNOTA" instead of "FAKTURA"
+    * A reference like "Krediterar faktura 12345" or "Avser faktura X"
+    * Supplier types like oil recycling (Quatra), deposit returns,
+      empty-pallet credits, return-of-goods
+    * Header amount printed as -X or shown in red / brackets
+- If you see ANY of these, the entire invoice is a credit and signs
+  flip negative. Get this wrong and the variance calc breaks.
+
+INCLUSIVE vs EXCLUSIVE OF VAT — second most common bug:
+- The total_excl_vat field MUST be ex-VAT. If the row prints both an
+  inc-VAT and ex-VAT number (Swedish invoices often show both columns
+  side by side, with headers like "Pris" / "Bel. ex moms" / "Bel. inc moms"),
+  use the EX-VAT figure.
+- If the row only prints an inc-VAT price, divide by (1 + vat_rate/100)
+  to get ex-VAT (e.g. 11 kr inc 10% VAT → 10 kr ex-VAT).
+- The sum of total_excl_vat across all rows MUST match the invoice's
+  ex-VAT header total within ~2%, NOT the inc-VAT "att betala" total.
 
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
