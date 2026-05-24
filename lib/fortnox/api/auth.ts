@@ -101,16 +101,45 @@ export async function refreshFortnoxToken(
   })
   if (!res.ok) {
     const text = await res.text().catch(() => '')
-    // Fortnox returns invalid_grant when the refresh token has been
-    // rotated (a previous refresh response wasn't persisted), revoked
-    // by the customer, or expired (45 days idle). Any of these mean
-    // the only path forward is owner re-OAuth — so flip the integration
-    // to status='needs_reauth' and stop pretending the connection is
-    // healthy. Without this flip, every subsequent request hits the
-    // same dead token and re-throws the same HTTP 400 in a loop.
     const isInvalidGrant =
       res.status === 400 || res.status === 401 || /invalid_grant/i.test(text)
+
     if (isInvalidGrant) {
+      // Belt-and-braces race detection: even with the M096 lock, two
+      // processes could theoretically race in the millisecond between
+      // acquire and Fortnox round-trip if the lock RPC failed silently.
+      // Before declaring the integration dead, re-read the row — if
+      // credentials_enc has changed since we started, another process
+      // already refreshed successfully. Use their result instead of
+      // flipping status='needs_reauth'.
+      try {
+        const { data: fresh } = await db
+          .from('integrations')
+          .select('credentials_enc, status')
+          .eq('id', integ.id)
+          .maybeSingle()
+        if (
+          fresh?.credentials_enc &&
+          fresh.credentials_enc !== integ.credentials_enc &&
+          fresh.status !== 'needs_reauth'
+        ) {
+          const newCreds = normaliseCreds(JSON.parse(decrypt(fresh.credentials_enc) ?? '{}'))
+          if (newCreds.access_token && newCreds.expires_at > Date.now()) {
+            log.info('fortnox_invalid_grant_recovered_via_reread', {
+              integration_id: integ.id,
+              new_expires_at: newCreds.expires_at,
+            })
+            return newCreds
+          }
+        }
+      } catch (rereadErr: any) {
+        log.warn('fortnox_invalid_grant_reread_failed', {
+          integration_id: integ.id,
+          error:          rereadErr?.message,
+        })
+      }
+
+      // Genuinely dead refresh_token — owner must re-OAuth.
       try {
         await db.from('integrations')
           .update({
@@ -174,13 +203,117 @@ export interface GetFreshTokenOpts {
 }
 
 /**
- * Race-prevention: when two callers refresh simultaneously, only one
- * actually hits Fortnox — the other awaits the in-flight promise.
- * Single-process scope only; concurrent Vercel function invocations
- * can still race. Cross-process safety needs DB advisory lock + that's
- * a follow-up scoped in SCALING-FORTNOX-AUTH.md.
+ * In-process refresh dedupe (Map<integration_id, Promise>) for the case
+ * where two callers in the SAME Vercel invocation both want a refresh.
+ * Layered on top of the M096 DB lock — without this, two same-process
+ * callers would both try to acquire the DB lock, one would lose and
+ * poll-wait unnecessarily. With this, they share one Promise that does
+ * the lock dance once.
  */
 const inflightRefreshes = new Map<string, Promise<DecryptedFortnoxCreds>>()
+
+/**
+ * Sleep helper for the lock-wait poll.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms))
+}
+
+/**
+ * Try-acquire-or-wait refresh. Implements the cross-process race fix
+ * from M096:
+ *
+ *   1. Try acquire DB lock on (integration_id). If acquired:
+ *      - We're the chosen one. Do the refresh.
+ *      - Always release in finally.
+ *   2. If NOT acquired, another process is mid-refresh. Wait up to 15s,
+ *      polling integrations.updated_at. As soon as the row's
+ *      credentials_enc changes (= other process persisted refreshed
+ *      creds), re-decrypt + return THEIR result.
+ *   3. If we time out waiting, fall through and try the refresh
+ *      ourselves (the other process probably crashed).
+ *
+ * Eliminates the invalid_grant cascade that killed integrations whenever
+ * 2+ Lambda invocations posted the same refresh_token to Fortnox.
+ */
+async function refreshWithLock(
+  db:        any,
+  integ:     FortnoxIntegrationRow,
+  currCreds: DecryptedFortnoxCreds,
+): Promise<DecryptedFortnoxCreds> {
+  const owner = `pid=${process.pid}/${Math.random().toString(36).slice(2, 8)}`
+
+  // Snapshot current creds string so we can detect when "the row changed"
+  // (another process persisted a refresh).
+  const baselineEnc = integ.credentials_enc
+
+  // Try to acquire the lock.
+  const { data: acquired, error: lockErr } = await db.rpc(
+    'acquire_fortnox_refresh_lock',
+    { p_integration_id: integ.id, p_owner: owner },
+  )
+
+  if (lockErr) {
+    // Lock RPC not deployed yet (pre-M096) or transient error — fall
+    // back to old behaviour: just refresh and hope for the best.
+    log.warn('fortnox_refresh_lock_rpc_unavailable', {
+      integration_id: integ.id,
+      error:          lockErr.message,
+    })
+    return refreshFortnoxToken(db, integ, currCreds)
+  }
+
+  if (acquired === true) {
+    // We have the lock. Do the refresh, always release.
+    try {
+      return await refreshFortnoxToken(db, integ, currCreds)
+    } finally {
+      try {
+        await db.rpc('release_fortnox_refresh_lock', { p_integration_id: integ.id })
+      } catch (releaseErr: any) {
+        // Stale-sweep covers us in 30s; this is best-effort.
+        log.warn('fortnox_refresh_lock_release_failed', {
+          integration_id: integ.id,
+          error:          releaseErr?.message,
+        })
+      }
+    }
+  }
+
+  // Lost the race. Poll for the holder to finish (= credentials_enc
+  // changes in the integrations row). 15s budget, 500ms ticks.
+  for (let i = 0; i < 30; i++) {
+    await sleep(500)
+    const { data: fresh } = await db
+      .from('integrations')
+      .select('credentials_enc')
+      .eq('id', integ.id)
+      .maybeSingle()
+    if (fresh?.credentials_enc && fresh.credentials_enc !== baselineEnc) {
+      // Other process persisted. Use their result.
+      try {
+        const newCreds = normaliseCreds(JSON.parse(decrypt(fresh.credentials_enc) ?? '{}'))
+        if (newCreds.access_token) {
+          log.info('fortnox_refresh_race_won_by_other', {
+            integration_id: integ.id,
+            waited_ms:      (i + 1) * 500,
+          })
+          return newCreds
+        }
+      } catch (decErr: any) {
+        log.warn('fortnox_refresh_race_decrypt_failed', {
+          integration_id: integ.id,
+          error:          decErr?.message,
+        })
+        // fall through to next poll
+      }
+    }
+  }
+
+  // Holder didn't finish in 15s — probably crashed. Try ourselves.
+  log.warn('fortnox_refresh_lock_wait_timeout', { integration_id: integ.id })
+  return refreshFortnoxToken(db, integ, currCreds)
+}
 
 /** Load + decrypt + (maybe) refresh. Returns the full creds object so
  *  callers that need scope / expires_at can consume them. Most callers
@@ -192,46 +325,37 @@ export async function getFreshFortnoxCreds(
   opts?:      GetFreshTokenOpts,
 ): Promise<DecryptedFortnoxCreds | null> {
   const integ = await loadFortnoxIntegration(db, orgId, businessId)
-  if (!integ) {
-    console.log('[fortnox/auth] no integration for', { orgId, businessId })
-    return null
-  }
+  if (!integ) return null
 
   let creds: DecryptedFortnoxCreds
   try {
     creds = normaliseCreds(JSON.parse(decrypt(integ.credentials_enc) ?? '{}'))
   } catch (e: any) {
-    console.error('[fortnox/auth] decrypt threw:', e?.message)
     throw new Error('Failed to decrypt Fortnox credentials')
   }
 
   const stillValid = creds.expires_at - Date.now() > REFRESH_THRESHOLD_MS
-  console.log('[fortnox/auth] state', {
-    integ_id: integ.id,
-    access_token_len: creds.access_token?.length ?? 0,
-    expires_in_min: Math.round((creds.expires_at - Date.now()) / 60000),
-    stillValid, will_refresh: !stillValid || !!opts?.force,
-  })
 
-  if (opts?.force || !stillValid) {
-    const key = `${integ.id}`
-    let p = inflightRefreshes.get(key)
-    if (!p) {
-      p = refreshFortnoxToken(db, integ, creds)
-        .finally(() => inflightRefreshes.delete(key))
-      inflightRefreshes.set(key, p)
-    }
-    try {
-      creds = await p
-      console.log('[fortnox/auth] refresh ok', {
-        new_access_token_len: creds.access_token?.length ?? 0,
-        new_expires_at: creds.expires_at,
-      })
-    } catch (e: any) {
-      console.error('[fortnox/auth] refresh threw:', e?.message)
-      // ALSO mark status='error' here so the watchdog picks it up, since
-      // generic refresh errors (HTTP 5xx, network, invalid_client) didn't
-      // previously flip status. Now we surface them.
+  if (!opts?.force && stillValid && creds.access_token) {
+    return creds   // happy path — no refresh needed
+  }
+
+  // Refresh path — dedupe by integration_id within this process AND
+  // serialise across processes via the M096 DB lock.
+  const key = `${integ.id}`
+  let p = inflightRefreshes.get(key)
+  if (!p) {
+    p = refreshWithLock(db, integ, creds)
+      .finally(() => inflightRefreshes.delete(key))
+    inflightRefreshes.set(key, p)
+  }
+  try {
+    return await p
+  } catch (e: any) {
+    // Mark status='error' for generic refresh errors (HTTP 5xx, network
+    // issues, invalid_client) — invalid_grant has its own path in
+    // refreshFortnoxToken that flips to needs_reauth instead.
+    if (e?.message !== 'FORTNOX_NEEDS_REAUTH') {
       try {
         await db.from('integrations')
           .update({
@@ -240,10 +364,9 @@ export async function getFreshFortnoxCreds(
           })
           .eq('id', integ.id)
       } catch {}
-      throw e
     }
+    throw e
   }
-  return creds
 }
 
 /** One-call helper: load → decrypt → refresh if expiring → return the

@@ -21,8 +21,7 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
-import { refreshFortnoxToken }          from '@/lib/fortnox/api/auth'
-import { decrypt }                      from '@/lib/integrations/encryption'
+import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -52,117 +51,45 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'Business not found in your org' }, { status: 404 })
 
-  // Resolve a live Fortnox access token. Bypass the shared helpers entirely
-  // — they keep returning null / triggering refresh races in production
-  // (2026-05-24, root cause TBD). For this user-blocking PDF render path:
-  //
-  //   1. Read the credentials_enc directly + decrypt.
-  //   2. Use the stored access_token AS-IS, no expiry-window check.
-  //   3. If Fortnox returns 401 to our actual file fetch below, refresh
-  //      once and retry. This avoids the "guess if it's expired" branch
-  //      that was somehow misfiring.
-  //
-  // The "always try cached, refresh on 401" pattern is the canonical
-  // OAuth client pattern — strictly better than expiry-window heuristics
-  // because it works even when the server's idea of expiry differs from
-  // what we cached.
-  let accessToken: string | null = null
-  let integForRefresh: any       = null
-  let rawCreds: any              = null
-  let loadDiag: any              = {}
+  // Resolve a live Fortnox access token via the canonical helper. The
+  // helper now serialises cross-process refreshes via the M096 lock, so
+  // concurrent invocations won't all hammer Fortnox's token endpoint
+  // with the same refresh_token. If the token is fresh, this is just a
+  // DB read + decrypt.
+  let accessToken: string | null
   try {
-    const { data: integ } = await db
-      .from('integrations')
-      .select('id, org_id, business_id, credentials_enc, status')
-      .eq('org_id', auth.orgId)
-      .eq('business_id', businessId)
-      .eq('provider', 'fortnox')
-      .in('status', ['connected', 'error', 'warning'])
-      .limit(1)
-      .maybeSingle()
-
-    loadDiag.integration_found  = !!integ
-    loadDiag.integration_status = integ?.status ?? null
-    loadDiag.has_credentials_enc = !!integ?.credentials_enc
-
-    if (integ?.credentials_enc) {
-      const decoded  = decrypt(integ.credentials_enc)
-      loadDiag.decrypt_ok      = !!decoded
-      loadDiag.decoded_len     = (decoded ?? '').length
-      const raw     = decoded ? JSON.parse(decoded) : {}
-      loadDiag.raw_access_len  = String(raw?.access_token  ?? '').length
-      loadDiag.raw_refresh_len = String(raw?.refresh_token ?? '').length
-      rawCreds         = raw
-      integForRefresh  = integ
-      accessToken      = raw?.access_token ? String(raw.access_token) : null
-    }
+    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
   } catch (err: any) {
     return NextResponse.json({
-      error:   'fortnox_token_load_failed',
-      message: err?.message ?? 'Failed to load Fortnox credentials.',
+      error:   'fortnox_token_refresh_failed',
+      message: err?.message === 'FORTNOX_NEEDS_REAUTH'
+        ? 'Your Fortnox connection was disconnected. Reconnect at /integrations.'
+        : (err?.message ?? 'Failed to obtain Fortnox token.'),
       caught_message: err?.message ?? null,
-      load_diag: loadDiag,
-    }, { status: 500 })
+    }, { status: 401 })
   }
 
   if (!accessToken) {
     return NextResponse.json({
       error: 'No connected Fortnox integration for this business',
-      diagnostic: {
-        biz_id: businessId,
-        biz_org_id: biz.org_id,
-        auth_org_id: auth.orgId,
-        ...loadDiag,
-      },
+      hint:  'Go to /integrations and click Connect, then try again.',
     }, { status: 404 })
   }
-  // Try inbox first (where uploaded supplier-invoice files live before being
-  // archived). Fortnox's `/3/inbox/{id}` returns the raw bytes; some files
-  // live in `/3/archive/{id}` instead. fortnoxFetch handles 429 retry-with-
-  // backoff so a transient rate limit doesn't 502 the user.
-  async function fetchFile(token: string): Promise<Response> {
-    let r = await fortnoxFetch(
-      `https://api.fortnox.se/3/inbox/${encodeURIComponent(fileId)}`,
-      token,
+
+  // Try inbox first (where uploaded supplier-invoice files live before
+  // being archived). Some files live in /3/archive/{id} instead.
+  // fortnoxFetch handles 429 retry-with-backoff.
+  let fortnoxRes = await fortnoxFetch(
+    `https://api.fortnox.se/3/inbox/${encodeURIComponent(fileId)}`,
+    accessToken,
+    { accept: '*/*' },
+  )
+  if (fortnoxRes.status === 404) {
+    fortnoxRes = await fortnoxFetch(
+      `https://api.fortnox.se/3/archive/${encodeURIComponent(fileId)}`,
+      accessToken,
       { accept: '*/*' },
     )
-    if (r.status === 404) {
-      r = await fortnoxFetch(
-        `https://api.fortnox.se/3/archive/${encodeURIComponent(fileId)}`,
-        token,
-        { accept: '*/*' },
-      )
-    }
-    return r
-  }
-
-  let fortnoxRes = await fetchFile(accessToken)
-
-  // If the cached token is actually expired, Fortnox returns 401. Refresh
-  // once and retry — this is the canonical OAuth client pattern, strictly
-  // better than guessing expiry from the cached expires_at timestamp.
-  if (fortnoxRes.status === 401 && integForRefresh && rawCreds?.refresh_token) {
-    try {
-      const refreshed = await refreshFortnoxToken(db, integForRefresh, {
-        access_token:  String(rawCreds.access_token  ?? ''),
-        refresh_token: String(rawCreds.refresh_token ?? ''),
-        expires_at:    0,   // force "expired" so refresh logic doesn't second-guess
-        token_type:    rawCreds.token_type,
-        scope:         rawCreds.scope,
-      })
-      if (refreshed.access_token) {
-        accessToken = refreshed.access_token
-        fortnoxRes  = await fetchFile(accessToken)
-      }
-    } catch (refreshErr: any) {
-      return NextResponse.json({
-        error:   'fortnox_token_refresh_failed',
-        message: refreshErr?.message === 'FORTNOX_NEEDS_REAUTH'
-          ? 'Your Fortnox connection was disconnected (refresh token rejected). Reconnect at /integrations.'
-          : (refreshErr?.message ?? 'Token refresh failed.'),
-        caught_message: refreshErr?.message ?? null,
-      }, { status: 401 })
-    }
   }
 
   if (!fortnoxRes.ok) {
