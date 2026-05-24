@@ -58,12 +58,18 @@ export async function GET(req: NextRequest) {
   // the morning's OAuth tokens expired (10h after onboarding), this
   // endpoint started 401-ing while the other three auto-refreshed.
   let accessToken: string | null
+  let tokenStage = 'before_call'
   try {
     accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
+    tokenStage = accessToken
+      ? `got_token_len_${accessToken.length}`
+      : 'helper_returned_null'
   } catch (err: any) {
     return NextResponse.json({
       error:   'fortnox_token_refresh_failed',
       message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
+      caught_message: err?.message ?? null,
+      stack_excerpt: String(err?.stack ?? '').slice(0, 600),
     }, { status: 401 })
   }
   if (!accessToken) {
@@ -94,8 +100,37 @@ export async function GET(req: NextRequest) {
         biz_org:  integState.org_id,
       }, { status: 403 })
     }
+    // ALSO inline the integration's actual access_token state (length
+    // only — never the value) so we can diagnose:
+    //   - row exists but credentials_enc decrypts to no access_token
+    //   - decrypt itself returned null
+    //   - refresh fired but persisted something empty
+    let access_token_in_db_len = 0
+    try {
+      const { data: cred } = await db
+        .from('integrations')
+        .select('credentials_enc, updated_at')
+        .eq('business_id', businessId)
+        .eq('provider', 'fortnox')
+        .maybeSingle()
+      if (cred?.credentials_enc) {
+        const { decrypt } = await import('@/lib/integrations/encryption')
+        const decoded = decrypt(cred.credentials_enc)
+        const parsed = decoded ? JSON.parse(decoded) : {}
+        access_token_in_db_len = String(parsed.access_token ?? '').length
+      }
+    } catch (e) { /* swallow — diagnostic only */ }
     return NextResponse.json({
       error: 'No connected Fortnox integration for this business',
+      diagnostic: {
+        biz_id:        businessId,
+        biz_org_id:    biz.org_id,
+        auth_org_id:   auth.orgId,
+        integration_found: !!integState,
+        integration_status: integState?.status ?? null,
+        token_stage:   tokenStage,
+        access_token_in_db_len,
+      },
     }, { status: 404 })
   }
 
