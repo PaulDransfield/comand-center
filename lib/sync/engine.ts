@@ -567,94 +567,33 @@ async function syncPersonalkollen(db: any, integ: any, fromDate: string, toDate:
 }
 
 // ── Fortnox sync ──────────────────────────────────────────────────────────────
-async function syncFortnox(db: any, integ: any, fromDate: string, toDate: string) {
-  // Refresh proactively if the token is close to expiry. Uses the
-  // shared helper from lib/fortnox/api/auth.ts so concurrent syncs
-  // dedupe the in-flight refresh AND invalid_grant flips status to
-  // 'needs_reauth' instead of looping on a dead token.
-  const accessToken = await getFreshFortnoxAccessToken(db, integ.org_id, integ.business_id)
-  if (!accessToken) throw new Error('FORTNOX_NEEDS_REAUTH')
-
-  const baseUrl = 'https://api.fortnox.se/3'
-  const headers = {
-    'Authorization': `Bearer ${accessToken}`,
-    'Content-Type':  'application/json',
-    'Accept':        'application/json',
-  }
-
-  let invoicesUpserted = 0
-
-  // Fetch supplier invoices
-  try {
-    const fromYear  = fromDate.slice(0,4)
-    const fromMonth = fromDate.slice(5,7)
-    const res = await fetch(`${baseUrl}/supplierinvoices?filter=all&fromdate=${fromDate}&todate=${toDate}&limit=500`, { headers })
-    if (res.ok) {
-      const data = await res.json()
-      const invoices = data.SupplierInvoices ?? []
-
-      for (const inv of invoices) {
-        const invDate = inv.InvoiceDate ?? inv.BookKeepingDate
-        if (!invDate) continue
-        const amount = parseFloat(inv.Total ?? inv.GrossAmount ?? 0)
-        const vat    = parseFloat(inv.VAT ?? 0)
-
-        await db.from('financial_logs').upsert({
-          org_id:           integ.org_id,
-          business_id:      integ.business_id ?? null,
-          provider:         'fortnox',
-          source_id:        `inv-${inv.GivenNumber ?? inv.InvoiceNumber}`,
-          log_type:         'invoice',
-          amount:           amount,
-          vat_amount:       vat,
-          vendor_name:      inv.SupplierName ?? null,
-          vendor_number:    inv.SupplierNumber ?? null,
-          transaction_date: invDate,
-          period_year:      parseInt(invDate.slice(0,4)),
-          period_month:     parseInt(invDate.slice(5,7)),
-          description:      inv.Comments ?? null,
-          raw_data:         inv,
-          updated_at:       new Date().toISOString(),
-        }, { onConflict: 'org_id,provider,source_id' })
-        invoicesUpserted++
-      }
-    }
-  } catch (e: any) {
-    console.error('Fortnox invoices error:', e.message)
-  }
-
-  // Fetch vouchers/journal entries
-  let vouchersUpserted = 0
-  try {
-    const res = await fetch(`${baseUrl}/vouchers?fromdate=${fromDate}&todate=${toDate}`, { headers })
-    if (res.ok) {
-      const data = await res.json()
-      const vouchers = data.Vouchers ?? []
-      for (const v of vouchers) {
-        const vDate = v.TransactionDate
-        if (!vDate) continue
-        await db.from('financial_logs').upsert({
-          org_id:           integ.org_id,
-          business_id:      integ.business_id ?? null,
-          provider:         'fortnox',
-          source_id:        `voucher-${v.VoucherSeries}-${v.VoucherNumber}`,
-          log_type:         'journal',
-          amount:           parseFloat(v.TransactionInformation ?? 0),
-          transaction_date: vDate,
-          period_year:      parseInt(vDate.slice(0,4)),
-          period_month:     parseInt(vDate.slice(5,7)),
-          description:      v.Description ?? null,
-          raw_data:         v,
-          updated_at:       new Date().toISOString(),
-        }, { onConflict: 'org_id,provider,source_id' })
-        vouchersUpserted++
-      }
-    }
-  } catch (e: any) {
-    console.error('Fortnox vouchers error:', e.message)
-  }
-
-  return { invoices: invoicesUpserted, vouchers: vouchersUpserted }
+//
+// DELIBERATELY A NO-OP (cleanup 2026-05-24).
+//
+// This function used to fetch /supplierinvoices and /vouchers from
+// Fortnox and upsert each into a `financial_logs` table. Two problems:
+//
+//   1. `financial_logs` is a dead table — nothing reads from it. Writes
+//      were pure waste (Fortnox API quota + DB rows). The audit at
+//      FORTNOX-API-AUDIT-2026-05-07.md flagged this.
+//   2. The canonical Fortnox sync path is now elsewhere:
+//        - `/api/fortnox/apply` → projectRollup → tracker_data (PDF path,
+//          gated by validators + AI auditor + owner review)
+//        - `/api/cron/fortnox-backfill-worker` → fortnox_vouchers cache
+//          + supplier_invoice_lines (M078) for the inventory pipeline
+//      Both write through the modern lock-aware getFreshFortnoxCreds.
+//      The legacy engine.ts path duplicated work and used a different
+//      refresh helper that didn't flag invalid_grant.
+//
+// We keep the function as a no-op (rather than deleting it) so the
+// runSync caller's switch statement keeps its `'fortnox'` arm without
+// branching. Returns zeros so downstream "rows synced" telemetry is
+// honest about the path being inactive.
+//
+// Next refactor: when runSync is rewritten, drop the case entirely and
+// remove this function. Tracked in ROADMAP under "dead-path removal."
+async function syncFortnox(_db: any, _integ: any, _fromDate: string, _toDate: string) {
+  return { invoices: 0, vouchers: 0 }
 }
 
 // ── Caspeco sync ─────────────────────────────────────────────────────────────
