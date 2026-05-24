@@ -47,6 +47,9 @@ export default function InventoryRecipesPage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [openId,  setOpenId]  = useState<string | null>(null)
+  // Drill-down back-stack: when you click "Open" on a sub-recipe row, the
+  // parent's id pushes onto the stack. The drawer's back arrow pops it.
+  const [drillStack, setDrillStack] = useState<string[]>([])
   const [creating,setCreating]= useState(false)
 
   useEffect(() => {
@@ -158,7 +161,21 @@ export default function InventoryRecipesPage() {
         <CreateModal bizId={bizId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); setOpenId(id); load() }} />
       )}
       {openId && bizId && (
-        <RecipeDrawer recipeId={openId} bizId={bizId} onClose={() => { setOpenId(null); load() }} />
+        <RecipeDrawer
+          recipeId={openId}
+          bizId={bizId}
+          canGoBack={drillStack.length > 0}
+          onBack={() => {
+            const prev = drillStack[drillStack.length - 1]
+            setDrillStack(s => s.slice(0, -1))
+            setOpenId(prev)
+          }}
+          onOpenSubrecipe={(id) => {
+            setDrillStack(s => [...s, openId])
+            setOpenId(id)
+          }}
+          onClose={() => { setOpenId(null); setDrillStack([]); load() }}
+        />
       )}
     </AppShell>
   )
@@ -246,7 +263,14 @@ interface DetailResponse {
   }
 }
 
-function RecipeDrawer({ recipeId, bizId, onClose }: { recipeId: string; bizId: string; onClose: () => void }) {
+function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGoBack }: {
+  recipeId: string
+  bizId: string
+  onClose: () => void
+  onOpenSubrecipe: (id: string) => void
+  onBack: () => void
+  canGoBack: boolean
+}) {
   const t = useTranslations('operations.inventory.recipes')
   const [data,    setData]    = useState<DetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -295,6 +319,16 @@ function RecipeDrawer({ recipeId, bizId, onClose }: { recipeId: string; bizId: s
             <div style={{ padding: '16px 20px', borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
+                  {canGoBack && (
+                    <button onClick={onBack}
+                      style={{
+                        background: 'transparent', border: 'none', cursor: 'pointer',
+                        color: UXP.ink3, fontSize: 11, padding: 0, marginBottom: 4,
+                        fontFamily: 'inherit',
+                      }}>
+                      ← {t('detail.back')}
+                    </button>
+                  )}
                   <div style={{ fontSize: 10, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
                     {data.recipe.type ? t(`type.${data.recipe.type}`) : t('type.other')}
                   </div>
@@ -338,6 +372,7 @@ function RecipeDrawer({ recipeId, bizId, onClose }: { recipeId: string; bizId: s
                   onRemove={() => removeIngredient(ing.id)}
                   onChange={(patch) => updateIngredient(ing.id, patch)}
                   onProductEdit={load}
+                  onOpenSubrecipe={onOpenSubrecipe}
                 />
               ))}
             </div>
@@ -357,11 +392,12 @@ function RecipeDrawer({ recipeId, bizId, onClose }: { recipeId: string; bizId: s
   )
 }
 
-function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
+function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe }: {
   ing: DetailIngredient
   onRemove: () => void
   onChange: (patch: { quantity?: number; unit?: string }) => void
   onProductEdit: () => void
+  onOpenSubrecipe: (id: string) => void
 }) {
   const t = useTranslations('operations.inventory.recipes')
   const [qty, setQty] = useState(String(ing.quantity))
@@ -452,9 +488,15 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
           {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
         </div>
         {ing.is_subrecipe ? (
-          // Sub-recipe row: no "edit product" affordance. (Future: link to
-          // the sub-recipe drawer so owner can jump straight to editing it.)
-          <span style={{ width: 22 }} />
+          // Sub-recipe row: "Open" jumps into the sub-recipe's own drawer
+          // with a back-stack so closing returns here.
+          <button onClick={() => ing.subrecipe_id && onOpenSubrecipe(ing.subrecipe_id)}
+            aria-label={t('detail.openSubrecipe')}
+            title={t('detail.openSubrecipeHint')}
+            style={{
+              background: 'transparent', border: 'none', color: UXP.lavDeep,
+              cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
+            }}>→</button>
         ) : (
           <button onClick={() => setExpanded(v => !v)} aria-label={t('detail.editProduct')}
             title={t('detail.editProductHint')}

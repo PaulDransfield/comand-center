@@ -304,7 +304,10 @@
         "noPriceLineErr":    "Ingen fakturarad kopplad till denna produkt ännu — lägg till från /inventory/items eller vänta på en extraherad faktura.",
         "noPriceToEdit":     "Ingen senaste fakturarad ännu — namn och enhet kan redigeras, men priset fylls i när en faktura kommer.",
         "subrecipeBadge":    "Recept",
-        "cycleLabel":        "Receptcykel — kostnad hoppas över"
+        "cycleLabel":        "Receptcykel — kostnad hoppas över",
+        "openSubrecipe":     "Öppna delrecept",
+        "openSubrecipeHint": "Hoppa in i detta delrecept. Bakåtpilen tar dig tillbaka.",
+        "back":              "Tillbaka"
       },
       "picker": {
         "title":     "Välj ingrediens",

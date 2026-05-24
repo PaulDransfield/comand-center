@@ -304,7 +304,10 @@
         "noPriceLineErr":    "No invoice line linked to this product yet — add it from /inventory/items or wait for an extracted invoice.",
         "noPriceToEdit":     "No latest invoice line yet — name and unit are editable, but price will fill in once an invoice arrives.",
         "subrecipeBadge":    "Recipe",
-        "cycleLabel":        "Recipe cycle — cost skipped"
+        "cycleLabel":        "Recipe cycle — cost skipped",
+        "openSubrecipe":     "Open sub-recipe",
+        "openSubrecipeHint": "Jump into this sub-recipe. Back arrow returns here.",
+        "back":              "Back"
       },
       "picker": {
         "title":     "Pick an ingredient",
