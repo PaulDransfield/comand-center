@@ -192,16 +192,36 @@ export async function getFreshFortnoxCreds(
   opts?:      GetFreshTokenOpts,
 ): Promise<DecryptedFortnoxCreds | null> {
   const integ = await loadFortnoxIntegration(db, orgId, businessId)
-  if (!integ) return null
+  if (!integ) {
+    console.log('[fortnox/auth] loadFortnoxIntegration returned null', { orgId, businessId })
+    return null
+  }
+  console.log('[fortnox/auth] integ found', {
+    id: integ.id, creds_len: integ.credentials_enc?.length ?? 0,
+  })
 
   let creds: DecryptedFortnoxCreds
   try {
-    creds = normaliseCreds(JSON.parse(decrypt(integ.credentials_enc) ?? '{}'))
-  } catch {
+    const decrypted = decrypt(integ.credentials_enc)
+    console.log('[fortnox/auth] decrypted', {
+      is_null: decrypted == null, len: decrypted?.length ?? 0,
+    })
+    const parsed = JSON.parse(decrypted ?? '{}')
+    console.log('[fortnox/auth] parsed keys', Object.keys(parsed))
+    creds = normaliseCreds(parsed)
+    console.log('[fortnox/auth] normalised', {
+      access_token_len: creds.access_token?.length ?? 0,
+      refresh_token_len: creds.refresh_token?.length ?? 0,
+      expires_at: creds.expires_at,
+      expires_in_ms: creds.expires_at - Date.now(),
+    })
+  } catch (e: any) {
+    console.log('[fortnox/auth] decrypt/parse threw:', e?.message)
     throw new Error('Failed to decrypt Fortnox credentials')
   }
 
   const stillValid = creds.expires_at - Date.now() > REFRESH_THRESHOLD_MS
+  console.log('[fortnox/auth] stillValid:', stillValid, 'force:', !!opts?.force)
   if (opts?.force || !stillValid) {
     const key = `${integ.id}`
     let p = inflightRefreshes.get(key)
@@ -211,6 +231,9 @@ export async function getFreshFortnoxCreds(
       inflightRefreshes.set(key, p)
     }
     creds = await p
+    console.log('[fortnox/auth] post-refresh', {
+      access_token_len: creds.access_token?.length ?? 0,
+    })
   }
   return creds
 }
