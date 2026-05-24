@@ -90,7 +90,12 @@ export async function POST(req: NextRequest) {
       let rowsUpserted = 0
       let page = 1
       while (true) {
-        const url = `${FORTNOX_API}/supplierinvoices?filter=all&fromdate=${fromIso}&todate=${toIso}&limit=500&page=${page}`
+        // No `filter=` param — Fortnox returns all non-cancelled invoices
+        // by default. `filter=all` is NOT a valid value (valid options:
+        // cancelled, fullypaid, unpaid, unpaidoverdue, unbooked, bookkept).
+        // Sending an invalid filter value triggers HTTP 400 ("Ett ogiltigt
+        // filter har använts", code 2000587).
+        const url = `${FORTNOX_API}/supplierinvoices?fromdate=${fromIso}&todate=${toIso}&limit=500&page=${page}`
         const res = await fortnoxFetch(url, accessToken, { accept: 'application/json' })
         if (!res.ok) {
           const t = await res.text().catch(() => '')
