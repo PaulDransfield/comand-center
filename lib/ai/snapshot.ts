@@ -61,7 +61,7 @@ export async function buildBusinessSnapshot(
   try {
     const { data: biz } = await db
       .from('businesses')
-      .select('name, legal_name, legal_city, org_number, country, vat_filing_cadence, setup_health_summary, setup_health_updated_at')
+      .select('name, legal_name, legal_city, org_number, country, vat_filing_cadence, setup_health_summary, setup_health_updated_at, business_stage, opening_days')
       .eq('id', businessId)
       .maybeSingle()
     if (biz) {
@@ -69,6 +69,31 @@ export async function buildBusinessSnapshot(
         ? `${biz.legal_name} (trades as ${biz.name})`
         : (biz.legal_name ?? biz.name)
       lines.push(`Business:        ${display}${biz.org_number ? ` · ${biz.org_number}` : ''}${biz.legal_city ? ` · ${biz.legal_city}` : ''}${biz.country ? ` · ${biz.country}` : ''}`)
+      // Business stage — load-bearing for any predictive surface. A 'new'
+      // business has <12 months of operating history; the prior-year
+      // anchor rule is invalid and MUST be skipped. AI surfaces reading
+      // this snapshot should branch on stage when generating forecasts /
+      // budgets / cost projections.
+      if (biz.business_stage) {
+        const stageHint = biz.business_stage === 'new'
+          ? 'no prior-year actuals available — do NOT anchor forecasts on last-year data'
+          : biz.business_stage === 'established_1y'
+            ? 'has one prior year of actuals (anchor cautiously)'
+            : biz.business_stage === 'established_3y'
+              ? 'has 3+ years of actuals (full prior-year anchor available)'
+              : ''
+        lines.push(`Business stage:  ${biz.business_stage}${stageHint ? ` — ${stageHint}` : ''}`)
+      }
+      // Opening days drive the scheduling-AI's day-of-week loop and
+      // help the forecast engine skip closed days. JSONB shape:
+      // { mon: true, tue: true, … }
+      const od = biz.opening_days as any | null
+      if (od && typeof od === 'object') {
+        const open = ['mon','tue','wed','thu','fri','sat','sun'].filter(d => od[d] === true)
+        if (open.length > 0 && open.length < 7) {
+          lines.push(`Opening days:    ${open.join(', ')} (others closed — skip in forecasts/scheduling)`)
+        }
+      }
       if (biz.vat_filing_cadence) {
         const cadenceSv = biz.vat_filing_cadence === 'monthly' ? 'månadsvis' :
                           biz.vat_filing_cadence === 'quarterly' ? 'kvartalsvis' : 'årsvis'

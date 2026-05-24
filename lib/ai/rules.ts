@@ -52,11 +52,35 @@ export const VOICE = `TONE & VOICE:
 // from YTD or generic "%-growth" assumptions overshoot badly. Always anchor on
 // prior-year ACTUAL monthly revenue, cap the stretch at +15%, and explicitly
 // detect data-gap months instead of silently averaging through them.
-export const FORECAST_ANCHOR = `FORECAST ANCHORING:
+//
+// EXCEPT for businesses with stage='new' (M046). They've been operating <12 mo
+// so there IS no prior year; anchoring on zeros produces actively misleading
+// budgets. Use forecastAnchorFor(stage) — picks the right ruleset.
+export const FORECAST_ANCHOR_ESTABLISHED = `FORECAST ANCHORING:
 - Anchor every monthly prediction on the same calendar month of the PRIOR YEAR's actual revenue (not YTD, not a generic seasonality curve).
 - Maximum stretch above prior-year actual: +15%. Stretches above this must be justified with a concrete reason (e.g. confirmed new revenue stream, documented price rise).
 - The CURRENT calendar month is never a valid anchor — partial-month data is not comparable.
 - If prior-year data for a month is missing OR shows staff_cost > 0 with revenue = 0, treat it as a data gap (skip or interpolate from nearest populated month in BOTH directions), not hibernation.`
+
+export const FORECAST_ANCHOR_NEW = `FORECAST ANCHORING (NEW BUSINESS):
+- This business is in stage='new' — it has been operating less than 12 months. There is NO prior year of actual revenue to anchor on. Do NOT apply the standard prior-year-anchor rule.
+- Build budgets / forecasts from:
+  (a) the most recent 4-8 weeks of actual revenue, trended forward week-by-week (not month-by-month)
+  (b) industry benchmark cost ratios (food 28-32%, staff 28-42%, other 15-25%) applied to the projected revenue
+  (c) any owner-supplied targets in budgets — those override (a)+(b)
+- DO NOT extrapolate from YTD totals as a "growth rate" — early-stage trajectory is too noisy.
+- Flag explicitly that the budget is a new-business projection without a historical anchor — owner should treat it as directional, not precise.`
+
+/**
+ * Pick the right forecast-anchor rule based on the business's stage (M046).
+ * Default → ESTABLISHED (safe for legacy businesses without stage set).
+ */
+export function forecastAnchorFor(businessStage: string | null | undefined): string {
+  return businessStage === 'new' ? FORECAST_ANCHOR_NEW : FORECAST_ANCHOR_ESTABLISHED
+}
+
+/** Deprecated — kept for back-compat. Prefer forecastAnchorFor(stage). */
+export const FORECAST_ANCHOR = FORECAST_ANCHOR_ESTABLISHED
 
 // ── Data-gap honesty ─────────────────────────────────────────────────────────
 // Silent imputation is worse than visible gaps. If the AI doesn't have the
