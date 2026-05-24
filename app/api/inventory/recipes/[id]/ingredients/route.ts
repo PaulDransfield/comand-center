@@ -95,6 +95,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .maybeSingle()
   const nextPos = ((last as any)?.position ?? -1) + 1
 
+  // SELECT-then-INSERT-or-UPDATE.
+  //
+  // We can't .upsert({ onConflict: 'recipe_id,product_id' }) because
+  // after M086 BOTH unique indexes on recipe_ingredients are PARTIAL
+  // (WHERE product_id IS NOT NULL / WHERE subrecipe_id IS NOT NULL),
+  // and PostgREST rejects partial indexes as ON CONFLICT targets even
+  // on a row that wouldn't conflict. Same class as the product_aliases
+  // matcher bug — partial uniques still enforce dedup at the DB layer,
+  // we just drive them via select + insert.
+
+  const existingQuery = productId
+    ? db.from('recipe_ingredients')
+        .select('id')
+        .eq('recipe_id', params.id)
+        .eq('product_id', productId)
+        .is('subrecipe_id', null)
+        .maybeSingle()
+    : db.from('recipe_ingredients')
+        .select('id')
+        .eq('recipe_id', params.id)
+        .eq('subrecipe_id', subrecipeId!)
+        .is('product_id', null)
+        .maybeSingle()
+
+  const { data: existing } = await existingQuery
+
   const row = {
     recipe_id:    params.id,
     product_id:   productId,
@@ -104,16 +130,47 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     notes,
     position:     nextPos,
   }
-  // Upserts target the matching partial unique index. Both indexes are
-  // single-column (recipe_id + the one non-null id field) so the right
-  // onConflict spec depends on which path we're on.
-  const onConflict = productId ? 'recipe_id,product_id' : 'recipe_id,subrecipe_id'
-  const { data, error } = await db
-    .from('recipe_ingredients')
-    .upsert(row, { onConflict })
-    .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
-    .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  let data: any
+  if (existing?.id) {
+    // Update existing row — quantity/unit/notes overwrite; position keeps its slot.
+    const { data: upd, error } = await db
+      .from('recipe_ingredients')
+      .update({ quantity, unit: unit ?? defaultUnit, notes })
+      .eq('id', existing.id)
+      .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
+      .single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    data = upd
+  } else {
+    const { data: ins, error } = await db
+      .from('recipe_ingredients')
+      .insert(row)
+      .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
+      .single()
+    if (error) {
+      // 23505 = race lost vs concurrent insert. Re-SELECT then UPDATE.
+      if ((error as any).code === '23505') {
+        const { data: winner } = await existingQuery
+        if (winner?.id) {
+          const { data: upd, error: uErr } = await db
+            .from('recipe_ingredients')
+            .update({ quantity, unit: unit ?? defaultUnit, notes })
+            .eq('id', winner.id)
+            .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
+            .single()
+          if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
+          data = upd
+        } else {
+          return NextResponse.json({ error: error.message }, { status: 500 })
+        }
+      } else {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+    } else {
+      data = ins
+    }
+  }
 
   return NextResponse.json({ ok: true, ingredient: data }, { headers: { 'Cache-Control': 'no-store' } })
 }
