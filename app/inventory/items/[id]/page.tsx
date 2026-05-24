@@ -492,8 +492,15 @@ export default function ProductDetailPage() {
 // text would require an alias-link reshuffle (out of scope).
 function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, any>) => void }) {
   const CURRENCIES = ['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP']
+  const isNonSek = (h.currency ?? 'SEK') !== 'SEK'
+  // Show SEK equivalent next to native amount when row currency != SEK.
+  // Empty/null when no FX rate available (yet) — surfaces as a coral
+  // warning rather than silently showing the native number as SEK.
+  const sekPrice = h.price_per_unit_sek
+  const sekTotal = h.total_sek
+  const rowBg    = isNonSek ? '#fef9f0' : 'transparent'   // soft amber tint = non-SEK
   return (
-    <tr style={{ borderTop: `0.5px solid ${UXP.borderSoft}` }}>
+    <tr style={{ borderTop: `0.5px solid ${UXP.borderSoft}`, background: rowBg }}>
       <td style={td()}>{h.invoice_date}</td>
       <td style={td()}>{h.supplier}</td>
       <td style={{ ...td(), fontFamily: 'ui-monospace, monospace' as const, color: UXP.ink3 }}>#{h.invoice_number}</td>
@@ -524,6 +531,11 @@ function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, an
           }}
           style={cellInput(70, true)}
         />
+        {isNonSek && (
+          <div style={{ fontSize: 9, color: sekPrice != null ? UXP.ink4 : UXP.coral, marginTop: 2, textAlign: 'right' as const }}>
+            {sekPrice != null ? `≈ ${sekPrice.toFixed(2)} kr` : 'no FX rate'}
+          </div>
+        )}
       </td>
       <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, padding: '4px 8px' }}>
         <input type="number" step="0.01" defaultValue={h.total_excl_vat ?? ''}
@@ -533,6 +545,11 @@ function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, an
           }}
           style={cellInput(80, true)}
         />
+        {isNonSek && (
+          <div style={{ fontSize: 9, color: sekTotal != null ? UXP.ink4 : UXP.coral, marginTop: 2, textAlign: 'right' as const }}>
+            {sekTotal != null ? `≈ ${sekTotal.toFixed(2)} kr` : 'no FX rate'}
+          </div>
+        )}
       </td>
       <td style={{ ...td(), padding: '4px 8px' }}>
         <select defaultValue={h.currency ?? 'SEK'}
@@ -540,6 +557,12 @@ function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, an
           style={{ ...cellInput(56), padding: '2px 4px' }}>
           {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
+        {isNonSek && h.fx_rate != null && (
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2 }}
+               title={`1 ${h.currency} = ${h.fx_rate.toFixed(4)} SEK at ${h.invoice_date}`}>
+            @ {h.fx_rate.toFixed(2)}
+          </div>
+        )}
       </td>
       <td style={td()}>
         <a href={h.fortnox_url} target="_blank" rel="noopener noreferrer"

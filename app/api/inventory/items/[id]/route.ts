@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { loadFxIndex, getFxRate } from '@/lib/inventory/fx'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -112,24 +113,50 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         suppliers_seen:    [],
       }
 
+  // FX conversion for non-SEK lines so the UI can show "≈ X SEK"
+  // next to the native amount. Owner-flipped EUR/USD/etc rows light
+  // up visibly so the metadata change feels like it did something.
+  const fxIndex = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+
   return NextResponse.json({
     product,
     aliases:    aliasesOut,
-    history:    history.map(h => ({
-      id:              h.id,
-      invoice_date:    h.invoice_date,
-      invoice_number:  h.fortnox_invoice_number,
-      supplier:        h.supplier_name_snapshot,
-      raw_description: h.raw_description,
-      article_number:  h.article_number,
-      quantity:        h.quantity,
-      unit:            h.unit,
-      price_per_unit:  h.price_per_unit,
-      total_excl_vat:  h.total_excl_vat,
-      vat_rate:        h.vat_rate,
-      currency:        h.currency ?? 'SEK',
-      fortnox_url:     `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(h.fortnox_invoice_number)}`,
-    })),
+    history:    history.map(h => {
+      const currency = h.currency ?? 'SEK'
+      let priceSek: number | null = null
+      let totalSek: number | null = null
+      let fxRate:   number | null = null
+      if (currency === 'SEK') {
+        priceSek = h.price_per_unit != null ? Number(h.price_per_unit) : null
+        totalSek = h.total_excl_vat != null ? Number(h.total_excl_vat) : null
+        fxRate   = 1
+      } else {
+        const rate = getFxRate(currency, h.invoice_date, fxIndex)
+        if (rate != null) {
+          fxRate   = rate
+          priceSek = h.price_per_unit != null ? Math.round(Number(h.price_per_unit) * rate * 100) / 100 : null
+          totalSek = h.total_excl_vat != null ? Math.round(Number(h.total_excl_vat) * rate * 100) / 100 : null
+        }
+      }
+      return {
+        id:              h.id,
+        invoice_date:    h.invoice_date,
+        invoice_number:  h.fortnox_invoice_number,
+        supplier:        h.supplier_name_snapshot,
+        raw_description: h.raw_description,
+        article_number:  h.article_number,
+        quantity:        h.quantity,
+        unit:            h.unit,
+        price_per_unit:  h.price_per_unit,
+        total_excl_vat:  h.total_excl_vat,
+        vat_rate:        h.vat_rate,
+        currency,
+        price_per_unit_sek: priceSek,
+        total_sek:          totalSek,
+        fx_rate:            fxRate,
+        fortnox_url:     `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(h.fortnox_invoice_number)}`,
+      }
+    }),
     aggregates,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
