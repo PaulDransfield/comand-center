@@ -485,29 +485,59 @@ async function callClaude(pdfBase64: string, input: ExtractInput): Promise<Claud
     },
   ]
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key':         apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type':      'application/json',
-    },
-    body: JSON.stringify({
-      model:       AI_MODELS.ANALYSIS,           // Sonnet 4.6
-      max_tokens:  4096,
-      system:      SYSTEM_PROMPT,
-      tools:       [RECORD_TOOL],
-      tool_choice: { type: 'tool', name: 'record_invoice_rows' },
-      messages:    [{ role: 'user', content: userMessage }],
-    }),
-  })
+  // Retry-with-backoff for Anthropic 429 (rate limit) + 5xx (transient).
+  // Sonnet 4.6 + vision burns ~5-10k input tokens per invoice; the
+  // org-wide 30k-tokens-per-minute ceiling trips when 4+ extractions run
+  // in parallel. Honour Retry-After when Anthropic sends it; otherwise
+  // exponential 2/4/8/16s. ~30s worst case before giving up — well under
+  // the cron's 60s budget. 429 is a transient, retriable signal here:
+  // it just means "too much in flight RIGHT NOW", not "bad request".
+  const ANTHROPIC_MAX_RETRIES   = 4
+  const ANTHROPIC_BACKOFF_MS    = [2000, 4000, 8000, 16000]
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    throw new Error(`Anthropic HTTP ${res.status}: ${errText.slice(0, 300)}`)
+  let res: Response
+  for (let attempt = 0; attempt <= ANTHROPIC_MAX_RETRIES; attempt++) {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key':         apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type':      'application/json',
+      },
+      body: JSON.stringify({
+        model:       AI_MODELS.ANALYSIS,         // Sonnet 4.6
+        max_tokens:  4096,
+        system:      SYSTEM_PROMPT,
+        tools:       [RECORD_TOOL],
+        tool_choice: { type: 'tool', name: 'record_invoice_rows' },
+        messages:    [{ role: 'user', content: userMessage }],
+      }),
+    })
+
+    // Retry on 429 (rate limit) and 5xx (transient server errors).
+    // Don't retry on 4xx other than 429 — those are auth/payload bugs
+    // that won't change with another attempt.
+    const isRetriable = res.status === 429 || (res.status >= 500 && res.status < 600)
+    if (!isRetriable || attempt === ANTHROPIC_MAX_RETRIES) break
+
+    let waitMs = ANTHROPIC_BACKOFF_MS[attempt] ?? 16000
+    const retryAfterRaw = res.headers.get('retry-after')
+    if (retryAfterRaw) {
+      const asSeconds = Number(retryAfterRaw)
+      if (Number.isFinite(asSeconds)) {
+        waitMs = Math.max(waitMs, asSeconds * 1000)
+      }
+    }
+    await sleep(waitMs)
   }
 
-  const json: any = await res.json()
+  if (!res!.ok) {
+    const errText = await res!.text().catch(() => '')
+    throw new Error(`Anthropic HTTP ${res!.status}: ${errText.slice(0, 300)}`)
+  }
+
+  const json: any = await res!.json()
   const tokensIn  = json?.usage?.input_tokens  ?? 0
   const tokensOut = json?.usage?.output_tokens ?? 0
 
