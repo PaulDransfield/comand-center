@@ -39,18 +39,23 @@ interface Detail {
     last_seen_at:             string | null
   }>
   history: Array<{
-    id:               string
-    invoice_date:     string
-    invoice_number:   string
-    supplier:         string
-    raw_description:  string
-    quantity:         number | null
-    unit:             string | null
-    price_per_unit:   number | null
-    total_excl_vat:   number | null
-    vat_rate:         number | null
-    currency:         string | null
-    fortnox_url:      string
+    id:                  string
+    invoice_date:        string
+    invoice_number:      string
+    supplier:            string
+    raw_description:     string
+    quantity:            number | null
+    unit:                string | null
+    price_per_unit:      number | null
+    total_excl_vat:      number | null
+    vat_rate:            number | null
+    currency:            string | null
+    price_per_unit_sek:  number | null
+    total_sek:           number | null
+    fx_rate:             number | null
+    fortnox_url:         string | null
+    pdf_file_id:         string | null
+    pdf_proxy_url:       string | null
   }>
   aggregates: {
     observation_count: number
@@ -75,6 +80,8 @@ export default function ProductDetailPage() {
   const [draft,   setDraft]   = useState('')
   const [saving,  setSaving]  = useState(false)
   const [saveErr, setSaveErr] = useState<string | null>(null)
+  // Inline PDF viewer state — opens when a history row's PDF button is clicked
+  const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -476,12 +483,17 @@ export default function ProductDetailPage() {
             </thead>
             <tbody>
               {history.map(h => (
-                <HistoryRow key={h.id} h={h} onPatch={(patch) => patchLine(h.id, patch)} />
+                <HistoryRow key={h.id} h={h}
+                  onPatch={(patch) => patchLine(h.id, patch)}
+                  onOpenPdf={() => h.pdf_proxy_url && setPdfModal({ url: h.pdf_proxy_url, title: `Invoice #${h.invoice_number} — ${h.supplier}` })}
+                />
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {pdfModal && <PdfModal url={pdfModal.url} title={pdfModal.title} onClose={() => setPdfModal(null)} />}
     </AppShell>
   )
 }
@@ -490,7 +502,7 @@ export default function ProductDetailPage() {
 // commits on blur; if the value didn't change, no request is sent.
 // Currency is a select. Description column stays read-only — fixing OCR
 // text would require an alias-link reshuffle (out of scope).
-function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, any>) => void }) {
+function HistoryRow({ h, onPatch, onOpenPdf }: { h: any; onPatch: (patch: Record<string, any>) => void; onOpenPdf: () => void }) {
   const CURRENCIES = ['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP']
   const isNonSek = (h.currency ?? 'SEK') !== 'SEK'
   // Show SEK equivalent next to native amount when row currency != SEK.
@@ -564,11 +576,78 @@ function HistoryRow({ h, onPatch }: { h: any; onPatch: (patch: Record<string, an
           </div>
         )}
       </td>
-      <td style={td()}>
-        <a href={h.fortnox_url} target="_blank" rel="noopener noreferrer"
-           style={{ fontSize: 10, color: UXP.lavText, textDecoration: 'none' }}>↗</a>
+      <td style={{ ...td(), whiteSpace: 'nowrap' as const }}>
+        {h.pdf_file_id && (
+          <button onClick={onOpenPdf}
+            title="View invoice PDF (inline)"
+            style={{
+              padding: '2px 8px', fontSize: 10, fontWeight: 600,
+              background: UXP.lavFill, color: UXP.lavText,
+              border: 'none', borderRadius: 4, cursor: 'pointer',
+              fontFamily: 'inherit', marginRight: 4,
+            }}>PDF</button>
+        )}
+        {h.fortnox_url && (
+          <a href={h.fortnox_url} target="_blank" rel="noopener noreferrer"
+             title="Open in Fortnox web app"
+             style={{ fontSize: 10, color: UXP.ink3, textDecoration: 'none' }}>↗</a>
+        )}
       </td>
     </tr>
+  )
+}
+
+// Inline PDF viewer modal — embedded iframe of the Fortnox file proxy.
+// Stays in-app per the brief. Footer has "Open in new tab" fallback
+// for browsers that don't render PDFs in iframes (rare; some mobile
+// Chrome versions).
+function PdfModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose}
+      style={{
+        position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 16,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(960px, 100%)', height: '90vh',
+          background: '#fff', borderRadius: 8, overflow: 'hidden' as const,
+          display: 'flex', flexDirection: 'column' as const,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.40)',
+        }}>
+        <div style={{
+          padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink3,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                textDecoration: 'none', fontFamily: 'inherit',
+              }}>Open in new tab ↗</a>
+            <button onClick={onClose}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: UXP.ink1, color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Close (Esc)</button>
+          </div>
+        </div>
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
+      </div>
+    </div>
   )
 }
 

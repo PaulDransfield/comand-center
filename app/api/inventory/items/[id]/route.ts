@@ -120,6 +120,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const fxIndex     = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
   const workspaceId = await getFortnoxWorkspaceId(db, product.business_id)
 
+  // Pull pdf_file_id per invoice number so the price-history rows can
+  // surface a "View PDF" affordance (inline modal via the proxy).
+  // Single batched query keyed on the distinct invoice numbers in history.
+  const distinctInvoices = Array.from(new Set(history.map((h: any) => h.fortnox_invoice_number).filter(Boolean)))
+  const fileByInvoice = new Map<string, string>()
+  if (distinctInvoices.length > 0) {
+    const { data: extractions } = await db
+      .from('invoice_pdf_extractions')
+      .select('fortnox_invoice_number, pdf_file_id')
+      .eq('business_id', product.business_id)
+      .in('fortnox_invoice_number', distinctInvoices)
+    for (const e of extractions ?? []) {
+      if (e.pdf_file_id) fileByInvoice.set(e.fortnox_invoice_number, e.pdf_file_id)
+    }
+  }
+
   return NextResponse.json({
     product,
     aliases:    aliasesOut,
@@ -140,6 +156,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           totalSek = h.total_excl_vat != null ? Math.round(Number(h.total_excl_vat) * rate * 100) / 100 : null
         }
       }
+      const fileId = fileByInvoice.get(h.fortnox_invoice_number) ?? null
       return {
         id:              h.id,
         invoice_date:    h.invoice_date,
@@ -157,6 +174,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         total_sek:          totalSek,
         fx_rate:            fxRate,
         fortnox_url:     supplierInvoiceUrl(workspaceId, h.fortnox_invoice_number),
+        pdf_file_id:     fileId,
+        pdf_proxy_url:   fileId
+          ? `/api/integrations/fortnox/file?file_id=${encodeURIComponent(fileId)}&business_id=${product.business_id}`
+          : null,
       }
     }),
     aggregates,
