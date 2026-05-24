@@ -208,6 +208,18 @@
       "backfillPackConfirm": "Scan every product without a pack size and auto-fill from the name (e.g. \"4,1 kg\" → 4100g)? Wrong ones can be fixed individually on the product detail page.",
       "backfillPackDone":    "Scanned {scanned} products, applied pack size to {applied}."
     },
+    "skipped": {
+      "title":          "Skipped suppliers",
+      "subtitle":       "Every supplier you've marked as non-inventory via Skip ALL on /inventory/review. Removing a rule flips that supplier's lines back to the review queue.",
+      "loading":        "Loading…",
+      "empty":          "No suppliers skipped yet. When you click 'Skip ALL from supplier' on /inventory/review, the rule shows up here.",
+      "colSupplier":    "Supplier",
+      "colLines":       "Lines hidden",
+      "colSince":       "Skipped since",
+      "restore":        "Restore",
+      "restoring":      "Restoring…",
+      "restoreConfirm": "Restore {supplier}? {count} line(s) will move back to the review queue and future invoices from them will no longer auto-skip."
+    },
     "review": {
       "title":             "Bulk review",
       "subtitle":          "Each row groups identical descriptions across every needs-review invoice line. Approving creates ONE product and links every matching line in one batch — your catalogue grows fast.",

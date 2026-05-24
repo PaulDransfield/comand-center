@@ -68,6 +68,7 @@
       "pages": {
         "items":       "Catalogue",
         "review":      "Bulk review",
+        "skipped":     "Skipped suppliers",
         "extractions": "PDF review",
         "recipes":     "Recipes",
         "counts":      "Stock counts",

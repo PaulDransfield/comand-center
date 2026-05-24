@@ -91,12 +91,13 @@ export const AREAS: Area[] = [
     // vision-stage behind a DemoDataBanner — kept here so the area is
     // discoverable; will pull through useTranslations in a later pass.
     pages: [
-      { key: 'items',       label: 'Catalogue',      href: '/inventory/items' },
-      { key: 'review',      label: 'Bulk review',    href: '/inventory/review' },
-      { key: 'extractions', label: 'PDF review',     href: '/inventory/extractions' },
-      { key: 'recipes',     label: 'Recipes',        href: '/inventory/recipes' },
-      { key: 'counts',      label: 'Stock counts',   href: '/inventory/counts' },
-      { key: 'waste',       label: 'Waste',          href: '/inventory/waste' },
+      { key: 'items',       label: 'Catalogue',         href: '/inventory/items' },
+      { key: 'review',      label: 'Bulk review',       href: '/inventory/review' },
+      { key: 'skipped',     label: 'Skipped suppliers', href: '/inventory/skipped' },
+      { key: 'extractions', label: 'PDF review',        href: '/inventory/extractions' },
+      { key: 'recipes',     label: 'Recipes',           href: '/inventory/recipes' },
+      { key: 'counts',      label: 'Stock counts',      href: '/inventory/counts' },
+      { key: 'waste',       label: 'Waste',             href: '/inventory/waste' },
     ],
   },
   {

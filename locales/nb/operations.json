@@ -208,6 +208,18 @@
       "backfillPackConfirm": "Skann alle produkter uten pakkestørrelse og fyll inn automatisk fra navnet (f.eks. \"4,1 kg\" → 4100g)? Feilaktige kan justeres på produktsiden.",
       "backfillPackDone":    "Skannet {scanned} produkter, anvendte pakkestørrelse på {applied}."
     },
+    "skipped": {
+      "title":          "Hoppede leverandører",
+      "subtitle":       "Hver leverandør du har markert som ikke-varelager via Hopp over ALLE på /inventory/review. Å fjerne en regel flytter leverandørens linjer tilbake til gjennomgangskøen.",
+      "loading":        "Laster…",
+      "empty":          "Ingen leverandører hoppet over ennå. Når du klikker 'Hopp over ALLE fra leverandøren' vises regelen her.",
+      "colSupplier":    "Leverandør",
+      "colLines":       "Skjulte linjer",
+      "colSince":       "Hoppet over siden",
+      "restore":        "Gjenopprett",
+      "restoring":      "Gjenoppretter…",
+      "restoreConfirm": "Gjenopprett {supplier}? {count} linjer flyttes tilbake til gjennomgangskøen og fremtidige fakturaer hoppes ikke lenger over automatisk."
+    },
     "review": {
       "title":             "Massegjennomgang",
       "subtitle":          "Hver rad grupperer identiske beskrivelser fra alle fakturalinjer som venter på gjennomgang. Når du godkjenner opprettes ETT produkt og alle matchende linjer kobles i én batch — katalogen vokser raskt.",

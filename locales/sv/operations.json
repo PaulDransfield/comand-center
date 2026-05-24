@@ -208,6 +208,18 @@
       "backfillPackConfirm": "Skanna alla produkter utan paketstorlek och fyll i automatiskt från namnet (t.ex. \"4,1 kg\" → 4100g)? Felaktiga kan justeras på produktsidan.",
       "backfillPackDone":    "Skannade {scanned} produkter, applicerade paketstorlek på {applied}."
     },
+    "skipped": {
+      "title":          "Överhoppade leverantörer",
+      "subtitle":       "Varje leverantör du markerat som icke-lager via Hoppa över ALLA på /inventory/review. Att ta bort en regel flyttar leverantörens rader tillbaka till granskningskön.",
+      "loading":        "Laddar…",
+      "empty":          "Inga leverantörer överhoppade ännu. När du klickar 'Hoppa över ALLA från leverantören' visas regeln här.",
+      "colSupplier":    "Leverantör",
+      "colLines":       "Dolda rader",
+      "colSince":       "Överhoppad sedan",
+      "restore":        "Återställ",
+      "restoring":      "Återställer…",
+      "restoreConfirm": "Återställ {supplier}? {count} rader flyttas tillbaka till granskningskön och framtida fakturor hoppas inte längre över automatiskt."
+    },
     "review": {
       "title":             "Massgranskning",
       "subtitle":          "Varje rad grupperar identiska beskrivningar från alla fakturarader som väntar på granskning. När du godkänner skapas EN produkt och alla matchande rader länkas i en batch — katalogen växer snabbt.",

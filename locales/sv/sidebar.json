@@ -68,6 +68,7 @@
       "pages": {
         "items":       "Katalog",
         "review":      "Massgranskning",
+        "skipped":     "Överhoppade leverantörer",
         "extractions": "PDF-granskning",
         "recipes":     "Recept",
         "counts":      "Lagerräkning",
