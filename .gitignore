@@ -24,4 +24,7 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+# Debug invoice PDFs downloaded for extractor investigation (customer data)
 quatra-*.pdf
+frimurarholmen-*.pdf
+*-debug.pdf
