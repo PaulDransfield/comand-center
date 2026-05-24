@@ -30,6 +30,8 @@ interface CatalogueItem {
   prior_median_price:   number | null
   change_pct:           number | null
   observation_count:    number
+  is_recipe_sourced:    boolean
+  source_recipe_id:     string | null
 }
 
 interface CatalogueResponse {
@@ -231,7 +233,19 @@ export default function InventoryItemsPage() {
                       style={{ cursor: 'pointer', borderTop: `0.5px solid ${UXP.borderSoft}` }}
                       onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ ...td(), fontWeight: 500, color: UXP.ink1 }}>{it.name}</td>
+                    <td style={{ ...td(), fontWeight: 500, color: UXP.ink1 }}>
+                      {it.name}
+                      {it.is_recipe_sourced && (
+                        <span style={{
+                          marginLeft: 6,
+                          fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                          padding: '1px 6px', background: UXP.lavFill, color: UXP.lavText,
+                          borderRadius: 3, textTransform: 'uppercase' as const,
+                        }} title={t('recipeSourcedTooltip')}>
+                          {t('recipeSourcedBadge')}
+                        </span>
+                      )}
+                    </td>
                     <td style={td()}><CategoryTag c={it.category} /></td>
                     <td style={{ ...td(), color: UXP.ink3, fontSize: 11 }}>{it.latest_date ?? '—'}</td>
                     <td style={{ ...td(), textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>

@@ -206,7 +206,9 @@
       "backfillPack":        "Detect pack size for all",
       "backfillPackHint":    "Parse pack size from every product name and save it. Idempotent — only touches products where pack size is currently unset.",
       "backfillPackConfirm": "Scan every product without a pack size and auto-fill from the name (e.g. \"4,1 kg\" → 4100g)? Wrong ones can be fixed individually on the product detail page.",
-      "backfillPackDone":    "Scanned {scanned} products, applied pack size to {applied}."
+      "backfillPackDone":    "Scanned {scanned} products, applied pack size to {applied}.",
+      "recipeSourcedBadge":   "Recipe",
+      "recipeSourcedTooltip": "Promoted from the recipes page. Price = recipe's food cost / portions."
     },
     "skipped": {
       "title":          "Skipped suppliers",
@@ -290,6 +292,12 @@
       "saving":             "Saving…",
       "deleteRecipe":       "Delete recipe",
       "deleteRecipeConfirm":"Delete this recipe? Ingredients stay linked to your catalogue.",
+      "promote":            "Promote to inventory",
+      "promoteHint":        "Add this recipe to the catalogue as a countable inventory item. Use it during stock counts and in other recipes' ingredient picker (Product tab).",
+      "promoteConfirm":     "Add this recipe to the catalogue? It will appear in /inventory/items with cost = food cost / portions.",
+      "promotedBadge":      "Promoted ✓ (click to remove)",
+      "unpromoteHint":      "Already in the catalogue. Click to remove the catalogue item (recipe stays).",
+      "unpromoteConfirm":   "Remove this recipe's catalogue item? The recipe itself stays. Fails if other recipes reference the catalogue item as an ingredient.",
       "removeIngredientConfirm": "Remove this ingredient from the recipe?",
       "addIngredient":      "+ Add ingredient",
       "done":               "Done",

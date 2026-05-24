@@ -30,6 +30,8 @@ interface CatalogueItem {
   prior_median_price:   number | null
   change_pct:           number | null     // (latest - prior_median) / prior_median
   observation_count:    number
+  is_recipe_sourced:    boolean           // M089 — true when this product is a promoted recipe
+  source_recipe_id:     string | null
 }
 
 export async function GET(req: NextRequest) {
@@ -49,7 +51,7 @@ export async function GET(req: NextRequest) {
   // 1. Pull every product for this business.
   let qProducts = db
     .from('products')
-    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name')
+    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -131,6 +133,8 @@ export async function GET(req: NextRequest) {
         prior_median_price: null,
         change_pct:         null,
         observation_count:  0,
+        is_recipe_sourced:  !!p.source_recipe_id,
+        source_recipe_id:   p.source_recipe_id ?? null,
       }
     }
     const latest = lines[0]
@@ -161,8 +165,40 @@ export async function GET(req: NextRequest) {
       prior_median_price: priorMedian,
       change_pct:         changePct,
       observation_count:  lines.length,
+      is_recipe_sourced:  !!p.source_recipe_id,
+      source_recipe_id:   p.source_recipe_id ?? null,
     }
   })
+
+  // Recipe-sourced products won't have supplier_invoice_lines, so their
+  // latest_price slot is currently null. Fill from the linked recipes'
+  // current cost-per-portion (food_cost / portions). Single batched
+  // query for all linked recipes.
+  const recipeIds = items.filter(i => i.is_recipe_sourced && i.source_recipe_id).map(i => i.source_recipe_id!) as string[]
+  if (recipeIds.length > 0) {
+    // Pull each recipe's food_cost via the cost helper. To avoid pulling
+    // every recipe in the business twice, we'll compute inline.
+    const { loadRecipeIndex, getProductLatestPrices, computeRecipeCost } = await import('@/lib/inventory/recipe-cost')
+    const { loadFxIndex } = await import('@/lib/inventory/fx')
+    const fxIndex = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+    const recipeIndex = await loadRecipeIndex(db, businessId)
+    const allLeafProductIds = new Set<string>()
+    for (const entry of recipeIndex.values()) {
+      for (const ing of entry.ingredients) if (ing.product_id) allLeafProductIds.add(ing.product_id)
+    }
+    const priceMap = await getProductLatestPrices(db, businessId, Array.from(allLeafProductIds), fxIndex)
+    for (const it of items) {
+      if (!it.is_recipe_sourced || !it.source_recipe_id) continue
+      const entry = recipeIndex.get(it.source_recipe_id)
+      if (!entry) continue
+      const summary = computeRecipeCost(entry.ingredients, priceMap, null, {
+        recipeIndex, recipeId: it.source_recipe_id,
+      })
+      const portions = Math.max(1, entry.portions)
+      it.latest_price = Math.round((summary.food_cost / portions) * 100) / 100
+      it.latest_unit  = 'portion'
+    }
+  }
 
   // Counts by category for filter tabs
   const counts: Record<string, number> = { all: items.length }

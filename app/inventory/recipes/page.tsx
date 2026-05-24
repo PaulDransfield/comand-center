@@ -255,7 +255,7 @@ interface DetailIngredient {
   cost_per_base_unit: number | null; pack_auto_detected: boolean
 }
 interface DetailResponse {
-  recipe: { id: string; name: string; type: string | null; menu_price: number | null; portions: number; notes: string | null; updated_at: string }
+  recipe: { id: string; name: string; type: string | null; menu_price: number | null; portions: number; notes: string | null; updated_at: string; source_product_id?: string | null }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
     missing_prices: number; unit_mismatches: number
@@ -306,6 +306,26 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
     if (!confirm(t('deleteRecipeConfirm'))) return
     const r = await fetch(`/api/inventory/recipes/${recipeId}`, { method: 'DELETE', cache: 'no-store' })
     if (r.ok) onClose()
+  }
+
+  async function promote() {
+    if (!confirm(t('promoteConfirm'))) return
+    const r = await fetch(`/api/inventory/recipes/${recipeId}/promote`, {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: data?.recipe.type === 'drink' || data?.recipe.type === 'cocktail' ? 'beverage' : 'food' }),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { alert(j.error ?? `HTTP ${r.status}`); return }
+    load()
+  }
+
+  async function unpromote() {
+    if (!confirm(t('unpromoteConfirm'))) return
+    const r = await fetch(`/api/inventory/recipes/${recipeId}/promote`, { method: 'DELETE', cache: 'no-store' })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { alert(j.error ?? `HTTP ${r.status}`); return }
+    load()
   }
 
   return (
@@ -377,9 +397,26 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
               ))}
             </div>
 
-            <div style={{ padding: '10px 20px', borderTop: `0.5px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ padding: '10px 20px', borderTop: `0.5px solid ${UXP.borderSoft}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <button onClick={deleteRecipe} style={dangerBtn}>{t('deleteRecipe')}</button>
-              <button onClick={onClose} style={secondaryBtn}>{t('done')}</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {data.recipe.source_product_id ? (
+                  <button onClick={unpromote} title={t('unpromoteHint')} style={{
+                    padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                    background: UXP.greenFill, color: UXP.greenDeep,
+                    border: `0.5px solid ${UXP.green}`, borderRadius: 5,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}>{t('promotedBadge')}</button>
+                ) : (
+                  <button onClick={promote} title={t('promoteHint')} style={{
+                    padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                    background: 'transparent', color: UXP.ink2,
+                    border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}>{t('promote')}</button>
+                )}
+                <button onClick={onClose} style={secondaryBtn}>{t('done')}</button>
+              </div>
             </div>
 
             {adding && (

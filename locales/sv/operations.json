@@ -206,7 +206,9 @@
       "backfillPack":        "Detektera paketstorlek för alla",
       "backfillPackHint":    "Tolka paketstorlek från varje produktnamn och spara. Idempotent — påverkar bara produkter utan paketstorlek.",
       "backfillPackConfirm": "Skanna alla produkter utan paketstorlek och fyll i automatiskt från namnet (t.ex. \"4,1 kg\" → 4100g)? Felaktiga kan justeras på produktsidan.",
-      "backfillPackDone":    "Skannade {scanned} produkter, applicerade paketstorlek på {applied}."
+      "backfillPackDone":    "Skannade {scanned} produkter, applicerade paketstorlek på {applied}.",
+      "recipeSourcedBadge":   "Recept",
+      "recipeSourcedTooltip": "Befordrad från receptsidan. Pris = receptets råvarukostnad / portioner."
     },
     "skipped": {
       "title":          "Överhoppade leverantörer",
@@ -290,6 +292,12 @@
       "saving":             "Sparar…",
       "deleteRecipe":       "Radera recept",
       "deleteRecipeConfirm":"Radera detta recept? Ingredienser ligger kvar i katalogen.",
+      "promote":            "Lägg till i lager",
+      "promoteHint":        "Lägg till receptet i katalogen som en räkningsbar lagervara. Användbar för lagerräkning och som ingrediens i andra recept (Produkt-fliken).",
+      "promoteConfirm":     "Lägg till receptet i katalogen? Det visas i /inventory/items med pris = råvarukostnad / portioner.",
+      "promotedBadge":      "Tillagd ✓ (klicka för att ta bort)",
+      "unpromoteHint":      "Redan i katalogen. Klicka för att ta bort katalogposten (receptet ligger kvar).",
+      "unpromoteConfirm":   "Ta bort denna receptpost från katalogen? Receptet ligger kvar. Misslyckas om andra recept använder katalogposten som ingrediens.",
       "removeIngredientConfirm": "Ta bort denna ingrediens från receptet?",
       "addIngredient":      "+ Lägg till ingrediens",
       "done":               "Klar",

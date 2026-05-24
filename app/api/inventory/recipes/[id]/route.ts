@@ -48,10 +48,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     { recipeIndex, recipeId: r.id },
   )
 
+  // Has this recipe been promoted to a catalogue item? If yes, return the
+  // product id so the drawer can show "Promoted ✓" instead of the button.
+  const { data: promoted } = await db
+    .from('products')
+    .select('id')
+    .eq('business_id', r.business_id)
+    .eq('source_recipe_id', r.id)
+    .maybeSingle()
+
   return NextResponse.json({
     recipe: {
       ...r,
       menu_price: r.menu_price != null ? Number(r.menu_price) : null,
+      source_product_id: promoted?.id ?? null,
     },
     summary,
   }, { headers: { 'Cache-Control': 'no-store' } })

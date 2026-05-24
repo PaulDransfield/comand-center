@@ -327,13 +327,11 @@ export function wouldCreateCycle(
   return false
 }
 
-// One-shot batch fetch: given a set of product_ids, return the latest
-// observed unit price per product (with its invoice_unit so the cost
-// reader can flag unit_mismatch + FX rate so non-SEK lines convert).
-// Used by both list + detail endpoints. The optional `fxIndex` arg
-// applies FX conversion when present; callers that don't care about FX
-// can omit it and prices stay in their native currency.
-export async function getProductLatestPrices(
+// Leaf-only price fetch — supplier_invoice_lines path. Used as a
+// building block by both `getProductLatestPrices` (the public reader)
+// and the recipe-sourced product pricing pass below. Does NOT detect
+// or handle source_recipe_id products specially.
+async function getProductLatestPricesLeaf(
   db: any,
   businessId: string,
   productIds: string[],
@@ -342,10 +340,6 @@ export async function getProductLatestPrices(
   const out = new Map<string, ProductLatestPrice>()
   if (productIds.length === 0) return out
 
-  // Seed with invoice_unit + pack_size + base_unit + name from products
-  // table — guarantees every requested product has an entry even if it
-  // has zero observed prices, and exposes the pack data so cost calc
-  // can apply per-base-unit conversion.
   for (let i = 0; i < productIds.length; i += 500) {
     const slice = productIds.slice(i, i + 500)
     const { data: prods } = await db
@@ -354,23 +348,16 @@ export async function getProductLatestPrices(
       .in('id', slice)
     for (const p of prods ?? []) {
       out.set(p.id, {
-        product_id:        p.id,
-        product_name:      p.name ?? null,
-        latest_price:      null,
-        invoice_unit:      p.invoice_unit ?? null,
-        latest_date:       null,
-        latest_line_id:    null,
-        latest_currency:   null,
-        pack_size:         p.pack_size != null ? Number(p.pack_size) : null,
-        base_unit:         p.base_unit ?? null,
-        latest_price_sek:  null,
-        fx_rate_used:      null,
+        product_id: p.id, product_name: p.name ?? null,
+        latest_price: null, invoice_unit: p.invoice_unit ?? null,
+        latest_date: null, latest_line_id: null, latest_currency: null,
+        pack_size: p.pack_size != null ? Number(p.pack_size) : null,
+        base_unit: p.base_unit ?? null,
+        latest_price_sek: null, fx_rate_used: null,
       })
     }
   }
 
-  // Resolve product → aliases → latest matched supplier_invoice_lines.
-  // Single sweep on supplier_invoice_lines + a sweep on product_aliases.
   const aliasToProduct = new Map<string, string>()
   for (let i = 0; i < productIds.length; i += 500) {
     const slice = productIds.slice(i, i + 500)
@@ -384,10 +371,6 @@ export async function getProductLatestPrices(
   const aliasIds = Array.from(aliasToProduct.keys())
   if (aliasIds.length === 0) return out
 
-  // Pull matched lines for these aliases, newest first. We only need
-  // the FIRST hit per product — but a small business has few enough
-  // observations that pulling everything and reducing in JS is fine.
-  // Cap at 50k to avoid pathological cases.
   const allLines: any[] = []
   for (let i = 0; i < aliasIds.length; i += 200) {
     const slice = aliasIds.slice(i, i + 200)
@@ -412,45 +395,177 @@ export async function getProductLatestPrices(
     const productId = aliasToProduct.get(l.product_alias_id)
     if (!productId) continue
     const existing = out.get(productId)
-    if (existing && existing.latest_date) continue   // already have a newer hit (input sorted DESC)
+    if (existing && existing.latest_date) continue
     if (l.price_per_unit == null) continue
     const nativePrice = Number(l.price_per_unit)
     const currency    = l.currency ?? 'SEK'
-    // FX conversion: if currency = SEK or no fxIndex, latest_price_sek
-    // is just the native price. If non-SEK + fxIndex has a rate, apply
-    // it. If non-SEK + no rate available, leave null and let the cost
-    // reader decide whether to fall back to native or refuse to cost.
     let priceSek: number | null = nativePrice
     let fxRateUsed: number | null = 1
     if (currency !== 'SEK') {
       if (fxIndex) {
         const rate = getFxRate(currency, l.invoice_date, fxIndex)
-        if (rate != null) {
-          priceSek   = nativePrice * rate
-          fxRateUsed = rate
-        } else {
-          priceSek   = null
-          fxRateUsed = null
-        }
-      } else {
-        // No fxIndex provided — leave as native, let caller decide.
-        priceSek   = null
-        fxRateUsed = null
-      }
+        if (rate != null) { priceSek = nativePrice * rate; fxRateUsed = rate }
+        else { priceSek = null; fxRateUsed = null }
+      } else { priceSek = null; fxRateUsed = null }
     }
     out.set(productId, {
-      product_id:        productId,
-      product_name:      existing?.product_name ?? null,
-      latest_price:      nativePrice,
-      invoice_unit:      existing?.invoice_unit ?? l.unit ?? null,
-      latest_date:       l.invoice_date,
-      latest_line_id:    l.id,
-      latest_currency:   currency,
-      pack_size:         existing?.pack_size ?? null,
-      base_unit:         existing?.base_unit ?? null,
-      latest_price_sek:  priceSek,
-      fx_rate_used:      fxRateUsed,
+      product_id: productId, product_name: existing?.product_name ?? null,
+      latest_price: nativePrice,
+      invoice_unit: existing?.invoice_unit ?? l.unit ?? null,
+      latest_date: l.invoice_date, latest_line_id: l.id, latest_currency: currency,
+      pack_size: existing?.pack_size ?? null, base_unit: existing?.base_unit ?? null,
+      latest_price_sek: priceSek, fx_rate_used: fxRateUsed,
     })
+  }
+  return out
+}
+
+// One-shot batch fetch: given a set of product_ids, return the latest
+// observed unit price per product (with its invoice_unit so the cost
+// reader can flag unit_mismatch + FX rate so non-SEK lines convert).
+// Used by both list + detail endpoints. The optional `fxIndex` arg
+// applies FX conversion when present; callers that don't care about FX
+// can omit it and prices stay in their native currency.
+//
+// Recipe-sourced products (M089, source_recipe_id != NULL) are priced
+// from the recipe's live food_cost / portions rather than from supplier
+// invoices — owner can promote a prep recipe ('Tomato Sauce') to a
+// catalogue item and stocktake it.
+export async function getProductLatestPrices(
+  db: any,
+  businessId: string,
+  productIds: string[],
+  fxIndex?: FxIndex,
+): Promise<Map<string, ProductLatestPrice>> {
+  const out = new Map<string, ProductLatestPrice>()
+  if (productIds.length === 0) return out
+
+  // Seed with invoice_unit + pack_size + base_unit + name + source_recipe_id
+  // from products table — guarantees every requested product has an entry
+  // even if it has zero observed prices, and exposes the pack data so
+  // cost calc can apply per-base-unit conversion.
+  //
+  // RECIPE-SOURCED PRODUCTS (M089): when source_recipe_id is set, latest
+  // price comes from the recipe's live cost (food_cost / portions), not
+  // from supplier_invoice_lines. We collect their ids here and fill the
+  // prices in a second pass below.
+  const recipeSourcedProducts: Array<{ product_id: string; recipe_id: string }> = []
+  for (let i = 0; i < productIds.length; i += 500) {
+    const slice = productIds.slice(i, i + 500)
+    const { data: prods } = await db
+      .from('products')
+      .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id')
+      .in('id', slice)
+    for (const p of prods ?? []) {
+      out.set(p.id, {
+        product_id:        p.id,
+        product_name:      p.name ?? null,
+        latest_price:      null,
+        invoice_unit:      p.invoice_unit ?? null,
+        latest_date:       null,
+        latest_line_id:    null,
+        latest_currency:   null,
+        pack_size:         p.pack_size != null ? Number(p.pack_size) : null,
+        base_unit:         p.base_unit ?? null,
+        latest_price_sek:  null,
+        fx_rate_used:      null,
+      })
+      if (p.source_recipe_id) {
+        recipeSourcedProducts.push({ product_id: p.id, recipe_id: p.source_recipe_id })
+      }
+    }
+  }
+
+  // Recipe-sourced product pricing — compute each linked recipe's
+  // cost-per-portion using the same compute path the recipe drawer uses.
+  // Doing it here keeps cost identical across surfaces.
+  if (recipeSourcedProducts.length > 0) {
+    const recipeIds = Array.from(new Set(recipeSourcedProducts.map(r => r.recipe_id)))
+    const { data: recipes } = await db
+      .from('recipes')
+      .select('id, portions, updated_at')
+      .in('id', recipeIds)
+    const recipeMeta = new Map<string, { portions: number; updated_at: string }>()
+    for (const r of recipes ?? []) {
+      recipeMeta.set(r.id, { portions: r.portions ?? 1, updated_at: r.updated_at })
+    }
+
+    // Build a recipe-index ONLY for these recipes' transitive ingredients.
+    // Easiest: just load the whole business's recipe index. The caller's
+    // already paying for getProductLatestPrices, this adds one extra query.
+    const fullIndex = await loadRecipeIndex(db, businessId)
+
+    // Collect all leaf product IDs the linked recipes (and their
+    // sub-recipes) depend on. Recurse to grab them all.
+    function collectLeafProducts(recipeId: string, seen: Set<string>, leafProducts: Set<string>) {
+      if (seen.has(recipeId)) return
+      seen.add(recipeId)
+      const entry = fullIndex.get(recipeId)
+      if (!entry) return
+      for (const ing of entry.ingredients) {
+        if (ing.product_id) leafProducts.add(ing.product_id)
+        if (ing.subrecipe_id) collectLeafProducts(ing.subrecipe_id, seen, leafProducts)
+      }
+    }
+    const leafProducts = new Set<string>()
+    for (const { recipe_id } of recipeSourcedProducts) {
+      collectLeafProducts(recipe_id, new Set(), leafProducts)
+    }
+
+    // Recursive call WITHOUT fxIndex+recipe context to avoid infinite
+    // loops on circular recipe-product references. Leaf product prices
+    // only — never enters the recipe-sourced branch.
+    let leafPrices: Map<string, ProductLatestPrice> = new Map()
+    if (leafProducts.size > 0) {
+      // Filter out any leaf product that is ITSELF recipe-sourced (rare
+      // edge case where a promoted recipe is used inside another recipe).
+      // Those will recurse via the same code path.
+      const ids = Array.from(leafProducts).filter(id => !recipeSourcedProducts.some(r => r.product_id === id))
+      if (ids.length > 0) {
+        leafPrices = await getProductLatestPricesLeaf(db, businessId, ids, fxIndex)
+      }
+    }
+
+    // Cost each recipe-sourced product
+    for (const { product_id, recipe_id } of recipeSourcedProducts) {
+      const meta = recipeMeta.get(recipe_id)
+      const entry = fullIndex.get(recipe_id)
+      if (!meta || !entry) continue
+      const summary = computeRecipeCost(entry.ingredients, leafPrices, null, {
+        recipeIndex: fullIndex, recipeId: recipe_id,
+      })
+      const portions = Math.max(1, meta.portions)
+      const perPortion = Math.round((summary.food_cost / portions) * 10000) / 10000
+      const slot = out.get(product_id)
+      if (slot) {
+        slot.latest_price     = perPortion
+        slot.latest_price_sek = perPortion          // recipes' food_cost is already in SEK
+        slot.fx_rate_used     = 1
+        slot.latest_date      = meta.updated_at?.slice(0, 10) ?? null
+        slot.latest_currency  = 'SEK'
+        // invoice_unit/pack/base already set at insert time
+      }
+    }
+  }
+
+  // Supplier-invoice-priced products — delegate to the leaf helper for
+  // anything that ISN'T recipe-sourced. Then merge its results back in.
+  const nonRecipeIds = productIds.filter(id =>
+    !recipeSourcedProducts.some(r => r.product_id === id)
+  )
+  if (nonRecipeIds.length > 0) {
+    const leafPrices = await getProductLatestPricesLeaf(db, businessId, nonRecipeIds, fxIndex)
+    for (const [id, row] of leafPrices) {
+      const existing = out.get(id)
+      // Keep the existing seeded row's pack/unit info but overwrite price fields.
+      out.set(id, {
+        ...row,
+        product_name: existing?.product_name ?? row.product_name,
+        invoice_unit: existing?.invoice_unit ?? row.invoice_unit,
+        pack_size:    existing?.pack_size    ?? row.pack_size,
+        base_unit:    existing?.base_unit    ?? row.base_unit,
+      })
+    }
   }
 
   return out

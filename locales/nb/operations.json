@@ -206,7 +206,9 @@
       "backfillPack":        "Oppdag pakkestørrelse for alle",
       "backfillPackHint":    "Tolk pakkestørrelse fra hvert produktnavn og lagre. Idempotent — påvirker bare produkter uten pakkestørrelse.",
       "backfillPackConfirm": "Skann alle produkter uten pakkestørrelse og fyll inn automatisk fra navnet (f.eks. \"4,1 kg\" → 4100g)? Feilaktige kan justeres på produktsiden.",
-      "backfillPackDone":    "Skannet {scanned} produkter, anvendte pakkestørrelse på {applied}."
+      "backfillPackDone":    "Skannet {scanned} produkter, anvendte pakkestørrelse på {applied}.",
+      "recipeSourcedBadge":   "Oppskrift",
+      "recipeSourcedTooltip": "Forfremmet fra oppskriftssiden. Pris = oppskriftens råvarekostnad / porsjoner."
     },
     "skipped": {
       "title":          "Hoppede leverandører",
@@ -290,6 +292,12 @@
       "saving":             "Lagrer…",
       "deleteRecipe":       "Slett oppskrift",
       "deleteRecipeConfirm":"Slett denne oppskriften? Ingredienser blir værende i katalogen.",
+      "promote":            "Legg til i lager",
+      "promoteHint":        "Legg til denne oppskriften i katalogen som en tellbar lagerartikkel. Brukbar i lagertelling og som ingrediens i andre oppskrifter (Produkt-fanen).",
+      "promoteConfirm":     "Legg oppskriften til katalogen? Den vises i /inventory/items med pris = råvarekostnad / porsjoner.",
+      "promotedBadge":      "Lagt til ✓ (klikk for å fjerne)",
+      "unpromoteHint":      "Allerede i katalogen. Klikk for å fjerne katalogposten (oppskriften blir værende).",
+      "unpromoteConfirm":   "Fjern denne oppskriftens katalogpost? Oppskriften blir værende. Mislykkes hvis andre oppskrifter bruker katalogposten som ingrediens.",
       "removeIngredientConfirm": "Fjern denne ingrediensen fra oppskriften?",
       "addIngredient":      "+ Legg til ingrediens",
       "done":               "Ferdig",
