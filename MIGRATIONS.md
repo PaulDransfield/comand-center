@@ -6,6 +6,27 @@
 
 ## Pending — apply when ready
 
+### M097 — POS menu items + sales (variance loop foundation) ⏳ pending application
+**File:** `sql/M097-POS-SALES.sql`
+**Purpose:** Closes the inventory loop. Adds `pos_menu_items` (dishes the restaurant sells, optionally linked to a recipe) and `pos_sales` (per-ticket OR per-week aggregate sale rows). Enables `/inventory/variance` to compute theoretical product draw (POS sales × recipes) vs actual (purchases − waste).
+**Schema:**
+- `pos_menu_items(id, org_id, business_id, pos_provider, pos_item_id, name, recipe_id FK recipes, price_inc_vat, archived_at, created_at, updated_at)`
+- Partial unique index `(business_id, pos_provider, pos_item_id) WHERE pos_item_id IS NOT NULL` for connector idempotency
+- Partial unique index `(business_id, LOWER(name)) WHERE pos_provider='manual' AND archived_at IS NULL` for manual-entry dedup
+- `pos_sales(id, org_id, business_id, pos_item_id FK pos_menu_items, sold_at, sold_date GENERATED, quantity, net_revenue, source, source_ref, notes, created_at, updated_at)`
+- Partial unique index `(business_id, source, source_ref) WHERE source_ref IS NOT NULL` (connector idempotency)
+- Partial unique index `(business_id, pos_item_id, sold_date) WHERE source='manual'` (manual weekly entries)
+- RLS via `current_user_org_ids()` on both tables
+**Companion code:**
+- `/api/inventory/pos-menu-items` (GET + POST) and `/api/inventory/pos-menu-items/[id]` (PATCH + DELETE)
+- `/api/inventory/pos-sales` (GET + POST) and `/api/inventory/pos-sales/[id]` (DELETE)
+- `/api/inventory/variance` (GET) — uses `lib/inventory/variance.ts::computeVariance` which loads recipes, expands POS sales × recipes into per-product theoretical draw, sums purchases + waste, returns variance rows + summary
+- `/inventory/sales` page — manual weekly entry grid
+- `/inventory/variance` page — theoretical vs actual dashboard
+- Nav additions in `lib/nav/areas.ts` (Sales, Variance)
+**Idempotent.**
+**PostgREST partial-index trap:** the manual-weekly partial unique index can't be used by `.upsert({ onConflict })`. Manual sales POST does SELECT-then-INSERT-or-UPDATE with 23505 retry per `feedback_postgrest_upsert_partial_indexes.md`.
+
 ### M088 — fx_rates table ⏳ pending application
 **File:** `sql/M088-FX-RATES.sql`
 **Purpose:** Daily currency-to-SEK rates so cost calc (recipe-cost.ts) can convert non-SEK invoice lines. ECB daily XML is the source; daily cron at `/api/cron/fx-rates-update` (17:00 UTC) fetches + upserts.

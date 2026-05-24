@@ -96,8 +96,10 @@ export const AREAS: Area[] = [
       { key: 'skipped',     label: 'Skipped suppliers', href: '/inventory/skipped' },
       { key: 'extractions', label: 'PDF review',        href: '/inventory/extractions' },
       { key: 'recipes',     label: 'Recipes',           href: '/inventory/recipes' },
+      { key: 'sales',       label: 'Sales (manual)',    href: '/inventory/sales' },
       { key: 'counts',      label: 'Stock counts',      href: '/inventory/counts' },
       { key: 'waste',       label: 'Waste',             href: '/inventory/waste' },
+      { key: 'variance',    label: 'Variance',          href: '/inventory/variance' },
     ],
   },
   {
