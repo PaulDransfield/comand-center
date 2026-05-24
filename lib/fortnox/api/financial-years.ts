@@ -20,6 +20,8 @@
 // Most Swedish restaurants run a calendar fiscal year, but some (especially
 // post-acquisition) carry a broken-year. Don't assume — always enumerate.
 
+import { fortnoxFetch } from './fetch'
+
 const FORTNOX_API = 'https://api.fortnox.se/3'
 
 export interface FortnoxFinancialYear {
@@ -43,12 +45,11 @@ export interface FetchFinancialYearsResult {
  * a customer typically has 1-10 years on file.
  */
 export async function fetchFinancialYears(accessToken: string): Promise<FetchFinancialYearsResult> {
-  const res = await fetch(`${FORTNOX_API}/financialyears`, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Accept':        'application/json',
-    },
-  })
+  // Use the shared retry-aware fetcher so transient 429s get backed off
+  // and retried up to 4× (~30s worst case) rather than surfacing as a
+  // hard "Backfill failed" to the owner. The raw fetch() here previously
+  // had no retry and turned every rate-limit blip into a backfill abort.
+  const res = await fortnoxFetch(`${FORTNOX_API}/financialyears`, accessToken)
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`Fortnox /financialyears failed: HTTP ${res.status} — ${text.slice(0, 200)}`)
