@@ -61,37 +61,15 @@ export async function loadFortnoxIntegration(
 ): Promise<FortnoxIntegrationRow | null> {
   const { data, error } = await db
     .from('integrations')
-    .select('id, org_id, business_id, credentials_enc, status')
+    .select('id, org_id, business_id, credentials_enc')
     .eq('org_id', orgId)
     .eq('business_id', businessId)
     .eq('provider', 'fortnox')
     .in('status', ['connected', 'error', 'warning'])
     .limit(1)
     .maybeSingle()
-  console.log('[fortnox/auth] loadIntegration', {
-    orgId, businessId,
-    error: error?.message ?? null,
-    found: !!data, status: data?.status ?? null,
-    creds_len: data?.credentials_enc?.length ?? 0,
-  })
   if (error) throw new Error(`Fortnox integration load failed: ${error.message}`)
-  if (!data?.credentials_enc) {
-    // No-org-filter probe to spot RLS / org mismatch
-    const { data: anyRow } = await db
-      .from('integrations')
-      .select('id, org_id, status, credentials_enc')
-      .eq('business_id', businessId)
-      .eq('provider', 'fortnox')
-      .maybeSingle()
-    console.log('[fortnox/auth] no-filter probe', {
-      found: !!anyRow,
-      its_org_id: anyRow?.org_id ?? null,
-      its_status: anyRow?.status ?? null,
-      its_creds_len: anyRow?.credentials_enc?.length ?? 0,
-      requested_orgId: orgId,
-    })
-    return null
-  }
+  if (!data?.credentials_enc) return null
   return data as FortnoxIntegrationRow
 }
 
@@ -214,36 +192,16 @@ export async function getFreshFortnoxCreds(
   opts?:      GetFreshTokenOpts,
 ): Promise<DecryptedFortnoxCreds | null> {
   const integ = await loadFortnoxIntegration(db, orgId, businessId)
-  if (!integ) {
-    console.log('[fortnox/auth] loadFortnoxIntegration returned null', { orgId, businessId })
-    return null
-  }
-  console.log('[fortnox/auth] integ found', {
-    id: integ.id, creds_len: integ.credentials_enc?.length ?? 0,
-  })
+  if (!integ) return null
 
   let creds: DecryptedFortnoxCreds
   try {
-    const decrypted = decrypt(integ.credentials_enc)
-    console.log('[fortnox/auth] decrypted', {
-      is_null: decrypted == null, len: decrypted?.length ?? 0,
-    })
-    const parsed = JSON.parse(decrypted ?? '{}')
-    console.log('[fortnox/auth] parsed keys', Object.keys(parsed))
-    creds = normaliseCreds(parsed)
-    console.log('[fortnox/auth] normalised', {
-      access_token_len: creds.access_token?.length ?? 0,
-      refresh_token_len: creds.refresh_token?.length ?? 0,
-      expires_at: creds.expires_at,
-      expires_in_ms: creds.expires_at - Date.now(),
-    })
-  } catch (e: any) {
-    console.log('[fortnox/auth] decrypt/parse threw:', e?.message)
+    creds = normaliseCreds(JSON.parse(decrypt(integ.credentials_enc) ?? '{}'))
+  } catch {
     throw new Error('Failed to decrypt Fortnox credentials')
   }
 
   const stillValid = creds.expires_at - Date.now() > REFRESH_THRESHOLD_MS
-  console.log('[fortnox/auth] stillValid:', stillValid, 'force:', !!opts?.force)
   if (opts?.force || !stillValid) {
     const key = `${integ.id}`
     let p = inflightRefreshes.get(key)
@@ -253,9 +211,6 @@ export async function getFreshFortnoxCreds(
       inflightRefreshes.set(key, p)
     }
     creds = await p
-    console.log('[fortnox/auth] post-refresh', {
-      access_token_len: creds.access_token?.length ?? 0,
-    })
   }
   return creds
 }

@@ -58,18 +58,12 @@ export async function GET(req: NextRequest) {
   // the morning's OAuth tokens expired (10h after onboarding), this
   // endpoint started 401-ing while the other three auto-refreshed.
   let accessToken: string | null
-  let tokenStage = 'before_call'
   try {
     accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
-    tokenStage = accessToken
-      ? `got_token_len_${accessToken.length}`
-      : 'helper_returned_null'
-    console.log('[fortnox/file] tokenStage:', tokenStage, 'orgId:', auth.orgId, 'bizId:', businessId)
   } catch (err: any) {
     return NextResponse.json({
       error:   'fortnox_token_refresh_failed',
       message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
-      stage:   'refresh_threw',
     }, { status: 401 })
   }
   if (!accessToken) {
@@ -102,14 +96,6 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({
       error: 'No connected Fortnox integration for this business',
-      diagnostic: {
-        biz_id:       businessId,
-        biz_org_id:   biz.org_id,
-        auth_org_id:  auth.orgId,
-        integration_found: !!integState,
-        integration_status: integState?.status ?? null,
-        token_stage:  tokenStage,
-      },
     }, { status: 404 })
   }
 
