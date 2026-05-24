@@ -264,11 +264,17 @@ export async function extractInvoicePdf(
   // (it can't see the VAT delta).
   let selfInvoiceRescued = false
 
-  if (headerTotal != null && headerTotal < -10 && totalExtracted > 10) {
-    const headerAbs = Math.abs(headerTotal)
+  // Run rescues whenever the header is meaningfully negative — we may
+  // need to flip Claude's positive output, OR Claude already flipped
+  // signs but we still need to skip the strict validator for the
+  // inc-vs-excl-VAT gap on självfaktura.
+  if (headerTotal != null && headerTotal < -10 && Math.abs(totalExtracted) > 10) {
+    const headerAbs    = Math.abs(headerTotal)
+    const extractedAbs = Math.abs(totalExtracted)
+    const extractedIsPositive = totalExtracted > 0
 
-    // Pattern A — simple sign-only error
-    if (Math.abs(headerAbs - totalExtracted) / headerAbs < 0.05) {
+    // Pattern A — simple sign-only error (header neg, extracted pos, |abs| ≈)
+    if (extractedIsPositive && Math.abs(headerAbs - extractedAbs) / headerAbs < 0.05) {
       for (const r of validRows) {
         if (r.quantity       != null) r.quantity       = -Number(r.quantity)
         if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
@@ -281,23 +287,35 @@ export async function extractInvoicePdf(
         severity: 'warn',
       })
     } else {
-      // Pattern B — try each Swedish VAT rate; if |extracted × (1+vat)| ≈ |header|,
-      // it's a self-invoice/inc-vs-excl-VAT case. Flip signs (don't multiply the
-      // stored values — leave them excl-VAT so downstream cost calc stays clean).
+      // Pattern B — header is inc-VAT, extracted rows sum to ex-VAT.
+      // Try each Swedish VAT rate; if |extracted × (1+vat)| ≈ |header|
+      // (within 2%), it's a self-invoice. Two sub-cases:
+      //   - Claude returned positive: flip signs AND skip validator
+      //   - Claude already returned negative (good prompt!): just skip
+      //     validator — the inc-vs-ex-VAT gap will always trip strict
+      //     comparison even with correct signs.
       for (const vatRate of [25, 12, 6]) {
-        const grossed = totalExtracted * (1 + vatRate / 100)
+        const grossed = extractedAbs * (1 + vatRate / 100)
         if (Math.abs(headerAbs - grossed) / headerAbs < 0.02) {
-          for (const r of validRows) {
-            if (r.quantity       != null) r.quantity       = -Number(r.quantity)
-            if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
-            if (r.price_per_unit != null) r.price_per_unit = -Number(r.price_per_unit)
+          if (extractedIsPositive) {
+            for (const r of validRows) {
+              if (r.quantity       != null) r.quantity       = -Number(r.quantity)
+              if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
+              if (r.price_per_unit != null) r.price_per_unit = -Number(r.price_per_unit)
+            }
+            totalExtracted = -totalExtracted
+            warnings.push({
+              code: 'self_invoice_sign_flipped',
+              message: `Self-invoice detected — header is inc-${vatRate}%-VAT ${headerTotal.toFixed(2)}, extracted rows sum to ${(-totalExtracted).toFixed(2)} ex-VAT. Flipped signs negative. (Quatra oil recycling, empty-pallet returns, deposit credits — buyer's books reverse the cost.)`,
+              severity: 'warn',
+            })
+          } else {
+            warnings.push({
+              code: 'self_invoice_vat_skip',
+              message: `Self-invoice match — header is inc-${vatRate}%-VAT ${headerTotal.toFixed(2)}, extracted rows already correctly signed at ${totalExtracted.toFixed(2)} ex-VAT. Skipping strict total-match (inc/ex-VAT gap expected).`,
+              severity: 'warn',
+            })
           }
-          totalExtracted = -totalExtracted
-          warnings.push({
-            code: 'self_invoice_sign_flipped',
-            message: `Self-invoice detected — header is inc-${vatRate}%-VAT ${headerTotal.toFixed(2)}, extracted rows sum to ${(-totalExtracted).toFixed(2)} ex-VAT. Flipped signs negative. (Quatra oil recycling, empty-pallet returns, deposit credits — buyer's books reverse the cost.)`,
-            severity: 'warn',
-          })
           selfInvoiceRescued = true
           break
         }
