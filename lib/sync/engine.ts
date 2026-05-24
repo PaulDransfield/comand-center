@@ -598,6 +598,23 @@ async function ensureFreshFortnoxToken(db: any, integ: any): Promise<any> {
   })
   if (!res.ok) {
     const errText = await res.text().catch(() => '')
+    // Fortnox refresh tokens are single-use — once rotated, the old one
+    // is invalid_grant forever. Detect it + flip status='needs_reauth'
+    // so future calls short-circuit instead of beating a dead horse.
+    // (Mirrors lib/fortnox/api/auth.ts refreshFortnoxToken.)
+    const isInvalidGrant =
+      res.status === 400 || res.status === 401 || /invalid_grant/i.test(errText)
+    if (isInvalidGrant) {
+      try {
+        await db.from('integrations')
+          .update({
+            status:     'needs_reauth',
+            last_error: `Fortnox refresh token rejected: ${errText.slice(0, 200)}`,
+          })
+          .eq('id', integ.id)
+      } catch { /* best-effort */ }
+      throw new Error('FORTNOX_NEEDS_REAUTH')
+    }
     throw new Error(`Fortnox token refresh failed (${res.status}): ${errText.slice(0, 200)}`)
   }
   const tok: any = await res.json()

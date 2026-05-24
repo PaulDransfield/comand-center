@@ -67,6 +67,23 @@ export async function GET(req: NextRequest) {
     }, { status: 401 })
   }
   if (!accessToken) {
+    // Detect whether the integration exists but is in a dead state
+    // (status='error' / 'needs_reauth' / empty access_token) vs truly
+    // not connected. The diagnostic helps owner know what to do.
+    const { data: integState } = await db
+      .from('integrations')
+      .select('status, last_error')
+      .eq('business_id', businessId)
+      .eq('provider', 'fortnox')
+      .maybeSingle()
+    if (integState && integState.status !== 'connected') {
+      return NextResponse.json({
+        error:   'fortnox_needs_reconnect',
+        message: 'Fortnox connection needs to be re-authorised. Go to /integrations and click Connect.',
+        status:  integState.status,
+        detail:  integState.last_error?.slice(0, 200),
+      }, { status: 409 })
+    }
     return NextResponse.json({ error: 'No connected Fortnox integration for this business' }, { status: 404 })
   }
 
