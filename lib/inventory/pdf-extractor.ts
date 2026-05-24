@@ -635,6 +635,32 @@ INCLUSIVE vs EXCLUSIVE OF VAT — second most common bug:
 - The sum of total_excl_vat across all rows MUST match the invoice's
   ex-VAT header total within ~2%, NOT the inc-VAT "att betala" total.
 
+MULTI-INVOICE REBILLS — third common pattern:
+- Some PDFs contain MULTIPLE invoices or receipts stitched together:
+  the supplier's invoice to YOU on page 1, then the supplier's OWN
+  underlying purchase receipt from a wholesaler attached as pages 2+.
+  Common when a small supplier resells / passes through goods from
+  Axfood Snabbgross, Martin Servera, Menigo, Granngården, etc.
+- The supplier hint we pass in (\`Supplier on Fortnox\`) tells you who
+  ACTUALLY billed the buyer. That is the supplier whose invoice you
+  should extract.
+- Extract ONLY from the TOP-LEVEL invoice — the one from the supplier
+  on the Fortnox header. IGNORE attached receipts from other
+  suppliers. The buyer only owes the rebilled amount, not the
+  underlying full purchase. Detail receipts are supporting docs.
+- The top-level rebill line is often a single line like:
+    "Axfood 0021035252  1 st  1 610,00 kr"
+  Extract that one line as-is. DO NOT dig into the attached Axfood
+  receipt to enumerate 15 product rows — the buyer didn't receive
+  all 15 of those items in those quantities.
+- Indicators that a PDF is a rebill:
+    * "Sida 1(1)" on page 1 followed by a separate "Sida 1(2)" or
+      "Faktura" header from a DIFFERENT supplier on page 2
+    * Two distinct organisationsnummer (one per invoice section)
+    * The page-1 line description references the other supplier's
+      invoice number directly (e.g. "Axfood 0021035252")
+    * Total mismatch between page-1 sum and pages-2+ sum
+
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
 - Use the ISO 4217 code when you see a different currency:
