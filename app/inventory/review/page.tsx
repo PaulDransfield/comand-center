@@ -71,6 +71,9 @@ export default function InventoryReviewPage() {
     alias_id?: string;
     err?: string;
   }>>({})
+  // Bulk-action selection state
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState<{ done: number; total: number } | null>(null)
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -256,6 +259,51 @@ export default function InventoryReviewPage() {
   const totalLines = visible.reduce((s, g) => s + g.line_count, 0)
   const doneCount = Object.values(edits).filter(e => e.done).length
 
+  // Selection helpers — only "unresolved" rows can be selected
+  function isSelectable(g: ReviewGroup) {
+    const e = edits[g.group_key]
+    return !e?.done && !e?.skipped && !e?.busy
+  }
+  const visibleSelectable = visible.filter(isSelectable)
+  const selectedVisible = visibleSelectable.filter(g => selected.has(g.group_key))
+  function toggle(groupKey: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(groupKey)) next.delete(groupKey); else next.add(groupKey)
+      return next
+    })
+  }
+  function selectAllVisible() {
+    setSelected(new Set([...selected, ...visibleSelectable.map(g => g.group_key)]))
+  }
+  function clearSelection() { setSelected(new Set()) }
+
+  async function bulkApprove() {
+    const items = visibleSelectable.filter(g => selected.has(g.group_key))
+    if (items.length === 0) return
+    if (!confirm(t('bulkApproveConfirm', { count: String(items.length) }))) return
+    setBulkBusy({ done: 0, total: items.length })
+    for (let i = 0; i < items.length; i++) {
+      await approve(items[i])    // approve() already updates per-row state
+      setBulkBusy({ done: i + 1, total: items.length })
+    }
+    setBulkBusy(null)
+    clearSelection()
+  }
+
+  async function bulkSkip() {
+    const items = visibleSelectable.filter(g => selected.has(g.group_key))
+    if (items.length === 0) return
+    if (!confirm(t('bulkSkipConfirm', { count: String(items.length) }))) return
+    setBulkBusy({ done: 0, total: items.length })
+    for (let i = 0; i < items.length; i++) {
+      await skip(items[i])
+      setBulkBusy({ done: i + 1, total: items.length })
+    }
+    setBulkBusy(null)
+    clearSelection()
+  }
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
@@ -328,8 +376,40 @@ export default function InventoryReviewPage() {
           </div>
         )}
 
+        {/* Bulk selection toolbar — only shown when there ARE selectable rows */}
+        {!loading && visibleSelectable.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+            padding: '6px 12px', background: UXP.subtleBg,
+            border: `0.5px solid ${UXP.border}`, borderRadius: 6, fontSize: 11,
+          }}>
+            <span style={{ color: UXP.ink3 }}>
+              {t('bulkSelectedLabel', { selected: String(selectedVisible.length), visible: String(visibleSelectable.length) })}
+            </span>
+            <button onClick={selectAllVisible}
+              disabled={selectedVisible.length === visibleSelectable.length}
+              style={{
+                padding: '2px 8px', fontSize: 11, background: 'transparent',
+                color: UXP.lavText, border: `0.5px solid ${UXP.lavMid}`,
+                borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+              {t('bulkSelectAll')}
+            </button>
+            {selectedVisible.length > 0 && (
+              <button onClick={clearSelection}
+                style={{
+                  padding: '2px 8px', fontSize: 11, background: 'transparent',
+                  color: UXP.ink3, border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                {t('bulkClear')}
+              </button>
+            )}
+          </div>
+        )}
+
         {!loading && visible.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8, paddingBottom: selectedVisible.length > 0 ? 80 : 0 }}>
             {visible.map(g => {
               const e = edits[g.group_key] ?? { name: g.suggested_name, category: g.suggested_category }
               const isDone    = !!e.done
@@ -346,6 +426,14 @@ export default function InventoryReviewPage() {
                   transition: 'opacity 200ms, background 200ms',
                 }}>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                    {/* Checkbox for bulk actions — disabled if already resolved or in flight */}
+                    <input
+                      type="checkbox"
+                      checked={selected.has(g.group_key)}
+                      disabled={isResolved || e.busy || !!bulkBusy}
+                      onChange={() => toggle(g.group_key)}
+                      style={{ marginTop: 8, cursor: isResolved || e.busy ? 'not-allowed' : 'pointer' }}
+                    />
                     {/* LEFT: name + supplier + sample */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <input
@@ -474,6 +562,44 @@ export default function InventoryReviewPage() {
           </div>
         )}
       </div>
+
+      {/* Sticky bulk-action footer */}
+      {(selectedVisible.length > 0 || bulkBusy) && (
+        <div style={{
+          position: 'fixed' as const, bottom: 0, left: 0, right: 0,
+          background: '#fff', borderTop: `0.5px solid ${UXP.border}`,
+          padding: '10px 24px', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', gap: 14,
+          boxShadow: '0 -4px 16px rgba(58,53,80,0.08)',
+          zIndex: 50,
+        }}>
+          <div style={{ fontSize: 12, color: UXP.ink2 }}>
+            {bulkBusy
+              ? t('bulkInProgress', { done: String(bulkBusy.done), total: String(bulkBusy.total) })
+              : t('bulkFooterLabel', { count: String(selectedVisible.length) })}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={bulkSkip} disabled={!!bulkBusy}
+              style={{
+                padding: '6px 14px', fontSize: 12, fontWeight: 500,
+                background: 'transparent', color: UXP.ink2,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                cursor: bulkBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+              }}>
+              {t('bulkSkip')}
+            </button>
+            <button onClick={bulkApprove} disabled={!!bulkBusy}
+              style={{
+                padding: '6px 18px', fontSize: 12, fontWeight: 600,
+                background: UXP.lavDeep, color: '#fff',
+                border: 'none', borderRadius: 5,
+                cursor: bulkBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+              }}>
+              {t('bulkApprove')}
+            </button>
+          </div>
+        </div>
+      )}
     </AppShell>
   )
 }

@@ -250,7 +250,16 @@
       "undo":              "Undo",
       "undoHint":          "Reverse this action. For Approve, deletes the product + alias and re-flags the lines as needs-review. For Skip, restores the lines to the queue.",
       "linked":            "Linked ✓",
-      "linkedHint":        "A product with this name already existed in the catalogue. Linked this supplier's variant under it instead of creating a duplicate."
+      "linkedHint":        "A product with this name already existed in the catalogue. Linked this supplier's variant under it instead of creating a duplicate.",
+      "bulkSelectedLabel": "{selected} of {visible} selected",
+      "bulkSelectAll":     "Select all visible",
+      "bulkClear":         "Clear",
+      "bulkFooterLabel":   "{count} group(s) selected",
+      "bulkApprove":       "Approve selected",
+      "bulkSkip":          "Skip selected",
+      "bulkInProgress":    "Processing {done} of {total}…",
+      "bulkApproveConfirm":"Approve {count} group(s) with their suggested name + category? You can adjust individual rows first.",
+      "bulkSkipConfirm":   "Skip {count} group(s) as non-inventory?"
     },
     "recipes": {
       "title":              "Recipes",

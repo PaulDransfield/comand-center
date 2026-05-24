@@ -250,7 +250,16 @@
       "undo":              "Angre",
       "undoHint":          "Tilbakestill handlingen. For Godkjenn slettes produktet + aliaset og linjene flagges som trenger-gjennomgang. For Hopp over gjenopprettes linjene til køen.",
       "linked":            "Lenket ✓",
-      "linkedHint":        "Et produkt med dette navnet fantes allerede i katalogen. Lenket denne leverandørens variant under det i stedet for å lage en duplikat."
+      "linkedHint":        "Et produkt med dette navnet fantes allerede i katalogen. Lenket denne leverandørens variant under det i stedet for å lage en duplikat.",
+      "bulkSelectedLabel": "{selected} av {visible} valgte",
+      "bulkSelectAll":     "Velg alle synlige",
+      "bulkClear":         "Tøm",
+      "bulkFooterLabel":   "{count} gruppe(r) valgte",
+      "bulkApprove":       "Godkjenn valgte",
+      "bulkSkip":          "Hopp over valgte",
+      "bulkInProgress":    "Behandler {done} av {total}…",
+      "bulkApproveConfirm":"Godkjenn {count} gruppe(r) med foreslått navn + kategori? Du kan justere enkeltrader først.",
+      "bulkSkipConfirm":   "Hopp over {count} gruppe(r) som ikke-varelager?"
     },
     "recipes": {
       "title":              "Oppskrifter",

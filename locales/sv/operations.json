@@ -250,7 +250,16 @@
       "undo":              "Ångra",
       "undoHint":          "Återställ åtgärden. För Godkänn raderas produkten + aliaset och raderna flaggas som behöver-granskning. För Hoppa över återställs raderna till kön.",
       "linked":            "Länkad ✓",
-      "linkedHint":        "En produkt med detta namn fanns redan i katalogen. Länkade denna leverantörs variant under den i stället för att skapa en dubblett."
+      "linkedHint":        "En produkt med detta namn fanns redan i katalogen. Länkade denna leverantörs variant under den i stället för att skapa en dubblett.",
+      "bulkSelectedLabel": "{selected} av {visible} valda",
+      "bulkSelectAll":     "Välj alla synliga",
+      "bulkClear":         "Rensa",
+      "bulkFooterLabel":   "{count} grupp(er) valda",
+      "bulkApprove":       "Godkänn valda",
+      "bulkSkip":          "Hoppa över valda",
+      "bulkInProgress":    "Bearbetar {done} av {total}…",
+      "bulkApproveConfirm":"Godkänn {count} grupp(er) med deras föreslagna namn + kategori? Du kan justera enskilda rader först.",
+      "bulkSkipConfirm":   "Hoppa över {count} grupp(er) som icke-lager?"
     },
     "recipes": {
       "title":              "Recept",
