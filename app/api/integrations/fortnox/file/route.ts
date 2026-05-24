@@ -21,7 +21,8 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
-import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
+import { refreshFortnoxToken }          from '@/lib/fortnox/api/auth'
+import { decrypt }                      from '@/lib/integrations/encryption'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -51,26 +52,70 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'Business not found in your org' }, { status: 404 })
 
-  // Resolve a live Fortnox access token via the shared helper. Refreshes
-  // via refresh_token when the stored access_token is within 5min of its
-  // 60-min expiry. This route was missed in the 2026-05-11 token-refresh
-  // fix that covered recent-invoices / drilldown / invoice-pdf — after
-  // the morning's OAuth tokens expired (10h after onboarding), this
-  // endpoint started 401-ing while the other three auto-refreshed.
-  let accessToken: string | null
+  // Resolve a live Fortnox access token. We bypass getFreshFortnoxAccessToken
+  // here intentionally — that helper was returning null in production despite
+  // a valid token sitting in the DB (2026-05-24, root cause TBD, tracked
+  // separately). Since this is a user-blocking PDF render path, we read +
+  // decrypt directly and refresh inline if the stored token is near expiry.
+  // This path matches what loadFortnoxIntegration + getFreshFortnoxCreds do,
+  // just inlined so a bug in either can't strand the user.
+  let accessToken: string | null = null
   let tokenStage = 'before_call'
   try {
-    accessToken = await getFreshFortnoxAccessToken(db, auth.orgId, businessId)
-    tokenStage = accessToken
-      ? `got_token_len_${accessToken.length}`
-      : 'helper_returned_null'
+    const { data: integ } = await db
+      .from('integrations')
+      .select('id, org_id, business_id, credentials_enc, status')
+      .eq('org_id', auth.orgId)
+      .eq('business_id', businessId)
+      .eq('provider', 'fortnox')
+      .in('status', ['connected', 'error', 'warning'])
+      .limit(1)
+      .maybeSingle()
+
+    if (!integ?.credentials_enc) {
+      tokenStage = 'no_integration_row'
+    } else {
+      const decoded = decrypt(integ.credentials_enc)
+      const raw     = decoded ? JSON.parse(decoded) : {}
+      const expMs   = typeof raw.expires_at === 'number'
+        ? raw.expires_at
+        : (typeof raw.expires_at === 'string' ? (Date.parse(raw.expires_at) || 0) : 0)
+
+      const stillValid = expMs - Date.now() > 5 * 60 * 1000
+
+      if (stillValid && raw.access_token) {
+        accessToken = String(raw.access_token)
+        tokenStage  = `direct_decrypt_len_${accessToken.length}`
+      } else {
+        // Near expiry or empty — refresh via the shared helper (its refresh
+        // path is fine; only the wrapper that returns the cached token was
+        // the broken one).
+        try {
+          const refreshed = await refreshFortnoxToken(db, integ as any, {
+            access_token:  String(raw.access_token  ?? ''),
+            refresh_token: String(raw.refresh_token ?? ''),
+            expires_at:    expMs,
+            token_type:    raw.token_type,
+            scope:         raw.scope,
+          })
+          accessToken = refreshed.access_token || null
+          tokenStage  = `refreshed_len_${refreshed.access_token?.length ?? 0}`
+        } catch (refreshErr: any) {
+          return NextResponse.json({
+            error:   'fortnox_token_refresh_failed',
+            message: refreshErr?.message ?? 'Token refresh failed — please reconnect Fortnox.',
+            caught_message: refreshErr?.message ?? null,
+          }, { status: 401 })
+        }
+      }
+    }
   } catch (err: any) {
     return NextResponse.json({
-      error:   'fortnox_token_refresh_failed',
-      message: err?.message ?? 'Token refresh failed — please reconnect Fortnox.',
+      error:   'fortnox_token_load_failed',
+      message: err?.message ?? 'Failed to load Fortnox credentials.',
       caught_message: err?.message ?? null,
       stack_excerpt: String(err?.stack ?? '').slice(0, 600),
-    }, { status: 401 })
+    }, { status: 500 })
   }
   if (!accessToken) {
     // Diagnostic — surface BOTH the integration's actual state AND the
