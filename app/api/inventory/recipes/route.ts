@@ -10,6 +10,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
+import { loadFxIndex } from '@/lib/inventory/fx'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,7 +54,8 @@ export async function GET(req: NextRequest) {
       if (ing.product_id) allProductIds.add(ing.product_id)
     }
   }
-  const priceMap = await getProductLatestPrices(db, businessId, Array.from(allProductIds))
+  const fxIndex  = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+  const priceMap = await getProductLatestPrices(db, businessId, Array.from(allProductIds), fxIndex)
 
   const enriched = recipes.map((r: any) => {
     const entry = recipeIndex.get(r.id)

@@ -11,6 +11,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { getProductLatestPrices } from '@/lib/inventory/recipe-cost'
+import { loadFxIndex } from '@/lib/inventory/fx'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -41,7 +42,8 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const ids = (products ?? []).map((p: any) => p.id)
-  const prices = await getProductLatestPrices(db, businessId, ids)
+  const fxIndex = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+  const prices = await getProductLatestPrices(db, businessId, ids, fxIndex)
 
   const out = (products ?? []).map((p: any) => {
     const pr = prices.get(p.id)

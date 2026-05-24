@@ -9,6 +9,7 @@
 // formula can't drift between surfaces.
 //
 import { canonicalUnit, convertQuantity, parseProductPackSize } from './unit-conversion'
+import { getFxRate, type FxIndex } from './fx'
 
 // UNIT MODEL (post-M087):
 //   Each product can carry pack_size + base_unit. Recipe ingredient qty
@@ -51,6 +52,8 @@ export interface ProductLatestPrice {
   latest_currency: string | null
   pack_size:       number | null    // M087 — base_units per invoice_unit
   base_unit:       string | null    // M087 — 'g' | 'ml' | 'st'
+  latest_price_sek:  number | null  // M088 — latest_price converted via fx at latest_date; null if no rate
+  fx_rate_used:    number | null    // M088 — diagnostic / UI display ("@ 11.45 SEK")
 }
 
 export interface CostedIngredient extends IngredientForCosting {
@@ -167,7 +170,11 @@ export function computeRecipeCost(
 
     // ── Product branch ──────────────────────────────────────────────
     const p = ing.product_id ? prices.get(ing.product_id) : undefined
-    const unitPrice   = p?.latest_price ?? null
+    // Use the SEK-converted price when fxIndex was passed; falls back
+    // to native price for SEK rows (where latest_price_sek == latest_price).
+    // When non-SEK + no FX rate available, latest_price_sek is null and
+    // we treat the row as missing-price.
+    const unitPrice   = p?.latest_price_sek ?? null
     const invoiceUnit = p?.invoice_unit ?? null
     const noPrice     = unitPrice == null
 
@@ -322,11 +329,15 @@ export function wouldCreateCycle(
 
 // One-shot batch fetch: given a set of product_ids, return the latest
 // observed unit price per product (with its invoice_unit so the cost
-// reader can flag unit_mismatch). Used by both list + detail endpoints.
+// reader can flag unit_mismatch + FX rate so non-SEK lines convert).
+// Used by both list + detail endpoints. The optional `fxIndex` arg
+// applies FX conversion when present; callers that don't care about FX
+// can omit it and prices stay in their native currency.
 export async function getProductLatestPrices(
   db: any,
   businessId: string,
   productIds: string[],
+  fxIndex?: FxIndex,
 ): Promise<Map<string, ProductLatestPrice>> {
   const out = new Map<string, ProductLatestPrice>()
   if (productIds.length === 0) return out
@@ -343,15 +354,17 @@ export async function getProductLatestPrices(
       .in('id', slice)
     for (const p of prods ?? []) {
       out.set(p.id, {
-        product_id:      p.id,
-        product_name:    p.name ?? null,
-        latest_price:    null,
-        invoice_unit:    p.invoice_unit ?? null,
-        latest_date:     null,
-        latest_line_id:  null,
-        latest_currency: null,
-        pack_size:       p.pack_size != null ? Number(p.pack_size) : null,
-        base_unit:       p.base_unit ?? null,
+        product_id:        p.id,
+        product_name:      p.name ?? null,
+        latest_price:      null,
+        invoice_unit:      p.invoice_unit ?? null,
+        latest_date:       null,
+        latest_line_id:    null,
+        latest_currency:   null,
+        pack_size:         p.pack_size != null ? Number(p.pack_size) : null,
+        base_unit:         p.base_unit ?? null,
+        latest_price_sek:  null,
+        fx_rate_used:      null,
       })
     }
   }
@@ -401,16 +414,42 @@ export async function getProductLatestPrices(
     const existing = out.get(productId)
     if (existing && existing.latest_date) continue   // already have a newer hit (input sorted DESC)
     if (l.price_per_unit == null) continue
+    const nativePrice = Number(l.price_per_unit)
+    const currency    = l.currency ?? 'SEK'
+    // FX conversion: if currency = SEK or no fxIndex, latest_price_sek
+    // is just the native price. If non-SEK + fxIndex has a rate, apply
+    // it. If non-SEK + no rate available, leave null and let the cost
+    // reader decide whether to fall back to native or refuse to cost.
+    let priceSek: number | null = nativePrice
+    let fxRateUsed: number | null = 1
+    if (currency !== 'SEK') {
+      if (fxIndex) {
+        const rate = getFxRate(currency, l.invoice_date, fxIndex)
+        if (rate != null) {
+          priceSek   = nativePrice * rate
+          fxRateUsed = rate
+        } else {
+          priceSek   = null
+          fxRateUsed = null
+        }
+      } else {
+        // No fxIndex provided — leave as native, let caller decide.
+        priceSek   = null
+        fxRateUsed = null
+      }
+    }
     out.set(productId, {
-      product_id:      productId,
-      product_name:    existing?.product_name ?? null,
-      latest_price:    Number(l.price_per_unit),
-      invoice_unit:    existing?.invoice_unit ?? l.unit ?? null,
-      latest_date:     l.invoice_date,
-      latest_line_id:  l.id,
-      latest_currency: l.currency ?? 'SEK',
-      pack_size:       existing?.pack_size ?? null,
-      base_unit:       existing?.base_unit ?? null,
+      product_id:        productId,
+      product_name:      existing?.product_name ?? null,
+      latest_price:      nativePrice,
+      invoice_unit:      existing?.invoice_unit ?? l.unit ?? null,
+      latest_date:       l.invoice_date,
+      latest_line_id:    l.id,
+      latest_currency:   currency,
+      pack_size:         existing?.pack_size ?? null,
+      base_unit:         existing?.base_unit ?? null,
+      latest_price_sek:  priceSek,
+      fx_rate_used:      fxRateUsed,
     })
   }
 
