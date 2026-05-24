@@ -24,7 +24,7 @@
 // would land inside the same 5-second window. No retry on 429 — the throttle
 // should make 429s unreachable; if they occur we fail loudly.
 
-import { decrypt } from '@/lib/integrations/encryption'
+import { getFreshFortnoxCreds } from './auth'
 import { fetchFinancialYears, clampRangeToFiscalYears } from './financial-years'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -165,8 +165,8 @@ export async function fetchVoucherSummariesForRange(opts: VoucherFetchOptions): 
   const startedAt = Date.now()
   const db        = opts.db
 
-  const integ = await loadIntegration(db, opts.orgId, opts.businessId)
-  let creds   = await ensureFreshToken(db, integ)
+  if (!opts.businessId) throw new Error('vouchers.ts: businessId is required (refresh helper needs it)')
+  let creds  = await ensureFreshToken(db, opts.orgId, opts.businessId)
 
   const throttle = new SlidingWindowThrottle(RATE_MAX, RATE_WINDOW_MS)
   let listRequests   = 0
@@ -199,7 +199,7 @@ export async function fetchVoucherSummariesForRange(opts: VoucherFetchOptions): 
       listRequests++
 
       if (res.status === 401) {
-        creds = await ensureFreshToken(db, integ, /*force*/ true)
+        creds = await ensureFreshToken(db, opts.orgId, opts.businessId!, /*force*/ true)
         tokenRefreshed = true
         const retry = await authedFetch(url, creds.access_token, fyId, fyDate)
         if (!retry.ok) throw new Error(`Fortnox /vouchers list failed after refresh: HTTP ${retry.status}`)
@@ -237,8 +237,8 @@ export async function fetchVoucherDetailsForSummaries(opts: VoucherDetailsBatchO
   const startedAt = Date.now()
   const db        = opts.db
 
-  const integ = await loadIntegration(db, opts.orgId, opts.businessId)
-  let creds   = await ensureFreshToken(db, integ)
+  if (!opts.businessId) throw new Error('vouchers.ts: businessId is required (refresh helper needs it)')
+  let creds  = await ensureFreshToken(db, opts.orgId, opts.businessId)
 
   const throttle = new SlidingWindowThrottle(RATE_MAX, RATE_WINDOW_MS)
   let detailRequests = 0
@@ -266,7 +266,7 @@ export async function fetchVoucherDetailsForSummaries(opts: VoucherDetailsBatchO
     await throttle.acquire()
 
     if (creds.expires_at - Date.now() < REFRESH_THRESHOLD_MS) {
-      creds = await ensureFreshToken(db, integ, /*force*/ true)
+      creds = await ensureFreshToken(db, opts.orgId, opts.businessId!, /*force*/ true)
       tokenRefreshed = true
     }
 
@@ -313,8 +313,8 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
   const startedAt = Date.now()
   const db        = opts.db
 
-  const integ = await loadIntegration(db, opts.orgId, opts.businessId)
-  let creds   = await ensureFreshToken(db, integ)
+  if (!opts.businessId) throw new Error('vouchers.ts: businessId is required (refresh helper needs it)')
+  let creds  = await ensureFreshToken(db, opts.orgId, opts.businessId)
 
   const throttle = new SlidingWindowThrottle(RATE_MAX, RATE_WINDOW_MS)
   let listRequests   = 0
@@ -364,7 +364,7 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
 
       if (res.status === 401) {
         // Token expired mid-fetch. Refresh and retry once.
-        creds = await ensureFreshToken(db, integ, /*force*/ true)
+        creds = await ensureFreshToken(db, opts.orgId, opts.businessId!, /*force*/ true)
         tokenRefreshed = true
         const retry = await authedFetch(url, creds.access_token, fyId, fyDate)
         if (!retry.ok) throw new Error(`Fortnox /vouchers list failed after refresh: HTTP ${retry.status}`)
@@ -392,7 +392,7 @@ export async function fetchVouchersForRange(opts: VoucherFetchOptions): Promise<
     await throttle.acquire()
     // Refresh token if approaching expiry between detail calls.
     if (creds.expires_at - Date.now() < REFRESH_THRESHOLD_MS) {
-      creds = await ensureFreshToken(db, integ, /*force*/ true)
+      creds = await ensureFreshToken(db, opts.orgId, opts.businessId!, /*force*/ true)
       tokenRefreshed = true
     }
     // Detail GET also requires the fiscal-year context — vouchers are
@@ -455,79 +455,16 @@ interface DecryptedCreds {
   scope?:        string
 }
 
-async function loadIntegration(db: any, orgId: string, businessId?: string): Promise<IntegrationRow> {
-  // Accept status IN ('connected', 'error', 'warning'). The credentials are
-  // valid in any of those states — only 'disconnected' / 'not_connected'
-  // means we genuinely have nothing. A previous backfill failure flips the
-  // row to 'error' but the OAuth tokens are intact, so the retry path must
-  // be able to load the row without requiring a manual status reset first.
-  let q = db
-    .from('integrations')
-    .select('id, org_id, business_id, credentials_enc')
-    .eq('org_id', orgId)
-    .eq('provider', 'fortnox')
-    .in('status', ['connected', 'error', 'warning'])
-
-  if (businessId) q = q.eq('business_id', businessId)
-
-  const { data, error } = await q.limit(1).maybeSingle()
-  if (error) throw new Error(`Failed to load Fortnox integration: ${error.message}`)
-  if (!data) throw new Error(`No active Fortnox integration for org ${orgId}${businessId ? ` business ${businessId}` : ''} (need status connected/error/warning)`)
-  if (!data.credentials_enc) throw new Error('Fortnox integration row has no credentials')
-  return data as IntegrationRow
-}
-
-async function ensureFreshToken(db: any, integ: IntegrationRow, force = false): Promise<DecryptedCreds> {
-  const decrypted = decrypt(integ.credentials_enc) ?? '{}'
-  const creds: DecryptedCreds = normaliseCreds(JSON.parse(decrypted))
-
-  const stillValid = creds.expires_at - Date.now() > REFRESH_THRESHOLD_MS
-  if (stillValid && !force) return creds
-
-  if (!creds.refresh_token) {
-    throw new Error('Fortnox token expired and no refresh_token available — customer must reconnect')
+// Thin adapter around the canonical helper in lib/fortnox/api/auth.ts so
+// vouchers.ts callers continue to get a creds-shaped value (they use
+// .access_token). The shared helper handles in-flight refresh dedupe +
+// invalid_grant → needs_reauth flip.
+async function ensureFreshToken(db: any, orgId: string, businessId: string, force = false): Promise<DecryptedCreds> {
+  const creds = await getFreshFortnoxCreds(db, orgId, businessId, { force })
+  if (!creds || !creds.access_token) {
+    throw new Error('Fortnox integration not available — owner needs to reconnect')
   }
-
-  const clientId     = process.env.FORTNOX_CLIENT_ID
-  const clientSecret = process.env.FORTNOX_CLIENT_SECRET
-  if (!clientId || !clientSecret) {
-    throw new Error('FORTNOX_CLIENT_ID / FORTNOX_CLIENT_SECRET not set in env')
-  }
-
-  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-  const res = await fetch(FORTNOX_TOKEN, {
-    method:  'POST',
-    headers: { 'Authorization': `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body:    new URLSearchParams({ grant_type: 'refresh_token', refresh_token: creds.refresh_token }).toString(),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Fortnox token refresh failed: HTTP ${res.status} — ${text.slice(0, 200)}`)
-  }
-
-  const tok: any = await res.json()
-  const refreshed: DecryptedCreds = {
-    access_token:  tok.access_token  ?? creds.access_token,
-    refresh_token: tok.refresh_token ?? creds.refresh_token,
-    expires_at:    Date.now() + (Number(tok.expires_in ?? 3600) * 1000),
-    token_type:    tok.token_type    ?? creds.token_type,
-    scope:         tok.scope         ?? creds.scope,
-  }
-
-  // Persist the refreshed token so the production paths (lib/sync/engine.ts,
-  // app/api/integrations/fortnox/route.ts) see the same fresh token. Don't
-  // strand the customer with the old one.
-  const { encrypt } = await import('@/lib/integrations/encryption')
-  await db.from('integrations')
-    .update({
-      credentials_enc:  encrypt(JSON.stringify(refreshed)),
-      token_expires_at: new Date(refreshed.expires_at).toISOString(),
-      status:           'connected',
-      last_error:       null,
-    })
-    .eq('id', integ.id)
-
-  return refreshed
+  return creds as DecryptedCreds
 }
 
 /** Normalise both legacy and current credential shapes into a single struct. */

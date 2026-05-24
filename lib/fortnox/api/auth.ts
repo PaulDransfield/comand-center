@@ -157,17 +157,31 @@ function normaliseCreds(raw: any): DecryptedFortnoxCreds {
   }
 }
 
+export interface GetFreshTokenOpts {
+  /** Force refresh even if the cached token isn't expiring yet. Use
+   *  when a 401 came back from Fortnox despite expires_at being far in
+   *  the future (stale cache, manual revocation, etc). */
+  force?: boolean
+}
+
 /**
- * One-call helper: load integration → decrypt creds → refresh if expiring →
- * return the live access_token. Returns null when there's no usable
- * Fortnox connection for this (org, business). Throws only on refresh
- * failure (customer must reconnect).
+ * Race-prevention: when two callers refresh simultaneously, only one
+ * actually hits Fortnox — the other awaits the in-flight promise.
+ * Single-process scope only; concurrent Vercel function invocations
+ * can still race. Cross-process safety needs DB advisory lock + that's
+ * a follow-up scoped in SCALING-FORTNOX-AUTH.md.
  */
-export async function getFreshFortnoxAccessToken(
+const inflightRefreshes = new Map<string, Promise<DecryptedFortnoxCreds>>()
+
+/** Load + decrypt + (maybe) refresh. Returns the full creds object so
+ *  callers that need scope / expires_at can consume them. Most callers
+ *  want just the access_token via `getFreshFortnoxAccessToken`. */
+export async function getFreshFortnoxCreds(
   db:         any,
   orgId:      string,
   businessId: string,
-): Promise<string | null> {
+  opts?:      GetFreshTokenOpts,
+): Promise<DecryptedFortnoxCreds | null> {
   const integ = await loadFortnoxIntegration(db, orgId, businessId)
   if (!integ) return null
 
@@ -179,8 +193,29 @@ export async function getFreshFortnoxAccessToken(
   }
 
   const stillValid = creds.expires_at - Date.now() > REFRESH_THRESHOLD_MS
-  if (!stillValid) {
-    creds = await refreshFortnoxToken(db, integ, creds)
+  if (opts?.force || !stillValid) {
+    const key = `${integ.id}`
+    let p = inflightRefreshes.get(key)
+    if (!p) {
+      p = refreshFortnoxToken(db, integ, creds)
+        .finally(() => inflightRefreshes.delete(key))
+      inflightRefreshes.set(key, p)
+    }
+    creds = await p
   }
-  return creds.access_token || null
+  return creds
+}
+
+/** One-call helper: load → decrypt → refresh if expiring → return the
+ *  live access_token. Returns null when there's no usable Fortnox
+ *  connection for this (org, business). Throws only on refresh failure
+ *  (customer must reconnect). */
+export async function getFreshFortnoxAccessToken(
+  db:         any,
+  orgId:      string,
+  businessId: string,
+  opts?:      GetFreshTokenOpts,
+): Promise<string | null> {
+  const creds = await getFreshFortnoxCreds(db, orgId, businessId, opts)
+  return creds?.access_token ?? null
 }
