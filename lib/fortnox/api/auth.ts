@@ -192,16 +192,27 @@ export async function getFreshFortnoxCreds(
   opts?:      GetFreshTokenOpts,
 ): Promise<DecryptedFortnoxCreds | null> {
   const integ = await loadFortnoxIntegration(db, orgId, businessId)
-  if (!integ) return null
+  if (!integ) {
+    console.log('[fortnox/auth] no integration for', { orgId, businessId })
+    return null
+  }
 
   let creds: DecryptedFortnoxCreds
   try {
     creds = normaliseCreds(JSON.parse(decrypt(integ.credentials_enc) ?? '{}'))
-  } catch {
+  } catch (e: any) {
+    console.error('[fortnox/auth] decrypt threw:', e?.message)
     throw new Error('Failed to decrypt Fortnox credentials')
   }
 
   const stillValid = creds.expires_at - Date.now() > REFRESH_THRESHOLD_MS
+  console.log('[fortnox/auth] state', {
+    integ_id: integ.id,
+    access_token_len: creds.access_token?.length ?? 0,
+    expires_in_min: Math.round((creds.expires_at - Date.now()) / 60000),
+    stillValid, will_refresh: !stillValid || !!opts?.force,
+  })
+
   if (opts?.force || !stillValid) {
     const key = `${integ.id}`
     let p = inflightRefreshes.get(key)
@@ -210,7 +221,27 @@ export async function getFreshFortnoxCreds(
         .finally(() => inflightRefreshes.delete(key))
       inflightRefreshes.set(key, p)
     }
-    creds = await p
+    try {
+      creds = await p
+      console.log('[fortnox/auth] refresh ok', {
+        new_access_token_len: creds.access_token?.length ?? 0,
+        new_expires_at: creds.expires_at,
+      })
+    } catch (e: any) {
+      console.error('[fortnox/auth] refresh threw:', e?.message)
+      // ALSO mark status='error' here so the watchdog picks it up, since
+      // generic refresh errors (HTTP 5xx, network, invalid_client) didn't
+      // previously flip status. Now we surface them.
+      try {
+        await db.from('integrations')
+          .update({
+            status:     'error',
+            last_error: `refresh failed: ${e?.message ?? 'unknown'}`,
+          })
+          .eq('id', integ.id)
+      } catch {}
+      throw e
+    }
   }
   return creds
 }
