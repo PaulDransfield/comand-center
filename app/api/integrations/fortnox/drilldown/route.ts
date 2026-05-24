@@ -32,6 +32,7 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fetchVouchersForRange }        from '@/lib/fortnox/api/vouchers'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
+import { supplierInvoiceUrl, voucherUrl, getFortnoxWorkspaceId } from '@/lib/fortnox/web-url'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -59,7 +60,7 @@ const CATEGORY_ACCOUNT_RANGES: Record<string, Array<[number, number]>> = {
 export interface DrilldownInvoice {
   source_type:        'supplier_invoice' | 'manual_journal'
   source_id:          string                  // GivenNumber for supplier invoice; "series-number" for vouchers
-  fortnox_url:        string                  // Fortnox web UI URL for "Open in Fortnox"
+  fortnox_url:        string | null           // Fortnox web UI URL for "Open in Fortnox" (null when workspace_id not captured)
   file_id:            string | null           // Fortnox file id for PDF retrieval, if attached
   date:               string                  // ISO YYYY-MM-DD
   invoice_number:     string                  // Display number (GivenNumber or voucher series-number)
@@ -177,6 +178,8 @@ export async function POST(req: NextRequest) {
     fetchSupplierInvoices(db, auth.orgId, businessId, fromIso, toIso),
   ])
 
+  const workspaceId = await getFortnoxWorkspaceId(db, businessId)
+
   // Join vouchers to their parent supplier invoice via VoucherSeries+VoucherNumber.
   // Supplier invoice rows expose VoucherSeries and VoucherNumber; vouchers expose
   // their own series+number. The two match when the supplier invoice has been
@@ -228,7 +231,7 @@ export async function POST(req: NextRequest) {
     if (invoice) {
       const supName     = invoice.SupplierName ?? '—'
       const supNorm     = normaliseSupplier(supName)
-      const fortnoxUrl  = `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(invoice.GivenNumber ?? '')}`
+      const fortnoxUrl  = supplierInvoiceUrl(workspaceId, String(invoice.GivenNumber ?? ''))
       const inv: DrilldownInvoice = {
         source_type:         'supplier_invoice',
         source_id:           String(invoice.GivenNumber ?? ''),
@@ -265,7 +268,7 @@ export async function POST(req: NextRequest) {
       manualJournals.push({
         source_type:         'manual_journal',
         source_id:           `${v.VoucherSeries}-${v.VoucherNumber}`,
-        fortnox_url:         `https://apps.fortnox.se/voucher/${encodeURIComponent(v.VoucherSeries)}/${v.VoucherNumber}`,
+        fortnox_url:         voucherUrl(workspaceId, v.VoucherSeries, v.VoucherNumber),
         file_id:             null,
         date:                v.TransactionDate,
         invoice_number:      `${v.VoucherSeries}-${v.VoucherNumber}`,

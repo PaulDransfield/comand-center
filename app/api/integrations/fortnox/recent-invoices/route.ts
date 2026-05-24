@@ -36,6 +36,7 @@ import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
+import { supplierInvoiceUrl, getFortnoxWorkspaceId } from '@/lib/fortnox/web-url'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -78,7 +79,7 @@ export interface RecentInvoice {
   status:           'paid' | 'overdue' | 'pending'
   currency:         string | null
   file_id:          string | null
-  fortnox_url:      string
+  fortnox_url:      string | null
   voucher_series:   string | null
   voucher_number:   string | null
   comments:         string | null
@@ -219,6 +220,8 @@ export async function GET(req: NextRequest) {
     }, { status: 404 })
   }
 
+  const workspaceId = await getFortnoxWorkspaceId(db, businessId)
+
   // Range: either calendar-month window (year_month=YYYY-MM mode) or
   // last-N-days. Stockholm-local YYYY-MM-DD.
   let fromIso: string
@@ -311,7 +314,7 @@ export async function GET(req: NextRequest) {
         status,
         currency:       inv.Currency ? String(inv.Currency) : 'SEK',
         file_id:        inv.SupplierInvoiceFileConnections?.[0]?.FileId ?? null,
-        fortnox_url:    `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(String(inv.GivenNumber ?? ''))}`,
+        fortnox_url:    supplierInvoiceUrl(workspaceId, String(inv.GivenNumber ?? '')),
         voucher_series: inv.VoucherSeries ? String(inv.VoucherSeries) : null,
         voucher_number: inv.VoucherNumber != null ? String(inv.VoucherNumber) : null,
         comments:       inv.Comments ? String(inv.Comments) : null,

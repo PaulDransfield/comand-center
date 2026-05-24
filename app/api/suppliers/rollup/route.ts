@@ -30,6 +30,7 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 import { requireBusinessAccess }        from '@/lib/auth/require-role'
+import { supplierInvoiceUrl, getFortnoxWorkspaceId } from '@/lib/fortnox/web-url'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -58,7 +59,7 @@ export interface SupplierInvoiceLite {
   total:           number | null
   currency:        string | null
   file_id:         string | null
-  fortnox_url:     string
+  fortnox_url:     string | null
 }
 
 export interface SupplierRollupRow {
@@ -143,14 +144,18 @@ export async function GET(req: NextRequest) {
   const fromIso = fromDate.toISOString().slice(0, 10)
   const toIso   = todayLocal
 
+  // Resolve Fortnox workspace_id once so deep links can render
+  const workspaceId = await getFortnoxWorkspaceId(db, businessId)
+
   // ── Cache check ──────────────────────────────────────────────────
-  // Cache key bumped to v2 so the master-list/categorisation/invoice-id
-  // additions don't collide with the older cached payload shape.
+  // Cache key bumped to v3: the v2 payload baked the (broken) old
+  // /supplierinvoice/{number} URLs. v3 uses the workspace-id-aware
+  // helper. Old v2 cache rows expire on their own.
   const cacheKey = {
     business_id:  businessId,
     period_year:  0,
     period_month: 0,
-    category:     `__suppliers_rollup_v2_${WINDOW_MONTHS}m__`,
+    category:     `__suppliers_rollup_v3_${WINDOW_MONTHS}m__`,
   }
   const { data: cached } = await db
     .from('overhead_drilldown_cache')
@@ -301,7 +306,7 @@ export async function GET(req: NextRequest) {
       total:          parseAmount(inv.Total),
       currency:       inv.Currency ? String(inv.Currency) : 'SEK',
       file_id:        inv.SupplierInvoiceFileConnections?.[0]?.FileId ?? null,
-      fortnox_url:    `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(given)}`,
+      fortnox_url:    supplierInvoiceUrl(workspaceId, given),
     })
   }
 

@@ -15,6 +15,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { extractInvoicePdf } from '@/lib/inventory/pdf-extractor'
+import { supplierInvoiceUrl, getFortnoxWorkspaceId } from '@/lib/fortnox/web-url'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -47,6 +48,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, row.business_id)
   if (forbidden) return forbidden
 
+  const workspaceId = await getFortnoxWorkspaceId(db, row.business_id)
+
   return NextResponse.json({
     id:                       row.id,
     business_id:              row.business_id,
@@ -66,7 +69,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     ai_model:                 row.ai_model,
     cost_usd:                 row.cost_usd,
     completed_at:             row.completed_at,
-    fortnox_url:              `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(row.fortnox_invoice_number)}`,
+    fortnox_url:              supplierInvoiceUrl(workspaceId, row.fortnox_invoice_number),
     pdf_proxy_url:            row.pdf_file_id
       ? `/api/integrations/fortnox/file?file_id=${encodeURIComponent(row.pdf_file_id)}&business_id=${row.business_id}`
       : null,

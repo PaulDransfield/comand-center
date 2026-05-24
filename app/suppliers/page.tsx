@@ -516,7 +516,7 @@ function InvoiceDrawer({ row, bizId, onClose }: { row: SupplierRollupRow; bizId:
                 >
                   View PDF
                 </a>
-              ) : (
+              ) : inv.fortnox_url ? (
                 <a
                   href={inv.fortnox_url}
                   target="_blank"
@@ -535,7 +535,7 @@ function InvoiceDrawer({ row, bizId, onClose }: { row: SupplierRollupRow; bizId:
                 >
                   Open in Fortnox ↗
                 </a>
-              )}
+              ) : null}
             </div>
           ))}
         </div>

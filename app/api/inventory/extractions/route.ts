@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
+import { supplierInvoiceUrl, getFortnoxWorkspaceId } from '@/lib/fortnox/web-url'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -53,6 +54,8 @@ export async function GET(req: NextRequest) {
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  const workspaceId = await getFortnoxWorkspaceId(db, businessId)
+
   const items = (data ?? []).map((r: any) => ({
     id:                r.id,
     status:            r.status,
@@ -69,7 +72,7 @@ export async function GET(req: NextRequest) {
     warning_codes:     (r.validation_warnings ?? []).map((w: any) => w.code),
     completed_at:      r.completed_at,
     cost_usd:          r.cost_usd,
-    fortnox_url:       `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(r.fortnox_invoice_number)}`,
+    fortnox_url:       supplierInvoiceUrl(workspaceId, r.fortnox_invoice_number),
   }))
 
   return NextResponse.json({

@@ -455,6 +455,9 @@ export default function IntegrationsPage() {
                           was 6 months ago) and PK is the live truth.
                           Stored on integrations.config; aggregator reads
                           it on every run. */}
+                      {provider.key === 'fortnox' && integ?.business_id && (
+                        <FortnoxWorkspacePrompt businessId={integ.business_id} />
+                      )}
                       {provider.key === 'personalkollen' && (
                         <label style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', fontSize: 12, color: '#374151', lineHeight: 1.4 }}>
                           <input
@@ -711,5 +714,91 @@ export default function IntegrationsPage() {
 
     </div>
     </AppShell>
+  )
+}
+
+// Per-business prompt to capture Fortnox web-app workspace UUID.
+// Fortnox doesn't expose this via API — owner pastes their URL once.
+function FortnoxWorkspacePrompt({ businessId }: { businessId: string }) {
+  const [current, setCurrent] = useState<string | null | undefined>(undefined)
+  const [editing, setEditing] = useState(false)
+  const [pasted,  setPasted]  = useState('')
+  const [busy,    setBusy]    = useState(false)
+  const [err,     setErr]     = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/integrations/fortnox/workspace-id?business_id=${encodeURIComponent(businessId)}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setCurrent(j.workspace_id ?? null) })
+      .catch(() => { if (!cancelled) setCurrent(null) })
+    return () => { cancelled = true }
+  }, [businessId])
+
+  async function save() {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch('/api/integrations/fortnox/workspace-id', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: businessId, pasted }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setCurrent(j.workspace_id)
+      setEditing(false); setPasted('')
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  if (current === undefined) return null   // still loading
+
+  if (current && !editing) {
+    return (
+      <div style={{ marginTop: 8, padding: '6px 10px', background: '#f0fdf4', border: '0.5px solid #bbf7d0',
+                    borderRadius: 6, fontSize: 11, color: '#166534', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span>Workspace URL set — "Open in Fortnox" links will work.</span>
+        <button onClick={() => setEditing(true)} style={{
+          background: 'transparent', border: 'none', color: '#166534',
+          fontSize: 11, cursor: 'pointer', padding: 0, textDecoration: 'underline' as const,
+        }}>change</button>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 8, padding: '8px 10px', background: '#fef9f0', border: '0.5px solid #fde68a',
+                  borderRadius: 6, fontSize: 11, color: '#92400e' }}>
+      <div style={{ marginBottom: 6 }}>
+        <strong>Open in Fortnox links need your workspace URL.</strong> Log into Fortnox, open any supplier
+        invoice, copy the address bar URL, paste it here. We extract the workspace ID and save it once
+        per business.
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text" value={pasted} onChange={e => setPasted(e.target.value)} disabled={busy}
+          placeholder="https://apps2.fortnox.se/app/…"
+          style={{
+            flex: 1, padding: '5px 8px', fontSize: 11,
+            border: '0.5px solid #e5e7eb', borderRadius: 4,
+            background: '#fff', color: '#111827', fontFamily: 'inherit',
+          }} />
+        <button onClick={save} disabled={busy || !pasted.trim()} style={{
+          padding: '5px 12px', fontSize: 11, fontWeight: 600,
+          background: '#7c3aed', color: '#fff',
+          border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+        }}>{busy ? 'Saving…' : 'Save'}</button>
+        {editing && (
+          <button onClick={() => { setEditing(false); setPasted(''); setErr(null) }}
+            disabled={busy}
+            style={{
+              padding: '5px 10px', fontSize: 11,
+              background: 'transparent', color: '#6b7280',
+              border: '0.5px solid #e5e7eb', borderRadius: 4,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}>Cancel</button>
+        )}
+      </div>
+      {err && <div style={{ marginTop: 4, color: '#dc2626' }}>{err}</div>}
+    </div>
   )
 }

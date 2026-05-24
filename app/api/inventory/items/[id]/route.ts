@@ -13,6 +13,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { loadFxIndex, getFxRate } from '@/lib/inventory/fx'
+import { getFortnoxWorkspaceId, supplierInvoiceUrl } from '@/lib/fortnox/web-url'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -116,7 +117,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // FX conversion for non-SEK lines so the UI can show "≈ X SEK"
   // next to the native amount. Owner-flipped EUR/USD/etc rows light
   // up visibly so the metadata change feels like it did something.
-  const fxIndex = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+  const fxIndex     = await loadFxIndex(db, ['EUR', 'USD', 'NOK', 'DKK', 'GBP'])
+  const workspaceId = await getFortnoxWorkspaceId(db, product.business_id)
 
   return NextResponse.json({
     product,
@@ -154,7 +156,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         price_per_unit_sek: priceSek,
         total_sek:          totalSek,
         fx_rate:            fxRate,
-        fortnox_url:     `https://apps.fortnox.se/supplierinvoice/${encodeURIComponent(h.fortnox_invoice_number)}`,
+        fortnox_url:     supplierInvoiceUrl(workspaceId, h.fortnox_invoice_number),
       }
     }),
     aggregates,
