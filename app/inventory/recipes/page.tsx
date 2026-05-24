@@ -234,6 +234,8 @@ interface DetailIngredient {
   latest_line_id: string | null; latest_currency: string | null
   subrecipe_id: string | null; subrecipe_name: string | null
   is_subrecipe: boolean; cycle: boolean
+  pack_size: number | null; base_unit: string | null
+  cost_per_base_unit: number | null; pack_auto_detected: boolean
 }
 interface DetailResponse {
   recipe: { id: string; name: string; type: string | null; menu_price: number | null; portions: number; notes: string | null; updated_at: string }
@@ -422,11 +424,20 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
                     ? `${fmtKr(ing.unit_price)}/portion`
                     : t('detail.noPrice'))
                 : (ing.unit_price != null
-                    ? `${ing.latest_currency && ing.latest_currency !== 'SEK' ? `${ing.unit_price.toFixed(2)} ${ing.latest_currency}` : fmtKr(ing.unit_price)}/${ing.invoice_unit ?? '?'}`
+                    ? (ing.cost_per_base_unit != null && ing.base_unit
+                        // Show per-base-unit when pack conversion is in play
+                        ? `${ing.cost_per_base_unit.toFixed(4)} ${ing.latest_currency && ing.latest_currency !== 'SEK' ? ing.latest_currency : 'kr'}/${ing.base_unit} (pack ${ing.pack_size}${ing.base_unit}${ing.pack_auto_detected ? ' · auto' : ''})`
+                        : `${ing.latest_currency && ing.latest_currency !== 'SEK' ? `${ing.unit_price.toFixed(2)} ${ing.latest_currency}` : fmtKr(ing.unit_price)}/${ing.invoice_unit ?? '?'}`)
                     : t('detail.noPrice'))}
             {!ing.is_subrecipe && ing.unit_mismatch && (
               <span style={{ marginLeft: 6, color: UXP.coral, fontWeight: 500 }}>
                 {t('detail.unitMismatchLabel', { recipe: ing.unit ?? '?', product: ing.invoice_unit ?? '?' })}
+              </span>
+            )}
+            {!ing.is_subrecipe && ing.pack_auto_detected && !ing.unit_mismatch && (
+              <span style={{ marginLeft: 6, color: UXP.lavText, fontWeight: 500 }}
+                    title="Pack size parsed from product name. Save it on the catalogue page to make it persistent.">
+                · pack auto-detected
               </span>
             )}
           </div>
@@ -473,6 +484,21 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit }: {
             <input type="text" defaultValue={ing.invoice_unit ?? ''} disabled={busy}
               onBlur={e => { const v = e.target.value.trim(); if (v !== (ing.invoice_unit ?? '')) patchProduct({ invoice_unit: v || null }) }}
               style={{ ...inputStyle, padding: '3px 6px', fontSize: 11 }} />
+          </Field>
+          <Field label="Pack size">
+            <div style={{ display: 'flex', gap: 4 }}>
+              <input type="number" min="0" step="0.01" defaultValue={ing.pack_size ?? ''} disabled={busy}
+                onBlur={e => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== ing.pack_size) patchProduct({ pack_size: v }) }}
+                style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, flex: 1 }} placeholder="1000" />
+              <select defaultValue={ing.base_unit ?? ''} disabled={busy}
+                onChange={e => { if (e.target.value !== (ing.base_unit ?? '')) patchProduct({ base_unit: e.target.value || null }) }}
+                style={{ ...inputStyle, padding: '3px 4px', fontSize: 11, width: 56 }}>
+                <option value="">—</option>
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+                <option value="st">st</option>
+              </select>
+            </div>
           </Field>
           <Field label={t('detail.editPrice')}>
             <input type="number" min="0" step="0.01" defaultValue={ing.unit_price ?? ''} disabled={busy || !ing.latest_line_id}

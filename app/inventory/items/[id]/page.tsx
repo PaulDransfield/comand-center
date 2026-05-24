@@ -21,6 +21,8 @@ interface Detail {
     default_supplier_name:           string | null
     invoice_unit:                    string | null
     count_unit:                      string | null
+    pack_size:                       number | null
+    base_unit:                       string | null
   }
   aliases: Array<{
     id:                       string
@@ -119,6 +121,17 @@ export default function ProductDetailPage() {
     } catch (err: any) {
       setSaveErr(err.message)
     }
+  }
+
+  async function fetchAndApplyPackSuggestion() {
+    if (!data) return
+    try {
+      const r = await fetch(`/api/inventory/items/${params.id}/pack-suggest`, { cache: 'no-store' })
+      const j = await r.json().catch(() => ({}))
+      if (j.suggested && (!data.product.pack_size || !data.product.base_unit)) {
+        await patchProduct({ pack_size: j.suggested.pack_size, base_unit: j.suggested.base_unit })
+      }
+    } catch { /* swallow */ }
   }
 
   async function patchLine(lineId: string, patch: Record<string, any>) {
@@ -248,7 +261,7 @@ export default function ProductDetailPage() {
               </select>
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>Unit</span>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>Invoice unit</span>
               <input
                 type="text"
                 defaultValue={product.invoice_unit ?? ''}
@@ -263,11 +276,68 @@ export default function ProductDetailPage() {
                   borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
                 }} />
             </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}
+                    title="How many base units (g / ml / st) in ONE invoice unit. Example: a 1kg bag of garlic priced per ST has pack size 1000.">
+                Pack size
+              </span>
+              <input
+                type="number" step="0.01" min="0"
+                defaultValue={product.pack_size ?? ''}
+                onBlur={e => {
+                  const v = e.target.value === '' ? null : Number(e.target.value)
+                  if (v !== product.pack_size) patchProduct({ pack_size: v })
+                }}
+                placeholder="1000"
+                style={{
+                  padding: '3px 6px', fontSize: 12, width: 80,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                  textAlign: 'right' as const,
+                }} />
+              <select
+                value={product.base_unit ?? ''}
+                onChange={e => patchProduct({ base_unit: e.target.value || null })}
+                style={{
+                  padding: '3px 4px', fontSize: 12,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                }}>
+                <option value="">—</option>
+                <option value="g">g</option>
+                <option value="ml">ml</option>
+                <option value="st">st</option>
+              </select>
+            </label>
             {product.default_supplier_name && (
               <span style={{ color: UXP.ink4 }}>· usually from {product.default_supplier_name}</span>
             )}
           </div>
         </div>
+
+        {/* Auto-detect pack size suggestion when missing */}
+        {(!product.pack_size || !product.base_unit) && (
+          <div style={{
+            padding: '8px 12px', marginBottom: 12,
+            background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+            borderRadius: 6, fontSize: 12, color: UXP.ink2,
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+          }}>
+            <span>
+              Pack size missing. Recipes using this product can't convert grams/ml correctly until you set it.
+              We can try to detect it from the name "{product.name}".
+            </span>
+            <button onClick={fetchAndApplyPackSuggestion}
+              style={{
+                padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                background: UXP.lavDeep, color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                whiteSpace: 'nowrap' as const,
+              }}>
+              Detect & apply
+            </button>
+          </div>
+        )}
 
         {/* Aggregate tiles */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 16 }}>

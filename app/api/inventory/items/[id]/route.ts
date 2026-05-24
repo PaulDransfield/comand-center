@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // 1. Product row
   const { data: product, error: pErr } = await db
     .from('products')
-    .select('id, org_id, business_id, name, category, default_supplier_fortnox_number, default_supplier_name, invoice_unit, count_unit, unit_conversion, created_at, updated_at')
+    .select('id, org_id, business_id, name, category, default_supplier_fortnox_number, default_supplier_name, invoice_unit, count_unit, unit_conversion, pack_size, base_unit, created_at, updated_at')
     .eq('id', id)
     .maybeSingle()
   if (pErr)      return NextResponse.json({ error: pErr.message }, { status: 500 })
@@ -170,6 +170,23 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.invoice_unit !== undefined) {
     patch.invoice_unit = body.invoice_unit ? String(body.invoice_unit).trim() : null
   }
+  if (body.pack_size !== undefined) {
+    if (body.pack_size === null || body.pack_size === '') patch.pack_size = null
+    else {
+      const ps = Number(body.pack_size)
+      if (!Number.isFinite(ps) || ps <= 0) return NextResponse.json({ error: 'pack_size must be > 0' }, { status: 400 })
+      patch.pack_size = ps
+    }
+  }
+  if (body.base_unit !== undefined) {
+    if (body.base_unit === null || body.base_unit === '') patch.base_unit = null
+    else {
+      const valid = ['g', 'ml', 'st']
+      const bu = String(body.base_unit).trim().toLowerCase()
+      if (!valid.includes(bu)) return NextResponse.json({ error: `base_unit must be one of: ${valid.join(', ')}` }, { status: 400 })
+      patch.base_unit = bu
+    }
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }
@@ -191,7 +208,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('products')
     .update(patch)
     .eq('id', id)
-    .select('id, name, category, default_supplier_name, invoice_unit, count_unit, updated_at')
+    .select('id, name, category, default_supplier_name, invoice_unit, count_unit, pack_size, base_unit, updated_at')
     .single()
 
   if (error) {

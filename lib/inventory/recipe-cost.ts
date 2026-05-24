@@ -1,15 +1,24 @@
 // lib/inventory/recipe-cost.ts
 //
+// (See unit-conversion.ts for the canonicalUnit / parseProductPackSize
+// helpers — restaurant cost calc lives at the intersection of these two.)
+//
 // Single source of truth for recipe cost calculation. Both the list
 // endpoint (GET /api/inventory/recipes) and the detail endpoint
 // (GET /api/inventory/recipes/[id]) call computeRecipeCost() so the
 // formula can't drift between surfaces.
 //
-// MVP UNIT MODEL: ingredient.quantity is in the SAME unit as
-// product.invoice_unit. When ingredient.unit differs, cost is still
-// computed (quantity × latest_price) but `unit_mismatch: true` flags
-// it so the UI can warn the owner. Real unit conversion needs a
-// per-product `pack_to_base_unit` factor on products — follow-up.
+import { canonicalUnit, convertQuantity, parseProductPackSize } from './unit-conversion'
+
+// UNIT MODEL (post-M087):
+//   Each product can carry pack_size + base_unit. Recipe ingredient qty
+//   converts into the product's base_unit (g↔kg, ml↔l) and then
+//   line_cost = converted_qty × (unit_price / pack_size).
+//   Example: garlic bought as 1 ST @ 56 kr, pack_size=1000, base_unit='g'
+//            recipe uses 20 g → 20 × (56/1000) = 1.12 kr.
+//   Fallback: when pack_size is null, try to parse it from the product
+//   name (parseProductPackSize). When that fails, fall back to legacy
+//   1:1 calc + unit_mismatch warning.
 
 export interface IngredientForCosting {
   id:           string
@@ -34,23 +43,31 @@ export type RecipeIndex = Map<string, RecipeContextEntry>
 
 export interface ProductLatestPrice {
   product_id:      string
+  product_name:    string | null   // used by the auto pack-size parser
   latest_price:    number | null
   invoice_unit:    string | null
   latest_date:     string | null
   latest_line_id:  string | null    // for inline edit-the-price from the recipe drawer
   latest_currency: string | null
+  pack_size:       number | null    // M087 — base_units per invoice_unit
+  base_unit:       string | null    // M087 — 'g' | 'ml' | 'st'
 }
 
 export interface CostedIngredient extends IngredientForCosting {
   invoice_unit:    string | null
   unit_price:      number | null     // per product.invoice_unit for products; per portion for sub-recipes
-  line_cost:       number | null     // quantity × unit_price
-  unit_mismatch:   boolean           // true when ingredient.unit != invoice_unit (products only)
+  line_cost:       number | null     // quantity × unit_price (after pack conversion when available)
+  unit_mismatch:   boolean           // true when units couldn't be converted (different families or no pack data)
   no_price:        boolean           // true when product has no observed price yet OR sub-recipe couldn't cost
   latest_line_id:  string | null     // products only; null for sub-recipes
   latest_currency: string | null     // products only; null for sub-recipes
   is_subrecipe:    boolean           // true if this ingredient is a sub-recipe reference
   cycle:           boolean           // true if cost couldn't be computed because of a recipe cycle
+  // M087 — pack-aware conversion fields
+  pack_size:           number | null  // base units per invoice unit (e.g. 1000 for a 1kg bag)
+  base_unit:           string | null  // 'g' | 'ml' | 'st'
+  cost_per_base_unit:  number | null  // unit_price / pack_size — e.g. 0.056 kr/g
+  pack_auto_detected:  boolean        // true when the parser inferred pack_size from the name (NOT saved yet)
 }
 
 export interface RecipeCostSummary {
@@ -82,30 +99,38 @@ export function computeRecipeCost(
       if (ancestors.has(ing.subrecipe_id)) {
         return {
           ...ing,
-          invoice_unit:    'portion',
-          unit_price:      null,
-          line_cost:       null,
-          unit_mismatch:   false,
-          no_price:        true,
-          latest_line_id:  null,
-          latest_currency: null,
-          is_subrecipe:    true,
-          cycle:           true,
+          invoice_unit:        'portion',
+          unit_price:          null,
+          line_cost:           null,
+          unit_mismatch:       false,
+          no_price:            true,
+          latest_line_id:      null,
+          latest_currency:     null,
+          is_subrecipe:        true,
+          cycle:               true,
+          pack_size:           null,
+          base_unit:           null,
+          cost_per_base_unit:  null,
+          pack_auto_detected:  false,
         }
       }
       const subEntry = index?.get(ing.subrecipe_id)
       if (!subEntry || subEntry.portions <= 0) {
         return {
           ...ing,
-          invoice_unit:    'portion',
-          unit_price:      null,
-          line_cost:       null,
-          unit_mismatch:   false,
-          no_price:        true,
-          latest_line_id:  null,
-          latest_currency: null,
-          is_subrecipe:    true,
-          cycle:           false,
+          invoice_unit:        'portion',
+          unit_price:          null,
+          line_cost:           null,
+          unit_mismatch:       false,
+          no_price:            true,
+          latest_line_id:      null,
+          latest_currency:     null,
+          is_subrecipe:        true,
+          cycle:               false,
+          pack_size:           null,
+          base_unit:           null,
+          cost_per_base_unit:  null,
+          pack_auto_detected:  false,
         }
       }
       // Recurse — pass a copy of ancestors so siblings can re-enter the
@@ -124,28 +149,71 @@ export function computeRecipeCost(
       const lineCost = Math.round(ing.quantity * perPortion * 100) / 100
       return {
         ...ing,
-        invoice_unit:    'portion',
-        unit_price:      Math.round(perPortion * 100) / 100,
-        line_cost:       lineCost,
-        unit_mismatch:   false,
-        no_price:        subSummary.food_cost === 0 && subSummary.missing_prices > 0,
-        latest_line_id:  null,
-        latest_currency: null,
-        is_subrecipe:    true,
-        cycle:           false,
+        invoice_unit:        'portion',
+        unit_price:          Math.round(perPortion * 100) / 100,
+        line_cost:           lineCost,
+        unit_mismatch:       false,
+        no_price:            subSummary.food_cost === 0 && subSummary.missing_prices > 0,
+        latest_line_id:      null,
+        latest_currency:     null,
+        is_subrecipe:        true,
+        cycle:               false,
+        pack_size:           null,
+        base_unit:           null,
+        cost_per_base_unit:  null,
+        pack_auto_detected:  false,
       }
     }
 
-    // ── Product branch (unchanged behaviour) ────────────────────────
+    // ── Product branch ──────────────────────────────────────────────
     const p = ing.product_id ? prices.get(ing.product_id) : undefined
-    const unitPrice = p?.latest_price ?? null
+    const unitPrice   = p?.latest_price ?? null
     const invoiceUnit = p?.invoice_unit ?? null
-    const noPrice = unitPrice == null
-    const unitMismatch =
-      !noPrice &&
-      !!invoiceUnit && !!ing.unit &&
-      invoiceUnit.trim().toLowerCase() !== ing.unit.trim().toLowerCase()
-    const lineCost = noPrice ? null : Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
+    const noPrice     = unitPrice == null
+
+    // Pack-aware conversion. Use saved pack data first; if missing, try
+    // to parse from the product name (cheap and very high hit rate for
+    // restaurant invoices — "Pizza sauce 4,1 kg" etc).
+    let packSize:   number | null = p?.pack_size ?? null
+    let baseUnit:   string | null = p?.base_unit ?? null
+    let autoParsed = false
+    if ((packSize == null || baseUnit == null) && p?.product_name) {
+      const parsed = parseProductPackSize(p.product_name)
+      if (parsed) {
+        packSize = parsed.pack_size
+        baseUnit = parsed.base_unit
+        autoParsed = true
+      }
+    }
+
+    // cost_per_base_unit = unit_price / pack_size  (when both known)
+    let costPerBase: number | null = null
+    if (unitPrice != null && packSize != null && packSize > 0) {
+      costPerBase = unitPrice / packSize
+    }
+
+    // Try to convert recipe qty to base_unit. If we have base_unit + the
+    // recipe's unit is in the same family (g↔kg, ml↔l), we get a clean
+    // converted quantity. If not, fall back to old line_cost so the
+    // owner at least sees SOMETHING and the unit_mismatch flag warns them.
+    let lineCost: number | null = null
+    let unitMismatch = false
+    if (!noPrice && costPerBase != null && baseUnit && ing.unit) {
+      const converted = convertQuantity(ing.quantity, ing.unit, baseUnit)
+      if (converted != null) {
+        lineCost = Math.round(converted * costPerBase * 100) / 100
+      } else {
+        // Cross-family or unknown unit — flag and don't try to cost
+        lineCost = null
+        unitMismatch = true
+      }
+    } else if (!noPrice) {
+      // No pack data at all (and parser couldn't help) — legacy 1:1 calc.
+      lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
+      unitMismatch = !!invoiceUnit && !!ing.unit &&
+                     canonicalUnit(invoiceUnit) !== canonicalUnit(ing.unit)
+    }
+
     return {
       ...ing,
       invoice_unit:    invoiceUnit,
@@ -157,6 +225,10 @@ export function computeRecipeCost(
       latest_currency: p?.latest_currency ?? null,
       is_subrecipe:    false,
       cycle:           false,
+      pack_size:           packSize,
+      base_unit:           baseUnit,
+      cost_per_base_unit:  costPerBase != null ? Math.round(costPerBase * 10000) / 10000 : null,
+      pack_auto_detected:  autoParsed,
     }
   })
 
@@ -259,22 +331,27 @@ export async function getProductLatestPrices(
   const out = new Map<string, ProductLatestPrice>()
   if (productIds.length === 0) return out
 
-  // Seed with invoice_unit from products table — guarantees every
-  // requested product has an entry even if it has zero observed prices.
+  // Seed with invoice_unit + pack_size + base_unit + name from products
+  // table — guarantees every requested product has an entry even if it
+  // has zero observed prices, and exposes the pack data so cost calc
+  // can apply per-base-unit conversion.
   for (let i = 0; i < productIds.length; i += 500) {
     const slice = productIds.slice(i, i + 500)
     const { data: prods } = await db
       .from('products')
-      .select('id, invoice_unit')
+      .select('id, name, invoice_unit, pack_size, base_unit')
       .in('id', slice)
     for (const p of prods ?? []) {
       out.set(p.id, {
         product_id:      p.id,
+        product_name:    p.name ?? null,
         latest_price:    null,
         invoice_unit:    p.invoice_unit ?? null,
         latest_date:     null,
         latest_line_id:  null,
         latest_currency: null,
+        pack_size:       p.pack_size != null ? Number(p.pack_size) : null,
+        base_unit:       p.base_unit ?? null,
       })
     }
   }
@@ -326,11 +403,14 @@ export async function getProductLatestPrices(
     if (l.price_per_unit == null) continue
     out.set(productId, {
       product_id:      productId,
+      product_name:    existing?.product_name ?? null,
       latest_price:    Number(l.price_per_unit),
       invoice_unit:    existing?.invoice_unit ?? l.unit ?? null,
       latest_date:     l.invoice_date,
       latest_line_id:  l.id,
       latest_currency: l.currency ?? 'SEK',
+      pack_size:       existing?.pack_size ?? null,
+      base_unit:       existing?.base_unit ?? null,
     })
   }
 
