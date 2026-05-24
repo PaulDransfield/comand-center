@@ -60,6 +60,25 @@ export async function GET(req: NextRequest) {
     .maybeSingle()
   if (!biz) return NextResponse.json({ error: 'Business not found in your org' }, { status: 404 })
 
+  // M098 cache early-return. If fortnox_supplier_invoices already has
+  // file_id for this (business, given_number), skip the detail fetch
+  // and 302 straight to the file proxy. Saves a Fortnox round-trip
+  // per PDF click after the first one.
+  const { data: cached } = await db
+    .from('fortnox_supplier_invoices')
+    .select('file_id')
+    .eq('business_id', businessId)
+    .eq('given_number', givenNumber)
+    .maybeSingle()
+  if (cached?.file_id) {
+    const filename = `invoice-${givenNumber}.pdf`
+    const proxyUrl =
+      `/api/integrations/fortnox/file?business_id=${encodeURIComponent(businessId)}` +
+      `&file_id=${encodeURIComponent(cached.file_id)}` +
+      `&filename=${encodeURIComponent(filename)}`
+    return NextResponse.redirect(new URL(proxyUrl, req.url), { status: 302 })
+  }
+
   // Resolve a live Fortnox access token (auto-refresh when near expiry).
   let accessToken: string | null
   try {
@@ -127,6 +146,17 @@ export async function GET(req: NextRequest) {
       },
     }, { status: 404 })
   }
+
+  // Persist the resolved file_id into the M098 cache so subsequent
+  // clicks for the same invoice skip the detail fetch entirely.
+  // Best-effort — log on failure but don't block the 302.
+  try {
+    await db
+      .from('fortnox_supplier_invoices')
+      .update({ file_id: fileId, file_id_fetched_at: new Date().toISOString() })
+      .eq('business_id', businessId)
+      .eq('given_number', givenNumber)
+  } catch { /* fall through — the 302 still works */ }
 
   // 302 to the existing PDF proxy. Filename is best-effort.
   const filename = `invoice-${givenNumber}.pdf`

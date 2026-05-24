@@ -157,6 +157,118 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── M098 local cache path ────────────────────────────────────────
+  // Before hitting Fortnox live, try the fortnox_supplier_invoices
+  // cache populated by /api/cron/fortnox-supplier-sync. When the cache
+  // has rows for this business AND last_synced_at is recent (≤26h),
+  // serve from the cache. This eliminates the per-render Fortnox
+  // traffic that breaks the 25 req/5sec rate limit at customer #3+.
+  //
+  // Date window is computed inline (same logic as the live path
+  // below) so the early-return doesn't duplicate state.
+  const fromIsoLocal = (() => {
+    if (yearMonthValid) {
+      const [y, m] = yearMonth.split('-').map(Number)
+      return `${y}-${String(m).padStart(2, '0')}-01`
+    }
+    const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
+    const fromDate   = new Date(new Date(todayLocal + 'T00:00:00Z').getTime() - days * 86_400_000)
+    return fromDate.toISOString().slice(0, 10)
+  })()
+  const toIsoLocal = (() => {
+    if (yearMonthValid) {
+      const [y, m] = yearMonth.split('-').map(Number)
+      const lastDay = new Date(y!, m!, 0).getDate()
+      return `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    }
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
+  })()
+
+  const { data: syncState } = await db
+    .from('fortnox_sync_state')
+    .select('last_synced_at, last_cursor_date')
+    .eq('business_id', businessId)
+    .eq('resource', 'supplier_invoices')
+    .maybeSingle()
+
+  const cacheAgeMs = syncState?.last_synced_at
+    ? Date.now() - new Date(syncState.last_synced_at).getTime()
+    : Infinity
+  const M098_FRESH_MS = 26 * 60 * 60 * 1000   // 26h — daily cron + safety margin
+
+  if (cacheAgeMs < M098_FRESH_MS) {
+    let q = db
+      .from('fortnox_supplier_invoices')
+      .select('given_number, invoice_number, supplier_name, invoice_date, due_date, final_pay_date, total, balance, currency, file_id, voucher_series, voucher_number, comments, cancelled')
+      .eq('business_id', businessId)
+      .eq('cancelled', false)
+      .gte('invoice_date', fromIsoLocal)
+      .lte('invoice_date', toIsoLocal)
+      .order('invoice_date', { ascending: false })
+      .limit(500)
+    if (supplierFilter) {
+      q = q.ilike('supplier_normalised', `%${supplierFilter.replace(/[^a-z0-9]+/g, '')}%`)
+    }
+    const { data: cacheRows, error: cacheErr } = await q
+
+    if (!cacheErr && cacheRows && cacheRows.length > 0) {
+      const workspaceIdEarly = await getFortnoxWorkspaceId(db, businessId)
+      const todayLocalIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Stockholm' }).format(new Date())
+      const invoices: RecentInvoice[] = cacheRows.map((r: any) => {
+        const balance = r.balance != null ? Number(r.balance) : null
+        const finalPay = r.final_pay_date ?? null
+        const due = r.due_date ?? null
+        let status: 'paid' | 'overdue' | 'pending' = 'pending'
+        if (finalPay || (balance != null && Math.abs(balance) < 0.01)) status = 'paid'
+        else if (due && due < todayLocalIso && (balance == null || balance > 0.5)) status = 'overdue'
+        return {
+          supplier_name:  String(r.supplier_name ?? '—'),
+          given_number:   String(r.given_number ?? ''),
+          invoice_number: String(r.invoice_number ?? r.given_number ?? '—'),
+          invoice_date:   String(r.invoice_date),
+          due_date:       due,
+          final_pay_date: finalPay,
+          total:          r.total != null ? Number(r.total) : null,
+          balance,
+          status,
+          currency:       r.currency ?? 'SEK',
+          file_id:        r.file_id ?? null,
+          fortnox_url:    supplierInvoiceUrl(workspaceIdEarly, String(r.given_number ?? '')),
+          voucher_series: r.voucher_series ?? null,
+          voucher_number: r.voucher_number != null ? String(r.voucher_number) : null,
+          comments:       r.comments ?? null,
+        }
+      })
+
+      const payload: RecentInvoicesPayload = {
+        invoices,
+        fetched_at:      new Date().toISOString(),
+        days_window:     yearMonthValid ? 0 : days,
+        year_month:      yearMonthValid ? yearMonth : null,
+        supplier_filter: supplierFilter || null,
+      }
+
+      // Write through to the 5-min in-app cache so repeat renders
+      // within 5 min skip even this DB query.
+      await db
+        .from('overhead_drilldown_cache')
+        .upsert({
+          business_id:  cacheKey.business_id,
+          period_year:  cacheKey.period_year,
+          period_month: cacheKey.period_month,
+          category:     cacheKey.category,
+          payload,
+          fetched_at:   new Date().toISOString(),
+        }, { onConflict: 'business_id,period_year,period_month,category' })
+
+      return NextResponse.json(
+        { ...payload, cache: 'm098' },
+        { headers: { 'Cache-Control': 'no-store' } },
+      )
+    }
+  }
+  // Fall through to live-Fortnox path: M098 empty or stale.
+
   // Helper: when Fortnox is unreachable mid-fetch (token refresh fails,
   // rate-limit, 5xx, etc.) we still want to return data if we have ANY
   // cached payload — staleness is far better than the dashboard widget

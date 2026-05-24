@@ -6,6 +6,23 @@
 
 ## Pending — apply when ready
 
+### M098 — Fortnox supplier-invoices local cache ⏳ pending application
+**File:** `sql/M098-FORTNOX-SUPPLIER-INVOICES-CACHE.sql`
+**Purpose:** Read-path scaling. Pre-M098, every dashboard render hit Fortnox `/supplierinvoices` live (25 req/5sec rate limit, 500-1500ms per call). Fine at 2 customers, breaks at customer #3+ when bursts (lunch-hour traffic) exceed the budget. M098 adds a local cache populated by a daily sync cron; user-facing reads (recent-invoices feed, dashboard card, /invoices page, drilldown) hit the cache. file_id fetched lazily on first PDF view, then persisted.
+**Schema:**
+- `fortnox_supplier_invoices(id, org_id, business_id, given_number, invoice_number, supplier_name, supplier_number, supplier_normalised, invoice_date, bookkeeping_date, due_date, total, currency, vat, balance, final_pay_date, voucher_series, voucher_number, file_id, file_id_fetched_at, has_pdf GENERATED, comments, cancelled, raw_data JSONB, first_seen_at, last_synced_at)`
+- UNIQUE `(business_id, given_number)` — full unique (not partial), safe for `.upsert({ onConflict: 'business_id,given_number' })`
+- Indexes on `(business_id, invoice_date DESC)`, `(business_id, supplier_normalised)`, `(business_id, voucher_series, voucher_number) WHERE voucher_series IS NOT NULL`, `(business_id, has_pdf) WHERE has_pdf`
+- `fortnox_sync_state(business_id, resource, last_synced_at, last_cursor_date, rows_synced, last_error, created_at, updated_at)` — PK `(business_id, resource)`
+- RLS via `current_user_org_ids()` on both
+**Companion code:**
+- `/api/cron/fortnox-supplier-sync` — daily cron at 06:10 UTC. For each connected Fortnox integration: read cursor from `fortnox_sync_state`, paginate `/supplierinvoices?fromdate=cursor-1d&todate=today&limit=500`, upsert to cache, update cursor. First-time backfill goes 12 months back.
+- `vercel.json` — cron entry at 06:10 UTC.
+- `/api/integrations/fortnox/recent-invoices` — refactored: tries M098 first (when `last_synced_at < 26h`), falls back to live Fortnox if empty/stale. Writes through to the 5-min in-app cache.
+- `/api/integrations/fortnox/invoice-pdf` — refactored: looks up `file_id` from M098 cache, 302 directly when present. Live detail fetch only when `file_id` is null — then persists it back.
+**Idempotent.**
+**Required after apply:** trigger the cron once manually to seed the cache: `curl -X GET https://comandcenter.se/api/cron/fortnox-supplier-sync -H "Authorization: Bearer $CRON_SECRET"`. First run takes longer (12-month backfill); subsequent daily runs are incremental.
+
 ### M097 — POS menu items + sales (variance loop foundation) ⏳ pending application
 **File:** `sql/M097-POS-SALES.sql`
 **Purpose:** Closes the inventory loop. Adds `pos_menu_items` (dishes the restaurant sells, optionally linked to a recipe) and `pos_sales` (per-ticket OR per-week aggregate sale rows). Enables `/inventory/variance` to compute theoretical product draw (POS sales × recipes) vs actual (purchases − waste).

@@ -8,6 +8,7 @@
     { "path": "/api/cron/data-source-disagreements-alert", "schedule": "30 5 * * *" },
     { "path": "/api/cron/manual-tracker-audit",            "schedule": "45 5 * * *" },
     { "path": "/api/cron/fortnox-backfill-worker",         "schedule": "0 6 * * *" },
+    { "path": "/api/cron/fortnox-supplier-sync",           "schedule": "10 6 * * *" },
     { "path": "/api/cron/voucher-cache-refresh",           "schedule": "15 6 * * *" },
     { "path": "/api/cron/inventory-lines-sync",            "schedule": "30 6 * * *" },
     { "path": "/api/cron/inventory-pdf-extract-sweep",     "schedule": "0,30 6-22 * * *" },
