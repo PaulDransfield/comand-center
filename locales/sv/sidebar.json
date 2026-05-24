@@ -71,8 +71,10 @@
         "skipped":     "Överhoppade leverantörer",
         "extractions": "PDF-granskning",
         "recipes":     "Recept",
+        "sales":       "Försäljning (manuell)",
         "counts":      "Lagerräkning",
-        "waste":       "Svinn"
+        "waste":       "Svinn",
+        "variance":    "Avvikelse"
       }
     },
     "bookkeeping": {

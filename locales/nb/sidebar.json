@@ -71,8 +71,10 @@
         "skipped":     "Hoppede leverandører",
         "extractions": "PDF-gjennomgang",
         "recipes":     "Oppskrifter",
+        "sales":       "Salg (manuelt)",
         "counts":      "Lagertelling",
-        "waste":       "Svinn"
+        "waste":       "Svinn",
+        "variance":    "Avvik"
       }
     },
     "bookkeeping": {

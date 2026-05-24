@@ -71,8 +71,10 @@
         "skipped":     "Skipped suppliers",
         "extractions": "PDF review",
         "recipes":     "Recipes",
+        "sales":       "Sales (manual)",
         "counts":      "Stock counts",
-        "waste":       "Waste"
+        "waste":       "Waste",
+        "variance":    "Variance"
       }
     },
     "bookkeeping": {
