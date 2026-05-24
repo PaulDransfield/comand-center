@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
+import { checkCronSecret, checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -29,11 +30,10 @@ export async function GET(req: NextRequest)  { return handle(req) }   // Vercel 
 
 async function handle(req: NextRequest) {
   noStore()
-  const auth = req.headers.get('authorization') ?? ''
-  const cronSecret  = process.env.CRON_SECRET
-  const adminSecret = process.env.ADMIN_SECRET
-  if (!(cronSecret  && auth === `Bearer ${cronSecret}`)  &&
-      !(adminSecret && auth === `Bearer ${adminSecret}`)) {
+  // checkCronSecret accepts: x-vercel-cron header (Vercel scheduler),
+  // Authorization Bearer CRON_SECRET, x-cron-secret header, ?secret= query.
+  // Plus admin secret for manual ops kicks.
+  if (!checkCronSecret(req) && !checkAdminSecret(req)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
