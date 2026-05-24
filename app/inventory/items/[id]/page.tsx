@@ -19,10 +19,16 @@ interface Detail {
     name:                            string
     category:                        string
     default_supplier_name:           string | null
+    default_supplier_fortnox_number: string | null
     invoice_unit:                    string | null
     count_unit:                      string | null
     pack_size:                       number | null
     base_unit:                       string | null
+    source_recipe_id:                string | null
+    price_override:                  number | null
+    price_override_currency:         string | null
+    price_override_set_at:           string | null
+    archived_at:                     string | null
   }
   aliases: Array<{
     id:                       string
@@ -309,9 +315,67 @@ export default function ProductDetailPage() {
                 <option value="st">st</option>
               </select>
             </label>
-            {product.default_supplier_name && (
-              <span style={{ color: UXP.ink4 }}>· usually from {product.default_supplier_name}</span>
-            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}
+                    title="Manual price override per invoice unit. Wins over invoice / recipe-derived price. Leave blank to use derived.">
+                Price override
+              </span>
+              <input
+                type="number" step="0.01" min="0"
+                defaultValue={product.price_override ?? ''}
+                onBlur={e => {
+                  const v = e.target.value === '' ? null : Number(e.target.value)
+                  if (v !== product.price_override) patchProduct({ price_override: v })
+                }}
+                placeholder="—"
+                style={{
+                  padding: '3px 6px', fontSize: 12, width: 80,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                  textAlign: 'right' as const,
+                }} />
+              <select
+                value={product.price_override_currency ?? 'SEK'}
+                onChange={e => patchProduct({ price_override_currency: e.target.value })}
+                style={{
+                  padding: '3px 4px', fontSize: 12,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                }}>
+                {['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP'].map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                Default supplier
+              </span>
+              <input
+                type="text"
+                defaultValue={product.default_supplier_name ?? ''}
+                onBlur={e => {
+                  const v = e.target.value.trim()
+                  if (v !== (product.default_supplier_name ?? '')) patchProduct({ default_supplier_name: v || null })
+                }}
+                placeholder="—"
+                style={{
+                  padding: '3px 6px', fontSize: 12, width: 160,
+                  background: '#fff', border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 4, color: UXP.ink1, fontFamily: 'inherit',
+                }} />
+            </label>
+            <button onClick={() => {
+              if (!confirm(product.archived_at ? 'Restore this product?' : 'Archive this product? It will be hidden from the catalogue and pickers. Recipes referencing it stay linked.')) return
+              patchProduct({ archived: !product.archived_at })
+            }}
+              style={{
+                padding: '4px 10px', fontSize: 11,
+                background: 'transparent',
+                color: product.archived_at ? UXP.greenDeep : UXP.roseText,
+                border: `0.5px solid ${product.archived_at ? UXP.green : UXP.rose}`,
+                borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+              {product.archived_at ? 'Restore' : 'Archive'}
+            </button>
           </div>
         </div>
 

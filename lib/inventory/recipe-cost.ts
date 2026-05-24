@@ -450,11 +450,12 @@ export async function getProductLatestPrices(
   // from supplier_invoice_lines. We collect their ids here and fill the
   // prices in a second pass below.
   const recipeSourcedProducts: Array<{ product_id: string; recipe_id: string }> = []
+  const overrideProducts:      Array<{ product_id: string; price: number; currency: string }> = []
   for (let i = 0; i < productIds.length; i += 500) {
     const slice = productIds.slice(i, i + 500)
     const { data: prods } = await db
       .from('products')
-      .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id')
+      .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency')
       .in('id', slice)
     for (const p of prods ?? []) {
       out.set(p.id, {
@@ -470,10 +471,40 @@ export async function getProductLatestPrices(
         latest_price_sek:  null,
         fx_rate_used:      null,
       })
-      if (p.source_recipe_id) {
+      if (p.price_override != null) {
+        overrideProducts.push({
+          product_id: p.id,
+          price:      Number(p.price_override),
+          currency:   p.price_override_currency ?? 'SEK',
+        })
+      } else if (p.source_recipe_id) {
         recipeSourcedProducts.push({ product_id: p.id, recipe_id: p.source_recipe_id })
       }
     }
+  }
+
+  // Apply price overrides FIRST — they win over both recipe-derived and
+  // invoice-derived prices. FX-convert non-SEK overrides via fxIndex
+  // (using "today" since overrides don't have an invoice_date).
+  const todayIso = new Date().toISOString().slice(0, 10)
+  for (const ov of overrideProducts) {
+    const slot = out.get(ov.product_id)
+    if (!slot) continue
+    let priceSek: number | null = ov.price
+    let fxRateUsed: number | null = 1
+    if (ov.currency !== 'SEK') {
+      if (fxIndex) {
+        const rate = getFxRate(ov.currency, todayIso, fxIndex)
+        if (rate != null) { priceSek = ov.price * rate; fxRateUsed = rate }
+        else { priceSek = null; fxRateUsed = null }
+      } else { priceSek = null; fxRateUsed = null }
+    }
+    slot.latest_price     = ov.price
+    slot.latest_currency  = ov.currency
+    slot.latest_price_sek = priceSek
+    slot.fx_rate_used     = fxRateUsed
+    slot.latest_date      = todayIso
+    // latest_line_id stays null — override isn't a line
   }
 
   // Recipe-sourced product pricing — compute each linked recipe's
@@ -549,15 +580,18 @@ export async function getProductLatestPrices(
   }
 
   // Supplier-invoice-priced products — delegate to the leaf helper for
-  // anything that ISN'T recipe-sourced. Then merge its results back in.
-  const nonRecipeIds = productIds.filter(id =>
-    !recipeSourcedProducts.some(r => r.product_id === id)
-  )
-  if (nonRecipeIds.length > 0) {
-    const leafPrices = await getProductLatestPricesLeaf(db, businessId, nonRecipeIds, fxIndex)
+  // anything that ISN'T recipe-sourced AND ISN'T price-overridden.
+  // Merge results, but don't clobber the override / recipe price we
+  // already set above.
+  const skipIds = new Set<string>([
+    ...recipeSourcedProducts.map(r => r.product_id),
+    ...overrideProducts.map(o => o.product_id),
+  ])
+  const nonSkipIds = productIds.filter(id => !skipIds.has(id))
+  if (nonSkipIds.length > 0) {
+    const leafPrices = await getProductLatestPricesLeaf(db, businessId, nonSkipIds, fxIndex)
     for (const [id, row] of leafPrices) {
       const existing = out.get(id)
-      // Keep the existing seeded row's pack/unit info but overwrite price fields.
       out.set(id, {
         ...row,
         product_name: existing?.product_name ?? row.product_name,

@@ -27,7 +27,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // 1. Product row
   const { data: product, error: pErr } = await db
     .from('products')
-    .select('id, org_id, business_id, name, category, default_supplier_fortnox_number, default_supplier_name, invoice_unit, count_unit, unit_conversion, pack_size, base_unit, created_at, updated_at')
+    .select('id, org_id, business_id, name, category, default_supplier_fortnox_number, default_supplier_name, invoice_unit, count_unit, unit_conversion, pack_size, base_unit, source_recipe_id, price_override, price_override_currency, price_override_set_at, archived_at, created_at, updated_at')
     .eq('id', id)
     .maybeSingle()
   if (pErr)      return NextResponse.json({ error: pErr.message }, { status: 500 })
@@ -187,6 +187,35 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.base_unit = bu
     }
   }
+  if (body.price_override !== undefined) {
+    if (body.price_override === null || body.price_override === '') {
+      patch.price_override = null
+      patch.price_override_set_at = null
+    } else {
+      const p = Number(body.price_override)
+      if (!Number.isFinite(p) || p < 0) return NextResponse.json({ error: 'price_override must be >= 0' }, { status: 400 })
+      patch.price_override = p
+      patch.price_override_set_at = new Date().toISOString()
+    }
+  }
+  if (body.price_override_currency !== undefined) {
+    if (body.price_override_currency === null || body.price_override_currency === '') patch.price_override_currency = null
+    else {
+      const valid = ['SEK', 'EUR', 'USD', 'NOK', 'DKK', 'GBP']
+      const c = String(body.price_override_currency).trim().toUpperCase()
+      if (!valid.includes(c)) return NextResponse.json({ error: `currency must be one of: ${valid.join(', ')}` }, { status: 400 })
+      patch.price_override_currency = c
+    }
+  }
+  if (body.default_supplier_name !== undefined) {
+    patch.default_supplier_name = body.default_supplier_name ? String(body.default_supplier_name).trim() : null
+  }
+  if (body.default_supplier_fortnox_number !== undefined) {
+    patch.default_supplier_fortnox_number = body.default_supplier_fortnox_number ? String(body.default_supplier_fortnox_number).trim() : null
+  }
+  if (body.archived !== undefined) {
+    patch.archived_at = body.archived ? new Date().toISOString() : null
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }
@@ -208,7 +237,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('products')
     .update(patch)
     .eq('id', id)
-    .select('id, name, category, default_supplier_name, invoice_unit, count_unit, pack_size, base_unit, updated_at')
+    .select('id, name, category, default_supplier_name, default_supplier_fortnox_number, invoice_unit, count_unit, pack_size, base_unit, price_override, price_override_currency, archived_at, updated_at')
     .single()
 
   if (error) {
