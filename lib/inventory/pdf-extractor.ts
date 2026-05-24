@@ -236,31 +236,73 @@ export async function extractInvoicePdf(
   let totalExtracted = validRows.reduce((s, r) => s + Number(r.total_excl_vat ?? 0), 0)
   const headerTotal  = input.invoice_total_header ?? modelResponse.header?.invoice_total_excl_vat ?? null
 
-  // Server-side credit-note sign-flip rescue. Despite the explicit
-  // prompt section, Claude still occasionally returns positive values
-  // for credit notes (signature: header is negative, extracted is
-  // positive, |extracted| ≈ |header|). Catching it here saves the
-  // owner a manual review per credit note. Conditions:
-  //   - header is meaningfully negative (< -10 kr to avoid noise)
-  //   - extracted is positive (sign error in Claude's output)
-  //   - absolute values match within 5 % (so we're not flipping
-  //     genuinely-wrong extractions that happen to have signs reversed)
-  if (
-    headerTotal != null && headerTotal < -10 &&
-    totalExtracted > 10 &&
-    Math.abs(Math.abs(headerTotal) - Math.abs(totalExtracted)) / Math.abs(headerTotal) < 0.05
-  ) {
-    for (const r of validRows) {
-      if (r.quantity       != null) r.quantity       = -Number(r.quantity)
-      if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
-      if (r.price_per_unit != null) r.price_per_unit = -Number(r.price_per_unit)
+  // ── Server-side sign-flip rescues ────────────────────────────────
+  // Two distinct credit patterns Swedish restaurants hit regularly:
+  //
+  // PATTERN A — STANDARD CREDIT NOTE
+  //   PDF prints negative amounts (or has KREDITFAKTURA title), header
+  //   is negative, but Claude returned positive rows. Signature:
+  //   |extracted| ≈ |header| within 5%.
+  //
+  // PATTERN B — SJÄLVFAKTURA / SELF-INVOICE (Quatra recycling pattern)
+  //   PDF prints POSITIVE amounts (from supplier's perspective: "we
+  //   owe you X kr") but Fortnox books it as negative because from
+  //   the buyer's accounting view, it's a cost reversal or income
+  //   event. Critically, Fortnox's header is the INC-VAT figure while
+  //   the PDF's line items sum to the EX-VAT figure. Signature:
+  //   |extracted| × (1 + vat_rate/100) ≈ |header| within 2%.
+  //
+  //   Real examples: oil recycling (Quatra), empty-pallet credits,
+  //   deposit returns. The PDF text usually contains "Självfaktura"
+  //   or similar explicit wording but we don't rely on it — the
+  //   math signature is unambiguous.
+
+  // Tracks whether a self-invoice (Pattern B) rescue fired. When true,
+  // the downstream total-match validator is skipped — we've already
+  // verified the inc-VAT-vs-ex-VAT match to within 2% inside the
+  // rescue, so re-running the strict validator would always fail
+  // (it can't see the VAT delta).
+  let selfInvoiceRescued = false
+
+  if (headerTotal != null && headerTotal < -10 && totalExtracted > 10) {
+    const headerAbs = Math.abs(headerTotal)
+
+    // Pattern A — simple sign-only error
+    if (Math.abs(headerAbs - totalExtracted) / headerAbs < 0.05) {
+      for (const r of validRows) {
+        if (r.quantity       != null) r.quantity       = -Number(r.quantity)
+        if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
+        if (r.price_per_unit != null) r.price_per_unit = -Number(r.price_per_unit)
+      }
+      totalExtracted = -totalExtracted
+      warnings.push({
+        code: 'credit_note_sign_flipped',
+        message: `Credit note detected (header ${headerTotal.toFixed(2)}, extracted +${Math.abs(totalExtracted).toFixed(2)}). Flipped all row signs to negative to match.`,
+        severity: 'warn',
+      })
+    } else {
+      // Pattern B — try each Swedish VAT rate; if |extracted × (1+vat)| ≈ |header|,
+      // it's a self-invoice/inc-vs-excl-VAT case. Flip signs (don't multiply the
+      // stored values — leave them excl-VAT so downstream cost calc stays clean).
+      for (const vatRate of [25, 12, 6]) {
+        const grossed = totalExtracted * (1 + vatRate / 100)
+        if (Math.abs(headerAbs - grossed) / headerAbs < 0.02) {
+          for (const r of validRows) {
+            if (r.quantity       != null) r.quantity       = -Number(r.quantity)
+            if (r.total_excl_vat != null) r.total_excl_vat = -Number(r.total_excl_vat)
+            if (r.price_per_unit != null) r.price_per_unit = -Number(r.price_per_unit)
+          }
+          totalExtracted = -totalExtracted
+          warnings.push({
+            code: 'self_invoice_sign_flipped',
+            message: `Self-invoice detected — header is inc-${vatRate}%-VAT ${headerTotal.toFixed(2)}, extracted rows sum to ${(-totalExtracted).toFixed(2)} ex-VAT. Flipped signs negative. (Quatra oil recycling, empty-pallet returns, deposit credits — buyer's books reverse the cost.)`,
+            severity: 'warn',
+          })
+          selfInvoiceRescued = true
+          break
+        }
+      }
     }
-    totalExtracted = -totalExtracted
-    warnings.push({
-      code: 'credit_note_sign_flipped',
-      message: `Credit note detected (header ${headerTotal.toFixed(2)}, extracted +${Math.abs(totalExtracted).toFixed(2)}). Flipped all row signs to negative to match.`,
-      severity: 'warn',
-    })
   }
 
   let totalDeltaPct: number | null = null
@@ -272,7 +314,7 @@ export async function extractInvoicePdf(
   // is treated as "no real header total".
   const HEADER_NOISE_THRESHOLD = 0.01
   const headerIsReal = headerTotal != null && Math.abs(headerTotal) >= HEADER_NOISE_THRESHOLD
-  if (headerIsReal) {
+  if (headerIsReal && !selfInvoiceRescued) {
     totalDeltaPct = Math.abs(totalExtracted - headerTotal) / Math.abs(headerTotal)
     if (totalDeltaPct > TOTAL_MATCH_TOL_PCT) {
       warnings.push({
@@ -281,6 +323,11 @@ export async function extractInvoicePdf(
         severity: 'block',
       })
     }
+  } else if (headerIsReal && selfInvoiceRescued) {
+    // Self-invoice rescue already verified the inc-VAT vs ex-VAT match
+    // to within 2%. Surface a notional delta for the dashboard but skip
+    // the block-severity validator.
+    totalDeltaPct = 0
   } else {
     warnings.push({
       code: 'no_header_total',
@@ -551,6 +598,12 @@ CREDIT NOTES — CRITICAL (this is the most common extraction bug):
     * Supplier types like oil recycling (Quatra), deposit returns,
       empty-pallet credits, return-of-goods
     * Header amount printed as -X or shown in red / brackets
+    * **"Självfaktura"** anywhere on the page (Swedish self-invoice —
+      the supplier writes the invoice on the buyer's behalf because
+      money is owed TO the buyer, e.g. recycling pickups, deposit
+      returns). The PDF will print POSITIVE numbers as if it were a
+      normal invoice, but it MUST be extracted as negative because
+      from our accounting perspective the supplier is paying us.
 - If you see ANY of these, the entire invoice is a credit and signs
   flip negative. Get this wrong and the variance calc breaks.
 
