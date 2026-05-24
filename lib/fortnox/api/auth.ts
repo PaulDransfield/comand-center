@@ -25,6 +25,7 @@
 // copy avoids any risk of breaking the backfill worker.
 
 import { decrypt, encrypt } from '@/lib/integrations/encryption'
+import { log } from '@/lib/log/structured'
 
 const FORTNOX_TOKEN_URL    = 'https://apps.fortnox.se/oauth-v1/token'
 const REFRESH_THRESHOLD_MS = 5 * 60 * 1000   // refresh if <5min to expiry
@@ -118,6 +119,14 @@ export async function refreshFortnoxToken(
           })
           .eq('id', integ.id)
       } catch { /* best-effort — the throw below is still the loud signal */ }
+      log.error('fortnox_needs_reauth', {
+        route:          'lib/fortnox/api/auth.ts',
+        org_id:         integ.org_id,
+        business_id:    integ.business_id,
+        integration_id: integ.id,
+        http_status:    res.status,
+        body_excerpt:   text.slice(0, 200),
+      })
       throw new Error('FORTNOX_NEEDS_REAUTH')
     }
     throw new Error(`Fortnox token refresh failed: HTTP ${res.status} — ${text.slice(0, 200)}`)

@@ -30,6 +30,7 @@ import BackgroundSync  from './BackgroundSync'
 import PlanGate        from './PlanGate'
 import OnboardingGate  from './OnboardingGate'
 import AiUsageBanner   from './AiUsageBanner'
+import BrokenIntegrationBanner from './BrokenIntegrationBanner'
 import { RoleGate }    from './RoleGate'
 import { UXP }         from '@/lib/constants/tokens'
 
@@ -69,6 +70,7 @@ export default function AppShell({
 
       {/* Main column — toolbar + page content */}
       <div className="cc-main-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <BrokenIntegrationBanner />
         <AiUsageBanner />
         <AppShellUX
           dateLabel={dateLabel}
