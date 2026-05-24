@@ -644,22 +644,12 @@ function PdfModal({ url, title, onClose }: { url: string; title: string; onClose
               }}>Close (Esc)</button>
           </div>
         </div>
-        {/* <embed> is more reliable than <iframe> for PDFs across browsers
-            (Chrome's PDF viewer handles embed natively; iframe sometimes
-            blocked by X-Frame-Options or rendered as download). <object>
-            wraps with a fallback link in case the browser can't render
-            PDFs inline. */}
-        <object data={url} type="application/pdf"
-          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }}>
-          <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.ink3 }}>
-            Your browser doesn't render PDFs inline.
-            <br />
-            <a href={url} target="_blank" rel="noopener noreferrer"
-               style={{ color: UXP.lavText, marginTop: 12, display: 'inline-block' }}>
-              Open PDF in new tab ↗
-            </a>
-          </div>
-        </object>
+        {/* Chrome's built-in PDF viewer intercepts iframe loads of
+            application/pdf content + renders inline. <object> alone
+            failed in Chrome (showed the fallback) — iframe + correct
+            content-type is the more reliable combo. */}
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
       </div>
     </div>
   )

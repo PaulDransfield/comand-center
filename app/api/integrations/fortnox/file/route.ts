@@ -124,18 +124,22 @@ export async function GET(req: NextRequest) {
     }, { status: 502 })
   }
 
-  const contentType = fortnoxRes.headers.get('content-type') ?? 'application/pdf'
   const safeFilename = filename.replace(/[^a-zA-Z0-9._\- ]/g, '_').slice(0, 200) || 'invoice.pdf'
 
-  // Stream the body back. NextResponse can wrap a ReadableStream directly.
+  // Force application/pdf — Fortnox sometimes sends application/octet-stream
+  // which Chrome's built-in PDF viewer ignores (you'd get a download
+  // prompt or blank iframe). We know these are PDFs by definition.
+  // X-Frame-Options=SAMEORIGIN so OUR iframe can render the PDF
+  // (without it, some browsers/Vercel defaults add DENY which blocks
+  // even same-origin embeds).
   return new NextResponse(fortnoxRes.body, {
     status: 200,
     headers: {
-      'Content-Type':        contentType,
-      // 'inline' so the browser renders the PDF in the new tab; switch to
-      // 'attachment' to force download.
+      'Content-Type':        'application/pdf',
       'Content-Disposition': `inline; filename="${safeFilename}"`,
       'Cache-Control':       'private, max-age=300',  // 5 min — short-lived; user can re-fetch
+      'X-Frame-Options':     'SAMEORIGIN',
+      'Content-Security-Policy': "frame-ancestors 'self'",  // explicit frame allow for same-origin
     },
   })
 }
