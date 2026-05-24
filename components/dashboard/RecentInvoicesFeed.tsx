@@ -44,9 +44,10 @@ interface Props {
 }
 
 export default function RecentInvoicesFeed({ businessId, days = 14, maxRows = 25 }: Props) {
-  const [data,    setData]    = useState<RecentInvoicesPayload | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
+  const [data,     setData]     = useState<RecentInvoicesPayload | null>(null)
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState<string | null>(null)
+  const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
 
   useEffect(() => {
     if (!businessId) return
@@ -130,23 +131,30 @@ export default function RecentInvoicesFeed({ businessId, days = 14, maxRows = 25
             <div key={group.date}>
               <div style={GROUP_LABEL_STYLE}>{group.label}</div>
               {group.invoices.map(inv => (
-                <InvoiceRow key={`${inv.given_number}_${inv.invoice_number}`} invoice={inv} businessId={businessId} />
+                <InvoiceRow key={`${inv.given_number}_${inv.invoice_number}`} invoice={inv} businessId={businessId}
+                  onOpenPdf={(url, title) => setPdfModal({ url, title })} />
               ))}
             </div>
           ))}
         </div>
       )}
+
+      {pdfModal && <PdfModal url={pdfModal.url} title={pdfModal.title} onClose={() => setPdfModal(null)} />}
     </section>
   )
 }
 
-function InvoiceRow({ invoice, businessId }: { invoice: RecentInvoice; businessId: string }) {
+function InvoiceRow({
+  invoice, businessId, onOpenPdf,
+}: {
+  invoice: RecentInvoice
+  businessId: string
+  onOpenPdf: (url: string, title: string) => void
+}) {
   // The /supplierinvoices LIST endpoint doesn't include file connections —
-  // that field is only on /supplierinvoices/{GivenNumber} (detail). So we
-  // ALWAYS link to /invoice-pdf which does an on-demand detail fetch and
-  // 302-redirects to the PDF proxy. First click incurs ~500ms latency for
-  // the detail fetch; if no PDF is attached, the redirect lands on a 404
-  // with a friendly message.
+  // that field is only on /supplierinvoices/{GivenNumber} (detail). The
+  // invoice-pdf endpoint does an on-demand detail fetch + 302 to the file
+  // proxy. iframe follows the redirect and renders inline. Stay-in-app.
   const pdfUrl = `/api/integrations/fortnox/invoice-pdf?business_id=${encodeURIComponent(businessId)}&given_number=${encodeURIComponent(invoice.given_number)}`
 
   return (
@@ -165,9 +173,66 @@ function InvoiceRow({ invoice, businessId }: { invoice: RecentInvoice; businessI
         )}
       </div>
       <div style={ROW_ACTIONS_STYLE}>
-        <a href={pdfUrl} target="_blank" rel="noopener noreferrer" style={LINK_STYLE} title="View invoice PDF (fetches from Fortnox on click)">
+        <button
+          type="button"
+          onClick={() => onOpenPdf(pdfUrl, `${invoice.supplier_name} — ${invoice.invoice_number}`)}
+          style={LINK_BUTTON_STYLE}
+          title="View invoice PDF in-app"
+        >
           View PDF
-        </a>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Inline PDF viewer — embedded iframe of the Fortnox file proxy (via the
+// invoice-pdf 302 redirect). Stay-in-app per the brief.
+function PdfModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(20,18,40,0.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 16,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(960px, 100%)', height: '90vh',
+          background: '#fff', borderRadius: 8, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.40)',
+        }}>
+        <div style={{
+          padding: '10px 14px', borderBottom: '0.5px solid #e5e7eb',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1f2e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: '#6b7280',
+                border: '0.5px solid #e5e7eb', borderRadius: 4,
+                textDecoration: 'none', fontFamily: 'inherit',
+              }}>Open in new tab ↗</a>
+            <button onClick={onClose}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: '#1a1f2e', color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Close (Esc)</button>
+          </div>
+        </div>
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
       </div>
     </div>
   )
@@ -267,6 +332,16 @@ const LINK_STYLE: React.CSSProperties = {
   color: '#3b82f6',
   textDecoration: 'none',
   fontWeight: 500,
+}
+const LINK_BUTTON_STYLE: React.CSSProperties = {
+  fontSize: 11,
+  color: '#3b82f6',
+  background: 'transparent',
+  border: 'none',
+  fontWeight: 500,
+  cursor: 'pointer',
+  padding: 0,
+  fontFamily: 'inherit',
 }
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
