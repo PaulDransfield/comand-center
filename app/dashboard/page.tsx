@@ -403,7 +403,7 @@ function DashboardInner() {
         )}
 
         {/* ── Money flow row ────────────────────────────────────── */}
-        <MoneyFlowRow bankPos={bankPos} cashFlow={cashFlow} recentInv={recentInv} />
+        <MoneyFlowRow bankPos={bankPos} cashFlow={cashFlow} recentInv={recentInv} bizId={bizId} />
 
         {/* ── Review themes ─────────────────────────────────────── */}
         {reviewThemes?.top_themes?.length > 0 && (
@@ -781,8 +781,9 @@ function AttentionCard({ items }: { items: AttentionItem[] }) {
 }
 
 // ── Money flow row ──────────────────────────────────────────────────
-function MoneyFlowRow({ bankPos, cashFlow, recentInv }: any) {
+function MoneyFlowRow({ bankPos, cashFlow, recentInv, bizId }: any) {
   const locale = useLocale()
+  const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
   const cashPosition = Number(bankPos?.summary?.current_position_since_tracking ?? 0)
   const cashMtd      = Number(bankPos?.summary?.this_month_change ?? 0)
   const absBalance   = bankPos?.summary?.absolute_balance != null ? Number(bankPos.summary.absolute_balance) : null
@@ -841,36 +842,120 @@ function MoneyFlowRow({ bankPos, cashFlow, recentInv }: any) {
       <Card title="Recent invoices" subtitle={`Last ${recentInv?.days_window ?? 14} days`}>
         {invoices.length > 0 ? (
           <div style={{ display: 'grid', gap: 0 }}>
-            {invoices.map((inv: any, idx: number) => (
-              <div key={inv.given_number ?? idx} style={{
-                display:             'grid',
-                gridTemplateColumns: '1fr auto',
-                gap:                 8,
-                padding:             '8px 0',
-                borderBottom:        idx < invoices.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
-                alignItems:          'baseline',
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                    {inv.supplier_name}
-                  </div>
-                  <div style={{ fontSize: 9, color: UXP.ink4 }}>{inv.invoice_date}</div>
-                </div>
-                <div style={{
-                  fontSize:           11,
-                  fontWeight:         500,
-                  color:              UXP.ink1,
-                  fontVariantNumeric: 'tabular-nums' as const,
+            {invoices.map((inv: any, idx: number) => {
+              // PDF resolution: prefer direct file_id → file proxy URL.
+              // Else hit invoice-pdf (does just-in-time detail fetch +
+              // 302 to file proxy). Both render inline in the modal —
+              // stay in app, never link out to Fortnox's web UI.
+              const pdfUrl = bizId && (inv.file_id
+                ? `/api/integrations/fortnox/file?business_id=${encodeURIComponent(bizId)}&file_id=${encodeURIComponent(inv.file_id)}`
+                : inv.given_number
+                  ? `/api/integrations/fortnox/invoice-pdf?business_id=${encodeURIComponent(bizId)}&given_number=${encodeURIComponent(inv.given_number)}`
+                  : null)
+              return (
+                <div key={inv.given_number ?? idx} style={{
+                  display:             'grid',
+                  gridTemplateColumns: '1fr auto auto',
+                  gap:                 8,
+                  padding:             '8px 0',
+                  borderBottom:        idx < invoices.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+                  alignItems:          'baseline',
                 }}>
-                  {inv.total != null ? fmtKr(inv.total) : '—'}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                      {inv.supplier_name}
+                    </div>
+                    <div style={{ fontSize: 9, color: UXP.ink4 }}>{inv.invoice_date}</div>
+                  </div>
+                  <div style={{
+                    fontSize:           11,
+                    fontWeight:         500,
+                    color:              UXP.ink1,
+                    fontVariantNumeric: 'tabular-nums' as const,
+                  }}>
+                    {inv.total != null ? fmtKr(inv.total) : '—'}
+                  </div>
+                  {pdfUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setPdfModal({ url: pdfUrl, title: `${inv.supplier_name} — ${inv.invoice_number ?? ''}` })}
+                      title="View invoice PDF in-app"
+                      style={{
+                        padding:        '2px 8px',
+                        background:     UXP.lavFill,
+                        color:          UXP.lavText,
+                        border:         'none',
+                        borderRadius:   999,
+                        fontSize:       9,
+                        fontWeight:     500,
+                        cursor:         'pointer',
+                        fontFamily:     'inherit',
+                        letterSpacing:  '0.02em',
+                      }}
+                    >PDF</button>
+                  ) : <span />}
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           <Empty>No recent invoices.</Empty>
         )}
       </Card>
+
+      {pdfModal && <DashboardPdfModal url={pdfModal.url} title={pdfModal.title} onClose={() => setPdfModal(null)} />}
+    </div>
+  )
+}
+
+// Inline PDF viewer for the dashboard's "Recent invoices" card.
+// Same pattern as inventory + /invoices — stay in app, never new tab.
+function DashboardPdfModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose}
+      style={{
+        position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 16,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(960px, 100%)', height: '90vh',
+          background: '#fff', borderRadius: 8, overflow: 'hidden' as const,
+          display: 'flex', flexDirection: 'column' as const,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.40)',
+        }}>
+        <div style={{
+          padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink3,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                textDecoration: 'none', fontFamily: 'inherit',
+              }}>Open in new tab ↗</a>
+            <button onClick={onClose}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: UXP.ink1, color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Close (Esc)</button>
+          </div>
+        </div>
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
+      </div>
     </div>
   )
 }
