@@ -18,6 +18,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { waitUntil } from '@vercel/functions'
 import { runPdfExtractionBatch } from '@/lib/inventory/pdf-extraction-worker'
+import { checkCronSecret, checkAdminSecret } from '@/lib/admin/check-secret'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -26,11 +27,7 @@ export const maxDuration = 800
 export async function POST(req: NextRequest) {
   noStore()
 
-  const adminSecret = process.env.ADMIN_SECRET
-  const cronSecret  = process.env.CRON_SECRET
-  const auth = req.headers.get('authorization') ?? ''
-  if (!(adminSecret && auth === `Bearer ${adminSecret}`) &&
-      !(cronSecret  && auth === `Bearer ${cronSecret}`)) {
+  if (!checkCronSecret(req) && !checkAdminSecret(req)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
