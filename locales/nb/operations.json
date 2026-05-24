@@ -202,7 +202,11 @@
         "takeaway_material": "Take-away",
         "disposables":       "Forbruksvarer",
         "other":             "Annet"
-      }
+      },
+      "backfillPack":        "Oppdag pakkestørrelse for alle",
+      "backfillPackHint":    "Tolk pakkestørrelse fra hvert produktnavn og lagre. Idempotent — påvirker bare produkter uten pakkestørrelse.",
+      "backfillPackConfirm": "Skann alle produkter uten pakkestørrelse og fyll inn automatisk fra navnet (f.eks. \"4,1 kg\" → 4100g)? Feilaktige kan justeres på produktsiden.",
+      "backfillPackDone":    "Skannet {scanned} produkter, anvendte pakkestørrelse på {applied}."
     },
     "review": {
       "title":             "Massegjennomgang",

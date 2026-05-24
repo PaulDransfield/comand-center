@@ -202,7 +202,11 @@
         "takeaway_material": "Take-away",
         "disposables":       "Förbrukning",
         "other":             "Övrigt"
-      }
+      },
+      "backfillPack":        "Detektera paketstorlek för alla",
+      "backfillPackHint":    "Tolka paketstorlek från varje produktnamn och spara. Idempotent — påverkar bara produkter utan paketstorlek.",
+      "backfillPackConfirm": "Skanna alla produkter utan paketstorlek och fyll i automatiskt från namnet (t.ex. \"4,1 kg\" → 4100g)? Felaktiga kan justeras på produktsidan.",
+      "backfillPackDone":    "Skannade {scanned} produkter, applicerade paketstorlek på {applied}."
     },
     "review": {
       "title":             "Massgranskning",

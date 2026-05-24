@@ -202,7 +202,11 @@
         "takeaway_material": "Take-away",
         "disposables":       "Disposables",
         "other":             "Other"
-      }
+      },
+      "backfillPack":        "Detect pack size for all",
+      "backfillPackHint":    "Parse pack size from every product name and save it. Idempotent — only touches products where pack size is currently unset.",
+      "backfillPackConfirm": "Scan every product without a pack size and auto-fill from the name (e.g. \"4,1 kg\" → 4100g)? Wrong ones can be fixed individually on the product detail page.",
+      "backfillPackDone":    "Scanned {scanned} products, applied pack size to {applied}."
     },
     "review": {
       "title":             "Bulk review",

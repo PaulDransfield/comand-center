@@ -98,15 +98,48 @@ export default function InventoryItemsPage() {
   const creeping = items.filter(i => (i.change_pct ?? 0) >= 0.05).length
   const totalObservations = items.reduce((s, i) => s + i.observation_count, 0)
 
+  async function backfillPackSize() {
+    if (!bizId) return
+    if (!confirm(t('backfillPackConfirm'))) return
+    try {
+      const r = await fetch('/api/inventory/items/backfill-pack-size', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      alert(t('backfillPackDone', { scanned: String(j.scanned), applied: String(j.applied) }))
+      load()
+    } catch (e: any) {
+      alert(e.message)
+    }
+  }
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
-          {t('title')}
-        </h1>
-        <p style={{ margin: '4px 0 18px', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
-          {t('subtitle')}
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
+              {t('title')}
+            </h1>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: UXP.ink3, maxWidth: 720, lineHeight: 1.5 }}>
+              {t('subtitle')}
+            </p>
+          </div>
+          <button onClick={backfillPackSize}
+            title={t('backfillPackHint')}
+            style={{
+              padding: '6px 12px', fontSize: 11, fontWeight: 500,
+              background: 'transparent', color: UXP.ink2,
+              border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+              cursor: 'pointer', fontFamily: 'inherit',
+              whiteSpace: 'nowrap' as const,
+            }}>
+            {t('backfillPack')}
+          </button>
+        </div>
 
         {/* KPI strip */}
         <div style={{
