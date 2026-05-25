@@ -291,5 +291,172 @@ export async function syncScheduleFromPK(
     result.shifts_upserted += slice.length
   }
 
+  // ── 3. Refresh staff_profiles — derive metadata from PK staff list
+  //       + 12-week shift history. Cheap to do every sync.
+  try {
+    await refreshStaffProfiles(db, orgId, businessId, token)
+  } catch (e: any) {
+    result.errors.push(`profile refresh: ${e?.message ?? e}`)
+  }
+
   return result
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Staff profile derivation
+//
+// Pulls /staffs/?with_employments=true for contract/cost facts, then
+// walks staff_shifts for the last 12 weeks to derive typical_days,
+// primary_section, versatility, etc. Idempotent — upserts the rolled
+// numbers into staff_profiles.
+
+async function refreshStaffProfiles(
+  db:         SupabaseClient,
+  orgId:      string,
+  businessId: string,
+  token:      string,
+): Promise<void> {
+  // 1. Pull current staff payload from PK
+  const r = await fetch(`${PK_BASE}/staffs/?with_employments=true`, {
+    headers: { Authorization: `Token ${token}`, Accept: 'application/json' },
+  })
+  if (!r.ok) throw new Error(`PK /staffs/ HTTP ${r.status}`)
+  const pkStaff: any[] = []
+  let next: string | null = `${PK_BASE}/staffs/?with_employments=true`
+  let pages = 0
+  while (next) {
+    const rr = await fetch(next, { headers: { Authorization: `Token ${token}`, Accept: 'application/json' } })
+    if (!rr.ok) break
+    const j: any = await rr.json()
+    if (Array.isArray(j?.results)) pkStaff.push(...j.results)
+    next = j?.next ?? null
+    pages++
+    if (pages > 20) break
+  }
+
+  if (pkStaff.length === 0) return
+
+  // 2. Load the last 12 weeks of shifts for derived stats
+  const cutoff = new Date(); cutoff.setUTCDate(cutoff.getUTCDate() - 12 * 7)
+  const { data: shifts } = await db
+    .from('staff_shifts')
+    .select('staff_uid, shift_date, period_name, shift_template_id, shift_kind, is_published, start_at, end_at')
+    .eq('business_id', businessId)
+    .gte('shift_date', cutoff.toISOString().slice(0, 10))
+  const { data: templates } = await db
+    .from('staff_shift_templates')
+    .select('id, section')
+    .eq('business_id', businessId)
+    .is('archived_at', null)
+  const templateSectionById = new Map((templates ?? []).map((t: any) => [t.id, t.section ?? 'other']))
+
+  // Aggregate per staff
+  const statsByStaff = new Map<string, {
+    daysWorked: Map<string, number>      // 'mon'..'sun' → count of weeks worked that day
+    sections:   Map<string, number>      // section → shift count
+    earliestStart: Map<string, number>   // hour → count (for opener/closer classification)
+    latestEnd:     Map<string, number>
+    totalShifts:   number
+    weeksObserved: Set<string>           // for normalising typical_days
+  }>()
+  const DOW = ['sun','mon','tue','wed','thu','fri','sat']
+  for (const s of (shifts ?? [])) {
+    if (!s.staff_uid) continue
+    if (s.shift_kind === 'semester' || s.shift_kind === 'sick') continue
+    if (!statsByStaff.has(s.staff_uid)) {
+      statsByStaff.set(s.staff_uid, {
+        daysWorked:   new Map(),
+        sections:     new Map(),
+        earliestStart: new Map(),
+        latestEnd:     new Map(),
+        totalShifts:   0,
+        weeksObserved: new Set(),
+      })
+    }
+    const st = statsByStaff.get(s.staff_uid)!
+    const d = new Date(s.shift_date + 'T00:00:00Z')
+    const dow = DOW[d.getUTCDay()]
+    st.daysWorked.set(dow, (st.daysWorked.get(dow) ?? 0) + 1)
+    const sec = templateSectionById.get(s.shift_template_id) ?? 'other'
+    st.sections.set(sec, (st.sections.get(sec) ?? 0) + 1)
+    const startHour = new Date(s.start_at).getUTCHours()
+    const endHour   = new Date(s.end_at).getUTCHours()
+    st.earliestStart.set(String(startHour), (st.earliestStart.get(String(startHour)) ?? 0) + 1)
+    st.latestEnd.set(String(endHour), (st.latestEnd.get(String(endHour)) ?? 0) + 1)
+    st.totalShifts++
+    // ISO week key
+    const w = isoWeekFor(d)
+    st.weeksObserved.add(w)
+  }
+
+  // 3. Build upsert rows
+  const today = new Date().toISOString().slice(0, 10)
+  const profileRows: any[] = []
+  for (const s of pkStaff) {
+    const staffUid = String(s.url ?? s.id ?? '')
+    if (!staffUid) continue
+    const activeEmp = (s.employments ?? []).find((e: any) =>
+      (!e.end || e.end >= today) && (!e.start || e.start <= today),
+    ) ?? null
+    const st = statsByStaff.get(staffUid)
+    let primarySection: string | null = null
+    let typicalDays: Record<string, number> | null = null
+    let versatilityScore: number | null = null
+    let typicalShiftWindow: string | null = null
+    if (st && st.totalShifts > 0) {
+      const sortedSecs = Array.from(st.sections.entries()).sort((a, b) => b[1] - a[1])
+      primarySection = sortedSecs[0]?.[0] ?? null
+      versatilityScore = Math.min(1, sortedSecs.length / 4)
+      const weeks = Math.max(1, st.weeksObserved.size)
+      typicalDays = {}
+      for (const dow of DOW.slice(1).concat(['sun'])) {
+        typicalDays[dow] = Math.round(((st.daysWorked.get(dow) ?? 0) / weeks) * 100) / 100
+      }
+      // Opener/midday/closer based on modal start hour
+      const modalStart = Array.from(st.earliestStart.entries()).sort((a, b) => b[1] - a[1])[0]
+      if (modalStart) {
+        const h = Number(modalStart[0])
+        typicalShiftWindow = h < 9 ? 'opener' : h < 14 ? 'midday' : h < 17 ? 'split' : 'closer'
+      }
+    }
+
+    profileRows.push({
+      org_id: orgId, business_id: businessId,
+      pk_staff_url: staffUid,
+      staff_uid: staffUid,
+      display_name:  `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim() || null,
+      full_name:     `${s.first_name ?? ''} ${s.last_name ?? ''}`.trim() || null,
+      email:         s.email ?? null,
+      salary_type:        activeEmp?.salary_type ?? null,
+      hourly_rate_sek:    activeEmp?.hourly_salary ? Number(activeEmp.hourly_salary) : null,
+      monthly_salary_sek: activeEmp?.monthly_salary ? Number(activeEmp.monthly_salary) : null,
+      fixed_cost_per_day_sek: activeEmp?.fixed_cost_per_day ? Number(activeEmp.fixed_cost_per_day) : null,
+      service_grade_pct:  activeEmp?.service_grade ? Number(activeEmp.service_grade) * 100 : null,
+      hired_at:           activeEmp?.start ?? null,
+      contract_end_at:    activeEmp?.end ?? null,
+      primary_section:    primarySection,
+      typical_days:       typicalDays,
+      typical_shift_window: typicalShiftWindow,
+      versatility_score:  versatilityScore,
+      is_active:          s.confirmed ?? true,
+      last_refreshed_at:  new Date().toISOString(),
+    })
+  }
+
+  // Upsert
+  if (profileRows.length > 0) {
+    const { error } = await db
+      .from('staff_profiles')
+      .upsert(profileRows, { onConflict: 'business_id,pk_staff_url' })
+    if (error) throw new Error(`profile upsert: ${error.message}`)
+  }
+}
+
+function isoWeekFor(d: Date): string {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+  const dn = (t.getUTCDay() + 6) % 7
+  t.setUTCDate(t.getUTCDate() - dn + 3)
+  const ft = new Date(Date.UTC(t.getUTCFullYear(), 0, 4))
+  const wn = 1 + Math.round(((t.getTime() - ft.getTime()) / 86400000 - 3 + ((ft.getUTCDay() + 6) % 7)) / 7)
+  return `${t.getUTCFullYear()}-W${String(wn).padStart(2, '0')}`
 }
