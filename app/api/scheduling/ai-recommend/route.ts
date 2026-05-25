@@ -10,6 +10,11 @@
 //   - Business: target_staff_pct, country, opening_days, business_stage
 //   - Current week shifts + templates + staff profiles
 //   - Demand forecast: per-day revenue, weather, holidays
+//   - HOURLY DEMAND PROFILE: 12-week historical avg revenue + covers per
+//     weekday × hour-of-day. This is what lets the AI judge whether a
+//     12:00–14:00 overlap actually has demand to support a third FOH
+//     person — without it, the AI was only seeing daily totals and
+//     guessing.
 //   - Recent owner overrides (last 60 days of rejected/modified suggestions)
 //     as in-context learning examples
 //   - Asymmetric rule guidance (cuts by default; adds only if business
@@ -92,7 +97,15 @@ export async function POST(req: NextRequest) {
     days.push(d.toISOString().slice(0, 10))
   }
 
-  const [shiftsRes, templatesRes, profilesRes, forecastRes, recentOutcomesRes] = await Promise.all([
+  // Load 12 weeks back for hourly history; the demand profile is built from this.
+  const hourlyFrom = new Date(monday); hourlyFrom.setUTCDate(hourlyFrom.getUTCDate() - 12 * 7)
+  const hourlyFromIso = hourlyFrom.toISOString().slice(0, 10)
+
+  // Also load planned-cost-per-hour reference: historical staff cost % by
+  // (weekday × hour) — pairs with hourly revenue to show the AI which
+  // hours have ALREADY been over-staffed historically. We approximate
+  // this from staff_shifts vs hourly_metrics.
+  const [shiftsRes, templatesRes, profilesRes, forecastRes, recentOutcomesRes, hourlyRes] = await Promise.all([
     db.from('staff_shifts')
       .select('id, staff_uid, shift_date, start_at, end_at, start_time_local, end_time_local, staff_name, period_name, shift_template_id, shift_kind, breaks_seconds, has_ob, ob_hours, estimated_cost, is_published')
       .eq('business_id', businessId)
@@ -116,6 +129,12 @@ export async function POST(req: NextRequest) {
       .gte('created_at', new Date(Date.now() - 60 * 86_400_000).toISOString())
       .order('created_at', { ascending: false })
       .limit(20),
+    db.from('hourly_metrics')
+      .select('business_date, hour, revenue, covers')
+      .eq('business_id', businessId)
+      .gte('business_date', hourlyFromIso)
+      .lt('business_date', days[0])
+      .order('business_date'),
   ])
 
   if (shiftsRes.error)    return NextResponse.json({ error: `shifts: ${shiftsRes.error.message}` }, { status: 500 })
@@ -126,6 +145,56 @@ export async function POST(req: NextRequest) {
   const profiles  = profilesRes.data  ?? []
   const forecast  = forecastRes.data  ?? []
   const recent    = recentOutcomesRes.data ?? []
+  const hourly    = hourlyRes.data    ?? []
+
+  // ── Build per-(weekday × hour) demand profile from 12-week history ─
+  //
+  // Output: hourlyDemand[weekday=0..6][hour=0..23] = { avgRev, avgCovers, samples }
+  // where weekday 0 = Mon, 6 = Sun (ISO).  An "hour" cell with samples=0
+  // means we've never seen revenue at that slot — almost certainly closed.
+  const hourlyDemand: { weekday: number; hour: number; avg_rev: number; avg_covers: number; samples: number }[] = []
+  {
+    const buckets: Record<string, { rev: number; covers: number; n: number; dates: Set<string> }> = {}
+    // Track distinct dates per weekday so a "no row" counts as a 0
+    const datesByWeekday: Record<number, Set<string>> = { 0: new Set(), 1: new Set(), 2: new Set(), 3: new Set(), 4: new Set(), 5: new Set(), 6: new Set() }
+    for (const row of hourly) {
+      const wd = isoWeekday(row.business_date)
+      datesByWeekday[wd].add(row.business_date)
+      const k = `${wd}|${row.hour}`
+      if (!buckets[k]) buckets[k] = { rev: 0, covers: 0, n: 0, dates: new Set() }
+      buckets[k].rev    += Number(row.revenue ?? 0)
+      buckets[k].covers += Number(row.covers  ?? 0)
+      buckets[k].n      += 1
+      buckets[k].dates.add(row.business_date)
+    }
+    for (let wd = 0; wd < 7; wd++) {
+      const denom = datesByWeekday[wd].size || 1
+      for (let h = 0; h < 24; h++) {
+        const b = buckets[`${wd}|${h}`]
+        if (!b) {
+          hourlyDemand.push({ weekday: wd, hour: h, avg_rev: 0, avg_covers: 0, samples: 0 })
+        } else {
+          // Average across ALL dates of that weekday (a "no row" implies 0)
+          hourlyDemand.push({
+            weekday: wd, hour: h,
+            avg_rev:    Math.round(b.rev / denom),
+            avg_covers: Math.round((b.covers / denom) * 10) / 10,
+            samples:    denom,
+          })
+        }
+      }
+    }
+  }
+
+  // Compact summary the AI can read at a glance — group by weekday with
+  // open hours only (drop closed hours = avg_rev < 100 kr AND samples > 4).
+  const hourlyByWeekday = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, wd) => {
+    const openHours = hourlyDemand
+      .filter(c => c.weekday === wd && !(c.avg_rev < 100 && c.samples > 4))
+      .sort((a, b) => a.hour - b.hour)
+      .map(c => ({ h: c.hour, rev: c.avg_rev, covers: c.avg_covers }))
+    return { day, hours: openHours }
+  })
 
   // Compute per-day aggregates the AI needs
   const forecastByDate = new Map(forecast.map(f => [f.forecast_date, Number(f.predicted_revenue)]))
@@ -168,6 +237,12 @@ export async function POST(req: NextRequest) {
 - For every ADD: explicitly quantify downside risk in your reasoning ("if revenue lands at 70% of forecast, this adds X kr fixed cost on a slow day").
 - Adds must respect typical_days for the suggested staff member — never schedule someone outside their normal pattern unless absolutely necessary.`
       : SCHEDULING_ASYMMETRY,
+    `HOURLY DEMAND PROFILE (12-week history):
+- "hourly_demand_by_weekday" gives the average revenue + covers for every open hour of each weekday, derived from the past 12 weeks of POS sales. This is your PRIMARY signal for whether a shift overlap is justified.
+- Use these numbers in your reasoning. Specific example: "Monday 12:00–13:00 avg 1,800 kr / 22 covers — below the threshold to justify three FOH on the floor; cutting Linnéa's 12:00 start to 14:00 is safe."
+- Cite the actual hourly figures when explaining a cut. Owners trust reasoning that quotes their own data over reasoning that sounds plausible.
+- An empty hours list for a weekday means we have no POS data — be more conservative there (lower confidence on cuts).
+- Cover-count tells you whether the trough is light traffic or just low spend (e.g. coffee crowd). Don't cut staff on a high-cover hour even if revenue is modest.`,
     `LEARNING:
 - Recent owner overrides are included below. When the owner rejected a suggestion, do NOT propose the same change again. When they MODIFIED a suggestion, learn the pattern — they like X kind of change, not Y.
 - You can suggest fewer, higher-quality changes rather than many marginal ones. Confidence < 0.65 → omit the suggestion entirely.`,
@@ -205,6 +280,7 @@ Return at most 8 suggestions per week — prioritise highest-impact (largest SEK
       gap_to_target_pct: weekStaffPct != null ? Math.round((weekStaffPct - targetPct) * 10) / 10 : null,
     },
     days: dayContext,
+    hourly_demand_by_weekday: hourlyByWeekday,
     templates: templates.map((t: any) => ({
       id: t.id, name: t.name, section: t.section,
       modal_start: t.modal_start_time, modal_end: t.modal_end_time,
@@ -340,6 +416,12 @@ Return at most 8 suggestions per week — prioritise highest-impact (largest SEK
 }
 
 // ─────────────────────────────────────────────────────────────────────
+
+// ISO weekday: 0 = Mon, 6 = Sun
+function isoWeekday(dateIso: string): number {
+  const d = new Date(dateIso + 'T00:00:00Z')
+  return (d.getUTCDay() + 6) % 7
+}
 
 function isoWeekToRange(weekIso: string): { monday: string; sunday: string } {
   const [yearStr, weekStr] = weekIso.split('-W')
