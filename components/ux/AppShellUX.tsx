@@ -383,10 +383,18 @@ function StepArrow({ direction, onClick }: { direction: 'prev' | 'next'; onClick
 }
 
 function AskCcPill({ onClick }: { onClick?: () => void }) {
+  // When no explicit onClick is provided by the page, dispatch the
+  // global 'cc-open-askai' event. The nearest mounted AskAI handler
+  // (either the page-level rich-context one or the AppShell fallback)
+  // listens for this and opens the slide-in panel.
+  const handleClick = () => {
+    if (onClick) { onClick(); return }
+    try { window.dispatchEvent(new CustomEvent('cc-open-askai')) } catch {}
+  }
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       style={{
         display:        'inline-flex',
         alignItems:     'center',

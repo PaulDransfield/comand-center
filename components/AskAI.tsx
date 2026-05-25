@@ -40,9 +40,21 @@ interface Props {
    * org-scoped already and runs regardless. (FIXES §0kk.)
    */
   orgScope?: boolean
+  /**
+   * When true, hide the floating bottom-right "Ask CC" button — the
+   * toolbar pill is the only trigger. Used by AppShell's fallback
+   * AskAI on pages that don't mount their own.
+   */
+  hideFloatingBtn?: boolean
+  /**
+   * Set by AppShell's fallback AskAI so the global event handler
+   * registry prefers page-level (rich-context) instances over the
+   * fallback when both are mounted. Pages should leave this unset.
+   */
+  isFallback?: boolean
 }
 
-export default function AskAI({ page, context, tier = 'full', orgScope = false }: Props) {
+export default function AskAI({ page, context, tier = 'full', orgScope = false, hideFloatingBtn = false, isFallback = false }: Props) {
   const t          = useTranslations('askai')
   const suggKey    = SUGGESTION_PAGES.has(page) ? page : 'default'
   const suggestions = [
@@ -73,6 +85,30 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100)
   }, [open])
+
+  // Listen for the toolbar's "Ask CC" pill click. Registry pattern:
+  // every AskAI mount pushes itself into a global stack so multiple
+  // simultaneous mounts don't all open at once. The TOP of the stack
+  // wins, with page-level instances ranked above the AppShell fallback.
+  useEffect(() => {
+    const w = window as any
+    w.__cc_askai_handlers ??= [] as Array<{ open: () => void; isFallback: boolean }>
+    const entry = { open: () => setOpen(true), isFallback }
+    w.__cc_askai_handlers.push(entry)
+    const onEvent = () => {
+      const handlers = w.__cc_askai_handlers as Array<{ open: () => void; isFallback: boolean }>
+      // Prefer most-recent non-fallback; fall back to most-recent overall.
+      const nonFb = [...handlers].reverse().find(h => !h.isFallback)
+      const target = nonFb ?? handlers[handlers.length - 1]
+      target?.open()
+    }
+    window.addEventListener('cc-open-askai', onEvent)
+    return () => {
+      window.removeEventListener('cc-open-askai', onEvent)
+      const idx = w.__cc_askai_handlers.indexOf(entry)
+      if (idx >= 0) w.__cc_askai_handlers.splice(idx, 1)
+    }
+  }, [isFallback])
 
   async function send(question: string) {
     if (!question.trim() || loading) return
@@ -207,18 +243,21 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false }
 
   return (
     <>
-      {/* Floating button — UXP "Ask CC" pill */}
-      <button
-        className="ai-fab"
-        style={FAB}
-        onClick={() => setOpen(o => !o)}
-        title={t('fabTitle')}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
-        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}
-      >
-        <span aria-hidden style={{ fontSize: 12 }}>✦</span>
-        Ask CC
-      </button>
+      {/* Floating button — UXP "Ask CC" pill. Hidden when the AskAI is
+          mounted as the AppShell fallback (toolbar pill is the trigger). */}
+      {!hideFloatingBtn && (
+        <button
+          className="ai-fab"
+          style={FAB}
+          onClick={() => setOpen(o => !o)}
+          title={t('fabTitle')}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = 'none' }}
+        >
+          <span aria-hidden style={{ fontSize: 12 }}>✦</span>
+          Ask CC
+        </button>
+      )}
 
       {/* Backdrop */}
       <div style={OVERLAY} onClick={() => setOpen(false)} />

@@ -19,6 +19,8 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import dynamic from 'next/dynamic'
+import { usePathname } from 'next/navigation'
 import RailNav      from './ux/RailNav'
 import AppShellUX   from './ux/AppShellUX'
 import BizPicker    from './ux/BizPicker'
@@ -33,6 +35,12 @@ import AiUsageBanner   from './AiUsageBanner'
 import BrokenIntegrationBanner from './BrokenIntegrationBanner'
 import { RoleGate }    from './RoleGate'
 import { UXP }         from '@/lib/constants/tokens'
+
+// Fallback Ask CC handler for pages that don't mount their own AskAI
+// (e.g. /scheduling, /inventory, /settings). Hides its own floating
+// button; the toolbar pill is the only trigger. Page-level AskAI mounts
+// take precedence via the registry stack in AskAI.tsx.
+const AskAI = dynamic(() => import('./AskAI'), { ssr: false, loading: () => null })
 
 export interface AppShellProps {
   children:      ReactNode
@@ -52,6 +60,12 @@ export default function AppShell({
   compareLabel,
   onAskCc,
 }: AppShellProps) {
+  const pathname = usePathname() ?? ''
+  // Short pathname-derived label for the fallback AskAI's `page` prop
+  // (used to pick suggestion text). Pages with their own AskAI pass their
+  // own — this is purely the AppShell fallback.
+  const fallbackPage = pathname.split('/').filter(Boolean)[0] ?? 'general'
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: UXP.pageBg }}>
       {/* Rail — hidden on mobile; MobileNav takes over below 768px */}
@@ -84,6 +98,10 @@ export default function AppShell({
           <RoleGate>{children}</RoleGate>
         </AppShellUX>
       </div>
+
+      {/* Fallback Ask CC handler — page-level AskAI (when mounted) wins
+          via the registry stack and the floating button is hidden here. */}
+      <AskAI page={fallbackPage} context="" hideFloatingBtn isFallback />
 
       <ConsentBanner />
       <BackgroundSync />
