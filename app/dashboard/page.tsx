@@ -32,7 +32,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocale } from 'next-intl'
 import { useRouter, useSearchParams } from 'next/navigation'
 import dynamicImport from 'next/dynamic'
@@ -201,7 +201,11 @@ function DashboardInner() {
   }, [])
 
   // ── Period-bound fetches ─────────────────────────────────────────
-  useEffect(() => {
+  // Extracted to a useCallback so the ColdStartBanner (and any other
+  // surface that triggers a fresh load) can call it imperatively after
+  // an action — e.g. after "Sync now" completes, we want the dashboard
+  // numbers to refresh without a page reload.
+  const loadDashboard = useCallback(() => {
     if (!bizId) return
     setLoading(true)
     setDailyRows([]); setCurrSummary(null); setPrevSummary(null); setDepts(null)
@@ -227,7 +231,9 @@ function DashboardInner() {
       const latest = rows.reduce((m: string, r: any) => r.date > m ? r.date : m, '')
       setDataAsOf(latest || null)
     })
-  }, [bizId, weekOffset, monthOffset, viewMode])
+  }, [bizId, viewMode, weekOffset, monthOffset])
+
+  useEffect(() => { loadDashboard() }, [loadDashboard])
 
   // ── Independent fetches ───────────────────────────────────────────
   useEffect(() => {
@@ -365,6 +371,12 @@ function DashboardInner() {
           <UpgradeBanner plan={upgradePlan} onClose={() => setShowUpgrade(false)} />
         )}
 
+        <ColdStartBanner
+          loading={loading}
+          dailyRows={dailyRows}
+          selectedBiz={selectedBiz}
+          onSyncComplete={loadDashboard}
+        />
         <StaleDataBanner dataAsOf={dataAsOf} loading={loading} viewMode={viewMode} weekOffset={weekOffset} monthOffset={monthOffset} />
 
         {/* W/M toggle — sits at top right of the page, separate from the
@@ -1046,6 +1058,132 @@ function UpgradeBanner({ plan, onClose }: { plan: string; onClose: () => void })
         background: 'transparent', border: 'none', cursor: 'pointer',
         color: UXP.greenDeep, fontSize: 16, padding: '0 4px',
       }}>×</button>
+    </div>
+  )
+}
+
+// ── Cold-start banner ───────────────────────────────────────────────
+// Shown when a fresh customer signs up, connects integrations, lands on
+// the dashboard — but the nightly master-sync hasn't run yet. Without
+// this, they see blank KPI cards + an empty chart and assume the product
+// is broken. The banner explains the wait, shows them what's expected,
+// and gives them a "Sync now" button so they don't have to wait.
+//
+// Renders only when:
+//   - bizId is set
+//   - loading is false (otherwise we'd flash the banner during initial load)
+//   - dailyRows is empty (no data yet)
+//   - business was created < 72h ago (older = stale-data, not cold-start)
+function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
+  loading:        boolean
+  dailyRows:      any[]
+  selectedBiz:    any
+  onSyncComplete: () => void
+}) {
+  const [syncing, setSyncing] = useState(false)
+  const [result, setResult]   = useState<{ ok: boolean; message: string } | null>(null)
+
+  if (loading) return null
+  if (!selectedBiz?.id) return null
+  if (dailyRows.length > 0) return null
+
+  const createdAt = selectedBiz?.created_at ? new Date(selectedBiz.created_at).getTime() : null
+  const ageHours  = createdAt ? (Date.now() - createdAt) / 3600_000 : null
+  const isFresh   = ageHours != null && ageHours < 72
+
+  // If business is older than 72h and dailyRows is empty, that's a
+  // genuine "something is broken" state — show a different message
+  // pointing at integrations instead of the "you're new, wait" copy.
+  const isStale = !isFresh
+
+  async function syncNow() {
+    if (syncing) return
+    setSyncing(true)
+    setResult(null)
+    try {
+      const r = await fetch('/api/sync/now', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || j.reason === 'no_integrations') {
+        setResult({
+          ok: false,
+          message: j.message ?? j.error ?? 'Connect at least one integration first.',
+        })
+      } else {
+        setResult({
+          ok: true,
+          message: `Synced ${j.synced_count} integration${j.synced_count === 1 ? '' : 's'} in ${Math.round((j.duration_ms ?? 0) / 1000)}s. Loading data…`,
+        })
+        // Give the DB a beat then reload dashboard data
+        setTimeout(() => onSyncComplete(), 1500)
+      }
+    } catch (e: any) {
+      setResult({ ok: false, message: e?.message ?? 'Sync failed — try again in a moment.' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  return (
+    <div style={{
+      background:    isStale ? UXP.coral + '15' : UXP.lavFill,
+      border:        `0.5px solid ${isStale ? UXP.coralLine : UXP.lavMid}`,
+      borderRadius:  UXP.r_lg,
+      padding:       '14px 18px',
+      display:       'flex',
+      alignItems:    'flex-start',
+      gap:           14,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: isStale ? UXP.coral : UXP.lavText, marginBottom: 4 }}>
+          {isStale
+            ? 'No data syncing for this business'
+            : `Welcome${selectedBiz?.name ? `, ${selectedBiz.name}` : ''} — your data is on its way`}
+        </div>
+        <div style={{ fontSize: 12, color: UXP.ink2, lineHeight: 1.55 }}>
+          {isStale ? (
+            <>
+              We haven't seen new data from your connected integrations in a while.
+              Check <a href="/integrations" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>integrations</a> for any broken connections, or click below to trigger a manual sync.
+            </>
+          ) : (
+            <>
+              Background sync runs nightly at 04:00 UTC (05:00 Stockholm) and brings in the last 90 days of Fortnox + Personalkollen data.
+              Want it now? Click below — first sync takes ~30-60 seconds. While you wait, you can{' '}
+              <a href="/onboarding" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>finish onboarding</a>
+              {' '}or{' '}
+              <a href="/integrations" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>verify your integrations</a>.
+            </>
+          )}
+        </div>
+        {result && (
+          <div style={{
+            marginTop: 8, padding: '6px 10px',
+            background: result.ok ? UXP.greenFill : UXP.roseFill,
+            color: result.ok ? UXP.greenDeep : UXP.roseText,
+            border: `0.5px solid ${result.ok ? UXP.green : UXP.rose}`,
+            borderRadius: 6, fontSize: 11,
+          }}>
+            {result.message}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={syncNow}
+        disabled={syncing}
+        style={{
+          padding: '8px 16px', fontSize: 12, fontWeight: 500,
+          background: syncing ? UXP.subtleBg : UXP.ink1,
+          color: syncing ? UXP.ink3 : '#fff',
+          border: 'none', borderRadius: 6,
+          cursor: syncing ? 'wait' : 'pointer', fontFamily: 'inherit',
+          whiteSpace: 'nowrap' as const,
+        }}>
+        {syncing ? 'Syncing…' : 'Sync now'}
+      </button>
     </div>
   )
 }

@@ -27,8 +27,8 @@ export async function GET(req: NextRequest) {
   // applied in this environment). Without this fallback the entire
   // dashboard goes empty because Supabase returns null on column-not-
   // found and downstream code has no bizId → no data fetched.
-  const SELECT_FULL = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at'
-  const SELECT_LEGACY = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active'
+  const SELECT_FULL = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, vat_filing_cadence, setup_health_summary, setup_health_updated_at, created_at'
+  const SELECT_LEGACY = 'id, name, type, city, org_number, colour, target_staff_pct, target_food_pct, target_rent_pct, target_margin_pct, is_active, created_at'
 
   let { data: businesses, error: selectErr } = await adminDb
     .from('businesses')
