@@ -126,6 +126,34 @@ export default function InventoryItemsPage() {
     }
   }
 
+  const [recatBusy, setRecatBusy] = useState(false)
+
+  async function recategoriseOther() {
+    if (!bizId || recatBusy) return
+    const otherCount = data?.counts?.other ?? 0
+    if (otherCount === 0) { alert('No products in "other"'); return }
+    if (!confirm(`Reclassify ${otherCount} products from "other"? AI scans names + uses web search for unfamiliar items. Estimated ~$${(otherCount * 0.015).toFixed(2)}.`)) return
+    setRecatBusy(true)
+    try {
+      const r = await fetch('/api/inventory/recategorise-other', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId, use_web_search: true }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      const summary = Object.entries(j.summary ?? {})
+        .map(([cat, n]) => `${cat}: ${n}`)
+        .join(', ')
+      alert(`Recategorised ${j.recategorised}/${j.total_products} products${j.escalated_to_sonnet ? ` (${j.escalated_to_sonnet} escalated to web search)` : ''}.\n\n${summary || 'no changes'}\n\nStill "other": ${j.still_other}\nCost: $${j.cost_usd}`)
+      load()
+    } catch (e: any) {
+      alert(e.message)
+    } finally {
+      setRecatBusy(false)
+    }
+  }
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
@@ -138,17 +166,34 @@ export default function InventoryItemsPage() {
               {t('subtitle')}
             </p>
           </div>
-          <button onClick={backfillPackSize}
-            title={t('backfillPackHint')}
-            style={{
-              padding: '6px 12px', fontSize: 11, fontWeight: 500,
-              background: 'transparent', color: UXP.ink2,
-              border: `0.5px solid ${UXP.border}`, borderRadius: 5,
-              cursor: 'pointer', fontFamily: 'inherit',
-              whiteSpace: 'nowrap' as const,
-            }}>
-            {t('backfillPack')}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={recategoriseOther}
+              disabled={recatBusy || (data?.counts?.other ?? 0) === 0}
+              title="AI re-classifies products in 'other' by name + web search"
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                background: recatBusy ? UXP.subtleBg : UXP.lavFill,
+                color: UXP.lavText,
+                border: `0.5px solid ${UXP.lavMid}`, borderRadius: 5,
+                cursor: recatBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                whiteSpace: 'nowrap' as const,
+                opacity: ((data?.counts?.other ?? 0) === 0) ? 0.5 : 1,
+              }}>
+              <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.04em', marginRight: 5 }}>AI</span>
+              {recatBusy ? 'Sorting…' : `Sort "other" (${data?.counts?.other ?? 0})`}
+            </button>
+            <button onClick={backfillPackSize}
+              title={t('backfillPackHint')}
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink2,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 5,
+                cursor: 'pointer', fontFamily: 'inherit',
+                whiteSpace: 'nowrap' as const,
+              }}>
+              {t('backfillPack')}
+            </button>
+          </div>
         </div>
 
         {/* KPI strip */}
