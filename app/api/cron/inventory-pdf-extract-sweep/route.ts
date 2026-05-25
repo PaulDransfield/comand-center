@@ -56,6 +56,20 @@ async function handle(req: NextRequest) {
     if (from > 50_000) break   // safety
   }
 
+  // Belt-and-braces: also kick every business that has invoice lines, even
+  // with zero pending extraction rows. This covers the connect-time ordering
+  // gap where the scanner ran before the backfill wrote the (empty-text)
+  // lines, found 0 candidates, and was never retriggered — which left Vero's
+  // catalogue empty. The per-business extractor's findCandidates is
+  // idempotent (skips already-terminal invoices), so a fully-extracted
+  // business is a cheap no-op. Capped at 10k line rows (distinct businesses;
+  // fine well past current scale).
+  const { data: lineBizRows } = await db
+    .from('supplier_invoice_lines')
+    .select('business_id')
+    .limit(10000)
+  for (const r of (lineBizRows ?? [])) businessesWithPending.add((r as any).business_id)
+
   const targets = Array.from(businessesWithPending)
   const base = process.env.NEXT_PUBLIC_APP_URL ??
                (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)

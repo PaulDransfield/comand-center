@@ -348,6 +348,15 @@ export async function runInventoryBackfill(
 
   p.phase = 'done'
   await complete(db, input.business_id, p)
+
+  // Now that ALL invoice lines exist, kick PDF extraction. Invoices that
+  // Fortnox returns as amounts-without-line-text get their item detail from
+  // the attached PDF (vision extraction), then chain_rematch dedupes them
+  // into the catalogue. This MUST run AFTER the backfill, not concurrently:
+  // at connect-time the lines don't exist yet, so an early run finds 0
+  // candidates, no-ops, and is never retried — which left Vero's catalogue
+  // empty. Awaited so the POST leaves before this function ends.
+  await triggerPdfExtraction(input.business_id)
 }
 
 // ── Persistence helpers ──────────────────────────────────────────────
@@ -399,6 +408,25 @@ async function checkpointAndRelaunch(db: any, businessId: string, p: ProgressSha
 // kick endpoint with resume:true — which skips the state reset so the
 // worker reloads the persisted cursor. Awaited so the POST actually leaves
 // before this function (kept alive by the caller's waitUntil) ends.
+// Kick PDF extraction for this business once the line backfill is done.
+// The extractor's findCandidates picks up every invoice with an empty-
+// description line; chain_rematch runs the matcher after each batch so the
+// catalogue fills as items are pulled from the PDFs.
+async function triggerPdfExtraction(businessId: string): Promise<void> {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !process.env.CRON_SECRET) return
+  await fetch(`${base}/api/cron/inventory-pdf-extract-business`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ business_id: businessId, reset_extracting: true, chain_rematch: true, trigger: 'backfill_complete' }),
+  }).catch(() => {})
+}
+
 async function triggerNextInventoryBackfill(businessId: string): Promise<void> {
   const base =
     process.env.NEXT_PUBLIC_APP_URL ??
