@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin/require-admin'
+import { checkCronSecret } from '@/lib/admin/check-secret'
 import { checkAndIncrementAiLimit } from '@/lib/ai/usage'
 import { buildGroups, runClaudeBatch, MAX_GROUPS_PER_RUN } from '@/lib/inventory/ai-suggest-core'
 import { createProductFromLine, type InvoiceLineForMatching } from '@/lib/inventory/matcher'
@@ -37,6 +38,7 @@ export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 
 const APPLY_CONFIDENCE = 0.65   // matches the AI's own 'review' cutoff + the bulk-apply UI
+const MAX_CHAIN = 20            // cap pipeline self-chain hops (safety net)
 // ONE Haiku chunk per request (~90-120s) so a single call never approaches
 // the 300s function cap. Big catalogues take several chunks — the board
 // chains the calls, and the cache below means already-classified groups are
@@ -51,14 +53,22 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({} as any))
   const businessId = String(body?.business_id ?? '').trim()
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  // Self-chain hop counter — bounds the pipeline-driven chaining (below).
+  const chainCount = Number(body?.chain ?? 0)
 
   const db = createAdminClient()
   const { data: biz } = await db.from('businesses').select('org_id').eq('id', businessId).maybeSingle()
   if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
   const orgId = biz.org_id
 
-  const guard = await requireAdmin(req, { orgId, businessId })
-  if (!('ok' in guard)) return guard
+  // Two callers: the concierge board (admin secret, one chunk per click) and
+  // the pipeline (CRON_SECRET — extraction-completion fires this so the
+  // catalogue auto-builds with no human step). Cron callers self-chain.
+  const isCron = checkCronSecret(req)
+  if (!isCron) {
+    const guard = await requireAdmin(req, { orgId, businessId })
+    if (!('ok' in guard)) return guard
+  }
 
   // Coarse per-org quota gate for the whole click (the per-call logAiRequest
   // inside runClaudeBatch feeds the cost dashboard separately).
@@ -250,6 +260,23 @@ export async function POST(req: NextRequest) {
     remaining_review_lines: remainingReview ?? 0,
     errors_sample: summary.errors.slice(0, 5),
   }))
+
+  // Pipeline self-chain: when the extractor fired this (cron), keep going
+  // chunk-by-chunk until a hop neither classifies nor applies anything — so
+  // the whole catalogue builds from a single trigger with no human. The
+  // delete-then-insert cache means each hop classifies NEW groups, so this
+  // terminates. Bounded by MAX_CHAIN. (Admin/board callers chain client-side.)
+  const progressed = suggestedCount > 0 || appliedTotal > 0
+  if (isCron && progressed && (remainingReview ?? 0) > 0 && chainCount < MAX_CHAIN) {
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+    if (base && process.env.CRON_SECRET) {
+      await fetch(`${base}/api/admin/onboard/catalogue-autobuild`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.CRON_SECRET}` },
+        body:    JSON.stringify({ business_id: businessId, chain: chainCount + 1 }),
+      }).catch(() => {})
+    }
+  }
 
   return NextResponse.json({
     ok: true,

@@ -124,6 +124,22 @@ function kickMatcher(businessId: string, reason: string) {
   }).catch(err => console.error('[inventory-pdf-extract] kick matcher failed:', err))
 }
 
+// On full extraction completion, kick the catalogue auto-build so products
+// are created from the freshly-extracted line descriptions — the last step
+// that makes the catalogue appear without a human. The endpoint accepts
+// CRON_SECRET and self-chains chunk-by-chunk until the catalogue is built.
+function kickCatalogueAutobuild(businessId: string) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ??
+               (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  const secret = process.env.CRON_SECRET
+  if (!base || !secret) return
+  fetch(`${base}/api/admin/onboard/catalogue-autobuild`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${secret}` },
+    body:    JSON.stringify({ business_id: businessId, chain: 0 }),
+  }).catch(err => console.error('[inventory-pdf-extract] kick autobuild failed:', err))
+}
+
 async function runWithAutoChain(db: any, orgId: string, businessId: string, chainRematch: boolean = false): Promise<void> {
   const STARTED = Date.now()
   const BUDGET_MS = 750_000   // leave 50 s safety margin under maxDuration
@@ -148,7 +164,14 @@ async function runWithAutoChain(db: any, orgId: string, businessId: string, chai
           final_summary: summary,
         },
       }).eq('business_id', businessId)
-      if (chainRematch) kickMatcher(businessId, 'pdf_extract_complete')
+      if (chainRematch) {
+        kickMatcher(businessId, 'pdf_extract_complete')
+        // The matcher only LINKS to existing products. On a cold catalogue,
+        // the AI auto-build is what CREATES products from the freshly-
+        // extracted descriptions — the final step that makes the catalogue
+        // appear with no human. It's cron-authed + self-chaining.
+        kickCatalogueAutobuild(businessId)
+      }
       return
     }
   }
