@@ -209,6 +209,19 @@ export default function SchedulingGridPage() {
     return groups
   }, [data])
 
+  // Index pending suggestions by the shift they target — for inline grid overlay.
+  // Multiple suggestions on the same shift: keep the highest-confidence one.
+  const pendingByShiftId = useMemo(() => {
+    const m = new Map<string, AISuggestion>()
+    if (!data) return m
+    for (const s of data.suggestions) {
+      if (s.status !== 'pending' || !s.target_shift_id) continue
+      const existing = m.get(s.target_shift_id)
+      if (!existing || s.confidence > existing.confidence) m.set(s.target_shift_id, s)
+    }
+    return m
+  }, [data])
+
   async function syncFromPK() {
     if (!bizId || syncing) return
     setSyncing(true)
@@ -450,6 +463,8 @@ export default function SchedulingGridPage() {
                     template={template}
                     days={data.days}
                     shifts={shiftsByDateTemplate}
+                    pendingByShiftId={pendingByShiftId}
+                    onSuggestionAction={actOnSuggestion}
                   />
                 ))}
               </div>
@@ -465,6 +480,8 @@ export default function SchedulingGridPage() {
                     profile={profile}
                     days={data.days}
                     shifts={shiftsByDateStaff}
+                    pendingByShiftId={pendingByShiftId}
+                    onSuggestionAction={actOnSuggestion}
                   />
                 ))}
               </div>
@@ -484,9 +501,9 @@ export default function SchedulingGridPage() {
         )}
 
         <p style={{ fontSize: 11, color: UXP.ink4, marginTop: 12, lineHeight: 1.6 }}>
-          AI recommendations are non-binding — review each before clicking <strong>Apply &amp; open PK</strong>. The clipboard summary
-          can be pasted into Personalkollen since PK does not allow third-party writes from our token. Your overrides feed the
-          next AI run.
+          Orange-dashed cells show pending AI suggestions — original time struck through, proposed time in orange, savings on the right.
+          Click <strong style={{ color: UXP.greenDeep }}>✓</strong> to approve or <strong>×</strong> to reject directly in the cell. Tap the cell to see the AI's reasoning.
+          When you've reviewed the week, click <strong>Apply &amp; open PK</strong> — we'll copy a summary to your clipboard since PK doesn't accept third-party writes.
         </p>
       </div>
 
@@ -557,10 +574,12 @@ function SectionHeader({ label, count }: { label: string; count: number }) {
   )
 }
 
-function TemplateRow({ template, days, shifts }: {
+function TemplateRow({ template, days, shifts, pendingByShiftId, onSuggestionAction }: {
   template: Template
   days:     DayHeader[]
   shifts:   Map<string, Shift[]>
+  pendingByShiftId:    Map<string, AISuggestion>
+  onSuggestionAction:  (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
 }) {
   return (
     <div style={{
@@ -585,7 +604,10 @@ function TemplateRow({ template, days, shifts }: {
         return (
           <div key={d.date} style={{ borderLeft: `0.5px solid ${UXP.borderSoft}`, padding: 4, display: 'flex', flexDirection: 'column' as const, gap: 3 }}>
             {cellShifts.map(s => (
-              <ShiftBlock key={s.id} shift={s} colour={template.display_colour ?? '#a99ce6'} showStaff />
+              <ShiftBlock key={s.id} shift={s}
+                colour={template.display_colour ?? '#a99ce6'} showStaff
+                pendingSuggestion={pendingByShiftId.get(s.id) ?? null}
+                onSuggestionAction={onSuggestionAction} />
             ))}
           </div>
         )
@@ -594,10 +616,12 @@ function TemplateRow({ template, days, shifts }: {
   )
 }
 
-function StaffRow({ profile, days, shifts }: {
+function StaffRow({ profile, days, shifts, pendingByShiftId, onSuggestionAction }: {
   profile: Profile
   days:    DayHeader[]
   shifts:  Map<string, Shift[]>
+  pendingByShiftId:    Map<string, AISuggestion>
+  onSuggestionAction:  (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
 }) {
   const initials = (profile.display_name ?? profile.full_name ?? '?').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase()
   return (
@@ -627,7 +651,10 @@ function StaffRow({ profile, days, shifts }: {
         return (
           <div key={d.date} style={{ borderLeft: `0.5px solid ${UXP.borderSoft}`, padding: 4, display: 'flex', flexDirection: 'column' as const, gap: 3 }}>
             {cellShifts.map(s => (
-              <ShiftBlock key={s.id} shift={s} colour={'#a99ce6'} showTemplate />
+              <ShiftBlock key={s.id} shift={s}
+                colour={'#a99ce6'} showTemplate
+                pendingSuggestion={pendingByShiftId.get(s.id) ?? null}
+                onSuggestionAction={onSuggestionAction} />
             ))}
           </div>
         )
@@ -636,9 +663,14 @@ function StaffRow({ profile, days, shifts }: {
   )
 }
 
-function ShiftBlock({ shift, colour, showStaff, showTemplate }: {
+function ShiftBlock({ shift, colour, showStaff, showTemplate, pendingSuggestion, onSuggestionAction }: {
   shift: Shift; colour: string; showStaff?: boolean; showTemplate?: boolean
+  pendingSuggestion?:   AISuggestion | null
+  onSuggestionAction?:  (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const [busy, setBusy] = useState(false)
+
   if (shift.shift_kind === 'semester') {
     return (
       <div style={{
@@ -651,35 +683,193 @@ function ShiftBlock({ shift, colour, showStaff, showTemplate }: {
       </div>
     )
   }
-  const isAi  = shift.is_ai_suggested
+  const isAi    = shift.is_ai_suggested
   const isDraft = !shift.is_published
-  const bg = isAi
-    ? '#fbf2eb'                                       // dashed orange when AI-suggested
-    : isDraft
-      ? `${colour}33`                                  // 20% opacity draft tint
-      : `${colour}55`                                  // 33% opacity published
-  const borderStyle = isAi ? '0.5px dashed rgba(192,112,58,0.5)' : `0.5px solid ${colour}66`
+  const hasSugg = !!pendingSuggestion
+
+  const bg = hasSugg
+    ? '#fbf2eb'                                       // soft orange when suggestion is pending
+    : isAi
+      ? '#fbf2eb'                                     // dashed orange when AI-generated shift
+      : isDraft
+        ? `${colour}33`                                // 20% opacity draft tint
+        : `${colour}55`                                // 33% opacity published
+  const borderStyle = (hasSugg || isAi)
+    ? '0.5px dashed rgba(192,112,58,0.65)'
+    : `0.5px solid ${colour}66`
+
+  const origStart = (shift.start_time_local ?? '').slice(0, 5)
+  const origEnd   = (shift.end_time_local   ?? '').slice(0, 5)
+  const diff      = hasSugg ? extractDiff(pendingSuggestion!, origStart, origEnd) : null
+
+  async function act(action: 'approved' | 'rejected', e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!pendingSuggestion || !onSuggestionAction || busy) return
+    setBusy(true)
+    try { await onSuggestionAction(pendingSuggestion.id, action) } finally { setBusy(false) }
+  }
+
   return (
-    <div style={{
-      background: bg, border: borderStyle, borderRadius: 4, padding: '5px 7px',
-      minWidth: 0, overflow: 'hidden' as const,
-    }}>
+    <div
+      onClick={() => hasSugg && setExpanded(!expanded)}
+      style={{
+        background: bg, border: borderStyle, borderRadius: 4, padding: '5px 7px',
+        minWidth: 0, overflow: 'hidden' as const, position: 'relative' as const,
+        cursor: hasSugg ? 'pointer' : 'default',
+      }}>
+      {/* Mini approve/reject buttons — top-right when suggestion pending */}
+      {hasSugg && (
+        <div style={{
+          position: 'absolute' as const, top: 2, right: 2, display: 'flex', gap: 2,
+        }}>
+          <button onClick={(e) => act('approved', e)} disabled={busy} title="Approve change"
+            style={miniSuggBtn(true)}>✓</button>
+          <button onClick={(e) => act('rejected', e)} disabled={busy} title="Reject change"
+            style={miniSuggBtn(false)}>×</button>
+        </div>
+      )}
+
       {showStaff && shift.staff_name && (
-        <div style={{ fontSize: 9, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+        <div style={{ fontSize: 9, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, paddingRight: hasSugg ? 32 : 0 }}>
           {shift.staff_name}
         </div>
       )}
       {showTemplate && shift.period_name && (
-        <div style={{ fontSize: 9, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+        <div style={{ fontSize: 9, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, paddingRight: hasSugg ? 32 : 0 }}>
           {shift.period_name}
         </div>
       )}
-      <div style={{ fontSize: 9, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
-        {(shift.start_time_local ?? '').slice(0, 5)}–{(shift.end_time_local ?? '').slice(0, 5)}
-        {isAi && <span style={{ color: '#a96a3c', marginLeft: 4, fontWeight: 500 }}>AI</span>}
-      </div>
+
+      {/* Time line — original times (struck through where changing), then proposed times */}
+      {hasSugg && diff ? (
+        <div style={{ fontSize: 9, fontVariantNumeric: 'tabular-nums' as const, lineHeight: 1.5, marginTop: 1 }}>
+          <span style={{ color: UXP.ink4, textDecoration: 'line-through' }}>
+            {origStart}–{origEnd}
+          </span>
+          <span style={{ color: '#a96a3c', marginLeft: 4, fontWeight: 600 }}>
+            → {diff.newRange}
+          </span>
+          {diff.savedLabel && (
+            <span style={{ color: '#a96a3c', marginLeft: 4 }}>
+              ({diff.savedLabel})
+            </span>
+          )}
+        </div>
+      ) : (
+        <div style={{ fontSize: 9, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
+          {origStart}–{origEnd}
+          {isAi && <span style={{ color: '#a96a3c', marginLeft: 4, fontWeight: 500 }}>AI</span>}
+        </div>
+      )}
+
+      {/* Savings + action label when suggestion present */}
+      {hasSugg && (
+        <div style={{
+          fontSize: 9, marginTop: 2, color: UXP.lavText, display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <span style={{ fontWeight: 500 }}>{ACTION_LABELS[pendingSuggestion!.action] ?? pendingSuggestion!.action}</span>
+          {pendingSuggestion!.est_sek_saving != null && (
+            <span style={{ color: UXP.greenDeep, fontWeight: 500 }}>
+              {pendingSuggestion!.est_sek_saving >= 0 ? '+' : ''}{Math.round(pendingSuggestion!.est_sek_saving)} kr
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Click-to-expand reasoning */}
+      {hasSugg && expanded && pendingSuggestion!.reasoning && (
+        <div style={{
+          marginTop: 4, paddingTop: 4, borderTop: `0.5px dashed rgba(192,112,58,0.4)`,
+          fontSize: 9, color: UXP.ink2, lineHeight: 1.5, whiteSpace: 'normal' as const,
+        }}>
+          {pendingSuggestion!.reasoning}
+        </div>
+      )}
     </div>
   )
+}
+
+// Mini approve/reject button style for the inline overlay
+function miniSuggBtn(isApprove: boolean): React.CSSProperties {
+  return {
+    width: 14, height: 14, padding: 0, fontSize: 10, lineHeight: '12px',
+    background: isApprove ? UXP.greenDeep : '#fff',
+    color: isApprove ? '#fff' : UXP.ink3,
+    border: `0.5px solid ${isApprove ? UXP.greenDeep : 'rgba(192,112,58,0.5)'}`,
+    borderRadius: 3, cursor: 'pointer', fontFamily: 'inherit',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontWeight: 600,
+  }
+}
+
+// Extract a compact visual diff between a shift's current times and the
+// proposed AI suggestion. Handles reduce/extend/reassign — falls back to
+// the proposed.description when we can't parse start/end cleanly.
+function extractDiff(sugg: AISuggestion, origStart: string, origEnd: string): {
+  newRange: string
+  savedLabel: string | null
+} | null {
+  const p: any = sugg.proposed ?? {}
+  const b: any = sugg.before   ?? {}
+
+  // Try to pull HH:MM out of common shapes
+  const newStart = pickTime(p.start ?? p.start_time ?? p.start_local)
+  const newEnd   = pickTime(p.end   ?? p.end_time   ?? p.end_local)
+
+  if (newStart || newEnd) {
+    const ns = newStart ?? origStart
+    const ne = newEnd   ?? origEnd
+    // Compute hours saved
+    let savedLabel: string | null = null
+    if (p.hours != null && b.hours != null) {
+      const delta = Number(b.hours) - Number(p.hours)
+      if (Math.abs(delta) > 0.05) savedLabel = `${delta > 0 ? '−' : '+'}${Math.abs(delta).toFixed(1)}h`
+    } else if (p.delta_hours != null) {
+      const d = Number(p.delta_hours)
+      if (d !== 0) savedLabel = `${d > 0 ? '+' : ''}${d.toFixed(1)}h`
+    } else {
+      // Compute from times directly
+      const minsBefore = toMin(origEnd) - toMin(origStart)
+      const minsAfter  = toMin(ne) - toMin(ns)
+      if (Number.isFinite(minsBefore) && Number.isFinite(minsAfter)) {
+        const deltaH = (minsBefore - minsAfter) / 60
+        if (Math.abs(deltaH) > 0.05) savedLabel = `${deltaH > 0 ? '−' : '+'}${Math.abs(deltaH).toFixed(1)}h`
+      }
+    }
+    return { newRange: `${ns}–${ne}`, savedLabel }
+  }
+
+  // Reassign — new staff name in proposed.staff_name
+  if (p.staff_name && p.staff_name !== b.staff_name) {
+    return { newRange: `→ ${p.staff_name}`, savedLabel: null }
+  }
+  // Template swap
+  if ((p.template_name || p.period_name) && (p.template_name !== b.template_name || p.period_name !== b.period_name)) {
+    return { newRange: `→ ${p.template_name ?? p.period_name}`, savedLabel: null }
+  }
+  // Cut — no replacement, just remove
+  if (sugg.action === 'cut') {
+    return { newRange: 'remove', savedLabel: null }
+  }
+  // Couldn't parse a structured diff — fall back to description
+  if (typeof p.description === 'string') {
+    return { newRange: p.description.slice(0, 40), savedLabel: null }
+  }
+  return null
+}
+
+function pickTime(v: any): string | null {
+  if (!v) return null
+  const s = String(v)
+  const m = s.match(/(\d{1,2}):(\d{2})/)
+  if (!m) return null
+  return `${m[1].padStart(2, '0')}:${m[2]}`
+}
+function toMin(t: string): number {
+  const m = t?.match?.(/^(\d{1,2}):(\d{2})/)
+  if (!m) return NaN
+  return Number(m[1]) * 60 + Number(m[2])
 }
 
 // ── Atoms ────────────────────────────────────────────────────────────
@@ -702,7 +892,14 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// AI suggestions panel — appears below the grid when there are suggestions
+// AI suggestions panel — collapsed summary below the grid.
+//
+// The grid cells themselves now render each pending suggestion inline
+// (orange-dashed shift with strike-through original time, proposed time,
+// savings, and mini ✓/× buttons). This panel is the "show me everything
+// at once" fallback for orphan suggestions that don't bind to a shift
+// (e.g. action='add' creating a new shift) and for the unsuggested
+// orphan/audit view.
 
 function SuggestionsPanel({
   suggestions, shifts, templates, profiles, onAction,
@@ -713,35 +910,66 @@ function SuggestionsPanel({
   profiles:    Profile[]
   onAction:    (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
 }) {
+  const [expanded, setExpanded] = useState(false)
+
   const grouped = useMemo(() => {
     const by: Record<string, AISuggestion[]> = { pending: [], approved: [], rejected: [], applied: [] }
-    for (const s of suggestions) {
-      if (by[s.status]) by[s.status].push(s)
-    }
+    for (const s of suggestions) if (by[s.status]) by[s.status].push(s)
     return by
   }, [suggestions])
+
+  // Suggestions that don't bind to a shift visible in the grid — only
+  // those need to be surfaced here (anything else is already shown inline).
+  const orphan = useMemo(() => {
+    const shiftIds = new Set(shifts.map(s => s.id))
+    return suggestions.filter(s => !s.target_shift_id || !shiftIds.has(s.target_shift_id))
+  }, [suggestions, shifts])
+
+  // Sum savings across pending + approved
+  const totalPotential = suggestions
+    .filter(s => s.status === 'pending' || s.status === 'approved')
+    .reduce((sum, s) => sum + (s.est_sek_saving ?? 0), 0)
 
   return (
     <div style={{
       marginTop: 18, background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
       borderRadius: 10, overflow: 'hidden',
     }}>
-      <div style={{
-        padding: '10px 16px', borderBottom: `0.5px solid ${UXP.border}`,
-        background: UXP.subtleBg, display: 'flex', alignItems: 'center', gap: 10,
-      }}>
+      <div
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          padding: '10px 16px', cursor: 'pointer',
+          background: UXP.subtleBg, display: 'flex', alignItems: 'center', gap: 10,
+          borderBottom: expanded ? `0.5px solid ${UXP.border}` : 'none',
+        }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-          AI suggestions
+          AI summary
         </span>
         <span style={{ fontSize: 11, color: UXP.ink3 }}>
           {grouped.pending.length} pending · {grouped.approved.length} approved · {grouped.rejected.length} rejected
+          {totalPotential > 0 && ` · ${fmtKr(totalPotential)} potential weekly saving`}
+        </span>
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: UXP.ink3 }}>
+          {expanded ? 'Hide list ▾' : 'Show list ▸'}
         </span>
       </div>
-      <div>
-        {[...grouped.pending, ...grouped.approved, ...grouped.rejected, ...grouped.applied].map(s => (
-          <SuggestionRow key={s.id} suggestion={s} onAction={onAction} />
-        ))}
-      </div>
+
+      {/* Always show orphan suggestions (no shift to overlay onto) */}
+      {orphan.length > 0 && (
+        <div style={{ padding: '8px 16px', background: '#fbf6ee', fontSize: 10, color: UXP.ink2, borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+          {orphan.length} suggestion{orphan.length === 1 ? '' : 's'} can't be overlaid on a shift cell (add / unbound) — see list below:
+        </div>
+      )}
+      {(expanded || orphan.length > 0) && (
+        <div>
+          {(expanded
+            ? [...grouped.pending, ...grouped.approved, ...grouped.rejected, ...grouped.applied]
+            : orphan
+          ).map(s => (
+            <SuggestionRow key={s.id} suggestion={s} onAction={onAction} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
