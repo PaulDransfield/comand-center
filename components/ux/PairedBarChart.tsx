@@ -24,6 +24,18 @@ export interface ClusterSeries {
   /** Value per group, in the same order as `groups`. */
   data:  number[]
   color: string   // override; defaults wrap on the lavender palette
+  /**
+   * Optional per-bar colour overrides — same length as `data`. A non-null
+   * value at index `i` replaces the series default for that bar only.
+   * Used to paint today's in-progress labour bar a distinct pastel.
+   */
+  colorOverrides?: (string | null)[]
+  /**
+   * Optional per-bar stroke colour — same length as `data`. Lets the
+   * caller add a definition outline around specific bars without
+   * affecting the rest of the series.
+   */
+  strokeOverrides?: (string | null)[]
 }
 
 export interface LineOverlay {
@@ -150,16 +162,20 @@ export default function PairedBarChart({
 
         {/* Clustered bars */}
         {series.map((s, si) => {
-          const colour = s.color || LAV_PALETTE[si % LAV_PALETTE.length]
+          const defaultColour = s.color || LAV_PALETTE[si % LAV_PALETTE.length]
           return s.data.map((v, gi) => {
             const val = Number.isFinite(v) ? Math.max(0, v) : 0
             const yT  = yLeftFor(val)
             const h   = (PAD_T + innerH) - yT
+            const colour = s.colorOverrides?.[gi] || defaultColour
+            const stroke = s.strokeOverrides?.[gi]
             return (
               <rect
                 key={`b-${si}-${gi}`}
                 x={xFor(gi, si)} y={yT} width={barW} height={Math.max(0, h)}
                 rx={3} ry={3} fill={colour}
+                stroke={stroke || 'none'}
+                strokeWidth={stroke ? 0.8 : 0}
               />
             )
           })

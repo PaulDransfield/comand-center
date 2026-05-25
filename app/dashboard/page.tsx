@@ -603,8 +603,14 @@ function DemandOutlookStrip({ demand }: { demand: any }) {
 
 // ── Chart card ───────────────────────────────────────────────────────
 function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
+  // Today's labour cost is mostly scheduled (PK estimated_salary) — paint
+  // it in a pastel peach so it never reads as a closed actual.
+  const LAB_TODAY_FILL   = '#f4c39a'
+  const LAB_TODAY_STROKE = '#d68b58'
+  const labourColors = days.map(d => d.isToday && Number(d.staff_cost ?? 0) > 0 ? LAB_TODAY_FILL   : null)
+  const labourStroke = days.map(d => d.isToday && Number(d.staff_cost ?? 0) > 0 ? LAB_TODAY_STROKE : null)
   return (
-    <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue">
+    <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue · today shown in pastel peach (scheduled, not final)">
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
       ) : (
@@ -612,7 +618,13 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
           groups={days.map(d => d.dayName)}
           series={[
             { label: 'Revenue', data: days.map(d => Number(d.revenue ?? 0)),    color: UXP.lav },
-            { label: 'Labour',  data: days.map(d => Number(d.staff_cost ?? 0)), color: UXP.lavMid },
+            {
+              label: 'Labour',
+              data: days.map(d => Number(d.staff_cost ?? 0)),
+              color: UXP.lavMid,
+              colorOverrides:  labourColors,
+              strokeOverrides: labourStroke,
+            },
           ]}
           lines={[{
             label:  'Labour %',
