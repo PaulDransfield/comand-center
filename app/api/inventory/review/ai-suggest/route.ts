@@ -28,7 +28,7 @@ export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
 
 const CACHE_TTL_HOURS = 24
-const MAX_GROUPS_PER_RUN = 250   // safety — Chicce has ~420 but most runs work on fewer
+const MAX_GROUPS_PER_RUN = 120   // cap so Haiku's JSON response fits in max_tokens
 
 // Haiku 4.5 published pricing
 const HAIKU_INPUT_USD_PER_TOKEN  = 1  / 1_000_000
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   // ── 1. Load current needs_review groups ──────────────────────────
   const { data: lines, error: linesErr } = await db
     .from('supplier_invoice_lines')
-    .select('supplier_fortnox_number, supplier_name_snapshot, raw_description, unit, price_per_unit, total_excl_vat, invoice_date, fortnox_account')
+    .select('supplier_fortnox_number, supplier_name_snapshot, raw_description, unit, price_per_unit, total_excl_vat, invoice_date, account_number')
     .eq('business_id', businessId)
     .eq('match_status', 'needs_review')
     .limit(15_000)
@@ -157,9 +157,9 @@ function buildGroups(lines: any[]): Group[] {
     g.line_count++
     g.total_kr += Number(l.total_excl_vat ?? 0)
     if (l.price_per_unit != null) pricesByKey.get(key)!.push(Number(l.price_per_unit))
-    if (l.fortnox_account) {
+    if (l.account_number) {
       const t = accountTallyByKey.get(key)!
-      t.set(l.fortnox_account, (t.get(l.fortnox_account) ?? 0) + 1)
+      t.set(l.account_number, (t.get(l.account_number) ?? 0) + 1)
     }
     if (l.invoice_date && (!g.latest_invoice_date || l.invoice_date > g.latest_invoice_date)) {
       g.latest_invoice_date = l.invoice_date
@@ -196,7 +196,7 @@ async function runClaudeBatch(
   // Load the catalogue context (products + aliases) for matching
   const { data: products } = await db
     .from('products')
-    .select('id, name, category, default_unit')
+    .select('id, name, category, invoice_unit')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -230,7 +230,7 @@ async function runClaudeBatch(
 
   // Build the catalogue text for Claude
   const catalogueText = (products ?? []).map((p: any) =>
-    `  [${p.id.slice(0, 8)}] ${p.name}  (cat:${p.category ?? '?'}, unit:${p.default_unit ?? '?'})`
+    `  [${p.id.slice(0, 8)}] ${p.name}  (cat:${p.category ?? '?'}, unit:${p.invoice_unit ?? '?'})`
   ).join('\n')
 
   const aliasText = (aliases ?? []).slice(0, 200).map((a: any) =>
@@ -310,7 +310,7 @@ Return JSON array only.`
     },
     body: JSON.stringify({
       model:       AI_MODELS.AGENT,             // Haiku 4.5
-      max_tokens:  8192,
+      max_tokens:  16384,
       system: [
         { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
       ],
@@ -373,13 +373,20 @@ Return JSON array only.`
     })
   }
 
+  // Dedupe by group_key — Claude can hallucinate the same 16-char prefix
+  // twice, which would otherwise crash the upsert with "ON CONFLICT DO
+  // UPDATE cannot affect row a second time". Last entry wins.
+  const dedupMap = new Map<string, any>()
+  for (const r of rows) dedupMap.set(r.group_key, r)
+  const dedupedRows = Array.from(dedupMap.values())
+
   // Upsert into cache. Unique constraint is (business_id, group_key).
-  if (rows.length > 0) {
+  if (dedupedRows.length > 0) {
     const { error: upErr } = await db
       .from('inventory_review_suggestions')
-      .upsert(rows, { onConflict: 'business_id,group_key' })
+      .upsert(dedupedRows, { onConflict: 'business_id,group_key' })
     if (upErr) console.error('[ai-suggest] upsert failed:', upErr.message)
   }
 
-  return rows
+  return dedupedRows
 }
