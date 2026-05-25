@@ -15,8 +15,20 @@ const MAX_GROUPS = 120   // cap so the JSON response fits in max_tokens
 
 const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
+// MUST match lib/inventory/normalise.ts exactly — group_key is derived
+// from this and the UI uses the canonical version. Mismatched group_keys
+// mean cached AI suggestions can't be paired back to UI rows.
+const UNIT_SUFFIX_RE = /(\d+)\s+(st|kg|hg|g|l|cl|ml|dl|pack|frp|fp|paket|liter|kilo|gram)\b/gi
 function normaliseDescription(raw) {
-  return String(raw ?? '').toLowerCase().replace(/\s+/g, ' ').trim()
+  if (!raw) return ''
+  return String(raw)
+    .toLowerCase()
+    .replace(/å/g, 'a').replace(/ä/g, 'a').replace(/ö/g, 'o')
+    .replace(/[éè]/g, 'e')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(UNIT_SUFFIX_RE, (_, n, u) => `${n}${u.toLowerCase()}`)
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 // 1. Load needs_review lines + build groups
@@ -64,8 +76,18 @@ for (const [k, g] of byKey) {
   const t = accountsByKey.get(k)
   if (t?.size) g.most_common_account = Array.from(t.entries()).sort((a,b)=>b[1]-a[1])[0][0]
 }
-const groups = Array.from(byKey.values()).sort((a,b)=>b.line_count-a.line_count).slice(0, MAX_GROUPS)
-console.log('Built', byKey.size, 'groups (processing top', groups.length, ')')
+// Skip groups that already have AI suggestions cached (within 24h).
+// Lets repeated script runs work through the queue in chunks instead
+// of re-processing the same top 120.
+const { data: cached } = await db.from('inventory_review_suggestions')
+  .select('group_key')
+  .eq('business_id', BIZ_ID)
+  .gte('created_at', new Date(Date.now() - 24*3600*1000).toISOString())
+const cachedKeys = new Set((cached ?? []).map(c => c.group_key))
+const allGroups = Array.from(byKey.values()).sort((a,b)=>b.line_count-a.line_count)
+const groups = allGroups.filter(g => !cachedKeys.has(g.group_key)).slice(0, MAX_GROUPS)
+console.log('Built', byKey.size, 'groups,', cachedKeys.size, 'already cached, processing next', groups.length)
+if (groups.length === 0) { console.log('All groups have fresh AI suggestions — nothing to do'); process.exit(0) }
 
 // 2. Load catalogue + aliases + recent outcomes
 const { data: products, error: prodErr } = await db.from('products').select('id, name, category, invoice_unit')
