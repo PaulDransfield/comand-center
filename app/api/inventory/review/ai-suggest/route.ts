@@ -25,7 +25,7 @@ import { normaliseDescription }         from '@/lib/inventory/normalise'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300   // Haiku call takes ~90-100s on 120-group batches; 60s default 504s
 
 const CACHE_TTL_HOURS = 24
 const MAX_GROUPS_PER_RUN = 120   // cap so Haiku's JSON response fits in max_tokens

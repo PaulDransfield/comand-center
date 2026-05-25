@@ -438,7 +438,7 @@ export default function InventoryReviewPage() {
             borderRadius: 8, fontSize: 11,
             flexWrap: 'wrap' as const,
           }}>
-            <span style={{ fontSize: 14 }}>🤖</span>
+            <span style={{ fontSize: 10, color: UXP.lavText, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>AI</span>
             <button
               type="button"
               onClick={() => loadAi(Object.keys(ai).length > 0)}
@@ -653,7 +653,7 @@ export default function InventoryReviewPage() {
                             borderRadius: 6, fontSize: 11, color: palette.fg,
                             display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const,
                           }}>
-                            <span style={{ fontSize: 12 }}>🤖</span>
+                            <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, color: palette.fg, opacity: 0.7 }}>AI</span>
                             <span style={{ fontWeight: 500 }}>{label}</span>
                             <span style={{ fontSize: 10, color: palette.fg, opacity: 0.75 }}>({conf}% confident)</span>
                             {s.reasoning && (
