@@ -143,6 +143,14 @@ export default function SchedulingGridPage() {
     if (s) setBizId(s)
     const v = localStorage.getItem('cc_scheduling_view') as ViewMode | null
     if (v === 'shift' || v === 'staff') setView(v)
+    // React to business changes from the toolbar BizPicker — it dispatches
+    // a synthetic 'storage' event after writing cc_selected_biz.
+    function onStorage() {
+      const next = localStorage.getItem('cc_selected_biz')
+      if (next) setBizId(next)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const setViewPersist = (v: ViewMode) => {
