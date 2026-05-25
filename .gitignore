@@ -28,3 +28,7 @@ Thumbs.db
 quatra-*.pdf
 frimurarholmen-*.pdf
 *-debug.pdf
+
+# Customer-data screenshots / PK schema captures (real staff names visible)
+PK schema*.png
+PK schema*.jpg
