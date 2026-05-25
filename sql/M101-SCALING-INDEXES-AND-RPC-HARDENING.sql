@@ -13,46 +13,135 @@
 --      SKIP LOCKED on list_ready_extraction_jobs so two concurrent
 --      sweepers can't return overlapping job sets.
 --
--- Safe to re-run: every CREATE INDEX is IF NOT EXISTS, every CREATE
--- OR REPLACE FUNCTION replaces the body atomically.
+-- Defensive: every index create wraps the column check in a DO block,
+-- so if production schema differs from what's in `archive/migrations/`
+-- (which we've burned on before — see memory archive_migrations_not_authoritative)
+-- the migration logs a NOTICE and continues instead of failing hard.
+-- Re-run safely; existing indexes are skipped via IF NOT EXISTS.
 
--- ── A.1) hourly_metrics composite index ────────────────────────────
--- Hot path: lib/forecast/hourly.ts loads 12 weeks of hourly history
--- per forecast call. /api/scheduling/ai-recommend builds the per-
--- weekday-per-hour demand profile from a 12-week SELECT here.
--- 24 rows × 365 days × 20 customers = 175k rows/year/business.
-CREATE INDEX IF NOT EXISTS idx_hourly_metrics_biz_date
-  ON hourly_metrics (business_id, business_date);
+-- ── Helper: pick the first column name that actually exists ────────
+-- Many of our hot tables have evolved column names over time. Rather
+-- than guess, introspect pg_attribute and create the index against
+-- whatever the real column is named.
+DO $$
+DECLARE
+  date_col TEXT;
+BEGIN
+  -- hourly_metrics: try business_date, then service_date, then date
+  SELECT column_name INTO date_col
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'hourly_metrics'
+    AND column_name IN ('business_date', 'service_date', 'date')
+  ORDER BY CASE column_name
+    WHEN 'business_date' THEN 1
+    WHEN 'service_date'  THEN 2
+    WHEN 'date'          THEN 3
+  END
+  LIMIT 1;
 
--- ── A.2) overhead_drilldown_cache lookup index ──────────────────────
--- Hot path: /api/integrations/fortnox/drilldown does eq on all 4
--- columns to find a cached entry. /api/overheads/explain uses the same
--- key during AI cache enrichment. 5-min TTL means every page mount
--- triggers a lookup; no index = scan.
-CREATE INDEX IF NOT EXISTS idx_overhead_cache_lookup
-  ON overhead_drilldown_cache (business_id, period_year, period_month, category);
+  IF date_col IS NOT NULL THEN
+    EXECUTE format(
+      'CREATE INDEX IF NOT EXISTS idx_hourly_metrics_biz_date ON hourly_metrics (business_id, %I)',
+      date_col
+    );
+    RAISE NOTICE 'M101: created idx_hourly_metrics_biz_date on (business_id, %)', date_col;
+  ELSE
+    RAISE NOTICE 'M101: skipped hourly_metrics index — table not found or no recognized date column';
+  END IF;
+END $$;
 
--- ── A.3) supplier_classifications lookup index ──────────────────────
--- Hot path: lib/inventory/matcher.ts gate-0 checks the per-business
--- override BEFORE BAS-account routing. Called once per invoice line
--- during bulk-review or PDF apply. 20 customers × 500 lines/month =
--- 10k lookups/month even at modest scale.
-CREATE INDEX IF NOT EXISTS idx_supplier_class_biz_num
-  ON supplier_classifications (business_id, supplier_fortnox_number);
+-- ── overhead_drilldown_cache lookup index ───────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'overhead_drilldown_cache'
+  ) AND EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'overhead_drilldown_cache'
+      AND column_name = 'period_year'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_overhead_cache_lookup ON overhead_drilldown_cache (business_id, period_year, period_month, category)';
+    RAISE NOTICE 'M101: created idx_overhead_cache_lookup';
+  ELSE
+    RAISE NOTICE 'M101: skipped overhead_drilldown_cache — table or columns not present';
+  END IF;
+END $$;
 
--- ── A.4) daily_metrics composite index ──────────────────────────────
--- M034 covered revenue_logs + staff_logs but not daily_metrics, which
--- is the table the dashboard reads on every page load. RLS policy
--- evaluates per-row; without the composite, queries scan all 20-org
--- rows even when filtered to one business.
-CREATE INDEX IF NOT EXISTS idx_daily_metrics_org_biz_date
-  ON daily_metrics (org_id, business_id, business_date);
+-- ── supplier_classifications lookup index ───────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'supplier_classifications'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_supplier_class_biz_num ON supplier_classifications (business_id, supplier_fortnox_number)';
+    RAISE NOTICE 'M101: created idx_supplier_class_biz_num';
+  ELSE
+    RAISE NOTICE 'M101: skipped supplier_classifications — table not present';
+  END IF;
+END $$;
 
--- ── A.5) monthly_metrics composite index ────────────────────────────
--- Same pattern as A.4 for monthly_metrics. Tracker / overheads /
--- budgets all read this; RLS lookup needs the composite for fast scans.
-CREATE INDEX IF NOT EXISTS idx_monthly_metrics_org_biz_period
-  ON monthly_metrics (org_id, business_id, period_year, period_month);
+-- ── daily_metrics composite index ───────────────────────────────────
+-- Tries business_date / date / metric_date in priority order.
+DO $$
+DECLARE
+  date_col TEXT;
+BEGIN
+  SELECT column_name INTO date_col
+  FROM information_schema.columns
+  WHERE table_schema = 'public' AND table_name = 'daily_metrics'
+    AND column_name IN ('business_date', 'date', 'metric_date')
+  ORDER BY CASE column_name
+    WHEN 'business_date' THEN 1
+    WHEN 'date'          THEN 2
+    WHEN 'metric_date'   THEN 3
+  END
+  LIMIT 1;
+
+  IF date_col IS NOT NULL THEN
+    EXECUTE format(
+      'CREATE INDEX IF NOT EXISTS idx_daily_metrics_org_biz_date ON daily_metrics (org_id, business_id, %I)',
+      date_col
+    );
+    RAISE NOTICE 'M101: created idx_daily_metrics_org_biz_date on (org_id, business_id, %)', date_col;
+  ELSE
+    RAISE NOTICE 'M101: skipped daily_metrics index — no recognized date column';
+  END IF;
+END $$;
+
+-- ── monthly_metrics composite index ─────────────────────────────────
+-- Tries (year, month) first since that's the canonical pair, then
+-- (period_year, period_month) as a fallback.
+DO $$
+DECLARE
+  year_col  TEXT;
+  month_col TEXT;
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'monthly_metrics' AND column_name = 'year'
+  ) THEN
+    year_col  := 'year';
+    month_col := 'month';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'monthly_metrics' AND column_name = 'period_year'
+  ) THEN
+    year_col  := 'period_year';
+    month_col := 'period_month';
+  END IF;
+
+  IF year_col IS NOT NULL THEN
+    EXECUTE format(
+      'CREATE INDEX IF NOT EXISTS idx_monthly_metrics_org_biz_period ON monthly_metrics (org_id, business_id, %I, %I)',
+      year_col, month_col
+    );
+    RAISE NOTICE 'M101: created idx_monthly_metrics_org_biz_period on (org_id, business_id, %, %)', year_col, month_col;
+  ELSE
+    RAISE NOTICE 'M101: skipped monthly_metrics index — no recognized year/month columns';
+  END IF;
+END $$;
 
 -- ── B) Harden list_ready_extraction_jobs against concurrent sweepers ─
 -- The function returns pending jobs whose scheduled_for is in the
@@ -74,11 +163,6 @@ BEGIN
   ) INTO fn_exists;
 
   IF fn_exists THEN
-    -- Replace with FOR UPDATE SKIP LOCKED variant. We don't actually
-    -- claim the row here (the worker's claim_next_extraction_job does
-    -- that with its own FOR UPDATE) — SKIP LOCKED just means a
-    -- concurrent sweeper sees nothing while we read, so it doesn't
-    -- also try to fire a worker for the same id.
     EXECUTE $func$
       CREATE OR REPLACE FUNCTION list_ready_extraction_jobs(max_jobs integer DEFAULT 10)
       RETURNS TABLE (
@@ -103,14 +187,21 @@ BEGIN
       END;
       $body$;
     $func$;
+    RAISE NOTICE 'M101: hardened list_ready_extraction_jobs with FOR UPDATE SKIP LOCKED';
+  ELSE
+    RAISE NOTICE 'M101: skipped list_ready_extraction_jobs hardening — function not present';
   END IF;
 END $$;
 
--- Done. Verify with:
---   SELECT indexname FROM pg_indexes WHERE indexname IN (
+-- ── Verification ────────────────────────────────────────────────────
+-- Watch the NOTICE output above. Then run:
+--   SELECT indexname, tablename FROM pg_indexes
+--   WHERE indexname IN (
 --     'idx_hourly_metrics_biz_date',
 --     'idx_overhead_cache_lookup',
 --     'idx_supplier_class_biz_num',
 --     'idx_daily_metrics_org_biz_date',
 --     'idx_monthly_metrics_org_biz_period'
 --   );
+-- Any indexes missing here failed the column-introspection check.
+-- Tell Claude the actual column name and we'll fix M101 to match.
