@@ -95,6 +95,12 @@ existed → 0 candidates → marked done → never retried → empty catalogue.
 6. **Apply from the in-memory classifier result**, not only a cache re-read — so a
    cache hiccup can't make auto-build apply nothing.
 
+6b. **Auto-build does ONE bounded chunk (~80 groups) per invocation.** The Haiku
+   prompt grows with the catalogue (products + aliases as context), so a bigger
+   batch can blow the 300s function cap (it did on Vero: `FUNCTION_INVOCATION_TIMEOUT`).
+   The cron self-chain / board chaining drains the rest one chunk at a time. Don't
+   raise the per-call chunk to "go faster" — it times out and breaks the chain.
+
 7. **Look-back window = 4 months** for inventory (kitchens don't hold older stock).
    `lib/inventory/backfill-worker.ts` default; overridable via `months_back`.
 

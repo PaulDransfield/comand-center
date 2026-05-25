@@ -28,7 +28,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { requireAdmin } from '@/lib/admin/require-admin'
 import { checkCronSecret } from '@/lib/admin/check-secret'
 import { checkAndIncrementAiLimit } from '@/lib/ai/usage'
-import { buildGroups, runClaudeBatch, MAX_GROUPS_PER_RUN } from '@/lib/inventory/ai-suggest-core'
+import { buildGroups, runClaudeBatch } from '@/lib/inventory/ai-suggest-core'
 import { createProductFromLine, type InvoiceLineForMatching } from '@/lib/inventory/matcher'
 import { normaliseDescription } from '@/lib/inventory/normalise'
 import type { InventoryCategory } from '@/lib/inventory/categories'
@@ -131,12 +131,15 @@ export async function POST(req: NextRequest) {
   }
   groups.sort((a, b) => b.line_count - a.line_count)
 
-  // ── 1. Classify not-yet-cached groups (up to 2 Haiku calls, time-guarded) ──
+  // ── 1. Classify ONE bounded chunk of not-yet-cached groups (one Haiku call) ──
   // Skip groups that already have a cached suggestion so chained calls don't
-  // re-spend Haiku. Crucially we APPLY from the rows runClaudeBatch returns
-  // IN-MEMORY (below) — not from a re-query — so a silent cache-write failure
-  // can't leave us applying nothing.
-  const started = Date.now()
+  // re-spend Haiku. ONE call per invocation, capped well below MAX_GROUPS_PER_RUN:
+  // the prompt grows with the catalogue (products + aliases as context), so a
+  // larger batch could push the request past the 300s function cap — which is
+  // what timed out on Vero's big dataset. The self-chain (cron) / board chaining
+  // handles the rest. We APPLY from the IN-MEMORY rows (below), not a re-query,
+  // so a silent cache-write failure can't leave us applying nothing.
+  const AUTOBUILD_CHUNK = 80
   const { data: existingSugg } = await db
     .from('inventory_review_suggestions')
     .select('group_key')
@@ -145,12 +148,9 @@ export async function POST(req: NextRequest) {
   const groupsNeedingAi = groups.filter(g => !haveSuggestion.has(g.group_key))
 
   const freshRows: any[] = []
-  for (let i = 0; i < groupsNeedingAi.length; i += MAX_GROUPS_PER_RUN) {
-    if (i > 0 && Date.now() - started > 150_000) break   // keep the whole request well under 300s
-    const chunk = groupsNeedingAi.slice(i, i + MAX_GROUPS_PER_RUN)
-    const rows = await runClaudeBatch(db, orgId, businessId, chunk)
-    freshRows.push(...rows)
-    if (i >= MAX_GROUPS_PER_RUN) break   // hard cap 2 chunks/call; board chains the rest
+  const chunk = groupsNeedingAi.slice(0, AUTOBUILD_CHUNK)
+  if (chunk.length > 0) {
+    freshRows.push(...await runClaudeBatch(db, orgId, businessId, chunk))
   }
   const suggestedCount = freshRows.length
 
