@@ -54,7 +54,7 @@ async function loadGroups() {
     const key = Buffer.from(internal, 'utf-8').toString('base64url')
     if (!byKey.has(key)) {
       byKey.set(key, {
-        group_key: key, supplier_fortnox_number: String(supplierKey),
+        group_key: key, supplier_fortnox_number: String(l.supplier_fortnox_number ?? ''),
         supplier_name: l.supplier_name_snapshot ?? null,
         sample_raw_description: String(l.raw_description ?? '').slice(0, 200),
         unit: l.unit, line_count: 0, total_kr: 0,
