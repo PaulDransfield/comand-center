@@ -36,6 +36,8 @@ import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess }        from '@/lib/auth/require-role'
 import { AI_MODELS }                    from '@/lib/ai/models'
+import { anthropicFetch }               from '@/lib/ai/anthropic-fetch'
+import { checkAndIncrementAiLimit }     from '@/lib/ai/usage'
 import { getHolidaysForCountry }        from '@/lib/holidays'
 import { composeRules, INDUSTRY_BENCHMARKS, VOICE, SCHEDULING_ASYMMETRY } from '@/lib/ai/rules'
 
@@ -318,19 +320,20 @@ Return at most 8 suggestions per week — prioritise highest-impact (largest SEK
     })),
   })
 
-  // ── Call Sonnet ─────────────────────────────────────────────────
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return NextResponse.json({ error: 'ANTHROPIC_API_KEY not set' }, { status: 500 })
+  // ── Per-org AI quota gate ───────────────────────────────────────
+  // Atomic INSERT … ON CONFLICT DO UPDATE via the increment_ai_usage_checked
+  // RPC. Decrements on over-limit so rejected attempts don't tick the counter.
+  // Without this an owner spamming "Generate AI suggestions" could burn
+  // the entire plan's daily AI budget in seconds.
+  const usage = await checkAndIncrementAiLimit(db, auth.orgId)
+  if (!usage.ok) {
+    return NextResponse.json(usage.body, { status: usage.status })
+  }
 
+  // ── Call Sonnet ─────────────────────────────────────────────────
   const t0 = Date.now()
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key':         apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type':      'application/json',
-    },
-    body: JSON.stringify({
+  const result = await anthropicFetch({
+    body: {
       model:       AI_MODELS.ANALYSIS,   // Sonnet 4.6
       max_tokens:  6000,
       system: [
@@ -339,16 +342,15 @@ Return at most 8 suggestions per week — prioritise highest-impact (largest SEK
       messages: [
         { role: 'user', content: `Generate scheduling suggestions for this week:\n\n${userMessage}\n\nReturn JSON object {"suggestions": [...]} only.` },
       ],
-    }),
+    },
   })
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '')
-    return NextResponse.json({ error: `Anthropic HTTP ${res.status}: ${errText.slice(0, 300)}` }, { status: 502 })
+  if (!result.ok) {
+    return NextResponse.json({ error: `Anthropic HTTP ${result.status}: ${result.errorText}` }, { status: 502 })
   }
-  const json: any = await res.json()
-  const tIn  = json?.usage?.input_tokens  ?? 0
-  const tOut = json?.usage?.output_tokens ?? 0
+  const json = result.json
+  const tIn  = result.tokensIn
+  const tOut = result.tokensOut
   const cost = tIn * SONNET_INPUT_USD_PER_TOKEN + tOut * SONNET_OUTPUT_USD_PER_TOKEN
 
   const rawText = json?.content?.[0]?.text ?? ''

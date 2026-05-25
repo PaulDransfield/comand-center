@@ -122,9 +122,15 @@ export function getMonthlyCeilingSek(planKey: string): number {
 // If total Claude spend across ALL orgs in the last 24 h exceeds this cap,
 // every AI call is blocked until the rolling window drops back below. Covers
 // exploited endpoints, runaway scripts, prompt injection attacks. Env-configurable.
+//
+// Default was $50; bumped to $150 2026-05-25 after scaling audit projected
+// ~$60-80/day baseline at 20 customers with normal usage, and ~$120+/day on
+// spike days (bulk Fortnox extraction, forecasting re-runs). $50 would have
+// fired daily at moderate scale, blocking every customer's AI access.
+// Set MAX_DAILY_GLOBAL_USD env var in prod to tune further.
 function globalDailyCapUsd(): number {
-  const raw = parseFloat(process.env.MAX_DAILY_GLOBAL_USD ?? '50')
-  return Number.isFinite(raw) && raw > 0 ? raw : 50
+  const raw = parseFloat(process.env.MAX_DAILY_GLOBAL_USD ?? '150')
+  return Number.isFinite(raw) && raw > 0 ? raw : 150
 }
 
 // Hard safety cap on "unlimited" plans (Group / Enterprise). The published

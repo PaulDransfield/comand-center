@@ -34,6 +34,7 @@
 import { NextRequest, NextResponse }    from 'next/server'
 import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
+import { requireBusinessAccess }        from '@/lib/auth/require-role'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
 import { supplierInvoiceUrl, getFortnoxWorkspaceId } from '@/lib/fortnox/web-url'
@@ -111,6 +112,8 @@ export async function GET(req: NextRequest) {
   if (!businessId) {
     return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   }
+  const forbidden = requireBusinessAccess(auth, businessId)
+  if (forbidden) return forbidden
 
   const db = createAdminClient()
 

@@ -21,6 +21,8 @@ import { unstable_noStore as noStore }  from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess }        from '@/lib/auth/require-role'
 import { AI_MODELS }                    from '@/lib/ai/models'
+import { anthropicFetch }               from '@/lib/ai/anthropic-fetch'
+import { checkAndIncrementAiLimit }     from '@/lib/ai/usage'
 import { normaliseDescription }         from '@/lib/inventory/normalise'
 
 export const runtime     = 'nodejs'
@@ -48,6 +50,14 @@ export async function POST(req: NextRequest) {
   if (forbidden) return forbidden
 
   const db = createAdminClient()
+
+  // Per-org AI quota gate — bulk-review is a Haiku call but at 120 groups
+  // × multiple presses of "Refresh AI sort" it'll burn through quota fast.
+  // Atomic increment so spamming doesn't race past the cap.
+  const usage = await checkAndIncrementAiLimit(db, auth.orgId)
+  if (!usage.ok) {
+    return NextResponse.json(usage.body, { status: usage.status })
+  }
 
   // ── 1. Load current needs_review groups ──────────────────────────
   const { data: lines, error: linesErr } = await db
@@ -196,8 +206,7 @@ async function runClaudeBatch(
   groups:     Group[],
 ): Promise<any[]> {
   if (groups.length === 0) return []
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured')
+  // No apiKey check here — anthropicFetch throws if missing
 
   // Load the catalogue context (products + aliases) for matching
   const { data: products } = await db
@@ -306,15 +315,10 @@ ${groupsText}
 
 Return JSON array only.`
 
-  // Anthropic call with prompt caching on the system+catalogue blob
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key':         apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type':      'application/json',
-    },
-    body: JSON.stringify({
+  // Anthropic call with prompt caching on the system+catalogue blob,
+  // wrapped in retry-with-backoff (Anthropic 429 + 5xx).
+  const result = await anthropicFetch({
+    body: {
       model:       AI_MODELS.AGENT,             // Haiku 4.5
       max_tokens:  16384,
       system: [
@@ -323,18 +327,16 @@ Return JSON array only.`
       messages: [
         { role: 'user', content: userMessage },
       ],
-    }),
+    },
   })
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(`Anthropic HTTP ${res.status}: ${text.slice(0, 300)}`)
+  if (!result.ok) {
+    throw new Error(`Anthropic HTTP ${result.status}: ${result.errorText}`)
   }
-  const json: any = await res.json()
-  const tokensIn  = json?.usage?.input_tokens  ?? 0
-  const tokensOut = json?.usage?.output_tokens ?? 0
+  const json = result.json
+  const tokensIn  = result.tokensIn
+  const tokensOut = result.tokensOut
   const cost = (tokensIn * HAIKU_INPUT_USD_PER_TOKEN) + (tokensOut * HAIKU_OUTPUT_USD_PER_TOKEN)
-  console.log(`[ai-suggest] business=${businessId.slice(0,8)} groups=${groups.length} tokens=${tokensIn}/${tokensOut} cost=$${cost.toFixed(4)}`)
+  console.log(`[ai-suggest] business=${businessId.slice(0,8)} groups=${groups.length} tokens=${tokensIn}/${tokensOut} cache_read=${result.cacheRead} cost=$${cost.toFixed(4)}`)
 
   // Parse the JSON response. Strip any prose before/after the array.
   const rawText = json?.content?.[0]?.text ?? ''

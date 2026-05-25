@@ -29,6 +29,7 @@
 
 import { NextRequest, NextResponse }    from 'next/server'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
+import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { fetchVouchersForRange }        from '@/lib/fortnox/api/vouchers'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
@@ -110,6 +111,8 @@ export async function POST(req: NextRequest) {
   if (periodMonth < 1 || periodMonth > 12) {
     return NextResponse.json({ error: 'month must be 1-12' }, { status: 400 })
   }
+  const forbidden = requireBusinessAccess(auth, businessId)
+  if (forbidden) return forbidden
   if (!CATEGORY_ACCOUNT_RANGES[category]) {
     return NextResponse.json({ error: `Unknown category: ${category}` }, { status: 400 })
   }

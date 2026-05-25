@@ -36,7 +36,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { waitUntil } from '@vercel/functions'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
-import { logAiRequest } from '@/lib/ai/usage'
+import { logAiRequest, checkAiLimit } from '@/lib/ai/usage'
 import { log }          from '@/lib/log/structured'
 import { classifyByAccount, classifyLabel, classifyByVat } from '@/lib/fortnox/classify'
 
@@ -624,6 +624,15 @@ Notes on the example:
       { type: 'text', text: 'Extract this Fortnox PDF. Call the submit_extraction tool with the full structured extraction — do not reply in free text.' },
     ],
   }]
+
+  // Global kill-switch gate — extract is cron-driven (no per-user quota
+  // makes sense) but it MUST honour the org's daily AI ceiling AND the
+  // global $/day kill switch. If blocked, throw — the job's backoff path
+  // will requeue it for the next quota window.
+  const gate = await checkAiLimit(db, upload.org_id)
+  if (!gate.ok) {
+    throw new Error(`AI quota gate blocked: ${gate.body.reason} (used=${gate.body.used}/${gate.body.limit})`)
+  }
 
   // Sonnet 4.6 with extended thinking — based on Claude.ai's own reasoning on
   // this exact problem. tool_choice='auto' (Anthropic forbids thinking +

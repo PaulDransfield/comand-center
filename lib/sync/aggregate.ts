@@ -27,12 +27,17 @@ import { createAdminClient } from '@/lib/supabase/server'
 // this lock is the structural cure — only one aggregateMetrics call per
 // business runs at a time, others skip.
 //
-// Lock is held in the `aggregation_lock` table (M027). Stale rows >60 s old
+// Lock is held in the `aggregation_lock` table (M027). Stale rows >180 s old
 // are stolen on the assumption the previous worker crashed. If the lock
 // table doesn't exist (M027 not applied), we fall back to no-lock behaviour
 // and log a structured error so Vercel surfaces the drift.
-
-const LOCK_STALE_MS = 60_000
+//
+// Was 60s — bumped to 180s 2026-05-25 after scaling audit. Master-sync
+// maxDuration is 300s; a 60s lock TTL meant a slow sync could have its
+// lock stolen mid-aggregate, causing concurrent writes to monthly_metrics
+// and stale overwrites. 180s gives 3 min headroom while still recovering
+// from genuine worker crashes within one cron tick.
+const LOCK_STALE_MS = 180_000
 
 async function acquireAggregationLock(db: any, businessId: string, lockId: string): Promise<boolean | 'no_table'> {
   // Attempt insert. PK violation means another worker holds the lock.

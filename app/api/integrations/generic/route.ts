@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
+import { requireBusinessAccess }    from '@/lib/auth/require-role'
 import { encrypt }                   from '@/lib/integrations/encryption'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,14 @@ export async function POST(req: NextRequest) {
 
   const ALLOWED = ['caspeco', 'ancon', 'swess', 'quinyx', 'planday', 'trivec', 'zettle']
   if (!ALLOWED.includes(provider)) return NextResponse.json({ error: 'Unknown provider' }, { status: 400 })
+
+  // Verify the caller owns the business they're connecting an integration to.
+  // Without this an attacker could pass another org's business_id and
+  // attach credentials to a business they don't own.
+  if (business_id) {
+    const forbidden = requireBusinessAccess(auth, business_id)
+    if (forbidden) return forbidden
+  }
 
   const db        = createAdminClient()
   const encrypted = encrypt(api_key)
