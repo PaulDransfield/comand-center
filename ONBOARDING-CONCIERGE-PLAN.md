@@ -129,8 +129,9 @@ global `MAX_DAILY_GLOBAL_USD` kill-switch mid-session. Surface the running $ on 
   it's display-only). Reuses every existing kick endpoint. Burst is session-scoped.
 - **Phase 2 — Catalogue auto-build — ✅ SHIPPED 2026-05-25.** Extracted the Haiku
   classifier into `lib/inventory/ai-suggest-core.ts` (shared by the review page +
-  the worker). New `/api/admin/onboard/catalogue-autobuild` generates suggestions
-  across the needs_review queue (batched, ≤3 Haiku calls/click) and applies every
+  the worker). New `/api/admin/onboard/catalogue-autobuild` classifies ONE ~120-group
+  chunk per call (cache-aware — skips already-classified groups; the board chains calls
+  until done, so no single request nears the 300s cap) and applies every
   suggestion with confidence ≥0.65 and action≠review: create_new → product+alias+link,
   approve_existing → link to the suggested product, skip_non_inventory → not_inventory.
   Residual stays for the owner. Board shows an "Auto-build" button on the catalogue

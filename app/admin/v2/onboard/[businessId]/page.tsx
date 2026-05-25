@@ -59,11 +59,22 @@ export default function OnboardBoardPage() {
   // across the needs_review queue and applies the confident, non-review ones.
   const autobuild = useCallback(async () => {
     setCatBusy(true)
+    setError(null)
     try {
-      const r = await adminFetch<any>('/api/admin/onboard/catalogue-autobuild', {
-        method: 'POST', body: JSON.stringify({ business_id: businessId }),
-      })
-      setLast(`Catalogue: +${r.applied_create} new · +${r.applied_approve} matched · ${r.applied_skip} skipped · ${r.left_for_review} left to review`)
+      // Each call classifies one ~120-group chunk + applies the confident
+      // ones (kept short so it never hits the 300s function cap). Chain until
+      // a round neither classifies nor applies anything new, or review is
+      // empty. Cap iterations as a safety net.
+      let tot = { create: 0, approve: 0, skip: 0 }
+      for (let round = 1; round <= 10; round++) {
+        const r = await adminFetch<any>('/api/admin/onboard/catalogue-autobuild', {
+          method: 'POST', body: JSON.stringify({ business_id: businessId }),
+        })
+        tot.create += r.applied_create; tot.approve += r.applied_approve; tot.skip += r.applied_skip
+        setLast(`Catalogue (round ${round}): +${tot.create} new · +${tot.approve} matched · ${tot.skip} skipped · ${r.remaining_review_lines} to review`)
+        const progressed = (r.ai_classified ?? 0) > 0 || (r.applied_total ?? 0) > 0
+        if (!progressed || (r.remaining_review_lines ?? 0) === 0) break
+      }
     } catch (e: any) {
       setError(e?.message ?? 'auto-build failed')
     } finally {

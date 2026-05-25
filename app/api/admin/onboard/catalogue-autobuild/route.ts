@@ -37,7 +37,10 @@ export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 
 const APPLY_CONFIDENCE = 0.65   // matches the AI's own 'review' cutoff + the bulk-apply UI
-const MAX_CHUNKS = 3            // cap Haiku calls per click (~90s each) under maxDuration
+// ONE Haiku chunk per request (~90-120s) so a single call never approaches
+// the 300s function cap. Big catalogues take several chunks — the board
+// chains the calls, and the cache below means already-classified groups are
+// skipped on subsequent rounds (no redundant Haiku spend).
 const VALID_CATEGORIES: InventoryCategory[] = [
   'food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other',
 ]
@@ -91,12 +94,20 @@ export async function POST(req: NextRequest) {
   }
   groups.sort((a, b) => b.line_count - a.line_count)
 
-  // ── 1. Generate suggestions in chunks (each chunk = one Haiku call) ──
+  // ── 1. Classify ONE chunk of not-yet-classified groups (one Haiku call) ──
+  // Skip groups that already have a cached suggestion so chained calls don't
+  // re-spend Haiku on the same groups.
+  const { data: existingSugg } = await db
+    .from('inventory_review_suggestions')
+    .select('group_key')
+    .eq('business_id', businessId)
+  const haveSuggestion = new Set((existingSugg ?? []).map((s: any) => s.group_key))
+  const groupsNeedingAi = groups.filter(g => !haveSuggestion.has(g.group_key)).slice(0, MAX_GROUPS_PER_RUN)
+
   let suggestedCount = 0
-  for (let i = 0; i < groups.length && i < MAX_CHUNKS * MAX_GROUPS_PER_RUN; i += MAX_GROUPS_PER_RUN) {
-    const chunk = groups.slice(i, i + MAX_GROUPS_PER_RUN)
-    const rows = await runClaudeBatch(db, orgId, businessId, chunk)
-    suggestedCount += rows.length
+  if (groupsNeedingAi.length > 0) {
+    const rows = await runClaudeBatch(db, orgId, businessId, groupsNeedingAi)
+    suggestedCount = rows.length
   }
 
   // ── Load all cached suggestions for the business (incl. earlier runs) ──
@@ -171,7 +182,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, ...summary }, {
+  // How many review lines remain after this round — drives the board's
+  // chaining loop (it re-calls until nothing more is classified or applied).
+  const { count: remainingReview } = await db
+    .from('supplier_invoice_lines')
+    .select('*', { count: 'exact', head: true })
+    .eq('business_id', businessId)
+    .eq('match_status', 'needs_review')
+
+  const appliedTotal = summary.applied_create + summary.applied_approve + summary.applied_skip
+
+  return NextResponse.json({
+    ok: true,
+    ...summary,
+    ai_classified:         suggestedCount,
+    applied_total:         appliedTotal,
+    remaining_review_lines: remainingReview ?? 0,
+  }, {
     headers: { 'Cache-Control': 'no-store' },
   })
 }
