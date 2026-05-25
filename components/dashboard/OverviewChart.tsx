@@ -618,13 +618,17 @@ export default function OverviewChart({
             const lab = shownLabour(d)
             const hasPred    = !d.revenue    && d.pred && d.pred.est_revenue  > 0
             const hasPredLab = !d.staff_cost && d.pred && (d.pred.planned_cost ?? 0) > 0
+            // Today's labour cost is mostly scheduled (PK estimated_salary) since
+            // shifts haven't closed yet — treat it as in-progress so the colour
+            // doesn't read identical to a fully-actual prior day.
+            const labInProgress = !!d.isToday && d.staff_cost > 0
 
             const fcast = dayForecast(d, compareMode)
 
             // Per-day labour tier — drives bar colour (actual or predicted)
             // and the above-bar percentage annotation.
             const tierInfo = labourTier(d.staff_pct, targetLabourPct)
-            const labFill  = hasPredLab ? tierInfo.predFill : tierInfo.ink
+            const labFill  = (hasPredLab || labInProgress) ? tierInfo.predFill : tierInfo.ink
 
             const labBottomY = yAt(-lab)
 
@@ -671,18 +675,33 @@ export default function OverviewChart({
                   />
                 )}
                 {/* Labour bar — tier-coloured (green/amber/red) based on
-                    staff_pct vs targetLabourPct. Predicted-labour days use
-                    the matching soft variant. */}
+                    staff_pct vs targetLabourPct. Predicted + in-progress
+                    days use the soft variant. Today gets a diagonal-stripe
+                    overlay so it reads as "scheduled / in progress" rather
+                    than identical-looking to a fully closed-out prior day. */}
                 {lab > 0 && (
-                  <rect
-                    x={cx - barW / 2}
-                    y={zeroY}
-                    width={barW}
-                    height={Math.max(1, labBottomY - zeroY)}
-                    rx={r} ry={r}
-                    fill={labFill}
-                    opacity={hasPredLab ? 0.92 : 1}
-                  />
+                  <>
+                    <rect
+                      x={cx - barW / 2}
+                      y={zeroY}
+                      width={barW}
+                      height={Math.max(1, labBottomY - zeroY)}
+                      rx={r} ry={r}
+                      fill={labFill}
+                      opacity={(hasPredLab || labInProgress) ? 0.92 : 1}
+                    />
+                    {labInProgress && (
+                      <rect
+                        x={cx - barW / 2}
+                        y={zeroY}
+                        width={barW}
+                        height={Math.max(1, labBottomY - zeroY)}
+                        rx={r} ry={r}
+                        fill="url(#pk-pred-lab)"
+                        opacity={0.45}
+                      />
+                    )}
+                  </>
                 )}
 
                 {/* Forecast whiskers (compare mode prev/ai) */}
