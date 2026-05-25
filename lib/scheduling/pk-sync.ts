@@ -431,7 +431,9 @@ async function refreshStaffProfiles(
       hourly_rate_sek:    activeEmp?.hourly_salary ? Number(activeEmp.hourly_salary) : null,
       monthly_salary_sek: activeEmp?.monthly_salary ? Number(activeEmp.monthly_salary) : null,
       fixed_cost_per_day_sek: activeEmp?.fixed_cost_per_day ? Number(activeEmp.fixed_cost_per_day) : null,
-      service_grade_pct:  activeEmp?.service_grade ? Number(activeEmp.service_grade) * 100 : null,
+      // PK returns service_grade as percentage already ('100.00' = full-time).
+      // Don't multiply by 100 — that overflows NUMERIC(5,2).
+      service_grade_pct:  activeEmp?.service_grade ? Number(activeEmp.service_grade) : null,
       hired_at:           activeEmp?.start ?? null,
       contract_end_at:    activeEmp?.end ?? null,
       primary_section:    primarySection,
