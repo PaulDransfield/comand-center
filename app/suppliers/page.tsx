@@ -406,6 +406,7 @@ function CategoryChip({ category }: { category: SupplierCategory }) {
 
 // ── Invoice drawer — list + one-click PDF ──────────────────────────
 function InvoiceDrawer({ row, bizId, onClose }: { row: SupplierRollupRow; bizId: string | null; onClose: () => void }) {
+  const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
   return (
     <div role="dialog" aria-label={`Invoices for ${row.supplier_name}`} style={{
       position:   'fixed' as const,
@@ -497,49 +498,98 @@ function InvoiceDrawer({ row, bizId, onClose }: { row: SupplierRollupRow; bizId:
               }}>
                 {inv.total != null ? fmtKr(inv.total) : '—'}
               </span>
-              {inv.file_id && bizId ? (
-                <a
-                  href={`/api/integrations/fortnox/file?business_id=${bizId}&file_id=${encodeURIComponent(inv.file_id)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    padding:      '4px 10px',
-                    background:   UXP.lavFill,
-                    color:        UXP.lavText,
-                    border:       'none',
-                    borderRadius: 999,
-                    fontSize:     10,
-                    fontWeight:   500,
-                    textDecoration: 'none',
-                    letterSpacing: '0.02em',
+              {/* Single PDF button — opens inline modal. Stay-in-app:
+                  prefer file_id → file proxy URL; else fall back to
+                  invoice-pdf endpoint (just-in-time detail fetch +
+                  302 to file proxy). Never link out to Fortnox web. */}
+              {bizId && (inv.file_id || inv.given_number) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = inv.file_id
+                      ? `/api/integrations/fortnox/file?business_id=${encodeURIComponent(bizId)}&file_id=${encodeURIComponent(inv.file_id)}`
+                      : `/api/integrations/fortnox/invoice-pdf?business_id=${encodeURIComponent(bizId)}&given_number=${encodeURIComponent(inv.given_number!)}`
+                    setPdfModal({ url, title: `${row.supplier_name} — #${inv.invoice_number}` })
                   }}
-                >
-                  View PDF
-                </a>
-              ) : inv.fortnox_url ? (
-                <a
-                  href={inv.fortnox_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   style={{
-                    padding:      '4px 10px',
-                    background:   UXP.cardBg,
-                    color:        UXP.ink3,
-                    border:       `0.5px solid ${UXP.border}`,
-                    borderRadius: 999,
-                    fontSize:     10,
-                    fontWeight:   500,
-                    textDecoration: 'none',
-                    letterSpacing: '0.02em',
+                    padding:        '4px 10px',
+                    background:     UXP.lavFill,
+                    color:          UXP.lavText,
+                    border:         'none',
+                    borderRadius:   999,
+                    fontSize:       10,
+                    fontWeight:     500,
+                    cursor:         'pointer',
+                    fontFamily:     'inherit',
+                    letterSpacing:  '0.02em',
                   }}
-                >
-                  Open in Fortnox ↗
-                </a>
-              ) : null}
+                >PDF</button>
+              )}
             </div>
           ))}
         </div>
       )}
+
+      {pdfModal && (
+        <SuppliersPdfModal
+          url={pdfModal.url}
+          title={pdfModal.title}
+          onClose={() => setPdfModal(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Inline PDF viewer — embedded iframe of the file proxy (or invoice-pdf
+// 302). Stay-in-app. Footer has 'Open in new tab' fallback for browsers
+// that don't render PDFs in iframes (rare mobile Chrome).
+function SuppliersPdfModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose}
+      style={{
+        position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 16,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(960px, 100%)', height: '90vh',
+          background: '#fff', borderRadius: 8, overflow: 'hidden' as const,
+          display: 'flex', flexDirection: 'column' as const,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.40)',
+        }}>
+        <div style={{
+          padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink3,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                textDecoration: 'none', fontFamily: 'inherit',
+              }}>Open in new tab ↗</a>
+            <button onClick={onClose}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: UXP.ink1, color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Close (Esc)</button>
+          </div>
+        </div>
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
+      </div>
     </div>
   )
 }
