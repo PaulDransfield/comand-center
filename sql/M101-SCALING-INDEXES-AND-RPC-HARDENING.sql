@@ -163,25 +163,27 @@ BEGIN
   ) INTO fn_exists;
 
   IF fn_exists THEN
+    -- Keep the original signature (RETURNS SETOF extraction_jobs) so
+    -- existing callers that may select extra columns aren't broken.
+    -- Only change: switch from `LANGUAGE sql STABLE` to plpgsql so we
+    -- can use FOR UPDATE SKIP LOCKED inside a query (not available in
+    -- a sql-language function).
+    --
+    -- CREATE OR REPLACE works fine for matching signatures; no DROP needed.
     EXECUTE $func$
       CREATE OR REPLACE FUNCTION list_ready_extraction_jobs(max_jobs integer DEFAULT 10)
-      RETURNS TABLE (
-        id          uuid,
-        upload_id   uuid,
-        attempts    integer,
-        scheduled_for timestamptz
-      )
+      RETURNS SETOF extraction_jobs
       LANGUAGE plpgsql
       SECURITY DEFINER
       SET search_path = public
       AS $body$
       BEGIN
         RETURN QUERY
-        SELECT j.id, j.upload_id, j.attempts, j.scheduled_for
-        FROM extraction_jobs j
-        WHERE j.status = 'pending'
-          AND j.scheduled_for <= now()
-        ORDER BY j.scheduled_for ASC, j.created_at ASC
+        SELECT *
+        FROM extraction_jobs
+        WHERE status = 'pending'
+          AND scheduled_for <= now()
+        ORDER BY scheduled_for ASC
         LIMIT max_jobs
         FOR UPDATE SKIP LOCKED;
       END;
