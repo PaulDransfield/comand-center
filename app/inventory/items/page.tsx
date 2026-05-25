@@ -63,6 +63,14 @@ export default function InventoryItemsPage() {
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
     if (s) setBizId(s)
+    // React to BizPicker switching the active business — without this
+    // listener the page would only react on full reload.
+    function onStorage() {
+      const next = localStorage.getItem('cc_selected_biz')
+      if (next) setBizId(next)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const load = useCallback(async () => {

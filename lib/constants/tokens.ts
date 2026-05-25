@@ -52,6 +52,21 @@ export const UXP = {
   railW: 46,
 } as const
 
+// Z-index scale. Use these instead of raw numbers so the stacking order
+// stays predictable across modals, tooltips, banners, and overlays.
+// Audit (2026-05-25) found values ranging 50/100/199/200/1000 across the
+// codebase — confusing and brittle on mobile where multiple panels stack.
+export const Z = {
+  sticky:    10,    // sticky page headers, fixed tables
+  rail:      20,    // sidebar / RailNav (above page content, below banners)
+  banner:    50,    // BrokenIntegrationBanner, AiUsageBanner, ConsentBanner
+  dropdown:  100,   // toolbar dropdowns, autocomplete menus
+  backdrop:  199,   // modal scrim (immediately below modal)
+  modal:     200,   // slide-in panels, dialog cards
+  tooltip:   300,   // hover tooltips (above all)
+  toast:     400,   // ephemeral notifications (highest)
+} as const
+
 export type UxpToken = keyof typeof UXP
 
 export const UX = {

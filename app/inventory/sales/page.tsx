@@ -60,6 +60,12 @@ export default function SalesPage() {
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
     if (s) setBizId(s)
+    function onStorage() {
+      const next = localStorage.getItem('cc_selected_biz')
+      if (next) setBizId(next)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   // Build the list of week-start dates (Mondays) to show.

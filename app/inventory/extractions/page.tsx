@@ -58,6 +58,12 @@ export default function InventoryExtractionsPage() {
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
     if (s) setBizId(s)
+    function onStorage() {
+      const next = localStorage.getItem('cc_selected_biz')
+      if (next) setBizId(next)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   const load = useCallback(async () => {

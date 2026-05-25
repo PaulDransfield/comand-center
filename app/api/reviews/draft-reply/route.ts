@@ -23,8 +23,9 @@ import { canAccessBusiness }                 from '@/lib/auth/permissions'
 import { AI_MODELS }                         from '@/lib/ai/models'
 import { checkAndIncrementAiLimit }          from '@/lib/ai/usage'
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+export const runtime     = 'nodejs'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60   // Haiku 4.5 reply draft fits comfortably; explicit so plan changes don't silently shorten
 
 type Tone = 'warm' | 'professional' | 'apologetic'
 const ALLOWED_TONES: Tone[] = ['warm', 'professional', 'apologetic']
