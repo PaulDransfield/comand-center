@@ -212,7 +212,7 @@ export default function InvoicesPage() {
               letterSpacing:  '0.02em',
             }}>
               <span aria-hidden style={{ width: 6, height: 6, borderRadius: '50%', background: UXP.green, display: 'inline-block' }} />
-              Synkad från Fortnox
+              Synced from Fortnox
             </span>
           </div>
 
