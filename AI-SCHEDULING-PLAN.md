@@ -37,7 +37,33 @@ Key elements from `cc_ai_recommended_schedule_en.html` informing the build:
 
 Decision implicit in the mockup: **the AI is allowed to recommend ADDING shifts, not just cutting.** This is a deliberate departure from the current `SCHEDULING_ASYMMETRY` rule (`lib/ai/rules.ts`). See §7.
 
-### 2.1 Pre-publish review (new requirement, locked 2026-05-25)
+### 2.0 PK's actual layout (added 2026-05-25 after seeing `PK schema example.png`)
+
+PK's native scheduling UI is **shift-centric, not staff-centric**:
+
+- **Rows = shift templates** (named recurring slots): "Halv kväll 15:00–20:30", "Kväll 11:30–20:30", "Kök 06:00–14:00", "Mellan 10:30–15:00", "Morgon 07:30–15:00", "Kontor 07:15–15:00", "Jocke 07:00–13:00", etc. Each row has a colour-coded section dot and the template's default shift window beside the name.
+- **Columns = days** (Mon-Sun).
+- **Cells = shift blocks** stacked vertically: each block shows actual `start–end` + the assigned staff name (e.g. `07:00 – 14:00 / Linh Ngyuen`). Multiple staff can fill the same shift template on the same day (e.g. Kväll Wednesday has both Emiliia Popilnukh AND Linnéa Pierre). "Semester" (vacation) blocks show inside cells in muted grey.
+- **Cell background colour** matches the section/shift-type colour so the whole grid reads as colour bands.
+
+This is a much richer model than the per-staff row mockup. It means:
+
+1. **Shift templates are first-class objects in PK** that we must mirror (`staff_shift_templates`), not derive
+2. **Both "by shift template" and "by staff" views have value** and the grid should toggle between them
+3. **Section colours come from PK** — sync them so the views are consistent across CC and PK
+4. **Multiple shifts per (template × day)** must be supported (it's the common case for any section with parallel coverage)
+5. **"Semester" / time-off** is its own shift kind PK already tracks — don't reinvent
+
+### 2.1 Final grid model
+
+CommandCenter's `/scheduling` page renders one of two views, owner-togglable:
+
+- **Shift view (default, PK-native)**: rows = shift templates grouped by section, columns = days, cells = stacked shift blocks with staff names. Matches PK's mental model so owners switching back and forth aren't disoriented. AI suggestions appear as dashed-orange shift blocks inside the appropriate template row.
+- **Staff view (our mockup)**: rows = staff (grouped by section/role), columns = days, cells = the shifts that person is on. Better for "is anyone consistently over- or under-worked?" and for the performance-signal flow.
+
+Both views render the same underlying `staff_shifts` data with different pivots. Toggle is a single switch in the toolbar — state remembered per-business in localStorage.
+
+### 2.2 Pre-publish review (new requirement, locked 2026-05-25)
 
 Before the owner clicks "Apply & send to Personalkollen", a review panel surfaces four KPI views so they can sanity-check the week. The owner can return to the grid and tweak any individual cell, then re-open the review. **Apply** is disabled while any HARD compliance check is failing.
 
@@ -114,15 +140,33 @@ staff_profiles (
 )
 ```
 
-**`staff_shifts`** — per-shift detail beyond what `staff_logs` aggregates (only added if PK has the data):
+**`staff_shift_templates`** — PK shift templates mirrored (the rows in PK's grid):
+
+```sql
+staff_shift_templates (
+  id UUID, business_id, org_id,
+  pk_template_id TEXT,               -- PK's stable id for sync idempotency
+  name TEXT,                         -- 'Halv kväll', 'Kväll', 'Kök', 'Morgon', 'Kontor'
+  default_start TIME,                -- e.g. 15:00
+  default_end   TIME,                -- e.g. 20:30
+  section TEXT,                      -- 'foh' | 'kitchen' | 'bar' | 'management' | 'office'
+  colour TEXT,                       -- hex from PK ('#a99ce6' etc) so views match
+  sort_order INTEGER,
+  archived_at TIMESTAMPTZ,
+  last_synced_at TIMESTAMPTZ
+)
+```
+
+**`staff_shifts`** — per-shift detail. Each shift OPTIONALLY references a template (most do):
 
 ```sql
 staff_shifts (
-  id, business_id, staff_uid, shift_date,
-  start_time TIMESTAMPTZ, end_time TIMESTAMPTZ,
+  id UUID, business_id, staff_uid, shift_date,
+  shift_template_id UUID REFERENCES staff_shift_templates(id) NULL,
+  start_time TIMESTAMPTZ, end_time TIMESTAMPTZ,   -- actual times can deviate from template defaults
   position TEXT, section TEXT,
   break_minutes INTEGER,
-  shift_type TEXT,                   -- 'regular' | 'open' | 'on_call' | 'holiday' | 'sick'
+  shift_kind TEXT,                   -- 'regular' | 'semester' | 'sick' | 'on_call' | 'open'
   pk_shift_id TEXT,                  -- PK's stable id for write-back idempotency
   is_ai_suggested BOOLEAN DEFAULT FALSE,
   ai_suggestion_id UUID REFERENCES schedule_ai_suggestions(id),
@@ -133,6 +177,8 @@ staff_shifts (
   ...
 )
 ```
+
+Note the `shift_kind='semester'` (Swedish "vacation") is treated as a first-class kind because PK has it as a distinct block type. AI never schedules over Semester blocks.
 
 **`schedule_ai_suggestions`** — one row per AI-recommended change:
 
@@ -194,9 +240,15 @@ AI returns `schedule_ai_suggestions` rows. UI shows them inline. Owner clicks Ap
 
 ### Phase 0 — PK API discovery (½ day)
 
-- Probe `personalkollen.se`'s API for: per-shift detail endpoint (start/end/position/section), staff contracts endpoint, availability endpoint, write-back endpoints
-- Document what's available vs not in this file
-- Decision gate: if PK doesn't expose enough metadata, Phase 2 reduces in scope (we can still display + recommend, just less granular)
+After seeing `PK schema example.png`, the PK data model is richer than initially assumed and the probe targets are now concrete. Confirm these endpoints + payload shapes:
+
+- **Shift templates** — the named recurring slots ("Kväll 11:30-20:30", "Kök 06:00-14:00"). We need: id, name, default times, section, colour, sort order.
+- **Scheduled shifts** — actual assignments per (template × day × staff): start/end times, kind (regular vs semester vs sick), staff_uid.
+- **Staff metadata** — position, section affinity, contract type, max hours/week, hourly rate, employment dates.
+- **Availability / time-off requests** — Semester requests, "can't work this day" markers.
+- **Write endpoints** — POST/PUT for: new shift, modify shift, delete shift. CRITICAL for Phase 2's apply-back. If write doesn't exist, fall back to clipboard export.
+
+Output of Phase 0: this section gets updated with confirmed endpoint paths + sample payloads + a yes/no on write-back. Without that, Phase 1 schema design risks rework.
 
 ### Phase 1 — Grid display + insight overlay (2 days)
 
