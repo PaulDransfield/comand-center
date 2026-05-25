@@ -34,6 +34,80 @@ interface CatalogueItem {
   source_recipe_id:     string | null
 }
 
+const VALID_CATEGORIES = ['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other']
+
+// POST — create a product (article) by hand. The catalogue is normally built
+// by the invoice matcher, but when supplier invoices carry no line text
+// (amounts-per-account bookkeeping — see Vero) there's nothing to match, so
+// owners build/extend the catalogue manually: here, and inline while counting
+// stock. Dedups by (business_id, name) like the matcher does.
+export async function POST(req: NextRequest) {
+  noStore()
+  const auth = await getRequestAuth(req)
+  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+
+  let body: any
+  try { body = await req.json() } catch { body = {} }
+  const businessId = String(body.business_id ?? '').trim()
+  const name       = String(body.name ?? '').trim()
+  const category   = String(body.category ?? 'other').trim()
+  const unit       = body.unit ? String(body.unit).trim() : null
+  const baseUnit   = body.base_unit ? String(body.base_unit).trim() : null
+  const packSize   = body.pack_size != null && body.pack_size !== '' ? Number(body.pack_size) : null
+
+  if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
+  if (!name)       return NextResponse.json({ error: 'name required' }, { status: 400 })
+  if (name.length > 200) return NextResponse.json({ error: 'name too long (max 200)' }, { status: 400 })
+  if (!VALID_CATEGORIES.includes(category)) {
+    return NextResponse.json({ error: `category must be one of: ${VALID_CATEGORIES.join(', ')}` }, { status: 400 })
+  }
+  if (packSize != null && (!Number.isFinite(packSize) || packSize <= 0)) {
+    return NextResponse.json({ error: 'pack_size must be a positive number' }, { status: 400 })
+  }
+
+  const forbidden = requireBusinessAccess(auth, businessId)
+  if (forbidden) return forbidden
+
+  const db = createAdminClient()
+  const { data: biz } = await db.from('businesses').select('id, org_id').eq('id', businessId).maybeSingle()
+  if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
+
+  // Find-or-create by name (matches the matcher's dedup key).
+  const { data: existing } = await db
+    .from('products').select('id').eq('business_id', businessId).eq('name', name).maybeSingle()
+  if (existing?.id) {
+    return NextResponse.json({ ok: true, product_id: existing.id, reused: true, message: `"${name}" already exists.` })
+  }
+
+  const { data: prod, error } = await db
+    .from('products')
+    .insert({
+      org_id:       biz.org_id,
+      business_id:  businessId,
+      name,
+      category,
+      invoice_unit: unit,
+      base_unit:    baseUnit,
+      pack_size:    packSize,
+      created_via:  'owner_review',   // known-good enum value (same as matcher-created products)
+    })
+    .select('id')
+    .single()
+  if (error) {
+    // 23505 = lost a race to a concurrent create of the same name — reuse it.
+    if ((error as any).code === '23505') {
+      const { data: race } = await db
+        .from('products').select('id').eq('business_id', businessId).eq('name', name).maybeSingle()
+      if (race?.id) return NextResponse.json({ ok: true, product_id: race.id, reused: true })
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true, product_id: prod.id, reused: false }, {
+    headers: { 'Cache-Control': 'no-store' },
+  })
+}
+
 export async function GET(req: NextRequest) {
   noStore()
   const auth = await getRequestAuth(req)

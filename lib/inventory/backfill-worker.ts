@@ -84,7 +84,10 @@ export async function runInventoryBackfill(
   db: any,
   input: WorkerInput,
 ): Promise<void> {
-  const months = Number.isFinite(input.months_back) ? Number(input.months_back) : 12
+  // Default 4 months: inventory is about what's currently on the shelf, and
+  // most kitchens don't hold product bought >4 months ago. Shorter window =
+  // less noise + cheaper. Callers can override via months_back.
+  const months = Number.isFinite(input.months_back) ? Number(input.months_back) : 4
   const now    = new Date()
   const fromIso = isoDate(new Date(now.getFullYear(), now.getMonth() - months, 1))
   const toIso   = isoDate(now)
