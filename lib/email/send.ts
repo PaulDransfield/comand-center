@@ -18,6 +18,7 @@
 // different error surface (throws on non-2xx) and no AbortController
 // support in older versions. A thin fetch stays portable.
 
+import { createHash } from 'crypto'
 import { captureError } from '@/lib/monitoring/sentry'
 import { log }          from '@/lib/log/structured'
 
@@ -33,6 +34,15 @@ export interface SendEmailArgs {
   context?:    Record<string, any>
   /** Per-call timeout override. Default 10 000 ms. */
   timeoutMs?:  number
+  /**
+   * Idempotency key — Resend dedups identical (key + content) within 24h.
+   * Provide when the caller needs exactly-once semantics across Vercel
+   * function retries (e.g. cron-fired daily digests, post-payment receipts).
+   * Default: auto-derived from sha1(from|to|subject|first-400-of-html) so
+   * back-to-back identical sends get deduped even without an explicit key.
+   * Max 256 chars per Resend docs.
+   */
+  idempotencyKey?: string
 }
 
 export interface SendEmailResult {
@@ -55,14 +65,27 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
+  // Derive an idempotency key when the caller didn't pass one. Resend
+  // dedups (key + body) within 24h, so identical back-to-back sends get
+  // collapsed even if a Vercel function retry resends them.
+  // Max 256 chars per Resend; sha1 hex is 40, well under.
+  const idemKey = args.idempotencyKey
+    ?? createHash('sha1').update([
+      args.from,
+      Array.isArray(args.to) ? args.to.join(',') : args.to,
+      args.subject,
+      (args.html ?? '').slice(0, 400),
+    ].join('|')).digest('hex')
+
   const started = Date.now()
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method:  'POST',
       signal:  controller.signal,
       headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':    'application/json',
+        'Authorization':   `Bearer ${apiKey}`,
+        'Idempotency-Key': idemKey,
       },
       body: JSON.stringify({
         from:     args.from,
@@ -102,11 +125,12 @@ export async function sendEmail(args: SendEmailArgs): Promise<SendEmailResult> {
 
     const json: any = await res.json().catch(() => ({}))
     log.info('resend send ok', {
-      route:       'lib/email/send',
+      route:           'lib/email/send',
       duration_ms,
-      http_status: res.status,
-      subject:     args.subject,
-      message_id:  json?.id ?? null,
+      http_status:     res.status,
+      subject:         args.subject,
+      message_id:      json?.id ?? null,
+      idempotency_key: idemKey,
       ...args.context,
     })
     return { ok: true, messageId: json?.id ?? null, status: res.status }

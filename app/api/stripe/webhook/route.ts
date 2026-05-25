@@ -60,55 +60,82 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  // ── 3. Dedup check ───────────────────────────────────────────────
-  // Insert the event id first. If it already exists (409/duplicate),
-  // this is a replay — we already processed it, so acknowledge with
-  // 200 without doing the work again.
-  const { error: dedupErr } = await supabase
-    .from('stripe_processed_events')
-    .insert({ event_id: event.id, event_type: event.type })
-
-  if (dedupErr) {
-    if (dedupErr.code === '23505' || /duplicate key/i.test(dedupErr.message ?? '')) {
-      log.info('stripe-webhook duplicate event skipped', {
-        route:      'stripe/webhook',
-        event_id:   event.id,
-        event_type: event.type,
-        status:     'duplicate',
-      })
-      return NextResponse.json({ received: true, duplicate: true, type: event.type })
-    }
-    log.error('stripe-webhook dedup insert failed', {
-      route:      'stripe/webhook',
-      event_id:   event.id,
-      event_type: event.type,
-      error:      dedupErr.message,
-      status:     'error',
+  // ── 3. Atomic claim ──────────────────────────────────────────────
+  // M103 hardening: separates "I'm processing this" from "I finished
+  // processing this". Previously a function killed mid-handler left
+  // the dedup row in place → the next Stripe retry treated it as
+  // duplicate and silently skipped, causing under-billing.
+  //
+  // claim_stripe_event returns one of:
+  //   'claimed'        — fresh event, run handleEvent
+  //   'duplicate'      — already processed, ack 200
+  //   'concurrent'     — another worker is actively processing it
+  //                      (<60s), return 429 so Stripe retries shortly
+  //   'stale_takeover' — previous worker died; rerun handleEvent
+  //                      (handlers are idempotent on Stripe data)
+  const { data: claimResult, error: claimErr } = await supabase
+    .rpc('claim_stripe_event', {
+      p_event_id:   event.id,
+      p_event_type: event.type,
+      p_stale_ms:   60_000,
     })
-    return NextResponse.json({ error: `DB error: ${dedupErr.message}` }, { status: 500 })
+
+  if (claimErr) {
+    log.error('stripe-webhook claim rpc failed', {
+      route: 'stripe/webhook', event_id: event.id, event_type: event.type,
+      error: claimErr.message, status: 'error',
+    })
+    return NextResponse.json({ error: `Claim RPC: ${claimErr.message}` }, { status: 500 })
+  }
+
+  const claim = String(claimResult ?? '')
+
+  if (claim === 'duplicate') {
+    log.info('stripe-webhook duplicate event skipped', {
+      route: 'stripe/webhook', event_id: event.id, event_type: event.type, status: 'duplicate',
+    })
+    return NextResponse.json({ received: true, duplicate: true, type: event.type })
+  }
+
+  if (claim === 'concurrent') {
+    log.info('stripe-webhook concurrent worker — asking Stripe to retry', {
+      route: 'stripe/webhook', event_id: event.id, event_type: event.type, status: 'concurrent',
+    })
+    // 429 tells Stripe to retry with exponential backoff. The other
+    // worker will either finish and mark processed (next retry sees
+    // 'duplicate') or die (next retry sees 'stale_takeover').
+    return NextResponse.json({ retry: true, reason: 'concurrent_worker' }, { status: 429 })
+  }
+
+  // 'claimed' or 'stale_takeover' — proceed to handle
+  const tookOver = claim === 'stale_takeover'
+  if (tookOver) {
+    log.warn('stripe-webhook stale-takeover — re-running handler', {
+      route: 'stripe/webhook', event_id: event.id, event_type: event.type,
+    })
   }
 
   // ── 4. Process ───────────────────────────────────────────────────
   const started = Date.now()
   try {
     await handleEvent(event, supabase)
+    // Only NOW mark the event processed — if Vercel killed us before
+    // this point, the next retry sees claimed_at older than stale_ms
+    // and takes over instead of treating it as duplicate.
+    await supabase.rpc('mark_stripe_event_processed', { p_event_id: event.id })
     log.info('stripe-webhook processed', {
-      route:       'stripe/webhook',
-      duration_ms: Date.now() - started,
-      event_id:    event.id,
-      event_type:  event.type,
-      status:      'success',
+      route: 'stripe/webhook', duration_ms: Date.now() - started,
+      event_id: event.id, event_type: event.type,
+      took_over: tookOver, status: 'success',
     })
     return NextResponse.json({ received: true, type: event.type })
   } catch (err: any) {
+    // Roll back the claim so the next retry can re-attempt cleanly.
     await supabase.from('stripe_processed_events').delete().eq('event_id', event.id)
     log.error('stripe-webhook handler failed', {
-      route:       'stripe/webhook',
-      duration_ms: Date.now() - started,
-      event_id:    event.id,
-      event_type:  event.type,
-      error:       err?.message ?? 'handler error',
-      status:      'error',
+      route: 'stripe/webhook', duration_ms: Date.now() - started,
+      event_id: event.id, event_type: event.type,
+      error: err?.message ?? 'handler error', status: 'error',
     })
     return NextResponse.json({ error: err?.message ?? 'handler error' }, { status: 500 })
   }

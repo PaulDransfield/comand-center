@@ -1,12 +1,12 @@
 # Owner actions pending — scaling audit + autonomous session 2026-05-25
 
-Two waves of work shipped today. **Both are deployed.** Two items need your hand when you're back:
+Two waves of work shipped today. **All deployed.** SQL migrations need your hand when you're back:
 
 ---
 
-## 1. Apply SQL migration M101 (scaling indexes + RPC hardening)
+## SQL migrations — apply in order
 
-**File:** `sql/M101-SCALING-INDEXES-AND-RPC-HARDENING.sql`
+### 1. `sql/M101-SCALING-INDEXES-AND-RPC-HARDENING.sql` ✅ APPLIED
 
 Open Supabase → SQL Editor → paste + run. Safe to re-run (every CREATE is IF NOT EXISTS).
 
@@ -32,7 +32,40 @@ SELECT indexname FROM pg_indexes WHERE indexname IN (
 
 ---
 
-## 2. Set `MAX_DAILY_GLOBAL_USD=150` in Vercel env (optional but recommended)
+### 2. `sql/M102-AI-REQUEST-LOG-ARCHIVE.sql` — NEW
+
+Creates `ai_request_log_archive` table + `upsert_ai_log_archive` RPC. The weekly retention cron now archives 365-day rolling-window aggregates BEFORE deleting source rows. Preserves audit trail for compliance + historical cost analysis without growing the hot table.
+
+Grain: one row per (date × org × request_type × model). ~99% smaller than raw rows.
+
+```sql
+SELECT proname FROM pg_proc WHERE proname = 'upsert_ai_log_archive';
+SELECT relname FROM pg_class WHERE relname = 'ai_request_log_archive';
+-- expect 1 row each
+```
+
+---
+
+### 3. `sql/M103-STRIPE-WEBHOOK-IDEMPOTENCY.sql` — NEW
+
+Adds `processed_at` + `claimed_at` columns to `stripe_processed_events` + two RPCs (`claim_stripe_event`, `mark_stripe_event_processed`). Hardens the webhook so a Vercel function killed mid-handler can be re-tried instead of silently skipped (the silent-underbilling bug class).
+
+Backfills existing rows as `processed_at = created_at` so prior events are still treated as duplicates correctly.
+
+```sql
+SELECT proname FROM pg_proc WHERE proname IN
+  ('claim_stripe_event', 'mark_stripe_event_processed');
+-- expect 2 rows
+
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'stripe_processed_events'
+  AND column_name IN ('processed_at', 'claimed_at');
+-- expect 2 rows
+```
+
+---
+
+## 4. Set `MAX_DAILY_GLOBAL_USD=150` in Vercel env (optional but recommended)
 
 The default in code is now $150 (was $50). Setting the env var in Vercel makes the limit explicit and easier to tune later without a redeploy:
 
