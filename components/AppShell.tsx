@@ -33,6 +33,7 @@ import PlanGate        from './PlanGate'
 import OnboardingGate  from './OnboardingGate'
 import AiUsageBanner   from './AiUsageBanner'
 import BrokenIntegrationBanner from './BrokenIntegrationBanner'
+import SyncProgressBanner from './SyncProgressBanner'
 import { RoleGate }    from './RoleGate'
 import { UXP }         from '@/lib/constants/tokens'
 
@@ -86,6 +87,7 @@ export default function AppShell({
       <div className="cc-main-content" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <BrokenIntegrationBanner />
         <AiUsageBanner />
+        <SyncProgressBanner />
         <AppShellUX
           dateLabel={dateLabel}
           onPrev={onPrev}
