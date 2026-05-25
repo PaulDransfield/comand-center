@@ -74,6 +74,19 @@ export default function InventoryReviewPage() {
   // Bulk-action selection state
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState<{ done: number; total: number } | null>(null)
+  // AI suggestions — keyed by group_key. Populated by the "AI sort" button.
+  // confidence ∈ [0, 1]. action ∈ approve_existing|create_new|skip_non_inventory|review.
+  type AISuggestion = {
+    action: 'approve_existing' | 'create_new' | 'skip_non_inventory' | 'review'
+    confidence: number
+    product_id?: string | null
+    suggested_name?: string | null
+    suggested_category?: string | null
+    reasoning?: string | null
+  }
+  const [ai, setAi] = useState<Record<string, AISuggestion>>({})
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiSummary, setAiSummary] = useState<{ total: number; cached: boolean | 'partial' } | null>(null)
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -104,6 +117,59 @@ export default function InventoryReviewPage() {
 
   useEffect(() => { if (bizId) load() }, [bizId, load])
 
+  // Load AI suggestions for the current needs_review queue. Cached 24h
+  // server-side so repeat loads don't re-bill. force=true forces fresh.
+  const loadAi = useCallback(async (force = false) => {
+    if (!bizId) return
+    setAiBusy(true)
+    try {
+      const r = await fetch('/api/inventory/review/ai-suggest', {
+        method:  'POST',
+        cache:   'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId, force }),
+      })
+      const j = await r.json().catch(() => ({} as any))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      const map: Record<string, AISuggestion> = {}
+      for (const s of (j.suggestions ?? [])) {
+        map[s.group_key] = {
+          action:             s.action,
+          confidence:         Number(s.confidence ?? 0),
+          product_id:         s.product_id ?? null,
+          suggested_name:     s.suggested_name ?? null,
+          suggested_category: s.suggested_category ?? null,
+          reasoning:          s.reasoning ?? null,
+        }
+      }
+      setAi(map)
+      setAiSummary({ total: (j.suggestions ?? []).length, cached: j.cached ?? false })
+    } catch (e: any) {
+      setError(`AI suggestions failed: ${e.message}`)
+    } finally {
+      setAiBusy(false)
+    }
+  }, [bizId])
+
+  // Fire-and-forget outcome logger — captures what owner did vs what AI
+  // suggested. Failures here MUST never block the owner action.
+  function logOutcome(groupKey: string, ownerAction: string, ownerProductId?: string | null, ownerChosenName?: string | null) {
+    if (!bizId) return
+    fetch('/api/inventory/review/learn', {
+      method:  'POST',
+      cache:   'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        business_id:        bizId,
+        group_key:          groupKey,
+        ai_suggestion:      ai[groupKey] ?? null,
+        owner_action:       ownerAction,
+        owner_product_id:   ownerProductId ?? null,
+        owner_chosen_name:  ownerChosenName ?? null,
+      }),
+    }).catch(() => { /* soft fail */ })
+  }
+
   async function approve(group: ReviewGroup) {
     if (!bizId) return
     const e = edits[group.group_key]
@@ -129,6 +195,14 @@ export default function InventoryReviewPage() {
         product_id: j.product_id, alias_id: j.alias_id,
         was_existing: !!j.was_existing,
       } }))
+      // Learning signal — log what AI suggested vs what owner did.
+      // approve_existing if existing product was matched; create_new otherwise.
+      logOutcome(
+        group.group_key,
+        j.was_existing ? 'approve_existing' : 'create_new',
+        j.product_id ?? null,
+        e.name.trim(),
+      )
     } catch (err: any) {
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
     }
@@ -188,6 +262,7 @@ export default function InventoryReviewPage() {
       const j = await r.json().catch(() => ({} as any))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, skipped: true } }))
+      logOutcome(group.group_key, 'skip_non_inventory')
     } catch (err: any) {
       setEdits(prev => ({ ...prev, [group.group_key]: { ...prev[group.group_key], busy: false, err: err.message } }))
     }
@@ -353,6 +428,92 @@ export default function InventoryReviewPage() {
             }} />
         </div>
 
+        {/* AI assist bar — sits below filters, above the bulk toolbar */}
+        {!loading && visible.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+            padding: '8px 12px',
+            background: Object.keys(ai).length > 0 ? UXP.lavFill : UXP.subtleBg,
+            border: `0.5px solid ${Object.keys(ai).length > 0 ? UXP.lavMid : UXP.border}`,
+            borderRadius: 8, fontSize: 11,
+            flexWrap: 'wrap' as const,
+          }}>
+            <span style={{ fontSize: 14 }}>🤖</span>
+            <button
+              type="button"
+              onClick={() => loadAi(Object.keys(ai).length > 0)}
+              disabled={aiBusy}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: UXP.lavMid, color: '#fff',
+                border: 'none', borderRadius: 6,
+                cursor: aiBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                opacity: aiBusy ? 0.6 : 1,
+              }}>
+              {aiBusy
+                ? 'AI thinking…'
+                : Object.keys(ai).length > 0 ? 'Refresh AI suggestions' : 'AI sort (suggest actions)'}
+            </button>
+            {aiSummary && (
+              <span style={{ color: UXP.ink3 }}>
+                {aiSummary.total} suggestion{aiSummary.total === 1 ? '' : 's'}
+                {aiSummary.cached === true && ' (cached)'}
+                {aiSummary.cached === 'partial' && ' (partial cache)'}
+              </span>
+            )}
+            {Object.keys(ai).length > 0 && (() => {
+              const hiConf = visible.filter(g => !edits[g.group_key]?.done && !edits[g.group_key]?.skipped && ai[g.group_key] && ai[g.group_key].confidence >= 0.85)
+              const hiConfApprove = hiConf.filter(g => ai[g.group_key].action === 'approve_existing' || ai[g.group_key].action === 'create_new')
+              const hiConfSkip    = hiConf.filter(g => ai[g.group_key].action === 'skip_non_inventory')
+              return (
+                <>
+                  <span style={{ color: UXP.ink3 }}>
+                    · {hiConfApprove.length} approve · {hiConfSkip.length} skip · {hiConf.length} total ≥85%
+                  </span>
+                  {hiConf.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm(`Apply ${hiConf.length} high-confidence AI suggestions? ${hiConfApprove.length} approve + ${hiConfSkip.length} skip.`)) return
+                        setBulkBusy({ done: 0, total: hiConf.length })
+                        for (let i = 0; i < hiConf.length; i++) {
+                          const g = hiConf[i]
+                          const s = ai[g.group_key]
+                          // For approve_existing/create_new: set name/category from AI, then approve.
+                          if (s.action === 'approve_existing' || s.action === 'create_new') {
+                            if (s.suggested_name) {
+                              setEdits(prev => ({ ...prev, [g.group_key]: {
+                                ...prev[g.group_key],
+                                name: s.suggested_name!,
+                                category: s.suggested_category ?? prev[g.group_key]?.category ?? g.suggested_category,
+                              } }))
+                              // give React a tick to commit the state before approve() reads it
+                              await new Promise(r => setTimeout(r, 0))
+                            }
+                            await approve(g)
+                          } else if (s.action === 'skip_non_inventory') {
+                            await skip(g)
+                          }
+                          setBulkBusy({ done: i + 1, total: hiConf.length })
+                        }
+                        setBulkBusy(null)
+                      }}
+                      style={{
+                        marginLeft: 'auto',
+                        padding: '5px 14px', fontSize: 11, fontWeight: 600,
+                        background: UXP.ink1, color: '#fff',
+                        border: 'none', borderRadius: 6,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      Apply all ≥85%
+                    </button>
+                  )}
+                </>
+              )
+            })()}
+          </div>
+        )}
+
         {error && (
           <div style={{ padding: '10px 14px', background: UXP.roseFill,
                         border: `0.5px solid ${UXP.rose}`, borderRadius: 8,
@@ -469,6 +630,70 @@ export default function InventoryReviewPage() {
                                     overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
                         {t('seenAs')} "{g.sample_raw_description}"
                       </div>
+                      {/* AI suggestion badge — only when an AI run has produced one for this group */}
+                      {ai[g.group_key] && !isResolved && (() => {
+                        const s = ai[g.group_key]
+                        const conf = Math.round(s.confidence * 100)
+                        const tone = s.confidence >= 0.85 ? 'high' : s.confidence >= 0.65 ? 'mid' : 'low'
+                        const palette = tone === 'high'
+                          ? { bg: UXP.lavFill, border: UXP.lavMid, fg: UXP.lavText }
+                          : tone === 'mid'
+                            ? { bg: UXP.subtleBg, border: UXP.border, fg: UXP.ink2 }
+                            : { bg: UXP.subtleBg, border: UXP.border, fg: UXP.ink3 }
+                        const label =
+                          s.action === 'approve_existing'  ? `Link to existing product${s.suggested_name ? `: ${s.suggested_name}` : ''}`
+                          : s.action === 'create_new'      ? `Add as "${s.suggested_name ?? '?'}" (${s.suggested_category ?? '?'})`
+                          : s.action === 'skip_non_inventory' ? 'Skip — not inventory'
+                          : 'Review'
+                        const canApply = s.action !== 'review' && s.confidence >= 0.5
+                        return (
+                          <div style={{
+                            marginTop: 8, padding: '5px 9px',
+                            background: palette.bg, border: `0.5px solid ${palette.border}`,
+                            borderRadius: 6, fontSize: 11, color: palette.fg,
+                            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const,
+                          }}>
+                            <span style={{ fontSize: 12 }}>🤖</span>
+                            <span style={{ fontWeight: 500 }}>{label}</span>
+                            <span style={{ fontSize: 10, color: palette.fg, opacity: 0.75 }}>({conf}% confident)</span>
+                            {s.reasoning && (
+                              <span style={{ fontSize: 10, color: palette.fg, opacity: 0.7, fontStyle: 'italic' as const, marginLeft: 4 }} title={s.reasoning}>
+                                · {s.reasoning.slice(0, 80)}
+                              </span>
+                            )}
+                            {canApply && (
+                              <button
+                                type="button"
+                                disabled={e.busy || !!bulkBusy}
+                                onClick={async () => {
+                                  if (s.action === 'approve_existing' || s.action === 'create_new') {
+                                    if (s.suggested_name) {
+                                      setEdits(prev => ({ ...prev, [g.group_key]: {
+                                        ...prev[g.group_key],
+                                        name: s.suggested_name!,
+                                        category: s.suggested_category ?? prev[g.group_key]?.category ?? g.suggested_category,
+                                      } }))
+                                      await new Promise(r => setTimeout(r, 0))
+                                    }
+                                    await approve(g)
+                                  } else if (s.action === 'skip_non_inventory') {
+                                    await skip(g)
+                                  }
+                                }}
+                                style={{
+                                  marginLeft: 'auto',
+                                  padding: '3px 10px', fontSize: 10, fontWeight: 600,
+                                  background: tone === 'high' ? UXP.ink1 : 'transparent',
+                                  color: tone === 'high' ? '#fff' : palette.fg,
+                                  border: tone === 'high' ? 'none' : `0.5px solid ${palette.border}`,
+                                  borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                                }}>
+                                Apply
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     {/* MIDDLE: numeric facts */}
