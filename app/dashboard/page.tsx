@@ -1116,23 +1116,32 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
   if (!isFresh && integrations == null) return null
 
   const STALE_HOURS = 36
-  const healthyCount = (integrations ?? []).filter(i => {
+  // Daily metrics (revenue, staff_cost, covers, hours) only come from POS /
+  // staff systems — never Fortnox, which is monthly P&L only. Keep this list
+  // in sync with /api/sync/now's provider list (minus fortnox).
+  const DAILY_METRIC_PROVIDERS = new Set(['personalkollen', 'onslip', 'ancon', 'swess', 'caspeco', 'inzii'])
+  const isHealthy = (i: { status: string | null; last_sync_at: string | null }) => {
     if (i.status !== 'connected') return false
     if (!i.last_sync_at) return false
     const ageH = (Date.now() - new Date(i.last_sync_at).getTime()) / 3600_000
     return ageH < STALE_HOURS
-  }).length
-  const integrationCount = (integrations ?? []).length
+  }
+  const healthy            = (integrations ?? []).filter(isHealthy)
+  const healthyCount       = healthy.length
+  const healthyDailyCount  = healthy.filter(i => DAILY_METRIC_PROVIDERS.has(i.provider)).length
+  const integrationCount   = (integrations ?? []).length
 
-  // Four states (only one of these is true at a time):
+  // Five states (only one of these is true at a time):
   //   isFresh            — new business < 72h old → "your data is on its way"
   //   noIntegrations     — none connected to this business → prompt to connect
   //   isStale            — has integrations, none healthy → alarming "check integrations"
-  //   isEmptyPeriod      — has healthy integrations, period is just quiet → calm hint
-  const noIntegrations = !isFresh && integrationCount === 0
-  const isStale        = !isFresh && integrationCount > 0 && healthyCount === 0
-  const isEmptyPeriod  = !isFresh && healthyCount > 0
-  const isAlarming     = noIntegrations || isStale
+  //   needsDailySource   — Fortnox-only (or other monthly-only sources); no POS/staff feed → explain & prompt
+  //   isEmptyPeriod      — has healthy daily-data integrations, period is just quiet → calm hint
+  const noIntegrations  = !isFresh && integrationCount === 0
+  const isStale         = !isFresh && integrationCount > 0 && healthyCount === 0
+  const needsDailySource = !isFresh && healthyCount > 0 && healthyDailyCount === 0
+  const isEmptyPeriod   = !isFresh && healthyDailyCount > 0
+  const isAlarming      = noIntegrations || isStale
 
   async function syncNow() {
     if (syncing) return
@@ -1180,9 +1189,11 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
             ? 'No integrations connected to this business'
             : isStale
               ? 'No data syncing for this business'
-              : isEmptyPeriod
-                ? 'No activity recorded for this period'
-                : `Welcome${selectedBiz?.name ? `, ${selectedBiz.name}` : ''} — your data is on its way`}
+              : needsDailySource
+                ? 'Connect a POS or staff system to populate this dashboard'
+                : isEmptyPeriod
+                  ? 'No activity recorded for this period'
+                  : `Welcome${selectedBiz?.name ? `, ${selectedBiz.name}` : ''} — your data is on its way`}
         </div>
         <div style={{ fontSize: 12, color: UXP.ink2, lineHeight: 1.55 }}>
           {noIntegrations ? (
@@ -1194,6 +1205,12 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
             <>
               We haven't seen new data from your connected integrations in over {STALE_HOURS} hours.
               Check <a href="/integrations" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>integrations</a> for any broken connections, or click below to trigger a manual sync.
+            </>
+          ) : needsDailySource ? (
+            <>
+              Fortnox is connected and feeding monthly P&L into <a href="/financials/performance" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>Financials → Performance</a>.
+              This dashboard shows daily revenue and labour, which come from your POS or staff system.
+              Head to <a href="/integrations" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>integrations</a> to connect Personalkollen so the daily view fills in.
             </>
           ) : isEmptyPeriod ? (
             <>
