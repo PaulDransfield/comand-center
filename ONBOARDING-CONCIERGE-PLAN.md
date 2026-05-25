@@ -121,10 +121,12 @@ global `MAX_DAILY_GLOBAL_USD` kill-switch mid-session. Surface the running $ on 
 
 ## 3. Phasing (ship in this order)
 
-- **Phase 1 — Board + Drive (highest value, lowest risk).** `/admin/v2/onboard/[bizId]`
-  + `/api/admin/onboard/status` + `/api/admin/onboard/drive`. Reuses every existing
-  kick endpoint; only new code is the read-model aggregation + the drive loop. This
-  alone delivers "full data setup without waiting."
+- **Phase 1 — Board + Drive — ✅ SHIPPED 2026-05-25.** `/admin/v2/onboard/[bizId]`
+  + `/api/admin/onboard/status` + `/api/admin/onboard/drive` + `lib/onboard/snapshot.ts`.
+  Read-model aggregates stage state from the authoritative tables; the board polls
+  every 5s and (auto-drive on) kicks the next idle/stalled stage. Sequential drive
+  order: financials → invoices → pdf (matching runs inline + via chain_rematch, so
+  it's display-only). Reuses every existing kick endpoint. Burst is session-scoped.
 - **Phase 2 — Catalogue auto-build.** Wire `ai-suggest` bulk + `recategorise-other`
   into a one-click board action + residual count.
 - **Phase 3 — Recipe AI-drafting** + fast review UI. The biggest labour win.
