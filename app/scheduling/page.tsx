@@ -231,6 +231,18 @@ export default function SchedulingGridPage() {
     return m
   }, [data])
 
+  // Per-day SEK savings from pending suggestions — for the "if you
+  // accepted all AI recs" projected % pill on each day header.
+  const pendingSavingsByDate = useMemo(() => {
+    const m = new Map<string, number>()
+    if (!data) return m
+    for (const s of data.suggestions) {
+      if (s.status !== 'pending' || !s.shift_date || s.est_sek_saving == null) continue
+      m.set(s.shift_date, (m.get(s.shift_date) ?? 0) + Number(s.est_sek_saving))
+    }
+    return m
+  }, [data])
+
   async function syncFromPK() {
     if (!bizId || syncing) return
     setSyncing(true)
@@ -458,7 +470,7 @@ export default function SchedulingGridPage() {
                 {view === 'shift' ? 'Shift template' : 'Staff'}
               </div>
               {data.days.map(d => (
-                <DayHeaderCell key={d.date} day={d} />
+                <DayHeaderCell key={d.date} day={d} aiSavingsSek={pendingSavingsByDate.get(d.date) ?? 0} />
               ))}
             </div>
 
@@ -530,10 +542,22 @@ export default function SchedulingGridPage() {
 // ─────────────────────────────────────────────────────────────────────
 // Sub-components
 
-function DayHeaderCell({ day }: { day: DayHeader }) {
+function DayHeaderCell({ day, aiSavingsSek }: { day: DayHeader; aiSavingsSek: number }) {
   const isWeekend = day.day_of_week === 'Sat' || day.day_of_week === 'Sun'
   const isHoliday = !!day.holiday
   const dateFg = (isWeekend || isHoliday) ? UXP.rose : UXP.ink2
+
+  // If the owner approved every pending suggestion for today, what would
+  // the projected staff % look like? Same divisor (forecast revenue),
+  // smaller numerator (planned cost − sum of est savings).
+  const postAiPct = (() => {
+    if (!day.forecast_revenue || day.forecast_revenue <= 0) return null
+    if (!aiSavingsSek) return null
+    const planned   = day.planned_cost ?? 0
+    const newPlan   = Math.max(0, planned - aiSavingsSek)
+    return Math.round((newPlan / day.forecast_revenue) * 1000) / 10
+  })()
+
   return (
     <div style={{
       padding: '8px 10px',
@@ -552,15 +576,33 @@ function DayHeaderCell({ day }: { day: DayHeader }) {
         <span>{day.forecast_revenue != null ? fmtKr(day.forecast_revenue) : '—'}</span>
         <span>{day.planned_hours}h</span>
       </div>
-      <div style={{ marginTop: 4 }}>
+      <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' as const }}>
         {day.projected_staff_pct != null && day.target_staff_pct != null && (() => {
           const gap = day.projected_staff_pct - day.target_staff_pct
           const tone = gap > 2 ? 'rose' : gap < -2 ? 'green' : 'neutral'
           const bg = tone === 'rose' ? UXP.roseFill : tone === 'green' ? UXP.greenFill : UXP.subtleBg
           const fg = tone === 'rose' ? UXP.roseText : tone === 'green' ? UXP.greenDeep : UXP.ink3
           return (
-            <span style={{ fontSize: 9, fontWeight: 500, color: fg, background: bg, borderRadius: 999, padding: '2px 7px' }}>
+            <span title="Projected labour % at current planned schedule"
+                  style={{ fontSize: 9, fontWeight: 500, color: fg, background: bg, borderRadius: 999, padding: '2px 7px' }}>
               {day.projected_staff_pct.toFixed(0)}%
+            </span>
+          )
+        })()}
+        {postAiPct != null && day.target_staff_pct != null && (() => {
+          const gap = postAiPct - day.target_staff_pct
+          const tone = gap > 2 ? 'rose' : gap < -2 ? 'green' : 'neutral'
+          const bg = tone === 'rose' ? UXP.roseFill : tone === 'green' ? UXP.greenFill : UXP.lavFill
+          const fg = tone === 'rose' ? UXP.roseText : tone === 'green' ? UXP.greenDeep : UXP.lavText
+          return (
+            <span title={`After applying pending AI suggestions (saves ${Math.round(aiSavingsSek)} kr)`}
+                  style={{
+                    fontSize: 9, fontWeight: 500, color: fg, background: bg, borderRadius: 999, padding: '2px 7px',
+                    border: `0.5px dashed ${UXP.lavMid}`,
+                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                  }}>
+              <span aria-hidden style={{ fontSize: 8, color: UXP.lavText, fontWeight: 600 }}>AI</span>
+              {postAiPct.toFixed(0)}%
             </span>
           )
         })()}
