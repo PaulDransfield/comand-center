@@ -1,5 +1,78 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-05-07
+Last updated: 2026-05-25
+
+---
+
+## 0cs. Scaling-audit gaps closed before 20-customer ramp (2026-05-25)
+
+Five-agent audit (DB / API / AI / sync / frontend) surfaced 25 P0+P1 items. Three deployment waves shipped over one extended session, M101–M103 applied. Highlights of bug-class fixes (architectural changes summarised in ROADMAP.md Session 21):
+
+### §0cs-1: Cross-tenant Fortnox data leak — fixed in `f9d924b`
+**Symptom:** 3 Fortnox endpoints (`/api/integrations/generic`, `/api/integrations/fortnox/recent-invoices`, `/api/integrations/fortnox/drilldown`) accepted `business_id` from request body/query and used it directly with `org_id` filter, but never verified the caller's org actually owns that business. A user belonging to org A could pass org B's `business_id` and get the data back.
+**Fix:** Added `requireBusinessAccess(auth, businessId)` after the request-param read on all 3 routes. Pattern matches `/api/scheduling/week` (which always had it correctly).
+
+### §0cs-2: AI cost runaway via "Generate" spam — fixed in `f9d924b`
+**Symptom:** `/api/scheduling/ai-recommend` (Sonnet 4.6) and `/api/inventory/review/ai-suggest` (Haiku 4.5, 16k tokens) called Anthropic with no quota gate. An owner spamming "Generate AI suggestions" on the scheduling grid could blow daily AI budget in seconds — $0.012/call × hundreds of attempts.
+**Fix:** Added `checkAndIncrementAiLimit(db, auth.orgId)` at the top of both routes (atomic INSERT…ON CONFLICT RPC; decrements on over-limit so rejected attempts don't tick the counter). Returns 429 with structured body when blocked. Extract-worker (cron-driven) uses the lighter `checkAiLimit` since user can't trigger bursts there.
+
+### §0cs-3: Anthropic 429 not handled on 2 endpoints — fixed in `f9d924b`
+**Symptom:** Single Anthropic rate-limit blip on `ai-recommend` or `ai-suggest` surfaced as 502 to the user. PDF extractor had the retry pattern; nothing else did.
+**Fix:** Extracted shared `lib/ai/anthropic-fetch.ts` helper. Honours `Retry-After` header, exponential 2/4/8/16s backoff on 429 + 5xx, max 4 retries. Wired into both routes. Pattern identical to `lib/inventory/pdf-extractor.ts:778-816`.
+
+### §0cs-4: Global kill-switch firing daily at 20-customer scale — fixed in `f9d924b`
+**Symptom:** `MAX_DAILY_GLOBAL_USD` default was $50. Audit cost projection at 20 customers was $60-80/day baseline, $120+ on spike days. Kill-switch would have fired daily and blocked AI org-wide.
+**Fix:** Default raised to $150 in `lib/ai/usage.ts:globalDailyCapUsd()`. Env-var `MAX_DAILY_GLOBAL_USD` can tune further in prod without redeploy.
+
+### §0cs-5: Fortnox 200 req/sec rate-limit storm — fixed in `303ddb8`
+**Symptom:** Audit projected master-sync at 06:00 UTC fans out 10 parallel integrations per customer × 20 customers = 200 simultaneous Fortnox requests, instantly tripping Fortnox's per-token rate limit. 429 cascade on every customer.
+**Fix:** Added per-token concurrency semaphore inside `fortnoxFetch()` — module-level `Map<tokenKey, inflightCount>` caps to 2 concurrent per access token (each customer has their own token). Acquire-before-fetch, release-in-finally so thrown errors don't leak slots. Caller code unchanged.
+
+### §0cs-6: Master-sync aggregation lock stolen mid-run — fixed in `f9d924b`
+**Symptom:** `LOCK_STALE_MS = 60_000` in `lib/sync/aggregate.ts` but master-sync `maxDuration = 300`. A slow run could have its lock stolen at the 60s mark while still mid-aggregate → concurrent writes to `monthly_metrics` → stale overwrites.
+**Fix:** Bumped TTL to 180s (3 min). Still recovers from genuine worker crashes within one cron tick.
+
+### §0cs-7: Master-sync per-customer errors silently swallowed — fixed in `303ddb8`
+**Symptom:** `syncOne` `try { } catch (e) { return { ...result, error: e.message } }` then `Promise.all` collected `[ok, error, ok, ...]`. Cron returned 200 OK; nobody got paged when individual customers failed.
+**Fix:** Added error-rate alerting. When `errors.length / integrations.length >= 30%`, builds a per-org breakdown and emails ops via new `lib/email/ops-alert.ts` helper. Returns 206 partial-status so monitoring picks it up. Per-customer error details in response body so admin can drill.
+
+### §0cs-8: scheduling-sync never probed needs_reauth integrations — fixed in `303ddb8`
+**Symptom:** `app/api/cron/scheduling-sync/route.ts:38` hardcoded `.in('status', ['connected', 'warning'])`. A PK integration that hit a transient 401 stayed deaf forever until owner manually reconnected, even though master-sync's `filterEligible()` was already auto-probing it.
+**Fix:** Switched to `filterEligible(integrations)` helper — same eligibility logic across all sync entry points. needs_reauth gets re-tried with the 6h cooldown.
+
+### §0cs-9: Extraction sweeper Vercel infinite-retry on RPC blip — fixed in `303ddb8`
+**Symptom:** `app/api/cron/extraction-sweeper/route.ts` returned 500 when `list_ready_extraction_jobs` RPC errored. Vercel cron infinite-retries 500s; a transient DB blip could spawn racing sweeps that both claimed the same job.
+**Fix:** Return 200 with `{ ok: false, will_retry_on_next_cron: true }` payload on RPC failure. Cron fires every 2 min anyway. Belt-and-braces: M101 hardened the RPC itself with `FOR UPDATE SKIP LOCKED`.
+
+### §0cs-10: ai_request_log under-counted by 2 surfaces — fixed in `303ddb8`
+**Symptom:** PDF extractor (`lib/inventory/pdf-extractor.ts`) and inventory ai-suggest both computed `aiCost` USD but never called `logAiRequest()`. Cost dashboard rollup undercounted ~$1.50/mo per customer; spike costs from Sonnet escalations on PDF extract were invisible.
+**Fix:** Added `logAiRequest()` calls in both files. Tags request_type as `pdf_extract_supplier_invoice_haiku` / `..._sonnet` so cost breakdown sees the cascade distribution.
+
+### §0cs-11: Stripe webhook silent underbilling (Vercel function killed mid-handler) — fixed in `c76cc16`
+**Symptom:** Webhook inserted dedup row BEFORE running `handleEvent`. If Vercel killed the function between insert and handler completion, the next Stripe retry treated the row as already-processed and skipped. Customer's subscription change never wrote to our DB → underbilling.
+**Fix:** Two-phase via M103 schema + RPCs.
+- `claim_stripe_event` returns `'claimed' | 'duplicate' | 'concurrent' | 'stale_takeover'` based on `claimed_at` + `processed_at` state.
+- `'concurrent'` (claimed <60s ago, not yet processed) → 429 so Stripe retries shortly.
+- `'stale_takeover'` (claimed >60s ago, never processed = previous worker died) → rerun handler.
+- `mark_stripe_event_processed` only called AFTER `handleEvent` returns successfully.
+Same pattern handles network blips, OOM kills, timeout-without-Stripe-rollback. Handlers must be idempotent on Stripe data (they were already — `subscription.updated` etc. are end-state writes).
+
+### §0cs-12: Resend double-send on Vercel function retry — fixed in `c76cc16`
+**Symptom:** A function that called `sendEmail()` then crashed before returning 200 to Vercel would be retried. Resend got the same POST twice → customer got duplicate notification (welcome email, billing receipt, etc.).
+**Fix:** `lib/email/send.ts` now sets `Idempotency-Key` header on every Resend POST. Default key auto-derived from `sha1(from|to|subject|first-400-of-html)` so identical sends back-to-back collapse within Resend's 24h dedup window. New optional `idempotencyKey` arg lets callers pass a stable key for stronger semantics (e.g. `digest:${date}:${orgId}`).
+
+### §0cs-13: PostgREST unbounded SELECT silent truncation — fixed in `303ddb8`
+**Symptom:** `/api/tracker` selected `*` from `tracker_data` with no `.limit()`. PostgREST silently truncates at 1000 rows. Fine today; at 20 customers × multiple years it would silently lose data.
+**Fix:** Added explicit `.limit(24)` on `tracker_data` and `.limit(500)` on `tracker_line_items`. Documents intent + prevents silent truncation forever.
+
+### §0cs-14: 10 inventory pages didn't react to BizPicker switch — fixed in `eb4887e`
+**Symptom:** Pages read `cc_selected_biz` from localStorage on mount but didn't subscribe to `storage` events. Owner switching businesses in the toolbar BizPicker required a full page reload before data refreshed.
+**Fix:** Added `window.addEventListener('storage', ...)` cleanup pattern to `app/inventory/{items, counts, extractions, recipes, review, sales, skipped, variance, waste}/page.tsx`. Same pattern as `/scheduling` page already uses.
+
+### §0cs-15: M101 + M103 migrations had schema-drift bugs — fixed in `7ef6001`, `cde5203`, `0606429`
+**Symptom 1:** M101 first version assumed `business_date` column on `hourly_metrics` (per `sql/M071-HOURLY-METRICS.sql` DDL); production schema differed. `42703 column "business_date" does not exist`.
+**Symptom 2:** M101 second version tried to `CREATE OR REPLACE FUNCTION list_ready_extraction_jobs` with a new return signature. `42P13 cannot change return type`.
+**Symptom 3:** M103 first version assumed `created_at` column on `stripe_processed_events`; actual schema only has `event_id`, `event_type`, `processed_at`. `42703 column "created_at" does not exist`.
+**Fix:** All three migrations rewritten to be defensive — every `ALTER`/`CREATE INDEX`/`CREATE FUNCTION` wrapped in a `DO` block that introspects `information_schema.columns` / `pg_proc` first. `RAISE NOTICE` on every step so operator sees what landed vs what skipped. New memory: [[feedback_archive_migrations_not_authoritative]] reinforced — files under `archive/migrations/` aren't trustworthy for prod schema.
 
 ---
 

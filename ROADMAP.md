@@ -1,7 +1,51 @@
 # ROADMAP.md — CommandCenter
-> Version 8.9 | Updated: 2026-05-11 | Session 17 ✅ (Fortnox OAuth chain unblocked + 12-month backfill + overhead drilldown)
-> Active focus: Piece 4 LLM-adjust + cold-start clamp re-run, then add-second-business flow. Stripe price IDs still pending. i18n coverage of /scheduling, /notebook, /overheads/* still pending.
-> Read alongside CLAUDE.md and FIXES.md
+> Version 9.0 | Updated: 2026-05-25 | Session 21 ✅ (scaling audit P0+P1 + risk-horizon — Fortnox semaphore, AI quota gates, archive table, Stripe + Resend idempotency)
+> Active focus: 20-customer ramp readiness now done. Next: page-bloat refactor (1200+ LOC dashboard/scheduling) for maintainability — deferred until UI-focused session. Stripe price IDs still pending. i18n coverage of /scheduling, /notebook, /overheads/* still pending.
+> Read alongside CLAUDE.md, FIXES.md, MIGRATIONS.md.
+
+---
+
+## Session 21 — 2026-05-25 (scaling audit + risk-horizon hardening) ✅ SHIPPED
+
+Five parallel audit agents reviewed DB / API / AI / sync / frontend for 20+ customer readiness. Findings rolled into three deployment waves over one extended session. **All P0 + P1 in code, M101–M103 migrations applied.** Detailed log lives in `OWNER-ACTIONS-PENDING.md`.
+
+### Closed (would-fire-before-20-customers)
+
+- **Fortnox 200 req/sec rate-limit storm** — `lib/fortnox/api/fetch.ts` now caps to 2 concurrent fetches per access token (per-customer in practice). Fan-out via Promise.all naturally serialises.
+- **AI cost runaway from user-triggered AI surfaces** — `checkAndIncrementAiLimit` on `/api/scheduling/ai-recommend`, `/api/inventory/review/ai-suggest`, `/api/fortnox/extract-worker` (kill-switch gate), `/api/reviews/draft-reply` already had it.
+- **Cross-tenant Fortnox data leak** — `requireBusinessAccess()` added to `/api/integrations/fortnox/recent-invoices`, `/api/integrations/fortnox/drilldown`, `/api/integrations/generic`. Caller can no longer pass another org's `business_id` to get data back.
+- **Global AI kill-switch tripping daily** — `MAX_DAILY_GLOBAL_USD` default 50 → 150. Audit projected $60-80/day baseline at 20 customers; $50 would have blocked AI org-wide every day.
+- **Stripe silent underbilling** — Webhook now uses `claim_stripe_event` RPC two-phase pattern (claimed_at + processed_at). Function killed mid-handler no longer registers as "already processed" on retry. M103 added the schema.
+- **Resend double-sends** — Every email now carries an `Idempotency-Key` header (auto-derived sha1 if caller doesn't provide one). 24h Resend dedup window covers Vercel function-retry double-fires.
+
+### Built infrastructure
+
+- **`lib/ai/anthropic-fetch.ts`** — shared retry-with-backoff for Anthropic Messages API. Honours Retry-After + exponential 2/4/8/16s on 429/5xx. Wired into ai-recommend + ai-suggest.
+- **`lib/email/ops-alert.ts`** — internal cron-failure alert helper. Master-sync now returns 206 + emails ops when per-run error rate ≥30%.
+- **`lib/constants/tokens.ts` `Z` scale** — sticky/rail/banner/dropdown/backdrop/modal/tooltip/toast. Audit found 50/100/199/200/1000 raw values scattered. New surfaces use `Z.modal` etc.
+- **M101 — scaling indexes + RPC hardening:** 5 covering indexes on `hourly_metrics`, `overhead_drilldown_cache`, `supplier_classifications`, `daily_metrics`, `monthly_metrics`; `list_ready_extraction_jobs` switched to `LANGUAGE plpgsql` with `FOR UPDATE SKIP LOCKED`.
+- **M102 — `ai_request_log_archive`:** new per-day rollup table (date × org × request_type × model) so 365-day retention cron archives-then-deletes. Preserves audit trail without growing hot table.
+- **M103 — `stripe_processed_events` hardening:** `claimed_at` column added, `processed_at` made nullable, `claim_stripe_event` + `mark_stripe_event_processed` RPCs.
+
+### Observability
+
+- `logAiRequest()` now called inside `lib/inventory/pdf-extractor.ts` + `/api/inventory/review/ai-suggest` (were largest uncounted AI surfaces).
+- Aggregation lock TTL bumped 60s → 180s (`lib/sync/aggregate.ts`). Master-sync runs up to 300s; old TTL could be stolen mid-aggregate → stale overwrites.
+- Master-sync post-aggregate parallelized in batches of 5. At 20 customers drops post-agg from ~120s serial to ~25s.
+- `scheduling-sync` uses `filterEligible()` so `needs_reauth` PK integrations get probed + recover (previously stayed deaf forever).
+- Hardcoded `'claude-haiku-4-5-20251001'` strings replaced with `AI_MODELS.AGENT` in `budgets/coach`, `admin/probe-inzii`, `reviews/classifier`.
+- Storage-event listener on 10 inventory pages so BizPicker switch propagates without page reload.
+- Tracker endpoints have explicit `.limit(24)` and `.limit(500)` so PostgREST silent truncation can't bite.
+
+### Verified-not-a-risk
+
+- **Supabase Realtime budget** — Only `/overheads/upload` uses it (one channel, two listeners, proper cleanup). At 30 customers ~6 concurrent connections, well under Pro 200-cap. Audit was over-cautious.
+
+### Deferred (no scaling impact)
+
+- Page-bloat refactor (dashboard 1241 LOC, scheduling 1510 LOC) — maintainability, not scaling.
+- Recharts dynamic-import — risks SSR hydration breakage; needs perf-PR.
+- Stripe webhook transaction wrapping — superseded by the M103 two-phase claim pattern (better than transaction since it survives function-kill).
 
 ---
 

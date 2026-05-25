@@ -1,6 +1,47 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-24 | M082-M086 applied · M087 + M088 pending application
+> Last updated: 2026-05-25 | M101 + M102 + M103 applied (scaling audit + risk-horizon)
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Applied — 2026-05-25 (scaling audit + risk-horizon)
+
+### M103 — Stripe webhook idempotency hardening ✅ applied 2026-05-25
+**File:** `sql/M103-STRIPE-WEBHOOK-IDEMPOTENCY.sql`
+**Purpose:** Closes the silent-underbilling bug class. Pre-M103 the webhook inserted a dedup row BEFORE handleEvent; if Vercel killed the function mid-handler, the next Stripe retry treated the row as already-processed and silently skipped. M103 separates "claimed for processing" from "completed processing" via two columns + two RPCs.
+**Schema:**
+- Added `claimed_at TIMESTAMPTZ` to `stripe_processed_events` (existed)
+- Dropped `NOT NULL` + `DEFAULT now()` on `processed_at` so new code can store NULL during in-flight processing
+- Backfilled `claimed_at = processed_at` for existing rows (all represent completed events under old semantics)
+**RPCs:**
+- `claim_stripe_event(p_event_id, p_event_type, p_stale_ms=60000)` → returns `'claimed'` | `'duplicate'` | `'concurrent'` | `'stale_takeover'`
+- `mark_stripe_event_processed(p_event_id)` → sets `processed_at = now()` after handleEvent succeeds
+**Companion code:** `/api/stripe/webhook` rewritten to use the claim flow. `'concurrent'` returns 429 (Stripe retries); `'stale_takeover'` reruns handler (idempotent on Stripe data); `'claimed'` is the normal path.
+**Initial fix needed:** First version assumed `created_at` column existed — production schema only has `event_id`, `event_type`, `processed_at`. Defensive DO-block ADD COLUMN + NULL drop pattern works against actual schema. Idempotent.
+
+### M102 — ai_request_log archive table ✅ applied 2026-05-25
+**File:** `sql/M102-AI-REQUEST-LOG-ARCHIVE.sql`
+**Purpose:** Weekly retention cron used to hard-delete `ai_request_log` rows >365 days. Lost audit trail for compliance + multi-year cost analysis. M102 adds a per-day rollup table so we keep 7+ years cheaply (~99% smaller than raw rows).
+**Schema:**
+- `ai_request_log_archive(date, org_id, request_type, model, request_count, input_tokens_total, output_tokens_total, cost_usd_total, cost_sek_total, duration_ms_total, archived_at)`
+- PK `(date, org_id, request_type, model)` — one row per day per org per type per model
+- Indexes on `(org_id, date DESC)` + `(date DESC, model)`
+- RLS via `current_user_org_ids()`
+**RPC:** `upsert_ai_log_archive(p_date, p_org_id, p_request_type, p_model, p_request_count, p_input_tokens_total, p_output_tokens_total, p_cost_usd_total, p_cost_sek_total, p_duration_ms_total)` with SUM-on-conflict semantics so partial cron reruns aggregate correctly.
+**Companion code:** `/api/cron/ai-log-retention` rewritten to archive-then-delete in `BATCH_SIZE=5000` chunks. Aborts run on archive failure — never deletes unarchived data.
+**Idempotent.**
+
+### M101 — Scaling indexes + extraction sweeper RPC hardening ✅ applied 2026-05-25
+**File:** `sql/M101-SCALING-INDEXES-AND-RPC-HARDENING.sql`
+**Purpose:** Audit found hot-path queries doing sequential scans on tenant-scoped tables. Adds 5 covering indexes + hardens `list_ready_extraction_jobs` RPC with `FOR UPDATE SKIP LOCKED` so concurrent sweepers can't return overlapping job sets.
+**Indexes (all defensive — wrapped in DO-blocks that introspect column names because archive/migrations DDL doesn't always match prod):**
+- `idx_hourly_metrics_biz_date ON hourly_metrics (business_id, business_date)`
+- `idx_overhead_cache_lookup ON overhead_drilldown_cache (business_id, period_year, period_month, category)`
+- `idx_supplier_class_biz_num ON supplier_classifications (business_id, supplier_fortnox_number)`
+- `idx_daily_metrics_org_biz_date ON daily_metrics (org_id, business_id, business_date)`
+- `idx_monthly_metrics_org_biz_period ON monthly_metrics (org_id, business_id, year, month)`
+**RPC change:** `list_ready_extraction_jobs(max_jobs)` switched from `LANGUAGE sql STABLE` to `LANGUAGE plpgsql` (required for `FOR UPDATE SKIP LOCKED` in body). Preserved `RETURNS SETOF extraction_jobs` signature so existing callers aren't broken.
+**Initial fix needed:** First version assumed `business_date` column existed on `hourly_metrics`; production schema differs from M071 DDL. Rewrote to introspect `information_schema.columns` and pick the actual date column (tries `business_date` → `service_date` → `date`). Each step emits `RAISE NOTICE` so the operator sees which indexes landed vs were skipped.
 
 ---
 
