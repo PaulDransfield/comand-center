@@ -62,6 +62,11 @@ export async function POST(req: NextRequest) {
   const businessId = String(body.business_id ?? '').trim()
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
+  // A self-chain re-launch (worker hit its time budget mid-load). Skip the
+  // state reset below so the worker reloads the persisted cursor instead of
+  // starting over, and preserve started_at so the ETA spans the whole job.
+  const isResume = body?.resume === true
+
   // User-session calls go through the existing business-access gate.
   // Cron calls trust the secret + the explicit business_id.
   if (!isCronCall) {
@@ -90,27 +95,33 @@ export async function POST(req: NextRequest) {
   // status/progress cleanly. The supplier_invoice_lines rows from any
   // previous run stay intact (idempotent on their row-level unique key);
   // the matcher will skip already-matched ones.
-  const initialProgress = {
-    phase:        'enqueued',
-    triggered_at: new Date().toISOString(),
-    triggered_by: userIdentity,
-  }
-  const { error: upsertErr } = await db
-    .from('inventory_backfill_state')
-    .upsert({
-      org_id:        orgId,
-      business_id:   businessId,
-      status:        'pending',
-      progress:      initialProgress,
-      started_at:    new Date().toISOString(),
-      finished_at:   null,
-      error_message: null,
-    }, { onConflict: 'business_id' })
-  if (upsertErr) {
-    return NextResponse.json({
-      error:   'state_init_failed',
-      message: upsertErr.message,
-    }, { status: 500 })
+  //
+  // Skipped entirely on a self-chain resume: the row already exists with
+  // the persisted cursor/counts the worker needs, and we must NOT reset
+  // started_at (the ETA spans all hops).
+  if (!isResume) {
+    const initialProgress = {
+      phase:        'enqueued',
+      triggered_at: new Date().toISOString(),
+      triggered_by: userIdentity,
+    }
+    const { error: upsertErr } = await db
+      .from('inventory_backfill_state')
+      .upsert({
+        org_id:        orgId,
+        business_id:   businessId,
+        status:        'pending',
+        progress:      initialProgress,
+        started_at:    new Date().toISOString(),
+        finished_at:   null,
+        error_message: null,
+      }, { onConflict: 'business_id' })
+    if (upsertErr) {
+      return NextResponse.json({
+        error:   'state_init_failed',
+        message: upsertErr.message,
+      }, { status: 500 })
+    }
   }
 
   // Fire the worker. waitUntil keeps the function alive after the HTTP
@@ -118,10 +129,16 @@ export async function POST(req: NextRequest) {
   // cadence. The worker itself catches errors and writes them to the
   // state row — the .catch below is belt-and-braces for the case where
   // something throws before the worker's own try/catch fires.
+  // Give the worker a deadline 90s short of this function's hard cap so it
+  // can checkpoint + self-chain before Vercel kills it mid-load.
+  const deadlineMs = Date.now() + (maxDuration - 90) * 1000
+
   waitUntil(
     runInventoryBackfill(db, {
       org_id:      orgId,
       business_id: businessId,
+      resume:      isResume,
+      deadlineMs,
     }).catch(err =>
       db.from('inventory_backfill_state').update({
         status:        'failed',

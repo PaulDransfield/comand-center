@@ -25,15 +25,27 @@ const FORTNOX_API = 'https://api.fortnox.se/3'
 // — fast enough for a snappy admin UI without spamming the DB.
 const PROGRESS_FLUSH_EVERY_N_INVOICES = 5
 
+// Self-chain safety net. Each hop gets a fresh ~13min Vercel budget; 30
+// hops ≈ 6h ceiling, comfortably more than any real supplier-invoice
+// backlog needs. If we ever hit it, something is wrong (e.g. every fetch
+// 429-ing) — bail with a clear message rather than looping forever.
+const MAX_RESUMES = 30
+
 interface WorkerInput {
   org_id:       string
   business_id:  string
   months_back?: number          // default 12
+  /** Wall-clock ms after which the worker checkpoints + re-launches.
+   *  Passed by the kick route (derived from the function maxDuration). */
+  deadlineMs?:  number
+  /** True when re-launched from a prior run's checkpoint — reload cursor. */
+  resume?:      boolean
 }
 
 interface ProgressShape {
   phase:                 'fetching_invoice_list' | 'fetching_rows' | 'matching' | 'done'
   window:                { from: string; to: string }
+  cursor:                number   // index into the invoice list; the resume point
   invoices_found:        number
   invoices_processed:    number
   lines_inserted:        number
@@ -43,6 +55,7 @@ interface ProgressShape {
   lines_not_inventory:   number
   errors:                Array<{ invoice: string; error: string }>
   error_count:           number
+  resume_count:          number   // how many self-chain hops so far
 }
 
 interface SupplierInvoiceListItem {
@@ -76,18 +89,57 @@ export async function runInventoryBackfill(
   const fromIso = isoDate(new Date(now.getFullYear(), now.getMonth() - months, 1))
   const toIso   = isoDate(now)
 
-  const p: ProgressShape = {
-    phase:                  'fetching_invoice_list',
-    window:                 { from: fromIso, to: toIso },
-    invoices_found:         0,
-    invoices_processed:     0,
-    lines_inserted:         0,
-    lines_skipped_existing: 0,
-    lines_matched:          0,
-    lines_needs_review:     0,
-    lines_not_inventory:    0,
-    errors:                 [],
-    error_count:            0,
+  // Each Vercel run is capped (~13min). A cold load of hundreds of
+  // rate-limited Fortnox fetches can't finish in one run, so near the
+  // deadline we persist the cursor + counts, flip the row to 'pending',
+  // and re-launch a fresh worker that resumes from the cursor. Mirrors
+  // the financial backfill worker's resume design.
+  const deadline = input.deadlineMs ?? (Date.now() + 710_000)
+
+  // Resume: reload the prior run's progress (cursor + counts) so the loop
+  // continues monotonically rather than restarting at zero. Fresh start:
+  // a clean zeroed ProgressShape.
+  let p: ProgressShape
+  let startIndex = 0
+  if (input.resume) {
+    const { data: existing } = await db
+      .from('inventory_backfill_state')
+      .select('progress')
+      .eq('business_id', input.business_id)
+      .maybeSingle()
+    const prev = (existing?.progress ?? {}) as Partial<ProgressShape>
+    p = {
+      phase:                  'fetching_rows',
+      window:                 prev.window ?? { from: fromIso, to: toIso },
+      cursor:                 Number(prev.cursor ?? 0),
+      invoices_found:         Number(prev.invoices_found ?? 0),
+      invoices_processed:     Number(prev.invoices_processed ?? 0),
+      lines_inserted:         Number(prev.lines_inserted ?? 0),
+      lines_skipped_existing: Number(prev.lines_skipped_existing ?? 0),
+      lines_matched:          Number(prev.lines_matched ?? 0),
+      lines_needs_review:     Number(prev.lines_needs_review ?? 0),
+      lines_not_inventory:    Number(prev.lines_not_inventory ?? 0),
+      errors:                 Array.isArray(prev.errors) ? prev.errors : [],
+      error_count:            Number(prev.error_count ?? 0),
+      resume_count:           Number(prev.resume_count ?? 0) + 1,
+    }
+    startIndex = p.cursor
+  } else {
+    p = {
+      phase:                  'fetching_invoice_list',
+      window:                 { from: fromIso, to: toIso },
+      cursor:                 0,
+      invoices_found:         0,
+      invoices_processed:     0,
+      lines_inserted:         0,
+      lines_skipped_existing: 0,
+      lines_matched:          0,
+      lines_needs_review:     0,
+      lines_not_inventory:    0,
+      errors:                 [],
+      error_count:            0,
+      resume_count:           0,
+    }
   }
 
   // Mark running + initial progress.
@@ -133,7 +185,19 @@ export async function runInventoryBackfill(
   await flush(db, input.business_id, 'running', p)
 
   // ── Phase 2: per-invoice row fetch + persist + match ──
-  for (let i = 0; i < invoices.length; i++) {
+  for (let i = startIndex; i < invoices.length; i++) {
+    p.cursor = i
+
+    // Deadline guard: checkpoint + re-launch on a fresh function before
+    // Vercel kills this one mid-loop (which would strand the row at
+    // 'running' with nothing to resume it). Checked before processing so
+    // the boundary is clean — the relaunch re-does invoice `i` (idempotent
+    // via skip-already-ingested).
+    if (Date.now() > deadline) {
+      await checkpointAndRelaunch(db, input.business_id, p)
+      return
+    }
+
     const inv = invoices[i]
     const givenNumber  = inv.GivenNumber ?? inv.InvoiceNumber
     const supplierNum  = String(inv.SupplierNumber ?? '').trim()
@@ -311,6 +375,40 @@ async function fail(db: any, businessId: string, p: ProgressShape, message: stri
       finished_at:   new Date().toISOString(),
     })
     .eq('business_id', businessId)
+}
+
+// Persist the cursor + counts, flip the row back to 'pending', and launch
+// a fresh worker that resumes from here. status stays non-terminal so the
+// owner-facing banner keeps showing the job as in-progress across the hop.
+async function checkpointAndRelaunch(db: any, businessId: string, p: ProgressShape) {
+  if (p.resume_count >= MAX_RESUMES) {
+    await fail(db, businessId, p,
+      `Stopped after ${MAX_RESUMES} resume hops at invoice ${p.cursor}/${p.invoices_found}. Re-kick to continue.`)
+    return
+  }
+  await db.from('inventory_backfill_state')
+    .update({ status: 'pending', progress: p })
+    .eq('business_id', businessId)
+  await triggerNextInventoryBackfill(businessId)
+}
+
+// Re-launch on a fresh Vercel function (new ~13min budget) by hitting the
+// kick endpoint with resume:true — which skips the state reset so the
+// worker reloads the persisted cursor. Awaited so the POST actually leaves
+// before this function (kept alive by the caller's waitUntil) ends.
+async function triggerNextInventoryBackfill(businessId: string): Promise<void> {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !process.env.CRON_SECRET) return
+  await fetch(`${base}/api/inventory/lines/backfill`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({ business_id: businessId, resume: true, trigger: 'self_chain' }),
+  }).catch(() => {})
 }
 
 // ── Misc ────────────────────────────────────────────────────────────
