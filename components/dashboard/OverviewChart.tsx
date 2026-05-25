@@ -619,16 +619,23 @@ export default function OverviewChart({
             const hasPred    = !d.revenue    && d.pred && d.pred.est_revenue  > 0
             const hasPredLab = !d.staff_cost && d.pred && (d.pred.planned_cost ?? 0) > 0
             // Today's labour cost is mostly scheduled (PK estimated_salary) since
-            // shifts haven't closed yet — treat it as in-progress so the colour
-            // doesn't read identical to a fully-actual prior day.
+            // shifts haven't closed yet — paint it in a distinct pastel peach so
+            // owners can tell at a glance it's in-progress, not a closed actual.
             const labInProgress = !!d.isToday && d.staff_cost > 0
 
             const fcast = dayForecast(d, compareMode)
 
             // Per-day labour tier — drives bar colour (actual or predicted)
-            // and the above-bar percentage annotation.
+            // and the above-bar percentage annotation. Override with a
+            // pastel peach for today so the in-progress bar is unmistakable.
             const tierInfo = labourTier(d.staff_pct, targetLabourPct)
-            const labFill  = (hasPredLab || labInProgress) ? tierInfo.predFill : tierInfo.ink
+            const LAB_IN_PROGRESS_FILL   = '#f4c39a'   // pastel peach
+            const LAB_IN_PROGRESS_STROKE = '#d68b58'   // deeper coral for outline
+            const labFill  = labInProgress
+              ? LAB_IN_PROGRESS_FILL
+              : hasPredLab
+                ? tierInfo.predFill
+                : tierInfo.ink
 
             const labBottomY = yAt(-lab)
 
@@ -675,33 +682,21 @@ export default function OverviewChart({
                   />
                 )}
                 {/* Labour bar — tier-coloured (green/amber/red) based on
-                    staff_pct vs targetLabourPct. Predicted + in-progress
-                    days use the soft variant. Today gets a diagonal-stripe
-                    overlay so it reads as "scheduled / in progress" rather
-                    than identical-looking to a fully closed-out prior day. */}
+                    staff_pct vs targetLabourPct. Today's in-progress bar
+                    is painted in a distinct pastel peach (with a deeper
+                    coral outline) so it never reads as a closed actual. */}
                 {lab > 0 && (
-                  <>
-                    <rect
-                      x={cx - barW / 2}
-                      y={zeroY}
-                      width={barW}
-                      height={Math.max(1, labBottomY - zeroY)}
-                      rx={r} ry={r}
-                      fill={labFill}
-                      opacity={(hasPredLab || labInProgress) ? 0.92 : 1}
-                    />
-                    {labInProgress && (
-                      <rect
-                        x={cx - barW / 2}
-                        y={zeroY}
-                        width={barW}
-                        height={Math.max(1, labBottomY - zeroY)}
-                        rx={r} ry={r}
-                        fill="url(#pk-pred-lab)"
-                        opacity={0.45}
-                      />
-                    )}
-                  </>
+                  <rect
+                    x={cx - barW / 2}
+                    y={zeroY}
+                    width={barW}
+                    height={Math.max(1, labBottomY - zeroY)}
+                    rx={r} ry={r}
+                    fill={labFill}
+                    stroke={labInProgress ? LAB_IN_PROGRESS_STROKE : 'none'}
+                    strokeWidth={labInProgress ? 0.8 : 0}
+                    opacity={hasPredLab ? 0.92 : 1}
+                  />
                 )}
 
                 {/* Forecast whiskers (compare mode prev/ai) */}
