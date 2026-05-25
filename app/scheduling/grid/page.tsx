@@ -17,10 +17,11 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
+import { runCompliance, hasHardFailures, type ComplianceCheck } from '@/lib/scheduling/compliance'
 
 interface DayHeader {
   date: string
@@ -75,6 +76,21 @@ interface Shift {
   is_published: boolean
   is_ai_suggested: boolean
 }
+interface AISuggestion {
+  id: string
+  week_iso: string
+  shift_date: string | null
+  action: 'cut' | 'reduce' | 'extend' | 'reassign' | 'add' | 'swap_template'
+  target_staff_uid: string | null
+  target_shift_id: string | null
+  target_template_id: string | null
+  before: any
+  proposed: any
+  reasoning: string | null
+  est_sek_saving: number | null
+  confidence: number
+  status: 'pending' | 'approved' | 'modified' | 'rejected' | 'applied' | 'expired'
+}
 interface WeekPayload {
   business: { id: string; name: string; country: string; target_staff_pct: number | null }
   week: {
@@ -94,6 +110,7 @@ interface WeekPayload {
   templates: Template[]
   profiles: Profile[]
   shifts: Shift[]
+  suggestions: AISuggestion[]
 }
 
 type ViewMode = 'shift' | 'staff'
@@ -109,13 +126,16 @@ const SECTION_LABELS: Record<string, string> = {
 const SECTION_ORDER = ['management', 'foh', 'kitchen', 'bar', 'office', 'other']
 
 export default function SchedulingGridPage() {
-  const [bizId,    setBizId]    = useState<string | null>(null)
-  const [weekIso,  setWeekIso]  = useState<string>(() => isoWeekToday())
-  const [view,     setView]     = useState<ViewMode>('shift')
-  const [data,     setData]     = useState<WeekPayload | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [error,    setError]    = useState<string | null>(null)
-  const [syncing,  setSyncing]  = useState(false)
+  const [bizId,        setBizId]        = useState<string | null>(null)
+  const [weekIso,      setWeekIso]      = useState<string>(() => isoWeekToday())
+  const [view,         setView]         = useState<ViewMode>('shift')
+  const [data,         setData]         = useState<WeekPayload | null>(null)
+  const [loading,      setLoading]      = useState(true)
+  const [error,        setError]        = useState<string | null>(null)
+  const [syncing,      setSyncing]      = useState(false)
+  const [generatingAi, setGeneratingAi] = useState(false)
+  const [reviewOpen,   setReviewOpen]   = useState(false)
+  const [applying,     setApplying]     = useState(false)
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -208,6 +228,71 @@ export default function SchedulingGridPage() {
     } finally { setSyncing(false) }
   }
 
+  async function generateAiSuggestions(force = false) {
+    if (!bizId || generatingAi) return
+    setGeneratingAi(true)
+    try {
+      const r = await fetch('/api/scheduling/ai-recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ business_id: bizId, week_iso: weekIso, force }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        alert(`AI generation failed: ${j.error ?? r.status}`)
+      } else {
+        await load()
+      }
+    } finally { setGeneratingAi(false) }
+  }
+
+  async function actOnSuggestion(suggestionId: string, action: 'approved' | 'rejected', reason?: string) {
+    try {
+      const r = await fetch('/api/scheduling/learn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ suggestion_id: suggestionId, action, reason }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        alert(`Action failed: ${j.error ?? r.status}`)
+      }
+      await load()
+    } catch (e: any) { alert(e.message) }
+  }
+
+  async function applyApproved() {
+    if (!data) return
+    const approved = data.suggestions.filter(s => s.status === 'approved')
+    if (approved.length === 0) {
+      alert('No approved suggestions to apply. Approve at least one first.')
+      return
+    }
+    setApplying(true)
+    try {
+      // Generate clipboard summary
+      const summary = renderApplySummary(data, approved)
+      try { await navigator.clipboard.writeText(summary) } catch {
+        // older browser fallback — show in a prompt for manual copy
+        window.prompt('Copy this summary then click OK to open Personalkollen:', summary)
+      }
+      // Mark all approved as applied (best-effort)
+      for (const s of approved) {
+        await fetch('/api/scheduling/learn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+          body: JSON.stringify({ suggestion_id: s.id, action: 'applied' }),
+        })
+      }
+      await load()
+      // Open Personalkollen in a new tab
+      window.open('https://personalkollen.se/schema/', '_blank', 'noopener,noreferrer')
+    } finally { setApplying(false) }
+  }
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1400, padding: '20px 24px' }}>
@@ -236,6 +321,68 @@ export default function SchedulingGridPage() {
             </button>
           </div>
         </div>
+
+        {/* AI assist banner */}
+        {data && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14,
+            padding: '12px 16px',
+            background: (data.suggestions?.length ?? 0) > 0 ? UXP.lavFill : UXP.subtleBg,
+            border: `0.5px solid ${(data.suggestions?.length ?? 0) > 0 ? UXP.lavMid : UXP.border}`,
+            borderRadius: 10, flexWrap: 'wrap' as const,
+          }}>
+            <span style={{
+              fontSize: 9, fontWeight: 600, color: '#fff',
+              letterSpacing: '0.04em', textTransform: 'uppercase' as const,
+              padding: '3px 8px', background: UXP.lavMid, borderRadius: 4,
+            }}>AI</span>
+            {(() => {
+              const sugg = data.suggestions ?? []
+              const pending = sugg.filter(s => s.status === 'pending')
+              const approved = sugg.filter(s => s.status === 'approved')
+              const totalSaving = sugg.reduce((sum, s) => sum + (s.est_sek_saving ?? 0), 0)
+              if (sugg.length === 0) {
+                return (
+                  <>
+                    <span style={{ fontSize: 12, color: UXP.ink2, flex: 1 }}>
+                      No AI suggestions for this week yet. Generate to see proposed shift changes that move the schedule toward your target staff %.
+                    </span>
+                    <button
+                      onClick={() => generateAiSuggestions(false)}
+                      disabled={generatingAi}
+                      style={primaryAiBtn(generatingAi)}>
+                      {generatingAi ? 'Generating…' : 'Generate AI suggestions'}
+                    </button>
+                  </>
+                )
+              }
+              return (
+                <>
+                  <span style={{ fontSize: 12, color: UXP.lavText, fontWeight: 500 }}>
+                    {sugg.length} suggestion{sugg.length === 1 ? '' : 's'}
+                    {totalSaving > 0 && ` · saves ${fmtKr(totalSaving)} this week`}
+                  </span>
+                  <span style={{ fontSize: 11, color: UXP.ink3 }}>
+                    {pending.length} pending · {approved.length} approved
+                  </span>
+                  <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                    <button onClick={() => generateAiSuggestions(true)} disabled={generatingAi} style={navBtn()}>
+                      {generatingAi ? 'Generating…' : 'Regenerate'}
+                    </button>
+                    <button onClick={() => setReviewOpen(true)} style={navBtn()}>
+                      Review {approved.length > 0 ? `(${approved.length})` : ''}
+                    </button>
+                    {approved.length > 0 && (
+                      <button onClick={applyApproved} disabled={applying} style={primaryAiBtn(applying)}>
+                        {applying ? 'Applying…' : `Apply ${approved.length} & open PK`}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        )}
 
         {/* Week summary strip */}
         {data && (
@@ -325,11 +472,31 @@ export default function SchedulingGridPage() {
           </div>
         )}
 
+        {/* AI suggestions panel — appears below the grid when there are pending/approved suggestions */}
+        {data && data.suggestions && data.suggestions.length > 0 && (
+          <SuggestionsPanel
+            suggestions={data.suggestions}
+            shifts={data.shifts}
+            templates={data.templates}
+            profiles={data.profiles}
+            onAction={actOnSuggestion}
+          />
+        )}
+
         <p style={{ fontSize: 11, color: UXP.ink4, marginTop: 12, lineHeight: 1.6 }}>
-          Phase 1. AI-recommended changes overlay coming in Phase 2 (orange dashed cells with Approve / Modify / Reject).
-          Source of truth is Personalkollen — apply changes there until Phase 2 ships the clipboard-export flow.
+          AI recommendations are non-binding — review each before clicking <strong>Apply &amp; open PK</strong>. The clipboard summary
+          can be pasted into Personalkollen since PK does not allow third-party writes from our token. Your overrides feed the
+          next AI run.
         </p>
       </div>
+
+      {reviewOpen && data && (
+        <ReviewPanel
+          data={data}
+          onClose={() => setReviewOpen(false)}
+          onApply={async () => { setReviewOpen(false); await applyApproved() }}
+        />
+      )}
     </AppShell>
   )
 }
@@ -532,6 +699,494 @@ function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ padding: 32, textAlign: 'center' as const, fontSize: 12, color: UXP.ink3, background: UXP.cardBg, border: `0.5px dashed ${UXP.border}`, borderRadius: 8, lineHeight: 1.7 }}>{children}</div>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AI suggestions panel — appears below the grid when there are suggestions
+
+function SuggestionsPanel({
+  suggestions, shifts, templates, profiles, onAction,
+}: {
+  suggestions: AISuggestion[]
+  shifts:      Shift[]
+  templates:   Template[]
+  profiles:    Profile[]
+  onAction:    (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
+}) {
+  const grouped = useMemo(() => {
+    const by: Record<string, AISuggestion[]> = { pending: [], approved: [], rejected: [], applied: [] }
+    for (const s of suggestions) {
+      if (by[s.status]) by[s.status].push(s)
+    }
+    return by
+  }, [suggestions])
+
+  return (
+    <div style={{
+      marginTop: 18, background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+      borderRadius: 10, overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '10px 16px', borderBottom: `0.5px solid ${UXP.border}`,
+        background: UXP.subtleBg, display: 'flex', alignItems: 'center', gap: 10,
+      }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          AI suggestions
+        </span>
+        <span style={{ fontSize: 11, color: UXP.ink3 }}>
+          {grouped.pending.length} pending · {grouped.approved.length} approved · {grouped.rejected.length} rejected
+        </span>
+      </div>
+      <div>
+        {[...grouped.pending, ...grouped.approved, ...grouped.rejected, ...grouped.applied].map(s => (
+          <SuggestionRow key={s.id} suggestion={s} onAction={onAction} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function SuggestionRow({ suggestion, onAction }: {
+  suggestion: AISuggestion
+  onAction:   (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const isPending = suggestion.status === 'pending'
+  const tone = suggestion.status === 'approved' ? 'lav'
+             : suggestion.status === 'rejected' ? 'muted'
+             : suggestion.status === 'applied'  ? 'green'
+             : 'neutral'
+  const accentBg = tone === 'lav'    ? UXP.lavFill
+                 : tone === 'muted'  ? UXP.subtleBg
+                 : tone === 'green'  ? UXP.greenFill
+                 : '#fbf2eb'   // pending = soft orange
+  const accentBorder = tone === 'lav'   ? UXP.lavMid
+                     : tone === 'muted' ? UXP.borderSoft
+                     : tone === 'green' ? UXP.green
+                     : 'rgba(192,112,58,0.5)'
+  const statusLabel = suggestion.status === 'pending'  ? 'Pending'
+                    : suggestion.status === 'approved' ? 'Approved'
+                    : suggestion.status === 'rejected' ? 'Rejected'
+                    : suggestion.status === 'applied'  ? 'Applied'
+                    : suggestion.status
+
+  async function act(action: 'approved' | 'rejected') {
+    setBusy(true)
+    try { await onAction(suggestion.id, action) } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '90px 1fr auto auto',
+      gap: 12, padding: '12px 16px',
+      borderBottom: `0.5px solid ${UXP.borderSoft}`,
+      background: isPending ? '#ffffff' : (tone === 'muted' ? '#fafafa' : 'transparent'),
+      opacity: suggestion.status === 'rejected' ? 0.6 : 1,
+      alignItems: 'center',
+    }}>
+      {/* Status + confidence pill */}
+      <div>
+        <div style={{
+          display: 'inline-block', padding: '2px 8px', borderRadius: 999,
+          fontSize: 9, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const,
+          background: accentBg, border: `0.5px solid ${accentBorder}`,
+          color: tone === 'lav' ? UXP.lavText : tone === 'green' ? UXP.greenDeep : UXP.ink2,
+        }}>{statusLabel}</div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 4 }}>
+          {Math.round(suggestion.confidence * 100)}% confidence
+        </div>
+      </div>
+
+      {/* Reasoning + before/after */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1, marginBottom: 3 }}>
+          {ACTION_LABELS[suggestion.action] ?? suggestion.action}
+          {suggestion.shift_date && (
+            <span style={{ fontWeight: 400, color: UXP.ink3, marginLeft: 8 }}>
+              · {new Date(suggestion.shift_date + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: UXP.ink2, lineHeight: 1.55, marginBottom: 6 }}>
+          {suggestion.reasoning ?? '(no reasoning)'}
+        </div>
+        <div style={{ display: 'flex', gap: 10, fontSize: 10, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
+          {suggestion.before && <span><strong style={{ color: UXP.ink4 }}>Before:</strong> {summarizeStateJson(suggestion.before)}</span>}
+          {suggestion.proposed && <span><strong style={{ color: UXP.lavText }}>Proposed:</strong> {summarizeStateJson(suggestion.proposed)}</span>}
+        </div>
+      </div>
+
+      {/* SEK saving */}
+      <div style={{ textAlign: 'right' as const, minWidth: 90 }}>
+        {suggestion.est_sek_saving != null && (
+          <div style={{
+            fontSize: 13, fontWeight: 500,
+            color: suggestion.est_sek_saving >= 0 ? UXP.greenDeep : UXP.roseText,
+            fontVariantNumeric: 'tabular-nums' as const,
+          }}>
+            {suggestion.est_sek_saving >= 0 ? '+' : ''}{fmtKr(suggestion.est_sek_saving)}
+          </div>
+        )}
+        <div style={{ fontSize: 9, color: UXP.ink4 }}>est. saving</div>
+      </div>
+
+      {/* Approve / Reject buttons */}
+      <div style={{ display: 'flex', gap: 6, minWidth: 160, justifyContent: 'flex-end' }}>
+        {isPending && (
+          <>
+            <button onClick={() => act('approved')} disabled={busy}
+              style={{ ...navBtn(), background: UXP.ink1, color: '#fff', border: 'none' }}>
+              Approve
+            </button>
+            <button onClick={() => act('rejected')} disabled={busy}
+              style={navBtn()}>
+              Reject
+            </button>
+          </>
+        )}
+        {suggestion.status === 'approved' && (
+          <button onClick={() => act('rejected')} disabled={busy} style={navBtn()}>
+            Un-approve
+          </button>
+        )}
+        {suggestion.status === 'rejected' && (
+          <button onClick={() => act('approved')} disabled={busy} style={navBtn()}>
+            Re-approve
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  cut:            'Cut shift',
+  reduce:         'Reduce hours',
+  extend:         'Extend hours',
+  reassign:       'Reassign to different staff',
+  add:            'Add shift',
+  swap_template:  'Swap template',
+}
+
+function summarizeStateJson(state: any): string {
+  if (!state) return ''
+  if (typeof state === 'string') return state.slice(0, 80)
+  if (typeof state === 'object') {
+    // Try to format common shapes nicely; fall back to JSON
+    const parts: string[] = []
+    if (state.staff_name) parts.push(state.staff_name)
+    if (state.start || state.end) parts.push(`${state.start ?? '?'}-${state.end ?? '?'}`)
+    if (state.template_name || state.period_name) parts.push(state.template_name ?? state.period_name)
+    if (state.hours != null) parts.push(`${state.hours}h`)
+    if (state.description) parts.push(String(state.description).slice(0, 60))
+    if (parts.length > 0) return parts.join(' · ')
+    const s = JSON.stringify(state)
+    return s.length > 100 ? s.slice(0, 97) + '...' : s
+  }
+  return String(state)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Pre-publish review panel — slide-up sheet with 4 KPI tabs
+
+function ReviewPanel({ data, onClose, onApply }: {
+  data:    WeekPayload
+  onClose: () => void
+  onApply: () => Promise<void>
+}) {
+  const [tab, setTab] = useState<'forecast' | 'cost' | 'coverage' | 'compliance'>('forecast')
+  const approved = data.suggestions.filter(s => s.status === 'approved')
+
+  // Run compliance against the CURRENT shifts (Phase 2 doesn't yet
+  // simulate "with approved applied" — that's a follow-up once we have
+  // the suggestion → projected shift transform).
+  const checks: ComplianceCheck[] = useMemo(() => runCompliance({
+    shifts: data.shifts.map((s: any) => ({
+      id: s.id, staff_uid: s.staff_uid, staff_name: s.staff_name,
+      shift_date: s.shift_date, start_at: s.start_at, end_at: s.end_at,
+      breaks_seconds: s.breaks_seconds ?? 0, shift_kind: s.shift_kind,
+    })),
+    staff: data.profiles.map((p: any) => ({
+      staff_uid: p.staff_uid, display_name: p.display_name,
+      service_grade_pct: p.service_grade_pct, hourly_rate_sek: p.hourly_rate_sek,
+    })),
+    business_rules: {},   // pull from business settings when wired
+  }), [data])
+  const hardCount = checks.filter(c => c.severity === 'HARD').length
+  const warnCount = checks.filter(c => c.severity === 'WARN').length
+  const applyBlocked = hasHardFailures(checks)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.55)',
+      display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 'min(960px, 100%)', height: '85vh',
+        background: '#fff', borderRadius: '12px 12px 0 0', overflow: 'hidden' as const,
+        display: 'flex', flexDirection: 'column' as const,
+        boxShadow: '0 -8px 40px rgba(0,0,0,0.30)',
+      }}>
+        <div style={{
+          padding: '12px 18px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: UXP.ink1 }}>
+              Pre-publish review · Week {data.week.week_iso}
+            </div>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2 }}>
+              {approved.length} approved suggestion{approved.length === 1 ? '' : 's'}
+              {hardCount > 0 && <span style={{ color: UXP.roseText, marginLeft: 8 }}>· {hardCount} HARD failure{hardCount === 1 ? '' : 's'}</span>}
+              {warnCount > 0 && <span style={{ color: UXP.coral, marginLeft: 8 }}>· {warnCount} warning{warnCount === 1 ? '' : 's'}</span>}
+            </div>
+          </div>
+          <button onClick={onClose} style={navBtn()}>Close (Esc)</button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: `0.5px solid ${UXP.borderSoft}` }}>
+          {(['forecast', 'cost', 'coverage', 'compliance'] as const).map(t => (
+            <button key={t} onClick={() => setTab(t)}
+              style={{
+                padding: '10px 16px', fontSize: 11, fontWeight: 500,
+                background: tab === t ? '#fff' : UXP.subtleBg,
+                color: tab === t ? UXP.ink1 : UXP.ink3,
+                border: 'none', borderBottom: tab === t ? `2px solid ${UXP.lavMid}` : '2px solid transparent',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+              {t === 'forecast' ? 'Forecast vs hours'
+                : t === 'cost' ? 'Cost of labour %'
+                : t === 'coverage' ? 'Staff per hour vs demand'
+                : `Compliance${hardCount + warnCount > 0 ? ` (${hardCount + warnCount})` : ''}`}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab body */}
+        <div style={{ flex: 1, overflow: 'auto', padding: 18 }}>
+          {tab === 'forecast'   && <ForecastVsHoursTab days={data.days} />}
+          {tab === 'cost'       && <CostOfLabourTab week={data.week} days={data.days} />}
+          {tab === 'coverage'   && <CoverageTab days={data.days} shifts={data.shifts} />}
+          {tab === 'compliance' && <ComplianceTab checks={checks} />}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '12px 18px', borderTop: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: applyBlocked ? UXP.roseFill : UXP.subtleBg,
+        }}>
+          <span style={{ fontSize: 11, color: applyBlocked ? UXP.roseText : UXP.ink3 }}>
+            {applyBlocked
+              ? `Apply blocked — ${hardCount} HARD compliance failure${hardCount === 1 ? '' : 's'} must be resolved first`
+              : `Ready to apply ${approved.length} approved change${approved.length === 1 ? '' : 's'}`}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onClose} style={navBtn()}>Back to grid</button>
+            <button onClick={onApply} disabled={applyBlocked || approved.length === 0}
+              style={{ ...primaryAiBtn(false), opacity: (applyBlocked || approved.length === 0) ? 0.4 : 1 }}>
+              Apply &amp; open PK
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ForecastVsHoursTab({ days }: { days: DayHeader[] }) {
+  const maxRevenue = Math.max(...days.map(d => d.forecast_revenue ?? 0), 1)
+  const maxHours   = Math.max(...days.map(d => d.planned_hours), 1)
+  return (
+    <div>
+      <p style={{ fontSize: 11, color: UXP.ink3, marginBottom: 14 }}>
+        Per-day planned hours alongside the revenue forecast. Look for days where hours are out of step with expected demand.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 100px 100px 80px', gap: 8, fontSize: 11 }}>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>Day</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>Hours vs Revenue</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4, textAlign: 'right' as const }}>Hours</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4, textAlign: 'right' as const }}>Forecast</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4, textAlign: 'right' as const }}>%</div>
+        {days.map(d => (
+          <React.Fragment key={d.date}>
+            <div style={{ fontSize: 11, color: UXP.ink1, padding: '4px 0' }}>{d.day_of_week} {d.day_number}</div>
+            <div style={{ display: 'flex', alignItems: 'center', height: 22, gap: 4 }}>
+              <div style={{ flex: d.planned_hours / maxHours, height: 8, background: UXP.lavMid, borderRadius: 2 }} />
+              <div style={{ flex: ((d.forecast_revenue ?? 0) / maxRevenue), height: 8, background: UXP.green, borderRadius: 2, opacity: 0.6 }} />
+            </div>
+            <div style={{ fontSize: 11, color: UXP.ink2, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>{d.planned_hours}h</div>
+            <div style={{ fontSize: 11, color: UXP.ink2, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>{d.forecast_revenue != null ? fmtKr(d.forecast_revenue) : '—'}</div>
+            <div style={{ fontSize: 11, color: UXP.ink2, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>{d.projected_staff_pct != null ? d.projected_staff_pct.toFixed(0) + '%' : '—'}</div>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CostOfLabourTab({ week, days }: { week: WeekPayload['week']; days: DayHeader[] }) {
+  return (
+    <div>
+      <p style={{ fontSize: 11, color: UXP.ink3, marginBottom: 14 }}>
+        Weekly planned labour cost as a percentage of forecast revenue. Compare to target.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 18 }}>
+        <Kpi label="Planned cost"     value={fmtKr(week.planned_cost_sek)} />
+        <Kpi label="Forecast revenue" value={week.forecast_revenue_sek > 0 ? fmtKr(week.forecast_revenue_sek) : '—'} />
+        <Kpi label="Projected %"      value={week.projected_staff_pct != null ? week.projected_staff_pct.toFixed(1) + '%' : '—'} sub={week.target_staff_pct != null ? `Target ${week.target_staff_pct}%` : undefined} tone={week.gap_pct != null ? (week.gap_pct > 2 ? 'rose' : week.gap_pct < -2 ? 'green' : 'neutral') : 'neutral'} />
+        <Kpi label="Gap"              value={week.gap_pct != null ? (week.gap_pct > 0 ? '+' : '') + week.gap_pct.toFixed(1) + '%' : '—'} tone={week.gap_pct != null ? (week.gap_pct > 2 ? 'rose' : week.gap_pct < -2 ? 'green' : 'neutral') : 'neutral'} />
+      </div>
+      <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 6 }}>Per-day breakdown:</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '90px 100px 100px 80px', gap: 8, fontSize: 11 }}>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>Day</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4, textAlign: 'right' as const }}>Cost</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4, textAlign: 'right' as const }}>Forecast</div>
+        <div style={{ fontSize: 10, color: UXP.ink4, textTransform: 'uppercase' as const, letterSpacing: 0.4, textAlign: 'right' as const }}>%</div>
+        {days.map(d => (
+          <React.Fragment key={d.date}>
+            <div>{d.day_of_week} {d.day_number}</div>
+            <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>{fmtKr(d.planned_cost)}</div>
+            <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: UXP.ink3 }}>{d.forecast_revenue != null ? fmtKr(d.forecast_revenue) : '—'}</div>
+            <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: d.projected_staff_pct != null && d.target_staff_pct != null && Math.abs(d.projected_staff_pct - d.target_staff_pct) > 2 ? UXP.roseText : UXP.ink2 }}>
+              {d.projected_staff_pct != null ? d.projected_staff_pct.toFixed(1) + '%' : '—'}
+            </div>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function CoverageTab({ days, shifts }: { days: DayHeader[]; shifts: Shift[] }) {
+  // Build per-day per-hour staff count
+  return (
+    <div>
+      <p style={{ fontSize: 11, color: UXP.ink3, marginBottom: 14 }}>
+        Hourly headcount per day. Spot under-covered peaks (lunch 12-13, dinner 19-21) and over-staffed troughs.
+      </p>
+      {days.map(d => {
+        const dayShifts = shifts.filter(s => s.shift_date === d.date && s.shift_kind === 'regular')
+        const hourly = new Array(24).fill(0)
+        for (const s of dayShifts) {
+          const startH = new Date(s.start_at).getUTCHours()
+          const endH   = new Date(s.end_at).getUTCHours()
+          for (let h = startH; h <= endH; h++) hourly[h]++
+        }
+        const maxCount = Math.max(...hourly, 1)
+        return (
+          <div key={d.date} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: UXP.ink2, marginBottom: 4 }}>{d.day_of_week} {d.day_number}</div>
+            <div style={{ display: 'flex', gap: 1, height: 28, background: UXP.subtleBg, borderRadius: 2, overflow: 'hidden' as const }}>
+              {hourly.map((c, h) => (
+                <div key={h} title={`${String(h).padStart(2, '0')}:00 — ${c} staff`} style={{
+                  flex: 1, background: c === 0 ? 'transparent' : `rgba(169,156,230,${0.3 + 0.6 * c / maxCount})`,
+                  borderTop: c > 0 ? `1px solid ${UXP.lavMid}` : 'none',
+                  display: 'flex', alignItems: 'flex-end', justifyContent: 'center', fontSize: 8, color: UXP.lavText,
+                }}>{c > 0 ? c : ''}</div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, color: UXP.ink4, marginTop: 2 }}>
+              <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ComplianceTab({ checks }: { checks: ComplianceCheck[] }) {
+  if (checks.length === 0) {
+    return (
+      <div style={{ padding: 30, textAlign: 'center' as const, color: UXP.greenDeep, fontSize: 13 }}>
+        All compliance checks passed — no rest, overtime, or contract violations detected.
+      </div>
+    )
+  }
+  return (
+    <div>
+      <p style={{ fontSize: 11, color: UXP.ink3, marginBottom: 14 }}>
+        Swedish labour law (Arbetstidslagen) + EU directives + business rules. <strong>HARD</strong> failures must be resolved before publishing.
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 8 }}>
+        {checks.map(c => (
+          <div key={c.code} style={{
+            padding: '10px 14px',
+            background: c.severity === 'HARD' ? UXP.roseFill : UXP.subtleBg,
+            border: `0.5px solid ${c.severity === 'HARD' ? UXP.rose : UXP.border}`,
+            borderRadius: 6,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span style={{
+                fontSize: 9, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const,
+                padding: '2px 7px', borderRadius: 4,
+                background: c.severity === 'HARD' ? UXP.rose : UXP.coral, color: '#fff',
+              }}>{c.severity}</span>
+              <span style={{ fontSize: 10, color: UXP.ink4, fontFamily: 'ui-monospace, monospace' }}>{c.code.split(':')[0]}</span>
+            </div>
+            <div style={{ fontSize: 12, color: c.severity === 'HARD' ? UXP.roseText : UXP.ink1, lineHeight: 1.5 }}>
+              {c.message}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Helpers — render apply summary + button styles
+
+function renderApplySummary(data: WeekPayload, approved: AISuggestion[]): string {
+  const lines: string[] = []
+  lines.push(`CommandCenter schedule changes — Week ${data.week.week_iso} (${data.business.name})`)
+  lines.push(`Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`)
+  lines.push('')
+  lines.push(`Apply these ${approved.length} change${approved.length === 1 ? '' : 's'} in Personalkollen:`)
+  lines.push('')
+
+  // Group by date
+  const byDate = new Map<string, AISuggestion[]>()
+  for (const s of approved) {
+    const k = s.shift_date ?? 'unscheduled'
+    const arr = byDate.get(k); if (arr) arr.push(s); else byDate.set(k, [s])
+  }
+  const sortedDates = Array.from(byDate.keys()).sort()
+  for (const date of sortedDates) {
+    const dateLabel = date === 'unscheduled' ? 'Unscheduled' :
+      new Date(date + 'T00:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+    lines.push(`${dateLabel}:`)
+    for (const s of byDate.get(date)!) {
+      const action = ACTION_LABELS[s.action] ?? s.action
+      lines.push(`  · ${action.toUpperCase()}`)
+      if (s.before)   lines.push(`    Before:   ${summarizeStateJson(s.before)}`)
+      if (s.proposed) lines.push(`    Proposed: ${summarizeStateJson(s.proposed)}`)
+      if (s.reasoning) lines.push(`    Why: ${s.reasoning}`)
+      if (s.est_sek_saving != null) lines.push(`    Saving: ${s.est_sek_saving >= 0 ? '+' : ''}${Math.round(s.est_sek_saving)} kr`)
+      lines.push('')
+    }
+  }
+  lines.push('—')
+  lines.push('Source of truth: Personalkollen. CommandCenter doesn\'t write to PK — please apply manually using the list above. The next nightly sync will pick up your changes.')
+  return lines.join('\n')
+}
+
+function primaryAiBtn(busy: boolean): React.CSSProperties {
+  return {
+    padding: '6px 14px', fontSize: 11, fontWeight: 600,
+    background: UXP.lavMid, color: '#fff',
+    border: 'none', borderRadius: 6,
+    cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+    opacity: busy ? 0.6 : 1,
+  }
 }
 
 function navBtn(): React.CSSProperties {

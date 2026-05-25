@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
     days.push(d.toISOString().slice(0, 10))
   }
 
-  // Load shifts + templates + staff_profiles in parallel
-  const [shiftsRes, templatesRes, profilesRes] = await Promise.all([
+  // Load shifts + templates + staff_profiles + ai suggestions in parallel
+  const [shiftsRes, templatesRes, profilesRes, aiRes] = await Promise.all([
     db.from('staff_shifts')
       .select('id, staff_uid, shift_date, start_at, end_at, start_time_local, end_time_local, staff_name, period_name, description, estimated_cost, shift_template_id, shift_kind, breaks_seconds, has_ob, ob_hours, is_published, is_ai_suggested, source')
       .eq('business_id', businessId)
@@ -72,14 +72,21 @@ export async function GET(req: NextRequest) {
       .eq('is_active', true)
       .order('primary_section')
       .order('display_name'),
+    db.from('schedule_ai_suggestions')
+      .select('*')
+      .eq('business_id', businessId)
+      .eq('week_iso', weekIso)
+      .in('status', ['pending', 'approved', 'modified'])
+      .order('confidence', { ascending: false }),
   ])
   if (shiftsRes.error)    return NextResponse.json({ error: `shifts: ${shiftsRes.error.message}` }, { status: 500 })
   if (templatesRes.error) return NextResponse.json({ error: `templates: ${templatesRes.error.message}` }, { status: 500 })
   if (profilesRes.error)  return NextResponse.json({ error: `profiles: ${profilesRes.error.message}` }, { status: 500 })
 
-  const shifts    = shiftsRes.data    ?? []
-  const templates = templatesRes.data ?? []
-  const profiles  = profilesRes.data  ?? []
+  const shifts      = shiftsRes.data    ?? []
+  const templates   = templatesRes.data ?? []
+  const profiles    = profilesRes.data  ?? []
+  const suggestions = aiRes.data        ?? []
 
   // Per-day aggregates
   const holidays = getHolidaysForCountry(biz.country ?? 'SE', new Date(monday).getUTCFullYear())
@@ -150,7 +157,7 @@ export async function GET(req: NextRequest) {
     business: { id: biz.id, name: biz.name, country: biz.country, target_staff_pct: biz.target_staff_pct },
     week:     summary,
     days:     dayHeaders,
-    templates, profiles, shifts,
+    templates, profiles, shifts, suggestions,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 
