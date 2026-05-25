@@ -140,7 +140,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       counts: {},
       items: [],
-      message: 'Catalogue is empty. Either PDF extraction is still running, or the matcher hasn\'t had inventory lines to dedupe yet.',
+      message: 'Catalogue is empty. Use "+ Add article" to add the products you stock (you can also add them while counting). Products fill in automatically from supplier invoices that carry item descriptions — but many Fortnox invoices are booked as amounts only, in which case you build the catalogue by hand.',
     }, { headers: { 'Cache-Control': 'no-store' } })
   }
 
