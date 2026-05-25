@@ -18,32 +18,53 @@
 --
 -- Idempotent.
 
--- Add the column if missing
+-- Schema migration:
+--   Existing M018 table has columns (event_id, event_type, processed_at NOT NULL).
+--   Need to:
+--     1. Add claimed_at column (tracks "I'm in-flight on this event")
+--     2. Drop NOT NULL on processed_at so claims can have NULL until done
+--     3. Backfill claimed_at = processed_at for existing rows (which all
+--        represent completed events under the old semantics)
 DO $$
 BEGIN
+  -- Step 1: add claimed_at if missing
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'stripe_processed_events'
-      AND column_name = 'processed_at'
+      AND column_name = 'claimed_at'
   ) THEN
     ALTER TABLE public.stripe_processed_events
-      ADD COLUMN processed_at TIMESTAMPTZ,
-      ADD COLUMN claimed_at   TIMESTAMPTZ;
-    RAISE NOTICE 'M103: added processed_at + claimed_at to stripe_processed_events';
+      ADD COLUMN claimed_at TIMESTAMPTZ;
+    RAISE NOTICE 'M103: added claimed_at to stripe_processed_events';
   ELSE
-    RAISE NOTICE 'M103: stripe_processed_events already has processed_at — skipping schema change';
+    RAISE NOTICE 'M103: claimed_at already present — skipping ADD';
+  END IF;
+
+  -- Step 2: drop NOT NULL on processed_at if present (new code stores
+  -- NULL during processing and sets it once handleEvent completes)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'stripe_processed_events'
+      AND column_name = 'processed_at'
+      AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE public.stripe_processed_events
+      ALTER COLUMN processed_at DROP NOT NULL,
+      ALTER COLUMN processed_at DROP DEFAULT;
+    RAISE NOTICE 'M103: dropped NOT NULL + DEFAULT on processed_at';
+  ELSE
+    RAISE NOTICE 'M103: processed_at already nullable or missing — skipping NOT NULL drop';
   END IF;
 END $$;
 
--- Backfill: existing rows are all already-processed (the old code
--- inserted the row AFTER handleEvent — wait actually it was BEFORE.
--- But since the function would only have responded 200 to Stripe if
--- handleEvent completed, every existing row represents a completed
--- event from Stripe's POV. Safe to mark them all processed.
+-- Step 3: backfill claimed_at for existing rows. Every existing row
+-- represents a completed event (old code only succeeded — and thus
+-- only persisted — when handleEvent ran to completion), so claimed_at
+-- should equal processed_at.
 UPDATE public.stripe_processed_events
-SET processed_at = COALESCE(processed_at, created_at, NOW()),
-    claimed_at   = COALESCE(claimed_at,   created_at, NOW())
-WHERE processed_at IS NULL;
+SET claimed_at = processed_at
+WHERE claimed_at IS NULL
+  AND processed_at IS NOT NULL;
 
 -- Index for the dedup hot-path: lookups are by event_id (already PK)
 -- and stale-check filters by processed_at IS NULL. A partial index
