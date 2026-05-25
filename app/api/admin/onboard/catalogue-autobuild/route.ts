@@ -94,27 +94,39 @@ export async function POST(req: NextRequest) {
   }
   groups.sort((a, b) => b.line_count - a.line_count)
 
-  // ── 1. Classify ONE chunk of not-yet-classified groups (one Haiku call) ──
+  // ── 1. Classify not-yet-cached groups (up to 2 Haiku calls, time-guarded) ──
   // Skip groups that already have a cached suggestion so chained calls don't
-  // re-spend Haiku on the same groups.
+  // re-spend Haiku. Crucially we APPLY from the rows runClaudeBatch returns
+  // IN-MEMORY (below) — not from a re-query — so a silent cache-write failure
+  // can't leave us applying nothing.
+  const started = Date.now()
   const { data: existingSugg } = await db
     .from('inventory_review_suggestions')
     .select('group_key')
     .eq('business_id', businessId)
   const haveSuggestion = new Set((existingSugg ?? []).map((s: any) => s.group_key))
-  const groupsNeedingAi = groups.filter(g => !haveSuggestion.has(g.group_key)).slice(0, MAX_GROUPS_PER_RUN)
+  const groupsNeedingAi = groups.filter(g => !haveSuggestion.has(g.group_key))
 
-  let suggestedCount = 0
-  if (groupsNeedingAi.length > 0) {
-    const rows = await runClaudeBatch(db, orgId, businessId, groupsNeedingAi)
-    suggestedCount = rows.length
+  const freshRows: any[] = []
+  for (let i = 0; i < groupsNeedingAi.length; i += MAX_GROUPS_PER_RUN) {
+    if (i > 0 && Date.now() - started > 150_000) break   // keep the whole request well under 300s
+    const chunk = groupsNeedingAi.slice(i, i + MAX_GROUPS_PER_RUN)
+    const rows = await runClaudeBatch(db, orgId, businessId, chunk)
+    freshRows.push(...rows)
+    if (i >= MAX_GROUPS_PER_RUN) break   // hard cap 2 chunks/call; board chains the rest
   }
+  const suggestedCount = freshRows.length
 
-  // ── Load all cached suggestions for the business (incl. earlier runs) ──
-  const { data: suggestions } = await db
+  // Apply set = cached suggestions ∪ this run's fresh rows (fresh wins).
+  // Union (not just the re-query) makes us robust to a failed cache upsert.
+  const { data: cachedSugg } = await db
     .from('inventory_review_suggestions')
     .select('group_key, action, confidence, product_id, suggested_name, suggested_category')
     .eq('business_id', businessId)
+  const suggByKey = new Map<string, any>()
+  for (const r of (cachedSugg ?? [])) suggByKey.set(r.group_key, r)
+  for (const r of freshRows)          suggByKey.set(r.group_key, r)
+  const suggestions = Array.from(suggByKey.values())
 
   // Existing products → resolve approve_existing name + category.
   const { data: products } = await db
@@ -191,6 +203,26 @@ export async function POST(req: NextRequest) {
     .eq('match_status', 'needs_review')
 
   const appliedTotal = summary.applied_create + summary.applied_approve + summary.applied_skip
+
+  // Diagnostic — visible in Vercel runtime logs so we can see what the
+  // classifier produced + why lines did/didn't apply, without the client.
+  const actionTally: Record<string, number> = {}
+  for (const s of suggestions) {
+    const matchedHere = idsByKey.has(s.group_key)
+    const k = `${s.action}|conf${Number(s.confidence ?? 0) >= APPLY_CONFIDENCE ? '_ok' : '_low'}|${matchedHere ? 'inqueue' : 'stale'}`
+    actionTally[k] = (actionTally[k] ?? 0) + 1
+  }
+  console.log('[catalogue-autobuild]', JSON.stringify({
+    business: businessId.slice(0, 8),
+    groups: groups.length,
+    suggestions_total: suggestions.length,
+    fresh_this_run: suggestedCount,
+    action_tally: actionTally,
+    applied: { create: summary.applied_create, approve: summary.applied_approve, skip: summary.applied_skip },
+    left_for_review: summary.left_for_review,
+    remaining_review_lines: remainingReview ?? 0,
+    errors_sample: summary.errors.slice(0, 5),
+  }))
 
   return NextResponse.json({
     ok: true,
