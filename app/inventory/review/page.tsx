@@ -468,19 +468,24 @@ export default function InventoryReviewPage() {
               </span>
             )}
             {Object.keys(ai).length > 0 && (() => {
-              const hiConf = visible.filter(g => !edits[g.group_key]?.done && !edits[g.group_key]?.skipped && ai[g.group_key] && ai[g.group_key].confidence >= 0.85)
+              // Threshold of 0.65 matches the AI's own self-imposed cutoff:
+              // confidence < 0.65 gets classified as 'review' action (deferred
+              // to owner). So anything NOT marked 'review' has the AI's own
+              // signal that it's "fairly sure or better" — safe to bulk apply.
+              const APPLY_THRESHOLD = 0.65
+              const hiConf = visible.filter(g => !edits[g.group_key]?.done && !edits[g.group_key]?.skipped && ai[g.group_key] && ai[g.group_key].confidence >= APPLY_THRESHOLD && ai[g.group_key].action !== 'review')
               const hiConfApprove = hiConf.filter(g => ai[g.group_key].action === 'approve_existing' || ai[g.group_key].action === 'create_new')
               const hiConfSkip    = hiConf.filter(g => ai[g.group_key].action === 'skip_non_inventory')
               return (
                 <>
                   <span style={{ color: UXP.ink3 }}>
-                    · {hiConfApprove.length} approve · {hiConfSkip.length} skip · {hiConf.length} total ≥85%
+                    · {hiConfApprove.length} approve · {hiConfSkip.length} skip · {hiConf.length} total ≥65%
                   </span>
                   {hiConf.length > 0 && (
                     <button
                       type="button"
                       onClick={async () => {
-                        if (!confirm(`Apply ${hiConf.length} high-confidence AI suggestions? ${hiConfApprove.length} approve + ${hiConfSkip.length} skip.`)) return
+                        if (!confirm(`Apply ${hiConf.length} AI suggestions? ${hiConfApprove.length} approve + ${hiConfSkip.length} skip.`)) return
                         setBulkBusy({ done: 0, total: hiConf.length })
                         for (let i = 0; i < hiConf.length; i++) {
                           const g = hiConf[i]
