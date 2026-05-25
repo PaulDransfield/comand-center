@@ -19,6 +19,48 @@
 const MAX_RETRIES         = 4
 const BACKOFF_DEFAULTS_MS = [2000, 4000, 8000, 16000]   // total ~30s worst case
 
+// Per-token concurrency cap. Fortnox documents a 4 req/sec limit per access
+// token; with 2 concurrent in-flight + retry-with-backoff we comfortably
+// stay under the ceiling even when callers fan out via Promise.all.
+//
+// Scaling rationale: 20 customers × 5 parallel fan-out call sites was
+// projecting ~100 simultaneous Fortnox requests at 06:00 master-sync,
+// which would trip 429-cascade on every customer. With the cap each
+// customer's calls queue locally; the helper still retries gracefully on
+// any residual 429.
+//
+// Keyed on the first 16 chars of the token (sufficient to distinguish
+// customers; never persisted, never logged). Module-level Map persists
+// across calls within a single Vercel function instance.
+const PER_TOKEN_CONCURRENCY = 2
+const tokenInflight  = new Map<string, number>()
+const tokenWaitQueue = new Map<string, Array<() => void>>()
+
+async function acquireSlot(tokenKey: string): Promise<void> {
+  const current = tokenInflight.get(tokenKey) ?? 0
+  if (current < PER_TOKEN_CONCURRENCY) {
+    tokenInflight.set(tokenKey, current + 1)
+    return
+  }
+  await new Promise<void>(resolve => {
+    const q = tokenWaitQueue.get(tokenKey) ?? []
+    q.push(resolve)
+    tokenWaitQueue.set(tokenKey, q)
+  })
+  tokenInflight.set(tokenKey, (tokenInflight.get(tokenKey) ?? 0) + 1)
+}
+
+function releaseSlot(tokenKey: string): void {
+  const current = tokenInflight.get(tokenKey) ?? 1
+  tokenInflight.set(tokenKey, Math.max(0, current - 1))
+  const q = tokenWaitQueue.get(tokenKey)
+  if (q && q.length > 0) {
+    const next = q.shift()!
+    if (q.length === 0) tokenWaitQueue.delete(tokenKey)
+    next()
+  }
+}
+
 export interface FortnoxFetchOpts {
   /** Pin to a specific fiscal-year via the Fortnox-Financial-Year header. */
   financialYearId?:   number
@@ -45,29 +87,38 @@ export async function fortnoxFetch(
   if (opts.financialYearId)   headers['Fortnox-Financial-Year']      = String(opts.financialYearId)
   if (opts.financialYearDate) headers['Fortnox-Financial-Year-Date'] = opts.financialYearDate
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await fetch(url, { headers })
-    if (res.status !== 429) return res
-    if (attempt === MAX_RETRIES) return res
+  // Per-token serialization — caps simultaneous in-flight requests per
+  // customer to PER_TOKEN_CONCURRENCY. Acquire before fetch, release in
+  // finally so a thrown error never leaves the slot held.
+  const tokenKey = accessToken.slice(0, 16)
+  await acquireSlot(tokenKey)
+  try {
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const res = await fetch(url, { headers })
+      if (res.status !== 429) return res
+      if (attempt === MAX_RETRIES) return res
 
-    // Honor Retry-After (seconds or HTTP-date), else escalate via defaults
-    const retryAfterRaw = res.headers.get('Retry-After')
-    let waitMs = BACKOFF_DEFAULTS_MS[attempt]
-    if (retryAfterRaw) {
-      const asSeconds = Number(retryAfterRaw)
-      if (Number.isFinite(asSeconds)) {
-        waitMs = Math.max(waitMs, asSeconds * 1000)
-      } else {
-        const asDate = Date.parse(retryAfterRaw)
-        if (Number.isFinite(asDate)) {
-          waitMs = Math.max(waitMs, asDate - Date.now())
+      // Honor Retry-After (seconds or HTTP-date), else escalate via defaults
+      const retryAfterRaw = res.headers.get('Retry-After')
+      let waitMs = BACKOFF_DEFAULTS_MS[attempt]
+      if (retryAfterRaw) {
+        const asSeconds = Number(retryAfterRaw)
+        if (Number.isFinite(asSeconds)) {
+          waitMs = Math.max(waitMs, asSeconds * 1000)
+        } else {
+          const asDate = Date.parse(retryAfterRaw)
+          if (Number.isFinite(asDate)) {
+            waitMs = Math.max(waitMs, asDate - Date.now())
+          }
         }
       }
+      await sleep(waitMs)
     }
-    await sleep(waitMs)
+    // Defensive — loop returns or gives up before falling through.
+    throw new Error('fortnoxFetch: retry loop exhausted unexpectedly')
+  } finally {
+    releaseSlot(tokenKey)
   }
-  // Defensive — loop returns or gives up before falling through.
-  throw new Error('fortnoxFetch: retry loop exhausted unexpectedly')
 }
 
 function sleep(ms: number): Promise<void> {

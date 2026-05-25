@@ -40,8 +40,8 @@ export async function GET(req: NextRequest) {
   // and under-counted cost for any business with >1000 shifts a year.
   // The summary tables already dedupe providers + coerce numeric strings.
   const [trackerRes, monthlyRes] = await Promise.all([
-    db.from('tracker_data').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).order('period_month'),
-    db.from('monthly_metrics').select('month, revenue, staff_cost, food_cost').eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year),
+    db.from('tracker_data').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).order('period_month').limit(24),
+    db.from('monthly_metrics').select('month, revenue, staff_cost, food_cost').eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year).limit(24),
   ])
 
   const manualRows = trackerRes.data ?? []

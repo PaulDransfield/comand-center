@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     db.from('businesses').select('name, city').eq('id', businessId).eq('org_id', auth.orgId).maybeSingle(),
     db.from('tracker_data').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).eq('period_month', month).maybeSingle(),
     db.from('monthly_metrics').select('*').eq('org_id', auth.orgId).eq('business_id', businessId).eq('year', year).eq('month', month).maybeSingle(),
-    db.from('tracker_line_items').select('label_sv, category, subcategory, amount, fortnox_account').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).eq('period_month', month).order('amount', { ascending: false }),
+    db.from('tracker_line_items').select('label_sv, category, subcategory, amount, fortnox_account').eq('org_id', auth.orgId).eq('business_id', businessId).eq('period_year', year).eq('period_month', month).order('amount', { ascending: false }).limit(500),
   ])
 
   const biz = bizRes.data

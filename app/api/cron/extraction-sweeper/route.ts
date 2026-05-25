@@ -41,14 +41,32 @@ export async function GET(req: NextRequest) {
   // Step 2 — list jobs ready to fire.
   const { data: ready, error: listErr } = await db.rpc('list_ready_extraction_jobs', { max_jobs: 10 })
   if (listErr) {
+    // Returning 500 here used to make Vercel infinite-retry the cron in
+    // tight succession; if the RPC failure was transient (DB blip) a
+    // second sweep would land while the first was still in-flight,
+    // causing job-claim races. Log + return 200 — the cron fires every
+    // 2 minutes anyway, so the next regular tick will retry naturally.
     log.error('sweeper list rpc failed', { route: 'cron/extraction-sweeper', error: listErr.message })
-    return NextResponse.json({ error: listErr.message }, { status: 500 })
+    return NextResponse.json({
+      ok: false,
+      reset_count: resetCount ?? 0,
+      error: listErr.message,
+      will_retry_on_next_cron: true,
+    })
   }
   const jobs = Array.isArray(ready) ? ready : []
 
   const base = process.env.NEXT_PUBLIC_APP_URL
     ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-  if (!base) return NextResponse.json({ error: 'No base URL available for worker fire' }, { status: 500 })
+  if (!base) {
+    log.error('sweeper no base url', { route: 'cron/extraction-sweeper' })
+    return NextResponse.json({
+      ok: false,
+      reset_count: resetCount ?? 0,
+      error: 'No base URL available for worker fire',
+      will_retry_on_next_cron: true,
+    })
+  }
 
   const fires = jobs.map(() =>
     fetch(`${base}/api/fortnox/extract-worker`, {

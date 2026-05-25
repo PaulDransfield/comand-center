@@ -17,6 +17,7 @@ import { checkCronSecret }             from '@/lib/admin/check-secret'
 import { log }                         from '@/lib/log/structured'
 import { decrypt }                     from '@/lib/integrations/encryption'
 import { syncScheduleFromPK }          from '@/lib/scheduling/pk-sync'
+import { filterEligible }              from '@/lib/sync/eligibility'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -31,12 +32,19 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient()
   const started = Date.now()
 
-  const { data: integrations } = await db
+  // Pull connected + warning + needs_reauth (the latter only when the
+  // auto-recovery probe is due — filterEligible enforces the 6h cooldown).
+  // Previously hardcoded ['connected', 'warning'] meant any PK integration
+  // that hit a transient 401 stayed deaf to scheduling-sync forever until
+  // the owner manually reconnected — even after master-sync had already
+  // probed and recovered.
+  const { data: rawIntegrations } = await db
     .from('integrations')
-    .select('id, business_id, credentials_enc, businesses(name)')
+    .select('id, business_id, credentials_enc, status, reauth_notified_at, businesses(name)')
     .eq('provider', 'personalkollen')
-    .in('status', ['connected', 'warning'])
-  if (!integrations?.length) {
+    .in('status', ['connected', 'warning', 'needs_reauth', 'error'])
+  const integrations = filterEligible(rawIntegrations ?? [])
+  if (!integrations.length) {
     return NextResponse.json({ ok: true, businesses_synced: 0, message: 'no active PK integrations' })
   }
 

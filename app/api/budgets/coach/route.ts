@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
         business_id:          bizId,
         period_year:          year,
         period_month:         month,
-        model:                'claude-haiku-4-5-20251001',
+        model:                AI_MODELS.AGENT,
         suggested_revenue:    Math.round(projectedRev),
         suggested_staff_cost: Math.round(projectedLabour),
         suggested_margin_pct: projectedRev > 0 ? Math.round(((projectedRev - projectedLabour - mtdFoodCost) / projectedRev) * 1000) / 10 : null,

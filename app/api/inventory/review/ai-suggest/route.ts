@@ -22,7 +22,7 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess }        from '@/lib/auth/require-role'
 import { AI_MODELS }                    from '@/lib/ai/models'
 import { anthropicFetch }               from '@/lib/ai/anthropic-fetch'
-import { checkAndIncrementAiLimit }     from '@/lib/ai/usage'
+import { checkAndIncrementAiLimit, logAiRequest } from '@/lib/ai/usage'
 import { normaliseDescription }         from '@/lib/inventory/normalise'
 
 export const runtime     = 'nodejs'
@@ -337,6 +337,18 @@ Return JSON array only.`
   const tokensOut = result.tokensOut
   const cost = (tokensIn * HAIKU_INPUT_USD_PER_TOKEN) + (tokensOut * HAIKU_OUTPUT_USD_PER_TOKEN)
   console.log(`[ai-suggest] business=${businessId.slice(0,8)} groups=${groups.length} tokens=${tokensIn}/${tokensOut} cache_read=${result.cacheRead} cost=$${cost.toFixed(4)}`)
+
+  // Persist to ai_request_log so the admin cost dashboard sees inventory
+  // classification calls. Without this the rollup undercounts ~$1.50/mo
+  // per customer that goes unmeasured.
+  await logAiRequest(db, {
+    org_id:        orgId,
+    request_type:  'inventory_ai_suggest',
+    model:         AI_MODELS.AGENT,
+    input_tokens:  tokensIn,
+    output_tokens: tokensOut,
+    duration_ms:   result.durationMs,
+  }).catch(() => { /* non-fatal — logAiRequest swallows on failure already */ })
 
   // Parse the JSON response. Strip any prose before/after the array.
   const rawText = json?.content?.[0]?.text ?? ''

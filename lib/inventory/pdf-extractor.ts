@@ -15,6 +15,7 @@
 // caller sets status='needs_review' and the rows are NOT applied.
 
 import { AI_MODELS } from '@/lib/ai/models'
+import { logAiRequest } from '@/lib/ai/usage'
 import { getFreshFortnoxAccessToken } from '@/lib/fortnox/api/auth'
 import { fortnoxFetch } from '@/lib/fortnox/api/fetch'
 
@@ -171,6 +172,18 @@ export async function extractInvoicePdf(
 
   const rates  = pricingFor(modelUsed)
   const aiCost = (tokensIn * rates.input) + (tokensOut * rates.output)
+
+  // Persist to ai_request_log so admin cost dashboard sees PDF extraction
+  // calls. Without this, supplier-invoice extraction (escalation-heavy
+  // due to Sonnet fallback) was the largest single AI cost surface that
+  // went uncounted in the rollup. Non-fatal.
+  await logAiRequest(db, {
+    org_id:        input.org_id,
+    request_type:  escalated ? 'pdf_extract_supplier_invoice_sonnet' : 'pdf_extract_supplier_invoice_haiku',
+    model:         modelUsed,
+    input_tokens:  tokensIn,
+    output_tokens: tokensOut,
+  }).catch(() => { /* logAiRequest already swallows; belt-and-braces */ })
 
   // ── 3. Validate ───────────────────────────────────────────────────
 

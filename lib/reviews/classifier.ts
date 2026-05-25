@@ -4,6 +4,8 @@
 // sentiment. Uses Haiku 4.5 with tool-use for guaranteed-shape output —
 // regex-JSON parsing is not robust enough across Swedish/English mixed
 // reviews.
+
+import { AI_MODELS } from '@/lib/ai/models'
 //
 // Input  : verbatim review text + star rating + language code
 // Output : per-category polarity + confidence + pull-quote, overall
@@ -45,7 +47,7 @@ export interface ReviewClassification {
   ms:            number
 }
 
-const MODEL = 'claude-haiku-4-5-20251001'
+const MODEL = AI_MODELS.AGENT
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 
 const SYSTEM_PROMPT = `You classify restaurant reviews into structured themes for an operator dashboard.

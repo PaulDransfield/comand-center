@@ -13,6 +13,7 @@
 //   OR { org_id: "uuid" }       ← first inzii integration found
 
 import { NextRequest, NextResponse } from 'next/server'
+import { AI_MODELS } from '@/lib/ai/models'
 import { createAdminClient }         from '@/lib/supabase/server'
 import { decrypt }                   from '@/lib/integrations/encryption'
 import Anthropic                     from '@anthropic-ai/sdk'
@@ -138,7 +139,7 @@ Return JSON only — no markdown, no explanation outside JSON:
 
   try {
     const msg  = await anthropic.messages.create({
-      model:      'claude-haiku-4-5-20251001',
+      model:      AI_MODELS.AGENT,
       max_tokens: 1000,
       messages:   [{ role: 'user', content: prompt }],
     })
