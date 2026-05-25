@@ -49,6 +49,7 @@ export default function OnboardBoardPage() {
   const [lastAction, setLast] = useState<string>('')
   const [bizInput, setBizInput] = useState('')
   const [catBusy, setCatBusy] = useState(false)
+  const [recBusy, setRecBusy] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoRef = useRef(autoDrive)
   autoRef.current = autoDrive
@@ -67,6 +68,22 @@ export default function OnboardBoardPage() {
       setError(e?.message ?? 'auto-build failed')
     } finally {
       setCatBusy(false)
+    }
+  }, [businessId])
+
+  // One-shot AI recipe drafting (Phase 3). Drafts a recipe + ingredients
+  // for each POS menu item missing one; owner reviews on /inventory/recipes.
+  const draftRecipes = useCallback(async () => {
+    setRecBusy(true)
+    try {
+      const r = await adminFetch<any>('/api/admin/onboard/recipes-draft', {
+        method: 'POST', body: JSON.stringify({ business_id: businessId }),
+      })
+      setLast(r.message ?? `Recipes: ${r.drafted} drafted (${r.ingredients_added} ingredients) · ${r.linked_existing} linked · ${r.skipped_no_ingredients} skipped`)
+    } catch (e: any) {
+      setError(e?.message ?? 'recipe drafting failed')
+    } finally {
+      setRecBusy(false)
     }
   }, [businessId])
 
@@ -182,6 +199,11 @@ export default function OnboardBoardPage() {
                 {s.key === 'catalogue' && s.state === 'todo' && (
                   <button onClick={autobuild} disabled={catBusy} style={btn('#6d28d9', '#fff', true)}>
                     {catBusy ? 'Building…' : 'Auto-build'}
+                  </button>
+                )}
+                {s.key === 'recipes' && s.state === 'todo' && (
+                  <button onClick={draftRecipes} disabled={recBusy} style={btn('#6d28d9', '#fff', true)}>
+                    {recBusy ? 'Drafting…' : 'Draft recipes'}
                   </button>
                 )}
               </div>

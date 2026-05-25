@@ -69,7 +69,7 @@ export async function buildOnboardSnapshot(db: any, businessId: string): Promise
     trackerMonths,
     silTotal, silMatched, silNeedsReview, silNotInventory,
     pdfTotal, pdfPending, pdfExtracting, pdfExtracted, pdfFailed,
-    productCount, recipeCount, menuCount, dailyMetricCount,
+    productCount, recipeCount, menuCount, menuWithoutRecipe, dailyMetricCount,
   ] = await Promise.all([
     db.from('integrations')
       .select('provider, status, backfill_status, backfill_progress, backfill_started_at, backfill_finished_at, backfill_error')
@@ -94,7 +94,8 @@ export async function buildOnboardSnapshot(db: any, businessId: string): Promise
     cnt(db, 'invoice_pdf_extractions', q => q.eq('business_id', bid).eq('status', 'failed')),
     cnt(db, 'products', q => q.eq('business_id', bid)),
     cnt(db, 'recipes', q => q.eq('business_id', bid)),
-    cnt(db, 'pos_menu_items', q => q.eq('business_id', bid)),
+    cnt(db, 'pos_menu_items', q => q.eq('business_id', bid).is('archived_at', null)),
+    cnt(db, 'pos_menu_items', q => q.eq('business_id', bid).is('archived_at', null).is('recipe_id', null)),
     cnt(db, 'daily_metrics', q => q.eq('business_id', bid)),
   ])
 
@@ -223,14 +224,17 @@ export async function buildOnboardSnapshot(db: any, businessId: string): Promise
     drivable: false,
   })
 
-  // ── 6. Recipes (informational in Phase 1) ───────────────────────────
+  // ── 6. Recipes (Phase 3 — AI draft button, not auto-driven) ─────────
   stages.push({
     key: 'recipes', label: 'Recipes',
-    state: menuCount > 0 && recipeCount >= menuCount ? 'done' : recipeCount > 0 ? 'running' : 'todo',
-    detail: menuCount > 0 ? `${recipeCount}/${menuCount} menu items have a recipe` : `${recipeCount} recipes`,
-    percent: menuCount > 0 ? Math.min(100, Math.round((recipeCount / menuCount) * 100)) : null,
+    state: menuCount === 0 ? 'waiting'
+      : menuWithoutRecipe > 0 ? 'todo'
+      : 'done',
+    detail: menuCount === 0 ? 'no POS menu items yet'
+      : `${menuCount - menuWithoutRecipe}/${menuCount} menu items have a recipe · ${recipeCount} recipes`,
+    percent: menuCount > 0 ? Math.round(((menuCount - menuWithoutRecipe) / menuCount) * 100) : null,
     blocker: null,
-    drivable: false,   // Phase 3 (AI drafting) — not auto-driven yet
+    drivable: false,   // one-shot "Draft recipes" button, not the auto-drive loop (costs tokens)
   })
 
   // ── 7. Dashboard ────────────────────────────────────────────────────

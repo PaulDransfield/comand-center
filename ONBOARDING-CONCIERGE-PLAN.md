@@ -136,7 +136,14 @@ global `MAX_DAILY_GLOBAL_USD` kill-switch mid-session. Surface the running $ on 
   Residual stays for the owner. Board shows an "Auto-build" button on the catalogue
   stage (one-shot — costs tokens, so not in the auto-drive loop). "other" bucket left
   to the nightly recategorise cron.
-- **Phase 3 — Recipe AI-drafting** + fast review UI. The biggest labour win.
+- **Phase 3 — Recipe AI-drafting — ✅ SHIPPED 2026-05-25.** `/api/admin/onboard/recipes-draft`
+  drafts a recipe + ingredients for every POS menu item missing one: Sonnet 4.6 picks
+  products from the MATCHED catalogue with per-portion quantities/units, we create the
+  recipe (priced automatically by the Session-20 cost engine) + link the menu item.
+  Drafts tagged in `notes` ("AI DRAFT — …"); owner reviews/edits quantities on the
+  existing `/inventory/recipes` page (no migration, no new review UI). Board "Draft
+  recipes" button on the Recipes stage (one-shot, costs tokens). Depends on POS menu
+  items existing + a matched catalogue (refuses if catalogue empty).
 - **Phase 4 — Definition-of-done checklist, handover, per-customer cost guard.**
 
 ---
