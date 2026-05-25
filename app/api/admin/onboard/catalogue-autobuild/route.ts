@@ -230,6 +230,7 @@ export async function POST(req: NextRequest) {
     ai_classified:         suggestedCount,
     applied_total:         appliedTotal,
     remaining_review_lines: remainingReview ?? 0,
+    action_tally:          actionTally,   // diagnostic: action|confidence|in-queue distribution
   }, {
     headers: { 'Cache-Control': 'no-store' },
   })

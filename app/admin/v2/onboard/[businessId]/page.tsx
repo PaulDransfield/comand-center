@@ -71,9 +71,11 @@ export default function OnboardBoardPage() {
           method: 'POST', body: JSON.stringify({ business_id: businessId }),
         })
         tot.create += r.applied_create; tot.approve += r.applied_approve; tot.skip += r.applied_skip
-        setLast(`Catalogue (round ${round}): +${tot.create} new · +${tot.approve} matched · ${tot.skip} skipped · ${r.remaining_review_lines} to review`)
-        const progressed = (r.ai_classified ?? 0) > 0 || (r.applied_total ?? 0) > 0
-        if (!progressed || (r.remaining_review_lines ?? 0) === 0) break
+        setLast(`Catalogue (round ${round}): +${tot.create} new · +${tot.approve} matched · ${tot.skip} skipped · ${r.left_for_review} need review · ${r.remaining_review_lines} left`)
+        // Only keep going if this round actually RESOLVED lines. A round that
+        // classifies but applies nothing means the rest are review-tier — stop
+        // (don't loop re-classifying + burning Haiku tokens).
+        if ((r.applied_total ?? 0) === 0 || (r.remaining_review_lines ?? 0) === 0) break
       }
     } catch (e: any) {
       setError(e?.message ?? 'auto-build failed')
