@@ -44,9 +44,14 @@ async function loadGroups() {
   }
   const byKey = new Map(), pricesByKey = new Map(), accountsByKey = new Map()
   for (const l of lines) {
-    const supplierKey = l.supplier_fortnox_number ?? l.supplier_name_snapshot ?? 'unknown'
     const norm = normaliseDescription(l.raw_description)
-    const key = Buffer.from(`${supplierKey}|${norm}|${l.unit ?? ''}`).toString('base64url')
+    if (!norm) continue   // GET endpoint skips empty-normalised lines — match that
+    // EXACT format from app/api/inventory/needs-review/route.ts:
+    //   internal: `${supplier_fortnox_number}\x1f${normalised}\x1f${(unit ?? '').trim().toLowerCase()}`
+    //   exposed:  base64url(internal, 'utf-8')
+    const unit = (l.unit ?? '').trim().toLowerCase()
+    const internal = `${l.supplier_fortnox_number}\x1f${norm}\x1f${unit}`
+    const key = Buffer.from(internal, 'utf-8').toString('base64url')
     if (!byKey.has(key)) {
       byKey.set(key, {
         group_key: key, supplier_fortnox_number: String(supplierKey),
