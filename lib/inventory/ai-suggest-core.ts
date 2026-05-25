@@ -276,10 +276,29 @@ Return JSON array only.`
   const dedupedRows = Array.from(dedupMap.values())
 
   if (dedupedRows.length > 0) {
-    const { error: upErr } = await db
+    // Persist via delete-then-insert, NOT .upsert({ onConflict }). The
+    // (business_id, group_key) unique index is partial/missing in prod, and
+    // PostgREST rejects partial indexes as ON CONFLICT targets ("no unique
+    // or exclusion constraint matching the ON CONFLICT specification") — the
+    // same trap insertAlias() documents a few lines over. The upsert was
+    // failing SILENTLY (error swallowed), so suggestions never persisted:
+    // the review page didn't notice (it returns the in-memory rows) but the
+    // onboarding auto-build's cache read was always empty → it re-classified
+    // in a loop and applied nothing. Delete-then-insert is constraint-shape
+    // independent.
+    const keys = dedupedRows.map(r => r.group_key)
+    for (let i = 0; i < keys.length; i += 200) {
+      const { error: delErr } = await db
+        .from('inventory_review_suggestions')
+        .delete()
+        .eq('business_id', businessId)
+        .in('group_key', keys.slice(i, i + 200))
+      if (delErr) console.error('[ai-suggest] suggestions delete failed:', delErr.message)
+    }
+    const { error: insErr } = await db
       .from('inventory_review_suggestions')
-      .upsert(dedupedRows, { onConflict: 'business_id,group_key' })
-    if (upErr) console.error('[ai-suggest] upsert failed:', upErr.message)
+      .insert(dedupedRows)
+    if (insErr) console.error('[ai-suggest] suggestions insert failed:', insErr.message)
   }
 
   return dedupedRows
