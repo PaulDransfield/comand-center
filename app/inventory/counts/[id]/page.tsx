@@ -80,6 +80,27 @@ export default function CountDetailPage() {
   const [search,  setSearch]  = useState('')
   const [openCats, setOpenCats] = useState<Record<string, boolean>>({})
 
+  // Add-article-while-counting: create a product not yet in the catalogue
+  // without leaving the count. Reuses POST /api/inventory/items; the count
+  // GET returns ALL products, so a reload surfaces the new one ready to count.
+  const [showAdd, setShowAdd] = useState(false)
+  const [addName, setAddName] = useState('')
+  const [addCat,  setAddCat]  = useState('food')
+  const [addUnit, setAddUnit] = useState('')
+  const [addPack, setAddPack] = useState('')
+  const [addBusy, setAddBusy] = useState(false)
+  const [addErr,  setAddErr]  = useState<string | null>(null)
+
+  const lbl: React.CSSProperties = {
+    display: 'block', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+    letterSpacing: '0.05em', color: UXP.ink4, margin: '10px 0 4px',
+  }
+  const inp: React.CSSProperties = {
+    width: '100%', padding: '8px 10px', fontSize: 13, color: UXP.ink1,
+    border: `1px solid ${UXP.border}`, borderRadius: 6, fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  }
+
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -115,6 +136,33 @@ export default function CountDetailPage() {
     })
     if (!r.ok) { alert((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`); return }
     load()
+  }
+
+  async function addProduct() {
+    const bizId = data?.count.business_id
+    if (!bizId || !addName.trim()) { setAddErr('Name is required'); return }
+    setAddBusy(true); setAddErr(null)
+    try {
+      const r = await fetch('/api/inventory/items', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id: bizId,
+          name:        addName.trim(),
+          category:    addCat,
+          unit:        addUnit.trim() || null,
+          pack_size:   addPack.trim() || null,
+        }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setShowAdd(false); setAddName(''); setAddUnit(''); setAddPack(''); setAddCat('food')
+      load()   // new product shows up in the rows, ready to count
+    } catch (e: any) {
+      setAddErr(e.message)
+    } finally {
+      setAddBusy(false)
+    }
   }
 
   async function archive() {
@@ -178,14 +226,69 @@ export default function CountDetailPage() {
             </div>
           </div>
           {!completed && (
-            <button onClick={archive} style={{
-              padding: '6px 10px', fontSize: 11, fontWeight: 500,
-              background: 'transparent', color: UXP.roseText,
-              border: `0.5px solid ${UXP.rose}`, borderRadius: 5,
-              cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
-            }}>Discard</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => { setShowAdd(true); setAddErr(null) }} style={{
+                padding: '6px 10px', fontSize: 11, fontWeight: 600,
+                background: UXP.lavDeep, color: '#fff',
+                border: 'none', borderRadius: 5,
+                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+              }}>+ Add article</button>
+              <button onClick={archive} style={{
+                padding: '6px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.roseText,
+                border: `0.5px solid ${UXP.rose}`, borderRadius: 5,
+                cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+              }}>Discard</button>
+            </div>
           )}
         </div>
+
+        {/* Add-article modal */}
+        {showAdd && (
+          <>
+            <div onClick={() => setShowAdd(false)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 199 }} />
+            <div style={{
+              position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+              background: '#fff', borderRadius: 12, width: 400, maxWidth: '94vw', zIndex: 200,
+              padding: 22, boxShadow: '0 25px 60px rgba(0,0,0,0.3)', border: `1px solid ${UXP.border}`,
+            }}>
+              <h2 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>Add article</h2>
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: UXP.ink3 }}>Adds it to the catalogue and this count.</p>
+              <label style={lbl}>Name</label>
+              <input autoFocus value={addName} onChange={e => setAddName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addProduct() }}
+                placeholder="e.g. Olivolja extra virgin 5l" style={inp} />
+              <label style={lbl}>Category</label>
+              <select value={addCat} onChange={e => setAddCat(e.target.value)} style={inp}>
+                {['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other'].map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={lbl}>Unit (optional)</label>
+                  <input value={addUnit} onChange={e => setAddUnit(e.target.value)} placeholder="kg / l / st" style={inp} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={lbl}>Pack size (optional)</label>
+                  <input value={addPack} onChange={e => setAddPack(e.target.value)} placeholder="e.g. 5" style={inp} />
+                </div>
+              </div>
+              {addErr && <div style={{ color: UXP.roseText, fontSize: 12, marginTop: 8 }}>{addErr}</div>}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+                <button onClick={() => setShowAdd(false)}
+                  style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', color: UXP.ink2, border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancel
+                </button>
+                <button onClick={addProduct} disabled={addBusy}
+                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 6, cursor: addBusy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                  {addBusy ? 'Adding…' : 'Add article'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Progress bar */}
         <div style={{ marginBottom: 12 }}>
