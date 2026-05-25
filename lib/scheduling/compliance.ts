@@ -3,7 +3,7 @@
 // Pure-compute compliance checks against Swedish labour law
 // (Arbetstidslagen + EU Working Time Directive) and business-level
 // scheduling rules. Used by both:
-//   - The pre-publish review panel (slide-up sheet on /scheduling/grid)
+//   - The pre-publish review panel (slide-up sheet on /scheduling)
 //   - Inline cell warnings on the grid itself
 //
 // Same engine, two surfaces — rules can never drift.

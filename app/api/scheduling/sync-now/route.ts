@@ -1,7 +1,7 @@
 // app/api/scheduling/sync-now/route.ts
 //
 // Owner-callable: fires syncScheduleFromPK on demand for one business.
-// Used by the "Sync from PK" button on /scheduling/grid when the owner
+// Used by the "Sync from PK" button on /scheduling when the owner
 // wants to pull the latest roster without waiting for the nightly cron.
 
 import { NextRequest, NextResponse } from 'next/server'

@@ -77,7 +77,6 @@ export const AREAS: Area[] = [
     icon:  'calendar-event',
     pages: [
       { key: 'scheduling',  label: 'Scheduling',  href: '/scheduling' },
-      { key: 'grid',        label: 'Schedule grid', href: '/scheduling/grid' },
       { key: 'staff',       label: 'Staff',       href: '/staff' },
       { key: 'departments', label: 'Departments', href: '/departments' },
     ],
