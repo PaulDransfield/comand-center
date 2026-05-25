@@ -48,25 +48,33 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  // 1. Pull every product for this business.
-  let qProducts = db
+  // 1. Pull every product for this business — UNFILTERED. The counts on
+  //    the response need to reflect the WHOLE catalogue so the filter
+  //    tabs render real numbers. Filtering happens after the count
+  //    aggregation. Pre-fix this query was `.eq('category', filter)`
+  //    when filter !== 'all', which made tab counts collapse to 0 for
+  //    every category other than the active one.
+  const { data: allProducts, error: pErr } = await db
     .from('products')
     .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
-  if (categoryFilter !== 'all') qProducts = qProducts.eq('category', categoryFilter)
-
-  const { data: products, error: pErr } = await qProducts
   if (pErr) return NextResponse.json({ error: pErr.message }, { status: 500 })
 
-  if (!products || products.length === 0) {
+  if (!allProducts || allProducts.length === 0) {
     return NextResponse.json({
       counts: {},
       items: [],
       message: 'Catalogue is empty. Either PDF extraction is still running, or the matcher hasn\'t had inventory lines to dedupe yet.',
     }, { headers: { 'Cache-Control': 'no-store' } })
   }
+
+  // Filtered subset — only this is fed into the items aggregation below
+  // and returned to the UI. The unfiltered `allProducts` set drives counts.
+  const products = categoryFilter !== 'all'
+    ? allProducts.filter((p: any) => p.category === categoryFilter)
+    : allProducts
 
   // 2. Pull every matched supplier_invoice_lines row for this business in
   //    one paginated sweep. For Chicce-scale (~3 k lines) this is cheap;
@@ -200,9 +208,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Counts by category for filter tabs
-  const counts: Record<string, number> = { all: items.length }
-  for (const i of items) counts[i.category] = (counts[i.category] ?? 0) + 1
+  // Counts by category for filter tabs — computed from the UNFILTERED
+  // catalogue so each tab shows the real number even when a non-'all'
+  // filter is active.
+  const counts: Record<string, number> = { all: allProducts.length }
+  for (const p of allProducts) counts[p.category] = (counts[p.category] ?? 0) + 1
 
   return NextResponse.json({
     counts,
