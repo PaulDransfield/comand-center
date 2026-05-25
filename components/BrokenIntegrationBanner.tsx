@@ -29,6 +29,7 @@ export default function BrokenIntegrationBanner() {
   const pathname = usePathname()
   const [broken,    setBroken]    = useState<Broken[]>([])
   const [dismissed, setDismissed] = useState(false)
+  const [selectedBiz, setSelectedBiz] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -46,6 +47,18 @@ export default function BrokenIntegrationBanner() {
     load()
   }, [pathname, load])
 
+  // Track which business the owner is currently viewing — the banner
+  // only fires for the SELECTED business so Rosali's page doesn't shout
+  // about Vero's broken connection.
+  useEffect(() => {
+    function read() {
+      try { setSelectedBiz(localStorage.getItem('cc_selected_biz')) } catch {}
+    }
+    read()
+    window.addEventListener('storage', read)
+    return () => window.removeEventListener('storage', read)
+  }, [])
+
   useEffect(() => {
     // Per-session dismissal — re-shows on next browser tab
     try {
@@ -54,12 +67,20 @@ export default function BrokenIntegrationBanner() {
     } catch { /* swallow */ }
   }, [])
 
-  if (dismissed || broken.length === 0) return null
+  // Only surface broken integrations that belong to the business the
+  // owner is currently looking at. /group is the one place we'd want
+  // org-wide visibility — surface there explicitly.
+  const isOrgScope = pathname === '/group'
+  const visible = isOrgScope || !selectedBiz
+    ? broken
+    : broken.filter(b => b.business_id === selectedBiz)
+
+  if (dismissed || visible.length === 0) return null
 
   // Most owners have ONE broken integration at a time. Show the first
   // with a count badge if there are more.
-  const primary = broken[0]
-  const extraCount = broken.length - 1
+  const primary = visible[0]
+  const extraCount = visible.length - 1
 
   function dismiss() {
     try {
