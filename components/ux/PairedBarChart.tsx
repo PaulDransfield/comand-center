@@ -264,7 +264,9 @@ export default function PairedBarChart({
           </div>
           {series.map((s, si) => {
             const v = s.data[hoverIdx]
-            const color = s.color || LAV_PALETTE[si % LAV_PALETTE.length]
+            // Match the per-bar override so the tooltip swatch reflects
+            // the colour actually painted (e.g. peach for today's labour).
+            const color = s.colorOverrides?.[hoverIdx] || s.color || LAV_PALETTE[si % LAV_PALETTE.length]
             return (
               <div key={`tt-s-${si}`} style={{ display: 'grid', gridTemplateColumns: '8px 1fr auto', gap: 6, alignItems: 'center' }}>
                 <span style={{ width: 6, height: 6, borderRadius: 2, background: color }} />

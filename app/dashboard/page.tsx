@@ -603,14 +603,16 @@ function DemandOutlookStrip({ demand }: { demand: any }) {
 
 // ── Chart card ───────────────────────────────────────────────────────
 function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
-  // Today's labour cost is mostly scheduled (PK estimated_salary) — paint
-  // it in a pastel peach so it never reads as a closed actual.
+  // Colour scheme:
+  //   - Revenue:        UXP.lav     (light lavender)
+  //   - Labour (closed days): UXP.lavDeep (darker lavender — clear contrast vs revenue)
+  //   - Labour (today): pastel peach (scheduled, not final)
   const LAB_TODAY_FILL   = '#f4c39a'
   const LAB_TODAY_STROKE = '#d68b58'
   const labourColors = days.map(d => d.isToday && Number(d.staff_cost ?? 0) > 0 ? LAB_TODAY_FILL   : null)
   const labourStroke = days.map(d => d.isToday && Number(d.staff_cost ?? 0) > 0 ? LAB_TODAY_STROKE : null)
   return (
-    <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue · today shown in pastel peach (scheduled, not final)">
+    <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue · today in peach (scheduled, not final)">
       {loading ? (
         <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
       ) : (
@@ -621,7 +623,7 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
             {
               label: 'Labour',
               data: days.map(d => Number(d.staff_cost ?? 0)),
-              color: UXP.lavMid,
+              color: UXP.lavDeep,
               colorOverrides:  labourColors,
               strokeOverrides: labourStroke,
             },
