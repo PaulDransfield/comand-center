@@ -70,8 +70,14 @@ export default function OnboardBoardPage() {
         const r = await adminFetch<any>('/api/admin/onboard/catalogue-autobuild', {
           method: 'POST', body: JSON.stringify({ business_id: businessId }),
         })
-        tot.create += r.applied_create; tot.approve += r.applied_approve; tot.skip += r.applied_skip
-        setLast(`Catalogue (round ${round}): +${tot.create} new · +${tot.approve} matched · ${tot.skip} skipped · ${r.left_for_review} need review · ${r.remaining_review_lines} left`)
+        // Nothing-to-classify case (no groups / no line descriptions): the
+        // response has no count fields — show the explanation, don't NaN.
+        if (r.groups === 0 || r.applied_create === undefined) {
+          setLast(r.message ?? 'Nothing to classify.')
+          break
+        }
+        tot.create += (r.applied_create ?? 0); tot.approve += (r.applied_approve ?? 0); tot.skip += (r.applied_skip ?? 0)
+        setLast(`Catalogue (round ${round}): +${tot.create} new · +${tot.approve} matched · ${tot.skip} skipped · ${r.left_for_review ?? 0} need review · ${r.remaining_review_lines ?? 0} left`)
         // Only keep going if this round actually RESOLVED lines. A round that
         // classifies but applies nothing means the rest are review-tier — stop
         // (don't loop re-classifying + burning Haiku tokens).

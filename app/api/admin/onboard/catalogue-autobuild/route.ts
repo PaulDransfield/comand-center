@@ -90,7 +90,34 @@ export async function POST(req: NextRequest) {
 
   const groups = buildGroups(lines ?? [])
   if (groups.length === 0) {
-    return NextResponse.json({ ok: true, groups: 0, message: 'No needs_review groups to classify.' })
+    // buildGroups skips lines whose description normalises to empty. If we
+    // got here with needs_review lines present, they have no usable item
+    // text — surface that (with samples) instead of a NaN-producing bare
+    // response. Common cause: Fortnox returned supplier-invoice rows as
+    // amounts-per-account with no ItemDescription, so there's nothing to
+    // classify into a product catalogue.
+    const allLines = lines ?? []
+    const withDesc = allLines.filter((l: any) => normaliseDescription(l.raw_description ?? '')).length
+    const sample = allLines.slice(0, 10).map((l: any) => ({
+      desc: l.raw_description ?? null,
+      art:  l.article_number ?? null,
+      unit: l.unit ?? null,
+      acct: l.account_number ?? null,
+    }))
+    return NextResponse.json({
+      ok: true,
+      groups: 0,
+      applied_create: 0, applied_approve: 0, applied_skip: 0,
+      left_for_review: 0, lines_resolved: 0,
+      ai_classified: 0, applied_total: 0,
+      remaining_review_lines: allLines.length,
+      needs_review_lines: allLines.length,
+      lines_with_usable_description: withDesc,
+      sample_lines: sample,
+      message: withDesc === 0
+        ? `These ${allLines.length} invoice lines have no item descriptions to classify — Fortnox returned them as amounts without line text.`
+        : `${withDesc}/${allLines.length} lines have descriptions but no groups formed — likely all numeric/punctuation.`,
+    }, { headers: { 'Cache-Control': 'no-store' } })
   }
   groups.sort((a, b) => b.line_count - a.line_count)
 
