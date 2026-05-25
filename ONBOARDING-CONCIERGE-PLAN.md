@@ -127,8 +127,15 @@ global `MAX_DAILY_GLOBAL_USD` kill-switch mid-session. Surface the running $ on 
   every 5s and (auto-drive on) kicks the next idle/stalled stage. Sequential drive
   order: financials → invoices → pdf (matching runs inline + via chain_rematch, so
   it's display-only). Reuses every existing kick endpoint. Burst is session-scoped.
-- **Phase 2 — Catalogue auto-build.** Wire `ai-suggest` bulk + `recategorise-other`
-  into a one-click board action + residual count.
+- **Phase 2 — Catalogue auto-build — ✅ SHIPPED 2026-05-25.** Extracted the Haiku
+  classifier into `lib/inventory/ai-suggest-core.ts` (shared by the review page +
+  the worker). New `/api/admin/onboard/catalogue-autobuild` generates suggestions
+  across the needs_review queue (batched, ≤3 Haiku calls/click) and applies every
+  suggestion with confidence ≥0.65 and action≠review: create_new → product+alias+link,
+  approve_existing → link to the suggested product, skip_non_inventory → not_inventory.
+  Residual stays for the owner. Board shows an "Auto-build" button on the catalogue
+  stage (one-shot — costs tokens, so not in the auto-drive loop). "other" bucket left
+  to the nightly recategorise cron.
 - **Phase 3 — Recipe AI-drafting** + fast review UI. The biggest labour win.
 - **Phase 4 — Definition-of-done checklist, handover, per-customer cost guard.**
 

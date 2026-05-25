@@ -202,17 +202,18 @@ export async function buildOnboardSnapshot(db: any, businessId: string): Promise
 
   // ── 5. Catalogue (matcher) ──────────────────────────────────────────
   const silUnprocessed = Math.max(0, silTotal - silMatched - silNeedsReview - silNotInventory)
-  const catDone = silTotal > 0 && silUnprocessed === 0
+  // "done" once nothing is left awaiting review. needs_review is the backlog
+  // the one-click Auto-build (Phase 2) chews through; what it can't resolve
+  // confidently stays here for the owner.
   stages.push({
-    key: 'catalogue', label: 'Product matching',
+    key: 'catalogue', label: 'Product catalogue',
     state: fxBlocked ? 'waiting'
       : silTotal === 0 ? 'waiting'
-      : catDone ? 'done'
-      : silUnprocessed > 0 ? 'todo'
+      : silNeedsReview > 0 ? 'todo'
       : 'done',
     detail: silTotal === 0 ? 'waiting for invoices'
       : `${productCount} products · ${silMatched} matched · ${silNeedsReview} to review${silUnprocessed ? ` · ${silUnprocessed} unprocessed` : ''}`,
-    percent: silTotal > 0 ? Math.round(((silTotal - silUnprocessed) / silTotal) * 100) : null,
+    percent: silTotal > 0 ? Math.round(((silTotal - silNeedsReview) / silTotal) * 100) : null,
     blocker: null,
     // Matching runs inline during the backfill + after each PDF batch
     // (chain_rematch). An explicit matcher kick is redundant and would
@@ -252,7 +253,7 @@ export async function buildOnboardSnapshot(db: any, businessId: string): Promise
       fortnox, finStatus, finInFlight, finStale, finDone,
       invIsLine, invStatus, invDone, invInFlight, invFresh, invStateExists: !!invState.data,
       pdfDone, pdfRemaining,
-      catDone, silUnprocessed, silTotal,
+      silNeedsReview, silTotal,
     },
   }
 }

@@ -48,9 +48,27 @@ export default function OnboardBoardPage() {
   const [autoDrive, setAuto]  = useState(true)
   const [lastAction, setLast] = useState<string>('')
   const [bizInput, setBizInput] = useState('')
+  const [catBusy, setCatBusy] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const autoRef = useRef(autoDrive)
   autoRef.current = autoDrive
+
+  // One-shot catalogue auto-build (costs Haiku tokens, so it's a manual
+  // button — not part of the auto-drive loop). Generates AI suggestions
+  // across the needs_review queue and applies the confident, non-review ones.
+  const autobuild = useCallback(async () => {
+    setCatBusy(true)
+    try {
+      const r = await adminFetch<any>('/api/admin/onboard/catalogue-autobuild', {
+        method: 'POST', body: JSON.stringify({ business_id: businessId }),
+      })
+      setLast(`Catalogue: +${r.applied_create} new · +${r.applied_approve} matched · ${r.applied_skip} skipped · ${r.left_for_review} left to review`)
+    } catch (e: any) {
+      setError(e?.message ?? 'auto-build failed')
+    } finally {
+      setCatBusy(false)
+    }
+  }, [businessId])
 
   const drive = useCallback(async (stage?: string) => {
     try {
@@ -160,6 +178,11 @@ export default function OnboardBoardPage() {
                 {s.percent != null && <span style={{ fontSize: 12, fontWeight: 600, color: st.fg }}>{s.percent}%</span>}
                 {s.drivable && s.state !== 'done' && (
                   <button onClick={() => drive(s.key)} style={btn('#fff', '#6d28d9', true)}>Kick</button>
+                )}
+                {s.key === 'catalogue' && s.state === 'todo' && (
+                  <button onClick={autobuild} disabled={catBusy} style={btn('#6d28d9', '#fff', true)}>
+                    {catBusy ? 'Building…' : 'Auto-build'}
+                  </button>
                 )}
               </div>
               {s.percent != null && (
