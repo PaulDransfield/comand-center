@@ -37,6 +37,35 @@ Key elements from `cc_ai_recommended_schedule_en.html` informing the build:
 
 Decision implicit in the mockup: **the AI is allowed to recommend ADDING shifts, not just cutting.** This is a deliberate departure from the current `SCHEDULING_ASYMMETRY` rule (`lib/ai/rules.ts`). See §7.
 
+### 2.1 Pre-publish review (new requirement, locked 2026-05-25)
+
+Before the owner clicks "Apply & send to Personalkollen", a review panel surfaces four KPI views so they can sanity-check the week. The owner can return to the grid and tweak any individual cell, then re-open the review. **Apply** is disabled while any HARD compliance check is failing.
+
+**1. Forecast vs hours** — per-day stacked chart. Bar = planned hours (broken down by section: kitchen/foh/bar/management). Line overlay = forecast revenue. Owner spots over- or under-staffed days relative to expected demand at a glance. Two badges per day: a delta-from-target-pct chip (green if within ±2%, amber outside) and a "vs last similar week" comparator.
+
+**2. Cost of labour %** — weekly headline number with per-day breakdown. Shows: planned labour cost (SEK), forecast revenue (SEK), planned %, target %, gap. Sparkline of the last 8 same-weekday weeks for context. Per-day cells show whether the day's planned % is within target or breaching.
+
+**3. Staff per hour vs demand** — 24-hour bar chart per day showing scheduled headcount per hour (one bar per section colour) overlaid against an expected-demand curve (forecasted covers / transactions / revenue, derived from historical day-of-week patterns). Highlights under-covered peaks (lunch rush at 12-13, dinner peak at 19-21) and over-staffed troughs (15-17 typical mid-afternoon lull).
+
+**4. Compliance checks** — pass/warn/fail list of Swedish labour-law + business-rule constraints applied to the proposed schedule:
+
+| Check | Threshold | Severity |
+|---|---|---|
+| Min rest between shifts | ≥11h (Arbetstidslagen) | HARD — blocks Apply |
+| Max consecutive working days | ≤6 days | HARD |
+| Max weekly hours per staff | ≤contracted_max OR 48h (EU directive) | HARD |
+| Daily rest in 24h period | ≥11h continuous | HARD |
+| Weekly rest period | ≥36h continuous in 7 days | WARN |
+| Break compliance | ≥30 min break for >6h shift | WARN |
+| Contracted-hours floor | Don't schedule a 50%-contract person at <40% of contract | WARN |
+| Unavailable days | Staff hasn't blocked this day | WARN |
+| Lone-closer policy | If owner has enabled "two-person close required", flag single closes | WARN |
+| Minor employees | <18yo can't work after 22:00 or split shifts | HARD (only if business has any) |
+
+Hard failures show inline on the offending cell in the grid AND block the Apply button until resolved. Warns can be acknowledged with one click ("I know, apply anyway") and the acknowledgement is logged.
+
+The review panel is a slide-up sheet (or right-rail panel) that doesn't navigate away from the grid — the owner stays in editing context. Closing the review returns them to the grid with any unresolved warnings highlighted on the affected cells.
+
 ---
 
 ## 3. Data architecture
@@ -179,13 +208,16 @@ Goal: owner can see "this is what's planned this week, here's where we'll land c
 - UI: `/scheduling` page implementing the mockup, **without** the AI suggestion overlay (no orange dashed cells yet) — show planned shifts, section groupings, per-day totals
 - AI insight banner: read existing `/api/scheduling/ai-suggestion` recommendations, surface "Project N% staff cost this week" + "Y kr above target" at the top
 
-### Phase 2 — AI suggestions inline + apply-back (3 days)
+### Phase 2 — AI suggestions inline + pre-publish review + apply-back (4 days)
 
 - Schema: `schedule_ai_suggestions`
 - New endpoint `POST /api/scheduling/ai-recommend` — runs the planner, writes suggestion rows, returns them
 - UI: render suggestions as the orange dashed cells in the mockup. Per-cell **Approve / Modify / Reject** controls (NEVER auto-apply). Modify opens an inline editor for shift time/role/staff swap. Bulk "Apply all approved" at the bottom applies only the cells the owner has explicitly approved.
+- **Pre-publish review panel** (§2.1): a slide-up sheet that runs before Apply. Four KPI tabs (Forecast vs hours / Cost of labour % / Staff per hour vs demand / Compliance checks). HARD compliance failures disable the Apply button until resolved; WARNs are one-click-acknowledgeable. Owner can flip back to grid to fix anything, then re-open review.
+- **Compliance engine** (`lib/scheduling/compliance.ts`) — pure-compute checks against Arbetstidslagen + EU directives + business-config rules. Single function takes `{ shifts, staff_profiles, business_rules }` returns `{ checks: [{severity, code, message, affected_shift_ids}] }`. Same engine powers both the review panel AND inline cell warnings on the grid.
+- **Hourly-coverage chart** — derive expected demand from existing forecast endpoint's hourly breakdown (`/api/scheduling/ai-suggestion` already has per-day; needs extension to per-hour if not already there).
 - PK write-back (`lib/pos/personalkollen-write.ts`): only if PK has a write API. If not, "Apply" updates `staff_shifts` locally + opens PK in a new tab with copy-paste-ready instructions.
-- Learning loop: every Approve/Modify/Reject inserts into the suggestion row's status + records owner reasoning for next AI run. Modifications are particularly valuable signal — they show what the AI got CLOSE but not RIGHT.
+- Learning loop: every Approve/Modify/Reject inserts into the suggestion row's status + records owner reasoning for next AI run. Modifications are particularly valuable signal — they show what the AI got CLOSE but not RIGHT. Acknowledged WARNs also feed back (owner consistently acks "lone closer" → AI stops flagging it for that business).
 
 ### Phase 3 — Performance signals (1-2 days)
 
@@ -308,7 +340,7 @@ Real-world build order I'd recommend:
 
 Reversing 2 and 3 is the key non-obvious sequencing call. The AI suggestions are only as good as the data underneath them; build the data first.
 
-**Effort total:** ~8-10 days for everything. Easy to ship Phase 1 + Phase 3 in a single week (~3-4 days) and let those bake before committing to the heavier write-back work.
+**Effort total:** ~9-11 days for everything (Phase 2 grew by ~1 day to absorb the compliance engine + pre-publish review panel). Easy to ship Phase 1 + Phase 3 in a single week (~3-4 days) and let those bake before committing to the heavier write-back + review work.
 
 ---
 
