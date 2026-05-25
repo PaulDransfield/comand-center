@@ -39,6 +39,7 @@ import dynamicImport from 'next/dynamic'
 
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 
+import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
@@ -1082,6 +1083,24 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
 }) {
   const [syncing, setSyncing] = useState(false)
   const [result, setResult]   = useState<{ ok: boolean; message: string } | null>(null)
+  // Snapshot of this business's integrations so we can tell "sync is broken"
+  // (push the alarming "check integrations" copy) apart from "integrations
+  // are fine, the current period just happens to have no activity" (a calm
+  // hint). Without this the banner falsely accuses healthy integrations of
+  // being broken any time the selected week/month has no data.
+  const [integrations, setIntegrations] = useState<{ provider: string; status: string | null; last_sync_at: string | null }[] | null>(null)
+
+  useEffect(() => {
+    if (!selectedBiz?.id) { setIntegrations(null); return }
+    let cancelled = false
+    const supabase = createClient()
+    supabase
+      .from('integrations')
+      .select('provider, status, last_sync_at')
+      .eq('business_id', selectedBiz.id)
+      .then(({ data }) => { if (!cancelled) setIntegrations((data as any) ?? []) })
+    return () => { cancelled = true }
+  }, [selectedBiz?.id])
 
   if (loading) return null
   if (!selectedBiz?.id) return null
@@ -1091,10 +1110,29 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
   const ageHours  = createdAt ? (Date.now() - createdAt) / 3600_000 : null
   const isFresh   = ageHours != null && ageHours < 72
 
-  // If business is older than 72h and dailyRows is empty, that's a
-  // genuine "something is broken" state — show a different message
-  // pointing at integrations instead of the "you're new, wait" copy.
-  const isStale = !isFresh
+  // For non-fresh businesses we need the integration probe before deciding
+  // copy. Returning null briefly is fine — anything else risks flashing the
+  // alarming "check integrations" message before the probe lands.
+  if (!isFresh && integrations == null) return null
+
+  const STALE_HOURS = 36
+  const healthyCount = (integrations ?? []).filter(i => {
+    if (i.status !== 'connected') return false
+    if (!i.last_sync_at) return false
+    const ageH = (Date.now() - new Date(i.last_sync_at).getTime()) / 3600_000
+    return ageH < STALE_HOURS
+  }).length
+  const integrationCount = (integrations ?? []).length
+
+  // Four states (only one of these is true at a time):
+  //   isFresh            — new business < 72h old → "your data is on its way"
+  //   noIntegrations     — none connected to this business → prompt to connect
+  //   isStale            — has integrations, none healthy → alarming "check integrations"
+  //   isEmptyPeriod      — has healthy integrations, period is just quiet → calm hint
+  const noIntegrations = !isFresh && integrationCount === 0
+  const isStale        = !isFresh && integrationCount > 0 && healthyCount === 0
+  const isEmptyPeriod  = !isFresh && healthyCount > 0
+  const isAlarming     = noIntegrations || isStale
 
   async function syncNow() {
     if (syncing) return
@@ -1128,8 +1166,8 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
 
   return (
     <div style={{
-      background:    isStale ? UXP.coral + '15' : UXP.lavFill,
-      border:        `0.5px solid ${isStale ? UXP.coralLine : UXP.lavMid}`,
+      background:    isAlarming ? UXP.coral + '15' : UXP.lavFill,
+      border:        `0.5px solid ${isAlarming ? UXP.coralLine : UXP.lavMid}`,
       borderRadius:  UXP.r_lg,
       padding:       '14px 18px',
       display:       'flex',
@@ -1137,16 +1175,30 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
       gap:           14,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: isStale ? UXP.coral : UXP.lavText, marginBottom: 4 }}>
-          {isStale
-            ? 'No data syncing for this business'
-            : `Welcome${selectedBiz?.name ? `, ${selectedBiz.name}` : ''} — your data is on its way`}
+        <div style={{ fontSize: 13, fontWeight: 500, color: isAlarming ? UXP.coral : UXP.lavText, marginBottom: 4 }}>
+          {noIntegrations
+            ? 'No integrations connected to this business'
+            : isStale
+              ? 'No data syncing for this business'
+              : isEmptyPeriod
+                ? 'No activity recorded for this period'
+                : `Welcome${selectedBiz?.name ? `, ${selectedBiz.name}` : ''} — your data is on its way`}
         </div>
         <div style={{ fontSize: 12, color: UXP.ink2, lineHeight: 1.55 }}>
-          {isStale ? (
+          {noIntegrations ? (
             <>
-              We haven't seen new data from your connected integrations in a while.
+              You haven't connected any integrations to {selectedBiz?.name ?? 'this business'} yet.
+              Head to <a href="/integrations" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>integrations</a> to connect Fortnox or Personalkollen so data can start flowing.
+            </>
+          ) : isStale ? (
+            <>
+              We haven't seen new data from your connected integrations in over {STALE_HOURS} hours.
               Check <a href="/integrations" style={{ color: UXP.lavDeep, textDecoration: 'underline' }}>integrations</a> for any broken connections, or click below to trigger a manual sync.
+            </>
+          ) : isEmptyPeriod ? (
+            <>
+              Your integrations are connected and synced — there just isn't any revenue or shift data recorded for this period yet.
+              Try a different period using the date stepper above, or click below to pull the latest from your integrations now.
             </>
           ) : (
             <>
