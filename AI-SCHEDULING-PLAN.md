@@ -238,17 +238,49 @@ AI returns `schedule_ai_suggestions` rows. UI shows them inline. Owner clicks Ap
 
 ## 4. Build phases
 
-### Phase 0 — PK API discovery (½ day)
+### Phase 0 — PK API discovery (½ day) — COMPLETED 2026-05-25
 
-After seeing `PK schema example.png`, the PK data model is richer than initially assumed and the probe targets are now concrete. Confirm these endpoints + payload shapes:
+Probe script: `scripts/probe-pk-schedule-api.mjs`. Findings:
 
-- **Shift templates** — the named recurring slots ("Kväll 11:30-20:30", "Kök 06:00-14:00"). We need: id, name, default times, section, colour, sort order.
-- **Scheduled shifts** — actual assignments per (template × day × staff): start/end times, kind (regular vs semester vs sick), staff_uid.
-- **Staff metadata** — position, section affinity, contract type, max hours/week, hourly rate, employment dates.
-- **Availability / time-off requests** — Semester requests, "can't work this day" markers.
-- **Write endpoints** — POST/PUT for: new shift, modify shift, delete shift. CRITICAL for Phase 2's apply-back. If write doesn't exist, fall back to clipboard export.
+**Confirmed available (existing token permission sufficient):**
 
-Output of Phase 0: this section gets updated with confirmed endpoint paths + sample payloads + a yes/no on write-back. Without that, Phase 1 schema design risks rework.
+- **`/work-periods/`** is rich and covers everything we need per shift:
+  ```
+  url, period (FK to /periods/{id}/), staff (FK), date,
+  period_name (e.g. "Pastakök Öppning" — the template name),
+  period_color (e.g. "red" — the section colour PK uses in its grid),
+  start (UTC), end (UTC), start_time (local HH:MM), end_time,
+  description (free-text shift notes),
+  estimated_cost, staff_name, additional_salaries (OB),
+  is_recurring, is_deleted, is_published, is_read_only,
+  break_rule, break_rule_description, breaks (array),
+  workplace (FK),
+  costgroup: { url, name, workplace, sale_group, short_identifier }
+  ```
+  This single endpoint gives us shift detail + template name + colour + section + break rules + publish state, all denormalised.
+
+- **`/staffs/?with_employments=true`** (already in use) gives salary_type, hourly_salary, monthly_salary, service_grade (= contract percentage, 100% = full-time, 50% = half-time), fixed_cost_per_day, full employment history. Sufficient for cost modelling and contract-floor compliance checks.
+
+- **`/workplaces/`** — venues (already in use).
+
+**Confirmed inaccessible (403 with our token; existence implied but not readable):**
+
+- `/periods/{id}/` — 403. Templates can't be fetched as standalone objects. **BUT** every `work_period` has `period_name` + `period_color` embedded, so we DERIVE the template list by deduping `(period_name, period_color, costgroup.name)` clusters in the work-periods data we already pull. Good enough.
+- `/costgroups/` — 403. Embedded in work-periods as `costgroup.name` + `workplace` ref. Sufficient.
+- `/absences/` — 403. **This is the time-off endpoint we'd want for "Semester" visibility.** Need to ask PK for access to this, OR derive absence from `work_period.is_deleted=true` + gap detection. Probably gets us 80% of the way.
+- `/staff-groups/` — 403. Staff has `group` (FK) + `group_name` embedded; sufficient.
+- `/employments/` (top-level) — 403. Already covered by `?with_employments=true` on /staffs/.
+
+**Write-back status: BLOCKED.**
+
+- `OPTIONS /work-periods/` returns `Allow: GET, HEAD, OPTIONS` — **our token cannot POST/PUT/DELETE shifts.**
+- `OPTIONS /staffs/` returns `Allow: GET, POST, HEAD, OPTIONS` — we can POST staff (irrelevant for scheduling).
+- **Implication:** Phase 2's "Apply" button MUST fall back to clipboard export + "open PK" in a new tab (plan §6 scenario B). Native write-back would require PK to grant us write permission per business, which is a per-customer ask, not a code change.
+
+**Notes:**
+- `period_color` returns string keywords like `"red"` / `"yellow"` / `"green"` rather than hex. We'll map these to UXP-compatible hexes when rendering.
+- The `start`/`end` fields are UTC ISO timestamps; `start_time`/`end_time` are local HH:MM strings. Use `start_time`/`end_time` for display, `start`/`end` for cross-day math.
+- Templates are referenced via stable `period` URLs but we can't dereference them. Use `(period_name, period_color, costgroup.short_identifier)` as our local template key.
 
 ### Phase 1 — Grid display + insight overlay (2 days)
 
@@ -324,19 +356,25 @@ Track per-business "AI suggestion accept rate" — if it dips below 50% the AI i
 
 ---
 
-## 6. PK write-back — feasibility unknowns
+## 6. PK write-back — RESOLVED 2026-05-25 (Scenario B confirmed)
 
-The riskiest unknown for the whole plan. Two scenarios:
+Phase 0 probe confirmed: PK does NOT accept writes from our token. `OPTIONS /work-periods/` returns `Allow: GET, HEAD, OPTIONS` — read-only.
 
-**A. PK has a documented write API.** Best case. We POST shift changes, PK accepts, our `staff_shifts.applied_at` records the round-trip.
+**Phase 2 "Apply" flow (locked):**
+1. Owner approves AI suggestions in the grid + opens the pre-publish review panel
+2. Owner clicks "Copy & open PK"
+3. We update our `staff_shifts` table locally (so the AI sees applied state next round)
+4. We copy a clipboard-friendly text summary like:
+   ```
+   Tuesday 7 June — apply in Personalkollen:
+     ADD: Pastakök Öppning · 10:00–15:30 · Anna Karlsson
+     CUT: Kväll · 16:00–22:00 · Magnus Pettersson (suggested rest day)
+   ```
+5. Open Personalkollen in a new tab pointed at the right business + week
+6. Owner manually applies the changes in PK
+7. The next nightly PK sync picks up the changes and reconciles
 
-**B. PK is read-only for third parties.** Likely. Then Phase 2's "Apply" button:
-- Updates our `staff_shifts` table locally (so the AI sees the applied state next time)
-- Generates a clipboard-friendly text summary ("Tuesday: schedule Anna 11:00-15:00 as server")
-- Opens PK in a new tab pointed at the right week
-- Owner manually applies in PK — sync picks it up on next nightly pull
-
-Phase 0 must answer this before Phase 2 design is finalised. Memory note: the `project_pk_contracts_parked` memo says "Probe PK API for un-wired endpoints when revisited" — that's now.
+Native write-back would require PK to grant us write permission per business — a per-customer ask via PK support, not a code change. If a customer specifically requests it AND PK approves, the write path becomes a future enhancement at `lib/pos/personalkollen-write.ts`.
 
 ---
 
