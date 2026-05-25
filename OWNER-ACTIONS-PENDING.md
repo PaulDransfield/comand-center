@@ -1,120 +1,110 @@
-# Owner actions pending — autonomous scheduling-build session 2026-05-25
+# Owner actions pending — scaling audit + autonomous session 2026-05-25
 
-Status of the AI scheduling build at the end of this session. **Phase 0 + Phase 1 shipped. Phase 2 pending.**
-
-## Actions YOU need to take when back
-
-### 1. Apply M100 SQL migration
-
-File: `sql/M100-SCHEDULING.sql`. In Supabase SQL Editor, paste + run.
-
-Creates five tables:
-- `staff_shift_templates` — mirrored from PK
-- `staff_shifts` — per-shift detail mirrored from PK
-- `staff_profiles` — derived metadata + nightly pattern stats
-- `schedule_ai_suggestions` — Phase 2 AI output cache
-- `staff_performance_signals` — owner micro-ratings (Phase 3)
-
-All with RLS via `current_user_org_ids()`. Idempotent.
-
-### 2. Visit `/scheduling/grid` and click "Sync from PK"
-
-- New page lives at `/scheduling/grid` (Schedule grid in the sidebar)
-- Two views togglable: **By shift** (PK-native, rows = templates) and **By staff** (rows = staff members)
-- Week navigation with Prev / This week / Next
-- "Sync from PK" button pulls 12-week-back + 2-week-forward window into M100 tables on demand
-- Once seeded, the nightly cron at 06:20 UTC keeps it fresh
-
-**You'll need to do this once per business** (Vero, Rosalis). Check that:
-- All staff appear with their actual shifts in the week
-- Section auto-inference is sensible (some templates may land in "Other" — that's the keyword matcher not finding a hit; Phase 2 adds an owner-override UI)
-- Holiday + weekend day-column colouring works
-- Forecast revenue + projected staff % numbers populate (depend on existing forecasts data)
-
-### 3. Test with both Vero and Rosalis
-
-Vero's PK integration is in `status='error'` from the refresh-token races earlier — you'll need to re-OAuth at `/integrations` first. Rosalis was the customer whose schema example PNG you shared, so that's the one most likely to match the mockup faithfully.
-
-### 4. Decide on Phase 2's AI add-suggestions
-
-Plan §7 has a recommendation: keep "cuts only" as default, allow "adds" with explicit owner opt-in toggle per business. **Decide whether you want the AI to suggest adding shifts at all** before Phase 2 ships. The current `SCHEDULING_ASYMMETRY` rule says cuts only — your earlier instruction to "build the schedule" implies adds are OK. Just confirm.
+Two waves of work shipped today. **Both are deployed.** Two items need your hand when you're back:
 
 ---
 
-## What was shipped this session
+## 1. Apply SQL migration M101 (scaling indexes + RPC hardening)
 
-### Phase 0 — PK API discovery (DONE)
+**File:** `sql/M101-SCALING-INDEXES-AND-RPC-HARDENING.sql`
 
-Probe script `scripts/probe-pk-schedule-api.mjs` ran against Vero's PK creds. Findings locked into `AI-SCHEDULING-PLAN.md §0`:
+Open Supabase → SQL Editor → paste + run. Safe to re-run (every CREATE is IF NOT EXISTS).
 
-- `/work-periods/` has everything we need per shift (period_name, period_color, costgroup, breaks, OB, is_published, description)
-- Templates derive from `(period_name, period_color, costgroup.short_identifier)` clusters (PK won't let us read `/periods/{id}/` directly)
-- `/staffs/?with_employments=true` (already in use) has salary_type, hourly_rate, service_grade (contract %)
-- **WRITE-BACK IS BLOCKED** — PK returns `Allow: GET, HEAD, OPTIONS` on /work-periods/. Phase 2's "Apply" button must fall back to clipboard export + open-PK-in-new-tab. No native write API for us.
-- `/absences/` exists but 403 for our token — Semester detection falls back to regex on `period_name` for now
+Creates 5 covering indexes on hot query paths the scaling audit identified:
+- `idx_hourly_metrics_biz_date` — scheduling AI hourly profile
+- `idx_overhead_cache_lookup` — dashboard drilldown cache
+- `idx_supplier_class_biz_num` — invoice matcher gate-0
+- `idx_daily_metrics_org_biz_date` + `idx_monthly_metrics_org_biz_period` — RLS-friendly composites
 
-### M100 schema (DONE — needs SQL apply)
+Plus hardens `list_ready_extraction_jobs()` RPC with `FOR UPDATE SKIP LOCKED` (defence-in-depth against concurrent sweepers).
 
-File: `sql/M100-SCHEDULING.sql`. Five tables defined; comprehensive RLS + indexes.
-
-### PK sync helper (DONE)
-
-`lib/scheduling/pk-sync.ts` exports `syncScheduleFromPK(db, businessId, token, opts)`:
-- Pulls 12-week-back + 2-week-forward work-periods
-- Dedupes templates by `(name, color, costgroup_short_id)`
-- Maps PK colour keywords (red/blue/green/...) to UXP-compatible hexes
-- Infers section bucket (kitchen / foh / bar / management / office) from name+costgroup keywords
-- Marks shifts as `semester` / `sick` from name+description regex
-- Refreshes `staff_profiles` at the end of every sync (derived stats: primary_section, typical_days, versatility, typical_shift_window)
-- Idempotent on `pk_work_period_url`
-
-### Cron + on-demand sync (DONE)
-
-- `app/api/cron/scheduling-sync/route.ts` — nightly 06:20 UTC, runs sync for every PK-connected business. Wired in vercel.json.
-- `app/api/scheduling/sync-now/route.ts` — owner-callable POST for the "Sync from PK" button
-
-### `/scheduling/grid` page (DONE)
-
-`app/scheduling/grid/page.tsx` — full Phase 1 implementation:
-- KPI strip: planned cost / forecast revenue / projected % / gap-to-target
-- 7-day grid with rich day-column headers (date, weekend/holiday colouring, forecast, planned hours, projected % chip)
-- Section-grouped rows in both shift and staff views
-- Colour-banded shift cells from `template.display_colour`
-- Draft vs published opacity differentiation
-- Semester blocks in muted blue (never overwritten)
-- AI-suggested cells styled with dashed orange border (ready for Phase 2)
-- View toggle remembered in localStorage per-business
-
-### API endpoint (DONE)
-
-`app/api/scheduling/week/route.ts` — single GET returns the full grid payload. Reads from M100 tables + joins forecast data + computes day aggregates + injects holiday data via `getHolidaysForCountry`.
-
----
-
-## What's NEXT (Phase 2 + 3)
-
-Plan recommends shipping Phase 3 (performance signals) BEFORE Phase 2 (AI suggestions). But Phase 3 needs you to be in the app interacting with shifts so the prompts have triggers. So next session:
-
-1. Sit with Chicce or Vero owner for an hour, watch them use the grid
-2. Decide which performance dimensions to actually prompt for
-3. Build the post-shift prompt cards on the dashboard
-4. Then layer in Phase 2: AI suggestions + per-cell Approve/Modify/Reject + the pre-publish review panel + clipboard export
-
-Estimated: 5-7 days for Phase 2 + 3 combined.
-
----
-
-## Commits this session
-
-```
-e54c4fe  feat(scheduling): Phase 0 + M100 schema + PK sync foundation
-fc1e15d  feat(scheduling): Phase 1 — grid view + week summary + sync endpoints
+Verify after applying:
+```sql
+SELECT indexname FROM pg_indexes WHERE indexname IN (
+  'idx_hourly_metrics_biz_date',
+  'idx_overhead_cache_lookup',
+  'idx_supplier_class_biz_num',
+  'idx_daily_metrics_org_biz_date',
+  'idx_monthly_metrics_org_biz_period'
+);
+-- expect 5 rows
 ```
 
-Plus follow-up commit for the staff_profiles refresh logic.
+---
+
+## 2. Set `MAX_DAILY_GLOBAL_USD=150` in Vercel env (optional but recommended)
+
+The default in code is now $150 (was $50). Setting the env var in Vercel makes the limit explicit and easier to tune later without a redeploy:
+
+Vercel → comand-center → Settings → Environment Variables → Add
+- Name: `MAX_DAILY_GLOBAL_USD`
+- Value: `150`
+- Environments: Production, Preview, Development
+
+This is the global AI cost ceiling. If $150/day is breached, every AI call pauses until the rolling 24h window drops back below. At 20 customers expect baseline ~$60-80/day.
 
 ---
 
-## Background work that may still be running
+## What was actually shipped (no action needed — just FYI)
 
-- **AI bulk review loop** (Chicce inventory needs_review): was up to 1,115 / 1,504 groups cached when last checked. Should be ~complete by the time you're back. Visit `/inventory/review` and click "Apply all ≥85%" to bulk-resolve the suggestions.
+### Wave 1 — P0 critical (security + cost + correctness)
+
+| | Change | Why |
+|---|---|---|
+| P0.1 | `lib/sync/aggregate.ts`: aggregation lock TTL 60s → 180s | Master-sync runs up to 300s; old TTL meant the lock could be stolen mid-aggregate → stale overwrites |
+| P0.2 | `requireBusinessAccess()` added to 3 Fortnox routes (drilldown, recent-invoices, generic) | Closed cross-tenant leak — attacker could pass another org's `business_id` and get data |
+| P0.3 | AI quota gate (`checkAndIncrementAiLimit`) on scheduling/ai-recommend, inventory/ai-suggest, fortnox/extract-worker | Owner spamming "Generate" could blow daily AI budget in seconds |
+| P0.4 | Global kill-switch ceiling $50 → $150 | $50 would have fired daily at 20 customers and blocked all AI org-wide |
+| P0.5 | New `lib/ai/anthropic-fetch.ts` helper with 429 retry-with-backoff; wired into ai-recommend + ai-suggest | Single Anthropic 429 blip used to surface as 502 to the user |
+
+### Wave 2 — P0 sync infrastructure + P1 observability
+
+| | Change | Why |
+|---|---|---|
+| P0.6 | Per-token concurrency cap (2 in-flight per customer) in `lib/fortnox/api/fetch.ts` | Prevents Fortnox 200 req/sec rate-limit storm at 06:00 master-sync when 20 customers fan out simultaneously |
+| P0.7 | Parallelize master-sync post-aggregate in batches of 5 | At 20 customers drops post-agg from ~120s serial to ~25s |
+| P0.8 | Extraction sweeper returns 200 (not 500) on RPC failure | Was causing Vercel infinite-retry race conditions; now 2-min cron tick handles natural retry |
+| P1.1 | SQL migration M101 (see above) | Missing indexes were sequential-scanning hot tables |
+| P1.2 | Explicit `.limit(24)` + `.limit(500)` on tracker_data + tracker_line_items | PostgREST silently truncates at 1000; explicit limits document intent |
+| P1.3 | Master-sync alerts ops when error rate ≥30% via new `lib/email/ops-alert.ts`; returns 206 partial | Individual customer failures were silently swallowed |
+| P1.4 | `scheduling-sync` uses `filterEligible()` helper | needs_reauth integrations now get probed and recover instead of staying deaf |
+| P1.5 | `logAiRequest()` called inside `lib/inventory/pdf-extractor.ts` + inventory ai-suggest | Was the largest uncounted AI surface (~$1.50/mo/customer hidden) |
+| P1.7 | Replaced 3 hardcoded `'claude-haiku-4-5-20251001'` strings with `AI_MODELS.AGENT` | Model upgrades won't leave stragglers |
+
+### Wave 3 — P1.6 + P2 polish
+
+| | Change | Why |
+|---|---|---|
+| P1.6 | Storage event listener on 9 inventory pages | Pages now react to BizPicker immediately instead of needing a reload |
+| P2 | `lib/constants/tokens.ts`: added `Z` scale (sticky/rail/banner/dropdown/backdrop/modal/tooltip/toast) | Audit found raw z-index values 50/100/199/200/1000 scattered — use `Z.modal` etc. going forward |
+| P2 | Explicit `maxDuration = 60` on `/api/reviews/draft-reply` | Anthropic call without an explicit cap was at the mercy of Vercel plan changes |
+
+---
+
+## What was deliberately NOT touched
+
+These were on the audit but skipped because the risk of touching them outweighed the benefit at current scale:
+
+- **Stripe webhook transaction wrapping** — touches billing; needs a focused PR with manual verification before merging
+- **Resend email idempotency** — same risk reasoning; needs Resend message-id capture infrastructure first
+- **Page-size refactor** (1200+ LOC dashboard / scheduling) — no scaling risk at 20 customers, just maintainability; defer
+- **Recharts dynamic import** — could break SSR hydration; defer to a focused performance PR
+- **Emoji weather icons** (`☀⛅🌫🌧❄⛈`) — owner-sanctioned exception per memory
+- **`/scheduling` Phase 2 missing bits** — Phase 1+2 grid is shipped including AI recommender + Approve/Modify/Reject + Apply/PK handoff + ReviewPanel + compliance engine. No further pieces pending in the spec.
+
+---
+
+## Confidence summary
+
+**Codebase is fundamentally sound for 20 customers.** Schema capacity, RLS isolation, sync orchestration, the layered Fortnox reliability stack (M096 lock + M098 cache + Haiku→Sonnet cascade), and the new AI quota gates + retry helpers all hold up well at the projected scale.
+
+The three failure modes that would have fired before 20 customers are now closed:
+1. Fortnox 200 req/sec rate-limit storm — capped by per-token semaphore
+2. AI cost runaway from user-triggered AI endpoints — gated by `checkAndIncrementAiLimit`
+3. Cross-tenant data leak on 3 Fortnox endpoints — closed by `requireBusinessAccess`
+
+Next risk surfaces (P2 backlog, address as you grow past ~30 customers):
+- Realtime connection budget (Supabase Pro caps at 200)
+- ai_request_log retention (currently 365-day delete, no S3 archive)
+- Stripe + Resend idempotency hardening
+- Page-bloat refactor for maintainability
