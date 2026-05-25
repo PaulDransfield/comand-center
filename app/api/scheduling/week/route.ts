@@ -15,6 +15,7 @@ import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess }       from '@/lib/auth/require-role'
 import { getHolidaysForCountry }       from '@/lib/holidays'
+import { dailyForecast }               from '@/lib/forecast/daily'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -114,22 +115,25 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  // Forecast revenue per day — read from existing endpoint (best-effort).
+  // Forecast revenue per day — live via the daily forecaster (same
+  // pipeline the dashboard uses). The legacy `forecasts` table read was
+  // empty for most businesses, leaving the review panel's KPI cards
+  // showing "—" even for businesses with rich history.
   try {
-    const fcRes = await db
-      .from('forecasts')
-      .select('forecast_date, predicted_revenue')
-      .eq('business_id', businessId)
-      .gte('forecast_date', days[0])
-      .lte('forecast_date', days[6])
-    if (fcRes.data) {
-      const fcByDate = new Map(fcRes.data.map((f: any) => [f.forecast_date, Number(f.predicted_revenue)]))
-      for (const h of dayHeaders) {
-        const fc = fcByDate.get(h.date)
-        if (fc != null) {
-          h.forecast_revenue = Math.round(fc)
-          if (fc > 0) h.projected_staff_pct = Math.round((h.planned_cost / fc) * 1000) / 10
-        }
+    const fcResults = await Promise.all(
+      days.map(async (d) => {
+        try {
+          const f = await dailyForecast(businessId, new Date(d + 'T00:00:00Z'), { db })
+          return { date: d, revenue: Number(f?.predicted_revenue ?? 0) }
+        } catch { return { date: d, revenue: 0 } }
+      }),
+    )
+    const fcByDate = new Map(fcResults.map(r => [r.date, r.revenue]))
+    for (const h of dayHeaders) {
+      const fc = fcByDate.get(h.date)
+      if (fc != null && fc > 0) {
+        h.forecast_revenue = Math.round(fc)
+        h.projected_staff_pct = Math.round((h.planned_cost / fc) * 1000) / 10
       }
     }
   } catch { /* forecast lookup is best-effort; UI handles nulls */ }
