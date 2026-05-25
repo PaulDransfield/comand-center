@@ -32,6 +32,7 @@
     { "path": "/api/cron/api-discovery",                   "schedule": "0 2 * * 0" },
     { "path": "/api/cron/api-discovery-enhanced",          "schedule": "30 2 * * 0" },
     { "path": "/api/cron/industry-benchmarks",             "schedule": "0 3 * * 0" },
-    { "path": "/api/cron/ai-log-retention",                "schedule": "30 3 * * 0" }
+    { "path": "/api/cron/ai-log-retention",                "schedule": "30 3 * * 0" },
+    { "path": "/api/cron/recategorise-other",              "schedule": "45 3 * * *" }
   ]
 }
