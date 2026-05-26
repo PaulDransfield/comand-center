@@ -696,7 +696,10 @@ function GoogleApiLimitCallout({ totalOnGoogle, inDb }: { totalOnGoogle: number;
 // ════════════════════════════════════════════════════════════════════
 
 function RatingTrendChart({ trend }: { trend: ThemesResp['weekly_trend'] }) {
-  if (!trend || trend.length === 0) return null
+  // Need at least 2 weekly points for a trend — a single week renders as one
+  // meaningless bar ("one purple block"). Below that, show nothing; the star
+  // distribution + themes + insight cards already cover sparse-review cases.
+  if (!trend || trend.length < 2) return null
   const series = trend.slice(-12)
   const groups = series.map(w => formatWeekShort(w.week))
   const ratings = series.map(w => (w.avg_rating != null ? Number(w.avg_rating) : 0))
