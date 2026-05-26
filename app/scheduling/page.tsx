@@ -243,6 +243,17 @@ export default function SchedulingGridPage() {
     return m
   }, [data])
 
+  // Week labour % IF the owner applied the whole AI schedule: same divisor
+  // (forecast revenue), numerator = planned cost minus all pending savings.
+  const weekPostAiPct = useMemo(() => {
+    const rev = data?.week.forecast_revenue_sek ?? 0
+    if (!data || rev <= 0) return null
+    const totalSavings = Array.from(pendingSavingsByDate.values()).reduce((a, b) => a + b, 0)
+    if (totalSavings <= 0) return null
+    const newPlan = Math.max(0, (data.week.planned_cost_sek ?? 0) - totalSavings)
+    return Math.round((newPlan / rev) * 1000) / 10
+  }, [data, pendingSavingsByDate])
+
   async function syncFromPK() {
     if (!bizId || syncing) return
     setSyncing(true)
@@ -428,7 +439,10 @@ export default function SchedulingGridPage() {
             <Kpi
               label="Projected labour %"
               value={data.week.projected_staff_pct != null ? data.week.projected_staff_pct.toFixed(1) + '%' : '—'}
-              sub={data.week.target_staff_pct != null ? `Target ${data.week.target_staff_pct}%` : undefined}
+              sub={[
+                data.week.target_staff_pct != null ? `Target ${data.week.target_staff_pct}%` : null,
+                weekPostAiPct != null ? `→ ${weekPostAiPct}% on AI plan` : null,
+              ].filter(Boolean).join('  ·  ') || undefined}
               tone={data.week.gap_pct != null ? (data.week.gap_pct > 2 ? 'rose' : data.week.gap_pct < -2 ? 'green' : 'neutral') : 'neutral'}
             />
             <Kpi
