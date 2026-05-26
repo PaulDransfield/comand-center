@@ -55,7 +55,7 @@ Good-faith researchers following these guidelines will not be subject to legal a
   },
   {
     title: 'Our security posture',
-    body: `Data in transit: TLS 1.3 on every public endpoint, HSTS preload.
+    body: `Data in transit: TLS 1.3 on every public endpoint, HTTP Strict Transport Security (HSTS) enabled with a one-year max-age across all subdomains.
 
 Data at rest: AES-256 encryption provided by Supabase (Postgres) and AWS (underlying storage).
 
@@ -101,12 +101,12 @@ CommandCenter does not provide tax, legal, or accounting advice. Insights genera
     title: 'Compliance and certifications',
     body: `We do not yet hold ISO 27001 or SOC 2 certification. Our roadmap includes a formal ISMS and external penetration test before we scale past 50 customers.
 
-We rely on our sub-processors' certifications for the layers they provide:
+We put a GDPR-compliant Data Processing Agreement in place with each sub-processor before any production customer data is processed, and rely on their certifications for the layers they provide:
 
-— Supabase: SOC 2 Type II, HIPAA, GDPR (DPA on file).
-— Vercel: SOC 2 Type II, GDPR (DPA on file).
+— Supabase: SOC 2 Type II, HIPAA, GDPR.
+— Vercel: SOC 2 Type II, GDPR.
 — AWS (underlying Supabase): SOC 1/2/3, ISO 27001, PCI DSS, GDPR.
 — Stripe: PCI DSS Level 1, SOC 1/2, GDPR.
-— Anthropic: SOC 2 Type II, GDPR (SCCs on file).`
+— Anthropic: SOC 2 Type II, GDPR (US transfer covered by Standard Contractual Clauses).`
   },
 ]

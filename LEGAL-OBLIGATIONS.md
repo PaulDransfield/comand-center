@@ -1,6 +1,6 @@
 # LEGAL-OBLIGATIONS.md — data handling, accounting, and sub-processors
 
-> Last updated: 2026-04-17
+> Last updated: 2026-05-26
 > Owner: Paul Dransfield (founder)
 > Review cadence: quarterly, and whenever a new sub-processor or data source is added
 > **Status: internal working document — NOT legal advice. Before production go-live with paying customers, retain a Swedish data-protection/fintech lawyer (suggested firms: Delphi, Mannheimer Swartling, Setterwalls). This file is the founder's practical reference for what we have to do and what we have to prove we did.**
@@ -184,7 +184,8 @@ Every name on this list must be in our public privacy policy. Every one needs a 
 | **Stripe** | Billing, payments | US (EU presence) | Standard Stripe DPA — countersign | SCCs | Minimal PII — just billing email + card token |
 | **Resend** | Transactional email | US (EU delivery) | TODO | SCCs | Sends to customer addresses — minimal |
 | **GitHub** | Source code only (no customer data) | US | N/A for customer data | — | Codebase only; excluded from data flow |
-| **Sentry or similar** (future) | Error monitoring | — | — | — | Not yet in use; if added must scrub PII |
+| **Sentry (Functional Software, Inc.)** | Error/crash monitoring | EU (ingest.de.sentry.io) | TODO — countersign | SCCs for incidental US transfer | **LIVE.** PII + secret scrub in `lib/monitoring/sentry-scrub.ts` (JWTs, Bearer, Stripe/Resend/Anthropic keys, emails, SE phone numbers; cookies dropped). Listed in privacy §5. |
+| **PostHog (EU Cloud)** | Product-usage analytics | EU (Frankfurt) | TODO — countersign | N/A (EU Cloud) | **LIVE, consent-gated.** Loads only after cookie-banner accept; UUID-only identify, email/name/phone denylisted client-side (`lib/analytics/posthog.ts`). Listed in privacy §5 + §9 as of v1.3 (2026-05-26). |
 | **Personalkollen** | Data source (customer's integration — not our sub-processor technically, but must be disclosed) | Sweden | Handled by customer's agreement with PK | — | — |
 | **Fortnox / Björn Lundén / Visma** | Same as above | Sweden | Same as above | — | — |
 
@@ -225,6 +226,8 @@ A personal data breach triggers:
 ---
 
 ## 10. Gaps we know about (priority order)
+
+**2026-05-26 launch-readiness review (Claude):** Verified in code — auth middleware gate, RLS, AES-256-GCM credential encryption, full security-header set (CSP/HSTS/X-Frame DENY/nosniff/Referrer/Permissions), Sentry PII+secret scrub, consent-gated PostHog (EU, UUID-only), `/api/gdpr` DSAR export, admin hard-delete cascade, AI quota gates + global kill-switch + Stripe/Resend idempotency. Fixed: privacy v1.3 now discloses PostHog (§5 + §9 — previously claimed "no third-party tracking cookies", which was false); security page HSTS wording corrected. **Owner status 2026-05-26 (Paul):** AB registration **in progress** — org number pending. Sub-processor DPAs + Anthropic ZDR are **both gated on the org number** and will be signed/enabled as soon as it lands. To avoid publishing false claims meanwhile, the live privacy + security pages were reworded to **forward-safe** language ("DPA put in place before any production customer data is processed", "ZDR enabled before any production customer data is processed") — true now and after. **Remaining owner-only blockers:** (1) finalise AB registration → then (2) sign all sub-processor DPAs, (3) enable Anthropic ZDR, (4) Fortnox dev-program production certification, (5) Swedish DP lawyer review pass, (6) add org number + registered office to site footer / privacy §1 / ToS §1 once issued. **RESOLVED — retention:** legal answer is **30 days** operational grace (GDPR Art. 5(1)(e) storage-limitation) + **7 years** for billing/accounting records only (Bokföringslagen). Privacy §6 aligned down to 30 days 2026-05-26; ToS §12 + this file §9 already said 30 days — all three now agree. Also fixed the "deleted from all systems including backups" overclaim → backups roll off within the rotation cycle.
 
 **Blocked on company formation:**
 - Anthropic ZDR request, Supabase/Vercel/Stripe/Resend DPA countersigns, Fortnox developer program application, and the customer-facing DPA template all require a registered legal entity (company name, org number, registered address). Register the AB first; then the rest of §10 unblocks.

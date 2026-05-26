@@ -11,7 +11,7 @@ export default function PrivacyPage() {
 
       <h1 style={{ fontSize: 32, fontWeight: 700, marginBottom: 8 }}>Privacy Policy</h1>
       <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 40, fontFamily: 'system-ui' }}>
-        Version 1.2 · Last updated 19 April 2026 · CommandCenter (ComandCenter AB)
+        Version 1.3 · Last updated 26 May 2026 · CommandCenter (ComandCenter AB)
       </p>
 
       {[
@@ -65,13 +65,13 @@ We do not sell your data. We do not use your data for advertising.`
         },
         {
           title: '5. Data sharing and sub-processors',
-          body: `We share data with the following sub-processors. All are bound by GDPR-compliant Data Processing Agreements and process data only on our instruction.
+          body: `We share data with the following sub-processors. Each operates under a GDPR-compliant Data Processing Agreement, which we put in place before any production customer data is processed, and each processes data only on our documented instruction.
 
 DATABASE — Supabase Inc.
 Role: Database infrastructure and authentication
 Data: All customer and business data stored in our platform
 Location: EU (Frankfurt, Germany) — AWS eu-central-1
-Compliance: SOC 2 Type II certified, GDPR compliant, DPA signed
+Compliance: SOC 2 Type II certified, GDPR compliant (Data Processing Agreement)
 Privacy: supabase.com/privacy
 
 HOSTING — Vercel Inc.
@@ -83,7 +83,7 @@ Privacy: vercel.com/legal/privacy-policy
 
 AI PROCESSING — Anthropic PBC
 Role: AI assistant features, anomaly explanations, weekly briefings, budget suggestions, scheduling recommendations.
-Data: Aggregated business data — revenue totals, staff-hour totals, cost breakdowns — is sent to Anthropic to generate insight and written commentary. Individual staff personal data (names, employee IDs) is not routinely included; business/financial figures are. We request Zero Data Retention so Anthropic does not retain inputs or outputs beyond the processing window.
+Data: Aggregated business data — revenue totals, staff-hour totals, cost breakdowns — is sent to Anthropic to generate insight and written commentary. Individual staff personal data (names, employee IDs) is not routinely included; business/financial figures are. Zero Data Retention is enabled before any production customer data is processed, so Anthropic does not retain inputs or outputs beyond the processing window and does not use them to train models.
 Location: USA. Standard Contractual Clauses are in place as the Chapter V transfer mechanism.
 Privacy: anthropic.com/privacy · anthropic.com/legal/commercial-terms
 
@@ -105,6 +105,12 @@ Data: Recipient email address, subject line, HTML body (may include business nam
 Location: USA. Standard Contractual Clauses are in place as the Chapter V transfer mechanism.
 Privacy: resend.com/legal/privacy-policy
 
+PRODUCT ANALYTICS — PostHog (EU Cloud)
+Role: Product-usage analytics — which features are used — so we can improve the service. Loads only after you accept analytics cookies; declined by default.
+Data: Anonymous usage events keyed to your account's user ID (a UUID). Email, name, phone and any business or financial data are stripped client-side and never sent to PostHog.
+Location: EU (PostHog EU Cloud, Frankfurt) — data does not leave the EU.
+Privacy: posthog.com/privacy
+
 INTEGRATION PARTNERS — data synced on your explicit instruction only
 Personalkollen (Sweden): Staff scheduling and hours data
 Fortnox (Sweden): Accounting and invoice data
@@ -118,15 +124,15 @@ A full and current list of sub-processors is available on request at privacy@com
           title: '6. Data retention',
           body: `We retain your data for the following periods:
 
-Account and business data: For the duration of your subscription plus 12 months after cancellation, to allow reactivation and comply with accounting law.
+Account and business data: For the duration of your subscription, plus a 30-day grace period after cancellation (to allow reactivation and a final data export), after which it is permanently deleted. This follows the GDPR storage-limitation principle (Article 5(1)(e)).
 
-Staff data synced from integrations: Up to 3 years of historical data to support year-on-year comparisons and forecasting.
+Staff data synced from integrations: While your subscription is active we retain up to 3 years of history to support year-on-year comparison and forecasting. After cancellation it is deleted within the 30-day grace period above.
 
-Billing records: 7 years as required by Swedish accounting law (Bokföringslagen).
+Billing and accounting records: Retained for 7 years where required by the Swedish Bookkeeping Act (Bokföringslagen, 1999:1078).
 
 Usage logs: 90 days.
 
-After the retention period, data is permanently deleted from all systems including backups.`
+After the applicable retention period, data is permanently deleted from our active systems and removed from backups within the backup rotation cycle.`
         },
         {
           title: '7. Your rights under GDPR',
@@ -161,13 +167,15 @@ Despite these measures, no system is completely secure. If you discover a securi
         },
         {
           title: '9. Cookies',
-          body: `We use the following cookies:
+          body: `We use the following cookies and similar browser storage:
 
-Authentication: A session cookie to keep you logged in. This is strictly necessary and cannot be disabled.
+Authentication (strictly necessary): A session cookie to keep you logged in. This cannot be disabled.
 
-Preferences: We store your selected restaurant and UI preferences in localStorage. No tracking or advertising cookies are used.
+Preferences (strictly necessary): Your selected restaurant and UI preferences, stored in your browser's localStorage.
 
-We do not use Google Analytics, Facebook Pixel or any third-party tracking cookies.`
+Product analytics (optional — consent required): If you accept analytics in the cookie banner, we use PostHog (EU Cloud) to understand which features are used so we can improve the product. These do not load until you accept, and you can decline or withdraw consent at any time. Analytics events are keyed to an anonymous user ID — we never send your email, name or business data to PostHog.
+
+We do not use Google Analytics, Facebook Pixel, or any advertising or cross-site tracking cookies.`
         },
         {
           title: '10. International transfers',
