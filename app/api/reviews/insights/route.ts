@@ -56,17 +56,21 @@ export async function GET(req: NextRequest) {
     } catch { /* table missing — compute fresh */ }
   }
 
-  // ── Load review themes for the window ──
-  const since = new Date(Date.now() - windowDays * 86_400_000).toISOString()
+  // ── Load review themes — the most recent reviews CHRONOLOGICALLY, not a
+  // date window. With sparse reviews a date cutoff wrongly excludes older
+  // ones; insights are about overall feedback, so analyse whatever's on file
+  // (capped at the most recent 200). ──
   const { data: rows, error } = await db.from('review_themes')
     .select('rating, themes, sentiment, key_phrase')
-    .eq('business_id', businessId).gte('published_at', since)
+    .eq('business_id', businessId)
+    .order('published_at', { ascending: false })
+    .limit(200)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   const reviews = (rows ?? []) as Array<{ rating: number | null; themes: Record<string, { polarity: '+' | '-' | '~'; confidence: number; phrase: string }>; sentiment: number | null; key_phrase: string | null }>
 
   if (reviews.length < MIN_REVIEWS) {
     return NextResponse.json({ improvements: [], satisfactions: [], sample_size: reviews.length, cached: false,
-      message: `Only ${reviews.length} review(s) in the last ${windowDays} days — need at least ${MIN_REVIEWS} to spot patterns. Widen the window or sync more reviews.` }, noStoreHeaders)
+      message: `Only ${reviews.length} review(s) on file — need at least ${MIN_REVIEWS} to spot patterns. They'll appear as more reviews come in.` }, noStoreHeaders)
   }
 
   // ── Aggregate negative / positive signals per category ──
@@ -91,7 +95,7 @@ export async function GET(req: NextRequest) {
       .map(([c, v]) => `- ${c} (in ${v.count} review${v.count > 1 ? 's' : ''}): ${v.phrases.map(p => `"${p}"`).join('; ') || '(no quote)'}`).join('\n')
   const ratingLine = Object.entries(ratingDist).sort((a, b) => Number(b[0]) - Number(a[0])).map(([s, n]) => `${s}★×${n}`).join(', ')
 
-  const dataBlock = `Reviews analysed: ${reviews.length} (last ${windowDays} days). Ratings: ${ratingLine || 'n/a'}.
+  const dataBlock = `Reviews analysed: ${reviews.length} (most recent on file). Ratings: ${ratingLine || 'n/a'}.
 
 NEGATIVE SIGNALS (complaints / criticism):
 ${fmt(neg) || '(none)'}
