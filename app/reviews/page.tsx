@@ -114,6 +114,8 @@ export default function ReviewsPage() {
   // — separate from the per-review rows we ingested (capped at 5 by
   // Google Places' per-call limit).
   const [summary,    setSummary]    = useState<SummaryShape | null>(null)
+  const [insights,   setInsights]   = useState<InsightsResp | null>(null)
+  const [insightsLoading, setInsightsLoading] = useState(false)
   const [windowDays, setWindowDays] = useState(90)
   const [platform,   setPlatform]   = useState<PlatformKey>('google')
   const [loading,    setLoading]    = useState(true)
@@ -156,9 +158,23 @@ export default function ReviewsPage() {
     }
   }
 
+  // AI insight cards load separately so the themes render fast while the
+  // (slower, AI) synthesis populates. Cached server-side 24h.
+  async function loadInsights(business_id: string, win: number, force = false) {
+    setInsightsLoading(true)
+    try {
+      const r = await fetch(`/api/reviews/insights?business_id=${business_id}&window=${win}${force ? '&force=1' : ''}`, { cache: 'no-store' })
+      setInsights(r.ok ? await r.json() : null)
+    } catch { setInsights(null) } finally { setInsightsLoading(false) }
+  }
+
   useEffect(() => {
     if (!bizId) return
     loadStatus(bizId).then(() => loadData(bizId, windowDays))
+    // Insights are holistic ("what customers tell you") — always use the full
+    // available history (365d), not the page's recent-window toggle, since
+    // reviews are sparse and patterns want all the data.
+    loadInsights(bizId, 365)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bizId, windowDays])
 
@@ -260,6 +276,14 @@ export default function ReviewsPage() {
                 <StarDistribution reviews={reviews} />
                 <ThemesPanel themes={themes.top_themes} />
               </>
+            )}
+
+            {!loading && (insightsLoading || insights) && (
+              <InsightsCards
+                insights={insights}
+                loading={insightsLoading}
+                onRefresh={() => bizId && loadInsights(bizId, 365, true)}
+              />
             )}
 
             {!loading && reviews.length > 0 && bizId && (
@@ -793,6 +817,66 @@ function StarDistribution({ reviews }: { reviews: Review[] }) {
 // ════════════════════════════════════════════════════════════════════
 // Themes panel
 // ════════════════════════════════════════════════════════════════════
+
+// ── AI insight cards: 5 things to improve + 5 things customers love ──
+interface InsightItem { title: string; detail: string }
+interface InsightsResp { improvements: InsightItem[]; satisfactions: InsightItem[]; sample_size: number; message?: string; cached?: boolean }
+
+function InsightsCards({ insights, loading, onRefresh }: { insights: InsightsResp | null; loading: boolean; onRefresh: () => void }) {
+  const improvements  = insights?.improvements ?? []
+  const satisfactions = insights?.satisfactions ?? []
+  const hasItems = improvements.length > 0 || satisfactions.length > 0
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: UXP.ink1 }}>What customers are telling you</h3>
+          <span title="AI-generated from your reviews" style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', background: UXP.lavFill, color: UXP.lavText, borderRadius: 6, letterSpacing: '0.04em' }}>✦ AI</span>
+        </div>
+        <button onClick={onRefresh} disabled={loading} style={{ fontSize: 11, fontWeight: 500, padding: '4px 10px', background: 'transparent', color: UXP.ink3, border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit' }}>{loading ? 'Analysing…' : 'Refresh'}</button>
+      </div>
+
+      {loading && !hasItems && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="cc-insights-grid">
+          {[0, 1].map(i => <div key={i} style={{ height: 170, background: UXP.subtleBg, borderRadius: 12, border: `0.5px solid ${UXP.border}` }} />)}
+        </div>
+      )}
+      {!loading && insights?.message && !hasItems && (
+        <div style={{ padding: '12px 14px', fontSize: 12, color: UXP.ink3, background: UXP.subtleBg, borderRadius: 10 }}>{insights.message}</div>
+      )}
+      {hasItems && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }} className="cc-insights-grid">
+          <InsightColumn title="Improve to lift performance" items={improvements}  accent={UXP.coral}     fill="#fbeee6"        emptyText="No recurring complaints — nice." />
+          <InsightColumn title="What customers love"          items={satisfactions} accent={UXP.greenDeep} fill={UXP.greenFill}  emptyText="Not enough praise signal yet." />
+        </div>
+      )}
+      <style>{`@media (max-width:680px){.cc-insights-grid{grid-template-columns:1fr !important}}`}</style>
+    </div>
+  )
+}
+
+function InsightColumn({ title, items, accent, fill, emptyText }: { title: string; items: InsightItem[]; accent: string; fill: string; emptyText: string }) {
+  return (
+    <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 14px', background: fill, color: accent, fontSize: 12, fontWeight: 600 }}>{title}</div>
+      <div style={{ padding: '6px 14px 12px' }}>
+        {items.length === 0 ? (
+          <div style={{ fontSize: 12, color: UXP.ink3, padding: '8px 0' }}>{emptyText}</div>
+        ) : items.map((it, i) => (
+          <div key={i} style={{ padding: '9px 0', borderBottom: i < items.length - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span style={{ color: accent, fontWeight: 700, fontSize: 12, minWidth: 14 }}>{i + 1}</span>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: UXP.ink1, lineHeight: 1.4 }}>{it.title}</div>
+                {it.detail && <div style={{ fontSize: 11.5, color: UXP.ink3, lineHeight: 1.45, marginTop: 2 }}>{it.detail}</div>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function ThemesPanel({ themes }: { themes: ThemeAgg[] }) {
   if (!themes || themes.length === 0) return null
