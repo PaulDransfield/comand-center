@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
       .eq('business_id', businessId)
       .maybeSingle(),
     db.from('inventory_backfill_state')
-      .select('status, progress, started_at, finished_at, error_message')
+      .select('status, progress, started_at, finished_at, updated_at, error_message')
       .eq('org_id', auth.orgId)
       .eq('business_id', businessId)
       .maybeSingle(),
@@ -110,9 +110,15 @@ function buildFinancialsJob(integ: any): SyncJob {
   const progress = (integ.backfill_progress ?? {}) as Record<string, any>
   const phase    = String(progress.phase ?? status)
 
+  // Same staleness guard as the invoices job: a 'running' backfill with no
+  // finish and an old start is dead — don't show it as perpetually syncing.
+  const finStale = !integ.backfill_finished_at && integ.backfill_started_at &&
+    (Date.now() - new Date(integ.backfill_started_at).getTime()) > 30 * 60 * 1000
+
   const state: JobState =
     status === 'completed' ? 'done'
     : status === 'failed'  ? 'failed'
+    : finStale             ? 'done'   // dead run — hide it
     : status === 'pending' ? 'queued'
     : 'running'   // running | paused | anything mid-flight
 
@@ -161,14 +167,25 @@ function buildFinancialsJob(integ: any): SyncJob {
   }
 }
 
+// inventory_backfill_state is updated only at run boundaries (start +
+// completion), not continuously — so a row not touched in 15 min is between
+// sweep kicks or from a dead worker, NOT actively syncing. Treat stale rows
+// as done so the banner never shows perpetual "syncing" on an idle/onboarded
+// customer (the Chicce-stale-'running' bug). The next real kick updates the
+// row and the banner re-shows genuine activity.
+const INV_STALE_MS = 15 * 60 * 1000
+
 function buildInvoicesJob(invState: any): SyncJob {
   const status   = String(invState.status)
   const progress = (invState.progress ?? {}) as Record<string, any>
   const phase    = String(progress.phase ?? status)
+  const ageMs    = invState.updated_at ? Date.now() - new Date(invState.updated_at).getTime() : Infinity
+  const stale    = ageMs > INV_STALE_MS
 
   const state: JobState =
-    status === 'completed' ? 'done'
-    : status === 'failed'  ? 'failed'
+    status === 'failed'    ? 'failed'
+    : status === 'completed' || status === 'success' ? 'done'   // both are terminal
+    : stale                ? 'done'   // dead/idle worker — don't show "syncing"
     : status === 'pending' ? 'queued'
     : 'running'
 

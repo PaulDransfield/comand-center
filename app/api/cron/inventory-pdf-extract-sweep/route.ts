@@ -56,19 +56,43 @@ async function handle(req: NextRequest) {
     if (from > 50_000) break   // safety
   }
 
-  // Belt-and-braces: also kick every business that has invoice lines, even
-  // with zero pending extraction rows. This covers the connect-time ordering
-  // gap where the scanner ran before the backfill wrote the (empty-text)
-  // lines, found 0 candidates, and was never retriggered — which left Vero's
-  // catalogue empty. The per-business extractor's findCandidates is
-  // idempotent (skips already-terminal invoices), so a fully-extracted
-  // business is a cheap no-op. Capped at 10k line rows (distinct businesses;
-  // fine well past current scale).
-  const { data: lineBizRows } = await db
-    .from('supplier_invoice_lines')
-    .select('business_id')
-    .limit(10000)
-  for (const r of (lineBizRows ?? [])) businessesWithPending.add((r as any).business_id)
+  // Self-heal ONLY businesses that genuinely have un-extracted candidates:
+  // needs_review lines with an EMPTY description (the rows PDF extraction
+  // exists to fill). This covers the connect-time ordering gap (scanner ran
+  // before the backfill wrote the lines) WITHOUT churning already-onboarded
+  // customers. The earlier "kick every business with invoice lines" was too
+  // broad — it re-ran established customers' scanner/matcher every 30 min,
+  // showing spurious "syncing" banners + leaving stale 'running' state rows.
+  // As extraction fills descriptions, a business's empty-desc lines → 0 and
+  // it naturally drops out of the sweep.
+  const candidateBiz = new Set<string>()
+  let lf = 0
+  while (true) {
+    const { data: rows } = await db
+      .from('supplier_invoice_lines')
+      .select('business_id, raw_description')
+      .eq('match_status', 'needs_review')
+      .range(lf, lf + 999)
+    if (!rows || rows.length === 0) break
+    for (const r of rows as any[]) {
+      if (!r.raw_description || String(r.raw_description).trim() === '') candidateBiz.add(r.business_id)
+    }
+    if (rows.length < 1000) break
+    lf += 1000
+    if (lf > 50_000) break
+  }
+  for (const b of candidateBiz) businessesWithPending.add(b)
+
+  // Self-clear stale state rows: a worker that died left inventory_backfill_state
+  // stuck at 'running'/'pending', which makes the owner-facing sync banner show
+  // perpetual "syncing". Anything not updated in 30 min is dead — flip it to a
+  // terminal state, with finished_at backdated so the banner hides it
+  // immediately (no spurious "complete" flash).
+  const staleCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+  await db.from('inventory_backfill_state')
+    .update({ status: 'completed' })   // terminal status recognised by every status reader
+    .in('status', ['running', 'pending'])
+    .lt('updated_at', staleCutoff)
 
   const targets = Array.from(businessesWithPending)
   const base = process.env.NEXT_PUBLIC_APP_URL ??
