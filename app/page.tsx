@@ -227,7 +227,7 @@ export default function LandingPage() {
           </p>
         </div>
         <div className="cc-grid3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22 }}>
-          {[
+          {([
             { ico: '📊', title: 'Sales & forecast',     body: 'Daily revenue, channels, and a forecast that grades itself against reality and explains every swing.' },
             { ico: '🧾', title: 'Flash P&L',            body: 'Live profit per location, by end of day — see which site made money and which one leaked it.' },
             { ico: '💰', title: 'Cash projection',      body: "Where your cash will be in 30 days, projected straight from your Fortnox transactions." },
@@ -235,9 +235,9 @@ export default function LandingPage() {
             { ico: '🏗️', title: 'Bookkeeping & costs',  body: 'Fortnox-deep: every invoice classified to the right BAS account, overruns and price rises flagged.' },
             { ico: '⭐', title: 'Reviews',              body: 'AI replies in your voice, cross-referenced against the shift that caused the complaint.' },
             { ico: '✦',  title: 'Ask CC',               body: 'Ask anything about your data in plain Swedish — and get an answer with the numbers behind it.' },
-            { ico: '📦', title: 'Inventory & recipes',  body: 'Item master, recipe costings to the gram, and true food-cost reconciliation.', soon: true },
-            { ico: '📅', title: 'AI scheduling',        body: 'Rotas built against forecast demand, written back to Personalkollen with owner sign-off.', soon: true },
-          ].map((card, i) => (
+            { ico: '📦', title: 'Inventory & recipes',  body: 'Item master, recipe costings to the gram, and true food-cost reconciliation.' },
+            { ico: '📅', title: 'AI scheduling',        body: 'Rotas built against forecast demand, with AI suggestions to trim over-staffed shifts — you review and apply them in Personalkollen.' },
+          ] as { ico: string; title: string; body: string; soon?: boolean }[]).map((card, i) => (
             <div key={i} style={{
               background:   C.card,
               border:       `1px solid ${C.line}`,
