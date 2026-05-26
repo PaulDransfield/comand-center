@@ -21,21 +21,33 @@ interface Message {
   downloads?: Array<{ label: string; url: string }>   // generated-document links
 }
 
-// Detect "make me a [format] on our margins" requests. Returns the format(s)
-// to offer, or null when it's not a margin-document ask (falls through to the
-// normal chat answer). Kept tight so "what's our margin?" doesn't trigger it.
-function detectMarginDocRequest(q: string): Array<'pdf' | 'docx' | 'pptx'> | null {
+// Detect "make me a [format] report on [topic]" requests. Returns the report
+// type + format(s), or null (falls through to the normal chat answer + the
+// server-side generate_report tool, which catches phrasings this misses).
+// Kept tight so "what's our margin?" doesn't trigger it.
+type ReportType = 'margin' | 'cost' | 'supplier'
+function detectReportRequest(q: string): { type: ReportType; formats: Array<'pdf' | 'docx' | 'pptx'> } | null {
   const s = q.toLowerCase()
   const docWord = /(power\s?point|powerpoint|pptx|presentation|deck|slides|\bword\b|docx|\bpdf\b|report|document|write[\s-]?up|one[\s-]?pager|export)/.test(s)
-  const verb    = /(make|create|generate|build|put together|draft|prepare|export|can you|could you|i (?:need|want)|give me)/.test(s)
-  const margin  = /(margin|profitab|profit|gross|net|\bp&l\b|p and l|bottom line|our (?:numbers|financ|performance|results))/.test(s)
-  if (!docWord || !verb || !margin) return null
+  const verb    = /(make|create|generate|build|put together|draft|prepare|export|can you|could you|i (?:need|want)|give me|send me)/.test(s)
+  if (!docWord || !verb) return null
+  let type: ReportType | null = null
+  if (/(supplier|vendor|purchas)/.test(s)) type = 'supplier'
+  else if (/(cost breakdown|cost report|expense|overhead|cost split|our costs|where.*(money|spend))/.test(s)) type = 'cost'
+  else if (/(margin|profitab|profit|gross|net|\bp&l\b|p and l|bottom line)/.test(s)) type = 'margin'
+  else if (/(financ|our (?:numbers|performance|results))/.test(s)) type = 'margin'   // generic financial doc → margin
+  if (!type) return null
   const fmts: Array<'pdf' | 'docx' | 'pptx'> = []
   if (/(power\s?point|powerpoint|pptx|presentation|deck|slides)/.test(s)) fmts.push('pptx')
   if (/(\bword\b|docx|\.doc)/.test(s)) fmts.push('docx')
   if (/\bpdf\b/.test(s)) fmts.push('pdf')
-  return fmts.length ? fmts : ['pdf', 'docx', 'pptx']   // generic "report" → offer all three
+  return { type, formats: fmts.length ? fmts : ['pdf', 'docx', 'pptx'] }
 }
+
+const REPORT_KIND_LABEL: Record<ReportType, string> = {
+  margin: 'margin report', cost: 'cost breakdown', supplier: 'supplier spend report',
+}
+const DL_LABEL = { pdf: 'Download PDF', docx: 'Download Word', pptx: 'Download PowerPoint' } as const
 
 // Suggestion KEYS — text resolved from askai.suggestions.<page>.{q1,q2,q3} at
 // render time so suggestions render in the user's language. Pages outside
@@ -142,15 +154,14 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false, 
     // hand over download links instead of a chat answer. The /api/reports/
     // margin endpoint builds it (real numbers + AI recommendations) and the
     // links auth via the session cookie on click.
-    const docFmts = detectMarginDocRequest(question)
-    if (docFmts) {
+    const reportReq = detectReportRequest(question)
+    if (reportReq) {
       const bizId = typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null
       if (bizId) {
-        const LABEL = { pdf: 'Download PDF', docx: 'Download Word', pptx: 'Download PowerPoint' } as const
-        const downloads = docFmts.map(f => ({ label: LABEL[f], url: `/api/reports/margin?business_id=${encodeURIComponent(bizId)}&format=${f}` }))
+        const downloads = reportReq.formats.map(f => ({ label: DL_LABEL[f], url: `/api/reports/${reportReq.type}?business_id=${encodeURIComponent(bizId)}&format=${f}` }))
         setMessages(prev => [...prev, {
           role: 'assistant',
-          content: 'Here is your margin report — current margins, the monthly trend, and recommendations to improve them. Click to generate and download (takes a few seconds).',
+          content: `Here is your ${REPORT_KIND_LABEL[reportReq.type]} — real figures plus recommendations. Click to generate and download (takes a few seconds).`,
           downloads,
         }])
         setLoading(false)
@@ -205,7 +216,7 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false, 
         return
       }
 
-      setMessages(prev => [...prev, { role: 'assistant', content: data.answer }])
+      setMessages(prev => [...prev, { role: 'assistant', content: data.answer, ...(Array.isArray(data.downloads) && data.downloads.length ? { downloads: data.downloads } : {}) }])
       // Surface the 80 %-used warning if returned; clears when under threshold.
       setWarning(data.warning ?? null)
       // Poke the sidebar meter to refresh immediately.

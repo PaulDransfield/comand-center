@@ -1,33 +1,44 @@
-// Smoke-test all three renderers from one spec. Run: npx tsx scripts/test-reports.tsx
-import { renderMarginPdf } from '../components/reports/MarginReportPdf'
-import { renderMarginDocx } from '../lib/reports/margin-docx'
-import { renderMarginPptx } from '../lib/reports/margin-pptx'
+// Smoke-test the generic renderers from one ReportSpec.
+// Run: npx tsx scripts/test-reports.tsx
+import { renderReportPdf } from '../components/reports/MarginReportPdf'
+import { renderReportDocx } from '../lib/reports/margin-docx'
+import { renderReportPptx } from '../lib/reports/margin-pptx'
+import type { ReportSpec } from '../lib/reports/types'
 
-const months = [
-  { year: 2025, month: 11, label: 'Nov 2025', revenue: 1620000, food_cost: 254000, staff_cost: 471000, other_cost: 400000, net_profit: 495000, margin_pct: 30.6, food_pct: 15.7, labour_pct: 29.1, is_anomaly: false },
-  { year: 2025, month: 12, label: 'Dec 2025', revenue: 980000,  food_cost: 330000, staff_cost: 300000, other_cost: 200000, net_profit: 150000, margin_pct: 15.3, food_pct: 33.7, labour_pct: 30.6, is_anomaly: false },
-  { year: 2026, month: 1,  label: 'Jan 2026', revenue: 640000,  food_cost: 230000, staff_cost: 220000, other_cost: 170000, net_profit: 20000,  margin_pct: 3.1,  food_pct: 35.9, labour_pct: 34.4, is_anomaly: false },
-  { year: 2026, month: 4,  label: 'Apr 2026', revenue: 1135000, food_cost: 359000, staff_cost: 0,       other_cost: 400000, net_profit: 376000, margin_pct: 29.2, food_pct: 31.6, labour_pct: 0,    is_anomaly: true },
-]
-const spec: any = {
-  business_name: 'Vero Italiano', period_label: 'Nov 2025 – Apr 2026', generated_at: new Date().toISOString(),
-  months, latest: months[months.length - 1],
-  averages: { margin_pct: 16.3, food_pct: 28.4, labour_pct: 31.4, revenue: 1080000 },
-  anomaly_count: 1,
-  executive_summary: 'Net margin averaged 16.3% across the clean months, with November the standout (30.6%) on strong revenue and tight 15.7% food cost. One month (Apr 2026) is flagged for review — 0% recorded labour is operationally impossible and was excluded from the averages.',
-  recommendations: [
-    { title: 'Investigate the April 2026 labour gap', detail: 'Apr 2026 shows 0% labour on 1.1M kr revenue — labour was almost certainly posted to a different period. Correct it before trusting the average.' },
-    { title: 'Hold food cost near November levels', detail: 'November hit 15.7% food cost; January slipped to 35.9%. Document what drove the strong month and standardise it.' },
+const spec: ReportSpec = {
+  type: 'margin', title: 'Margin Report', business_name: 'Vero Italiano',
+  period_label: 'Nov 2025 – Apr 2026', generated_at: new Date().toISOString(),
+  kpis: [
+    { label: 'Net margin (last 3 mo)', value: '16.3%', tone: 'good' },
+    { label: 'Food cost', value: '28.4%' },
+    { label: 'Labour', value: '31.4%' },
+    { label: 'Revenue / mo', value: '1,080,000 kr' },
   ],
+  summary: 'Recent months averaged a 16.3% net margin; November was the standout. One month is flagged for review (0% labour, excluded from the headline).',
+  table: {
+    heading: 'Monthly margin trend',
+    columns: [ { key: 'month', label: 'Month' }, { key: 'revenue', label: 'Revenue', align: 'right' }, { key: 'food', label: 'Food %', align: 'right' }, { key: 'labour', label: 'Labour %', align: 'right' }, { key: 'margin', label: 'Net margin', align: 'right' } ],
+    rows: [
+      { cells: { month: 'Nov 2025', revenue: '1,623,951 kr', food: '15.7%', labour: '29.1%', margin: '29.9%' }, toneByKey: { margin: 'good' } },
+      { cells: { month: 'Jan 2026', revenue: '640,000 kr', food: '35.9%', labour: '34.4%', margin: '3.1%' }, toneByKey: { margin: 'bad' } },
+      { cells: { month: 'Apr 2026  *', revenue: '1,135,074 kr', food: '31.6%', labour: '0%', margin: '29.2%' }, muted: true },
+    ],
+    note: '* 1 month flagged as a data anomaly and excluded from the headline.',
+  },
+  recommendations: [
+    { title: 'Investigate the April labour gap', detail: 'Apr 2026 shows 0% labour — almost certainly posted to a different period.' },
+    { title: 'Hold food cost near November levels', detail: 'November hit 15.7%; standardise what drove it.' },
+  ],
+  footnote: 'Figures sourced from your Fortnox financial data.',
   ai_used: true,
 }
 
 const sig = (b: Buffer) => b.subarray(0, 4).toString('latin1')
 ;(async () => {
-  const pdf  = await renderMarginPdf(spec)
-  const docx = await renderMarginDocx(spec)
-  const pptx = await renderMarginPptx(spec)
+  const pdf  = await renderReportPdf(spec)
+  const docx = await renderReportDocx(spec)
+  const pptx = await renderReportPptx(spec)
   console.log(`PDF : ${pdf.length} bytes  sig="${sig(pdf)}"  -> ${sig(pdf) === '%PDF' ? 'VALID' : 'BAD'}`)
-  console.log(`DOCX: ${docx.length} bytes  sig="${sig(docx)}"  -> ${sig(docx).startsWith('PK') ? 'VALID (zip/ooxml)' : 'BAD'}`)
-  console.log(`PPTX: ${pptx.length} bytes  sig="${sig(pptx)}"  -> ${sig(pptx).startsWith('PK') ? 'VALID (zip/ooxml)' : 'BAD'}`)
+  console.log(`DOCX: ${docx.length} bytes  sig="${sig(docx)}"  -> ${sig(docx).startsWith('PK') ? 'VALID (ooxml)' : 'BAD'}`)
+  console.log(`PPTX: ${pptx.length} bytes  sig="${sig(pptx)}"  -> ${sig(pptx).startsWith('PK') ? 'VALID (ooxml)' : 'BAD'}`)
 })()

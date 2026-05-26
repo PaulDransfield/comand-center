@@ -236,9 +236,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'AI service unavailable. Please try again.' }, { status: 503 })
   }
 
+  // If the model called generate_report, hand the actual download links to
+  // the client (the tool itself only acked). The chat renders these as
+  // buttons; they auth via the session cookie on click.
+  let downloads: Array<{ label: string; url: string }> | undefined
+  const reportCall = toolsCalled.find(t => t.name === 'generate_report')
+  if (reportCall && businessId) {
+    const rtype = ['margin', 'cost', 'supplier'].includes(reportCall.args?.report_type) ? reportCall.args.report_type : 'margin'
+    const fmts: string[] = Array.isArray(reportCall.args?.formats) && reportCall.args.formats.length ? reportCall.args.formats : ['pdf', 'docx', 'pptx']
+    const LABEL: Record<string, string> = { pdf: 'Download PDF', docx: 'Download Word', pptx: 'Download PowerPoint' }
+    downloads = fmts.filter(f => LABEL[f]).map(f => ({ label: LABEL[f], url: `/api/reports/${rtype}?business_id=${encodeURIComponent(businessId)}&format=${f}` }))
+  }
+
   // Return the answer plus the approaching-limit warning if the gate set one.
   return NextResponse.json({
     answer,
+    ...(downloads && downloads.length ? { downloads } : {}),
     ...(gate.ok && gate.warning ? { warning: gate.warning } : {}),
   })
 }
