@@ -24,6 +24,7 @@
     "next-intl": "^4.11.0",
     "pdf-parse": "^2.4.5",
     "posthog-js": "^1.364.7",
+    "pptxgenjs": "^4.0.1",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "resend": "^3.2.0",

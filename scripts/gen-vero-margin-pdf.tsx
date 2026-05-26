@@ -29,9 +29,15 @@ const pct = (p: number, w: number) => w > 0 ? Math.round((p / w) * 1000) / 10 : 
       food_pct: pct(food, revenue), labour_pct: pct(staff, revenue) }
   }).filter((m: any) => m.revenue > 0).sort((a: any, b: any) => a.year - b.year || a.month - b.month)
 
-  const avg = (f: (m: any) => number) => months.length ? Math.round((months.reduce((s, m) => s + f(m), 0) / months.length) * 10) / 10 : 0
+  const isAnom = (m: any) => (m.labour_pct === 0 && m.revenue > 0) || m.food_pct > 80 || m.margin_pct < -150
+  months.forEach((m: any) => { m.is_anomaly = isAnom(m) })
+  const clean = months.filter((m: any) => m.revenue > 0 && !m.is_anomaly)
+  const base = clean.length ? clean : months.filter((m: any) => m.revenue > 0)
+  const anomaly_count = months.filter((m: any) => m.is_anomaly).length
+  const avg = (f: (m: any) => number) => base.length ? Math.round((base.reduce((s, m) => s + f(m), 0) / base.length) * 10) / 10 : 0
   const averages = { margin_pct: avg(m => m.margin_pct), food_pct: avg(m => m.food_pct), labour_pct: avg(m => m.labour_pct),
-    revenue: months.length ? Math.round(months.reduce((s, m) => s + m.revenue, 0) / months.length) : 0 }
+    revenue: base.length ? Math.round(base.reduce((s, m) => s + m.revenue, 0) / base.length) : 0 }
+  console.log(`Anomaly months excluded from averages: ${anomaly_count}`)
 
   // AI narrative (direct call, prod key)
   let summary = '', recs: any[] = [], aiUsed = false
@@ -49,7 +55,7 @@ const pct = (p: number, w: number) => w > 0 ? Math.round((p / w) * 1000) / 10 : 
   } catch (e: any) { console.log('AI failed (will use fallback):', e?.message) }
 
   const spec = { business_name: 'Vero Italiano', period_label: months.length ? `${months[0].label} – ${months[months.length-1].label}` : '—',
-    generated_at: new Date().toISOString(), months, latest: months[months.length-1] ?? null, averages,
+    generated_at: new Date().toISOString(), months, latest: months[months.length-1] ?? null, averages, anomaly_count,
     executive_summary: summary || `Averaged ${averages.margin_pct}% net margin.`, recommendations: recs, ai_used: aiUsed }
 
   const buf = await renderMarginPdf(spec as any)

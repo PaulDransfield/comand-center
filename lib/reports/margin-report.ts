@@ -26,6 +26,19 @@ export interface MarginMonth {
   margin_pct: number   // net margin %
   food_pct:   number   // food cost as % of revenue
   labour_pct: number   // staff cost as % of revenue
+  is_anomaly: boolean  // clear data error (write-off / uncaptured labour) — excluded from headline averages
+}
+
+// A month is a DATA ERROR (not a genuinely bad trading month) when the
+// figures are operationally impossible: labour not captured, a food-cost
+// write-off, or an absurd negative margin. We exclude these from the
+// headline KPIs so they don't skew the average, but still show them in the
+// table flagged for review. We deliberately KEEP real-but-bad months
+// (e.g. high labour % on a low-revenue month) — those are signal, not noise.
+function isDataAnomaly(m: { revenue: number; food_pct: number; labour_pct: number; margin_pct: number }): boolean {
+  return (m.labour_pct === 0 && m.revenue > 0)   // labour not posted to this period
+    || m.food_pct > 80                            // write-off / misallocation
+    || m.margin_pct < -150                        // not a real trading result
 }
 
 export interface MarginReportSpec {
@@ -35,6 +48,7 @@ export interface MarginReportSpec {
   months:            MarginMonth[]
   latest:            MarginMonth | null
   averages:          { margin_pct: number; food_pct: number; labour_pct: number; revenue: number }
+  anomaly_count:     number   // months excluded from the averages (flagged in the table)
   executive_summary: string
   recommendations:   Array<{ title: string; detail: string }>
   ai_used:           boolean
@@ -72,8 +86,10 @@ export async function loadMarginMonths(db: any, businessId: string): Promise<Mar
         margin_pct: Number(r.margin_pct ?? 0),
         food_pct:   pct(food_cost, revenue),
         labour_pct: pct(staff_cost, revenue),
+        is_anomaly: false,
       }
     })
+    .map((m: MarginMonth) => ({ ...m, is_anomaly: isDataAnomaly(m) }))
     .filter((m: MarginMonth) => m.revenue > 0)        // skip empty months
     .sort((a: MarginMonth, b: MarginMonth) => a.year - b.year || a.month - b.month)
 
@@ -90,14 +106,19 @@ export async function buildMarginReportSpec(
   const months = await loadMarginMonths(db, businessId)
   const latest = months.length ? months[months.length - 1] : null
 
-  const withRev = months.filter(m => m.revenue > 0)
+  // Headline averages over CLEAN months only (exclude data errors), so one
+  // write-off / uncaptured-labour month can't make the whole report read as
+  // a -55% margin business.
+  const clean = months.filter(m => m.revenue > 0 && !m.is_anomaly)
+  const anomaly_count = months.filter(m => m.is_anomaly).length
+  const base = clean.length ? clean : months.filter(m => m.revenue > 0)  // fall back if everything's flagged
   const avg = (sel: (m: MarginMonth) => number) =>
-    withRev.length ? Math.round((withRev.reduce((s, m) => s + sel(m), 0) / withRev.length) * 10) / 10 : 0
+    base.length ? Math.round((base.reduce((s, m) => s + sel(m), 0) / base.length) * 10) / 10 : 0
   const averages = {
     margin_pct: avg(m => m.margin_pct),
     food_pct:   avg(m => m.food_pct),
     labour_pct: avg(m => m.labour_pct),
-    revenue:    withRev.length ? Math.round(withRev.reduce((s, m) => s + m.revenue, 0) / withRev.length) : 0,
+    revenue:    base.length ? Math.round(base.reduce((s, m) => s + m.revenue, 0) / base.length) : 0,
   }
 
   const period_label = months.length
@@ -134,6 +155,7 @@ export async function buildMarginReportSpec(
     months,
     latest,
     averages,
+    anomaly_count,
     executive_summary,
     recommendations,
     ai_used,
@@ -159,7 +181,7 @@ async function generateNarrative(
   businessName: string,
 ): Promise<{ executive_summary: string; recommendations: Array<{ title: string; detail: string }> } | null> {
   const table = months.map(m =>
-    `${m.label}: revenue ${Math.round(m.revenue)} kr, food ${m.food_pct}%, labour ${m.labour_pct}%, net margin ${m.margin_pct}%`
+    `${m.label}: revenue ${Math.round(m.revenue)} kr, food ${m.food_pct}%, labour ${m.labour_pct}%, net margin ${m.margin_pct}%${m.is_anomaly ? '  [DATA ANOMALY — flag for review, do not treat as real trading]' : ''}`
   ).join('\n')
 
   const SYSTEM = `You are a restaurant-group CFO advisor writing a short margin report for an owner. ${SCOPE_NOTE}

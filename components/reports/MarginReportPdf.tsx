@@ -97,13 +97,18 @@ function MarginDoc({ spec }: { spec: MarginReportSpec }) {
         </View>
         {spec.months.map((m: MarginMonth) => (
           <View style={s.tRow} key={`${m.year}-${m.month}`}>
-            <Text style={[s.td, s.cMonth]}>{m.label}</Text>
+            <Text style={[s.td, s.cMonth, m.is_anomaly ? { color: INK2 } : {}]}>{m.label}{m.is_anomaly ? '  *' : ''}</Text>
             <Text style={[s.td, s.cNum]}>{kr(m.revenue)}</Text>
             <Text style={[s.td, s.cNum]}>{m.food_pct}%</Text>
             <Text style={[s.td, s.cNum]}>{m.labour_pct}%</Text>
-            <Text style={[s.td, s.cNum, { color: tone(m.margin_pct), fontFamily: 'Helvetica-Bold' }]}>{m.margin_pct}%</Text>
+            <Text style={[s.td, s.cNum, { color: m.is_anomaly ? INK2 : tone(m.margin_pct), fontFamily: 'Helvetica-Bold' }]}>{m.margin_pct}%</Text>
           </View>
         ))}
+        {spec.anomaly_count > 0 && (
+          <Text style={{ fontSize: 8, color: INK2, marginTop: 6, lineHeight: 1.4 }}>
+            * {spec.anomaly_count} month{spec.anomaly_count > 1 ? 's' : ''} flagged as a data anomaly (e.g. a stock write-off or uncaptured labour) and excluded from the averages above — worth reviewing in Fortnox.
+          </Text>
+        )}
 
         {/* Recommendations */}
         {spec.recommendations.length > 0 && (

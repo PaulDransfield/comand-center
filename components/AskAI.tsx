@@ -18,6 +18,23 @@ import { UXP }                         from '@/lib/constants/tokens'
 interface Message {
   role:    'user' | 'assistant'
   content: string
+  downloads?: Array<{ label: string; url: string }>   // generated-document links
+}
+
+// Detect "make me a [format] on our margins" requests. Returns the format(s)
+// to offer, or null when it's not a margin-document ask (falls through to the
+// normal chat answer). Kept tight so "what's our margin?" doesn't trigger it.
+function detectMarginDocRequest(q: string): Array<'pdf' | 'docx' | 'pptx'> | null {
+  const s = q.toLowerCase()
+  const docWord = /(power\s?point|powerpoint|pptx|presentation|deck|slides|\bword\b|docx|\bpdf\b|report|document|write[\s-]?up|one[\s-]?pager|export)/.test(s)
+  const verb    = /(make|create|generate|build|put together|draft|prepare|export|can you|could you|i (?:need|want)|give me)/.test(s)
+  const margin  = /(margin|profitab|profit|gross|net|\bp&l\b|p and l|bottom line|our (?:numbers|financ|performance|results))/.test(s)
+  if (!docWord || !verb || !margin) return null
+  const fmts: Array<'pdf' | 'docx' | 'pptx'> = []
+  if (/(power\s?point|powerpoint|pptx|presentation|deck|slides)/.test(s)) fmts.push('pptx')
+  if (/(\bword\b|docx|\.doc)/.test(s)) fmts.push('docx')
+  if (/\bpdf\b/.test(s)) fmts.push('pdf')
+  return fmts.length ? fmts : ['pdf', 'docx', 'pptx']   // generic "report" → offer all three
 }
 
 // Suggestion KEYS — text resolved from askai.suggestions.<page>.{q1,q2,q3} at
@@ -120,6 +137,26 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false, 
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setLoading(true)
+
+    // Document generation: if the owner asks for a margin report/deck/doc,
+    // hand over download links instead of a chat answer. The /api/reports/
+    // margin endpoint builds it (real numbers + AI recommendations) and the
+    // links auth via the session cookie on click.
+    const docFmts = detectMarginDocRequest(question)
+    if (docFmts) {
+      const bizId = typeof window !== 'undefined' ? localStorage.getItem('cc_selected_biz') : null
+      if (bizId) {
+        const LABEL = { pdf: 'Download PDF', docx: 'Download Word', pptx: 'Download PowerPoint' } as const
+        const downloads = docFmts.map(f => ({ label: LABEL[f], url: `/api/reports/margin?business_id=${encodeURIComponent(bizId)}&format=${f}` }))
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Here is your margin report — current margins, the monthly trend, and recommendations to improve them. Click to generate and download (takes a few seconds).',
+          downloads,
+        }])
+        setLoading(false)
+        return
+      }
+    }
 
     try {
       // Get the session token so the API route can authenticate the request
@@ -371,6 +408,20 @@ export default function AskAI({ page, context, tier = 'full', orgScope = false, 
               }}>
                 {msg.content}
               </div>
+              {msg.downloads && msg.downloads.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 2 }}>
+                  {msg.downloads.map((d, j) => (
+                    <a key={j} href={d.url} target="_blank" rel="noopener noreferrer"
+                      style={{
+                        padding: '6px 12px', fontSize: 11.5, fontWeight: 600,
+                        background: UXP.lavDeep, color: '#fff', borderRadius: 7,
+                        textDecoration: 'none', fontFamily: 'inherit',
+                      }}>
+                      {d.label}
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 
