@@ -116,7 +116,7 @@ export default function ReviewsPage() {
   const [summary,    setSummary]    = useState<SummaryShape | null>(null)
   const [insights,   setInsights]   = useState<InsightsResp | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
-  const [windowDays, setWindowDays] = useState(90)
+  const [windowDays, setWindowDays] = useState(365)
   const [platform,   setPlatform]   = useState<PlatformKey>('google')
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState('')
@@ -248,22 +248,6 @@ export default function ReviewsPage() {
 
             {!loading && themes && themes.sample_size === 0 && reviews.length === 0 && (
               <Empty>No reviews analysed yet. Hit "Sync now" to fetch the latest from Google, or wait for the daily 04:20 UTC sync.</Empty>
-            )}
-
-            {!loading && themes && themes.sample_size === 0 && reviews.length > 0 && (
-              <Banner
-                tone="warning"
-                text={`No reviews in the last ${windowDays} days, but ${reviews.length} older one${reviews.length === 1 ? '' : 's'} ${reviews.length === 1 ? 'is' : 'are'} on file. Switch to 12 months for theme coverage, or scroll for the full list.`}
-              />
-            )}
-
-            {/* Google API-limit callout — only when we actually have a
-                wide gap between Google's total and what we ingested. */}
-            {!loading && summary && summary.total_reviews_on_google && summary.total_reviews_on_google > summary.reviews_in_db && (
-              <GoogleApiLimitCallout
-                totalOnGoogle={summary.total_reviews_on_google}
-                inDb={summary.reviews_in_db}
-              />
             )}
 
             {!loading && summary && (
