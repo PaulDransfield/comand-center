@@ -50,6 +50,37 @@ export const UXP = {
   r_md:  8,
   r_lg:  12,
   railW: 46,
+
+  // ── Polish tier — added 2026-05-28 for the dashboard polish pilot.
+  // Additive only; existing surfaces keep using their inline values until
+  // they opt in. See POLISH-ROADMAP.md for the rollout plan.
+
+  // Elevation. Hairline border + a whisper of shadow gives depth without
+  // looking heavy on the pastel-lavender background. Use shadowSoft for
+  // static surfaces (banners, secondary cards), shadowCard for the primary
+  // content cards, shadowLift for hover/active states later.
+  shadowSoft: '0 1px 2px rgba(58,53,80,0.04)',
+  shadowCard: '0 1px 3px rgba(58,53,80,0.05), 0 1px 2px rgba(58,53,80,0.03)',
+  shadowLift: '0 4px 14px rgba(58,53,80,0.08), 0 1px 3px rgba(58,53,80,0.04)',
+
+  // Typography scale — one canonical reference. The dashboard hardcodes
+  // these numbers today (9, 11, 12, 13, 17, 24); listing them here makes
+  // them grep-able and consistent when other pages migrate.
+  fsMicro:   9,
+  fsLabel:   11,
+  fsBody:    12,
+  fsSection: 13,
+  fsTitle:   17,
+  fsHero:    24,
+
+  fwRegular:  400,
+  fwMedium:   500,
+  fwSemibold: 600,
+
+  // Motion. Snappier than the legacy 150ms default; uses a smooth-out
+  // curve so interactions feel responsive rather than easing into place.
+  motionFast: '120ms cubic-bezier(0.2, 0, 0.2, 1)',
+  motionMed:  '180ms cubic-bezier(0.2, 0, 0.2, 1)',
 } as const
 
 // Z-index scale. Use these instead of raw numbers so the stacking order

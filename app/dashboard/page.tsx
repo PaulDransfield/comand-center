@@ -98,19 +98,83 @@ function getMonthBounds(offset = 0) {
   }
 }
 
-// ── Weather emoji map ─────────────────────────────────────────────────
-function weatherIcon(code?: number): string {
-  if (code == null) return ''
-  if (code === 0)              return '☀️'
-  if (code <= 3)               return '⛅'
-  if (code === 45 || code === 48) return '🌫️'
-  if (code >= 51 && code <= 57)   return '🌦️'
-  if (code >= 61 && code <= 67)   return '🌧️'
-  if (code >= 71 && code <= 77)   return '❄️'
-  if (code >= 80 && code <= 82)   return '🌦️'
-  if (code >= 85 && code <= 86)   return '🌨️'
-  if (code >= 95)                 return '⛈️'
-  return ''
+// ── Weather icon (lucide-style inline SVG) ────────────────────────────
+// Replaces the previous emoji set. Emoji rendering varies wildly across
+// OSes (Segoe UI Emoji on Windows reads chunky / cartoonish; Apple Color
+// Emoji on Mac doesn't match the editorial palette of the dashboard) and
+// also breaks the brand no-emoji rule. One-weight line icons keep the
+// dashboard sharp at any DPR and inherit currentColor / size cleanly.
+function WeatherIcon({ code, size = 14, color = 'currentColor' }: {
+  code?: number; size?: number; color?: string
+}) {
+  if (code == null) return null
+  const which =
+    code === 0                   ? 'sun'              :
+    code <= 3                    ? 'cloud-sun'        :
+    code === 45 || code === 48   ? 'cloud-fog'        :
+    code >= 51 && code <= 57     ? 'cloud-drizzle'    :
+    code >= 61 && code <= 67     ? 'cloud-rain'       :
+    code >= 71 && code <= 77     ? 'snowflake'        :
+    code >= 80 && code <= 82     ? 'cloud-rain'       :
+    code >= 85 && code <= 86     ? 'snowflake'        :
+    code >= 95                   ? 'cloud-lightning'  :
+    null
+  if (!which) return null
+  const attrs = {
+    width:           size,
+    height:          size,
+    viewBox:         '0 0 24 24',
+    fill:            'none' as const,
+    stroke:          color,
+    strokeWidth:     1.75,
+    strokeLinecap:   'round'  as const,
+    strokeLinejoin:  'round'  as const,
+    'aria-hidden':   true     as const,
+    style: { display: 'inline-block', verticalAlign: 'middle' as const, flexShrink: 0 },
+  }
+  if (which === 'sun') return (
+    <svg {...attrs}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </svg>
+  )
+  if (which === 'cloud-sun') return (
+    <svg {...attrs}>
+      <path d="M12 2v2M4.93 4.93l1.41 1.41M20 12h2M19.07 4.93l-1.41 1.41" />
+      <path d="M15.95 12.65a4 4 0 0 0-5.93-4.13" />
+      <path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z" />
+    </svg>
+  )
+  if (which === 'cloud-fog') return (
+    <svg {...attrs}>
+      <path d="M5 17a4 4 0 0 1 0-8 6 6 0 0 1 11.41-1.5A4.5 4.5 0 1 1 17 17" />
+      <path d="M16 17H7M17 21H9" />
+    </svg>
+  )
+  if (which === 'cloud-drizzle') return (
+    <svg {...attrs}>
+      <path d="M4 14.9A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.24" />
+      <path d="M8 19v1M8 14v1M16 19v1M16 14v1M12 21v1M12 16v1" />
+    </svg>
+  )
+  if (which === 'cloud-rain') return (
+    <svg {...attrs}>
+      <path d="M4 14.9A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.24" />
+      <path d="M16 14v6M8 14v6M12 16v6" />
+    </svg>
+  )
+  if (which === 'snowflake') return (
+    <svg {...attrs}>
+      <path d="M12 2v20M4 6l16 12M4 18 20 6" />
+    </svg>
+  )
+  if (which === 'cloud-lightning') return (
+    <svg {...attrs}>
+      <path d="M6 16.33A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 .5 8.97" />
+      <path d="m13 12-3 5h4l-3 5" />
+    </svg>
+  )
+  return null
 }
 
 // ── Suspense wrapper ──────────────────────────────────────────────────
@@ -568,13 +632,14 @@ function DemandOutlookStrip({ demand }: { demand: any }) {
                 display:      'flex',
                 flexDirection: 'column' as const,
                 gap:          4,
+                boxShadow:    UXP.shadowSoft,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <span style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500, letterSpacing: '0.02em' }}>
                   {d.weekday}
                 </span>
-                <span style={{ fontSize: 14 }} aria-hidden>{weatherIcon(d.weather?.code)}</span>
+                <WeatherIcon code={d.weather?.code} size={14} color={UXP.ink2} />
               </div>
               <div style={{
                 fontSize:           17,
@@ -1046,10 +1111,11 @@ function UpgradeBanner({ plan, onClose }: { plan: string; onClose: () => void })
       alignItems:    'center',
       justifyContent: 'space-between',
       gap:           12,
+      boxShadow:     UXP.shadowSoft,
     }}>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 500, color: UXP.greenDeep }}>
-          🎉 Welcome to {plan || 'your new plan'}
+        <div style={{ fontSize: 13, fontWeight: 500, color: UXP.greenDeep, letterSpacing: '-0.005em' }}>
+          Welcome to {plan || 'your new plan'}
         </div>
         <div style={{ fontSize: 11, color: UXP.greenDeep, marginTop: 2 }}>
           Your subscription is active — all features unlocked.
@@ -1182,6 +1248,7 @@ function ColdStartBanner({ loading, dailyRows, selectedBiz, onSyncComplete }: {
       display:       'flex',
       alignItems:    'flex-start',
       gap:           14,
+      boxShadow:     UXP.shadowSoft,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: isAlarming ? UXP.coral : UXP.lavText, marginBottom: 4 }}>
@@ -1272,6 +1339,7 @@ function StaleDataBanner({ dataAsOf, loading, viewMode, weekOffset, monthOffset 
       padding:       '10px 14px',
       fontSize:      12,
       color:         UXP.lavText,
+      boxShadow:     UXP.shadowSoft,
     }}>
       Latest synced data is <strong>{daysOld === 1 ? 'yesterday' : `${daysOld} days old`}</strong>. Hourly catchup may be running.
     </div>
@@ -1293,6 +1361,7 @@ function Card({ title, subtitle, info, children }: {
       borderRadius:  UXP.r_lg,
       padding:       '14px 16px',
       position:      'relative' as const,
+      boxShadow:     UXP.shadowCard,
     }}>
       <div style={{ marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
         <div style={{ flex: 1 }}>

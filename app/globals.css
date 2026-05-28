@@ -6,6 +6,14 @@ html, body { margin: 0; padding: 0; }
    later in the cascade so its DM Sans rule wins for "/". */
 body {
   font-family: var(--font-sans, -apple-system), BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Grayscale font smoothing — biggest single sharpness win on macOS
+     (Chrome/Safari subpixel-render fonts heavier by default). On Windows
+     these properties no-op gracefully. Added 2026-05-28 as part of the
+     dashboard polish pilot — applies app-wide because it's a foundation
+     thing, not a per-page concern. See POLISH-ROADMAP.md. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 /* Reserve scrollbar space so pages that don't scroll don't shift left/right
    when switching to pages that do. scrollbar-gutter has the best UX on modern
