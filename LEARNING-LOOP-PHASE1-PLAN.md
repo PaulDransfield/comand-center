@@ -577,7 +577,31 @@ the §7.1 hard floor — they're trend signals, surfaced in the admin
 view, used to inform future Gate-0 / retrieval improvements
 (reconciliation-doc Phase 3+).
 
-### 3b.4 D3 checkpoint — synthetic regression test
+### 3b.4 D3 checkpoint — synthetic regression test — PASSED 2026-05-30
+
+**Synthetic-regression matrix (verify-accuracy-snapshot.mjs --synthetic):**
+11/11 cases pass. Hard at 12pp, soft at 6pp, quiet at <50 outcomes,
+warmup downgrades to informational, absolute floors escalate. Floor
+logic is provably correct.
+
+**Real-data side (verify-accuracy-snapshot.mjs --local-run):** 12
+snapshot rows written across all orgs. Notable signals:
+
+- **Vero Italiano needs_review_agreement = 46.8%** (n=outcomes). Below
+  the 50% absolute hard floor. Correctly tagged `informational` by the
+  warmup gate — would be `hard` post-warmup (2026-06-29 onwards). The
+  monitor saw it and held back. **This is a real concern worth
+  investigating** after the dust settles on D2/D3, but NOT a D3
+  deliverable — it's exactly the kind of signal the snapshot was built
+  to surface.
+- Chicce Slotsgatan needs_review_agreement = 75.4%. Healthy, above
+  the pre-D2 61.3% baseline.
+- audit_sample_agreement columns NULL on every scope (only the Chiarlo
+  confirm from D2 exists; well below MIN_SAMPLE=50).
+- All rows tagged in_warmup until 2026-06-29.
+
+**D3-done.** Schema + cron + admin view + tests + verify script all
+landed on `learning-loop-phase1-3-accuracy`. Merging next.
 
 Owner-locked checkpoint: "the synthetic-regression test is the D3
 equivalent of the demotion round-trip — it's the proof the monitor
