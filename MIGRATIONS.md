@@ -1,6 +1,46 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-25 | M101 + M102 + M103 applied (scaling audit + risk-horizon)
+> Last updated: 2026-05-30 | doc-only fix: ledger reconciled against `pg_tables` (M087/M088/M097/M098/M099/M100 had landed in prod but were still listed pending or missing here)
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Applied — 2026-05-30 (ledger reconciliation, no SQL run)
+
+Pre-Phase-1 audit (`scripts/diag-phase1-prereq.mjs`, read-only) cross-checked the
+ledger against `pg_tables` and information-schema columns on prod. Findings:
+
+- **M087** (`products.pack_size` + `base_unit`): ✅ applied. Verified: a sample
+  `products` row returned `pack_size=2500, base_unit='g'`. Entry below moved
+  from "Pending" to applied here; no SQL run today.
+- **M088** (`fx_rates`): ✅ applied. Verified: 37 rows present. Moved likewise.
+- **M097** (`pos_menu_items` + `pos_sales`): ✅ applied. Verified: both tables
+  exist (both empty — no live POS feeds yet). Moved.
+- **M098** (`fortnox_supplier_invoices` + `fortnox_sync_state`): ✅ applied.
+  Verified: `fortnox_supplier_invoices` has 1,760 rows; `fortnox_sync_state`
+  has 2 rows. Moved.
+- **M099** (`inventory_review_suggestions` + `inventory_review_outcomes`):
+  ✅ applied. Verified: both tables exist with 1,000+ rows each (PostgREST
+  page cap). Was missing from this ledger entirely. Brief entry added below.
+- **M100** (scheduling — actual tables `staff_shifts`, `staff_profiles`,
+  `staff_shift_templates`, `schedule_ai_suggestions`,
+  `staff_performance_signals`): ✅ applied. Verified: `staff_shifts` 1,655
+  rows, `staff_profiles` 131, `staff_shift_templates` 28,
+  `schedule_ai_suggestions` 40. Was missing from this ledger entirely.
+- **M104** (`review_insights_cache`): ⏳ genuinely pending. Verified MISSING.
+  A separate `review_insights` table exists (2 rows) but is not the same
+  thing. Entry kept in "Pending" below.
+
+This is a **doc-only commit**. No SQL was run on prod for this update.
+
+**Known broader drift (out of scope for this commit):** entries M075, M076,
+M077, M078, M079, M080, M063, M064, M065, M067, M068 are still marked
+"pending application" further down in this file. Most are almost certainly
+applied (the live system reads from `product_aliases` / `invoice_pdf_extractions`
+/ `fortnox_vouchers_cache` every day, which would 500 if their tables were
+missing). A full ledger reconciliation pass would verify each via
+`pg_tables` and flip labels — deferred to a follow-up doc PR. Today's
+scope is narrowly the four migrations gating Phase 1 work + the two
+missing entries (M099/M100).
 
 ---
 
@@ -47,7 +87,23 @@
 
 ## Pending — apply when ready
 
-### M098 — Fortnox supplier-invoices local cache ⏳ pending application
+### M104 — Review insights cache ⏳ pending application
+**File:** `sql/M104-REVIEW-INSIGHTS-CACHE.sql`
+**Purpose:** 24h-cached pre-computed insights for the /reviews dashboard cards (5 things to improve + 5 things customers love). Derived from `review_themes` (LLM-extracted, persistent across the Google TOS 30-day raw-text prune). Without this cache, every /reviews load re-runs the LLM synthesis (~$0.005/load).
+**Schema (per file — not verified on prod since the table doesn't yet exist):**
+- `review_insights_cache(id, business_id, org_id, cache_key, payload JSONB, generated_at, ai_model, tokens_input, tokens_output)`
+- UNIQUE `(business_id, cache_key)` for upsert
+- TTL: 24h, enforced by cache_key + generated_at check at read time
+**Companion code:** /reviews dashboard + `/api/reviews/insights` consume the cache opportunistically with a fall-back to live LLM synthesis when stale or missing.
+**Verified MISSING via `pg_tables` 2026-05-30.** Apply when reviewing the
+/reviews page surface; not blocking other work.
+
+### M098 — Fortnox supplier-invoices local cache ✅ APPLIED — verified 2026-05-30
+**File:** `sql/M098-FORTNOX-SUPPLIER-INVOICES-CACHE.sql`
+**Status update:** Was marked "pending application" in this ledger pre-2026-05-30. The
+pre-Phase-1 audit found `fortnox_supplier_invoices` populated with 1,760 rows and
+`fortnox_sync_state` with 2 rows. Table exists in prod. **Original entry preserved below
+for the schema + companion-code reference.**
 **File:** `sql/M098-FORTNOX-SUPPLIER-INVOICES-CACHE.sql`
 **Purpose:** Read-path scaling. Pre-M098, every dashboard render hit Fortnox `/supplierinvoices` live (25 req/5sec rate limit, 500-1500ms per call). Fine at 2 customers, breaks at customer #3+ when bursts (lunch-hour traffic) exceed the budget. M098 adds a local cache populated by a daily sync cron; user-facing reads (recent-invoices feed, dashboard card, /invoices page, drilldown) hit the cache. file_id fetched lazily on first PDF view, then persisted.
 **Schema:**
@@ -64,7 +120,10 @@
 **Idempotent.**
 **Required after apply:** trigger the cron once manually to seed the cache: `curl -X GET https://comandcenter.se/api/cron/fortnox-supplier-sync -H "Authorization: Bearer $CRON_SECRET"`. First run takes longer (12-month backfill); subsequent daily runs are incremental.
 
-### M097 — POS menu items + sales (variance loop foundation) ⏳ pending application
+### M097 — POS menu items + sales (variance loop foundation) ✅ APPLIED — verified 2026-05-30
+**Status update:** Was marked "pending application" pre-2026-05-30. Pre-Phase-1 audit
+found `pos_menu_items` and `pos_sales` both exist (both empty — no live POS feeds yet).
+Original entry preserved below.
 **File:** `sql/M097-POS-SALES.sql`
 **Purpose:** Closes the inventory loop. Adds `pos_menu_items` (dishes the restaurant sells, optionally linked to a recipe) and `pos_sales` (per-ticket OR per-week aggregate sale rows). Enables `/inventory/variance` to compute theoretical product draw (POS sales × recipes) vs actual (purchases − waste).
 **Schema:**
@@ -85,7 +144,9 @@
 **Idempotent.**
 **PostgREST partial-index trap:** the manual-weekly partial unique index can't be used by `.upsert({ onConflict })`. Manual sales POST does SELECT-then-INSERT-or-UPDATE with 23505 retry per `feedback_postgrest_upsert_partial_indexes.md`.
 
-### M088 — fx_rates table ⏳ pending application
+### M088 — fx_rates table ✅ APPLIED — verified 2026-05-30
+**Status update:** Was marked "pending application" pre-2026-05-30. Pre-Phase-1 audit
+found `fx_rates` populated with 37 rows. Original entry preserved below.
 **File:** `sql/M088-FX-RATES.sql`
 **Purpose:** Daily currency-to-SEK rates so cost calc (recipe-cost.ts) can convert non-SEK invoice lines. ECB daily XML is the source; daily cron at `/api/cron/fx-rates-update` (17:00 UTC) fetches + upserts.
 **Schema:**
@@ -101,7 +162,10 @@
 **Idempotent.**
 **Required after apply:** trigger the cron once manually to seed today's rates: `curl -X GET https://comandcenter.se/api/cron/fx-rates-update -H "Authorization: Bearer $CRON_SECRET"`
 
-### M087 — products.pack_size + base_unit ⏳ pending application
+### M087 — products.pack_size + base_unit ✅ APPLIED — verified 2026-05-30
+**Status update:** Was marked "pending application" pre-2026-05-30. Pre-Phase-1 audit
+found `products.pack_size` + `products.base_unit` populated (sample row returned
+pack_size=2500, base_unit='g'). Original entry preserved below.
 **File:** `sql/M087-PRODUCT-PACK-SIZE.sql`
 **Purpose:** Unit conversion for recipes. Restaurant recipes are in g/ml/st, invoices are per pack (1kg bag at 56 kr per ST). Without pack data, 20g of garlic costs 1118 kr instead of 1.12 kr. Both columns nullable so legacy products fall back to 1:1 + warning.
 **Schema:**
