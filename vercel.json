@@ -34,6 +34,7 @@
     { "path": "/api/cron/industry-benchmarks",             "schedule": "0 3 * * 0" },
     { "path": "/api/cron/ai-log-retention",                "schedule": "30 3 * * 0" },
     { "path": "/api/cron/recategorise-other",              "schedule": "45 3 * * *" },
-    { "path": "/api/cron/inventory-audit-sampler",         "schedule": "15 3 * * *" }
+    { "path": "/api/cron/inventory-audit-sampler",         "schedule": "15 3 * * *" },
+    { "path": "/api/cron/inventory-accuracy-snapshot",     "schedule": "30 2 * * *" }
   ]
 }

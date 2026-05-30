@@ -513,6 +513,98 @@ Total: ~500 LOC + 1 migration. ~1 day.
 
 ---
 
+## 3b. Owner refinements folded in 2026-05-30 (post-D2 merge, pre-D3 build)
+
+D2 merged clean (commit `ffde2dd`). Owner approved D3 with three
+refinements + a checkpoint design — captured here verbatim before the
+schema lands.
+
+### 3b.1 Segment agreement rates by context — never blend
+
+Agreement is now measured on two distinct populations with different
+expected baselines:
+
+| context | population | expected baseline | watched by §7.1 floor? |
+|---|---|---|---|
+| `needs_review` | hard cases the matcher couldn't categorise — owner's only chance to teach the system | **moderate (61.3% pre-D2)** | **YES — this is the classifier-health signal** |
+| `audit_sample` | confident auto-matches the matcher already made — should be high agreement | high (TBD — D2 is the first time this exists) | **NO — has its own trend and threshold** |
+
+If we collapse them into one number, adding audit confirms (high
+agreement, by design) inflates the blend and can mask a real regression
+in the classifier on the hard-case path. The snapshot table holds them
+as SEPARATE COLUMNS, and the floor-check logic in `accuracy-floor.ts`
+specifically watches `needs_review_agreement_pct`, not a blended figure.
+
+Audit-sample precision (audit confirmations / (audit confirmations +
+audit corrections)) gets its own column + trend, with its own
+informational thresholds. Not subject to the same hard alert.
+
+### 3b.2 Warm-up period — protect against transition churn
+
+The 61.3% baseline predates D1 + D2. A trailing-30-day window today
+mixes old-regime data with new-regime data, and the floor could:
+- misfire on the legitimate churn D1/D2 caused, OR
+- mask a real drop because the baseline is still sliding
+
+**Locked design:**
+
+- `BASELINE_ANCHOR_DATE = '2026-05-30'` (D2 merge date) as a named constant
+  in `lib/inventory/accuracy-floor.ts`.
+- `WARMUP_DAYS = 30`. During the warm-up window (snapshot_date <
+  anchor + 30d), the floor-check computes the alert level but tags it
+  `'informational'` rather than `'soft'`/`'hard'`. Logged but not
+  actioned.
+- After warm-up: trailing-30-day baseline uses outcomes ON OR AFTER the
+  anchor date. The pre-anchor data is excluded entirely from the
+  baseline computation — keeping the comparison clean.
+
+The snapshot table records the alert level emitted on each day so we
+can audit the warm-up transition later ("when did we first fire a real
+hard alert vs informational?").
+
+### 3b.3 Two non-headline dimensions are explicit columns
+
+Both signals were flagged in earlier owner reviews; D3 makes them
+quantifiable so they're not just narrative observations.
+
+| column | computation | what it surfaces |
+|---|---|---|
+| `create_new_divergence_pct` | (AI `create_new` count − Owner `create_new` count) / max(AI count, 1), over the window | Silent catalog-duplication risk — model spawns new products where owner merges into existing ones. Pre-D3 measurement: AI 721 vs Owner 533 = +26% AI over-suggestion. |
+| `rebate_noise_count` | Count of `product_aliases` (or recent `supplier_invoice_lines`?) whose `raw_description` matches the rebate regex: `/avtalsrabatt|^rabatt\b|pant\b|öresavrundning|faktureringsavg/i`. Window-scoped. | Gate-0 quality signal. The Carlsberg `Avtalsrabatt` cluster surfaced organically in D2 rank 7-14. Quantifies how often Gate-0 lets non-products through. |
+
+Both are columns on `inventory_accuracy_snapshots`. Neither triggers
+the §7.1 hard floor — they're trend signals, surfaced in the admin
+view, used to inform future Gate-0 / retrieval improvements
+(reconciliation-doc Phase 3+).
+
+### 3b.4 D3 checkpoint — synthetic regression test
+
+Owner-locked checkpoint: "the synthetic-regression test is the D3
+equivalent of the demotion round-trip — it's the proof the monitor
+actually monitors."
+
+The verify script (`scripts/verify-accuracy-snapshot.mjs`) ships with a
+`--synthetic` mode that:
+
+| scenario | what's fed | expected emitted alert |
+|---|---|---|
+| 12pp drop, ≥50 outcomes | needs_review agreement rate manufactured 12pp below baseline | `hard` |
+| 6pp drop, ≥50 outcomes | drop manufactured 6pp below baseline | `soft` |
+| 12pp drop, <50 outcomes | same drop but only 40 outcomes in window | quiet (`null`, blocked by min-sample guard) |
+| no drop | rate within ±2pp of baseline | quiet |
+| during warm-up | any drop | `informational` regardless of magnitude |
+
+This proves the §7.1 floor logic fires correctly across the matrix.
+None of these scenarios write to the real snapshot table — they
+construct synthetic input rows and run them through the pure
+`accuracy-floor.ts` logic.
+
+The real-data side of the checkpoint: run the snapshot cron once,
+prove a row lands in `inventory_accuracy_snapshots` for each
+business + a global row, with all the expected columns populated.
+
+---
+
 ## 4. Deliverable 3 — Accuracy snapshots
 
 ### 4.1 Schema
