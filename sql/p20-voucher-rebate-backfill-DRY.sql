@@ -144,21 +144,16 @@ WHERE sil.business_id            = sai.business_id
   -- Fortnox-native rows (account_source='fortnox_row') are left alone.
   AND sil.account_number IS NULL;
 
--- ── OPERATION 2 — Rebate guard + audit outcomes (atomic) ──────────────
+-- ── OPERATION 2 — Rebate guard + audit outcomes + demotion firing ────
 --
--- ONE statement, two data-modifying CTEs: capture pre-update aliases,
--- UPDATE lines, INSERT outcome rows from the captured snapshot. The
--- two writes commit together or roll back together.
+-- Identical to APPLY. See APPLY for full design commentary.
 --
--- PostgreSQL regex notes:
---   ~*       case-insensitive POSIX ARE match
---   \M       end-of-word boundary (ARE equivalent of JS \b after \w)
---   ^pant\M  matches Pant/PANT/pant at start-of-string only, ending at
---            a word boundary. Does NOT match mid-string "Varav pant".
+-- One statement, three actions: 2a UPDATE lines, 2b INSERT outcomes,
+-- 2c RPC fires correction (bumps corrections_against, may demote at
+-- threshold). NOT EXISTS guard on affected_aliases clamps the counter
+-- bump to once-per-batch even if matched-with-alias state recurs.
 
 WITH affected_aliases AS (
-  -- Snapshot the (alias, org, business) tuples about to be unlinked.
-  -- Only 'matched' lines with a non-null alias generate an outcome row.
   SELECT DISTINCT
     sil.product_alias_id AS alias_id,
     sil.org_id,
@@ -168,39 +163,34 @@ WITH affected_aliases AS (
     AND sil.raw_description ~* '(avtalsrabatt|^rabatt|^pant\M|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)'
     AND sil.match_status = 'matched'
     AND sil.product_alias_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.inventory_review_outcomes iro
+      WHERE iro.context = 'rebate_guard_backfill'
+        AND iro.group_key = 'rebate_guard:' || sil.product_alias_id::text
+    )
 ),
 updated_lines AS (
-  -- Flip every rebate line not already at 'not_inventory'. Clears the
-  -- alias link.
   UPDATE public.supplier_invoice_lines
-  SET
-    match_status     = 'not_inventory',
-    product_alias_id = NULL
+  SET match_status = 'not_inventory', product_alias_id = NULL
   WHERE business_id IN ('63ada0ac-18af-406a-8ad3-4acfd0379f2c'::uuid, '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99'::uuid)
     AND raw_description ~* '(avtalsrabatt|^rabatt|^pant\M|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)'
-    -- IDEMPOTENCY GUARD — only flip rows that haven't been flipped yet.
     AND match_status != 'not_inventory'
-  RETURNING id, business_id, raw_description
+  RETURNING id
+),
+inserted_outcomes AS (
+  INSERT INTO public.inventory_review_outcomes (
+    org_id, business_id, group_key, ai_action, ai_confidence,
+    owner_action, agreed, context
+  )
+  SELECT
+    a.org_id, a.business_id,
+    'rebate_guard:' || a.alias_id::text, 'approve_existing', NULL,
+    'skip_non_inventory', false, 'rebate_guard_backfill'
+  FROM affected_aliases a
+  RETURNING id
 )
-INSERT INTO public.inventory_review_outcomes (
-  org_id,
-  business_id,
-  group_key,
-  ai_action,
-  ai_confidence,
-  owner_action,
-  agreed,
-  context
-)
-SELECT
-  a.org_id,
-  a.business_id,
-  'rebate_guard:' || a.alias_id::text  AS group_key,
-  'approve_existing'                   AS ai_action,
-  NULL                                 AS ai_confidence,
-  'skip_non_inventory'                 AS owner_action,
-  false                                AS agreed,
-  'rebate_guard_backfill'              AS context
+-- 2c: matches runtime /correct-attribution path; threshold=2.
+SELECT a.alias_id, public.product_aliases_record_correction(a.alias_id, 2) AS rpc_caused_demotion
 FROM affected_aliases a;
 
 -- ═══════════════════════════════════════════════════════════════════════

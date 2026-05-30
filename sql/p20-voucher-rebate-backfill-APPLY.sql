@@ -150,11 +150,25 @@ WHERE sil.business_id            = sai.business_id
   -- Fortnox-native rows (account_source='fortnox_row') are left alone.
   AND sil.account_number IS NULL;
 
--- ── OPERATION 2 — Rebate guard + audit outcomes (atomic) ──────────────
+-- ── OPERATION 2 — Rebate guard + audit outcomes + demotion firing ────
 --
--- ONE statement, two data-modifying CTEs: capture pre-update aliases,
--- UPDATE lines, INSERT outcome rows from the captured snapshot. The
--- two writes commit together or roll back together.
+-- ONE statement, three data-modifying actions bundled via CTEs:
+--   2a  UPDATE lines → not_inventory + clear alias
+--   2b  INSERT outcome rows (one per affected alias)
+--   2c  RPC bump corrections_against + last_corrected_at (+ maybe demote
+--       at threshold) — matches the runtime /correct-attribution path
+--       exactly, threshold=2 = DEMOTION_THRESHOLD in lib/inventory/demotion.ts
+--
+-- All three commit together or roll back together. PG data-modifying
+-- CTEs all see the BASE snapshot, so affected_aliases captures pre-
+-- update state correctly even though updated_lines runs the UPDATE.
+--
+-- IDEMPOTENCY GUARD on affected_aliases (NOT EXISTS rebate_guard_backfill):
+-- the tightest possible guard. Even if matched-with-alias state somehow
+-- recurs (manual re-link edge case), each alias is bumped EXACTLY ONCE
+-- per back-fill batch. The natural script-re-run case is also covered:
+-- after Op 2a flips lines, the supplier_invoice_lines filter returns 0
+-- on its own. The NOT EXISTS is belt-and-braces for re-link.
 --
 -- PostgreSQL regex notes:
 --   ~*       case-insensitive POSIX ARE match
@@ -164,7 +178,9 @@ WHERE sil.business_id            = sai.business_id
 
 WITH affected_aliases AS (
   -- Snapshot the (alias, org, business) tuples about to be unlinked.
-  -- Only 'matched' lines with a non-null alias generate an outcome row.
+  -- Only 'matched' lines with a non-null alias generate an outcome row
+  -- AND a correction bump. NOT EXISTS clamps the counter-bump to once-
+  -- per-batch per the owner's tight-guard requirement.
   SELECT DISTINCT
     sil.product_alias_id AS alias_id,
     sil.org_id,
@@ -174,39 +190,57 @@ WITH affected_aliases AS (
     AND sil.raw_description ~* '(avtalsrabatt|^rabatt|^pant\M|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)'
     AND sil.match_status = 'matched'
     AND sil.product_alias_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.inventory_review_outcomes iro
+      WHERE iro.context = 'rebate_guard_backfill'
+        AND iro.group_key = 'rebate_guard:' || sil.product_alias_id::text
+    )
 ),
 updated_lines AS (
-  -- Flip every rebate line not already at 'not_inventory'. Clears the
-  -- alias link.
+  -- 2a: Flip every rebate line not already at 'not_inventory'. Clears
+  -- the alias link. NOT filtered by NOT EXISTS — even if a re-linked
+  -- line slips through with an already-corrected alias, we still want
+  -- the line cleared (the line-level fix is independent of the alias-
+  -- level counter).
   UPDATE public.supplier_invoice_lines
   SET
     match_status     = 'not_inventory',
     product_alias_id = NULL
   WHERE business_id IN ('63ada0ac-18af-406a-8ad3-4acfd0379f2c'::uuid, '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99'::uuid)
     AND raw_description ~* '(avtalsrabatt|^rabatt|^pant\M|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)'
-    -- IDEMPOTENCY GUARD — only flip rows that haven't been flipped yet.
     AND match_status != 'not_inventory'
-  RETURNING id, business_id, raw_description
+  RETURNING id
+),
+inserted_outcomes AS (
+  -- 2b: Insert one outcome row per affected alias. Sourced from
+  -- affected_aliases (NOT EXISTS-guarded), so re-running this whole
+  -- statement inserts zero duplicates.
+  INSERT INTO public.inventory_review_outcomes (
+    org_id, business_id, group_key, ai_action, ai_confidence,
+    owner_action, agreed, context
+  )
+  SELECT
+    a.org_id,
+    a.business_id,
+    'rebate_guard:' || a.alias_id::text  AS group_key,
+    'approve_existing'                   AS ai_action,
+    NULL                                 AS ai_confidence,
+    'skip_non_inventory'                 AS owner_action,
+    false                                AS agreed,
+    'rebate_guard_backfill'              AS context
+  FROM affected_aliases a
+  RETURNING id
 )
-INSERT INTO public.inventory_review_outcomes (
-  org_id,
-  business_id,
-  group_key,
-  ai_action,
-  ai_confidence,
-  owner_action,
-  agreed,
-  context
-)
+-- 2c: Fire the correction RPC for each affected alias. Same threshold
+-- (2) as the runtime /correct-attribution endpoint
+-- (DEMOTION_THRESHOLD in lib/inventory/demotion.ts). Returns TRUE if
+-- THIS call caused demotion — expected FALSE for all 17 today (all land
+-- at corrections_against=1, well below threshold of 2). The RPC has an
+-- internal `AND is_active = TRUE` guard, so already-demoted aliases are
+-- skipped silently.
 SELECT
-  a.org_id,
-  a.business_id,
-  'rebate_guard:' || a.alias_id::text  AS group_key,
-  'approve_existing'                   AS ai_action,
-  NULL                                 AS ai_confidence,
-  'skip_non_inventory'                 AS owner_action,
-  false                                AS agreed,
-  'rebate_guard_backfill'              AS context
+  a.alias_id,
+  public.product_aliases_record_correction(a.alias_id, 2) AS rpc_caused_demotion
 FROM affected_aliases a;
 
 -- ═══════════════════════════════════════════════════════════════════════
