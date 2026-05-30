@@ -201,13 +201,28 @@ if (confirm.trim() !== 'DEMOTE') {
   process.exit(0)
 }
 
-// Call the RPC directly via PostgREST (the endpoint route does the same thing
-// but adds line-revert in the same call — we replicate here so the script is
-// self-contained and doesn't depend on Vercel routing).
-const demoted = await rpc('product_aliases_record_correction', {
+// Call the RPC directly via PostgREST (the endpoint route does the same
+// thing but adds line-revert in the same call — we replicate here so the
+// script is self-contained and doesn't depend on Vercel routing).
+//
+// SINGLE-SHOT DEMO (owner choice (b) on 2026-05-30): call the RPC TWICE
+// to take corrections_against 0→1→2 in one --apply run, crossing the
+// default threshold of 2 and deactivating the alias in one walkthrough.
+// In real production the two corrections would be spread across two
+// separate user actions on two different lines.
+console.log('\n  Call 1/2 (corrections_against 0 → 1; below threshold = 2, not yet deactivated)…')
+const demoted1 = await rpc('product_aliases_record_correction', {
   p_alias_id:  candidateAlias.id,
   p_threshold: 2,
 })
+console.log(`     RPC returned: ${demoted1}  (FALSE = no deactivation yet — expected)`)
+
+console.log('\n  Call 2/2 (corrections_against 1 → 2; crosses threshold = 2, deactivates)…')
+const demoted2 = await rpc('product_aliases_record_correction', {
+  p_alias_id:  candidateAlias.id,
+  p_threshold: 2,
+})
+console.log(`     RPC returned: ${demoted2}  (TRUE = alias was deactivated by this call — expected)`)
 
 // Flip the line back to needs_review (mirrors the endpoint's step 4).
 await fetch(`${URL}/rest/v1/supplier_invoice_lines?id=eq.${lines[0].id}`, {
@@ -215,8 +230,7 @@ await fetch(`${URL}/rest/v1/supplier_invoice_lines?id=eq.${lines[0].id}`, {
   headers: { ...H, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
   body:    JSON.stringify({ match_status: 'needs_review', product_alias_id: null }),
 })
-
-console.log(`\n  RPC returned: ${demoted}  (TRUE = alias was deactivated by this call)`)
+const demoted = demoted2  // for the after-state check below
 
 // ───────────────────────────────────────────────────────────────────────
 // Step 4 — Show after-state + matcher-skip proof
