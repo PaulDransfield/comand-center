@@ -62,9 +62,24 @@ const BUSINESSES = [
   { id: VERO,   name: 'Vero Italiano'    },
 ]
 
-// Owner-locked exact pattern from D3 (REBATE_NOISE_PATTERN). Tight
-// anchors per owner refinement — no loose 'rabatt' substring.
-const REBATE_PATTERN = /(avtalsrabatt|^rabatt|\bpant\b|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)/i
+// REVISED pattern — owner-locked after dry-run #1 surfaced a real
+// false-positive class at Chicce. The original D3 pattern had
+// `\bpant\b` which catches BOTH legitimate deposit lines (PANT…)
+// AND product names with ", Varav pant per enhet:" appended as a
+// deposit annotation (e.g. "COCA COLA BRK 33CL, Varav pant per
+// enhet: 17,80"). Routing those Coca-Cola lines to not_inventory
+// would be wrong.
+//
+// Fix: anchor to start (`^pant\b`). Every legitimate deposit line
+// in the dry-run leads with PANT / Pant; every false positive has
+// `pant` mid-string after Varav. Owner approved 2026-05-30.
+const REBATE_PATTERN = /(avtalsrabatt|^rabatt|^pant\b|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)/i
+
+// Original (pre-fix) — kept for the DIRECTION-B check below: any
+// line caught by the old pattern but NOT by the new one is now NOT
+// routed to not_inventory. Owner must eyeball that list to confirm
+// it's all false positives, not legitimate deposits we dropped.
+const REBATE_PATTERN_OLD = /(avtalsrabatt|^rabatt|\bpant\b|pantersättning|öresavrundning|faktureringsavg|inkassoarvode|påminnelseavg)/i
 
 // Exclude list for BAS accounts that should never end up in account_number
 // because they're the AP / VAT / rounding side of the booking.
@@ -265,9 +280,38 @@ for (const biz of BUSINESSES) {
     descCounts.set(k, (descCounts.get(k) ?? 0) + 1)
   }
   const sortedDescs = [...descCounts.entries()].sort((a, b) => b[1] - a[1])
-  console.log(`\n    DISTINCT descriptions caught by guard (sorted desc, ALL ${sortedDescs.length} shown — eyeball for false positives):`)
+  console.log(`\n    DIRECTION A — distinct descriptions CAUGHT by NEW guard (eyeball for false positives KEPT):`)
+  console.log(`      ${sortedDescs.length} distinct descriptions, ${rebateLines.length} total lines`)
   for (const [desc, n] of sortedDescs) {
     console.log(`      ${String(n).padStart(4)}× "${desc}"`)
+  }
+
+  // ── DIRECTION-B CHECK (owner requirement before write) ───────────
+  // Lines caught by the OLD pattern but NOT by the new one are now
+  // NOT routed to not_inventory. Confirm they're all real products
+  // (false positives the fix correctly drops), not legitimate
+  // deposit lines we accidentally lost.
+  const oldRebateIds = new Set(lines.filter(l => l.raw_description && REBATE_PATTERN_OLD.test(l.raw_description)).map(l => l.id))
+  const newRebateIds = new Set(rebateLines.map(l => l.id))
+  const droppedByFix = lines.filter(l => oldRebateIds.has(l.id) && !newRebateIds.has(l.id))
+  console.log(`\n    DIRECTION B — distinct descriptions DROPPED by the ^pant\\b anchor:`)
+  console.log(`      ${droppedByFix.length} lines no longer caught (expected: all "Varav pant" product annotations)`)
+  if (droppedByFix.length === 0) {
+    console.log(`      (none — none of the OLD-pattern catches relied on the loose \\bpant\\b rule)`)
+  } else {
+    const droppedCounts = new Map()
+    for (const l of droppedByFix) {
+      const k = (l.raw_description ?? '').trim()
+      droppedCounts.set(k, (droppedCounts.get(k) ?? 0) + 1)
+    }
+    const sortedDropped = [...droppedCounts.entries()].sort((a, b) => b[1] - a[1])
+    for (const [desc, n] of sortedDropped) {
+      // Heuristic verdict per line — visible flag if a description "looks like" a real product
+      const looksLikeProduct = /,\s*Varav pant|\s+Varav pant/i.test(desc)
+      const verdict = looksLikeProduct ? '✓ correctly dropped (product with deposit annotation)' : '⚠️ EYEBALL — does this look like a legitimate deposit line?'
+      console.log(`      ${String(n).padStart(4)}× "${desc}"`)
+      console.log(`           → ${verdict}`)
+    }
   }
 
   // ── INTERSECTION — lines in both Op 1 and Op 2 ───────────────────────
