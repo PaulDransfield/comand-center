@@ -9,16 +9,34 @@
 //     the old rules can be re-evaluated)
 //   - matcher logic tweaks
 //   - manually flipping lines back to 'needs_review' via SQL
+//   - the P2.0 voucher back-fill activating Gate-0 BAS routing on
+//     thousands of previously-NULL account_number rows
 //
 // Default: process ALL non-matched lines (status IN ('not_inventory',
-// 'needs_review')). Pass `?only_not_inventory=1` to limit to the
+// 'needs_review')). Pass `only_not_inventory=1` to limit to the
 // not_inventory rows specifically (e.g. after broadening the
 // allowlist).
 //
-// Background-worker pattern same as the backfill: kick + waitUntil +
-// status row. Same poll endpoint at /backfill/status returns the
-// progress — the inventory_backfill_state row is reused (one in-flight
-// op per business at a time).
+// ── Self-chaining worker ─────────────────────────────────────────────
+//
+// Each Vercel function run is capped at 800s. A cold rematch over a
+// business with thousands of unmatched lines (Vero P2.0: ~5,500
+// candidates @ trigram-fuzzy lookups per line) cannot complete in one
+// run. Without the self-chain the worker dies mid-page, the row stays
+// at 'running' indefinitely, and progress is lost.
+//
+// Mirrors lib/inventory/backfill-worker.ts:
+//   - Deadline = function maxDuration - 90s safety margin
+//   - Before each page/row, check (Date.now() > deadline)
+//   - On deadline: persist cursor + counts, flip to 'pending', kick
+//     a fresh function via CRON_SECRET-authenticated POST with
+//     resume:true
+//   - Resume reloads cursor + counts so the loop continues monotonically
+//   - MAX_RESUMES guard prevents runaway re-launches
+//
+// Cursor uses (id > last_seen_id) ordering for stability across hops
+// — offset-based pagination would skip rows when lines drop out of the
+// result set as they get matched.
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
@@ -31,43 +49,97 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { matchInvoiceLine, type InvoiceLineForMatching, type MatchOutcome } from '@/lib/inventory/matcher'
 
+const MAX_RESUMES = 30
+const ZERO_UUID   = '00000000-0000-0000-0000-000000000000'
+const PAGE_SIZE   = 500
+
 export async function POST(req: NextRequest) {
   noStore()
 
-  const auth = await getRequestAuth(req)
-  if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+  // Two auth paths — mirrors backfill/route.ts:
+  //   - User session (owner clicking 'Re-match' from /admin/v2/tools)
+  //   - CRON_SECRET / ADMIN_SECRET (server-to-server from the self-
+  //     chain re-launch). The cron path needs an explicit business_id
+  //     since there's no session to derive org from.
+  const headerAuth = req.headers.get('authorization') ?? ''
+  const cronSecret  = process.env.CRON_SECRET
+  const adminSecret = process.env.ADMIN_SECRET
+  const isCronCall =
+    (cronSecret  && headerAuth === `Bearer ${cronSecret}`) ||
+    (adminSecret && headerAuth === `Bearer ${adminSecret}`)
+
+  let userOrgId: string | null = null
+  let userIdentity = 'cron'
+  if (!isCronCall) {
+    const auth = await getRequestAuth(req)
+    if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    userOrgId   = auth.orgId
+    userIdentity = auth.userId
+  }
 
   const body = await req.json().catch(() => ({} as any))
-  const businessId      = String(body.business_id ?? '').trim()
-  const onlyNotInv      = !!body.only_not_inventory
+  const businessId = String(body.business_id ?? '').trim()
+  const onlyNotInv = !!body.only_not_inventory
+  const isResume   = body?.resume === true
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
-  const forbidden = requireBusinessAccess(auth, businessId)
-  if (forbidden) return forbidden
+  // User-session calls go through the existing business-access gate.
+  // Cron self-chain trusts the secret + the explicit business_id.
+  if (!isCronCall) {
+    const auth = await getRequestAuth(req)
+    if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+    const forbidden = requireBusinessAccess(auth, businessId)
+    if (forbidden) return forbidden
+  }
 
   const db = createAdminClient()
 
-  // Reset state row for the new run (mirrors the backfill kick's UPSERT).
-  await db
-    .from('inventory_backfill_state')
-    .upsert({
-      org_id:        auth.orgId,
-      business_id:   businessId,
-      status:        'pending',
-      progress:      {
-        phase:         'enqueued',
-        operation:     onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all',
-        triggered_at:  new Date().toISOString(),
-        triggered_by:  auth.userId,
-      },
-      started_at:    new Date().toISOString(),
-      finished_at:   null,
-      error_message: null,
-    }, { onConflict: 'business_id' })
+  // Cron path needs org_id from the businesses table directly.
+  let orgId = userOrgId
+  if (!orgId) {
+    const { data: biz } = await db
+      .from('businesses')
+      .select('org_id')
+      .eq('id', businessId)
+      .maybeSingle()
+    if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
+    orgId = biz.org_id
+  }
+  if (!orgId) return NextResponse.json({ error: 'business has no org_id' }, { status: 500 })
 
-  // Fire worker. Errors caught + persisted by the worker.
+  // Skip state reset on resume — worker reloads cursor + counts from the
+  // existing row, and started_at must NOT be touched (ETA spans all hops).
+  if (!isResume) {
+    const { error: upsertErr } = await db
+      .from('inventory_backfill_state')
+      .upsert({
+        org_id:        orgId,
+        business_id:   businessId,
+        status:        'pending',
+        progress:      {
+          phase:         'enqueued',
+          operation:     onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all',
+          triggered_at:  new Date().toISOString(),
+          triggered_by:  userIdentity,
+        },
+        started_at:    new Date().toISOString(),
+        finished_at:   null,
+        error_message: null,
+      }, { onConflict: 'business_id' })
+    if (upsertErr) {
+      return NextResponse.json({ error: 'state_init_failed', message: upsertErr.message }, { status: 500 })
+    }
+  }
+
+  // Deadline = function cap minus 90s safety margin for checkpoint + re-kick HTTP.
+  const deadlineMs = Date.now() + (maxDuration - 90) * 1000
+
+  // Fire worker. waitUntil keeps the function alive after the HTTP
+  // response so the worker finishes regardless of poll cadence. The
+  // catch is belt-and-braces for crashes before the worker's own
+  // try/catch fires.
   waitUntil(
-    runRematch(db, businessId, auth.orgId, onlyNotInv).catch(err =>
+    runRematch(db, { businessId, orgId, onlyNotInv, deadlineMs, resume: isResume }).catch(err =>
       db.from('inventory_backfill_state').update({
         status:        'failed',
         error_message: `rematch crashed: ${err?.message ?? err}`,
@@ -77,57 +149,100 @@ export async function POST(req: NextRequest) {
   )
 
   return NextResponse.json({
-    ok:          true,
-    status:      'started',
-    business_id: businessId,
+    ok:                 true,
+    status:             'started',
+    business_id:        businessId,
     only_not_inventory: onlyNotInv,
-    message:     'Rematch running in the background. Poll /api/inventory/lines/backfill/status for progress.',
+    resume:             isResume,
+    message:            'Rematch running in the background. Poll /api/inventory/lines/backfill/status for progress.',
   }, { headers: { 'Cache-Control': 'no-store, max-age=0, must-revalidate' } })
 }
 
 // ─────────────────────────────────────────────────────────────────────
 
-async function runRematch(
-  db:           any,
-  businessId:   string,
-  orgId:        string,
-  onlyNotInv:   boolean,
-): Promise<void> {
-  const p: any = {
-    phase:                  'matching',
-    operation:              onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all',
-    invoices_found:         0,
-    invoices_processed:     0,
-    lines_inserted:         0,
-    lines_skipped_existing: 0,
-    lines_matched:          0,
-    lines_needs_review:     0,
-    lines_not_inventory:    0,
-    errors:                 [],
-    error_count:            0,
-    rematched_total:        0,
+interface RematchInput {
+  businessId: string
+  orgId:      string
+  onlyNotInv: boolean
+  deadlineMs: number
+  resume:     boolean
+}
+
+interface RematchProgress {
+  phase:                'matching' | 'done'
+  operation:            'rematch_not_inventory_only' | 'rematch_all'
+  cursor:               string  // last id processed; lines with id > cursor still pending
+  lines_matched:        number
+  lines_needs_review:   number
+  lines_not_inventory:  number
+  rematched_total:      number
+  errors:               Array<{ invoice: string; error: string }>
+  error_count:          number
+  resume_count:         number
+}
+
+async function runRematch(db: any, input: RematchInput): Promise<void> {
+  // Resume: reload prior progress (cursor + counts) so the loop continues
+  // monotonically rather than restarting. Fresh start: a clean zeroed shape.
+  let p: RematchProgress
+  if (input.resume) {
+    const { data: existing } = await db
+      .from('inventory_backfill_state')
+      .select('progress')
+      .eq('business_id', input.businessId)
+      .maybeSingle()
+    const prev = (existing?.progress ?? {}) as any
+    p = {
+      phase:                  'matching',
+      operation:              (prev.operation as RematchProgress['operation']) ?? (input.onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all'),
+      cursor:                 String(prev.cursor ?? ZERO_UUID),
+      lines_matched:          Number(prev.lines_matched ?? 0),
+      lines_needs_review:     Number(prev.lines_needs_review ?? 0),
+      lines_not_inventory:    Number(prev.lines_not_inventory ?? 0),
+      rematched_total:        Number(prev.rematched_total ?? 0),
+      errors:                 Array.isArray(prev.errors) ? prev.errors : [],
+      error_count:            Number(prev.error_count ?? 0),
+      resume_count:           Number(prev.resume_count ?? 0) + 1,
+    }
+  } else {
+    p = {
+      phase:                  'matching',
+      operation:              input.onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all',
+      cursor:                 ZERO_UUID,
+      lines_matched:          0,
+      lines_needs_review:     0,
+      lines_not_inventory:    0,
+      rematched_total:        0,
+      errors:                 [],
+      error_count:            0,
+      resume_count:           0,
+    }
   }
-  await flush(db, businessId, 'running', p)
+  await flush(db, input.businessId, 'running', p)
 
-  // Pull the candidate rows in pages of 500. Bypass RLS via the
-  // service-role client (we're inside a background worker, not a
-  // user-request context).
-  const targetStatuses = onlyNotInv ? ['not_inventory'] : ['not_inventory', 'needs_review']
+  const targetStatuses = input.onlyNotInv ? ['not_inventory'] : ['not_inventory', 'needs_review']
 
-  let total = 0
-  const pageSize = 500
-  let pageFrom = 0
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    // Deadline check BEFORE next page fetch — clean boundary, persists the
+    // cursor at the last completed row. Re-launch worker picks up from here.
+    if (Date.now() > input.deadlineMs) {
+      await checkpointAndRelaunch(db, input, p)
+      return
+    }
+
+    // Cursor pagination: id > p.cursor ordered by id. Stable across hops
+    // because matched rows drop out of the predicate (alias_id != null)
+    // and we never re-scan an id we've already advanced past.
     const { data: rows, error } = await db
       .from('supplier_invoice_lines')
       .select('id, org_id, business_id, supplier_fortnox_number, supplier_name_snapshot, article_number, raw_description, unit, account_number')
-      .eq('business_id', businessId)
+      .eq('business_id', input.businessId)
       .in('match_status', targetStatuses)
-      // Only act on rows that aren't already linked. Defensive — the
-      // matcher's own contract says it skips matched rows anyway.
       .is('product_alias_id', null)
-      .range(pageFrom, pageFrom + pageSize - 1)
+      .gt('id', p.cursor)
+      .order('id', { ascending: true })
+      .limit(PAGE_SIZE)
     if (error) {
       p.errors.push({ invoice: '(load)', error: error.message })
       p.error_count += 1
@@ -136,6 +251,13 @@ async function runRematch(
     if (!rows || rows.length === 0) break
 
     for (const row of rows) {
+      // Deadline check INSIDE the page too — a 500-row page of trigram
+      // queries can drift past the wall if the catalogue is large.
+      if (Date.now() > input.deadlineMs) {
+        await checkpointAndRelaunch(db, input, p)
+        return
+      }
+
       const lineInput: InvoiceLineForMatching = {
         id:                       row.id,
         business_id:              row.business_id,
@@ -153,6 +275,8 @@ async function runRematch(
       } catch (e: any) {
         p.errors.push({ invoice: row.id, error: `matcher: ${e?.message ?? e}` })
         p.error_count += 1
+        // Advance cursor anyway — never retry the same broken row forever.
+        p.cursor = row.id
         continue
       }
 
@@ -166,21 +290,19 @@ async function runRematch(
       }
       await db.from('supplier_invoice_lines').update(update).eq('id', row.id)
 
-      if (outcome.status === 'matched')          p.lines_matched      += 1
+      if (outcome.status === 'matched')           p.lines_matched      += 1
       else if (outcome.status === 'needs_review') p.lines_needs_review += 1
       else if (outcome.status === 'not_inventory') p.lines_not_inventory += 1
 
-      total += 1
-      p.rematched_total = total
+      p.cursor = row.id
+      p.rematched_total += 1
     }
 
-    // Cap errors[] to last 20 in the persisted row so the column doesn't bloat.
     if (p.errors.length > 20) p.errors = p.errors.slice(-20)
+    await flush(db, input.businessId, 'running', p)
 
-    await flush(db, businessId, 'running', p)
-
-    if (rows.length < pageSize) break
-    pageFrom += pageSize
+    // Short page = end of result set.
+    if (rows.length < PAGE_SIZE) break
   }
 
   p.phase = 'done'
@@ -189,11 +311,54 @@ async function runRematch(
     progress:      p,
     finished_at:   new Date().toISOString(),
     error_message: null,
-  }).eq('business_id', businessId)
+  }).eq('business_id', input.businessId)
 }
 
-async function flush(db: any, businessId: string, status: 'running', p: any) {
+async function flush(db: any, businessId: string, status: 'running' | 'pending', p: RematchProgress) {
   await db.from('inventory_backfill_state')
     .update({ status, progress: p })
     .eq('business_id', businessId)
+}
+
+// Persist cursor + counts, flip row back to 'pending', launch a fresh
+// worker hop. Status stays non-terminal so the UI banner keeps showing
+// the job as in-progress across the hop.
+async function checkpointAndRelaunch(db: any, input: RematchInput, p: RematchProgress) {
+  if (p.resume_count >= MAX_RESUMES) {
+    await db.from('inventory_backfill_state').update({
+      status:        'failed',
+      progress:      p,
+      finished_at:   new Date().toISOString(),
+      error_message: `Stopped after ${MAX_RESUMES} resume hops at cursor=${p.cursor}. Re-kick to continue.`,
+    }).eq('business_id', input.businessId)
+    return
+  }
+  await db.from('inventory_backfill_state')
+    .update({ status: 'pending', progress: p })
+    .eq('business_id', input.businessId)
+  await triggerNextRematch(input)
+}
+
+// Re-launch on a fresh Vercel function (new ~13min budget) by hitting
+// the kick endpoint with resume:true — which skips the state reset so
+// the worker reloads the persisted cursor. Awaited so the POST actually
+// leaves before this function ends.
+async function triggerNextRematch(input: RematchInput): Promise<void> {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !process.env.CRON_SECRET) return
+  await fetch(`${base}/api/inventory/lines/rematch`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+    },
+    body: JSON.stringify({
+      business_id:        input.businessId,
+      only_not_inventory: input.onlyNotInv,
+      resume:             true,
+      trigger:            'self_chain',
+    }),
+  }).catch(() => {})
 }
