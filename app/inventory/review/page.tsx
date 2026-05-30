@@ -395,6 +395,13 @@ export default function InventoryReviewPage() {
           {t('subtitle')}
         </p>
 
+        {/* Audit spot-check banner — soft, dismissible-for-the-day. Lives
+            adjacent to review per LEARNING-LOOP-PHASE1-PLAN.md §2b UX
+            note (audit must FEEL like a low-pressure spot-check, not
+            another to-do queue). Hidden when nothing's pending or when
+            the owner clicked "hide for today". */}
+        <AuditBanner bizId={bizId} />
+
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
           <Stat label={t('kpiGroups')} value={String(data?.total_groups ?? 0)} />
@@ -864,6 +871,74 @@ function Fact({ label, value, hint }: { label: string; value: string; hint?: str
       <div style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const }}>
         {value}
       </div>
+    </div>
+  )
+}
+
+// AuditBanner — soft adjacent surface on /inventory/review. Fetches the
+// pending audit-queue count and shows a one-line link unless the owner
+// dismissed it for the day. Quiet by design — frames as spot-check, not
+// to-do. Per LEARNING-LOOP-PHASE1-PLAN.md §2b owner UX note.
+function AuditBanner({ bizId }: { bizId: string | null }) {
+  const [pending,   setPending]   = useState(0)
+  const [dismissed, setDismissed] = useState(false)
+
+  useEffect(() => {
+    // localStorage key holds an ISO timestamp; banner hidden until then.
+    try {
+      const until = localStorage.getItem('cc_audit_banner_dismissed_until')
+      if (until && new Date(until).getTime() > Date.now()) setDismissed(true)
+    } catch {}
+  }, [])
+
+  useEffect(() => {
+    if (!bizId) return
+    let cancelled = false
+    fetch(`/api/inventory/audit?business_id=${encodeURIComponent(bizId)}&limit=1`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setPending(Number(j?.pending_count ?? 0)) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [bizId])
+
+  if (dismissed || pending === 0 || !bizId) return null
+
+  function hideForToday() {
+    try {
+      const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      localStorage.setItem('cc_audit_banner_dismissed_until', until)
+      setDismissed(true)
+    } catch {}
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+      padding: '10px 14px',
+      background: UXP.lavFill,
+      border: `0.5px solid ${UXP.lavMid}`,
+      borderRadius: 8,
+      fontSize: 12,
+    }}>
+      <span style={{
+        fontSize: 10, padding: '2px 8px',
+        background: UXP.lavMid, color: '#fff',
+        borderRadius: 999, fontWeight: 600, letterSpacing: '0.04em',
+      }}>QUICK CHECK</span>
+      <span style={{ color: UXP.ink2 }}>
+        <strong style={{ color: UXP.ink1, fontWeight: 600 }}>{pending}</strong> auto-match{pending === 1 ? '' : 'es'} ready to spot-check.
+      </span>
+      <a href="/inventory/audit" style={{
+        color: UXP.lavText, fontWeight: 600, textDecoration: 'none', marginLeft: 'auto',
+      }}>
+        Review →
+      </a>
+      <button onClick={hideForToday} style={{
+        background: 'transparent', border: 'none', cursor: 'pointer',
+        color: UXP.ink4, fontSize: 11, padding: '2px 6px', fontFamily: 'inherit',
+      }}>
+        Hide for today
+      </button>
     </div>
   )
 }

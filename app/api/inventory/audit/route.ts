@@ -53,5 +53,17 @@ export async function GET(req: NextRequest) {
   const { data, error } = await q
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ ok: true, items: data ?? [] }, { headers: { 'Cache-Control': 'no-store' } })
+  // pending_count: cheap dedicated COUNT so the /inventory/review banner
+  // can show "N to spot-check" without a second roundtrip. Always reports
+  // the unreviewed total regardless of include_reviewed.
+  const { count: pendingCount } = await db
+    .from('inventory_audit_queue')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', businessId)
+    .is('reviewed_at', null)
+
+  return NextResponse.json(
+    { ok: true, items: data ?? [], pending_count: pendingCount ?? 0 },
+    { headers: { 'Cache-Control': 'no-store' } },
+  )
 }

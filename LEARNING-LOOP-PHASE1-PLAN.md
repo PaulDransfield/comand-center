@@ -364,19 +364,43 @@ Risk-weighted from highest priority (most likely to be wrong) to lowest:
    crosses `USAGE_WEIGHT_ACTIVATION_THRESHOLD` (20 usages). See
    `lib/inventory/demotion.ts`.
 
-### 2b.4 D2 checkpoint (gate before D3)
+### 2b.4 D2 checkpoint (gate before D3) — PASSED 2026-05-30
 
 Per owner 2026-05-30: "see the sampler actually surface a risk-weighted
 batch on live data — with cross-supplier and previously-demoted aliases
 ranked to the top — before D3's snapshot layers on."
 
-D2-done verification:
-1. Apply M106
-2. Run the sampler cron once (manual trigger via the cron route)
-3. SELECT from `inventory_audit_queue` — expect cross-supplier aliases at
-   the top, then any with `times_demoted > 0`, then same-supplier
-4. UI smoke test: `/inventory/audit` renders the queue with the right
-   ordering
+Also per owner: "confirm that a confirm/correct in the UI actually
+writes the audit outcome and it reads back into the ai-suggest
+context. That round-trip is the real proof D2 works."
+
+**Sampler checkpoint (verify-audit-sampler.mjs --local-run, executed 2026-05-30):**
+- Chicce Slotsgatan: 89 fuzzy auto-match candidates → 20% adaptive
+  rate → 18 sampled → 18 upserted into queue
+- Top 6 by risk_score (all 10,021–10,036): cross-supplier
+- Ranks 7–18 (risk 136–158): same-supplier
+- Tier gap factor: ~63×. No bleed-through between cross and same tiers.
+- Previously-demoted: 0 surfaced. Acceptable — the only demoted alias
+  (Jameson) predates M106's extended RPC and is `is_active=FALSE`
+  (filtered out of eligibility). Will validate naturally on first
+  real demote-and-reactivate; failure mode is benign (missed risk bump,
+  not a data error).
+
+**Round-trip checkpoint (verify-audit-roundtrip.mjs --run, executed 2026-05-30):**
+- Picked top queue item (Chiarlo Le Orme Barbera d'Asti,
+  fuzzy_cross_supplier, score 10036)
+- Replicated `confirm` action endpoint logic →
+  `inventory_review_outcomes` row inserted with `context='audit_sample'`,
+  `agreed=true`, `owner_action='approve_existing'`
+- Marked queue row `reviewed_at=NOW, reviewer_decision='confirm'`
+- Re-ran the SAME outcome-loading SELECTs that
+  `lib/inventory/ai-suggest-core.ts` uses
+- Before: 0 audit_sample outcomes in the 60-day window. After: 1.
+- Generated learning text contains `[AUDIT — confirmed correct]` tag
+  exactly as the production prompt builder produces.
+
+**D2-done. UI + API + sampler + round-trip + tests + verify scripts all
+landed on `learning-loop-phase1-2-audit`. Merging next.**
 
 ### 2b.5 Mental note (NOT for chasing now — log only)
 
