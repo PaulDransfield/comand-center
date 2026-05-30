@@ -1,186 +1,74 @@
 // app/api/cron/inventory-rematch-business/route.ts
 //
-// Admin / cron entry point to re-run the matcher across all unmatched
-// supplier_invoice_lines rows for a business. Mirrors the auth +
-// background-worker pattern of inventory-pdf-extract-business; lets
-// ops trigger rematching after a PDF-extraction batch completes
-// without needing the owner logged in.
+// DEPRECATED-AS-OWN-WORKER, NOW A PROXY.
 //
-// POST /api/cron/inventory-rematch-business
-//   Body: { business_id, only_not_inventory?: boolean }
+// Was a standalone rematch worker mirroring /api/inventory/lines/rematch.
+// Two routes drifted: the user-facing route got the deadline-aware
+// self-chain patch (2026-05-30); this one didn't. PDF-extraction chains
+// kept hitting the 800s Vercel wall on big businesses and stranding the
+// state row at status='running'.
+//
+// Fixed by collapsing into a thin proxy: every cron-rematch call now
+// forwards to /api/inventory/lines/rematch with cron-secret auth so a
+// single patched worker handles every rematch path (UI clicks, PDF
+// extraction chains, manual extractions, ops kicks).
+//
+// Same external contract preserved:
+//   POST /api/cron/inventory-rematch-business
+//   Body: { business_id, only_not_inventory? }
 //   Auth: Bearer CRON_SECRET or ADMIN_SECRET
 //
-// Workflow:
-//   1. Pull all rows with match_status IN ('not_inventory','needs_review')
-//      (or just 'not_inventory' when only_not_inventory=true)
-//   2. Run matchInvoiceLine() on each
-//   3. Update row with new status / alias / candidates
-//   4. Track progress in inventory_backfill_state
+// Callers (do NOT need to change):
+//   - app/api/cron/inventory-pdf-extract-business/route.ts (chain after extraction)
+//   - app/api/inventory/extractions/[id]/route.ts (chain after manual extraction)
 //
-// Same worker module as /api/inventory/lines/rematch (the owner-facing
-// endpoint) but with cron-secret auth instead of user session.
+// Future cleanup: redirect the two callers above to hit
+// /api/inventory/lines/rematch directly and delete this proxy.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
-import { waitUntil } from '@vercel/functions'
-import { createAdminClient } from '@/lib/supabase/server'
-import { matchInvoiceLine, type InvoiceLineForMatching, type MatchOutcome } from '@/lib/inventory/matcher'
 
 export const runtime     = 'nodejs'
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 800
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
   noStore()
 
   const adminSecret = process.env.ADMIN_SECRET
   const cronSecret  = process.env.CRON_SECRET
-  const auth = req.headers.get('authorization') ?? ''
-  if (!(adminSecret && auth === `Bearer ${adminSecret}`) &&
-      !(cronSecret  && auth === `Bearer ${cronSecret}`)) {
+  const headerAuth  = req.headers.get('authorization') ?? ''
+  if (!(adminSecret && headerAuth === `Bearer ${adminSecret}`) &&
+      !(cronSecret  && headerAuth === `Bearer ${cronSecret}`)) {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 })
   }
 
   let body: any
   try { body = await req.json() } catch { body = {} }
   const businessId = String(body.business_id ?? '').trim()
-  const onlyNotInv = body.only_not_inventory === true
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
 
-  const db = createAdminClient()
-  const { data: biz } = await db
-    .from('businesses')
-    .select('id, org_id, name')
-    .eq('id', businessId)
-    .maybeSingle()
-  if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
-
-  await db
-    .from('inventory_backfill_state')
-    .upsert({
-      org_id:        biz.org_id,
-      business_id:   businessId,
-      status:        'pending',
-      progress: {
-        phase:        'enqueued',
-        operation:    onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all',
-        triggered_at: new Date().toISOString(),
-        triggered_by: 'cron_admin',
-      },
-      started_at:    new Date().toISOString(),
-      finished_at:   null,
-      error_message: null,
-    }, { onConflict: 'business_id' })
-
-  waitUntil(
-    runRematch(db, businessId, biz.org_id, onlyNotInv).catch(err =>
-      db.from('inventory_backfill_state').update({
-        status:        'failed',
-        error_message: `rematch crashed: ${err?.message ?? err}`,
-        finished_at:   new Date().toISOString(),
-      }).eq('business_id', businessId).then(() => {})
-    )
-  )
-
-  return NextResponse.json({
-    ok:                 true,
-    status:             'started',
-    business:           biz.name,
-    business_id:        businessId,
-    only_not_inventory: onlyNotInv,
-    message:            'Rematch running in background. Poll inventory_backfill_state for progress.',
-  }, { headers: { 'Cache-Control': 'no-store' } })
-}
-
-async function runRematch(
-  db:         any,
-  businessId: string,
-  orgId:      string,
-  onlyNotInv: boolean,
-): Promise<void> {
-  const p: any = {
-    phase:                  'matching',
-    operation:              onlyNotInv ? 'rematch_not_inventory_only' : 'rematch_all',
-    invoices_processed:     0,
-    lines_matched:          0,
-    lines_needs_review:     0,
-    lines_not_inventory:    0,
-    rematched_total:        0,
-    errors:                 [],
-    error_count:            0,
-  }
-  const flush = async (status: string) => {
-    await db.from('inventory_backfill_state').update({
-      progress: p,
-      status,
-      finished_at: status === 'success' || status === 'failed' ? new Date().toISOString() : null,
-    }).eq('business_id', businessId)
-  }
-  await flush('running')
-
-  const targetStatuses = onlyNotInv ? ['not_inventory'] : ['not_inventory', 'needs_review']
-  let total = 0
-  const pageSize = 500
-  let pageFrom = 0
-
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const { data: rows, error } = await db
-      .from('supplier_invoice_lines')
-      .select('id, org_id, business_id, supplier_fortnox_number, supplier_name_snapshot, article_number, raw_description, unit, account_number')
-      .eq('business_id', businessId)
-      .in('match_status', targetStatuses)
-      .is('product_alias_id', null)
-      .range(pageFrom, pageFrom + pageSize - 1)
-    if (error) {
-      p.errors.push({ phase: 'load', error: error.message })
-      p.error_count++
-      break
-    }
-    if (!rows || rows.length === 0) break
-
-    for (const row of rows) {
-      const lineInput: InvoiceLineForMatching = {
-        id:                       row.id,
-        business_id:              row.business_id,
-        org_id:                   row.org_id,
-        supplier_fortnox_number:  row.supplier_fortnox_number,
-        supplier_name_snapshot:   row.supplier_name_snapshot,
-        article_number:           row.article_number,
-        raw_description:          row.raw_description,
-        unit:                     row.unit,
-        account_number:           row.account_number,
-      }
-      let outcome: MatchOutcome
-      try {
-        outcome = await matchInvoiceLine(db, lineInput)
-      } catch (e: any) {
-        p.errors.push({ id: row.id, error: `matcher: ${e?.message ?? e}` })
-        p.error_count++
-        continue
-      }
-      const update: any = {
-        match_status:     outcome.status,
-        product_alias_id: outcome.alias_id,
-        match_candidates: outcome.candidates.length ? outcome.candidates : null,
-      }
-      if (outcome.status === 'matched' || outcome.status === 'not_inventory') {
-        update.matched_at = new Date().toISOString()
-      }
-      await db.from('supplier_invoice_lines').update(update).eq('id', row.id)
-      if (outcome.status === 'matched')          p.lines_matched++
-      else if (outcome.status === 'needs_review') p.lines_needs_review++
-      else if (outcome.status === 'not_inventory') p.lines_not_inventory++
-      total++
-      p.rematched_total = total
-    }
-
-    if (p.errors.length > 20) p.errors = p.errors.slice(-20)
-    await flush('running')
-    if (rows.length < pageSize) break
-    pageFrom += pageSize
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  if (!base || !cronSecret) {
+    return NextResponse.json({ error: 'app_url_or_cron_secret_missing' }, { status: 500 })
   }
 
-  p.phase = 'complete'
-  await flush('success')
+  // Forward to the patched worker. Preserve every field the caller sent
+  // (only_not_inventory, chained_from, etc.) so behaviour is identical
+  // to a direct POST. The patched route ignores unknown fields.
+  const res = await fetch(`${base}/api/inventory/lines/rematch`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${cronSecret}`,
+    },
+    body: JSON.stringify(body),
+  })
+
+  // Pass through the status + JSON body so the caller gets the same
+  // shape as before (legacy callers parse {ok, status, business_id, ...}).
+  const json = await res.json().catch(() => ({ ok: false, error: 'proxy_response_not_json' }))
+  return NextResponse.json(json, { status: res.status })
 }
