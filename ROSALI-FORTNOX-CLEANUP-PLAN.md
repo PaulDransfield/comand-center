@@ -349,10 +349,65 @@ Total: **half a day** including script + sweep + execution + monitoring.
    If yes, those need to be deleted too (or the FK will block).
    Worth adding to the FK introspection in §8.
 
+## 11b. Interaction with the 2026-04-01 Swedish food-VAT rule change
+
+Worth noting explicitly because the two bugs (Rosali cross-attribution +
+VAT misrouting) overlap in time but are independent.
+
+**Rosali's contaminated periods are entirely PRE-cutoff:**
+
+| Contaminated period | Relative to 2026-04-01 cutoff |
+|---|---|
+| 2025-01 through 2025-11 (11 months) | pre-cutoff (12 % food rate in effect) |
+| 2026-01 | pre-cutoff |
+| (no contaminated rows ≥ 2026-04) | — |
+
+So none of the rows being deleted carry the VAT-misrouting bug. The
+`classifyByVat` logic that mis-tags 6 %-moms revenue as `takeaway` only
+matters for periods ≥ 2026-04-01, and Rosali has zero of those in the
+contaminated set.
+
+**Rosali's PK data is entirely POST-cutoff:**
+
+`revenue_logs` for Rosali starts 2026-04-20. Every legitimate Rosali POS
+row was logged AFTER Sweden's food-VAT rate change. So when the cleanup
+script's Phase 4 recomputes Rosali's `monthly_metrics` from PK data, it
+runs PK rows through `lib/pos/personalkollen.ts:307-309` — the same
+classifier the VAT plan flags as buggy.
+
+In practice this doesn't change the cleanup outcome because:
+- `monthly_metrics` does NOT have `dine_in_revenue` / `takeaway_revenue`
+  columns (per verdict §12.1 — M029's split columns only landed on
+  `tracker_data`). So the PK recompute writes total revenue + staff cost,
+  not a VAT-derived split.
+- Rosali's `tracker_data` will have ZERO rows after cleanup (since the
+  source of those splits was Fortnox, which is being removed). No
+  downstream surface reads a dine_in/takeaway split for Rosali post-cleanup.
+
+But it does mean **two ordering implications:**
+
+1. **Cleanup is independent of the VAT fix.** Either can ship first. The
+   cleanup does not depend on `VAT-MISROUTING-FIX-PLAN.md` being merged.
+2. **If Rosali ever gets a Fortnox integration AFTER cleanup**, the VAT
+   fix should already be in place — otherwise Rosali's first April 2026+
+   `tracker_data` row will fire the same `classifyByVat` bug Vero hit.
+   Cross-referenced in `VAT-MISROUTING-FIX-PLAN.md` §11.
+
+**Action for this plan:** none changes. The cleanup script can ship
+today regardless of VAT fix status. Document the dependency for the
+day Rosali's Fortnox does get connected — handled in §12 below.
+
 ## 12. Separate follow-up work (NOT in this script)
 
 These are real fixes but separate scope:
 
+- **Rosali Fortnox onboarding gate** — when/if Rosali ever connects
+  Fortnox, the VAT misrouting fix (`VAT-MISROUTING-FIX-PLAN.md`
+  Phase 1 minimum) must ship first. Otherwise the first April 2026+
+  `tracker_data` row created from Rosali's Fortnox vouchers will fire
+  the `classifyByVat` 6 %-moms-→-takeaway bug. Easy check at connect
+  time: feature-flag the OAuth callback to refuse Rosali's connect
+  until the VAT fix is in main.
 - **Add `/api/fortnox/apply` guard** — refuse to apply a PDF against
   a business with no `integrations` row for `provider='fortnox'`.
   Catches the most common future vector.

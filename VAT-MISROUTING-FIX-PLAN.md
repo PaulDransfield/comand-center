@@ -468,6 +468,30 @@ the schema too.
    columns** (surfaced during B.3): out of scope per §2, but
    confirm — yes leave out, or yes add to the plan?
 
+## 7b. Interaction with Rosali Fortnox cleanup (cross-link)
+
+The Rosali contamination cleanup (`ROSALI-FORTNOX-CLEANUP-PLAN.md`) and
+this VAT fix are **independent** and can ship in either order. But there
+is one timing dependency:
+
+- Rosali's contaminated `tracker_data` rows are all PRE-2026-04-01 (Jan-Nov
+  2025 + Jan 2026), so they don't carry the VAT bug being fixed here.
+  Deleting them does not change the VAT-bug surface.
+- **However**, if Rosali ever connects Fortnox AFTER its cleanup runs,
+  the first April 2026+ row it produces would fire the same
+  `classifyByVat` bug Vero hit on its 3053 account. So Phase 1 of THIS
+  plan should ship before any Rosali Fortnox onboarding starts.
+
+Conversely: shipping THIS Phase 1 first has no negative effect on the
+Rosali cleanup — it only changes how 6 %-moms revenue lines are
+classified going forward, and Rosali has zero current or pending
+Fortnox-source rows.
+
+**Practical sequencing recommendation:** ship this VAT fix Phase 1 first
+(smaller blast radius, urgent because Vero April is already wrong every
+day), then the Rosali cleanup (cleaner once VAT classifier is correct so
+the recompute Phase 4 isn't subject to revision later).
+
 ## 8. Out of scope (logged for separate plans)
 
 - **Rosali Deli identical-to-Vero data duplication** (surfaced in B.1
