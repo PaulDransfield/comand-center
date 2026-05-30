@@ -113,14 +113,40 @@ export function classifyByAccount(acct: number | null): { category: string; subc
 // ── VAT-rate-based subcategory (revenue + food_cost lines only) ─────────────
 // Swedish restaurant VAT rates encode product/service classification:
 //   25 % moms → alcohol & non-food drinks
-//   12 % moms → dine-in food
-//    6 % moms → takeaway food (Wolt, Foodora, Uber Eats)
-// Platform names also map to takeaway when the VAT suffix is missing.
+//   12 % moms → dine-in food (restaurant service — unchanged by the 2026-04-01 cut)
+//    6 % moms → AMBIGUOUS after 2026-04-01 (see below)
+// Platform names (Wolt, Foodora, Uber Eats) map to takeaway regardless of VAT.
+//
+// 2026-04-01 RULE CHANGE
+// ----------------------
+// Sweden cut food-as-goods VAT from 12 % to 6 % effective 2026-04-01
+// (scheduled through 2027-12-31). Pre-cut: 6 % was unambiguously takeaway
+// (delivery platforms, takeaway food). Post-cut: a `6 % moms` revenue line
+// can be takeaway delivery OR food-as-goods OR food booked under the
+// temporary cut by the accountant — we can no longer deterministically
+// map 6 % → takeaway.
+//
+// THE FIX: classifyByVat no longer routes 6 %-moms to takeaway. It still
+// routes explicit Wolt/Foodora/UberEats labels to takeaway because those
+// names disambiguate. A 6 %-moms revenue line without one of those
+// platform names returns null and the caller (voucher-to-aggregator,
+// resultatrapport-parser, extract-worker AI prompt) leaves the
+// revenue-subset bucket unassigned — the line still contributes to
+// `revenue` but not to `dine_in_revenue` or `takeaway_revenue`.
+//
+// Audit trail: docs/investigation/vat-misrouting-verdict.md confirmed
+// Vero Italiano April 2026 was mis-classifying 48,468 SEK on account
+// 3053 "Försäljning varor 6% moms Sv" as takeaway via the pre-fix rule.
+// VAT-MISROUTING-FIX-PLAN.md Phase 1 is the change applied here.
 export function classifyByVat(label: string): { subcategory: string | null } | null {
   const key = String(label ?? '').trim().toLowerCase()
   if (/\b25\s*%?\s*moms\b/.test(key))  return { subcategory: 'alcohol' }
   if (/\b12\s*%?\s*moms\b/.test(key))  return { subcategory: 'food' }
-  if (/\b6\s*%?\s*moms\b/.test(key))   return { subcategory: 'takeaway' }
+  // 6 %-moms is no longer unambiguously takeaway after 2026-04-01.
+  // Fall through to the explicit platform check below — only Wolt /
+  // Foodora / UberEats labels still get tagged takeaway. A bare
+  // "6 % moms" with no platform hint stays null and the caller can
+  // route it via per-business account override or leave unclassified.
   if (/\b(wolt|foodora|uber\s*eats)\b/.test(key)) return { subcategory: 'takeaway' }
   // Label-keyword fallback: cost-side line "Inköp av varor och material
   // alkohol" (account 4011) doesn't carry a VAT % in the label, but the

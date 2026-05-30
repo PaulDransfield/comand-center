@@ -261,10 +261,12 @@ export async function getWorkPeriods(token: string, fromDate?: string, toDate?: 
 //   payments[].amount    = GROSS paid (inc-VAT + tip)
 //   sale.tip             = tip portion of payments
 //
-// Swedish VAT coding doubles as product/service classification:
-//   6 %  → takeaway food (reduced rate)
-//   12 % → dine-in food
-//   25 % → alcohol / soft drinks
+// Swedish VAT coding (post-2026-04-01 cut):
+//   25 % → alcohol / soft drinks (unchanged)
+//   12 % → dine-in restaurant service (unchanged)
+//    6 % → AMBIGUOUS — food sold as goods OR takeaway. NOT a takeaway signal
+//         on its own. Use PK's `sale.is_take_away` flag for the dine-in
+//         vs takeaway split; VAT only identifies food vs alcohol.
 //
 // We report `amount` as NET so it matches PK dashboard "Försäljning ex. moms".
 // Tip is separated, gross kept as `gross_amount` for reconciliation.
@@ -280,13 +282,23 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
   return raw.map((s: any) => {
     // Net from items: Σ (qty × price_per_unit). This is already ex-VAT.
     //
-    // Swedish VAT coding (verified 2026-04-19 against Vero restaurant data):
-    //   12 %  → dine-in food
+    // Swedish VAT coding (post-2026-04-01 cut):
     //   25 %  → alcohol / soft drinks
-    //    6 %  → takeaway food (reduced rate — Swedish tax code)
+    //   12 %  → dine-in restaurant service (unchanged)
+    //    6 %  → food sold as goods OR takeaway (AMBIGUOUS — see below)
     //
-    // So the VAT rate doubles as a reliable dine-in-vs-takeaway signal, since
-    // PK's own `is_take_away` boolean is null on most rows.
+    // PRE-2026-04-01 this code treated 6 % VAT as authoritative for the
+    // dine-in vs takeaway split. From 2026-04-01 Sweden cut food-as-goods
+    // VAT to 6 % temporarily, so a 6 %-VAT line on a PK ticket can be
+    // dine-in food, takeaway food, or shop-counter goods. VAT alone no
+    // longer discriminates dine-in vs takeaway.
+    //
+    // THE FIX: PK's own `sale.is_take_away` boolean (set at the ticket
+    // level by the POS) is now authoritative for the dine-in/takeaway
+    // split. VAT only identifies food vs alcohol. Food at any rate (6 or
+    // 12) lands in takeawayNet if the ticket is flagged takeaway,
+    // otherwise dine-in. See VAT-MISROUTING-FIX-PLAN.md Phase 1.
+    const isTakeawayHint = s.is_take_away === true
     let net          = 0
     let foodNet      = 0
     let drinkNet     = 0
@@ -304,10 +316,23 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
       const vat    = parseFloat(i.vat             ?? 0)
       const line   = qty * price
       net += line
-      if      (Math.abs(vat - 0.12) < 0.001) { foodNet  += line; dineInNet   += line }
-      else if (Math.abs(vat - 0.06) < 0.001) { foodNet  += line; takeawayNet += line }
-      else if (Math.abs(vat - 0.25) < 0.001) { drinkNet += line; dineInNet   += line }
-      else                                   { drinkNet += line; dineInNet   += line }  // unknowns default to drink / dine-in
+      const isFoodVat = Math.abs(vat - 0.12) < 0.001 || Math.abs(vat - 0.06) < 0.001
+      const isAlcoholVat = Math.abs(vat - 0.25) < 0.001
+      if (isFoodVat) {
+        // Food (any rate). PK ticket flag drives the dine-in vs takeaway split.
+        foodNet += line
+        if (isTakeawayHint) takeawayNet += line
+        else                dineInNet   += line
+      } else if (isAlcoholVat) {
+        // Alcohol — counted as dine-in regardless (rare to deliver alcohol
+        // via Wolt / Foodora given Swedish licensing).
+        drinkNet += line
+        dineInNet += line
+      } else {
+        // Unknown rate (rare) — default to drink / dine-in.
+        drinkNet += line
+        dineInNet += line
+      }
       const purchasePrice = parseFloat(i.product?.purchase_price ?? NaN)
       if (Number.isFinite(purchasePrice) && purchasePrice > 0) {
         cogsNet      += qty * purchasePrice
@@ -318,9 +343,10 @@ export async function getSales(token: string, fromDate?: string, toDate?: string
     const gross = (s.payments ?? []).reduce((sum: number, p: any) => sum + parseFloat(p.amount ?? 0), 0)
     const tip   = s.tip ? parseFloat(s.tip) : 0
 
-    // Prefer the VAT-rate signal over PK's `is_take_away` (mostly null).
-    // Fall back to the flag only if no 6 % items at all.
-    const isTakeaway = takeawayNet > 0 ? true : (s.is_take_away ?? false)
+    // PK ticket-level flag is the source of truth post-2026-04-01.
+    // Older code derived this from any 6 %-VAT line being present, which
+    // mis-classified dine-in food at the temporary 6 % rate as takeaway.
+    const isTakeaway = isTakeawayHint
 
     return {
       uid:           s.uid,

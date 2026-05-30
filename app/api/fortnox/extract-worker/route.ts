@@ -378,19 +378,32 @@ BAS CATEGORIES.  Sum accounts into rollup categories:
   financial        = 8xxx (interest + financial items — signed; interest expense negative)
   net_profit       = revenue − food_cost − staff_cost − other_cost − depreciation + financial
 
-REVENUE SUBSETS.  Three Swedish VAT rates discriminate revenue type on a
+REVENUE SUBSETS.  Swedish VAT rates discriminate revenue type on a
 restaurant P&L. They are SUBSETS of total revenue — never additive — and
 should add up close to (but not necessarily exactly) the revenue total because
 some revenue may be untagged or sit in "övriga intäkter":
 
   25 % moms → alcohol & non-food drinks      → alcohol_revenue
-  12 % moms → dine-in food (sit-down service) → dine_in_revenue
-   6 % moms → takeaway food (platform-led)    → takeaway_revenue
+  12 % moms → dine-in restaurant service     → dine_in_revenue
+   6 % moms → AMBIGUOUS after 2026-04-01
 
-Wolt, Foodora, and Uber Eats invoices arrive at 6 % VAT — they are takeaway
-even if the label says only "Försäljning Wolt" without explicit moms. If you
-see Wolt/Foodora/UberEats in the label OR a generic 6 %-moms revenue line,
-classify as takeaway.
+IMPORTANT 2026-04-01 RULE CHANGE.  Sweden cut food-as-goods VAT from 12 %
+to 6 % temporarily (through 2027-12-31). After that date, a "6 % moms"
+revenue line can be:
+  - takeaway delivery (Wolt / Foodora / Uber Eats), OR
+  - food sold as goods at the temporary cut rate, OR
+  - dine-in food booked under the temporary cut by the accountant.
+
+VAT alone no longer tells you which. ONLY tag a 6 %-moms revenue line as
+takeaway_revenue when the label explicitly names Wolt, Foodora, or Uber
+Eats. Otherwise leave the revenue subset UNCLASSIFIED (do not assign it
+to dine_in_revenue OR takeaway_revenue) — the line still contributes to
+total revenue, just not to either subset. The operator will review and
+configure the correct mapping per account in a follow-up UI.
+
+Wolt, Foodora, and Uber Eats invoices arrive at 6 % VAT — they are
+takeaway even if the label says only "Försäljning Wolt" without explicit
+moms. If you see Wolt/Foodora/UberEats in the label, classify as takeaway.
 
 ALCOHOL/FOOD COST SPLIT.  alcohol_cost is a SUBSET of food_cost, never additive.
 The Performance page displays "food only = food_cost − alcohol_cost" alongside

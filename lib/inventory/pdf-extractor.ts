@@ -634,8 +634,13 @@ Hard rules:
 - article_number = supplier's SKU/article code IF printed on the row, else null.
 - quantity, price_per_unit, total_excl_vat = numbers (no kr suffix, no thousands separators).
 - vat_rate = 0, 6, 12, or 25 — the Swedish standard rate, taken from what's
-  printed on the row (Wolt/Foodora takeaway = 6, dine-in food = 12,
-  alcohol/durables = 25).
+  printed on the row. Post-2026-04-01 Sweden's food VAT was cut from 12 %
+  to 6 % temporarily (through 2027-12-31), so a 6 %-rated supplier-invoice
+  line is now ordinary food goods or takeaway, and a 12 %-rated line is
+  dine-in restaurant service. Alcohol and durables stay at 25 %. Just
+  record whatever the supplier printed on the row — do NOT infer the
+  rate from the product type, and do NOT use the rate to classify the
+  product (categorisation happens later, based on supplier + BAS account).
 - If a line is illegible OR the PDF is unreadable, return rows: [] and let
   the calling system flag it for owner review. Never invent rows.
 
