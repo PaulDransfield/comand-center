@@ -468,14 +468,53 @@ Total: ~390 LOC + 1 migration. ~½ day.
 
 | Step | Action | Owner |
 |---|---|---|
-| 1 | Create feature branch `learning-loop-phase1-1-demotion` | dev |
-| 2 | Land M105 in Supabase (paste into SQL Editor — single transaction) | owner |
-| 3 | Ship D1 code → Vercel preview → smoke-test on Vero / Chicce; one manual demotion scenario per business | dev + owner |
-| 4 | Merge D1 to main; monitor `product_aliases.is_active=FALSE` count for 7 days | dev |
-| 5 | Repeat for D2 (M106 + audit sampler + UI) | — |
-| 6 | Repeat for D3 (M107 + snapshot cron + admin view) | — |
+| 1 | ✅ Create feature branch `learning-loop-phase1-1-demotion` | done |
+| 2 | Land M105 in Supabase (paste `sql/M105-PRODUCT-ALIASES-DEMOTION.sql` into SQL Editor — single transaction; the verification SELECTs at the end print the post-state) | owner |
+| 3 | Verify M105 with the read-only scenario inspector: `node scripts/verify-demotion-end-to-end.mjs` (no flag = inspect mode; picks a low-risk candidate alias and prints what would change) | owner |
+| 4 | Run the end-to-end demonstration: `node scripts/verify-demotion-end-to-end.mjs --apply --business <uuid> --alias <uuid>` (uses the candidate from step 3; types `DEMOTE` to confirm; demotes ONE alias and re-routes ONE line back to needs_review) | owner |
+| 5 | After step 4 succeeds: open `/inventory/review` and confirm the demoted alias's line is back in the queue. The matcher will NOT re-link it because the alias is `is_active=FALSE`. | owner |
+| 6 | Merge feature branch to main once steps 2-5 pass. Monitor `product_aliases.is_active=FALSE` count for 7 days post-merge. | dev |
+| 7 | Repeat for D2 (M106 + audit sampler + UI) | — |
+| 8 | Repeat for D3 (M107 + snapshot cron + admin view) | — |
 
-**No prod deploy without preview review.** Stop hook auto-pushes to a branch; do NOT auto-merge to main. (CLAUDE.md auto-push targets the current branch, not main directly — fine.)
+**Code already on branch (this commit):**
+- `sql/M105-PRODUCT-ALIASES-DEMOTION.sql` — schema + 3 RPCs (additive, idempotent)
+- `lib/inventory/matcher.ts` — Steps 1+2 filter on `is_active=true`; `insertAlias` re-activates demoted rows on re-target
+- `lib/inventory/demotion.ts` — named constants (`DEMOTION_THRESHOLD=2`, `DEMOTION_THRESHOLD_AUDIT=1`, `DECAY_DAYS_CROSS_SUPPLIER=90`, `USAGE_WEIGHT_ACTIVATION_THRESHOLD=20`)
+- `app/api/inventory/lines/[id]/correct-attribution/route.ts` (NEW) — the demotion-signal hook
+- `scripts/test-demotion.mjs` — 25 assertion tests, all pass
+- `scripts/verify-demotion-end-to-end.mjs` — read-only inspector + gated `--apply` for the owner checkpoint
+
+**No prod deploy without preview review.** Stop hook auto-pushes to this branch; do NOT auto-merge to main.
+
+### 5b. End-to-end demonstration script — what owner sees
+
+```
+$ node scripts/verify-demotion-end-to-end.mjs
+
+════════════════════════════════════════════════════════════════════════════
+  MODE: inspect
+════════════════════════════════════════════════════════════════════════════
+Picked candidate alias:
+  id:                <uuid>
+  business_id:       <vero or chicce uuid>
+  product_id:        <uuid>
+  raw_description:   "<the row's invoice text>"
+  supplier:          <supplier name>
+  match_method:      fuzzy_same_supplier  confidence: 0.83
+  line refs:         2
+
+[…shows current is_active=true, lines matched to it…]
+
+INSPECT mode — done. Re-run with --simulate to dry-run the RPC, or --apply to execute.
+To apply on this specific alias:
+  node scripts/verify-demotion-end-to-end.mjs --apply --business <uuid> --alias <uuid>
+```
+
+Then run with `--apply` (with the printed `--business` and `--alias`).
+The script prints the before-state, asks for `DEMOTE` confirmation, calls
+the RPC, flips the line, prints the after-state, and proves the matcher
+would now skip the alias. Total time: ~10 seconds.
 
 ## 6. Verification
 
@@ -489,12 +528,105 @@ Per the prompt's three verification points + a few additions from the data:
 | Accuracy snapshot computes against known outcomes + persists daily row | After cron runs, query `inventory_accuracy_snapshots` for today's row per business + global |
 | Existing correct matches unaffected | Baseline `supplier_invoice_lines.match_status` distribution (810/108/82) should be unchanged in the day-1 delta after D1 ships |
 
-## 7. Open questions
+## 7. Owner decisions (LOCKED 2026-05-30)
 
-1. **AI agreement rate (61.3% today)** — what's an acceptable floor before we change a classifier? Suggest **soft alert at <55%, hard at <50%** in the daily report. Owner call.
-2. **Whether to surface accuracy metrics to owners or admin-only** — prompt says internal only for now. Confirm.
-3. **Audit-sample weighting** — re-weight per §0.4 (cross-supplier > same-supplier > recent > high-line-value, NOT high-alias-usage). Confirm before D2 sampler ships.
-4. **Should `inventory_touch_alias` RPC be renamed** to reflect that it now also sets `last_applied_at`, or is a single helper called from two semantic places acceptable? Suggest leave as-is — call site clarity wins over name purity.
+### 7.1 Agreement-rate monitor — relative-first, absolute backstop
+
+The primary regression signal is **relative** (drop from trailing-30-day
+baseline), not absolute. Reason: a drop 61% → 52% is a real regression but
+clears the 50% absolute floor.
+
+- **Soft alert:** agreement drops **≥5pp** below the trailing-30-day rate
+- **Hard alert:** drops **≥10pp** below
+- **Absolute backstop:** soft <55% / hard <50% (these are the original
+  numbers — kept as the floor)
+- **Minimum sample guard:** don't fire either signal on **<50 new outcomes**
+  in the window (noise otherwise)
+- **Framing:** post-deploy keep/rollback monitor, NOT a pre-ship gate.
+  A classifier change ships to preview, accrues outcomes, then rolls back
+  if the relative or absolute thresholds trip.
+- **Don't anchor on 61.3% as "overall accuracy".** It's measured on the
+  residual hard cases that already fell through the deterministic matcher
+  (Steps 1-2 of the ladder). Real overall accuracy on the full ladder is
+  much higher — 61.3% is the AI's hit-rate on what's *left* after the
+  exact-match path.
+
+This lives in Deliverable 3's snapshot job and surfaces as a soft/hard
+warning row in the admin metrics view.
+
+### 7.2 Surface = admin-only
+
+Confirmed. Accuracy metrics describe **our model's performance**, not the
+owner's business. "Our AI is 61% accurate" is easy to misread and quietly
+becomes an implied promise.
+
+The owner-facing version comes later as a separate, reframed surface:
+**"X% of your invoices auto-sorted, Y waiting on you"** — that's about
+the owner's workload and progress, not our precision. **Don't conflate
+the two.** Build the workload-progress surface as its own thing when
+prioritised.
+
+### 7.3 Audit sampling — adaptive rate + flagged usage-weight reintro
+
+Confirmed: cross-supplier > same-supplier > recent > high-line-value;
+drop high-alias-usage from the weighting today (0 aliases have ≥21
+usages).
+
+**Adaptive sample rate** (replaces the prompt's flat 5%):
+
+```ts
+// lib/inventory/audit-sampler.ts
+function targetSampleRate(autoLinksInWindow: number): number {
+  if (autoLinksInWindow <= 20)  return 1.00   // audit everything
+  if (autoLinksInWindow <= 50)  return 0.50
+  if (autoLinksInWindow <= 200) return 0.20
+  return 0.05                                  // steady-state target
+}
+```
+
+At today's ~89 total auto-matches, the recent-7d window has maybe 5-15
+items → 100% sample → useful audit data accumulates fast. Tapering kicks
+in once the matcher learns and auto-link volume grows.
+
+**Forward-compat flag (NOT in D2 v1):** once any alias crosses ~20 usages,
+reintroduce high-usage weighting (a wrong alias applied 50× is
+high-impact). Add a TODO + constant in `lib/inventory/audit-sampler.ts`
+so the trigger is obvious when the data warrants. Re-evaluate quarterly.
+
+### 7.4 RPC naming
+
+`inventory_touch_alias` keeps its name. Adding `last_applied_at` alongside
+`last_seen_at` is a semantic addition, not a rename. Call sites stay clear.
+
+---
+
+## 7b. Carry-forwards from the findings (not blocking)
+
+1. **AI leans `create_new` (721) over `approve_existing` (137).** Model
+   spawns duplicate products rather than recognising existing ones. The
+   accuracy snapshot will track this. **Strong Phase 3 candidate:** give
+   the model better existing-product context in its in-context prompt
+   (retrieval improvement) so it merges more. Not a Phase 1 deliverable.
+
+2. **Auto-links are only 5% of aliases today.** Therefore D1 (demotion)
+   and D3 (accuracy baseline) are the **real near-term value**. D2 (audit)
+   is **cheap insurance** for when the matcher's share grows. The 1→2→3
+   order stands, but **don't over-invest in D2 tuning** until auto-link
+   volume warrants it.
+
+3. **Decay (originally part of D1) deferred to D2.** D1 lands `last_applied_at`
+   on `product_aliases` (the data needed for decay detection). D2 adds
+   the audit queue and the decay-sweep cron that surfaces stale
+   cross-supplier aliases as "needs re-confirm". D1 ships strictly the
+   demotion mechanism — simpler scope, faster ship.
+
+4. **D1's demotion signal is narrowed.** Only PATCH /api/inventory/lines/[id]
+   (direct alias_id change) increments `corrections_against`. The
+   AI-rejection demotion path (from `inventory_review_outcomes.agreed=false`)
+   is deferred to D2, when the audit queue gives us a cleaner signal.
+   Rationale: the AI-rejection-to-alias linkage is indirect (ai_product_id
+   is a product, not an alias; a product can have multiple aliases —
+   demoting the right one requires more state than we have today).
 
 ## 8. Out of scope (separate plans)
 

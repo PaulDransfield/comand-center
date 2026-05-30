@@ -119,6 +119,10 @@ export async function matchInvoiceLine(
   }
 
   // ── Step 1: exact (supplier, article_number) ───────────────────────────
+  // M105: filter on is_active=TRUE so demoted aliases are skipped. The
+  // partial unique index doesn't condition on is_active, so a demoted
+  // row WITH the same article_number still exists in the table — the
+  // .eq('is_active', true) here is what hides it from the matcher.
   if (line.article_number) {
     const { data: hit } = await db
       .from('product_aliases')
@@ -126,6 +130,7 @@ export async function matchInvoiceLine(
       .eq('business_id', line.business_id)
       .eq('supplier_fortnox_number', line.supplier_fortnox_number)
       .eq('article_number', line.article_number)
+      .eq('is_active', true)
       .maybeSingle()
     if (hit?.id) {
       await touchAlias(db, hit.id)
@@ -137,6 +142,7 @@ export async function matchInvoiceLine(
   }
 
   // ── Step 2: exact (supplier, normalised_description, unit) ────────────
+  // M105: same is_active filter.
   const { data: descHit } = await db
     .from('product_aliases')
     .select('id, product_id')
@@ -145,6 +151,7 @@ export async function matchInvoiceLine(
     .eq('normalised_description', normalised)
     .eq('unit', line.unit ?? '')
     .is('article_number', null)
+    .eq('is_active', true)
     .maybeSingle()
   if (descHit?.id) {
     await touchAlias(db, descHit.id)
@@ -327,9 +334,49 @@ async function insertAlias(db: any, args: NewAliasArgs): Promise<string> {
   // helper just stops trying to drive them via upsert. Race window:
   // SELECT→INSERT can be beaten by a concurrent insert, which raises
   // 23505 — we then re-SELECT and return the winning row's id.
+  //
+  // M105 — demotion-aware re-activation: findExistingAlias INTENTIONALLY
+  // returns demoted rows too (the partial unique index doesn't condition
+  // on is_active, so the demoted row would block an INSERT with the same
+  // key). When we find a demoted-or-different-product existing alias,
+  // re-activate it with the new product_id + reset counters. This counts
+  // as a fresh owner decision and stays in the same DB row (preserves
+  // first_seen_at + seen_count history; resets corrections_against +
+  // deactivated_*).
 
   const existing = await findExistingAlias(db, args)
-  if (existing) return existing
+  if (existing) {
+    const { data: ex } = await db
+      .from('product_aliases')
+      .select('id, product_id, is_active')
+      .eq('id', existing)
+      .maybeSingle()
+    if (ex?.is_active === true && ex.product_id === args.product_id) {
+      // Active + same product → nothing to do, return the existing id.
+      return ex.id
+    }
+    // Demoted, or active but pointing at a different product → re-target.
+    // Treat as a fresh owner decision: reset corrections_against to 0,
+    // clear deactivation, set new product_id + match_method.
+    // Don't reset seen_count — historical usage pattern stays for audit.
+    const { error: reactErr } = await db
+      .from('product_aliases')
+      .update({
+        product_id:          args.product_id,
+        is_active:           true,
+        corrections_against: 0,
+        deactivated_reason:  null,
+        deactivated_at:      null,
+        match_method:        args.match_method,
+        match_confidence:    args.match_confidence,
+        last_seen_at:        new Date().toISOString(),
+        last_applied_at:     new Date().toISOString(),
+        last_corrected_at:   null,
+      })
+      .eq('id', existing)
+    if (reactErr) throw new Error(`inventory matcher insertAlias re-activate: ${reactErr.message}`)
+    return existing
+  }
 
   const { data, error } = await db
     .from('product_aliases')
