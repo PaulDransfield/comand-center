@@ -113,7 +113,7 @@ if (mode === 'apply') {
   // (an alias that has multiple line refs so the demotion is observable,
   // but isn't a high-value one).
   console.log('Searching for a low-risk candidate alias to use for the verification scenario...\n')
-  const all = await q(`product_aliases?select=id,product_id,business_id,raw_description,supplier_name_snapshot,match_method,match_confidence,is_active,corrections_against,first_seen_at,last_applied_at&is_active=eq.true&order=created_at.desc&limit=200`)
+  const all = await q(`product_aliases?select=id,product_id,business_id,raw_description,supplier_name_snapshot,match_method,match_confidence,is_active,corrections_against,first_seen_at,last_applied_at&is_active=eq.true&order=first_seen_at.desc&limit=200`)
   // Find candidates with at least one matched line referencing them.
   // Prefer fuzzy_* aliases (they're the canonical "auto-link" target),
   // then owner_confirmed if none.
