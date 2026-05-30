@@ -115,9 +115,16 @@ export async function runClaudeBatch(
     .limit(500)
 
   const cutoff = new Date(Date.now() - 60 * 86_400_000).toISOString()
+  // Disagreements are the strongest learning signal. Include BOTH the
+  // needs_review context (owner correcting an AI suggestion in the
+  // bulk-review queue) AND the M106 audit_sample context (owner
+  // correcting a confident auto-link via the audit queue). Audit-sample
+  // corrections are RARER but per-row higher-confidence — the owner
+  // explicitly flagged the auto-match as wrong, not just disagreed
+  // with a suggestion.
   const { data: disagreements } = await db
     .from('inventory_review_outcomes')
-    .select('group_key, ai_action, ai_suggested_name, owner_action, owner_chosen_name')
+    .select('group_key, ai_action, ai_suggested_name, owner_action, owner_chosen_name, context')
     .eq('business_id', businessId)
     .eq('agreed', false)
     .gte('created_at', cutoff)
@@ -125,7 +132,7 @@ export async function runClaudeBatch(
     .limit(40)
   const { data: agreements } = await db
     .from('inventory_review_outcomes')
-    .select('group_key, ai_action, ai_suggested_name, owner_action')
+    .select('group_key, ai_action, ai_suggested_name, owner_action, context')
     .eq('business_id', businessId)
     .eq('agreed', true)
     .gte('created_at', cutoff)
@@ -141,12 +148,17 @@ export async function runClaudeBatch(
   ).join('\n')
 
   const learningText = [
-    ...(disagreements ?? []).map((o: any) =>
-      `  AI said "${o.ai_action}/${o.ai_suggested_name ?? '—'}" but owner did "${o.owner_action}/${o.owner_chosen_name ?? '—'}" — LEARN: trust this owner pattern`
-    ),
-    ...(agreements ?? []).slice(0, 10).map((o: any) =>
-      `  AI said "${o.ai_action}/${o.ai_suggested_name ?? '—'}" → owner agreed`
-    ),
+    ...(disagreements ?? []).map((o: any) => {
+      // Audit-sample disagreements are LOUDER — owner explicitly reviewed
+      // a confident auto-link and said no. Mark them so the model treats
+      // them as higher-priority signals than needs_review disagreements.
+      const tag = o.context === 'audit_sample' ? ' [AUDIT — high-confidence correction]' : ''
+      return `  AI said "${o.ai_action}/${o.ai_suggested_name ?? '—'}" but owner did "${o.owner_action}/${o.owner_chosen_name ?? '—'}" — LEARN: trust this owner pattern${tag}`
+    }),
+    ...(agreements ?? []).slice(0, 10).map((o: any) => {
+      const tag = o.context === 'audit_sample' ? ' [AUDIT — confirmed correct]' : ''
+      return `  AI said "${o.ai_action}/${o.ai_suggested_name ?? '—'}" → owner agreed${tag}`
+    }),
   ].join('\n')
 
   const groupsText = groups.map(g => JSON.stringify({
