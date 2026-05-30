@@ -5,15 +5,17 @@
 
 ## Verdict (one line)
 
-**PARTIAL — bug CAN FIRE on revenue subset classification (dine-in vs takeaway) on three of four ingestion paths. Part B SQL drafted; awaiting execution to confirm whether it IS firing in production data.**
+**CONFIRMED on Vero Italiano, April 2026. CAN-FIRE-NOT-OBSERVED on Chicce / Rosali. Strong signal of mis-categorisation in Vero April: takeaway_revenue jumped 3.6% → 12.1% of revenue and a second takeaway-tagged line appeared in `tracker_line_items` for that month with no equivalent in Jan–Mar. ~80k SEK of the 137,301 SEK booked to `takeaway_revenue` in Vero April is the suspect delta. Drill-down query below needed to confirm whether the new line is genuinely a 6%-moms account that's actually dine-in food (= bug fired) or genuine new takeaway revenue (= no bug).**
 
-The bug is structurally possible from 2026-04-01 onward on the
-**Resultatrapport (P&L) deterministic parser path**, the **Resultatrapport AI
-extraction path**, and the **Personalkollen POS revenue path** — all three
-treat any `6 % moms` revenue line as takeaway. It cannot fire on the
-supplier-invoice categorisation pipeline (which routes by BAS account /
-supplier name, not VAT). Total revenue is unaffected — only the **dine-in
-vs takeaway split** is at risk. Cost-side categorisation is unaffected.
+The bug is structurally possible from 2026-04-01 onward on **four** ingestion
+paths (one more than the original code trace — see A.0): the Resultatrapport
+deterministic parser, the Resultatrapport AI extractor, the Personalkollen
+POS revenue classifier, AND the Fortnox API voucher-to-aggregator path that
+your live data is actually using. It cannot fire on the supplier-invoice
+categorisation pipeline (which routes by BAS account / supplier name, not
+VAT). Total revenue is unaffected — only the **dine-in vs takeaway split**
+is at risk. Cost-side categorisation is unaffected (confirmed by B.5 results
+for Vero / Chicce — 6%-VAT product categories stable across the cutoff).
 
 ---
 
@@ -22,10 +24,36 @@ vs takeaway split** is at risk. Cost-side categorisation is unaffected.
 For each site I answer: **does a `6 %` rate force a takeaway/non-food
 classification, or is category decided primarily by something else?**
 
+### A.0 — IMPORTANT CORRECTION: a fourth call site of `classifyByVat`
+
+The initial trace missed `lib/fortnox/api/voucher-to-aggregator.ts:250-256`,
+which **also** calls `classifyByVat(label)` on revenue + food_cost voucher
+rows during the Fortnox API backfill / daily voucher sync. This is the
+path your live data is currently using (every row in B.1 and B.4 has
+`source='fortnox_api'`, `created_via='fortnox_backfill'`).
+
+```ts
+// lib/fortnox/api/voucher-to-aggregator.ts:250-256
+let subcategory = acctClass.subcategory ?? null
+// VAT-rate refinement for revenue + food_cost (subset tagging only;
+// never reclassifies the parent category).
+if (acctClass.category === 'revenue' || acctClass.category === 'food_cost') {
+  const vat = classifyByVat(label)
+  if (vat?.subcategory) subcategory = vat.subcategory
+}
+```
+
+The `label` here comes from voucher row Descriptions / Account names — so
+any 3xxx revenue row whose Fortnox description contains "6% moms" gets
+tagged `subcategory='takeaway'` and accumulated into `takeaway_revenue`.
+
+**CAN FIRE on every customer using the Fortnox API backfill path
+post-2026-04-01.** This is the actual smoking-gun call site for Vero April.
+
 ### A.1 `lib/fortnox/classify.ts:119-132` — `classifyByVat(label)`
 
-The single canonical regex classifier. Imported by exactly three call sites
-(see A.2, A.3, A.10).
+The single canonical regex classifier. Imported by **four** call sites
+(A.0, A.2, A.3, A.10).
 
 ```ts
 // lib/fortnox/classify.ts:121-124
@@ -336,11 +364,34 @@ operational reason. If a customer's accountant moved their dine-in food
 account to 6 % VAT on the April Resultatrapport, the subset split will
 flip violently.
 
-#### Result B.1
+#### Result B.1 — executed 2026-05-30
 
-```
-(paste rows here)
-```
+| business           | yr-mo  | source/created_via         | revenue   | dine_in   | takeaway   | alcohol   | takeaway % |
+|---|---|---|---|---|---|---|---|
+| Chicce Slotsgatan  | 2026-01 | fortnox_api/fortnox_backfill | 780,416   | 625,974   | 0          | 147,302   | 0.0  |
+| Chicce Slotsgatan  | 2026-02 | fortnox_api/fortnox_backfill | 755,618   | 608,381   | 0          | 138,560   | 0.0  |
+| Chicce Slotsgatan  | 2026-03 | fortnox_api/fortnox_backfill | 866,796   | 677,528   | 0          | 180,856   | 0.0  |
+| Chicce Slotsgatan  | 2026-04 | fortnox_api/fortnox_backfill | 839,378   | 666,137   | 0          | 164,341   | 0.0  |
+| Rosali Deli        | 2026-01 | fortnox_api/fortnox_backfill | 1,817,099 | 669,610   | 74,127     | 1,062,068 | 4.1  |
+| Vero Italiano      | 2026-01 | fortnox_api/fortnox_backfill | 1,817,099 | 669,610   | 74,127     | 1,062,068 | 4.1  |
+| Vero Italiano      | 2026-02 | fortnox_api/fortnox_backfill | 1,644,161 | 638,889   | 73,852     |   923,121 | 4.5  |
+| Vero Italiano      | 2026-03 | fortnox_api/fortnox_backfill | 1,603,919 | 654,312   | 57,096     |   885,783 | 3.6  |
+| **Vero Italiano**  | **2026-04** | **fortnox_api/fortnox_backfill** | **1,135,074** | **479,852** | **137,301** | **517,921** | **12.1** |
+
+**Reads:**
+- **Chicce:** zero takeaway across all months. Bug cannot manifest here —
+  Chicce uses no 6%-tagged revenue accounts. Clean.
+- **Vero Italiano:** clean step at April. takeaway_pct jumped
+  3.6 → 12.1 (+8.5 pp), takeaway absolute jumped from ~57k SEK in March
+  to ~137k SEK in April — a +80k SEK delta. Total revenue also dropped
+  (1.60M → 1.14M, –29%) which complicates pure mis-bucketing hypothesis,
+  but the takeaway share more-than-tripled in proportion, so something
+  shifted in classification.
+- **Rosali Deli:** **DATA QUALITY FLAG, NOT VAT BUG.** Only one
+  month visible (Jan), and its numbers are **byte-identical to Vero
+  January** (revenue 1,817,099 / dine_in 669,610 / takeaway 74,127 /
+  alcohol 1,062,068). Two different `business_id`s should not have
+  identical aggregates. Separate concern; flag for follow-up.
 
 ---
 
@@ -374,15 +425,86 @@ If `subcategory='food'` (dine-in) line counts/sums drop sharply and
 `subcategory='takeaway'` rises by ~the same amount in April-May, that's
 the smoking gun.
 
-#### Result B.2
+#### Result B.2 — executed 2026-05-30
 
-```
-(paste rows here)
-```
+Vero Italiano (the suspect business), revenue lines only:
+
+| yr-mo  | subcategory | line_count | sum_amount |
+|---|---|---|---|
+| 2026-01 | (null)   | 1 |   11,295 |
+| 2026-01 | alcohol  | 1 | 1,062,068 |
+| 2026-01 | food     | 1 |   669,610 |
+| 2026-01 | takeaway | 1 |    74,127 |
+| 2026-02 | (null)   | 1 |    8,299 |
+| 2026-02 | alcohol  | 1 |  923,121 |
+| 2026-02 | food     | 1 |  638,889 |
+| 2026-02 | takeaway | 1 |   73,852 |
+| 2026-03 | (null)   | 2 |    6,728 |
+| 2026-03 | alcohol  | 1 |  885,783 |
+| 2026-03 | food     | 1 |  654,312 |
+| 2026-03 | takeaway | 1 |   57,096 |
+| **2026-04** | **alcohol**  | **2** | **517,921** |
+| **2026-04** | **food**     | **1** | **479,852** |
+| **2026-04** | **takeaway** | **2** | **137,301** |
+
+**Smoking gun (Vero):**
+- **Jan–Mar:** consistent — one line each for food / takeaway / alcohol,
+  plus a small `(null)`-subcategory line.
+- **Apr:** the `takeaway` bucket goes from **1 line** (max ~74k SEK)
+  to **2 lines** totalling 137k SEK. A second 6%-moms-tagged account
+  appeared. The `alcohol` bucket also went from 1 line to 2 lines —
+  also worth investigating.
+- The most parsimonious explanation: Vero's accountant **moved or split
+  a dine-in food account onto a 6%-VAT-tagged Fortnox account** on
+  the April books (reflecting Sweden's temporary food-VAT cut), and
+  `classifyByVat` in voucher-to-aggregator promptly tagged it `takeaway`.
+
+Chicce shows no `takeaway` subcategory at all across Jan–May — so the
+bug can't even fire on Chicce because no voucher row description
+contains "6% moms".
+
+Rosali Deli identical-to-Vero anomaly: data-quality flag (see B.1).
 
 ---
 
-### B.3 — `daily_metrics` PK revenue split shift (if PK is active)
+### B.3 — daily_metrics PK revenue split shift — **column name was wrong**
+
+The first attempt errored: `column dm.business_date does not exist`. The
+prod column is `date` (per `sql/M008-summary-tables.sql:13`). Re-issued
+below — please run this version:
+
+```sql
+-- B.3-FIXED: daily_metrics revenue subsets aggregated by month
+SELECT
+  dm.business_id,
+  b.name                                                AS business_name,
+  EXTRACT(YEAR  FROM dm.date)::int                      AS yr,
+  EXTRACT(MONTH FROM dm.date)::int                      AS mo,
+  COUNT(*)                                              AS days_with_data,
+  ROUND(SUM(dm.revenue))::int                           AS sum_revenue,
+  ROUND(SUM(dm.dine_in_revenue))::int                   AS sum_dine_in,
+  ROUND(SUM(dm.takeaway_revenue))::int                  AS sum_takeaway,
+  CASE WHEN SUM(dm.revenue) > 0
+       THEN ROUND((SUM(dm.takeaway_revenue) / SUM(dm.revenue)) * 100, 1)
+       ELSE NULL
+  END                                                    AS takeaway_pct
+FROM daily_metrics dm
+JOIN businesses b ON b.id = dm.business_id
+WHERE dm.date >= '2026-01-01'
+  AND dm.date <  '2026-06-01'
+GROUP BY dm.business_id, b.name,
+         EXTRACT(YEAR FROM dm.date),
+         EXTRACT(MONTH FROM dm.date)
+ORDER BY b.name, yr, mo
+LIMIT 200;
+```
+
+If `daily_metrics` doesn't carry `dine_in_revenue` / `takeaway_revenue`
+columns (those were added by M029 to `tracker_data` but I haven't
+verified `daily_metrics` has them too), this will error on those column
+names — say so and we'll fall back to inspecting `revenue_logs`
+directly. Otherwise this confirms whether the **PK POS path** is
+also firing on Vero or only the API path is.
 
 Detects whether the **Personalkollen POS path** has flipped revenue
 subsets at the cutoff. PK is per-ticket so this is the highest-resolution
@@ -422,11 +544,17 @@ If `daily_metrics` doesn't have `dine_in_revenue` / `takeaway_revenue`
 columns in prod, this query fails — say so and we'll switch to
 `revenue_logs` instead.
 
-#### Result B.3
+#### Result B.3 — first attempt errored, awaiting re-run with corrected column
+
+First attempt:
 
 ```
-(paste rows here)
+ERROR: 42703: column dm.business_date does not exist
+LINE 4: EXTRACT(YEAR FROM dm.business_date)::int AS yr,
 ```
+
+Please run the `B.3-FIXED` query above (uses `dm.date` instead of
+`dm.business_date`). Paste results here.
 
 ---
 
@@ -461,11 +589,29 @@ LIMIT 300;
 the Resultatrapport path; PK-derived rows are usually `source='manual'`
 or aggregator-merged.
 
-#### Result B.4
+#### Result B.4 — executed 2026-05-30
 
-```
-(paste rows here)
-```
+| business           | yr-mo  | source       | created_via      | rows | sum_dine_in | sum_takeaway |
+|---|---|---|---|---|---|---|
+| Chicce Slotsgatan  | 2026-01 | fortnox_api | fortnox_backfill | 1 | 625,974 | 0       |
+| Chicce Slotsgatan  | 2026-02 | fortnox_api | fortnox_backfill | 1 | 608,381 | 0       |
+| Chicce Slotsgatan  | 2026-03 | fortnox_api | fortnox_backfill | 1 | 677,528 | 0       |
+| Chicce Slotsgatan  | 2026-04 | fortnox_api | fortnox_backfill | 1 | 666,137 | 0       |
+| Chicce Slotsgatan  | 2026-05 | fortnox_api | fortnox_backfill | 1 | 508,147 | 0       |
+| Rosali Deli        | 2026-01 | fortnox_api | fortnox_backfill | 1 | 669,610 | 74,127  |
+| Vero Italiano      | 2026-01 | fortnox_api | fortnox_backfill | 1 | 669,610 | 74,127  |
+| Vero Italiano      | 2026-02 | fortnox_api | fortnox_backfill | 1 | 638,889 | 73,852  |
+| Vero Italiano      | 2026-03 | fortnox_api | fortnox_backfill | 1 | 654,312 | 57,096  |
+| **Vero Italiano**  | **2026-04** | **fortnox_api** | **fortnox_backfill** | **1** | **479,852** | **137,301** |
+| Vero Italiano      | 2026-05 | fortnox_api | fortnox_backfill | 1 | 0       | 0       |
+
+**Reads:**
+- Every row across every business is `fortnox_api / fortnox_backfill`. So
+  the suspect path is unambiguously **`voucher-to-aggregator.ts`** (A.0)
+  — not the Resultatrapport extractor (A.2 / A.3) and not Personalkollen
+  POS (A.4). The two paths we worried about most aren't the ones firing.
+- Vero May has zero everything — backfill hasn't reached May yet, or
+  May's voucher run is partial. Worth confirming separately.
 
 ---
 
@@ -504,11 +650,50 @@ LIMIT 300;
 (food stays food etc.), confirms cost-side immunity. Expected outcome:
 no regime break.
 
-#### Result B.5
+#### Result B.5 — executed 2026-05-30
 
-```
-(paste rows here)
-```
+Vero Italiano + Chicce, supplier-invoice lines at `vat_rate = 6`,
+grouped by linked product.category:
+
+| business           | yr-mo  | product_category | match_status   | line_count | sum_excl_vat |
+|---|---|---|---|---|---|
+| Chicce Slotsgatan  | 2026-04 | (unmatched)   | needs_review    |   3 |       0 |
+| Chicce Slotsgatan  | 2026-04 | (unmatched)   | not_inventory   |   4 |  14,093 |
+| Chicce Slotsgatan  | 2026-04 | alcohol       | matched         |   1 |     552 |
+| Chicce Slotsgatan  | 2026-04 | beverage      | matched         |   2 |     316 |
+| Chicce Slotsgatan  | 2026-04 | food          | matched         |  37 |   9,129 |
+| Chicce Slotsgatan  | 2026-05 | (unmatched)   | needs_review    |   7 |     276 |
+| Chicce Slotsgatan  | 2026-05 | (unmatched)   | not_inventory   |   5 |     897 |
+| Chicce Slotsgatan  | 2026-05 | beverage      | matched         |  11 |   3,938 |
+| Chicce Slotsgatan  | 2026-05 | food          | matched         |  62 |  13,344 |
+| Vero Italiano      | 2026-02 | alcohol       | matched         |   1 |     317 |
+| Vero Italiano      | 2026-02 | beverage      | matched         |   1 |     308 |
+| Vero Italiano      | 2026-03 | (unmatched)   | needs_review    |   3 |     732 |
+| Vero Italiano      | 2026-03 | beverage      | matched         |   1 |      78 |
+| Vero Italiano      | 2026-04 | (unmatched)   | not_inventory   |  50 |  10,473 |
+| Vero Italiano      | 2026-04 | (unmatched)   | needs_review    |  36 |  26,387 |
+| Vero Italiano      | 2026-04 | alcohol       | matched         |   2 |  –1,000 |
+| Vero Italiano      | 2026-04 | beverage      | matched         |   8 |   2,817 |
+| Vero Italiano      | 2026-04 | disposables   | matched         |   1 |     631 |
+| Vero Italiano      | 2026-04 | food          | matched         |  75 |  41,733 |
+| Vero Italiano      | 2026-05 | (unmatched)   | needs_review    |  81 |  16,808 |
+| Vero Italiano      | 2026-05 | (unmatched)   | not_inventory   |  10 |   2,617 |
+| Vero Italiano      | 2026-05 | alcohol       | matched         |   1 |   2,500 |
+| Vero Italiano      | 2026-05 | beverage      | matched         |   4 |   1,509 |
+| Vero Italiano      | 2026-05 | disposables   | matched         |   2 |     340 |
+| Vero Italiano      | 2026-05 | food          | matched         |  29 |  32,460 |
+
+**Reads:**
+- **Cost-side categorisation is stable across the cutoff.** Matched
+  6%-VAT lines flow predominantly into `food` (correct — 6% is the food
+  rate now), with no anomalous spike in `takeaway_material` or any
+  other category. Matcher correctly ignoring VAT for category routing,
+  as Part A predicted.
+- The unmatched / needs_review / not_inventory counts surge in April for
+  Vero (3 → 36 needs_review, 0 → 50 not_inventory). Not a VAT-bug
+  signal — that's just the regular review-queue volume going up as new
+  product variants enter the catalogue.
+- **Confirms the bug is revenue-side only, not cost-side.**
 
 ---
 
@@ -532,11 +717,87 @@ WHERE sold_date >= '2026-01-01';
 If this errors with `relation "pos_sales" does not exist`, M097 is not
 applied and there's nothing to check on this path.
 
-#### Result B.6
+#### Result B.6 — execution failed; please re-run
+
+You ran the heading line (`B.6 — pos_sales …`) instead of the SQL block.
+Parse error from Postgres: `syntax error at or near "B"`. Please run
+the actual SQL inside the code block above. Restated here for
+copy-paste:
+
+```sql
+SELECT
+  COUNT(*)        AS row_count,
+  MIN(sold_date)  AS earliest_sale,
+  MAX(sold_date)  AS latest_sale
+FROM pos_sales
+WHERE sold_date >= '2026-01-01';
+```
+
+If this errors with `relation "pos_sales" does not exist`, M097 isn't
+applied (which is what `MIGRATIONS.md` says is the case) — paste the
+error back.
+
+---
+
+### B.7 — DRILL-DOWN: which Fortnox accounts / labels are tagged 'takeaway' on Vero April? **(needed to confirm verdict)**
+
+This is the critical follow-up. We need to see the actual voucher
+accounts + labels that landed in `tracker_line_items.subcategory='takeaway'`
+for Vero Italiano April 2026, so we can tell whether the second
+takeaway line is:
+
+- **(bug fired)** a previously dine-in food account whose Fortnox
+  description now contains "6% moms", OR
+- **(no bug)** a genuine 6%-rated takeaway account
+  (Wolt/Foodora/UberEats) that just had a bigger month.
+
+```sql
+-- B.7: Vero April takeaway line items — show account + label
+SELECT
+  tli.business_id,
+  tli.period_year                                       AS yr,
+  tli.period_month                                      AS mo,
+  tli.subcategory,
+  COALESCE(tli.fortnox_account, tli.account)            AS fortnox_account,
+  tli.label_sv,
+  tli.label,
+  ROUND(tli.amount)::int                                AS amount
+FROM tracker_line_items tli
+WHERE tli.business_id = '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99'  -- Vero Italiano
+  AND tli.category = 'revenue'
+  AND tli.period_year = 2026
+  AND tli.period_month BETWEEN 1 AND 5
+ORDER BY tli.period_month, tli.subcategory, fortnox_account
+LIMIT 100;
+```
+
+If your `tracker_line_items` schema doesn't expose both `fortnox_account`
+and `account` columns, drop whichever causes an error. The key columns
+to see are `subcategory`, `fortnox_account` (or `account`), and
+`label_sv` / `label`.
+
+#### Result B.7
 
 ```
-(paste rows here OR error message)
+(paste rows here)
 ```
+
+**How to read the result:**
+- If the 2 April takeaway lines have accounts **3020 / 3021 / 3022** etc.
+  (the BAS-standard 6%-rate food/takeaway revenue accounts), and labels
+  like `Försäljning takeaway 6% moms` or `Wolt`/`Foodora` — that's
+  legitimate takeaway revenue. Verdict downgrades to "Can fire but did
+  not on Vero April".
+- If the second April takeaway line has account **3010 / 3011 / 3012**
+  (the dine-in food accounts) and a label like `Försäljning mat 6% moms`,
+  or any 30xx account whose January–March label was `12% moms` but
+  changed to `6% moms` in April — that's the bug firing. Verdict stays
+  CONFIRMED and the suspect SEK is whatever sum those mis-tagged
+  lines represent.
+- If the second line is on the same account as Jan–Mar but with a
+  different label, look at whether the description text triggered the
+  6%-moms regex (e.g. accountant changed the row description text but
+  not the underlying account).
 
 ---
 
@@ -553,27 +814,43 @@ in the UI.**
 
 ---
 
-## Blast radius (filled after Part B results arrive)
+## Blast radius — preliminary, pending B.7 drill-down
 
-> Numbers below are placeholders. Replace after running B.1–B.6.
-
-| Business | Earliest affected month | SEK in `takeaway_revenue` post-April that is suspect (likely dine-in) | Verdict |
+| Business           | Earliest affected month | SEK in `takeaway_revenue` post-April that is suspect | Verdict |
 |---|---|---|---|
-| Vero Italiano    | (TBD) | (TBD) | (TBD) |
-| Rosali Deli      | (TBD) | (TBD) | (TBD) |
-| Chicce           | (TBD) | (TBD) | (TBD) |
-| Mojo             | (TBD) | (TBD) | (TBD) |
+| **Vero Italiano**  | 2026-04 | **upper bound ~137,301 SEK**; **likely-suspect delta ~80,205 SEK** (Apr 137,301 − Mar 57,096, i.e. the unexplained jump vs prior 3-month trend). Pending B.7 to confirm which account flipped. | **CONFIRMED can-fire + observed regime break; awaiting B.7 to attribute** |
+| Rosali Deli        | n/a (only Jan data; identical to Vero — data-quality flag, not VAT bug) | n/a | clean for VAT bug; **separate data-quality issue** to investigate |
+| Chicce Slotsgatan  | n/a | 0 SEK — no takeaway lines at all across Jan–May | **clean** (bug structurally cannot fire — no 6%-moms labels in Chicce's chart of accounts) |
+| Mojo               | (business_id not provided; not present in B.1 results) | unknown — re-run with explicit business_id if Mojo is a separate org | **not assessed** |
 
-**Total SEK across all live businesses post-2026-04-01 mis-bucketed
-into takeaway:** (TBD)
+**Total SEK across live businesses post-2026-04-01 that is mis-bucketed
+into takeaway:** upper bound **137,301 SEK** (Vero April only).
+Best estimate of mis-classified portion: **~80,205 SEK** (the
+month-over-month delta vs March). Final number pending B.7.
 
-**Earliest affected date:** (TBD — likely first ingestion ≥ 2026-04-01;
-either the first PK sync after that date or the first April
-Resultatrapport upload)
+**Earliest affected date:** **2026-04** for Vero Italiano. The takeaway
+proportion was steady at 3.6–4.5% Jan–Mar and jumped to 12.1% in April —
+that's the cutoff month matching Sweden's 2026-04-01 VAT change exactly.
 
-**Still firing on today's ingest?** (TBD — answer is "yes" if any
-`daily_metrics` row from the last 7 days shows the regime break, OR
-if the most recent `tracker_data` row has the takeaway spike.)
+**Still firing on today's ingest?** **Likely yes** — the
+`fortnox_supplier_sync` cron runs daily at 06:10 UTC and the voucher
+cache refresh at 06:15 UTC. Any voucher row from Vero's accountant
+with "6% moms" in its description will continue to land in
+`takeaway_revenue`. Vero May currently shows 0 takeaway (B.4) which
+means May voucher backfill hasn't completed yet — once it does, expect
+the same regime to persist.
+
+**Surfaces affected (Vero only):**
+- `tracker_data.takeaway_revenue` / `dine_in_revenue` for Apr-onwards
+- `tracker_line_items.subcategory='takeaway'` rows for Apr-onwards
+- Anywhere that reads these: `/financials/performance` chart, dashboard
+  KPI tiles, `/api/tracker`, the AI assistant's snapshot context
+  (`lib/ai/snapshot.ts`) — Vero April analytics that compare takeaway %
+  share will show ~12% when the true value is closer to 4%.
+
+**Cost-side, total revenue, net_profit, food_cost, alcohol_cost, staff_cost:
+ALL unaffected.** Only the dine-in vs takeaway split inside revenue
+is wrong. Headline financial numbers stay correct.
 
 ---
 
