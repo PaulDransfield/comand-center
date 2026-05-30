@@ -275,6 +275,146 @@ Total: ~250 LOC + 1 migration. ~1 day.
 
 ---
 
+## 2b. Owner refinements folded in 2026-05-30 (post-D1 review)
+
+D1 verified end-to-end on Chicce Jameson alias 23581bb9-… (see commit
+`73767d8`). Owner review surfaced two adjustments for D2.
+
+### 2b.1 Durable demotion history (REQUIRED before D2 ships)
+
+The current D1 re-activation branch in `lib/inventory/matcher.ts::insertAlias`
+resets `corrections_against = 0` and clears `deactivated_reason` /
+`deactivated_at`. That preserves the alias row's lineage but **erases the
+flip-flop signal** — once re-activated, "what aliases have been demoted
+and why" queries no longer find it. A demote→reactivate→demote cycle looks
+pristine each time.
+
+The Step-0 diagnostic found 0 flip-flops at current scale (so D1 is safe
+to ship as-is), but this design will make us blind to thrash exactly when
+the matcher's auto-link share grows.
+
+**Fix folded into D2 (M106):**
+
+```sql
+ALTER TABLE public.product_aliases
+  ADD COLUMN IF NOT EXISTS times_demoted    INTEGER     NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_demoted_at  TIMESTAMPTZ;
+```
+
+- `times_demoted` is **monotonic** — never reset, even on re-activation.
+- `last_demoted_at` snapshots the most recent deactivation timestamp;
+  survives re-activation as a historical reference.
+- `product_aliases_record_correction` RPC extended to bump
+  `times_demoted++` and set `last_demoted_at` at the moment of
+  deactivation (the threshold-crossing path inside the RPC).
+- `insertAlias` re-activation branch in `matcher.ts` continues to reset
+  the WORKING counters (`corrections_against`, `deactivated_reason`,
+  `deactivated_at`) but **never touches `times_demoted` /
+  `last_demoted_at`** — those are the durable history.
+
+Reporting query becomes:
+
+```sql
+SELECT id, raw_description, supplier_name_snapshot,
+       is_active, times_demoted, last_demoted_at,
+       corrections_against, deactivated_reason
+  FROM product_aliases
+ WHERE times_demoted > 0
+ ORDER BY times_demoted DESC, last_demoted_at DESC;
+```
+
+This catches both currently-demoted and previously-demoted-but-reactivated
+aliases — the thrash-detection signal the owner asked for.
+
+### 2b.2 Adaptive audit sample rate (LOCKED, from §7.3)
+
+Already specified above in §7.3 — restating here so it's visible alongside
+the D2 work that consumes it:
+
+```ts
+// lib/inventory/audit-sampler.ts
+function targetSampleRate(autoLinksInWindow: number): number {
+  if (autoLinksInWindow <= 20)  return 1.00   // audit everything
+  if (autoLinksInWindow <= 50)  return 0.50
+  if (autoLinksInWindow <= 200) return 0.20
+  return 0.05                                  // steady-state target
+}
+```
+
+At today's ~89 total auto-matches with a 7-day recent window of maybe
+5-15 items → 100% sample → queue useful from day one.
+
+### 2b.3 D2 risk ordering (UPDATED with previously-demoted)
+
+Risk-weighted from highest priority (most likely to be wrong) to lowest:
+
+1. **cross-supplier** (Step 4 trigram, threshold 0.85) — confidence floor
+   is lower than same-supplier; cross-supplier merges are the most
+   speculative.
+2. **previously-demoted** (`times_demoted > 0`) — this alias has been
+   wrong before. Even if re-activated, it deserves elevated scrutiny.
+   **NEW** in the ordering per owner guidance 2026-05-30.
+3. **same-supplier** (Step 3 trigram, threshold 0.80) — high-volume
+   auto-match path; mostly OK but the long tail bites.
+4. **recent** (created within the last 7 days) — newer aliases have less
+   real-world validation; prioritise.
+5. **high-line-value** (line.total_excl_vat) — a wrong alias on a 50,000 kr
+   line is worse than on a 14 kr line. Tiebreaker.
+6. **(disabled today)** high-alias-usage — re-enable when any alias
+   crosses `USAGE_WEIGHT_ACTIVATION_THRESHOLD` (20 usages). See
+   `lib/inventory/demotion.ts`.
+
+### 2b.4 D2 checkpoint (gate before D3) — PASSED 2026-05-30
+
+Per owner 2026-05-30: "see the sampler actually surface a risk-weighted
+batch on live data — with cross-supplier and previously-demoted aliases
+ranked to the top — before D3's snapshot layers on."
+
+Also per owner: "confirm that a confirm/correct in the UI actually
+writes the audit outcome and it reads back into the ai-suggest
+context. That round-trip is the real proof D2 works."
+
+**Sampler checkpoint (verify-audit-sampler.mjs --local-run, executed 2026-05-30):**
+- Chicce Slotsgatan: 89 fuzzy auto-match candidates → 20% adaptive
+  rate → 18 sampled → 18 upserted into queue
+- Top 6 by risk_score (all 10,021–10,036): cross-supplier
+- Ranks 7–18 (risk 136–158): same-supplier
+- Tier gap factor: ~63×. No bleed-through between cross and same tiers.
+- Previously-demoted: 0 surfaced. Acceptable — the only demoted alias
+  (Jameson) predates M106's extended RPC and is `is_active=FALSE`
+  (filtered out of eligibility). Will validate naturally on first
+  real demote-and-reactivate; failure mode is benign (missed risk bump,
+  not a data error).
+
+**Round-trip checkpoint (verify-audit-roundtrip.mjs --run, executed 2026-05-30):**
+- Picked top queue item (Chiarlo Le Orme Barbera d'Asti,
+  fuzzy_cross_supplier, score 10036)
+- Replicated `confirm` action endpoint logic →
+  `inventory_review_outcomes` row inserted with `context='audit_sample'`,
+  `agreed=true`, `owner_action='approve_existing'`
+- Marked queue row `reviewed_at=NOW, reviewer_decision='confirm'`
+- Re-ran the SAME outcome-loading SELECTs that
+  `lib/inventory/ai-suggest-core.ts` uses
+- Before: 0 audit_sample outcomes in the 60-day window. After: 1.
+- Generated learning text contains `[AUDIT — confirmed correct]` tag
+  exactly as the production prompt builder produces.
+
+**D2-done. UI + API + sampler + round-trip + tests + verify scripts all
+landed on `learning-loop-phase1-2-audit`. Merging next.**
+
+### 2b.5 Mental note (NOT for chasing now — log only)
+
+The D1 verification surfaced an `Avtalsrabatt JAMESON 40%` line as a
+demote candidate. That's a **contract-rebate, not a product** — it should
+arguably not have entered the catalogue at all. Gate 0 (the
+"is-this-inventory" check in `matcher.ts:74-109`) is occasionally letting
+discount/rebate lines through. The D3 accuracy snapshot is the right
+place to surface this as noise (rebate-pattern detection bumping
+`needs_review` rate). **Not a D2 task; logged for the categorisation
+quality pass later.**
+
+---
+
 ## 3. Deliverable 2 — Audit of confident auto-links
 
 ### 3.1 Schema
