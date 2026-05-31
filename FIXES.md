@@ -1,5 +1,69 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-05-25
+Last updated: 2026-05-31
+
+---
+
+## 0ct. P2.0 voucher back-fill → Fix 2 → Fix 1: queue noise cleanup + Gate 0 precedence (2026-05-30 → 2026-05-31)
+
+A two-day sequence that started with voucher back-fill (P2.0) activating BAS-account categorisation and ended with a refined Gate 0 precedence rule + a durable principle about the global supplier dictionary. Three deployments, two architectural patches, one accounting note for the bookkeeper.
+
+### §0ct-1: P2.0 voucher back-fill — activated Gate-0 BAS routing on 7,952 lines (2026-05-30)
+
+**Symptom:** `supplier_invoice_lines.account_number` was ~100% NULL at Chicce (3,218/3,218 rows). `categoryForBasAccount` was effectively unused; Gate 0 fell back to supplier-name classification, which produced an inflated needs_review queue and let rebate noise (Avtalsrabatt-suffixed lines) match to real products via fuzzy trigram.
+
+**Fix:** Back-filled `account_number` from matched vouchers' single-expense-account debit rows via `fortnox_vouchers_cache` (M080 + raw_data.Vouchers JSONB). `account_source='voucher_backfill'` (M108) distinguishes from Fortnox-native rows. Atomic transaction with Op 1 (account back-fill) + Op 2a (rebate-pattern guard → not_inventory) + Op 2b (`inventory_review_outcomes` row per affected alias) + Op 2c (`product_aliases_record_correction` RPC bumps `corrections_against` so D1's demotion mechanism fires on the same correction path the runtime uses). NOT EXISTS guard on the affected-aliases CTE makes the counter-bump exactly-once per back-fill batch.
+
+**Outcome:** Vero +56% permanent matches (~2,000 → 3,126). 17 confidently-wrong Carlsberg rebate aliases cleared. ~1,572 food/alcohol lines correctly elevated from wrong-not_inventory to correct-needs_review (queue grew, not shrunk — surfacing previously-hidden review work was an honest outcome not a regression). Owner_confirmed regressions = 0. See `project_p20_voucher_backfill_outcome` memory.
+
+### §0ct-2: Rematch worker timed out at 800s on 5,500-line pool — self-chain patch (2026-05-30)
+
+**Symptom:** `/api/inventory/lines/rematch` worker hit Vercel's `maxDuration=800` wall mid-page when processing Vero's ~5,547-line post-back-fill rematch pool. State row stuck at `status='running'` past 13 min; no progress.
+
+**Fix:** Mirrored `lib/inventory/backfill-worker.ts` self-chain pattern. Deadline = `now + (maxDuration - 90)s`; cursor-based pagination via `id > p.cursor ORDER BY id LIMIT 500` (offset-based skips rows as matched ones drop out of the predicate); `checkpointAndRelaunch` flips state to `'pending'` and POSTs self with `{ resume: true }` + Bearer CRON_SECRET. Resume reloads cursor + counts. `MAX_RESUMES = 30` cap. Patched `/api/inventory/lines/rematch/route.ts`; converted `/api/cron/inventory-rematch-business` to a thin proxy so PDF-extraction chain rematches use the same self-chaining worker. Memory: `feedback_rematch_worker_self_chain`.
+
+**Outcome:** Full Vero rematch completed in 3 hops, 5,728 lines processed, status='completed'.
+
+### §0ct-3: Fix 2 — deposit/logistics/rebate description rule (2026-05-31)
+
+**Symptom:** Elevated-queue dry-run after P2.0 surfaced ~half of Vero's residual needs_review queue was structural noise: pallets (EUR-PALL, PLASTPALL, Halvpall, Engångspall, Kolli), deposits (PANT ALUMINIUMBURK, PANTGRÖN, PBA RETURLÅDA), logistics fees (Plockavgift, Distribution, Leveransavgift, Frakt), and rebates with product-name suffixes (`"DE KUYPER... Avtalsrabatt"`). The original P2.0 rebate guard caught only `Avtalsrabatt`/`^pant`/`pantersättning` etc. — too narrow for the broader noise class.
+
+**Fix:** Extended pattern with ANCHORED arms (`^token\M` per the original ^pant fix discipline). New module `lib/inventory/description-rules.ts` with the canonical regex; `matcher.ts` Gate 0b consumes it (so future invoice lines hit the rule at ingestion, not at the next SQL backfill). One-time SQL APPLY flipped existing needs_review lines: **Chicce 1,000 → 364, Vero 3,173 → 2,182**.
+
+**Direction-A check (catches):** every distinct catch in the top-100 cross-business eyeball was a real deposit/return/fee/rebate. **Direction-B check (false-positive scan):** 0 currently-matched real products caught across 10,579 matched lines.
+
+### §0ct-4: Fix 1 — Gate 0 precedence + owner_confirmed safeguard + dictionary cleanliness (2026-05-31)
+
+**Symptom:** Pre-fix Gate 0 logic was `basCategory ?? supplierClass` — BAS-route silently overrode supplier classifier. Consultancy fees (Alden Ventures, Citriclabs, Cake on Cake), outsourced dishwashing (Agera & Partners), marketing services etc. that the accountant booked to 4xxx food accounts elevated to the review queue because `categoryForSupplier` never got to veto.
+
+**Fix:** Architectural — supplier-veto becomes a first-class signal alongside BAS-routing. Three additions:
+
+1. **Broadened safeguard** in `matcher.ts` Gate 0: `hasOwnerConfirmedAlias` helper checks for active alias with `match_method='owner_confirmed'` at this (business, supplier, normalised_description). The safeguard gates BOTH supplier-veto (0c) AND fallthrough_unknown (0d) — fuzzy aliases (fuzzy_*) are explicitly NOT protected. Per-business override (0a) and description rule (0b) always-veto, no safeguard.
+
+2. **Dictionary cleanliness rule** in `suppliers.ts` top-of-file comment: "global EXACT_OVERRIDES may only contain suppliers whose meaning is identical at every business; multi-purpose suppliers live in per-business `supplier_classifications`." Two confirmed category errors removed: **Frimurarholmen AB** (landlord at Vero AND food-passthrough billing for Axfood) and **BARKONSULT Jakobsson & Lövgren AB** (name reads consultancy, actually sells bar equipment + glassware + specialty spirits).
+
+3. **Hunt-as-review-flag principle**: the multi-purpose-supplier hunt (`scripts/diag-gate0-fix1-hunt.mjs`) surfaces lines where supplier-veto fires AND BAS gives positive food/alcohol. **This signature has two opposite causes that look identical from SQL:** mis-globalized supplier (dictionary wrong, BAS right — fix dictionary) vs miscoded invoice (dictionary right, BAS wrong — fix accounting). The hunt produces candidates, not verdicts. Never automate "remove from dictionary on contradiction" — only a description-level human eyeball can tell which class. The Fortnox AB case (22 SaaS-billing lines miscoded to 4xxx food) is the cautionary half.
+
+**Outcome (after Frimurarholmen + BARKONSULT + safeguard broaden):**
+- Chicce regressions: 0
+- Vero regressions: 23 remaining (down from initial 59) — split into 17 Spendrups normalization-mismatch cases (acceptable, see below) + 6 Citriclabs contradictory-owner-input cases (owner cleanup, not engineering)
+
+### §0ct-5 KNOWN RESIDUAL (deliberately left undone, 2026-05-31)
+
+**The 23 Vero edge cases are an acceptable steady-state cost — only if they stay small.**
+
+**17 Spendrups normalization-variant lines:** Owner_confirmed alias has `normalised_description` from one supplier-file form (e.g. "mariestads export 5 3 50cl returglas"); incoming line has it from another (e.g. "mstads export 5 3 50rg"). Same SKU, different supplier-string. Safeguard's (supplier, normalised) lookup misses because normalised differs.
+- Acceptable today: matched lines aren't re-touched by rematch (`.is('product_alias_id', null)` filter on the worker); new abbreviated-form lines go to needs_review → owner confirms once → new alias inserted with that normalised → safeguard catches future lines (**self-healing in one owner-action cycle**)
+- Considered + rejected: a `product_id`-based safeguard variant (B) that would shield "any line whose product was once owner_confirmed at this supplier" — it would weaken safeguard precision and suppress the self-healing signal
+
+**6 Citriclabs lines:** Per-business `supplier_classifications` says "skip all Citriclabs" AND specific Citriclabs lines have owner_confirmed product matches. Contradictory owner intent — no precedence rule should silently resolve it. Owner needs to clean up at Vero (drop the blanket override or unmatch those lines). Right behavior is current (surface, don't auto-resolve).
+
+**Trigger for reopening (Phase D watch):** if owners hit "confirm again for the same product" repeatedly during the 7-day window — i.e. normalization-variant re-confirmations arrive in **volume, not a trickle** — that's the signal `normalise.ts` is too strict (treating trivially-different supplier strings as distinct). The real fix would be upstream in normalisation, NOT a product_id safeguard. If the rate stays a trickle, (A) was right permanently.
+
+### §0ct-6: Accounting note (not engineering)
+
+22 Fortnox-the-vendor SaaS-billing invoices at Vero (Arkivplats, Kvitto & Utlägg Tolkning, etc., 9,244 SEK total) got booked to 4xxx food accounts by the accountant. The supplier dictionary correctly classifies Fortnox AB as not_inventory, so categorisation handles them — but the miscoding quietly skews Vero's food-cost number in `tracker_data` totals and will keep regenerating noise until the bookkeeper corrects it. **Flag to whoever does Vero's books.** Not engineering's job to silently re-route on the code side; that would mask the accounting issue.
+
+See: `project_p20_gate0_precedence_principle` memory for the full architectural reasoning + the principle that prevents next time someone wants to globalise a multi-purpose supplier.
 
 ---
 
