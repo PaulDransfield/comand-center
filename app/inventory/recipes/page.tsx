@@ -64,7 +64,7 @@ export default function InventoryRecipesPage() {
   }, [])
 
   const load = useCallback(async () => {
-    if (!bizId) return
+    if (!bizId) { setLoading(false); return }   // Don't lie about loading when there's nothing to load.
     setLoading(true); setError(null)
     try {
       const r = await fetch(`/api/inventory/recipes?business_id=${encodeURIComponent(bizId)}`, { cache: 'no-store' })
@@ -72,7 +72,10 @@ export default function InventoryRecipesPage() {
       setData(await r.json())
     } catch (e: any) { setError(e.message) } finally { setLoading(false) }
   }, [bizId])
-  useEffect(() => { if (bizId) load() }, [bizId, load])
+  useEffect(() => {
+    if (bizId) load()
+    else setLoading(false)   // No biz selected yet — stop the loading spinner and surface the empty-biz state.
+  }, [bizId, load])
 
   const rows = data?.recipes ?? []
 
@@ -88,7 +91,9 @@ export default function InventoryRecipesPage() {
               {t('subtitle')}
             </p>
           </div>
-          <button onClick={() => setCreating(true)} style={primaryBtn}>
+          <button onClick={() => setCreating(true)} disabled={!bizId}
+            title={!bizId ? 'Select a business in the sidebar first' : undefined}
+            style={{ ...primaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
             {t('addRecipe')}
           </button>
         </div>
@@ -108,8 +113,15 @@ export default function InventoryRecipesPage() {
             {error}
           </div>
         )}
-        {loading && <Empty label={t('loading')} />}
-        {!loading && rows.length === 0 && !error && <Empty label={t('empty')} />}
+        {!bizId && !loading && (
+          <div style={{ padding: '24px', textAlign: 'center' as const, background: UXP.subtleBg,
+                        border: `0.5px dashed ${UXP.border}`, borderRadius: 8,
+                        color: UXP.ink3, fontSize: 13 }}>
+            Select a business in the sidebar to load its recipes.
+          </div>
+        )}
+        {bizId && loading && <Empty label={t('loading')} />}
+        {bizId && !loading && rows.length === 0 && !error && <Empty label={t('empty')} />}
 
         {!loading && rows.length > 0 && (
           <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}>
