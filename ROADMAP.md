@@ -1,7 +1,44 @@
 # ROADMAP.md — CommandCenter
-> Version 9.0 | Updated: 2026-05-25 | Session 21 ✅ (scaling audit P0+P1 + risk-horizon — Fortnox semaphore, AI quota gates, archive table, Stripe + Resend idempotency)
-> Active focus: 20-customer ramp readiness now done. Next: page-bloat refactor (1200+ LOC dashboard/scheduling) for maintainability — deferred until UI-focused session. Stripe price IDs still pending. i18n coverage of /scheduling, /notebook, /overheads/* still pending.
+> Version 9.1 | Updated: 2026-05-31 | Session 22 ✅ (P2.0 voucher back-fill + Gate-0 precedence Fix 1/2 + reliability paydown Ticket 1)
+> Active focus: **Phase D watch active (2026-05-31 → 2026-06-07).** Decision at end of week: agreement >55% + queue draining + normalization re-confirm trickle → P2.0 validated, open P2a (suppliers master). Else reprioritise to Phase 3 catalogue (or upstream normalisation if re-confirms volume).
 > Read alongside CLAUDE.md, FIXES.md, MIGRATIONS.md.
+
+---
+
+## Session 22 — 2026-05-30/31 (P2.0 voucher back-fill + Gate-0 precedence Fix 1/2 + reliability paydown) ✅ SHIPPED
+
+Multi-day session driven by `claude-code-investigation-prompt`, `vat-misrouting-diagnostic-prompt`, `phase-2-0-voucher-backfill-prompt`, `elevated-queue-rematch-dryrun-prompt`, `p2-0-gate0-precedence-deposit-fix-prompt`, `vat-hotfix-status-check-prompt`, `p20-reliability-paydown-prompt`. Everything centred on Vero's categorisation queue. Detail per area in FIXES.md §0ct + companion memory `project_p20_gate0_precedence_principle`.
+
+### Shipped to prod (in order)
+
+1. **VAT hotfix** (commit 8806ed9) — `lib/sweden/vat.ts` created with explicit "never assume VAT→channel" principle; 5 inference sites converted; Vero April corrective backfill SQL ran. Status verified clean 2026-05-31 (`docs/investigation/vat-hotfix-status.md`).
+2. **P2.0 voucher back-fill** (M108 + `sql/p20-voucher-rebate-backfill-APPLY.sql`) — `account_source` column + widened `inventory_review_outcomes.context` CHECK; back-filled `supplier_invoice_lines.account_number` from `fortnox_vouchers_cache` single-expense-account vouchers; rebate-guard pattern caught Carlsberg `Avtalsrabatt`-class lines; 17 owner_confirmed aliases cleared with atomic Op 2c demotion firing (mirrors runtime `/correct-attribution`).
+3. **Rematch worker self-chain** — `/api/inventory/lines/rematch` now checkpoints + re-launches at Vercel's 800s wall (mirrors `lib/inventory/backfill-worker.ts`). `/api/cron/inventory-rematch-business` converted to thin proxy so PDF-chain rematches use the same self-chaining worker.
+4. **Fix 2 — deposit/logistics/rebate description rule** (`lib/inventory/description-rules.ts` + matcher Gate 0b + `sql/p20-fix2-deposit-logistics-DRY/APPLY.sql`) — flipped ~636 Chicce + ~991 Vero needs_review lines to not_inventory.
+5. **Fix 1 — Gate 0 precedence + owner_confirmed safeguard** — Frimurarholmen + BARKONSULT removed from `EXACT_OVERRIDES`; `hasOwnerConfirmedAlias` helper gates supplier-veto AND fallthrough_unknown vetoes; per-business override (0a) and description rule (0b) stay always-veto. Principle comment in `suppliers.ts`.
+6. **Reliability paydown Ticket 1** — `lib/fortnox/extract-voucher-ref.ts` + cron writer patch; `sql/p20-paydown-ticket1-backfill-APPLY.sql` populated 725 Chicce + 995 Vero `fortnox_supplier_invoices.voucher_series/voucher_number` columns from `raw_data.Vouchers` JSONB.
+
+### Architectural principles encoded (don't re-derive)
+
+- **Gate 0 precedence rule** (`project_p20_gate0_precedence_principle` memory): 0a per-business override + 0b description rule = always-veto; 0c global supplier dict + 0d fallthrough_unknown = gated on owner_confirmed alias.
+- **Dictionary cleanliness** (top-of-file `suppliers.ts`): EXACT_OVERRIDES holds only suppliers whose meaning is identical at every business. Multi-purpose lives in per-business `supplier_classifications` (M083).
+- **Hunt-as-review-flag** (the Fortnox refinement): supplier-veto contradicted by positive BAS food/alcohol is a candidate for review, NOT auto-remove. Two opposite causes look identical from SQL — mis-globalized supplier (fix dictionary) vs miscoded invoice (fix accounting). Description-level human eyeball required.
+- **Self-healing on normalization variants** (the 23 Vero residual decision): owner_confirmed alias safeguard uses (supplier, normalised_description). When the same SKU arrives with a different supplier-string, Gate 0 vetoes once → owner confirms → new alias with that normalisation → safeguard catches future lines. Don't shield via product_id — that would suppress the self-healing signal. Trigger for reopening: Phase D normalization re-confirm rate (if volume, fix is upstream in `normalise.ts`).
+
+### Phase D watch — three signals to read 2026-06-07
+
+1. Vero `needs_review_agreement_pct` vs 46.8% baseline (`inventory_accuracy_snapshots`, daily 02:30 UTC cron)
+2. Queue depth trend — does post-Fix-2 needs_review (Vero 2,182 / Chicce 364) drain or sit?
+3. Normalization re-confirm rate — owners hitting "confirm again for the same product" with a different supplier-string variant. Trickle = normalize-and-safeguard right; volume = `normalise.ts` too strict (real fix is upstream, NOT a product_id safeguard)
+
+Decision at 2026-06-07: agreement >55% + queue draining + re-confirm trickle → P2.0 validated, open P2a (suppliers master). Flat agreement OR non-draining OR volume of re-confirms → reprioritise to Phase 3 catalogue (or upstream normalisation depending on which signal misbehaves).
+
+### Parked follow-ups (post-2026-06-07)
+
+- **Ticket 2 reliability paydown** — re-warm `fortnox_vouchers_cache` for older periods. Vero is 2026-only (missing all of 2025 series A/B/C/D); Chicce gap is older periods. Rescue ceiling: ~2,354 lines (1,860 Chicce + 494 Vero). Parked because mid-watch backfill would confound queue-drain signal. First step on revisit: confirm the 8,387 Chicce NULL-account split (multi-account vs no-Vouchers vs other) to decide whether dominant-by-amount heuristic for multi-account earns its place.
+- **Owner-facing copy** "X lines newly added for review after invoice import" — product requirement, not just engineering note. Every rematch can elevate previously-hidden lines into needs_review; review surface needs to label arrivals so queue growth reads as system finding work, not malfunctioning.
+- **Fortnox-vendor accounting cleanup at Vero** — 22 SaaS-billing invoices (Arkivplats, Kvitto Tolkning, 9,244 SEK) miscoded to 4xxx food. Owner/bookkeeper action; categorisation already excludes them but they quietly skew food-cost.
+- **Investigate 2 not_inventory-with-alias rows** at Vero — pre-existing data consistency issue surfaced during P2.0 Fix 2 DRY. Drill in + decide whether to clear alias for consistency.
 
 ---
 

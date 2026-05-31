@@ -1,6 +1,45 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-30 | doc-only fix: ledger reconciled against `pg_tables` (M087/M088/M097/M098/M099/M100 had landed in prod but were still listed pending or missing here)
+> Last updated: 2026-05-31 | Session 22: M108 + Vero April VAT corrective backfill + P2.0 voucher rebate backfill + Fix 2 deposit/logistics backfill + Ticket 1 voucher-column backfill
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Applied — 2026-05-31 (Session 22: P2.0 + Fix 1/2 + Ticket 1)
+
+### M108 — P2.0 provenance (account_source + context CHECK widen) ✅ applied 2026-05-30
+**File:** `sql/M108-P20-PROVENANCE.sql`
+**Purpose:** Schema dependencies for P2.0 voucher back-fill operations.
+**Schema:**
+- Added `supplier_invoice_lines.account_source TEXT NOT NULL DEFAULT 'fortnox_row'` + CHECK constraint allowing `('fortnox_row', 'voucher_backfill', 'owner_correction')`
+- Partial index `supplier_invoice_lines_account_source_idx ON (business_id, account_source) WHERE account_source != 'fortnox_row'` for audit queries
+- Widened `inventory_review_outcomes.context` CHECK from `('needs_review', 'audit_sample')` → `('needs_review', 'audit_sample', 'rebate_guard_backfill')`
+**Pre-commit verified:** 2,498 needs_review + 1 audit_sample existing rows — no strand risk.
+**Idempotent.** ADD COLUMN IF NOT EXISTS + DROP+ADD CHECK pattern.
+
+### One-off data backfills (NOT numbered migrations — single-business, single-period fixes)
+
+These were applied via Supabase SQL Editor with BEGIN→verification→COMMIT pattern. Mirror of the M-migration approach for schema, but kept un-numbered because they don't define a re-runnable rollup.
+
+#### `sql/p20-voucher-rebate-backfill-APPLY.sql` ✅ applied 2026-05-30
+**Purpose:** Voucher-as-ground-truth back-fill. Three atomic operations on Chicce + Vero `supplier_invoice_lines`:
+- **Op 1:** Set `account_number` + `account_source='voucher_backfill'` from `fortnox_vouchers_cache` single-expense-account vouchers (901 Chicce + 7,051 Vero lines)
+- **Op 2a:** Rebate-guard pattern `~* '(avtalsrabatt|^rabatt|^pant\M|...)'` flipped lines to `match_status='not_inventory'` + cleared alias (117 Chicce + 576 Vero lines)
+- **Op 2b:** Inserted `inventory_review_outcomes` row per affected alias (17 Chicce + 0 Vero) with `context='rebate_guard_backfill'`
+- **Op 2c:** Called `product_aliases_record_correction(alias_id, 2)` per affected alias — mirrors runtime `/correct-attribution` path, bumps `corrections_against` + `last_corrected_at` (17 RPC calls, all landed at corrections=1, zero demotions)
+**Idempotent.** Re-running is no-op via `account_number IS NULL` + `match_status != 'not_inventory'` + `NOT EXISTS rebate_guard_backfill outcome` guards. All 8 verification metrics matched predicted figures exactly. See FIXES.md §0ct-1.
+
+#### `sql/p20-fix2-deposit-logistics-DRY/APPLY.sql` ✅ applied 2026-05-31
+**Purpose:** Extended description rule (Fix 2). Flipped needs_review lines to not_inventory where `raw_description` matches the broader deposit/logistics/rebate pattern (added arms: `^pantgr[öo]n\M`, `^eur[-\s]?pall\M`, `^plastpall\M`, `^pallet\M`, `^halvpall\M`, `^eng[åa]ngspall\M`, `^kolli\M`, `^pba\s+retur`, `^srs\s+(retur|back)`, `^retur\s+srs`, `^distribution\s+`, `^leveransavgift\M`, `^plockavgift\M`, `^frakt\M`, `^milj[öo]rabatt\M` alongside the original P2.0 arms).
+**Result:** 636 Chicce + 991 Vero lines flipped. Zero false positives (Direction-B clean across 10,579 matched lines). Idempotency = 0.
+**Companion code:** `lib/inventory/description-rules.ts` + matcher Gate 0b consume the same pattern so future invoice lines hit the rule at ingestion. See FIXES.md §0ct-3.
+
+#### `sql/p20-paydown-ticket1-backfill-APPLY.sql` ✅ applied 2026-05-31
+**Purpose:** Reliability paydown Ticket 1. Backfilled `fortnox_supplier_invoices.voucher_series` + `voucher_number` columns (M098-added but 100% NULL) from `raw_data.Vouchers` JSONB. Filter `v->>'ReferenceType' = 'SUPPLIERINVOICE' LIMIT 1` mirrors the shared TS helper `lib/fortnox/extract-voucher-ref.ts` used by the supplier-sync cron.
+**Result:** Chicce 725 populated (23 unrecoverable, no SUPPLIERINVOICE ref in JSONB); Vero 995 populated (17 unrecoverable). V3 load-bearing guard = 0 (extracted ref is always SUPPLIERINVOICE, never SUPPLIERPAYMENT). Spot-check confirmed 3 multi-ref invoices picked SUPPLIERINVOICE over SUPPLIERPAYMENT correctly. See FIXES.md §0ct + `docs/investigation/p20-reliability-paydown.md`.
+**Idempotent.** `WHERE voucher_series IS NULL AND raw_data ? 'Vouchers' AND EXISTS (...SUPPLIERINVOICE)` guard.
+
+#### `sql/backfill-vero-april-vat-misrouting.sql` ✅ applied 2026-05-30
+**Purpose:** One-off corrective for VAT misrouting bug (`docs/investigation/vat-misrouting-verdict.md`). Moved 48,468 SEK from Vero April 2026 `tracker_data.takeaway_revenue` to unclassified (stays in `revenue`, removed from subset). Account 3053 ("Försäljning varor 6% moms Sv") now subcategory=null instead of subcategory='takeaway'. Companion code: `lib/sweden/vat.ts` + 5 inference sites converted. See `docs/investigation/vat-hotfix-status.md` for status verdict.
 
 ---
 
