@@ -26,6 +26,7 @@
 import { normaliseDescription } from './normalise'
 import { categoryForBasAccount, type InventoryCategory } from './categories'
 import { categoryForSupplier, type SupplierClassification } from './suppliers'
+import { descriptionRule } from './description-rules'
 import { parseProductPackSize } from './unit-conversion'
 
 const SAME_SUPPLIER_THRESHOLD  = 0.80
@@ -95,9 +96,75 @@ export async function matchInvoiceLine(
     }
   }
 
+  // Gate 0b — description-level veto. Pallets, deposits, rebates, freight
+  // and packaging units are never inventory regardless of which BAS account
+  // the accountant booked them to. See lib/inventory/description-rules.ts
+  // for the pattern + the anchoring discipline (mid-string tokens on real
+  // products MUST NOT be caught — both-directions check in dry-run before
+  // adding any new arm).
+  if (descriptionRule(line.raw_description) === 'not_inventory') {
+    return {
+      status: 'not_inventory', product_id: null, alias_id: null,
+      method: null, confidence: null, candidates: [],
+    }
+  }
+
+  // Gate 0c — global supplier dictionary veto, WITH owner_confirmed safeguard.
+  //
+  // The precedence change (Fix 1, 2026-05-31): supplier classifier is one of
+  // three signals that can veto a line to not_inventory, alongside the per-
+  // business override (Gate 0a) and the description rule (Gate 0b). It used
+  // to be silently overridden by a positive BAS account, which let consultancy
+  // fees booked to 4xxx food sit in the review queue.
+  //
+  // SAFEGUARD: the global dictionary asserts a global truth that may not
+  // hold at every business — Frimurarholmen taught us a "landlord" can also
+  // do food passthrough at one specific customer. If an owner has already
+  // confirmed this line's (supplier, normalised_description) signature
+  // matches a real product, that explicit owner decision OUTRANKS the
+  // global guess. Never auto-veto an owner_confirmed match.
+  //
+  // The check is one indexed lookup per line — same cost class as Steps 1-2.
+  // Per-business supplier_classifications (Gate 0a) and the description
+  // rule (Gate 0b) have NO safeguard because both are higher-confidence
+  // signals: 0a is an explicit owner action at this business; 0b is
+  // structural (pallets/deposits never being products).
+  const supplierClass = categoryForSupplier(line.supplier_name_snapshot)
+  if (supplierClass === 'not_inventory') {
+    const normalisedForSafeguard = normaliseDescription(line.raw_description)
+    if (normalisedForSafeguard) {
+      const { data: ownerConfirmedHit } = await db
+        .from('product_aliases')
+        .select('id')
+        .eq('business_id', line.business_id)
+        .eq('supplier_fortnox_number', line.supplier_fortnox_number)
+        .eq('normalised_description', normalisedForSafeguard)
+        .eq('match_method', 'owner_confirmed')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle()
+      if (!ownerConfirmedHit) {
+        return {
+          status: 'not_inventory', product_id: null, alias_id: null,
+          method: null, confidence: null, candidates: [],
+        }
+      }
+      // else: owner_confirmed alias exists for this signature → fall through
+      // to positive routing. The matcher will hit the alias via Step 2 and
+      // confirm the existing match. Global supplier guess is overridden by
+      // explicit owner verification.
+    } else {
+      // No description to safeguard against → trust the supplier veto.
+      return {
+        status: 'not_inventory', product_id: null, alias_id: null,
+        method: null, confidence: null, candidates: [],
+      }
+    }
+  }
+
   const basCategory = categoryForBasAccount(line.account_number)
   const resolved: SupplierClassification | null =
-    basCategory ?? categoryForSupplier(line.supplier_name_snapshot)
+    basCategory ?? supplierClass
 
   if (!resolved || resolved === 'not_inventory' || resolved === 'other') {
     return {

@@ -50,6 +50,36 @@ function normaliseSupplierName(raw: string | null | undefined): string {
 // saw on Chicce's first backfill plus common Vero suppliers. Extend as
 // new businesses onboard — this is the "one minute of curation per
 // new supplier" workflow.
+//
+// ── HARD RULE (learned 2026-05-31, Frimurarholmen incident) ────────────
+//
+// THIS DICTIONARY MAY ONLY CONTAIN SUPPLIERS WHOSE MEANING IS THE SAME
+// AT EVERY BUSINESS. Anything multi-purpose lives in per-business
+// supplier_classifications (M083), NOT here.
+//
+// Example: Frimurarholmen AB is Vero's landlord AND a food-passthrough
+// for Axfood purchases. Globally classifying it as 'not_inventory'
+// silently vetoed 8 owner_confirmed real food matches. The supplier
+// itself isn't not_inventory — its meaning depends on what's being
+// billed, which only the business owner knows. That's exactly what
+// the per-business override mechanism exists for.
+//
+// Before adding an EXACT_OVERRIDES entry, confirm:
+//   1. The supplier sells the SAME category at every customer (or only
+//      operates at one customer and isn't expected to expand)
+//   2. The classification is structurally correct (a brewery is alcohol
+//      everywhere; an electricity company is not_inventory everywhere)
+//   3. The supplier doesn't have visible multi-purpose patterns at any
+//      existing customer (check actual invoice descriptions if unsure)
+//
+// If in doubt, leave the supplier OUT of EXACT_OVERRIDES and let
+// per-business overrides handle it. False-negative (line stays in
+// needs_review until owner curates) is always better than false-
+// positive (owner_confirmed match silently vetoed by a wrong guess).
+//
+// The owner_confirmed safeguard in matcher.ts Gate 0 catches the next
+// such incident automatically, but the durable fix is to keep this
+// dictionary clean of multi-purpose suppliers.
 
 const EXACT_OVERRIDES: Record<string, SupplierClassification> = {
   // ── Broadline food wholesalers ──────────────────────────────────
@@ -66,7 +96,10 @@ const EXACT_OVERRIDES: Record<string, SupplierClassification> = {
   'tradgardshallen sverige ab':                   'food',         // produce
   'niseko i orebro ab':                           'food',         // asian groceries
   'kogi forsaljnings aktiebolag':                 'food',
-  'frimurarholmen ab':                            'not_inventory', // landlord per business memo
+  // NOTE: 'frimurarholmen ab' removed 2026-05-31 — multi-purpose at Vero
+  // (landlord + Axfood food passthrough). Per-business override (M083)
+  // handles the rent invoices; food invoices fall through to BAS routing.
+  // See top-of-file rule + project_p20_gate0_precedence_safeguard memory.
 
   // ── Beverages / alcohol ──────────────────────────────────────────
   // Sweden treats beer as alcohol; we follow that convention so the
