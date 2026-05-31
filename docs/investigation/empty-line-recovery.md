@@ -11,6 +11,8 @@ Read-only. No recovery performed.
 
 3. **One pattern worth flagging but not blocking on: 64 of 110 M&S Vero invoices (58%) are marked `'no_pdf'`, and a 3-invoice sample shows their parent rows aren't in `fortnox_supplier_invoices` at all** (probably older than the supplier-sync window). Could be a real "Fortnox truly has no PDF for these" answer, or could be the supplier-sync window cutting off the lookup before the PDF was discoverable. Worth a separate ticket: re-sync those older M&S invoices from Fortnox + re-attempt PDF extraction on a sample. NOT an emergency — the just-shipped Rule (b) is on reasonably solid ground; the recoverable population it's terminal-stating is small.
 
+**CORRECTION (2026-05-31, follow-up):** the 3-invoice sample drilled into here misled the breakdown. The 64 `no_pdf` M&S Vero invoices split into **59 WITH parents** + **5 WITHOUT parents** — the missing-parent cluster is 5 invoices contributing 18 lines, not 64. The 3 sampled (8358, 8274, 8365) happened to be 3 of those 5. Full correction in `docs/investigation/ms-nopdf-cluster-verdict.md`.
+
 ## Detailed findings
 
 ### Step 1 — The two reference M&S invoices traced end-to-end
