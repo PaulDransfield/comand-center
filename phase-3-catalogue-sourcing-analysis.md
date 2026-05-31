@@ -23,11 +23,12 @@
 
 ### Option 2 — Open Food Facts (OFF)
 **What it is:** Free, crowdsourced, barcode(EAN/GTIN)-keyed database — 4M+ products, 150 countries, ODbL data licence, CC-BY-SA images, free API, no key.
-**Finding (verified):** Strong for **consumer retail** products by barcode; supplies name, brand, quantity/packaging, category, **images**, nutrition/allergens. But: voluntary contributions, **no accuracy/completeness guarantee**, **no pricing**, and crucially **no pack-size/foodservice catalogue semantics** — a 5kg foodservice sack of flour or a restaurant-pack of San Pellegrino may be absent or thinly covered, where consumer SKUs are well covered.
+**Finding (verified):** Strong for **consumer retail** products by barcode; supplies name, brand, quantity/packaging, category, **images**, nutrition/allergens. But: voluntary contributions, **no accuracy/completeness guarantee**, **no pricing**, and crucially **no pack-size/foodservice catalogue semantics**.
+**MEASURED on our own data (2026-05-31 EAN check):** OFF enrichment would cover **at most ~5% of lines and <1% of spend** at both Chicce and Vero — **and the true figure is lower**, because most "EAN-looking" `article_number`s (e.g. `60000002`, `60000018`) are **supplier-internal 8-digit codes that don't match real GS1 country prefixes**, not barcodes. The EAN-bearing lines are concentrated in single suppliers using internal-code patterns (Trädgårdshallen 380 lines at Chicce; SVENSK CATER 362 at Vero). Foodservice articles simply do not carry consumer barcodes at any material rate.
 **Implication:**
-- **Excellent, free Job-2 enrichment** (images + names + nutrition) **where the invoice line carries an EAN** that matches a consumer SKU — e.g. bottled drinks, branded packaged goods. This is real, immediate, zero-cost value for a chunk of the assortment.
-- **Weak Job-1 seed** for true foodservice articles (distributor-coded bulk items), which often have no consumer barcode at all.
-- Licence note: ODbL + CC-BY-SA carry **attribution/share-alike obligations** — usable, but the terms need a deliberate read before shipping (especially share-alike on any derived database).
+- OFF is **negligible as a catalogue source** — a rounding error for this business model, not the "images for free" lever it appeared to be against retail intuition.
+- Still worth wiring as **opportunistic, free enrichment** for the genuine branded-retail SKU slice (the bottled-drinks tail) — but framed as ~1%-of-spend polish, never a headline source, and only if it's near-zero effort.
+- Licence note: ODbL + CC-BY-SA carry **attribution/share-alike obligations** — read before shipping any OFF-derived data.
 
 ### Option 3 — GS1 Sweden / GTIN registry (Validoo)
 **What it is:** GS1 is the authoritative barcode/GTIN registry; in Sweden, **Validoo** is the GS1 product-data pool many suppliers publish verified master data into (name, pack hierarchy, dimensions, images, often foodservice-grade).
@@ -47,14 +48,14 @@
 
 ## The shape of the recommendation
 
-**Not one source — a layered strategy, sequenced by cost-to-value:**
+**Not one source — a layered strategy, sequenced by cost-to-value. The EAN measurement reorders it:**
 
-1. **Job-2 enrichment now, cheap:** wire **Open Food Facts by EAN** for the barcode-carrying slice of the assortment (drinks, branded packaged goods). Free, immediate images + clean names where a barcode matches. Treat as best-effort enrichment, never as match-critical truth. Read the ODbL/CC-BY-SA terms first.
-2. **Job-1 seed, self-built, compounding:** lean into **Option 4** — the cross-customer alias network *is* our foodservice catalogue, and it's the moat. Phase 2's supplier master (org-nr) is the prerequisite, which is already on the path. This needs no external deal and is accurate by construction.
-3. **Authoritative seed, investigate in parallel:** open a **GS1 Sweden / Validoo** conversation to learn access model, foodservice coverage, and price. This is the option that could materially accelerate Job 1 if the terms work — worth a real inquiry, not a build.
-4. **Distributor data, partnership track:** treat **Martin & Servera / Menigo** as a *business-development* conversation, not an integration task — best-fit data, highest friction, and the natural lever once there are enough customers to make us worth their integration time (which rhymes with the "Personalkollen/Novax as capital/partnership precedent" thinking).
+1. **Job-1 seed, self-built, compounding — THE primary source:** the cross-customer alias network *is* our foodservice catalogue, and it's the moat. Now confirmed as the *primary* play, not a fallback, because the EAN check showed no external free source pre-seeds foodservice articles in any material way. Phase 2's supplier master (org-nr) is the prerequisite — already on the path. Needs no external deal; accurate by construction (it's literally what customers buy); compounds with every confirmed alias.
+2. **Authoritative seed, investigate now:** open a **GS1 Sweden / Validoo** inquiry — access model, foodservice coverage, price. This is now the *most important external lever*, because it's the only source that (a) knows which article codes are real GS1 vs supplier-internal and (b) has genuine foodservice master data. Promoted from "parallel" to "the inquiry worth making this week."
+3. **Distributor data, partnership track:** **Martin & Servera / Menigo** as *business development*, not integration — best-fit data, highest friction, the lever once customer count justifies their integration time (rhymes with the Personalkollen/Novax partnership precedent).
+4. **OFF enrichment — opportunistic, near-zero priority:** wire **Open Food Facts by EAN** only as free polish for the ~1%-of-spend branded-retail tail, and only if effort is near-zero. Measured as negligible; do not treat as a catalogue source.
 
-**Net:** the catalogue isn't a single ingestion to build — it's OFF enrichment (free, now) + the self-built alias network (the moat, compounding) + two partnership/subscription conversations (GS1, distributors) that don't block code. That reframing means Phase 3 has a cheap, shippable core that doesn't wait on anyone's deal.
+**Net:** the catalogue is **the self-built alias network (the moat, compounding) as the core**, a GS1/Validoo inquiry as the one external lever worth pursuing now, a distributor BD track for later, and OFF as trivial optional polish. The headline shift from the EAN measurement: there is no cheap external shortcut to a foodservice catalogue — so the compounding self-built network isn't just the moat, it's the *main road*. That makes P2a (supplier master) the spine of Phase 3, not just a Phase 2 step.
 
 ---
 
