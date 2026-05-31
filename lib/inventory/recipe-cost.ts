@@ -180,9 +180,13 @@ export function computeRecipeCost(
     const invoiceUnit = p?.invoice_unit ?? null
     const noPrice     = unitPrice == null
 
-    // Pack-aware conversion. Use saved pack data first; if missing, try
-    // to parse from the product name (cheap and very high hit rate for
-    // restaurant invoices — "Pizza sauce 4,1 kg" etc).
+    // Pack-aware conversion. Resolution priority:
+    //   1. Saved pack_size + base_unit on the product (owner-set).
+    //   2. Parse from product name — "Pizza sauce 4,1 kg" etc.
+    //   3. Canonical SI inference from invoice_unit alone. If supplier
+    //      sells in KG and we know the kr/KG price, we know the kr/g
+    //      price without needing an explicit pack_size. Owner shouldn't
+    //      have to write `pack=1000, base=g` for every kg-priced item.
     let packSize:   number | null = p?.pack_size ?? null
     let baseUnit:   string | null = p?.base_unit ?? null
     let autoParsed = false
@@ -191,6 +195,14 @@ export function computeRecipeCost(
       if (parsed) {
         packSize = parsed.pack_size
         baseUnit = parsed.base_unit
+        autoParsed = true
+      }
+    }
+    if ((packSize == null || baseUnit == null) && invoiceUnit) {
+      const inferred = inferPackFromInvoiceUnit(invoiceUnit)
+      if (inferred) {
+        packSize = inferred.pack_size
+        baseUnit = inferred.base_unit
         autoParsed = true
       }
     }
@@ -315,6 +327,31 @@ export async function loadRecipeIndex(
     })
   }
   return idx
+}
+
+// Canonical SI inference — turn an invoice_unit string into (pack_size,
+// base_unit) so the engine can convert kg→g, l→ml etc without the owner
+// having to set explicit pack data per product. Returns null for unknown
+// units (engine falls through to the legacy 1:1 path with unit_mismatch
+// flag if recipe unit differs).
+//
+// Conservative: only matches the canonical SI/Swedish kitchen units where
+// the conversion is unambiguous. Anything weirder (FRP, FÖRP, KART, BX)
+// owner still has to set explicitly, because the pack-size is opaque
+// from the unit string alone.
+function inferPackFromInvoiceUnit(invoiceUnit: string): { pack_size: number; base_unit: string } | null {
+  const u = invoiceUnit.trim().toLowerCase().replace(/\s+/g, '')
+  // Mass
+  if (u === 'kg' || u === 'kilo' || u === 'kilogram') return { pack_size: 1000, base_unit: 'g' }
+  if (u === 'g' || u === 'gr' || u === 'gram' || u === 'grams') return { pack_size: 1, base_unit: 'g' }
+  // Volume
+  if (u === 'l' || u === 'liter' || u === 'litre' || u === 'lit') return { pack_size: 1000, base_unit: 'ml' }
+  if (u === 'dl') return { pack_size: 100, base_unit: 'ml' }
+  if (u === 'cl') return { pack_size: 10,  base_unit: 'ml' }
+  if (u === 'ml') return { pack_size: 1,   base_unit: 'ml' }
+  // Count
+  if (u === 'st' || u === 'styck' || u === 'stk' || u === 'ea' || u === 'each') return { pack_size: 1, base_unit: 'st' }
+  return null
 }
 
 // Yield-loss inflation. The engine consumes `quantity` directly; we pre-

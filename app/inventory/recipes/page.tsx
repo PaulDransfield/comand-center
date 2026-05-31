@@ -502,45 +502,41 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
               <div style={{ marginTop: 4, fontSize: 10, color: UXP.ink4 }}>
                 {data.recipe.portions} portion{data.recipe.portions === 1 ? '' : 's'}
               </div>
-              {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (
-                <div style={{ marginTop: 10, padding: '6px 10px', background: '#fef3e0',
-                              color: UXP.coral, fontSize: 11, borderRadius: 5 }}>
-                  {data.summary.missing_prices > 0 && (
-                    <button onClick={() => {
-                      const first = data.summary.ingredients.find(i => i.no_price && !i.is_subrecipe)
-                      if (first) {
-                        const el = document.getElementById(`ing-row-${first.id}`)
-                        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightIngId(first.id) }
-                      }
-                    }} style={{
-                      display: 'block', width: '100%', textAlign: 'left' as const,
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                      color: UXP.coral, fontSize: 11, fontFamily: 'inherit',
-                      textDecoration: 'underline', textUnderlineOffset: 2,
-                    }}>
-                      {t('detail.missingPricesWarn', { count: String(data.summary.missing_prices) })}
-                      <span style={{ marginLeft: 6, color: UXP.coral, opacity: 0.8 }}>— click to jump &amp; edit</span>
-                    </button>
-                  )}
-                  {data.summary.unit_mismatches > 0 && (
-                    <button onClick={() => {
-                      const first = data.summary.ingredients.find(i => i.unit_mismatch && !i.is_subrecipe)
-                      if (first) {
-                        const el = document.getElementById(`ing-row-${first.id}`)
-                        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightIngId(first.id) }
-                      }
-                    }} style={{
-                      display: 'block', width: '100%', textAlign: 'left' as const,
-                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                      color: UXP.coral, fontSize: 11, fontFamily: 'inherit',
-                      textDecoration: 'underline', textUnderlineOffset: 2,
-                    }}>
-                      {t('detail.unitMismatchWarn', { count: String(data.summary.unit_mismatches) })}
-                      <span style={{ marginLeft: 6, color: UXP.coral, opacity: 0.8 }}>— click to jump &amp; fix pack/base unit</span>
-                    </button>
-                  )}
-                </div>
-              )}
+              {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (() => {
+                // Warning cards — one per issue type, each a discrete
+                // clickable card with title + action affordance. Replaces
+                // the prior clumped paragraph that was visually noisy.
+                const missingList    = data.summary.ingredients.filter(i => i.no_price       && !i.is_subrecipe)
+                const mismatchList   = data.summary.ingredients.filter(i => i.unit_mismatch  && !i.is_subrecipe)
+                function jumpTo(ingId: string) {
+                  const el = document.getElementById(`ing-row-${ingId}`)
+                  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightIngId(ingId) }
+                }
+                return (
+                  <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                    {missingList.length > 0 && (
+                      <WarningCard
+                        count={missingList.length}
+                        title={`${missingList.length} ingredient${missingList.length === 1 ? '' : 's'} missing a supplier price`}
+                        detail="Cost is understated until you set a price. Click below to jump to the first one."
+                        names={missingList.map(i => i.product_name ?? '?')}
+                        actionLabel="Jump & set price"
+                        onJump={() => jumpTo(missingList[0].id)}
+                      />
+                    )}
+                    {mismatchList.length > 0 && (
+                      <WarningCard
+                        count={mismatchList.length}
+                        title={`${mismatchList.length} ingredient${mismatchList.length === 1 ? '' : 's'} can’t convert units`}
+                        detail="Recipe unit (e.g. g) doesn’t match the supplier unit (e.g. KG) and the product has no pack info. Set pack size + base unit so the engine can convert."
+                        names={mismatchList.map(i => `${i.product_name ?? '?'} (recipe ${i.unit ?? '?'} vs invoice ${i.invoice_unit ?? '?'})`)}
+                        actionLabel="Jump & fix pack/base unit"
+                        onJump={() => jumpTo(mismatchList[0].id)}
+                      />
+                    )}
+                  </div>
+                )
+              })()}
             </div>
 
             {/* Ingredients */}
@@ -1171,6 +1167,47 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
         )}
       </div>
     </Backdrop>
+  )
+}
+
+// Discrete warning card — title row + a few names + a single jump action.
+// Designed so the owner can scan multiple warnings at a glance without
+// them collapsing into one wall of text.
+function WarningCard({ count, title, detail, names, actionLabel, onJump }: {
+  count: number
+  title: string
+  detail: string
+  names: string[]
+  actionLabel: string
+  onJump: () => void
+}) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column' as const, gap: 6,
+      padding: '10px 12px', background: '#fef3e0',
+      border: `0.5px solid ${UXP.coral}`, borderRadius: 6,
+      fontSize: 11, color: UXP.ink1,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: UXP.coral, marginBottom: 2 }}>
+            {title}
+          </div>
+          <div style={{ color: UXP.ink2, lineHeight: 1.4 }}>{detail}</div>
+          {names.length > 0 && (
+            <ul style={{ margin: '6px 0 0', padding: '0 0 0 18px', color: UXP.ink2, fontSize: 10, lineHeight: 1.5 }}>
+              {names.slice(0, 3).map((n, i) => <li key={i}>{n}</li>)}
+              {names.length > 3 && <li style={{ color: UXP.ink4 }}>… and {names.length - 3} more</li>}
+            </ul>
+          )}
+        </div>
+        <button onClick={onJump} style={{
+          flexShrink: 0, padding: '6px 12px', fontSize: 11, fontWeight: 600,
+          background: UXP.coral, color: '#fff', border: 'none', borderRadius: 5,
+          cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+        }}>{actionLabel} →</button>
+      </div>
+    </div>
   )
 }
 
