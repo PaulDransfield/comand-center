@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
   // exceed a few hundred lines per business.
   const { data: candidateLines, error: cErr } = await db
     .from('supplier_invoice_lines')
-    .select('id, raw_description, unit, article_number, account_number, supplier_name_snapshot, supplier_fortnox_number, business_id, org_id')
+    .select('id, raw_description, unit, article_number, account_number, supplier_name_snapshot, supplier_fortnox_number, business_id, org_id, source')
     .eq('business_id', businessId)
     .eq('supplier_fortnox_number', supplierFortnoxNumber)
     .eq('match_status', 'needs_review')
@@ -129,6 +129,7 @@ export async function POST(req: NextRequest) {
         raw_description:          seed.raw_description,
         unit:                     seed.unit,
         account_number:           seed.account_number,
+        source:                   seed.source ?? 'fortnox_row',
       },
       productName,
       category,

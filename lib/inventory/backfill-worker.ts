@@ -275,7 +275,7 @@ export async function runInventoryBackfill(
           onConflict:       'business_id,fortnox_invoice_number,row_number',
           ignoreDuplicates: true,
         })
-        .select('id, org_id, business_id, supplier_fortnox_number, supplier_name_snapshot, article_number, raw_description, unit, account_number, match_status')
+        .select('id, org_id, business_id, supplier_fortnox_number, supplier_name_snapshot, article_number, raw_description, unit, account_number, match_status, source')
 
       if (insertErr) {
         p.errors.push({ invoice: invoiceNumber, error: `upsert: ${insertErr.message}` })
@@ -306,6 +306,7 @@ export async function runInventoryBackfill(
           raw_description:          row.raw_description,
           unit:                     row.unit,
           account_number:           row.account_number,
+          source:                   row.source ?? 'fortnox_row',
         }
         let outcome: MatchOutcome
         try {

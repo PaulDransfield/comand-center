@@ -236,7 +236,7 @@ async function runRematch(db: any, input: RematchInput): Promise<void> {
     // and we never re-scan an id we've already advanced past.
     const { data: rows, error } = await db
       .from('supplier_invoice_lines')
-      .select('id, org_id, business_id, supplier_fortnox_number, supplier_name_snapshot, article_number, raw_description, unit, account_number')
+      .select('id, org_id, business_id, supplier_fortnox_number, supplier_name_snapshot, article_number, raw_description, unit, account_number, source')
       .eq('business_id', input.businessId)
       .in('match_status', targetStatuses)
       .is('product_alias_id', null)
@@ -268,6 +268,7 @@ async function runRematch(db: any, input: RematchInput): Promise<void> {
         raw_description:          row.raw_description,
         unit:                     row.unit,
         account_number:           row.account_number,
+        source:                   row.source ?? 'fortnox_row',
       }
       let outcome: MatchOutcome
       try {

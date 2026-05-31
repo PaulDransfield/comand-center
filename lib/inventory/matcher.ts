@@ -42,6 +42,12 @@ export interface InvoiceLineForMatching {
   raw_description:          string
   unit:                     string | null
   account_number:           string | null
+  // M078 column — distinguishes the line's ingestion path. Load-bearing
+  // for Gate 0b-prime: a blank description on a 'fortnox_row' line is
+  // an un-itemizable account-level total (Vero pattern); a blank
+  // description on a 'pdf_extraction' line is an EXTRACTION FAILURE
+  // and must NOT be terminal-stated (it's a retry candidate).
+  source:                   'fortnox_row' | 'pdf_extraction' | 'owner_correction'
 }
 
 export interface MatchOutcome {
@@ -180,8 +186,31 @@ export async function matchInvoiceLine(
 
   const normalised = normaliseDescription(line.raw_description)
   if (!normalised) {
-    // Empty / unreadable description with an inventory BAS account — push to
-    // review so owner can decide. Don't auto-create a "Lavazza" called "".
+    // Gate 0b-prime — source-blank empty descriptions on a positive-BAS account
+    // are un-itemizable account-level totals (Vero's pattern: Fortnox books a
+    // single account-level row per invoice with no per-line text). The BAS
+    // account is enough for cost roll-up; the line just can't carry a product
+    // link. Terminal-state to not_inventory so it doesn't inflate the review
+    // queue with lines no human can resolve from a missing descriptor.
+    //
+    // CRITICAL: gated on source === 'fortnox_row'. A blank description on a
+    // 'pdf_extraction' line is an EXTRACTION FAILURE — description lost but
+    // recoverable on retry — NOT an account-level total. It must fall
+    // through to needs_review (the existing path below) so the retry logic
+    // can pick it up. See docs/investigation/vero-empty-descriptions.md +
+    // apply-vero-queue-staging-prompt.md Refinement 1.
+    if (line.source === 'fortnox_row'
+        && positiveCategory
+        && positiveCategory !== 'not_inventory'
+        && positiveCategory !== 'other') {
+      return {
+        status: 'not_inventory', product_id: null, alias_id: null,
+        method: null, confidence: null, candidates: [],
+      }
+    }
+    // Empty / unreadable description without the source-blank+positive-BAS
+    // combination — push to review (original behaviour). Don't auto-create
+    // a "Lavazza" called "".
     return {
       status: 'needs_review', product_id: null, alias_id: null,
       method: null, confidence: null, candidates: [],

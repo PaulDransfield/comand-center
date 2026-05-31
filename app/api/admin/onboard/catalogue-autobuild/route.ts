@@ -219,6 +219,7 @@ export async function POST(req: NextRequest) {
         raw_description:          seed.raw_description,
         unit:                     seed.unit,
         account_number:           seed.account_number,
+        source:                   seed.source ?? 'fortnox_row',
       }
       const created = await createProductFromLine(db, lineForMatcher, name, category)
       await updateLines(db, ids, { match_status: 'matched', product_alias_id: created.alias_id })
