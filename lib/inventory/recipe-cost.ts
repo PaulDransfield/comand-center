@@ -339,13 +339,13 @@ export async function loadRecipeIndex(
 // the conversion is unambiguous. Anything weirder (FRP, FÖRP, KART, BX)
 // owner still has to set explicitly, because the pack-size is opaque
 // from the unit string alone.
-function inferPackFromInvoiceUnit(invoiceUnit: string): { pack_size: number; base_unit: string } | null {
+export function inferPackFromInvoiceUnit(invoiceUnit: string): { pack_size: number; base_unit: string } | null {
   const u = invoiceUnit.trim().toLowerCase().replace(/\s+/g, '')
   // Mass
   if (u === 'kg' || u === 'kilo' || u === 'kilogram') return { pack_size: 1000, base_unit: 'g' }
   if (u === 'g' || u === 'gr' || u === 'gram' || u === 'grams') return { pack_size: 1, base_unit: 'g' }
-  // Volume
-  if (u === 'l' || u === 'liter' || u === 'litre' || u === 'lit') return { pack_size: 1000, base_unit: 'ml' }
+  // Volume — 'ltr' is a Swedish supplier variant of 'liter' (Diageo etc).
+  if (u === 'l' || u === 'liter' || u === 'litre' || u === 'lit' || u === 'ltr') return { pack_size: 1000, base_unit: 'ml' }
   if (u === 'dl') return { pack_size: 100, base_unit: 'ml' }
   if (u === 'cl') return { pack_size: 10,  base_unit: 'ml' }
   if (u === 'ml') return { pack_size: 1,   base_unit: 'ml' }
