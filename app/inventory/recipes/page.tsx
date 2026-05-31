@@ -188,14 +188,51 @@ export default function InventoryRecipesPage() {
 }
 
 // ── Create modal ───────────────────────────────────────────────────────
+// VAT_RATES — the three Swedish food-service rates owners actually see.
+// Listed explicitly so the dropdown can't mis-pair channel with rate
+// (channel is independent — a takeaway pinsa is 6%, an alcoholic drink is
+// 25% regardless of channel). Keep in sync with lib/sweden/vat.ts.
+const VAT_RATES = [6, 12, 25] as const
+
 function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: () => void; onCreated: (id: string) => void }) {
   const t = useTranslations('operations.inventory.recipes')
   const [name,      setName]      = useState('')
   const [type,      setType]      = useState('main')
-  const [menuPrice, setMenuPrice] = useState('')
+  // Ex-VAT is the canonical truth (per resolveRecipePriceFields). Inc-VAT
+  // is a convenience converter: typing here populates ex-VAT live, then
+  // ex-VAT is what's sent on save. Ex-VAT field is primary (focus, larger).
+  const [exVat,     setExVat]     = useState('')
+  const [incVat,    setIncVat]    = useState('')
+  const [vatRate,   setVatRate]   = useState<number>(12)
+  const [channel,   setChannel]   = useState<'dine_in' | 'takeaway'>('dine_in')
   const [portions,  setPortions]  = useState('1')
   const [busy,      setBusy]      = useState(false)
   const [err,       setErr]       = useState<string | null>(null)
+
+  // Inc-VAT → ex-VAT converter. Updates ex-VAT live when owner types in the
+  // inc-VAT helper field. Never the reverse — ex-VAT remains the source.
+  function onIncVatChange(raw: string) {
+    setIncVat(raw)
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) {
+      const ex = n / (1 + vatRate / 100)
+      setExVat((Math.round(ex * 100) / 100).toString())
+    }
+  }
+  // When VAT rate changes, re-derive ex-VAT from inc-VAT IF inc-VAT is set,
+  // otherwise re-derive inc-VAT from ex-VAT. Either way the two stay in sync.
+  function onVatRateChange(r: number) {
+    setVatRate(r)
+    const exN = Number(exVat)
+    const incN = Number(incVat)
+    if (Number.isFinite(incN) && incN > 0) {
+      const ex = incN / (1 + r / 100)
+      setExVat((Math.round(ex * 100) / 100).toString())
+    } else if (Number.isFinite(exN) && exN > 0) {
+      const inc = exN * (1 + r / 100)
+      setIncVat((Math.round(inc * 100) / 100).toString())
+    }
+  }
 
   async function save() {
     if (!name.trim()) return
@@ -205,11 +242,13 @@ function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: ()
         method: 'POST', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          business_id: bizId,
-          name: name.trim(),
+          business_id:          bizId,
+          name:                 name.trim(),
           type,
-          menu_price: menuPrice ? Number(menuPrice) : null,
-          portions: portions ? Number(portions) : 1,
+          selling_price_ex_vat: exVat ? Number(exVat) : null,
+          vat_rate:             vatRate,
+          channel,
+          portions:             portions ? Number(portions) : 1,
         }),
       })
       const j = await r.json().catch(() => ({}))
@@ -230,13 +269,38 @@ function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: ()
             {RECIPE_TYPES.map(k => <option key={k} value={k}>{t(`type.${k}`)}</option>)}
           </select>
         </Field>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <Field label={t('fieldMenuPrice')}>
-            <input type="number" min="0" step="0.01" value={menuPrice} onChange={e => setMenuPrice(e.target.value)} disabled={busy} style={inputStyle} />
+        {/* Price block — ex-VAT primary, inc-VAT as helper converter. */}
+        <Field label="Selling price ex-VAT (kr) — primary">
+          <input type="number" min="0" step="0.01" value={exVat}
+            onChange={e => { setExVat(e.target.value); /* clear inc to avoid stale conflict; user can re-type or it's recomputed on rate change */
+              const n = Number(e.target.value)
+              if (Number.isFinite(n) && n > 0) setIncVat((Math.round(n * (1 + vatRate / 100) * 100) / 100).toString())
+              else setIncVat('')
+            }}
+            disabled={busy} style={inputStyle} />
+        </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+          <Field label="Or inc-VAT (kr)">
+            <input type="number" min="0" step="0.01" value={incVat} onChange={e => onIncVatChange(e.target.value)} disabled={busy} style={inputStyle} />
           </Field>
-          <Field label={t('fieldPortions')}>
-            <input type="number" min="1" step="1" value={portions} onChange={e => setPortions(e.target.value)} disabled={busy} style={inputStyle} />
+          <Field label="VAT rate (%)">
+            <select value={vatRate} onChange={e => onVatRateChange(Number(e.target.value))} disabled={busy} style={inputStyle}>
+              {VAT_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+            </select>
           </Field>
+          <Field label="Channel">
+            <select value={channel} onChange={e => setChannel(e.target.value as 'dine_in' | 'takeaway')} disabled={busy} style={inputStyle}>
+              <option value="dine_in">Dine-in</option>
+              <option value="takeaway">Takeaway</option>
+            </select>
+          </Field>
+        </div>
+        <Field label={t('fieldPortions')}>
+          <input type="number" min="1" step="1" value={portions} onChange={e => setPortions(e.target.value)} disabled={busy} style={inputStyle} />
+        </Field>
+        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4, lineHeight: 1.4 }}>
+          Ex-VAT is what's stored — margin is computed off it. Inc-VAT updates it via the rate.
+          VAT rate and channel are independent: takeaway can be 6% OR 12% OR 25% depending on the product.
         </div>
         {err && <div style={errBanner}>{err}</div>}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
@@ -251,7 +315,8 @@ function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: ()
 // ── Recipe detail drawer ──────────────────────────────────────────────
 interface DetailIngredient {
   id: string; product_id: string | null; product_name: string | null; category: string | null;
-  quantity: number; unit: string | null; notes: string | null; position: number
+  quantity: number; quantity_stated?: number; waste_pct?: number;
+  unit: string | null; notes: string | null; position: number
   invoice_unit: string | null; unit_price: number | null; line_cost: number | null
   unit_mismatch: boolean; no_price: boolean
   latest_line_id: string | null; latest_currency: string | null
@@ -261,7 +326,14 @@ interface DetailIngredient {
   cost_per_base_unit: number | null; pack_auto_detected: boolean
 }
 interface DetailResponse {
-  recipe: { id: string; name: string; type: string | null; menu_price: number | null; portions: number; notes: string | null; updated_at: string; source_product_id?: string | null }
+  recipe: {
+    id: string; name: string; type: string | null;
+    menu_price: number | null;
+    selling_price_ex_vat: number | null;
+    vat_rate: number | null;
+    channel: string | null;
+    portions: number; notes: string | null; updated_at: string; source_product_id?: string | null
+  }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
     missing_prices: number; unit_mismatches: number
@@ -300,12 +372,25 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
     else alert((await r.json().catch(() => ({}))).error ?? 'failed')
   }
 
-  async function updateIngredient(ingId: string, patch: { quantity?: number; unit?: string | null }) {
+  async function updateIngredient(ingId: string, patch: { quantity?: number; unit?: string | null; waste_pct?: number }) {
     const r = await fetch(`/api/inventory/recipes/${recipeId}/ingredients/${ingId}`, {
       method: 'PATCH', cache: 'no-store',
       headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
     })
     if (r.ok) load()
+  }
+
+  // Patch recipe header (name + price/VAT/channel/portions). Used by the
+  // inline price editor; saves and re-loads so margin re-computes off the
+  // new ex_vat value immediately.
+  async function patchRecipe(patch: Record<string, any>) {
+    const r = await fetch(`/api/inventory/recipes/${recipeId}`, {
+      method: 'PATCH', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { alert(j.error ?? `HTTP ${r.status}`); return }
+    load()
   }
 
   async function deleteRecipe() {
@@ -363,12 +448,21 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                 <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 18 }}>×</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 14 }}>
-                <DrawerStat label={t('detail.menuPrice')} value={data.recipe.menu_price != null ? fmtKr(data.recipe.menu_price) : '—'} />
+                <DrawerStat label="GP %" value={data.summary.gp_pct != null ? `${data.summary.gp_pct.toFixed(1)} %` : '—'}
+                            color={data.summary.gp_pct != null ? gpColor(data.summary.gp_pct) : undefined} />
+                <DrawerStat label="GP kr" value={data.summary.gp_kr != null ? fmtKr(data.summary.gp_kr) : '—'}
+                            color={data.summary.gp_pct != null ? gpColor(data.summary.gp_pct) : undefined} />
                 <DrawerStat label={t('detail.foodCost')}  value={fmtKr(data.summary.food_cost)} />
                 <DrawerStat label={t('detail.foodPct')}   value={data.summary.food_pct != null ? `${data.summary.food_pct.toFixed(1)} %` : '—'}
                             color={data.summary.food_pct != null ? foodPctColor(data.summary.food_pct) : undefined} />
-                <DrawerStat label={t('detail.gpPct')}     value={data.summary.gp_pct != null ? `${data.summary.gp_pct.toFixed(1)} %` : '—'}
-                            color={data.summary.gp_pct != null ? gpColor(data.summary.gp_pct) : undefined} />
+              </div>
+              {/* Inline price + VAT + channel editor — owner-set, independent
+                  fields. ex-VAT is the primary stored truth; inc-VAT input
+                  acts as a converter that derives ex-VAT via the owner-set
+                  rate (NEVER inferred from channel). */}
+              <PriceVatEditor recipe={data.recipe} onSave={patchRecipe} />
+              <div style={{ marginTop: 4, fontSize: 10, color: UXP.ink4 }}>
+                {data.recipe.portions} portion{data.recipe.portions === 1 ? '' : 's'}
               </div>
               {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (
                 <div style={{ marginTop: 10, padding: '6px 10px', background: '#fef3e0',
@@ -435,19 +529,108 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
   )
 }
 
+// Inline price + VAT + channel editor for the recipe header. Ex-VAT is the
+// canonical truth; inc-VAT input is a converter. VAT rate + channel are
+// independent (no cross-inference). Saves via the patchRecipe callback,
+// which round-trips through resolveRecipePriceFields so menu_price and
+// selling_price_ex_vat can't drift.
+function PriceVatEditor({ recipe, onSave }: {
+  recipe: DetailResponse['recipe']
+  onSave: (patch: Record<string, any>) => Promise<void>
+}) {
+  // Use the stored ex-VAT if present; for legacy rows (ex-VAT null,
+  // menu_price set), display the legacy menu_price as ex-VAT placeholder
+  // and let the owner re-state it explicitly on first edit (don't auto-
+  // infer the rate — that's the VAT-misrouting trap).
+  const [exVat,   setExVat]   = useState(recipe.selling_price_ex_vat != null ? String(recipe.selling_price_ex_vat) : '')
+  const [vatRate, setVatRate] = useState<number>(recipe.vat_rate != null ? Number(recipe.vat_rate) : 12)
+  const [channel, setChannel] = useState<'dine_in' | 'takeaway'>(recipe.channel === 'takeaway' ? 'takeaway' : 'dine_in')
+  const [busy,    setBusy]    = useState(false)
+
+  // Re-sync local state when the recipe prop changes (after a save reload).
+  useEffect(() => {
+    setExVat(recipe.selling_price_ex_vat != null ? String(recipe.selling_price_ex_vat) : '')
+    setVatRate(recipe.vat_rate != null ? Number(recipe.vat_rate) : 12)
+    setChannel(recipe.channel === 'takeaway' ? 'takeaway' : 'dine_in')
+  }, [recipe.selling_price_ex_vat, recipe.vat_rate, recipe.channel])
+
+  // Derived inc-VAT for display (read-only here; CreateModal has the
+  // bidirectional input. Drawer keeps it simple: ex-VAT is the input,
+  // inc-VAT is the derived display so the owner can sanity-check what
+  // the menu would say).
+  const exVatNum = Number(exVat)
+  const incVatDisplay = Number.isFinite(exVatNum) && exVatNum > 0
+    ? fmtKr(Math.round(exVatNum * (1 + vatRate / 100) * 100) / 100)
+    : '—'
+
+  async function commit() {
+    if (busy) return
+    const exN = Number(exVat)
+    const patch: Record<string, any> = {
+      selling_price_ex_vat: exVat === '' ? null : (Number.isFinite(exN) && exN >= 0 ? exN : null),
+      vat_rate:             vatRate,
+      channel,
+    }
+    setBusy(true)
+    try { await onSave(patch) } finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{
+      marginTop: 12, padding: '8px 10px', background: UXP.subtleBg,
+      border: `0.5px solid ${UXP.border}`, borderRadius: 6,
+      display: 'grid', gridTemplateColumns: '1fr 80px 90px auto', gap: 8, alignItems: 'end',
+    }}>
+      <div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginBottom: 2, textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>Selling price ex-VAT (primary)</div>
+        <input type="number" min="0" step="0.01" value={exVat}
+          onChange={e => setExVat(e.target.value)}
+          onBlur={commit}
+          disabled={busy}
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: 13 }} />
+        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+          inc-VAT @ {vatRate}%: {incVatDisplay}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginBottom: 2, textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>VAT %</div>
+        <select value={vatRate} onChange={e => setVatRate(Number(e.target.value))} onBlur={commit} disabled={busy}
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: 12 }}>
+          {VAT_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+        </select>
+      </div>
+      <div>
+        <div style={{ fontSize: 9, color: UXP.ink4, marginBottom: 2, textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>Channel</div>
+        <select value={channel} onChange={e => setChannel(e.target.value as 'dine_in' | 'takeaway')} onBlur={commit} disabled={busy}
+          style={{ ...inputStyle, padding: '4px 8px', fontSize: 12 }}>
+          <option value="dine_in">Dine-in</option>
+          <option value="takeaway">Takeaway</option>
+        </select>
+      </div>
+      <button onClick={commit} disabled={busy} style={{
+        padding: '5px 10px', fontSize: 11, fontWeight: 500,
+        background: UXP.lavMid, color: '#fff', border: 'none', borderRadius: 5,
+        cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+      }}>{busy ? '…' : 'Save'}</button>
+    </div>
+  )
+}
+
 function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe }: {
   ing: DetailIngredient
   onRemove: () => void
-  onChange: (patch: { quantity?: number; unit?: string }) => void
+  onChange: (patch: { quantity?: number; unit?: string; waste_pct?: number }) => void
   onProductEdit: () => void
   onOpenSubrecipe: (id: string) => void
 }) {
   const t = useTranslations('operations.inventory.recipes')
-  const [qty, setQty] = useState(String(ing.quantity))
+  const [qty, setQty] = useState(String(ing.quantity_stated ?? ing.quantity))
+  const [waste, setWaste] = useState(String(ing.waste_pct ?? 0))
   const [expanded, setExpanded] = useState(false)
   const [busy,   setBusy]   = useState(false)
   const [err,    setErr]    = useState<string | null>(null)
-  useEffect(() => { setQty(String(ing.quantity)) }, [ing.quantity])
+  useEffect(() => { setQty(String(ing.quantity_stated ?? ing.quantity)) }, [ing.quantity, ing.quantity_stated])
+  useEffect(() => { setWaste(String(ing.waste_pct ?? 0)) }, [ing.waste_pct])
 
   async function patchProduct(patch: Record<string, any>) {
     setBusy(true); setErr(null)
@@ -481,7 +664,7 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe
   return (
     <div style={{ borderBottom: `0.5px solid ${UXP.borderSoft}`, padding: '8px 0' }}>
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 80px 60px 90px auto auto', gap: 10,
+        display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
         alignItems: 'center', fontSize: 12,
       }}>
         <div style={{ minWidth: 0 }}>
@@ -523,10 +706,24 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe
         </div>
         <input type="number" min="0" step="0.01" value={qty}
           onChange={e => setQty(e.target.value)}
-          onBlur={() => { const v = Number(qty); if (Number.isFinite(v) && v > 0 && v !== ing.quantity) onChange({ quantity: v }) }}
+          onBlur={() => { const v = Number(qty); const cur = ing.quantity_stated ?? ing.quantity; if (Number.isFinite(v) && v > 0 && v !== cur) onChange({ quantity: v }) }}
           style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }}
         />
         <div style={{ color: UXP.ink3, fontSize: 11 }}>{ing.unit ?? ing.invoice_unit ?? ''}</div>
+        {/* Waste % per line — yield-loss inflation applied in loadRecipeIndex
+            so engine math stays pure (per recipe-authoring-tool-prompt review).
+            Default 0 = no-op. Bounded 0..<100 (CHECK + clamp). Muted display
+            when 0, bold lavender when set so the owner sees which lines have
+            an applied yield. */}
+        <input type="number" min="0" max="95" step="1" value={waste}
+          onChange={e => setWaste(e.target.value)}
+          onBlur={() => { const v = Number(waste); const cur = ing.waste_pct ?? 0; if (Number.isFinite(v) && v >= 0 && v < 100 && v !== cur) onChange({ waste_pct: v }) }}
+          title="Waste % — kitchen yield loss. The cost-quantity is inflated by 1/(1−waste). 0 = no-op."
+          style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const,
+            color: Number(waste) > 0 ? UXP.lavText : UXP.ink4,
+            fontWeight: Number(waste) > 0 ? 600 : 400,
+          }}
+        />
         <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500 }}>
           {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
         </div>

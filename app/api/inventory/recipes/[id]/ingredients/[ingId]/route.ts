@@ -25,6 +25,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!Number.isFinite(q) || q <= 0) return NextResponse.json({ error: 'quantity must be > 0' }, { status: 400 })
     patch.quantity = q
   }
+  if (body.waste_pct !== undefined) {
+    // null clears to default 0; numeric must be 0..<100 (DB CHECK + clamp belt-and-braces)
+    if (body.waste_pct === null) patch.waste_pct = 0
+    else {
+      const w = Number(body.waste_pct)
+      if (!Number.isFinite(w) || w < 0 || w >= 100) {
+        return NextResponse.json({ error: 'waste_pct must be between 0 and < 100' }, { status: 400 })
+      }
+      patch.waste_pct = w
+    }
+  }
   if (body.unit !== undefined)  patch.unit  = body.unit  ? String(body.unit).trim()  : null
   if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
@@ -41,7 +52,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .update(patch)
     .eq('id', params.ingId)
     .eq('recipe_id', params.id)   // defence: don't let a request edit another recipe's ingredient
-    .select('id, product_id, quantity, unit, notes, position')
+    .select('id, product_id, subrecipe_id, quantity, waste_pct, unit, notes, position')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

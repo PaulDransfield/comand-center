@@ -26,7 +26,9 @@ export interface IngredientForCosting {
   product_id:   string | null        // null when this row is a sub-recipe reference
   product_name: string | null        // null for sub-recipe rows
   category:     string | null
-  quantity:     number
+  quantity:     number               // INFLATED for cost — see loadRecipeIndex. Original (recipe-stated) qty lives in quantity_stated.
+  quantity_stated: number            // What the owner entered (pre-waste). UI displays this.
+  waste_pct:    number               // 0..<100; the engine doesn't read this directly (inflation is done at load), kept for UI display only.
   unit:         string | null
   notes:        string | null
   position:     number
@@ -279,26 +281,54 @@ export async function loadRecipeIndex(
   const recipeIds = recipes.map((r: any) => r.id)
   const { data: ings } = await db
     .from('recipe_ingredients')
-    .select('id, recipe_id, product_id, subrecipe_id, quantity, unit, notes, position, products(name, category), subrecipe:subrecipe_id(name)')
+    .select('id, recipe_id, product_id, subrecipe_id, quantity, waste_pct, unit, notes, position, products(name, category), subrecipe:subrecipe_id(name)')
     .in('recipe_id', recipeIds)
     .order('position')
   for (const i of ings ?? []) {
     const entry = idx.get(i.recipe_id)
     if (!entry) continue
+    const statedQty = Number(i.quantity)
+    const wastePct  = clampWastePct(i.waste_pct)
     entry.ingredients.push({
-      id:             i.id,
-      product_id:     i.product_id,
-      product_name:   (i.products as any)?.name ?? null,
-      category:       (i.products as any)?.category ?? null,
-      quantity:       Number(i.quantity),
-      unit:           i.unit,
-      notes:          i.notes,
-      position:       i.position,
-      subrecipe_id:   i.subrecipe_id,
-      subrecipe_name: (i.subrecipe as any)?.name ?? null,
+      id:              i.id,
+      product_id:      i.product_id,
+      product_name:    (i.products as any)?.name ?? null,
+      category:        (i.products as any)?.category ?? null,
+      quantity:        inflateForWaste(statedQty, wastePct),
+      quantity_stated: statedQty,
+      waste_pct:       wastePct,
+      unit:            i.unit,
+      notes:           i.notes,
+      position:        i.position,
+      subrecipe_id:    i.subrecipe_id,
+      subrecipe_name:  (i.subrecipe as any)?.name ?? null,
     })
   }
   return idx
+}
+
+// Yield-loss inflation. The engine consumes `quantity` directly; we pre-
+// inflate at load so the engine math stays pure (no waste-aware branch
+// inside computeRecipeCost). At waste=0 this returns qty unchanged
+// (multiplied by 1). The clamp + DB CHECK (waste_pct < 100) prevent
+// division-by-zero; a stray 100 from anywhere clamps to MAX_WASTE_PCT and
+// the call is computed at the cap rather than blowing up.
+//
+// Named bounds (no magic numbers per owner review note).
+export const MAX_WASTE_PCT = 95     // Hard ceiling; >95% means the recipe is misconfigured.
+export const MIN_WASTE_PCT = 0
+function clampWastePct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return MIN_WASTE_PCT
+  if (n <= MIN_WASTE_PCT) return MIN_WASTE_PCT
+  if (n >= MAX_WASTE_PCT) return MAX_WASTE_PCT
+  return n
+}
+export function inflateForWaste(quantity: number, wastePct: number): number {
+  if (wastePct <= 0) return quantity                    // true no-op
+  const yieldFraction = 1 - (wastePct / 100)
+  if (yieldFraction <= 0) return quantity               // belt-and-braces — clamp should have caught this
+  return quantity / yieldFraction
 }
 
 // Cycle prevention helper for POST /api/inventory/recipes/[id]/ingredients.
