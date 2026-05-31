@@ -14,7 +14,7 @@ import { anthropicFetch }     from '@/lib/ai/anthropic-fetch'
 import { logAiRequest }       from '@/lib/ai/usage'
 import { normaliseDescription } from '@/lib/inventory/normalise'
 
-export const MAX_GROUPS_PER_RUN = 120   // cap so Haiku's JSON response fits in max_tokens
+export const MAX_GROUPS_PER_RUN = 400   // cap so Haiku's JSON response fits in max_tokens. Bumped 120 → 400 2026-05-31 to cover long-tail singleton groups at large queues (Vero: 634 distinct groups, 510 of them single-line). 400 groups × ~100 tokens/suggestion ≈ 40K output, fits comfortably under the 48K max_tokens below.
 
 const HAIKU_INPUT_USD_PER_TOKEN  = 1  / 1_000_000
 const HAIKU_OUTPUT_USD_PER_TOKEN = 5  / 1_000_000
@@ -217,7 +217,7 @@ Return JSON array only.`
   const result = await anthropicFetch({
     body: {
       model:       AI_MODELS.AGENT,             // Haiku 4.5
-      max_tokens:  16384,
+      max_tokens:  48000,
       system: [
         { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
       ],
