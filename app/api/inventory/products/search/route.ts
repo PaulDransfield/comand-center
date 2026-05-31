@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   let qB = db
     .from('products')
-    .select('id, name, category, invoice_unit, default_supplier_name')
+    .select('id, name, category, invoice_unit, default_supplier_name, pack_size, base_unit')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -52,6 +52,11 @@ export async function GET(req: NextRequest) {
       name:         p.name,
       category:     p.category,
       invoice_unit: p.invoice_unit ?? pr?.invoice_unit ?? null,
+      // pack/base info — recipe picker uses these to recommend the right
+      // unit input (base_unit when known, e.g. g instead of KG) and to
+      // surface "no pack info" warnings honestly.
+      pack_size:    p.pack_size ?? pr?.pack_size ?? null,
+      base_unit:    p.base_unit ?? pr?.base_unit ?? null,
       latest_price: pr?.latest_price ?? null,
       supplier:     p.default_supplier_name,
     }

@@ -217,10 +217,20 @@ export function computeRecipeCost(
         unitMismatch = true
       }
     } else if (!noPrice) {
-      // No pack data at all (and parser couldn't help) — legacy 1:1 calc.
-      lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
-      unitMismatch = !!invoiceUnit && !!ing.unit &&
-                     canonicalUnit(invoiceUnit) !== canonicalUnit(ing.unit)
+      // No pack data — use a 1:1 calc ONLY when the recipe unit matches the
+      // invoice unit (or one isn't set). If the units differ and we have no
+      // pack to convert through, we honestly cannot cost this line — return
+      // null and the unit_mismatch flag, never a confident-wrong number
+      // (the "10g recipe × 229 kr/KG = 2,290 kr" trap from the live test).
+      const sameUnit = !invoiceUnit || !ing.unit ||
+                       canonicalUnit(invoiceUnit) === canonicalUnit(ing.unit)
+      if (sameUnit) {
+        lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
+        unitMismatch = false
+      } else {
+        lineCost = null
+        unitMismatch = true
+      }
     }
 
     return {

@@ -206,6 +206,22 @@ export default function InventoryRecipesPage() {
 // 25% regardless of channel). Keep in sync with lib/sweden/vat.ts.
 const VAT_RATES = [6, 12, 25] as const
 
+// Common recipe units. Owners enter what the kitchen actually measures
+// in — usually grams/ml even when the supplier ships in kg or styck.
+// The cost engine converts via product.base_unit + pack_size, so g↔kg /
+// ml↔l are automatic. Includes Swedish kitchen units (knippe, klyfta,
+// burk) so dropdown covers real recipe writing.
+const UNIT_OPTIONS = [
+  'g', 'kg', 'ml', 'l',
+  'st', 'styck',
+  'msk', 'tsk', 'krm',
+  'knippe', 'klyfta', 'skiva', 'bunt',
+  'pkt', 'burk', 'flaska',
+  'portion',
+] as const
+
+const PRODUCT_CATEGORIES = ['food', 'beverage', 'alcohol', 'disposables', 'takeaway_material', 'cleaning', 'other'] as const
+
 function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: () => void; onCreated: (id: string) => void }) {
   const t = useTranslations('operations.inventory.recipes')
   const [name,      setName]      = useState('')
@@ -366,6 +382,16 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
   const [loading, setLoading] = useState(true)
   const [err,     setErr]     = useState<string | null>(null)
   const [adding,  setAdding]  = useState(false)
+  // When the missing-prices / unit-mismatch banner is clicked, this gets
+  // the offending ingredient id. IngredientRow with that id auto-expands
+  // its inline edit panel + flashes a soft highlight so the owner sees
+  // where to fix the cost. Clears 2s after first use.
+  const [highlightIngId, setHighlightIngId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!highlightIngId) return
+    const tmr = setTimeout(() => setHighlightIngId(null), 3000)
+    return () => clearTimeout(tmr)
+  }, [highlightIngId])
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
@@ -479,8 +505,40 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
               {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (
                 <div style={{ marginTop: 10, padding: '6px 10px', background: '#fef3e0',
                               color: UXP.coral, fontSize: 11, borderRadius: 5 }}>
-                  {data.summary.missing_prices > 0 && <div>{t('detail.missingPricesWarn', { count: String(data.summary.missing_prices) })}</div>}
-                  {data.summary.unit_mismatches > 0 && <div>{t('detail.unitMismatchWarn', { count: String(data.summary.unit_mismatches) })}</div>}
+                  {data.summary.missing_prices > 0 && (
+                    <button onClick={() => {
+                      const first = data.summary.ingredients.find(i => i.no_price && !i.is_subrecipe)
+                      if (first) {
+                        const el = document.getElementById(`ing-row-${first.id}`)
+                        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightIngId(first.id) }
+                      }
+                    }} style={{
+                      display: 'block', width: '100%', textAlign: 'left' as const,
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: UXP.coral, fontSize: 11, fontFamily: 'inherit',
+                      textDecoration: 'underline', textUnderlineOffset: 2,
+                    }}>
+                      {t('detail.missingPricesWarn', { count: String(data.summary.missing_prices) })}
+                      <span style={{ marginLeft: 6, color: UXP.coral, opacity: 0.8 }}>— click to jump &amp; edit</span>
+                    </button>
+                  )}
+                  {data.summary.unit_mismatches > 0 && (
+                    <button onClick={() => {
+                      const first = data.summary.ingredients.find(i => i.unit_mismatch && !i.is_subrecipe)
+                      if (first) {
+                        const el = document.getElementById(`ing-row-${first.id}`)
+                        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightIngId(first.id) }
+                      }
+                    }} style={{
+                      display: 'block', width: '100%', textAlign: 'left' as const,
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                      color: UXP.coral, fontSize: 11, fontFamily: 'inherit',
+                      textDecoration: 'underline', textUnderlineOffset: 2,
+                    }}>
+                      {t('detail.unitMismatchWarn', { count: String(data.summary.unit_mismatches) })}
+                      <span style={{ marginLeft: 6, color: UXP.coral, opacity: 0.8 }}>— click to jump &amp; fix pack/base unit</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -498,9 +556,28 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                   {t('detail.noIngredients')}
                 </div>
               )}
+              {/* Column header — makes "Waste %" explicit (owner kept asking
+                  if that column was "5 grams or 5 percent"). */}
+              {data.summary.ingredients.length > 0 && (
+                <div style={{
+                  display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
+                  padding: '4px 0', fontSize: 9, color: UXP.ink4,
+                  letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600,
+                  borderBottom: `0.5px solid ${UXP.border}`,
+                }}>
+                  <div>Ingredient</div>
+                  <div style={{ textAlign: 'right' as const }}>Qty</div>
+                  <div>Unit</div>
+                  <div style={{ textAlign: 'right' as const }}>Waste %</div>
+                  <div style={{ textAlign: 'right' as const }}>Line cost</div>
+                  <div></div>
+                  <div></div>
+                </div>
+              )}
               {data.summary.ingredients.map(ing => (
                 <IngredientRow key={ing.id}
                   ing={ing}
+                  highlighted={highlightIngId === ing.id}
                   onRemove={() => removeIngredient(ing.id)}
                   onChange={(patch) => updateIngredient(ing.id, patch)}
                   onProductEdit={load}
@@ -628,8 +705,9 @@ function PriceVatEditor({ recipe, onSave }: {
   )
 }
 
-function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe }: {
+function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, onOpenSubrecipe }: {
   ing: DetailIngredient
+  highlighted?: boolean
   onRemove: () => void
   onChange: (patch: { quantity?: number; unit?: string; waste_pct?: number }) => void
   onProductEdit: () => void
@@ -643,6 +721,9 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe
   const [err,    setErr]    = useState<string | null>(null)
   useEffect(() => { setQty(String(ing.quantity_stated ?? ing.quantity)) }, [ing.quantity, ing.quantity_stated])
   useEffect(() => { setWaste(String(ing.waste_pct ?? 0)) }, [ing.waste_pct])
+  // When the parent banner click flagged this row, auto-expand the inline
+  // edit panel (pack/base/price) so the owner lands on the fix UI.
+  useEffect(() => { if (highlighted && !ing.is_subrecipe) setExpanded(true) }, [highlighted, ing.is_subrecipe])
 
   async function patchProduct(patch: Record<string, any>) {
     setBusy(true); setErr(null)
@@ -674,7 +755,13 @@ function IngredientRow({ ing, onRemove, onChange, onProductEdit, onOpenSubrecipe
   const displayName = ing.is_subrecipe ? (ing.subrecipe_name ?? '?') : (ing.product_name ?? '?')
 
   return (
-    <div style={{ borderBottom: `0.5px solid ${UXP.borderSoft}`, padding: '8px 0' }}>
+    <div id={`ing-row-${ing.id}`}
+      style={{
+        borderBottom: `0.5px solid ${UXP.borderSoft}`, padding: '8px 0',
+        background: highlighted ? UXP.lavFill : 'transparent',
+        transition: 'background 400ms ease',
+        borderRadius: highlighted ? 4 : 0,
+      }}>
       <div style={{
         display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
         alignItems: 'center', fontSize: 12,
@@ -832,6 +919,52 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
   const [unit,      setUnit]      = useState('')
   const [busy,      setBusy]      = useState(false)
   const [err,       setErr]       = useState<string | null>(null)
+  // Inline product creation when the catalogue doesn't have the ingredient
+  // yet (recipe written before the first purchase, or supplier hasn't been
+  // matched). Three fields: name (from search query by default), category,
+  // optional pack/base for the cost engine. POSTs to /api/inventory/items,
+  // then immediately picks the new product so the owner can set qty/unit
+  // without a context switch.
+  const [creatingProduct, setCreatingProduct] = useState(false)
+  const [newName, setNewName]                 = useState('')
+  const [newCategory, setNewCategory]         = useState<typeof PRODUCT_CATEGORIES[number]>('food')
+  const [newPackSize, setNewPackSize]         = useState('')
+  const [newBaseUnit, setNewBaseUnit]         = useState<'g' | 'ml' | 'st' | ''>('')
+  const [newInvoiceUnit, setNewInvoiceUnit]   = useState('')
+
+  async function createProduct() {
+    const nm = newName.trim()
+    if (!nm) { setErr('Product name required.'); return }
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch('/api/inventory/items', {
+        method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id:  bizId,
+          name:         nm,
+          category:     newCategory,
+          unit:         newInvoiceUnit || null,
+          base_unit:    newBaseUnit || null,
+          pack_size:    newPackSize ? Number(newPackSize) : null,
+        }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      // Slot into the picker as if it had been picked from search results.
+      setPicked({
+        product_id:   j.product_id,
+        name:         nm,
+        category:     newCategory,
+        invoice_unit: newInvoiceUnit || null,
+        latest_price: null,
+      })
+      setUnit(newBaseUnit || newInvoiceUnit || 'g')
+      setCreatingProduct(false)
+      // Reset for next time.
+      setNewName(''); setNewPackSize(''); setNewBaseUnit(''); setNewInvoiceUnit('')
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
 
   // Debounced search — switches endpoint based on the active tab.
   useEffect(() => {
@@ -889,15 +1022,75 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
             <input type="text" value={q} onChange={e => setQ(e.target.value)} autoFocus
                    placeholder={tab === 'product' ? t('picker.search') : t('picker.searchRecipes')} style={inputStyle} />
             <div style={{ maxHeight: 280, overflowY: 'auto' as const, marginTop: 8, border: `0.5px solid ${UXP.border}`, borderRadius: 6 }}>
-              {results.length === 0 && (
+              {results.length === 0 && !creatingProduct && (
                 <div style={{ padding: 14, color: UXP.ink4, fontSize: 12, textAlign: 'center' as const }}>
                   {tab === 'product' ? t('picker.noResults') : t('picker.noRecipeResults')}
+                  {tab === 'product' && q.trim() && (
+                    <div style={{ marginTop: 10 }}>
+                      <button onClick={() => { setNewName(q.trim()); setCreatingProduct(true); setErr(null) }}
+                        style={{
+                          padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                          background: UXP.lavMid, color: '#fff', border: 'none',
+                          borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+                        }}>
+                        + Create new product "{q.trim()}"
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {creatingProduct && (
+                <div style={{ padding: 14, fontSize: 11 }}>
+                  <div style={{ fontWeight: 600, color: UXP.ink1, marginBottom: 8 }}>New product</div>
+                  <Field label="Name">
+                    <input type="text" value={newName} onChange={e => setNewName(e.target.value)} autoFocus disabled={busy} style={inputStyle} />
+                  </Field>
+                  <Field label="Category">
+                    <select value={newCategory} onChange={e => setNewCategory(e.target.value as any)} disabled={busy} style={inputStyle}>
+                      {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <Field label="Pack size">
+                      <input type="number" min="0" step="0.01" value={newPackSize} onChange={e => setNewPackSize(e.target.value)}
+                        placeholder="e.g. 2550" disabled={busy} style={inputStyle} />
+                    </Field>
+                    <Field label="Base unit">
+                      <select value={newBaseUnit} onChange={e => setNewBaseUnit(e.target.value as any)} disabled={busy} style={inputStyle}>
+                        <option value="">—</option>
+                        <option value="g">g</option>
+                        <option value="ml">ml</option>
+                        <option value="st">st</option>
+                      </select>
+                    </Field>
+                    <Field label="Invoice unit">
+                      <input type="text" value={newInvoiceUnit} onChange={e => setNewInvoiceUnit(e.target.value)}
+                        placeholder="STRYCK / KG …" disabled={busy} style={inputStyle} />
+                    </Field>
+                  </div>
+                  <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, lineHeight: 1.4 }}>
+                    Pack + base unit lets the cost engine convert recipe grams → supplier kg automatically.
+                    E.g. a 2550 g tomato can: pack=2550, base=g, invoice=STRYCK. Skip if no price yet — you can set later.
+                  </div>
+                  {err && <div style={{ ...errBanner, marginTop: 6 }}>{err}</div>}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                    <button onClick={() => { setCreatingProduct(false); setErr(null) }} disabled={busy} style={secondaryBtn}>Cancel</button>
+                    <button onClick={createProduct} disabled={busy || !newName.trim()} style={primaryBtn}>{busy ? 'Saving…' : 'Create product'}</button>
+                  </div>
                 </div>
               )}
               {results.map((p: any) => (
                 <button key={p.product_id ?? p.recipe_id}
                         onClick={() => {
-                          if (tab === 'product') { setPicked(p); setUnit(p.invoice_unit ?? '') }
+                          if (tab === 'product') {
+                            setPicked(p)
+                            // Default to base_unit when pack info exists (the
+                            // unit the kitchen actually measures in); fall
+                            // back to invoice_unit (the supplier unit, e.g.
+                            // KG). Always lowercased for the dropdown match.
+                            const def = p.base_unit ?? p.invoice_unit ?? ''
+                            setUnit(String(def).toLowerCase())
+                          }
                           else if (!p.would_cycle) { setPicked(p); setUnit('portion') }
                         }}
                         disabled={tab === 'recipe' && p.would_cycle}
@@ -945,14 +1138,26 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                 <input type="number" min="0" step="0.01" value={qty} autoFocus onChange={e => setQty(e.target.value)} disabled={busy} style={inputStyle} />
               </Field>
               <Field label={t('picker.unit')}>
-                <input type="text" value={unit} onChange={e => setUnit(e.target.value)} disabled={busy || tab === 'recipe'} style={inputStyle}
-                       placeholder={tab === 'product' ? (picked.invoice_unit ?? '') : 'portion'} />
+                <select value={unit} onChange={e => setUnit(e.target.value)} disabled={busy || tab === 'recipe'} style={inputStyle}>
+                  {/* Pre-select what the product expects (base_unit if pack
+                      is set, else invoice_unit) — owner can override. */}
+                  {tab === 'recipe' && <option value="portion">portion</option>}
+                  {tab === 'product' && UNIT_OPTIONS.map(u => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                </select>
               </Field>
             </div>
             <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>
-              {tab === 'product'
-                ? t('picker.unitHint',    { unit: picked.invoice_unit ?? '?' })
-                : t('picker.subRecipeHint')}
+              {tab === 'product' ? (
+                picked.base_unit && picked.pack_size
+                  // Product has pack/base info — recommend entering in the
+                  // base unit (g/ml/st). Cost converts automatically.
+                  ? <>Enter in <strong>{picked.base_unit}</strong> — pack is {picked.pack_size}{picked.base_unit} per {picked.invoice_unit ?? '?'}. Cost auto-converts.</>
+                  // No pack data — owner must enter in the invoice unit OR
+                  // edit the product to add pack/base info first.
+                  : <>No pack info set for this product. Enter in <strong>{picked.invoice_unit ?? '?'}</strong> or edit the product's pack/base unit first so g↔kg conversion works.</>
+              ) : t('picker.subRecipeHint')}
             </div>
             {err && <div style={errBanner}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>
