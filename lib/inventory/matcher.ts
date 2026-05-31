@@ -109,70 +109,73 @@ export async function matchInvoiceLine(
     }
   }
 
-  // Gate 0c — global supplier dictionary veto, WITH owner_confirmed safeguard.
+  // Gate 0c + 0d — global supplier dictionary veto AND fallthrough_unknown,
+  // BOTH gated by owner_confirmed safeguard.
   //
-  // The precedence change (Fix 1, 2026-05-31): supplier classifier is one of
-  // three signals that can veto a line to not_inventory, alongside the per-
-  // business override (Gate 0a) and the description rule (Gate 0b). It used
-  // to be silently overridden by a positive BAS account, which let consultancy
-  // fees booked to 4xxx food sit in the review queue.
+  // The principle (refined 2026-05-31 by the Vero-59 drill-in):
   //
-  // SAFEGUARD: the global dictionary asserts a global truth that may not
-  // hold at every business — Frimurarholmen taught us a "landlord" can also
-  // do food passthrough at one specific customer. If an owner has already
-  // confirmed this line's (supplier, normalised_description) signature
-  // matches a real product, that explicit owner decision OUTRANKS the
-  // global guess. Never auto-veto an owner_confirmed match.
+  //   Human-confirmed decisions are protected; machine guesses are not.
   //
-  // The check is one indexed lookup per line — same cost class as Steps 1-2.
-  // Per-business supplier_classifications (Gate 0a) and the description
-  // rule (Gate 0b) have NO safeguard because both are higher-confidence
-  // signals: 0a is an explicit owner action at this business; 0b is
-  // structural (pallets/deposits never being products).
+  // What that means in practice:
+  //   - Gate 0a (per-business supplier_classifications override) and Gate 0b
+  //     (description rule) always veto. 0a is explicit-at-this-business
+  //     owner action; 0b is structural fact (pallets/deposits never being
+  //     products). No safeguard.
+  //   - Gate 0c (global supplier dictionary) and Gate 0d (fallthrough_unknown:
+  //     no positive signal at all) BOTH defer to an owner_confirmed alias if
+  //     one exists for this line's (supplier, normalised_description) signature.
+  //     These are the auto-categorization paths — they may be wrong, and an
+  //     explicit owner-verified match outranks them. Fuzzy aliases
+  //     (fuzzy_same_supplier, fuzzy_cross_supplier) are NOT protected — those
+  //     are machine guesses the audit queue is meant to catch.
+  //
+  // Two history points the principle was earned by:
+  //   - Frimurarholmen (2026-05-31): a landlord supplier globally classified
+  //     as not_inventory also did food passthrough at Vero. 8 owner_confirmed
+  //     food matches were being vetoed by the global guess.
+  //   - 59 Vero "regressions" surfaced by the Fix 1 hunt: real Snabbgross
+  //     vegetables, Spendrups wines, etc., on 5xxx admin BAS accounts the
+  //     accountant mis-coded. basCategory=null, supplierClass=null →
+  //     fallthrough veto. All 100% had owner_confirmed aliases.
+  //
+  // The safeguard is one indexed lookup per would-be-vetoed line — sub-ms
+  // against the product_aliases (business_id, supplier_fortnox_number,
+  // normalised_description) index. Only fires when wouldVeto is true.
   const supplierClass = categoryForSupplier(line.supplier_name_snapshot)
-  if (supplierClass === 'not_inventory') {
+  const basCategory   = categoryForBasAccount(line.account_number)
+  const positiveCategory: SupplierClassification | null = basCategory ?? supplierClass
+
+  const wouldVetoBySupplier    = supplierClass === 'not_inventory'
+  const wouldVetoByFallthrough = !positiveCategory || positiveCategory === 'other'
+  const wouldVeto = wouldVetoBySupplier || wouldVetoByFallthrough
+
+  if (wouldVeto) {
     const normalisedForSafeguard = normaliseDescription(line.raw_description)
-    if (normalisedForSafeguard) {
-      const { data: ownerConfirmedHit } = await db
-        .from('product_aliases')
-        .select('id')
-        .eq('business_id', line.business_id)
-        .eq('supplier_fortnox_number', line.supplier_fortnox_number)
-        .eq('normalised_description', normalisedForSafeguard)
-        .eq('match_method', 'owner_confirmed')
-        .eq('is_active', true)
-        .limit(1)
-        .maybeSingle()
-      if (!ownerConfirmedHit) {
-        return {
-          status: 'not_inventory', product_id: null, alias_id: null,
-          method: null, confidence: null, candidates: [],
-        }
-      }
-      // else: owner_confirmed alias exists for this signature → fall through
-      // to positive routing. The matcher will hit the alias via Step 2 and
-      // confirm the existing match. Global supplier guess is overridden by
-      // explicit owner verification.
-    } else {
-      // No description to safeguard against → trust the supplier veto.
+    const safeguarded = normalisedForSafeguard
+      ? await hasOwnerConfirmedAlias(db, line, normalisedForSafeguard)
+      : false
+
+    if (!safeguarded) {
       return {
         status: 'not_inventory', product_id: null, alias_id: null,
         method: null, confidence: null, candidates: [],
       }
     }
+    // else: owner_confirmed alias exists for this signature → fall through
+    // to Steps 1-4. The matcher will hit the alias via Step 2 (description_exact)
+    // and confirm the existing match. The auto-veto is overridden by explicit
+    // owner verification at the line level.
   }
 
-  const basCategory = categoryForBasAccount(line.account_number)
-  const resolved: SupplierClassification | null =
-    basCategory ?? supplierClass
-
-  if (!resolved || resolved === 'not_inventory' || resolved === 'other') {
-    return {
-      status: 'not_inventory', product_id: null, alias_id: null,
-      method: null, confidence: null, candidates: [],
-    }
-  }
-  // From here on `resolved` is a real InventoryCategory.
+  // If we reach here we have either a positive category or a safeguarded
+  // fall-through. Resolve the category for downstream use; safeguarded
+  // fall-through with no positive signal gets 'other' as a placeholder
+  // (only used by create-new code paths, which Step 2 won't reach when
+  // an owner_confirmed alias already exists).
+  const resolved: InventoryCategory =
+    (positiveCategory && positiveCategory !== 'not_inventory' && positiveCategory !== 'other')
+      ? positiveCategory as InventoryCategory
+      : 'other'
   const _resolvedInventory: InventoryCategory = resolved
 
   const normalised = normaliseDescription(line.raw_description)
@@ -364,6 +367,42 @@ async function getSupplierOverride(db: any, business_id: string, supplier_fortno
     .eq('supplier_fortnox_number', supplier_fortnox_number)
     .maybeSingle()
   return data?.classification ?? null
+}
+
+// Owner-confirmed safeguard. Returns true when this line's signature
+// (business, supplier, normalised_description) has an active alias
+// created via 'owner_confirmed' — i.e. a human explicitly verified that
+// THIS specific raw_description from THIS supplier maps to a real
+// product. That signal outranks any of the auto-categorization Gate-0
+// vetoes (supplier dict guess, fallthrough-unknown).
+//
+// CRITICAL: only 'owner_confirmed' counts. Fuzzy aliases
+// (fuzzy_same_supplier, fuzzy_cross_supplier) are machine guesses —
+// they are NOT safeguarded; they remain vulnerable to re-veto, which
+// is what the audit queue + demotion mechanism is built to catch.
+// Conflating "matched" with "human-confirmed" would entrench machine
+// guesses and undo the learning loop.
+//
+// Uses the product_aliases_desc_uniq partial index (M075) for the
+// (business_id, supplier_fortnox_number, normalised_description) lookup
+// — sub-ms.
+async function hasOwnerConfirmedAlias(
+  db: any,
+  line: InvoiceLineForMatching,
+  normalised: string,
+): Promise<boolean> {
+  if (!normalised) return false
+  const { data } = await db
+    .from('product_aliases')
+    .select('id')
+    .eq('business_id', line.business_id)
+    .eq('supplier_fortnox_number', line.supplier_fortnox_number)
+    .eq('normalised_description', normalised)
+    .eq('match_method', 'owner_confirmed')
+    .eq('is_active', true)
+    .limit(1)
+    .maybeSingle()
+  return !!data
 }
 
 async function touchAlias(db: any, alias_id: string): Promise<void> {

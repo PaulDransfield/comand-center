@@ -138,7 +138,12 @@ const EXACT_OVERRIDES: Record<string, SupplierClassification> = {
   'securitas direct sverige ab':                  'not_inventory',
   'svenskt naringsliv service ab':                'not_inventory',
   'we are marketing sverige ab':                  'not_inventory',
-  'barkonsult jakobsson lovgren ab':              'not_inventory',
+  // NOTE: 'barkonsult jakobsson lovgren ab' removed 2026-05-31 — multi-purpose
+  // at Vero (sells real bar equipment + glassware + specialty spirits like
+  // Taggiasco Gin, Urban Bar martini glasses, iSi whipped-cream chargers,
+  // alongside any genuine consulting work the name suggests). Same pattern
+  // as Frimurarholmen. Per-business override (M083) can be added at any
+  // customer where the consulting side dominates.
   'ohrlings pricewaterhousecoopers ab':           'not_inventory',
   'orebro kommun':                                'not_inventory',
   'orebro kommun tekniska':                       'not_inventory', // water + sewage

@@ -62,7 +62,7 @@ const EXACT_OVERRIDES = {
   'carlsberg sverige aktiebolag':'alcohol','carlsberg intrum':'not_inventory','spendrups bryggeri ab':'alcohol','anora sweden ab':'alcohol','enjoy wine spirits ab':'alcohol','lihnells distillery ab':'alcohol','lively wines sweden ab':'alcohol','wine affair scandinavia ab':'alcohol','out of home ab':'alcohol',
   'ab tingstad papper':'takeaway_material','quatra sweden ab':'disposables',
   'orebro tvatt ab':'cleaning','renall ab':'cleaning','prezero recycling ab':'not_inventory',
-  'e on energidistribution aktiebolag':'not_inventory','caspeco ab':'not_inventory','fortnox ab':'not_inventory','fortnox aktiebolag':'not_inventory','advania sverige ab':'not_inventory','cedra sverige ab':'not_inventory','flow sweden ab':'not_inventory','qvanti ab':'not_inventory','elavon':'not_inventory','fora ab':'not_inventory','sami':'not_inventory','securitas direct sverige ab':'not_inventory','svenskt naringsliv service ab':'not_inventory','we are marketing sverige ab':'not_inventory','barkonsult jakobsson lovgren ab':'not_inventory','ohrlings pricewaterhousecoopers ab':'not_inventory','orebro kommun':'not_inventory','orebro kommun tekniska':'not_inventory','orebro sotar n ab':'not_inventory','hlk elgruppen ab':'not_inventory','varme installation storkoksserv':'not_inventory','eventcenter i orebro ab':'not_inventory','pitchers i orebro ab':'not_inventory','ps inkasso juridik ab':'not_inventory','sthal ab':'not_inventory','ancon ab':'not_inventory','ancon aktiebolag':'not_inventory',
+  'e on energidistribution aktiebolag':'not_inventory','caspeco ab':'not_inventory','fortnox ab':'not_inventory','fortnox aktiebolag':'not_inventory','advania sverige ab':'not_inventory','cedra sverige ab':'not_inventory','flow sweden ab':'not_inventory','qvanti ab':'not_inventory','elavon':'not_inventory','fora ab':'not_inventory','sami':'not_inventory','securitas direct sverige ab':'not_inventory','svenskt naringsliv service ab':'not_inventory','we are marketing sverige ab':'not_inventory','ohrlings pricewaterhousecoopers ab':'not_inventory','orebro kommun':'not_inventory','orebro kommun tekniska':'not_inventory','orebro sotar n ab':'not_inventory','hlk elgruppen ab':'not_inventory','varme installation storkoksserv':'not_inventory','eventcenter i orebro ab':'not_inventory','pitchers i orebro ab':'not_inventory','ps inkasso juridik ab':'not_inventory','sthal ab':'not_inventory','ancon ab':'not_inventory','ancon aktiebolag':'not_inventory',
   'lawe restaurang ab':'not_inventory',
 }
 const PATTERN_MATCHERS = [
@@ -158,52 +158,48 @@ async function loadOwnerOverrides(business_id) {
   return new Map(rows.map(r => [r.supplier_fortnox_number, r.classification]))
 }
 
-// ─── New Gate 0 simulation (Fix 1 spec) ───
+// ─── New Gate 0 simulation (Fix 1 spec, broadened-safeguard version) ───
+//
+// Mirrors lib/inventory/matcher.ts Gate 0 logic post-Fix-1:
+//   - 0a per-business override + 0b description rule always veto (no safeguard)
+//   - 0c supplier-dict veto AND 0d fallthrough-unknown BOTH gated on
+//     owner_confirmed alias presence
 function newGate0(line, ownerOverride, ownerConfirmedSet) {
-  // 0a: per-business override
+  // 0a
   if (ownerOverride === 'not_inventory') {
     return { class: 'not_inventory', firedBy: ['owner_override_per_business'] }
   }
 
-  // 0b: description rule — Fix 2 already shipped; checked here for completeness
-  //     but it won't fire for needs_review lines anymore (Fix 2 cleaned them up).
+  // 0b skipped here (Fix 2 cleaned the population)
 
-  // 0c: global supplier dictionary, with owner_confirmed safeguard
   const supplierClassResult = categoryForSupplier(line.supplier_name_snapshot)
-  const supplierClass = supplierClassResult?.category ?? null
+  const supplierClass  = supplierClassResult?.category ?? null
   const supplierSource = supplierClassResult?.source ?? null
+  const basCategory    = categoryForBasAccount(line.account_number)
+  const positiveCategory = basCategory ?? supplierClass
 
-  const basCategory = categoryForBasAccount(line.account_number)
+  const wouldVetoBySupplier    = supplierClass === 'not_inventory'
+  const wouldVetoByFallthrough = !positiveCategory || positiveCategory === 'other'
+  const wouldVeto = wouldVetoBySupplier || wouldVetoByFallthrough
 
-  if (supplierClass === 'not_inventory') {
+  if (wouldVeto) {
     const normalised = normaliseDescription(line.raw_description)
     const safeguarded = normalised && ownerConfirmedSet.has(`${line.supplier_fortnox_number}||${normalised}`)
     if (!safeguarded) {
-      // SAFETY HUNT MARKER: supplier veto fires; record whether BAS contradicts
+      const firedBy = wouldVetoBySupplier ? ['supplier_veto'] : ['fallthrough_unknown']
       return {
         class: 'not_inventory',
-        firedBy: ['supplier_veto'],
+        firedBy,
         supplierSource,
         basCategory,
-        contradiction: basCategory && ['food','alcohol','beverage'].includes(basCategory),
+        contradiction: wouldVetoBySupplier && basCategory && ['food','alcohol','beverage'].includes(basCategory),
         safeguarded: false,
       }
     }
-    return {
-      class: 'safeguarded_passthrough',
-      firedBy: [],
-      supplierSource,
-      basCategory,
-      safeguarded: true,
-    }
+    return { class: 'safeguarded_passthrough', firedBy: [], supplierSource, basCategory, safeguarded: true }
   }
 
-  // 0d: positive routing
-  const resolved = basCategory ?? supplierClass
-  if (!resolved || resolved === 'other') {
-    return { class: 'not_inventory', firedBy: ['fallthrough_unknown'] }
-  }
-  return { class: resolved, firedBy: [] }
+  return { class: positiveCategory, firedBy: [] }
 }
 
 // ─── Main ───
