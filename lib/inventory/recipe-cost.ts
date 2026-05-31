@@ -215,16 +215,25 @@ export function computeRecipeCost(
 
     // Try to convert recipe qty to base_unit. If we have base_unit + the
     // recipe's unit is in the same family (g↔kg, ml↔l), we get a clean
-    // converted quantity. If not, fall back to old line_cost so the
-    // owner at least sees SOMETHING and the unit_mismatch flag warns them.
+    // converted quantity. If not in the same family, try the 1:1 fallback
+    // against invoice_unit first — common case: invoice='st' (1 jar),
+    // pack parsed from name to '4100g', recipe asks for '1 styck' = 1 jar.
+    // The pack-aware path can't convert st→g, but 1:1 against invoice_unit
+    // is correct because '1 st of the jar' IS unit_price by definition.
     let lineCost: number | null = null
     let unitMismatch = false
     if (!noPrice && costPerBase != null && baseUnit && ing.unit) {
       const converted = convertQuantity(ing.quantity, ing.unit, baseUnit)
       if (converted != null) {
         lineCost = Math.round(converted * costPerBase * 100) / 100
+      } else if (invoiceUnit && canonicalUnit(invoiceUnit) === canonicalUnit(ing.unit)) {
+        // Recipe unit canonicalizes to the invoice unit (e.g. recipe 'styck'
+        // vs invoice 'st'). Use the unit_price directly — that's what the
+        // owner means by "1 of these". Pack-derived base_unit is irrelevant
+        // here; the supplier sells per st and the recipe specifies in st.
+        lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
       } else {
-        // Cross-family or unknown unit — flag and don't try to cost
+        // Truly cross-family (e.g. recipe ml vs product st with no conversion)
         lineCost = null
         unitMismatch = true
       }
