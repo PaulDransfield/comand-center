@@ -22,6 +22,7 @@ import { checkCronSecret }              from '@/lib/admin/check-secret'
 import { log }                          from '@/lib/log/structured'
 import { fortnoxFetch }                 from '@/lib/fortnox/api/fetch'
 import { getFreshFortnoxAccessToken }   from '@/lib/fortnox/api/auth'
+import { extractSupplierInvoiceVoucher } from '@/lib/fortnox/extract-voucher-ref'
 
 export const runtime         = 'nodejs'
 export const preferredRegion = 'fra1'
@@ -121,8 +122,13 @@ export async function POST(req: NextRequest) {
           vat:              inv.VAT             != null ? Number(inv.VAT)            : null,
           balance:          inv.Balance         != null ? Number(inv.Balance)        : null,
           final_pay_date:   inv.FinalPayDate     ?? null,
-          voucher_series:   inv.VoucherSeries    ?? null,
-          voucher_number:   inv.VoucherNumber   != null ? Number(inv.VoucherNumber)  : null,
+          // Fortnox's supplier-invoice payload doesn't expose VoucherSeries /
+          // VoucherNumber as top-level fields. The booking voucher ref lives
+          // nested in `inv.Vouchers[]` with `ReferenceType='SUPPLIERINVOICE'`
+          // (alongside SUPPLIERPAYMENT and other refs). Shared extractor in
+          // lib/fortnox/extract-voucher-ref.ts; sql/p20-paydown-ticket1-
+          // backfill-APPLY.sql mirrors the same filter for the one-time backfill.
+          ...extractSupplierInvoiceVoucher(inv),
           comments:         inv.Comments         ?? null,
           cancelled:        Boolean(inv.Cancelled),
           raw_data:         inv,
