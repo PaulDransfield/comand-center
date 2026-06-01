@@ -101,6 +101,9 @@ export const AREAS: Area[] = [
       { key: 'counts',      label: 'Stock counts',               href: '/inventory/counts' },
       { key: 'waste',       label: 'Waste',                      href: '/inventory/waste' },
       { key: 'variance',    label: 'Variance',                   href: '/inventory/variance' },
+      // Smart shopping list derived from prep sessions + pre-orders.
+      // Guide only — chef fills the order qty themselves.
+      { key: 'orders',      label: 'Order list',                 href: '/inventory/orders' },
     ],
   },
   {
