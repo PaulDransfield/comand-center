@@ -249,6 +249,70 @@ export async function extractInvoicePdf(
   let totalExtracted = validRows.reduce((s, r) => s + Number(r.total_excl_vat ?? 0), 0)
   const headerTotal  = input.invoice_total_header ?? modelResponse.header?.invoice_total_excl_vat ?? null
 
+  // ── Passthrough scaling (Marini/Rima class) ──────────────────────
+  // When the model populates passthrough_scaling, it's telling us the
+  // page-2 rows are denominated in some other currency / pre-markup
+  // scale than the page-1 invoice header. Apply the deterministic
+  // proportional scale here, server-side, so the sum reconciles to
+  // header by construction.
+  //
+  // Why this is safe (the load-bearing argument):
+  //   - The model only had to READ two numbers (page-1 header, page-2
+  //     grand total) and the per-row values. Reading is what models do
+  //     well. The compound math (FX × markup × per-row) is what they
+  //     get wrong.
+  //   - Sanity checks below: refuse to scale if the inferred factor is
+  //     outside a plausible band, if header is missing/zero, or if the
+  //     reported page-2 grand total doesn't match the row sum within 5%
+  //     (the model lied about its own input — don't apply the scale).
+  //   - Adds a 'proportional_scaling_applied' warning so the audit
+  //     trail records exactly what happened.
+  const pts = (modelResponse as any).passthrough_scaling
+  if (pts && typeof pts === 'object'
+      && Number.isFinite(Number(pts.page1_header_total))
+      && Number.isFinite(Number(pts.page2_grand_total))
+      && Math.abs(Number(pts.page2_grand_total)) > 0.01) {
+    const page1H = Number(pts.page1_header_total)
+    const page2T = Number(pts.page2_grand_total)
+    // The model's claimed page-2 grand total should match the sum of
+    // per-row values it returned. If it doesn't, the model is internally
+    // inconsistent and we DON'T trust the scaling claim.
+    const rowSumVsClaimedPage2 = page2T !== 0
+      ? Math.abs(totalExtracted - page2T) / Math.abs(page2T)
+      : Infinity
+    const scale = page2T !== 0 ? page1H / page2T : null
+    // Plausible band: scale between 0.5 (under-scaling odd) and 50
+    // (covers 11× FX × 1.10 markup = 12.21, with headroom). Outside
+    // this band is suspect.
+    if (scale != null && scale >= 0.5 && scale <= 50 && rowSumVsClaimedPage2 < 0.05) {
+      for (const r of validRows) {
+        if (r.total_excl_vat != null) {
+          r.total_excl_vat = Math.round(Number(r.total_excl_vat) * scale * 100) / 100
+        }
+        // price_per_unit follows the same scaling — it's denominated
+        // in the same source column as total. quantity stays in source
+        // units (Antal-as-printed) since the cost engine derives
+        // per-unit cost as total/quantity at read time.
+        if (r.price_per_unit != null) {
+          r.price_per_unit = Math.round(Number(r.price_per_unit) * scale * 1000) / 1000
+        }
+      }
+      totalExtracted = validRows.reduce((s, r) => s + Number(r.total_excl_vat ?? 0), 0)
+      warnings.push({
+        code: 'proportional_scaling_applied',
+        message: `Passthrough scaling applied: model reported page-1 header=${page1H.toFixed(2)} and page-2 grand total=${page2T.toFixed(2)} (${pts.column_used ?? 'column not specified'}). Server-computed scale=${scale.toFixed(4)} × every row. New sum=${totalExtracted.toFixed(2)}.`,
+        severity: 'warn',
+      })
+    } else {
+      // Suspect scaling claim — log a warning but don't apply.
+      warnings.push({
+        code: 'passthrough_scaling_rejected',
+        message: `Model reported passthrough_scaling but server refused to apply it. page1=${page1H}, page2=${page2T}, scale=${scale}, row_sum_vs_claimed_page2_drift=${(rowSumVsClaimedPage2 * 100).toFixed(1)}%. Either the scale factor is implausible or the model's claimed page-2 total disagrees with its own row sum.`,
+        severity: 'warn',
+      })
+    }
+  }
+
   // ── Server-side sign-flip rescues ────────────────────────────────
   // Two distinct credit patterns Swedish restaurants hit regularly:
   //
@@ -579,6 +643,11 @@ interface ClaudeRecordedRows {
     invoice_date?:           string | null
     currency?:               string | null   // ISO 4217 — null/missing → caller defaults to SEK
   }
+  passthrough_scaling?: {
+    page1_header_total: number
+    page2_grand_total:  number
+    column_used?:       string | null
+  } | null
 }
 
 const SYSTEM_PROMPT = `
@@ -726,6 +795,85 @@ is your in-prompt safeguard; the server-side check is the hard floor.
 If you get this wrong, the extraction is rejected and the invoice
 falls back to manual review — costly. Get it right.
 
+PASSTHROUGH-WITH-MARKUP SUB-PATTERN (Marini/Rima-style):
+Some passthrough invoices apply a distributor markup. The signature is:
+- Page 1 has a single line like "Levererat från X 2025 MM" where the
+  "Lev ant" / quantity column is a non-integer multiplier such as 1.10
+  (NOT a real product quantity), the à-pris column is the underlying
+  supplier cost, and Summa = à-pris × multiplier = the invoice total.
+  The multiplier represents the distributor's markup percentage
+  (1.10 = 10% markup, 1.15 = 15%, etc).
+- Page 2 itemizes the underlying supplier's sales detail, typically
+  with columns "Artikelnr | Namn | Antal | EUR | SEK". Page 2's row
+  totals reconcile to the UNDERLYING supplier cost (= header / markup),
+  NOT directly to the invoice header.
+- The page-2 table may have BOTH a EUR and SEK column. Often the SEK
+  column is BLANK per row and only printed as a grand total at the top
+  of page 2. In that case the EUR column is the per-row line total in
+  the supplier's billing currency, and an FX rate (e.g. 11,0565) is
+  printed at the top of page 2 to convert EUR → SEK.
+
+TO EXTRACT CORRECTLY — DO NOT do any FX or markup math yourself. The
+server has a deterministic post-processing step that will scale your
+row totals to reconcile against the header. Your job is just to READ
+and REPORT:
+
+  STEP 1: For each page-2 product row, report its value FROM ONE
+  COLUMN in the row's total_excl_vat field. The column may be EUR
+  or SEK — pick whichever is POPULATED per row (some invoices have
+  the SEK column blank per row and only the EUR column has values).
+  Report the raw value AS PRINTED on the document. Do NOT multiply,
+  do NOT convert, do NOT apply any markup.
+
+  STEP 2: Find the page-2 GRAND TOTAL of the SAME column you read
+  per-row. It's printed at the top or bottom of the page-2 table.
+  Report it in passthrough_scaling.page2_grand_total. The currency
+  of this value and your per-row values must match — both EUR or
+  both SEK.
+
+  STEP 3: Read the invoice header total from page 1 (the Summa
+  field on the "Levererat från X" line, OR the "Att betala excl.
+  moms" footer — both will agree). Report it in
+  passthrough_scaling.page1_header_total.
+
+The server will compute: scale = page1_header_total / page2_grand_total,
+then multiply each row.total_excl_vat by that scale. By construction
+the sum of scaled rows equals the invoice header total. The page-1
+markup multiplier (e.g. 1.10) and any EUR→SEK FX rate are BOTH absorbed
+into the single scale factor, so you don't need to detect or apply
+either.
+
+WORKED EXAMPLE — Laweka 3174 (SEK column populated):
+- For each of 46 product rows, write the SEK column value as
+  total_excl_vat. Mozzarella row → total_excl_vat = 76.89.
+- passthrough_scaling.page2_grand_total = 94 836.58 (the SEK column's
+  grand total at the bottom of page 2)
+- passthrough_scaling.page1_header_total = 104 320.24 (the page-1
+  Summa field on the "Levererat från Marini/Rima 2025 09" line)
+- Server then computes scale = 104320.24 / 94836.58 = 1.10 and
+  multiplies every row by 1.10. Mozzarella's final total_excl_vat
+  becomes 84.58 SEK; sum of all rows = 104 320.24.
+
+WORKED EXAMPLE — Eventcenter 2948 (SEK column blank, EUR populated):
+- For each of 29 product rows, write the EUR column value as
+  total_excl_vat (since SEK is blank). Mozzarella row →
+  total_excl_vat = 292.32.
+- passthrough_scaling.page2_grand_total = 7 357.71 (the EUR column's
+  grand total at the top of page 2)
+- passthrough_scaling.page1_header_total = 90 242.32
+- Server computes scale = 90242.32 / 7357.71 = 12.265 (this combines
+  the FX rate AND the markup) and multiplies every row by 12.265.
+  Mozzarella's final total_excl_vat = 3 585.45 SEK; sum = 90 242.32.
+
+quantity, price_per_unit, and unit stay in the SUPPLIER'S units (the
+Antal value as printed, the unit implicit in the description). Only
+total_excl_vat will be scaled.
+
+CRITICAL: passthrough_scaling is ONLY for these passthrough cases (the
+"Lev ant=1.10, page-1 single 'Levererat från' line" signature). Do NOT
+populate it for normal invoices — leave it null. The server will treat
+the absence as "no scaling needed, sum should match header as-is".
+
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
 - Use the ISO 4217 code when you see a different currency:
@@ -772,6 +920,23 @@ const RECORD_TOOL = {
           invoice_date:           { type: ['string', 'null'] },
           currency:               { type: ['string', 'null'], description: 'ISO 4217 code (SEK / EUR / USD / NOK / DKK / GBP). Default SEK if unclear.' },
         },
+      },
+      passthrough_scaling: {
+        // Optional metadata for passthrough invoices where page-2 rows are
+        // denominated in a different currency / scale than the page-1
+        // invoice total (e.g. Marini/Rima: EUR-priced page-2 + 10% markup
+        // applied to page-1 SEK header). When present, the server computes
+        // scale = page1_header_total / page2_grand_total and multiplies
+        // each row's total_excl_vat by that scale so the row sum reconciles
+        // to the header. The model just reports the two grand totals as
+        // printed on the document; deterministic math runs server-side.
+        type: ['object', 'null'],
+        properties: {
+          page1_header_total: { type: 'number', description: "The invoice's ex-VAT total as printed on page 1 (Summa / Att betala excl. moms), in the invoice's currency (usually SEK)." },
+          page2_grand_total:  { type: 'number', description: 'The grand total of the page-2 column you read per-row values from (whether EUR or SEK). If you read row values from the SEK column, report the SEK grand total here; if from the EUR column, report the EUR grand total here. The currency of THIS value and the per-row values must match.' },
+          column_used:        { type: ['string', 'null'], description: "Optional: 'EUR' or 'SEK' to indicate which page-2 column you read." },
+        },
+        required: ['page1_header_total', 'page2_grand_total'],
       },
     },
     required: ['rows'],

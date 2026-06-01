@@ -96,6 +96,33 @@ export async function POST(req: NextRequest) {
       )
 
       const rows = claude.payload?.rows ?? []
+
+      // Mirror the production extractor's passthrough scaling so the
+      // dry-run shows what the deployed extraction would actually produce
+      // (model reports two grand totals; server multiplies row totals so
+      // they reconcile to header).
+      const pts: any = (claude.payload as any)?.passthrough_scaling
+      let scaling_applied = false
+      let scaling_factor: number | null = null
+      if (pts && typeof pts === 'object'
+          && Number.isFinite(Number(pts.page1_header_total))
+          && Number.isFinite(Number(pts.page2_grand_total))
+          && Math.abs(Number(pts.page2_grand_total)) > 0.01) {
+        const page1H  = Number(pts.page1_header_total)
+        const page2T  = Number(pts.page2_grand_total)
+        const rowSumPreScale = rows.reduce((s: number, r: any) => s + Number(r.total_excl_vat ?? 0), 0)
+        const rowSumVsP2 = page2T !== 0 ? Math.abs(rowSumPreScale - page2T) / Math.abs(page2T) : Infinity
+        const scale = page2T !== 0 ? page1H / page2T : null
+        if (scale != null && scale >= 0.5 && scale <= 50 && rowSumVsP2 < 0.05) {
+          for (const r of rows) {
+            if (r.total_excl_vat != null) r.total_excl_vat = Math.round(Number(r.total_excl_vat) * scale * 100) / 100
+            if (r.price_per_unit != null) r.price_per_unit = Math.round(Number(r.price_per_unit) * scale * 1000) / 1000
+          }
+          scaling_applied = true
+          scaling_factor  = scale
+        }
+      }
+
       const totalExtracted = rows.reduce((s: number, r: any) => s + Number(r.total_excl_vat ?? 0), 0)
       const headerTotal = Number(ext.total_header ?? 0)
 
@@ -106,9 +133,11 @@ export async function POST(req: NextRequest) {
         ? evaluateReconciliation(totalExtracted, headerTotal, rows)
         : null
 
-      result.rows_count        = rows.length
-      result.total_extracted   = Math.round(totalExtracted * 100) / 100
-      result.total_header      = headerTotal
+      result.rows_count             = rows.length
+      result.total_extracted        = Math.round(totalExtracted * 100) / 100
+      result.total_header           = headerTotal
+      result.passthrough_scaling_applied = scaling_applied
+      result.passthrough_scaling_factor  = scaling_factor
       result.recon_delta_pct      = recon ? Math.round(recon.signed_delta_pct * 1000) / 10 : null
       result.recon_warning_code   = recon?.warning?.code ?? null
       result.recon_warning_msg    = recon?.warning?.message ?? null
