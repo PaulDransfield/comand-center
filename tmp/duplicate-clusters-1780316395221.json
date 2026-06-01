@@ -1,0 +1,16 @@
+{
+  "Chicce": {
+    "total_products": 1244,
+    "exact_duplicate_clusters": 12,
+    "exact_duplicate_products": 25,
+    "fuzzy_clusters": 48,
+    "fuzzy_cluster_products": 107
+  },
+  "Vero": {
+    "total_products": 898,
+    "exact_duplicate_clusters": 22,
+    "exact_duplicate_products": 44,
+    "fuzzy_clusters": 17,
+    "fuzzy_cluster_products": 40
+  }
+}
