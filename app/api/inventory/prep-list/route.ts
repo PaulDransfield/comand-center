@@ -141,28 +141,44 @@ export async function POST(req: NextRequest) {
       subIngredientsByRecipe.set((i as any).recipe_id, list)
     }
   }
+  // Two-step query — DON'T use recipes!inner here. recipe_ingredients
+  // has TWO FKs to recipes (recipe_id AND subrecipe_id); the embed's
+  // auto-detected join can pick subrecipe_id and the inner join drops
+  // every row with a NULL subrecipe (which is most product ingredients).
+  // The two-step pattern joins on recipe_id explicitly and avoids the
+  // ambiguity entirely.
   const usesByProductId = new Map<string, Array<{ ingredient_id: string; recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>>()
   if (productIds.length > 0) {
-    const { data: ris } = await db
-      .from('recipe_ingredients')
-      .select('id, product_id, quantity, unit, notes, recipes!inner(id, name, business_id, archived_at)')
-      .in('product_id', productIds)
-      .eq('recipes.business_id', businessId)
-      .is('recipes.archived_at', null)
-    for (const r of ris ?? []) {
-      const pid = (r as any).product_id as string
-      const rec = (r as any).recipes
-      if (!rec) continue
-      const list = usesByProductId.get(pid) ?? []
-      list.push({
-        ingredient_id: (r as any).id,
-        recipe_id:     rec.id,
-        recipe_name:   rec.name ?? null,
-        notes:         (r as any).notes ?? null,
-        quantity:      Number((r as any).quantity ?? 0),
-        unit:          (r as any).unit ?? null,
-      })
-      usesByProductId.set(pid, list)
+    const { data: bizRecipes } = await db
+      .from('recipes')
+      .select('id, name')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+    const bizRecipeIds = (bizRecipes ?? []).map((r: any) => r.id)
+    const nameByRecipeId = new Map<string, string | null>()
+    for (const r of bizRecipes ?? []) nameByRecipeId.set(r.id, (r as any).name ?? null)
+
+    if (bizRecipeIds.length > 0) {
+      const { data: ris } = await db
+        .from('recipe_ingredients')
+        .select('id, recipe_id, product_id, quantity, unit, notes')
+        .in('product_id', productIds)
+        .in('recipe_id', bizRecipeIds)
+      for (const r of ris ?? []) {
+        const pid = (r as any).product_id as string
+        const rid = (r as any).recipe_id as string
+        if (!pid || !rid) continue
+        const list = usesByProductId.get(pid) ?? []
+        list.push({
+          ingredient_id: (r as any).id,
+          recipe_id:     rid,
+          recipe_name:   nameByRecipeId.get(rid) ?? null,
+          notes:         (r as any).notes ?? null,
+          quantity:      Number((r as any).quantity ?? 0),
+          unit:          (r as any).unit ?? null,
+        })
+        usesByProductId.set(pid, list)
+      }
     }
   }
 
