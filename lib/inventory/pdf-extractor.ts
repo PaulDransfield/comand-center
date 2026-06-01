@@ -726,6 +726,55 @@ is your in-prompt safeguard; the server-side check is the hard floor.
 If you get this wrong, the extraction is rejected and the invoice
 falls back to manual review — costly. Get it right.
 
+PASSTHROUGH-WITH-MARKUP SUB-PATTERN (Marini/Rima-style):
+Some passthrough invoices apply a distributor markup. The signature is:
+- Page 1 has a single line like "Levererat från X 2025 MM" where the
+  "Lev ant" / quantity column is a non-integer multiplier such as 1.10
+  (NOT a real product quantity), the à-pris column is the underlying
+  supplier cost, and Summa = à-pris × multiplier = the invoice total.
+  The multiplier represents the distributor's markup percentage
+  (1.10 = 10% markup, 1.15 = 15%, etc).
+- Page 2 itemizes the underlying supplier's sales detail, typically
+  with columns "Artikelnr | Namn | Antal | EUR | SEK". Page 2's row
+  totals reconcile to the UNDERLYING supplier cost (= header / markup),
+  NOT directly to the invoice header.
+- The page-2 table may have BOTH a EUR and SEK column. Often the SEK
+  column is BLANK per row and only printed as a grand total at the top
+  of page 2. In that case the EUR column is the per-row line total in
+  the supplier's billing currency, and an FX rate (e.g. 11,0565) is
+  printed at the top of page 2 to convert EUR → SEK.
+
+To extract correctly:
+1. Detect the markup multiplier from page 1 (the "Lev ant" value on
+   the single summary line, e.g. 1.10). If it's 1.00 or absent, there
+   is no markup — skip step 4 below.
+2. For each page-2 product row, read the per-row total. Use the SEK
+   column if it has a value; otherwise use EUR × the page-2 FX rate.
+3. Multiply each per-row total by the markup multiplier from step 1.
+   That value goes into row.total_excl_vat.
+4. The sum of marked-up row totals should equal the invoice header
+   total within ~5%. If it doesn't, you've mis-identified one of the
+   conversion factors — re-check.
+
+Worked example for "Levererat från Marini/Rima 2025 09" (Laweka 3174):
+- Page 1: Lev ant=1.10, à-pris=94 836,58, Summa=104 320,24 SEK
+- Page 2: 46 product rows, SEK column populated, sum to 94 836,58
+- Per-row buyer cost = page-2 SEK × 1.10 → sum = 104 320,24 SEK ✓
+
+Worked example for "Levererat från Marini/Rima 2025 06" (Eventcenter 2948):
+- Page 1: Lev ant=1.10, à-pris=82 038,47, Summa=90 242,32 SEK
+- Page 2: 29 product rows, SEK column BLANK per row, EUR column
+  populated, sum of EUR = 7 357,71. FX rate at top = 11,15.
+- Per-row buyer cost = page-2 EUR × 11.15 × 1.10
+  → sum = 7 357,71 × 11.15 × 1.10 = 90 242 SEK ✓
+
+quantity, price_per_unit, and unit on each row stay in the SUPPLIER'S
+units (the Antal value, the description's implicit unit, whatever's
+printed). Only total_excl_vat needs the FX × markup applied so the sum
+reconciles to the header. The catalogue / cost engine derives per-unit
+buyer cost as total_excl_vat / quantity at read time, so applying the
+markup at the total level propagates correctly.
+
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
 - Use the ISO 4217 code when you see a different currency:
