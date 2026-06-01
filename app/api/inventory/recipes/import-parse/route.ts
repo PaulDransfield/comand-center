@@ -29,7 +29,13 @@ export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
 
 const MAX_DISHES      = 40    // Sonnet handles this in one call comfortably
-const MAX_CATALOGUE   = 400   // product context cap (same as admin endpoint)
+const MAX_CATALOGUE   = 1500  // product context cap. Bumped from 400 after
+                              // the Chicce truncation incident — alphabetical
+                              // sort meant any product past letter G never
+                              // entered Sonnet's context (Mozzarella at 691,
+                              // Parmigiano at 783, Ruccola at 943). 1500
+                              // comfortably fits Chicce's 854 food products
+                              // and Vero's ~600 within ~25k input tokens.
 const MAX_INPUT_CHARS = 8000  // ~2000 tokens of menu text; owner can iterate
 
 export async function POST(req: NextRequest) {
@@ -58,13 +64,20 @@ export async function POST(req: NextRequest) {
   const usage = await checkAndIncrementAiLimit(db, auth.orgId)
   if (!usage.ok) return NextResponse.json(usage.body, { status: usage.status })
 
-  // Catalogue context — same shape as the admin endpoint. Owner gets
-  // recipes that draw from THEIR catalogue, not hallucinated names.
+  // Catalogue context — owner gets recipes that draw from THEIR
+  // catalogue, not hallucinated names.
+  //
+  // Filter to food + beverage + alcohol categories only. Cleaning
+  // supplies, disposables, takeaway packaging wouldn't be ingredients
+  // in any sane recipe and just steal tokens. Caught the prior
+  // Chicce truncation bug (164 non-edible products pushed real
+  // ingredients past the 400-product cutoff).
   const { data: products } = await db
     .from('products')
     .select('id, name, category, invoice_unit, base_unit')
     .eq('business_id', businessId)
     .is('archived_at', null)
+    .in('category', ['food', 'beverage', 'alcohol'])
     .order('name')
     .limit(MAX_CATALOGUE)
 
@@ -88,17 +101,36 @@ export async function POST(req: NextRequest) {
   // draft ingredients per dish.
   const SYSTEM_PROMPT = `You are an expert head chef costing a Swedish restaurant's menu. The owner has pasted their menu as free-form text. Your job:
 
-1. Identify each distinct DISH in the input. Skip section headers, intros, footers, prices unless they're useful — focus on dish names.
+1. Identify each distinct DISH in the input. Skip section headers, intros, footers — focus on dish names.
 2. For each dish, draft a per-portion ingredient list drawn ONLY from the supplier product catalogue (reference each by its [8-char prefix]).
-3. If a dish has a selling price in the input, capture it; else leave selling_price out.
+3. If a dish has a selling price in the input, capture it as selling_price_inc_vat; else leave it null.
+
+── INGREDIENT MATCHING (this is where most drafts fail) ──
+
+Menu language (chef writing) and catalogue language (supplier descriptions) diverge constantly. Match by **what the ingredient IS**, not by string similarity. Examples:
+
+- Menu says "mozzarella"  → match catalogue "Mozzarella per pizza Julienne 2,5kg" or similar (any mozzarella product).
+- Menu says "parmesan"    → match "Parmigiano Reggiano DOP" or "Pecorino" (Italian hard cheeses are the chef's "parmesan").
+- Menu says "parmaskinka" → match "Prosciutto di Parma" (parma ham). Look for "prosciutto", "skinka", "ham".
+- Menu says "ruccola"      → match "Ruccola 200g" or "Ruccola Tvättad 4x500g" (any rocket/arugula).
+- Menu says "olivolja"     → match "Olivolja Extra Jungfru" or similar olive oil.
+- Menu says "tomatsås"     → match "Pizzatomater", "Mutti Polpa", "Hela Tomater" (any tomato product suitable as a sauce base).
+- Menu says "basilika" / "basil" → match "Basilika 100g" or "Basilika Färsk".
+- Menu says "pinsa base" / "pizzabotten" → match "Pinsa Base", "FRYS Base pizza", or similar.
+
+The menu is often bilingual (Swedish + English) — both refer to the same ingredient. Translate freely.
 
 RULES:
-- Use ONLY product prefixes that appear in the catalogue. Never invent a product. If a clearly-needed ingredient isn't in the catalogue, omit it (the owner will add it later).
-- Quantities are PER PORTION and realistic for the dish (a pinsa pizza ~80-120g cheese + ~30-50g sauce + ~200-300g base; a salad ~150-200g leaves + ~50g protein; etc).
+- Use ONLY product prefixes that appear in the catalogue. Never invent a product.
+- For each menu ingredient, scan the ENTIRE catalogue for ANY product that could plausibly fill the role. Don't give up if the chef's word doesn't appear verbatim.
+- Quantities are PER PORTION and realistic for the dish:
+  * Pinsa/pizza: 200-300g base + 60-100g cheese + 30-50g sauce + ~20-30g garnish each (ham/parmesan/herbs)
+  * Salad:      150-200g leaves + 30-80g protein/cheese + 10-20g dressing
+  * Pasta:      120-150g pasta + 80-120g sauce/protein + 10g garnish
 - Prefer the product's own unit where natural; otherwise g for solids, ml for liquids, st for countable items.
-- If you can't confidently draft a dish (unknown, no relevant products), include it with an empty ingredients array — the owner adds them.
+- If a dish references an ingredient that genuinely has no plausible catalogue match (e.g. "elderflower foam" with nothing close), omit it and note this in the dish's note field.
 - portions: almost always 1 unless the dish is obviously shared/family-size.
-- Up to ${MAX_DISHES} dishes per import. If the input has more, draft only the first ${MAX_DISHES}.
+- Up to ${MAX_DISHES} dishes per import.
 
 Return JSON ONLY, an array with one object per dish, in input order:
 [
@@ -108,8 +140,7 @@ Return JSON ONLY, an array with one object per dish, in input order:
     "selling_price_inc_vat": 195,
     "note":     "one short sentence about the dish",
     "ingredients": [
-      { "p": "abcd1234", "qty": 280, "unit": "g" },
-      ...
+      { "p": "abcd1234", "qty": 280, "unit": "g" }
     ]
   }
 ]`
