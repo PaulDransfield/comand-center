@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: r, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, updated_at')
+    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
     .eq('id', params.id)
     .maybeSingle()
   if (rErr)  return NextResponse.json({ error: rErr.message }, { status: 500 })
@@ -98,6 +98,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     patch.portions = pt
   }
 
+  // M117 — portions_per_cover (mix share for prep-list auto-fill).
+  // Accept null to clear; otherwise a non-negative number capped at 10
+  // (the DB CHECK constraint also enforces this — bound prevents the
+  // "owner typed 15 thinking percent" typo).
+  if (body.portions_per_cover !== undefined) {
+    if (body.portions_per_cover === null || body.portions_per_cover === '') {
+      patch.portions_per_cover = null
+    } else {
+      const ppc = Number(body.portions_per_cover)
+      if (!Number.isFinite(ppc) || ppc < 0 || ppc > 10) {
+        return NextResponse.json({ error: 'portions_per_cover must be between 0 and 10 (decimal share, e.g. 0.15 for 15%)' }, { status: 400 })
+      }
+      patch.portions_per_cover = ppc
+    }
+  }
+
   // M111 — sub-recipe yield. Accept either as a paired update or as
   // explicit nulls (clearing both). The DB CHECK enforces that the pair
   // is either fully set or fully null; mirror that here so we never
@@ -161,7 +177,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('recipes')
     .update(patch)
     .eq('id', params.id)
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
     .single()
   if (error) {
     if ((error as any).code === '23505') {

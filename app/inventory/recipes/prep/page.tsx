@@ -16,14 +16,18 @@ import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 
 interface DishRow {
-  id:               string
-  name:             string
-  type:             string | null
-  menu_price:       number | null
-  portions:         number
-  ingredient_count: number
-  missing_prices:   number
-  unit_mismatches:  number
+  id:                  string
+  name:                string
+  type:                string | null
+  menu_price:          number | null
+  portions:            number
+  ingredient_count:    number
+  missing_prices:      number
+  unit_mismatches:     number
+  // M117 — per-dish mix share for the covers auto-fill. 0.15 = 15% of
+  // covers order this dish. NULL when not set yet — that dish skips
+  // the auto-fill until owner sets a share.
+  portions_per_cover:  number | null
 }
 
 interface UseRef {
@@ -116,6 +120,8 @@ export default function PrepListPage() {
 
   // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
+  // M117 — expected covers for auto-fill. Empty string when not in use.
+  const [coversInput, setCoversInput] = useState<string>('')
   const [result,   setResult]   = useState<PrepResult | null>(null)
   const [computing, setComputing] = useState(false)
   const [search, setSearch] = useState('')
@@ -172,6 +178,46 @@ export default function PrepListPage() {
     () => Object.entries(selected).filter(([, q]) => q > 0).map(([recipe_id, qty]) => ({ recipe_id, qty })),
     [selected],
   )
+
+  // M117 — apply covers count to fill production from each dish's
+  // mix share. Replaces the selected set with all dishes that have
+  // portions_per_cover > 0, qty = round(covers × share). Dishes with
+  // no share set are skipped — owner adds them manually or sets a
+  // share to opt in. Chef can override individual qtys after.
+  const applyCovers = useCallback(() => {
+    const covers = Number(coversInput)
+    if (!Number.isFinite(covers) || covers <= 0) return
+    const next: Record<string, number> = {}
+    for (const d of dishes) {
+      const share = d.portions_per_cover != null ? Number(d.portions_per_cover) : 0
+      if (share > 0) {
+        const qty = Math.max(1, Math.round(covers * share))
+        next[d.id] = qty
+      }
+    }
+    setSelected(next)
+  }, [coversInput, dishes])
+
+  // Save a per-recipe mix share. Targets PATCH /api/inventory/recipes/[id]
+  // so the value lives on the dish and persists across sessions.
+  // Updates local state optimistically; rolls back on error.
+  const saveDishShare = useCallback(async (recipeId: string, sharePct: number | null) => {
+    const ppc = sharePct == null ? null : sharePct / 100
+    const prevDishes = dishes
+    setDishes(prev => prev.map(d => d.id === recipeId ? { ...d, portions_per_cover: ppc } : d))
+    try {
+      const r = await fetch(`/api/inventory/recipes/${recipeId}`, {
+        method: 'PATCH',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ portions_per_cover: ppc }),
+      })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+    } catch (e: any) {
+      setDishes(prevDishes)
+      setError(e.message)
+    }
+  }, [dishes])
 
   // Active session loader. Looks up whether the business has an open
   // prep session and, if so, pulls its frozen lines. Runs on biz change
@@ -600,6 +646,52 @@ export default function PrepListPage() {
                 </div>
               </div>
 
+              {/* M117 — covers auto-fill. Owner enters expected covers
+                  for tomorrow, clicks Apply, and every dish with a mix
+                  share set populates at qty=round(covers × share).
+                  Chef can edit individual qtys after. */}
+              <div style={{
+                background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+                borderRadius: 6, padding: 8, marginBottom: 10,
+              }}>
+                <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600,
+                              letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                  Auto-fill from covers
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="e.g. 200"
+                    value={coversInput}
+                    onChange={e => setCoversInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') applyCovers() }}
+                    style={{
+                      ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 12,
+                      textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
+                    }}
+                    aria-label="Expected covers"
+                  />
+                  <span style={{ fontSize: 10, color: UXP.ink4 }}>covers</span>
+                  <button
+                    type="button"
+                    onClick={applyCovers}
+                    disabled={!coversInput || Number(coversInput) <= 0}
+                    style={{
+                      padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                      background: UXP.lavDeep, color: '#fff', border: 'none',
+                      borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                      opacity: !coversInput || Number(coversInput) <= 0 ? 0.4 : 1,
+                    }}
+                  >
+                    Apply
+                  </button>
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4, lineHeight: 1.4 }}>
+                  Sets portions from each dish&apos;s mix share (% of covers). Dishes without a share set are skipped — set one below.
+                </div>
+              </div>
+
               {/* Selected lines (top of the panel — these are what's
                   driving the result). */}
               {selectedItems.length === 0 && (
@@ -609,9 +701,9 @@ export default function PrepListPage() {
               )}
               {selectedItems.length > 0 && (
                 <>
-                  {/* Column header so the number column is self-explanatory. */}
+                  {/* Column header so the number columns are self-explanatory. */}
                   <div style={{
-                    display: 'grid', gridTemplateColumns: '1fr 70px 20px',
+                    display: 'grid', gridTemplateColumns: '1fr 60px 56px 20px',
                     alignItems: 'center', gap: 6,
                     padding: '0 8px 4px', fontSize: 9, color: UXP.ink4,
                     fontWeight: 600, letterSpacing: '0.06em',
@@ -619,15 +711,17 @@ export default function PrepListPage() {
                   }}>
                     <div>Dish</div>
                     <div style={{ textAlign: 'right' as const }}>Portions</div>
+                    <div style={{ textAlign: 'right' as const }} title="Mix share — % of covers that order this dish. Drives the auto-fill.">% covers</div>
                     <div />
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
                     {selectedItems.map(({ recipe_id, qty }) => {
                       const d = dishById.get(recipe_id)
                       if (!d) return null
+                      const sharePctStr = d.portions_per_cover != null ? String(Math.round(d.portions_per_cover * 1000) / 10) : ''
                       return (
                         <div key={recipe_id} style={{
-                          display: 'grid', gridTemplateColumns: '1fr 70px 20px',
+                          display: 'grid', gridTemplateColumns: '1fr 60px 56px 20px',
                           alignItems: 'center', gap: 6,
                           padding: '6px 8px', background: UXP.lavFill,
                           border: `0.5px solid ${UXP.lavMid}`, borderRadius: 5,
@@ -643,6 +737,38 @@ export default function PrepListPage() {
                             onChange={e => {
                               const n = Number(e.target.value)
                               setSelected(s => ({ ...s, [recipe_id]: Number.isFinite(n) ? n : 0 }))
+                            }}
+                            style={{
+                              ...inputStyle, padding: '4px 6px', fontSize: 11,
+                              textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
+                            }}
+                          />
+                          {/* Inline % editor. Shown as percentage
+                              (15 → 15 %), stored as fraction (0.15)
+                              under the hood. Autosaves on blur to
+                              PATCH /recipes/[id]. key prop forces a
+                              remount when the underlying value
+                              changes elsewhere (auto-fill, other
+                              device), so the defaultValue reflects
+                              fresh data. */}
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            step={0.1}
+                            defaultValue={sharePctStr}
+                            key={`pct-${recipe_id}-${sharePctStr}`}
+                            placeholder="—"
+                            aria-label={`Mix share % for ${d.name}`}
+                            onBlur={e => {
+                              const raw = e.target.value.trim()
+                              if (raw === '' && d.portions_per_cover == null) return
+                              if (raw === '') { saveDishShare(recipe_id, null); return }
+                              const pct = Number(raw)
+                              if (!Number.isFinite(pct) || pct < 0 || pct > 100) return
+                              const currentPct = d.portions_per_cover != null ? d.portions_per_cover * 100 : null
+                              if (currentPct != null && Math.abs(pct - currentPct) < 0.01) return
+                              saveDishShare(recipe_id, pct)
                             }}
                             style={{
                               ...inputStyle, padding: '4px 6px', fontSize: 11,
