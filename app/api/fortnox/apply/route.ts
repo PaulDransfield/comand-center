@@ -16,6 +16,7 @@ import { waitUntil } from '@vercel/functions'
 import { createAdminClient, getRequestAuth } from '@/lib/supabase/server'
 import { log } from '@/lib/log/structured'
 import { projectRollup } from '@/lib/finance/projectRollup'
+import { bucketForAccount } from '@/lib/overheads/basBuckets'
 import { validateExtraction, type ValidationReport } from '@/lib/fortnox/validators'
 import { auditExtraction } from '@/lib/fortnox/ai-auditor'
 
@@ -300,19 +301,26 @@ export async function POST(req: NextRequest) {
 
     const lines = Array.isArray(extraction.lines) ? extraction.lines : []
     if (lines.length) {
-      const rows = lines.map((l: any) => ({
-        org_id:           auth.orgId,
-        business_id:      upload.business_id,
-        period_year:      year,
-        period_month:     0,
-        label_sv:         l.label_sv ?? l.label ?? '',
-        label_en:         l.label_en ?? null,
-        category:         l.category ?? 'other_cost',
-        subcategory:      l.subcategory ?? null,
-        amount:           Number(l.amount) || 0,
-        fortnox_account:  l.fortnox_account ?? null,
-        source_upload_id: upload.id,
-      }))
+      const rows = lines.map((l: any) => {
+        // M115 — fall back to the BAS dictionary when the AI didn't set
+        // a subcategory but did identify a Fortnox account. Honest-
+        // incomplete preserved: unknown account → bucket null → column
+        // stays null.
+        const dictBucket = l.subcategory ? null : bucketForAccount(l.fortnox_account)
+        return {
+          org_id:           auth.orgId,
+          business_id:      upload.business_id,
+          period_year:      year,
+          period_month:     0,
+          label_sv:         l.label_sv ?? l.label ?? '',
+          label_en:         l.label_en ?? null,
+          category:         l.category ?? 'other_cost',
+          subcategory:      l.subcategory ?? dictBucket?.sub ?? null,
+          amount:           Number(l.amount) || 0,
+          fortnox_account:  l.fortnox_account ?? null,
+          source_upload_id: upload.id,
+        }
+      })
       const { error: insErr } = await db.from('tracker_line_items').insert(rows)
       if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
     }
@@ -541,20 +549,24 @@ async function applyMonthly(db: any, args: {
 
   const lines = Array.isArray(args.lines) ? args.lines : []
   if (lines.length) {
-    const rows = lines.map((l: any) => ({
-      org_id:           orgId,
-      business_id:      businessId,
-      tracker_data_id:  upserted.id,
-      period_year:      year,
-      period_month:     month,
-      label_sv:         l.label_sv ?? l.label ?? '',
-      label_en:         l.label_en ?? null,
-      category:         l.category ?? 'other_cost',
-      subcategory:      l.subcategory ?? null,
-      amount:           Number(l.amount) || 0,
-      fortnox_account:  l.fortnox_account ?? null,
-      source_upload_id: uploadId,
-    }))
+    const rows = lines.map((l: any) => {
+      // M115 — see annual branch above. Same dictionary fallback.
+      const dictBucket = l.subcategory ? null : bucketForAccount(l.fortnox_account)
+      return {
+        org_id:           orgId,
+        business_id:      businessId,
+        tracker_data_id:  upserted.id,
+        period_year:      year,
+        period_month:     month,
+        label_sv:         l.label_sv ?? l.label ?? '',
+        label_en:         l.label_en ?? null,
+        category:         l.category ?? 'other_cost',
+        subcategory:      l.subcategory ?? dictBucket?.sub ?? null,
+        amount:           Number(l.amount) || 0,
+        fortnox_account:  l.fortnox_account ?? null,
+        source_upload_id: uploadId,
+      }
+    })
     const { error: liErr } = await db.from('tracker_line_items').insert(rows)
     if (liErr) return { error: `line items insert failed (${year}-${month}): ${liErr.message}` }
   }
