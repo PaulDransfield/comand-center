@@ -29,6 +29,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const quantity     = Number(body.quantity ?? 0)
   const unit         = body.unit  ? String(body.unit).trim()  : null
   const notes        = body.notes ? String(body.notes).trim() : null
+  // Per-line waste %. CHECK constraint enforces 0..<100 at the DB; clamp
+  // defensively here too. Default 0 = no-op (no yield-loss inflation).
+  const wastePctRaw  = body.waste_pct
+  let wastePct       = 0
+  if (wastePctRaw !== undefined && wastePctRaw !== null) {
+    const w = Number(wastePctRaw)
+    if (!Number.isFinite(w) || w < 0 || w >= 100) {
+      return NextResponse.json({ error: 'waste_pct must be between 0 and < 100' }, { status: 400 })
+    }
+    wastePct = w
+  }
 
   if ((!productId && !subrecipeId) || (productId && subrecipeId)) {
     return NextResponse.json({ error: 'exactly one of product_id or subrecipe_id required' }, { status: 400 })
@@ -126,6 +137,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     product_id:   productId,
     subrecipe_id: subrecipeId,
     quantity,
+    waste_pct:    wastePct,
     unit:         unit ?? defaultUnit,
     notes,
     position:     nextPos,
@@ -133,12 +145,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   let data: any
   if (existing?.id) {
-    // Update existing row — quantity/unit/notes overwrite; position keeps its slot.
+    // Update existing row — quantity/waste_pct/unit/notes overwrite; position keeps its slot.
     const { data: upd, error } = await db
       .from('recipe_ingredients')
-      .update({ quantity, unit: unit ?? defaultUnit, notes })
+      .update({ quantity, waste_pct: wastePct, unit: unit ?? defaultUnit, notes })
       .eq('id', existing.id)
-      .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
+      .select('id, product_id, subrecipe_id, quantity, waste_pct, unit, notes, position')
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     data = upd
@@ -146,7 +158,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const { data: ins, error } = await db
       .from('recipe_ingredients')
       .insert(row)
-      .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
+      .select('id, product_id, subrecipe_id, quantity, waste_pct, unit, notes, position')
       .single()
     if (error) {
       // 23505 = race lost vs concurrent insert. Re-SELECT then UPDATE.
@@ -155,9 +167,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         if (winner?.id) {
           const { data: upd, error: uErr } = await db
             .from('recipe_ingredients')
-            .update({ quantity, unit: unit ?? defaultUnit, notes })
+            .update({ quantity, waste_pct: wastePct, unit: unit ?? defaultUnit, notes })
             .eq('id', winner.id)
-            .select('id, product_id, subrecipe_id, quantity, unit, notes, position')
+            .select('id, product_id, subrecipe_id, quantity, waste_pct, unit, notes, position')
             .single()
           if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 })
           data = upd

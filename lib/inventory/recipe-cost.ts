@@ -26,7 +26,9 @@ export interface IngredientForCosting {
   product_id:   string | null        // null when this row is a sub-recipe reference
   product_name: string | null        // null for sub-recipe rows
   category:     string | null
-  quantity:     number
+  quantity:     number               // INFLATED for cost — see loadRecipeIndex. Original (recipe-stated) qty lives in quantity_stated.
+  quantity_stated: number            // What the owner entered (pre-waste). UI displays this.
+  waste_pct:    number               // 0..<100; the engine doesn't read this directly (inflation is done at load), kept for UI display only.
   unit:         string | null
   notes:        string | null
   position:     number
@@ -178,9 +180,13 @@ export function computeRecipeCost(
     const invoiceUnit = p?.invoice_unit ?? null
     const noPrice     = unitPrice == null
 
-    // Pack-aware conversion. Use saved pack data first; if missing, try
-    // to parse from the product name (cheap and very high hit rate for
-    // restaurant invoices — "Pizza sauce 4,1 kg" etc).
+    // Pack-aware conversion. Resolution priority:
+    //   1. Saved pack_size + base_unit on the product (owner-set).
+    //   2. Parse from product name — "Pizza sauce 4,1 kg" etc.
+    //   3. Canonical SI inference from invoice_unit alone. If supplier
+    //      sells in KG and we know the kr/KG price, we know the kr/g
+    //      price without needing an explicit pack_size. Owner shouldn't
+    //      have to write `pack=1000, base=g` for every kg-priced item.
     let packSize:   number | null = p?.pack_size ?? null
     let baseUnit:   string | null = p?.base_unit ?? null
     let autoParsed = false
@@ -189,6 +195,14 @@ export function computeRecipeCost(
       if (parsed) {
         packSize = parsed.pack_size
         baseUnit = parsed.base_unit
+        autoParsed = true
+      }
+    }
+    if ((packSize == null || baseUnit == null) && invoiceUnit) {
+      const inferred = inferPackFromInvoiceUnit(invoiceUnit)
+      if (inferred) {
+        packSize = inferred.pack_size
+        baseUnit = inferred.base_unit
         autoParsed = true
       }
     }
@@ -201,24 +215,43 @@ export function computeRecipeCost(
 
     // Try to convert recipe qty to base_unit. If we have base_unit + the
     // recipe's unit is in the same family (g↔kg, ml↔l), we get a clean
-    // converted quantity. If not, fall back to old line_cost so the
-    // owner at least sees SOMETHING and the unit_mismatch flag warns them.
+    // converted quantity. If not in the same family, try the 1:1 fallback
+    // against invoice_unit first — common case: invoice='st' (1 jar),
+    // pack parsed from name to '4100g', recipe asks for '1 styck' = 1 jar.
+    // The pack-aware path can't convert st→g, but 1:1 against invoice_unit
+    // is correct because '1 st of the jar' IS unit_price by definition.
     let lineCost: number | null = null
     let unitMismatch = false
     if (!noPrice && costPerBase != null && baseUnit && ing.unit) {
       const converted = convertQuantity(ing.quantity, ing.unit, baseUnit)
       if (converted != null) {
         lineCost = Math.round(converted * costPerBase * 100) / 100
+      } else if (invoiceUnit && canonicalUnit(invoiceUnit) === canonicalUnit(ing.unit)) {
+        // Recipe unit canonicalizes to the invoice unit (e.g. recipe 'styck'
+        // vs invoice 'st'). Use the unit_price directly — that's what the
+        // owner means by "1 of these". Pack-derived base_unit is irrelevant
+        // here; the supplier sells per st and the recipe specifies in st.
+        lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
       } else {
-        // Cross-family or unknown unit — flag and don't try to cost
+        // Truly cross-family (e.g. recipe ml vs product st with no conversion)
         lineCost = null
         unitMismatch = true
       }
     } else if (!noPrice) {
-      // No pack data at all (and parser couldn't help) — legacy 1:1 calc.
-      lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
-      unitMismatch = !!invoiceUnit && !!ing.unit &&
-                     canonicalUnit(invoiceUnit) !== canonicalUnit(ing.unit)
+      // No pack data — use a 1:1 calc ONLY when the recipe unit matches the
+      // invoice unit (or one isn't set). If the units differ and we have no
+      // pack to convert through, we honestly cannot cost this line — return
+      // null and the unit_mismatch flag, never a confident-wrong number
+      // (the "10g recipe × 229 kr/KG = 2,290 kr" trap from the live test).
+      const sameUnit = !invoiceUnit || !ing.unit ||
+                       canonicalUnit(invoiceUnit) === canonicalUnit(ing.unit)
+      if (sameUnit) {
+        lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
+        unitMismatch = false
+      } else {
+        lineCost = null
+        unitMismatch = true
+      }
     }
 
     return {
@@ -279,26 +312,79 @@ export async function loadRecipeIndex(
   const recipeIds = recipes.map((r: any) => r.id)
   const { data: ings } = await db
     .from('recipe_ingredients')
-    .select('id, recipe_id, product_id, subrecipe_id, quantity, unit, notes, position, products(name, category), subrecipe:subrecipe_id(name)')
+    .select('id, recipe_id, product_id, subrecipe_id, quantity, waste_pct, unit, notes, position, products(name, category), subrecipe:subrecipe_id(name)')
     .in('recipe_id', recipeIds)
     .order('position')
   for (const i of ings ?? []) {
     const entry = idx.get(i.recipe_id)
     if (!entry) continue
+    const statedQty = Number(i.quantity)
+    const wastePct  = clampWastePct(i.waste_pct)
     entry.ingredients.push({
-      id:             i.id,
-      product_id:     i.product_id,
-      product_name:   (i.products as any)?.name ?? null,
-      category:       (i.products as any)?.category ?? null,
-      quantity:       Number(i.quantity),
-      unit:           i.unit,
-      notes:          i.notes,
-      position:       i.position,
-      subrecipe_id:   i.subrecipe_id,
-      subrecipe_name: (i.subrecipe as any)?.name ?? null,
+      id:              i.id,
+      product_id:      i.product_id,
+      product_name:    (i.products as any)?.name ?? null,
+      category:        (i.products as any)?.category ?? null,
+      quantity:        inflateForWaste(statedQty, wastePct),
+      quantity_stated: statedQty,
+      waste_pct:       wastePct,
+      unit:            i.unit,
+      notes:           i.notes,
+      position:        i.position,
+      subrecipe_id:    i.subrecipe_id,
+      subrecipe_name:  (i.subrecipe as any)?.name ?? null,
     })
   }
   return idx
+}
+
+// Canonical SI inference — turn an invoice_unit string into (pack_size,
+// base_unit) so the engine can convert kg→g, l→ml etc without the owner
+// having to set explicit pack data per product. Returns null for unknown
+// units (engine falls through to the legacy 1:1 path with unit_mismatch
+// flag if recipe unit differs).
+//
+// Conservative: only matches the canonical SI/Swedish kitchen units where
+// the conversion is unambiguous. Anything weirder (FRP, FÖRP, KART, BX)
+// owner still has to set explicitly, because the pack-size is opaque
+// from the unit string alone.
+export function inferPackFromInvoiceUnit(invoiceUnit: string): { pack_size: number; base_unit: string } | null {
+  const u = invoiceUnit.trim().toLowerCase().replace(/\s+/g, '')
+  // Mass
+  if (u === 'kg' || u === 'kilo' || u === 'kilogram') return { pack_size: 1000, base_unit: 'g' }
+  if (u === 'g' || u === 'gr' || u === 'gram' || u === 'grams') return { pack_size: 1, base_unit: 'g' }
+  // Volume — 'ltr' is a Swedish supplier variant of 'liter' (Diageo etc).
+  if (u === 'l' || u === 'liter' || u === 'litre' || u === 'lit' || u === 'ltr') return { pack_size: 1000, base_unit: 'ml' }
+  if (u === 'dl') return { pack_size: 100, base_unit: 'ml' }
+  if (u === 'cl') return { pack_size: 10,  base_unit: 'ml' }
+  if (u === 'ml') return { pack_size: 1,   base_unit: 'ml' }
+  // Count
+  if (u === 'st' || u === 'styck' || u === 'stk' || u === 'ea' || u === 'each') return { pack_size: 1, base_unit: 'st' }
+  return null
+}
+
+// Yield-loss inflation. The engine consumes `quantity` directly; we pre-
+// inflate at load so the engine math stays pure (no waste-aware branch
+// inside computeRecipeCost). At waste=0 this returns qty unchanged
+// (multiplied by 1). The clamp + DB CHECK (waste_pct < 100) prevent
+// division-by-zero; a stray 100 from anywhere clamps to MAX_WASTE_PCT and
+// the call is computed at the cap rather than blowing up.
+//
+// Named bounds (no magic numbers per owner review note).
+export const MAX_WASTE_PCT = 95     // Hard ceiling; >95% means the recipe is misconfigured.
+export const MIN_WASTE_PCT = 0
+function clampWastePct(raw: any): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return MIN_WASTE_PCT
+  if (n <= MIN_WASTE_PCT) return MIN_WASTE_PCT
+  if (n >= MAX_WASTE_PCT) return MAX_WASTE_PCT
+  return n
+}
+export function inflateForWaste(quantity: number, wastePct: number): number {
+  if (wastePct <= 0) return quantity                    // true no-op
+  const yieldFraction = 1 - (wastePct / 100)
+  if (yieldFraction <= 0) return quantity               // belt-and-braces — clamp should have caught this
+  return quantity / yieldFraction
 }
 
 // Cycle prevention helper for POST /api/inventory/recipes/[id]/ingredients.

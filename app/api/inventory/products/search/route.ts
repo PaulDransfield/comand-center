@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
-import { getProductLatestPrices } from '@/lib/inventory/recipe-cost'
+import { getProductLatestPrices, inferPackFromInvoiceUnit } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
 
 export const runtime = 'nodejs'
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   let qB = db
     .from('products')
-    .select('id, name, category, invoice_unit, default_supplier_name')
+    .select('id, name, category, invoice_unit, default_supplier_name, pack_size, base_unit')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -47,11 +47,25 @@ export async function GET(req: NextRequest) {
 
   const out = (products ?? []).map((p: any) => {
     const pr = prices.get(p.id)
+    const invoiceUnit = p.invoice_unit ?? pr?.invoice_unit ?? null
+    // Same resolution priority as the cost engine — saved → SI inferred.
+    // Without this the picker's unit dropdown and "Enter in g — pack is
+    // 1000g per KG" hint don't fire for products whose pack is implied by
+    // the invoice unit (KG, L, ML, etc), so the UI would lie that they
+    // need owner setup when the engine actually handles them.
+    let packSize = p.pack_size ?? pr?.pack_size ?? null
+    let baseUnit = p.base_unit ?? pr?.base_unit ?? null
+    if ((packSize == null || baseUnit == null) && invoiceUnit) {
+      const inferred = inferPackFromInvoiceUnit(invoiceUnit)
+      if (inferred) { packSize = inferred.pack_size; baseUnit = inferred.base_unit }
+    }
     return {
       product_id:   p.id,
       name:         p.name,
       category:     p.category,
-      invoice_unit: p.invoice_unit ?? pr?.invoice_unit ?? null,
+      invoice_unit: invoiceUnit,
+      pack_size:    packSize,
+      base_unit:    baseUnit,
       latest_price: pr?.latest_price ?? null,
       supplier:     p.default_supplier_name,
     }

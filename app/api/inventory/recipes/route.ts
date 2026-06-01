@@ -11,6 +11,7 @@ import { getRequestAuth, createAdminClient } from '@/lib/supabase/server'
 import { requireBusinessAccess } from '@/lib/auth/require-role'
 import { computeRecipeCost, getProductLatestPrices, loadRecipeIndex } from '@/lib/inventory/recipe-cost'
 import { loadFxIndex } from '@/lib/inventory/fx'
+import { resolveRecipePriceFields } from '@/lib/inventory/recipe-price'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
 
   const { data: recipes, error: rErr } = await db
     .from('recipes')
-    .select('id, name, type, menu_price, portions, notes, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, notes, updated_at')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -60,28 +61,39 @@ export async function GET(req: NextRequest) {
   const enriched = recipes.map((r: any) => {
     const entry = recipeIndex.get(r.id)
     const ings  = entry?.ingredients ?? []
+    // Margin denominator priority: ex-VAT (canonical truth post-M109) →
+    // legacy menu_price (back-compat for rows where the owner hasn't
+    // re-opened the recipe in the authoring tool yet). Don't derive ex-VAT
+    // from a legacy menu_price here — we'd be guessing the rate.
+    const marginBase =
+      r.selling_price_ex_vat != null ? Number(r.selling_price_ex_vat)
+      : r.menu_price != null         ? Number(r.menu_price)
+      : null
     const summary = computeRecipeCost(
       ings,
       priceMap,
-      r.menu_price != null ? Number(r.menu_price) : null,
+      marginBase,
       { recipeIndex, recipeId: r.id },
     )
     return {
-      id:         r.id,
-      name:       r.name,
-      type:       r.type,
-      menu_price: r.menu_price != null ? Number(r.menu_price) : null,
-      portions:   r.portions,
-      notes:      r.notes,
-      updated_at: r.updated_at,
-      food_cost:       summary.food_cost,
-      food_pct:        summary.food_pct,
-      gp_pct:          summary.gp_pct,
-      gp_kr:           summary.gp_kr,
-      ingredient_count: ings.length,
-      missing_prices:  summary.missing_prices,
-      unit_mismatches: summary.unit_mismatches,
-      subrecipe_count: ings.filter(i => i.subrecipe_id != null).length,
+      id:                   r.id,
+      name:                 r.name,
+      type:                 r.type,
+      menu_price:           r.menu_price != null ? Number(r.menu_price) : null,
+      selling_price_ex_vat: r.selling_price_ex_vat != null ? Number(r.selling_price_ex_vat) : null,
+      vat_rate:             r.vat_rate != null ? Number(r.vat_rate) : null,
+      channel:              r.channel ?? null,
+      portions:             r.portions,
+      notes:                r.notes,
+      updated_at:           r.updated_at,
+      food_cost:            summary.food_cost,
+      food_pct:             summary.food_pct,
+      gp_pct:               summary.gp_pct,
+      gp_kr:                summary.gp_kr,
+      ingredient_count:     ings.length,
+      missing_prices:       summary.missing_prices,
+      unit_mismatches:      summary.unit_mismatches,
+      subrecipe_count:      ings.filter(i => i.subrecipe_id != null).length,
     }
   })
 
@@ -113,16 +125,23 @@ export async function POST(req: NextRequest) {
   const businessId = String(body.business_id ?? '').trim()
   const name       = String(body.name        ?? '').trim()
   const type       = body.type       ? String(body.type).trim() : null
-  const menuPrice  = body.menu_price != null ? Number(body.menu_price) : null
   const portions   = body.portions   != null ? Math.max(1, Math.floor(Number(body.portions))) : 1
   const notes      = body.notes      ? String(body.notes).trim() : null
+
+  // Price-truth invariant: selling_price_ex_vat is the canonical stored value.
+  // vat_rate and channel are independent owner-set fields (no inference
+  // between them — VAT-misrouting lesson from lib/sweden/vat.ts). menu_price
+  // is derived from ex_vat × (1 + vat_rate/100) so the two can never drift
+  // out of sync. The body may pass either form; we resolve to ex_vat.
+  const priceResolution = resolveRecipePriceFields(body)
+  if (priceResolution.error) {
+    return NextResponse.json({ error: priceResolution.error }, { status: 400 })
+  }
+  const { selling_price_ex_vat, vat_rate, channel, menu_price } = priceResolution
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
   if (!name)       return NextResponse.json({ error: 'name required' },        { status: 400 })
   if (name.length > 200) return NextResponse.json({ error: 'name too long (max 200)' }, { status: 400 })
-  if (menuPrice != null && (!Number.isFinite(menuPrice) || menuPrice < 0)) {
-    return NextResponse.json({ error: 'menu_price must be a non-negative number' }, { status: 400 })
-  }
   const forbidden = requireBusinessAccess(auth, businessId)
   if (forbidden) return forbidden
 
@@ -137,11 +156,14 @@ export async function POST(req: NextRequest) {
       org_id:      biz.org_id,
       name,
       type,
-      menu_price:  menuPrice,
+      menu_price,                  // derived (or legacy passthrough if no ex_vat)
+      selling_price_ex_vat,        // canonical truth
+      vat_rate,
+      channel,
       portions,
       notes,
     })
-    .select('id, name, type, menu_price, portions, notes, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, notes, updated_at')
     .single()
   if (error) {
     if ((error as any).code === '23505') {
@@ -152,3 +174,4 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true, recipe: data }, { headers: { 'Cache-Control': 'no-store' } })
 }
+
