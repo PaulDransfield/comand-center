@@ -66,15 +66,20 @@
     "inventory": {
       "label": "Lager",
       "pages": {
-        "items":       "Katalog",
-        "review":      "Massegjennomgang",
-        "skipped":     "Hoppede leverandører",
+        "items":       "Artikler",
+        "review":      "Artikkelgjennomgang",
+        "skipped":     "Ikke-lagerleverandører",
         "extractions": "PDF-gjennomgang",
-        "recipes":     "Oppskrifter",
-        "sales":       "Salg (manuelt)",
+        "sales":       "Koble retter til kassen",
         "counts":      "Lagertelling",
         "waste":       "Svinn",
         "variance":    "Avvik"
+      }
+    },
+    "recipes": {
+      "label": "Oppskrifter",
+      "pages": {
+        "recipes": "Oppskrifter"
       }
     },
     "bookkeeping": {
