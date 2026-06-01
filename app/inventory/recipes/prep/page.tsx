@@ -71,11 +71,15 @@ export default function PrepListPage() {
   const [loadingDishes, setLoadingDishes] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // selected = recipe_id → qty (covers). 0 / missing = not in the list.
+  // selected = recipe_id → qty (covers/portions). 0 / missing = not in the list.
   const [selected, setSelected] = useState<Record<string, number>>({})
   const [result,   setResult]   = useState<PrepResult | null>(null)
   const [computing, setComputing] = useState(false)
   const [search, setSearch] = useState('')
+  // Tab between the two result lists so the page isn't a wall of tables.
+  // Default is components (the higher-value aggregation) — owner can flip
+  // to ingredients when they want to pull stock or write a shopping list.
+  const [tab, setTab] = useState<'components' | 'ingredients' | 'flags'>('components')
 
   // Read the sidebar's selected biz from localStorage; mirror across tabs.
   useEffect(() => {
@@ -205,8 +209,13 @@ export default function PrepListPage() {
               background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
               borderRadius: 8, padding: 14, position: 'sticky' as const, top: 16,
             }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, marginBottom: 8 }}>
-                Production
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2 }}>
+                  Production
+                </div>
+                <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+                  Enter the number of <strong>portions</strong> you expect to make for each dish.
+                </div>
               </div>
 
               {/* Selected lines (top of the panel — these are what's
@@ -217,42 +226,57 @@ export default function PrepListPage() {
                 </div>
               )}
               {selectedItems.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-                  {selectedItems.map(({ recipe_id, qty }) => {
-                    const d = dishById.get(recipe_id)
-                    if (!d) return null
-                    return (
-                      <div key={recipe_id} style={{
-                        display: 'grid', gridTemplateColumns: '1fr 60px 20px',
-                        alignItems: 'center', gap: 6,
-                        padding: '6px 8px', background: UXP.lavFill,
-                        border: `0.5px solid ${UXP.lavMid}`, borderRadius: 5,
-                      }}>
-                        <div style={{ fontSize: 11, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                          {d.name}
+                <>
+                  {/* Column header so the number column is self-explanatory. */}
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: '1fr 70px 20px',
+                    alignItems: 'center', gap: 6,
+                    padding: '0 8px 4px', fontSize: 9, color: UXP.ink4,
+                    fontWeight: 600, letterSpacing: '0.06em',
+                    textTransform: 'uppercase' as const,
+                  }}>
+                    <div>Dish</div>
+                    <div style={{ textAlign: 'right' as const }}>Portions</div>
+                    <div />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                    {selectedItems.map(({ recipe_id, qty }) => {
+                      const d = dishById.get(recipe_id)
+                      if (!d) return null
+                      return (
+                        <div key={recipe_id} style={{
+                          display: 'grid', gridTemplateColumns: '1fr 70px 20px',
+                          alignItems: 'center', gap: 6,
+                          padding: '6px 8px', background: UXP.lavFill,
+                          border: `0.5px solid ${UXP.lavMid}`, borderRadius: 5,
+                        }}>
+                          <div style={{ fontSize: 11, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                            {d.name}
+                          </div>
+                          <input
+                            type="number"
+                            min={0}
+                            value={qty}
+                            aria-label={`Portions of ${d.name}`}
+                            onChange={e => {
+                              const n = Number(e.target.value)
+                              setSelected(s => ({ ...s, [recipe_id]: Number.isFinite(n) ? n : 0 }))
+                            }}
+                            style={{
+                              ...inputStyle, padding: '4px 6px', fontSize: 11,
+                              textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
+                            }}
+                          />
+                          <button
+                            onClick={() => setSelected(s => { const c = { ...s }; delete c[recipe_id]; return c })}
+                            style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 14, padding: 0 }}
+                            aria-label="Remove"
+                          >×</button>
                         </div>
-                        <input
-                          type="number"
-                          min={0}
-                          value={qty}
-                          onChange={e => {
-                            const n = Number(e.target.value)
-                            setSelected(s => ({ ...s, [recipe_id]: Number.isFinite(n) ? n : 0 }))
-                          }}
-                          style={{
-                            ...inputStyle, padding: '4px 6px', fontSize: 11,
-                            textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const,
-                          }}
-                        />
-                        <button
-                          onClick={() => setSelected(s => { const c = { ...s }; delete c[recipe_id]; return c })}
-                          style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 14, padding: 0 }}
-                          aria-label="Remove"
-                        >×</button>
-                      </div>
-                    )
-                  })}
-                </div>
+                      )
+                    })}
+                  </div>
+                </>
               )}
 
               {/* Dish search/picker */}
@@ -314,108 +338,132 @@ export default function PrepListPage() {
                     <div style={{ fontSize: 11, color: UXP.ink4, marginBottom: 8 }}>Aggregating…</div>
                   )}
 
-                  {/* Components / sub-recipes to prep. Highest aggregation
-                      value goes first (most-shared subs). */}
-                  <Section
-                    title="Components to prep"
-                    subtitle="Sub-recipes rolled up across the entered dishes. Make this much of each."
-                  >
-                    {result && result.components.length === 0 && (
-                      <Empty label="None of the entered dishes use sub-recipes." />
+                  {/* Tabbed result — components is the primary view since
+                      it's the aggregation payoff; ingredients is for the
+                      pull/shopping pass; flags only if something needs
+                      owner attention. */}
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                    <TabPill
+                      active={tab === 'components'} onClick={() => setTab('components')}
+                      label="Components to prep"
+                      count={result?.components.length ?? 0}
+                    />
+                    <TabPill
+                      active={tab === 'ingredients'} onClick={() => setTab('ingredients')}
+                      label="Raw ingredients to pull"
+                      count={result?.products.length ?? 0}
+                    />
+                    {result && result.flags.length > 0 && (
+                      <TabPill
+                        active={tab === 'flags'} onClick={() => setTab('flags')}
+                        label="Flags"
+                        count={result.flags.length}
+                        tone="coral"
+                      />
                     )}
-                    {result && result.components.length > 0 && (
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr style={{ background: UXP.subtleBg }}>
-                            <Th label="Component" />
-                            <Th label="Total to prep" align="right" />
-                            <Th label="Used by" align="right" />
-                            <Th label="Status" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {result.components.map(c => {
-                            const f = formatPrepQty(c.total_qty, c.unit)
-                            const sourceNames = c.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
-                            return (
-                              <tr key={c.subrecipe_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
-                                <td style={td}>
-                                  <div style={{ color: UXP.ink1, fontWeight: 500 }}>{c.name ?? '—'}</div>
-                                </td>
-                                <td style={{ ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
-                                  {c.uncertain ? '—' : `${f.qty} ${f.unit}`}
-                                </td>
-                                <td style={{ ...td, textAlign: 'right' as const, color: UXP.ink3, fontSize: 11 }}>
-                                  <span title={sourceNames.join(', ')}>{c.source_recipes.length}</span>
-                                </td>
-                                <td style={td}>
-                                  {c.uncertain ? (
-                                    <span style={uncertainBadge} title={c.uncertain_reason ?? ''}>
-                                      Set yield to roll up
-                                    </span>
-                                  ) : c.source_recipes.length >= 2 ? (
-                                    <span style={sharedBadge}>SHARED</span>
-                                  ) : null}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </Section>
+                  </div>
 
-                  {/* Products to pull. */}
-                  <Section
-                    title="Raw ingredients to pull"
-                    subtitle="Aggregated leaf ingredients across dishes and sub-recipes (where yields are set)."
-                  >
-                    {result && result.products.length === 0 && (
-                      <Empty label="No raw ingredients aggregated yet. If some components are flagged 'Set yield', their ingredients can't roll up until you fix that." />
-                    )}
-                    {result && result.products.length > 0 && (
-                      <table style={tableStyle}>
-                        <thead>
-                          <tr style={{ background: UXP.subtleBg }}>
-                            <Th label="Ingredient" />
-                            <Th label="Total to pull" align="right" />
-                            <Th label="Sources" align="right" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {result.products.map(p => {
-                            const f = formatPrepQty(p.total_qty, p.unit)
-                            const sourceNames = p.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
-                            return (
-                              <tr key={p.product_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
-                                <td style={td}>
-                                  <div style={{ color: UXP.ink1, fontWeight: 500 }}>{p.name ?? '—'}</div>
-                                  {p.category && (
-                                    <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>{p.category}</div>
-                                  )}
-                                </td>
-                                <td style={{ ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
-                                  {f.qty} {f.unit}
-                                </td>
-                                <td style={{ ...td, textAlign: 'right' as const, color: UXP.ink3, fontSize: 11 }}>
-                                  <span title={sourceNames.join(', ')}>{p.source_recipes.length}</span>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    )}
-                  </Section>
+                  {tab === 'components' && (
+                    <Section
+                      title="Components to prep"
+                      subtitle="Sub-recipes rolled up across the entered dishes. Make this much of each."
+                    >
+                      {result && result.components.length === 0 && (
+                        <Empty label="None of the entered dishes use sub-recipes." />
+                      )}
+                      {result && result.components.length > 0 && (
+                        <table style={tableStyle}>
+                          <thead>
+                            <tr style={{ background: UXP.subtleBg }}>
+                              <Th label="Component" />
+                              <Th label="Total to prep" align="right" />
+                              <Th label="Used by" align="right" />
+                              <Th label="Status" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {result.components.map(c => {
+                              const f = formatPrepQty(c.total_qty, c.unit)
+                              const sourceNames = c.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
+                              return (
+                                <tr key={c.subrecipe_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
+                                  <td style={td}>
+                                    <div style={{ color: UXP.ink1, fontWeight: 500 }}>{c.name ?? '—'}</div>
+                                  </td>
+                                  <td style={{ ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
+                                    {c.uncertain ? '—' : `${f.qty} ${f.unit}`}
+                                  </td>
+                                  <td style={{ ...td, textAlign: 'right' as const, color: UXP.ink3, fontSize: 11 }}>
+                                    <span title={sourceNames.join(', ')}>{c.source_recipes.length}</span>
+                                  </td>
+                                  <td style={td}>
+                                    {c.uncertain ? (
+                                      <span style={uncertainBadge} title={c.uncertain_reason ?? ''}>
+                                        Set yield to roll up
+                                      </span>
+                                    ) : c.source_recipes.length >= 2 ? (
+                                      <span style={sharedBadge}>SHARED</span>
+                                    ) : null}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </Section>
+                  )}
 
-                  {/* Flags surface any non-fatal anomalies — e.g. a product
-                      used in both g + ml across dishes, or a cycle. */}
-                  {result && result.flags.length > 0 && (
+                  {tab === 'ingredients' && (
+                    <Section
+                      title="Raw ingredients to pull"
+                      subtitle="Aggregated leaf ingredients across dishes and sub-recipes (where yields are set)."
+                    >
+                      {result && result.products.length === 0 && (
+                        <Empty label="No raw ingredients aggregated yet. If some components are flagged 'Set yield', their ingredients can't roll up until you fix that." />
+                      )}
+                      {result && result.products.length > 0 && (
+                        <table style={tableStyle}>
+                          <thead>
+                            <tr style={{ background: UXP.subtleBg }}>
+                              <Th label="Ingredient" />
+                              <Th label="Total to pull" align="right" />
+                              <Th label="Sources" align="right" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {result.products.map(p => {
+                              const f = formatPrepQty(p.total_qty, p.unit)
+                              const sourceNames = p.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
+                              return (
+                                <tr key={p.product_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
+                                  <td style={td}>
+                                    <div style={{ color: UXP.ink1, fontWeight: 500 }}>{p.name ?? '—'}</div>
+                                    {p.category && (
+                                      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>{p.category}</div>
+                                    )}
+                                  </td>
+                                  <td style={{ ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
+                                    {f.qty} {f.unit}
+                                  </td>
+                                  <td style={{ ...td, textAlign: 'right' as const, color: UXP.ink3, fontSize: 11 }}>
+                                    <span title={sourceNames.join(', ')}>{p.source_recipes.length}</span>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </Section>
+                  )}
+
+                  {tab === 'flags' && result && result.flags.length > 0 && (
                     <Section
                       title="Flags"
                       subtitle="Aggregation skipped these — fix the underlying recipe to roll them in."
                     >
-                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, padding: 8 }}>
                         {result.flags.map((fl, i) => (
                           <div key={i} style={{
                             padding: '6px 10px', background: '#fef3e0',
@@ -453,6 +501,34 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
         {children}
       </div>
     </div>
+  )
+}
+
+function TabPill({ active, onClick, label, count, tone = 'lav' }: {
+  active: boolean; onClick: () => void; label: string; count: number; tone?: 'lav' | 'coral'
+}) {
+  const activeBg   = tone === 'coral' ? '#fef3e0'   : UXP.lavFill
+  const activeFg   = tone === 'coral' ? UXP.coral   : UXP.lavText
+  const activeBord = tone === 'coral' ? UXP.coral   : UXP.lav
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding:       '4px 12px',
+        background:    active ? activeBg : UXP.cardBg,
+        color:         active ? activeFg : UXP.ink2,
+        border:        `0.5px solid ${active ? activeBord : UXP.border}`,
+        borderRadius:  999,
+        fontSize:      11,
+        fontWeight:    500,
+        fontFamily:    'inherit',
+        cursor:        'pointer',
+        letterSpacing: '0.02em',
+      }}
+    >
+      {label} <span style={{ color: active ? activeFg : UXP.ink4, marginLeft: 4, opacity: 0.75 }}>· {count}</span>
+    </button>
   )
 }
 
