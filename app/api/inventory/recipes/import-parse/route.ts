@@ -45,47 +45,71 @@ export async function POST(req: NextRequest) {
 
   // ── Input modes ───────────────────────────────────────────────────
   // (a) JSON body { business_id, menu_text }                  — paste
-  // (b) multipart form { business_id, file }                  — upload
-  //   PDF  → passed to Sonnet as document content block
-  //   Word → extracted via mammoth, passed as text
-  //   Image → passed as image content block (Sonnet vision)
+  // (b) multipart form { business_id, file, file, … }         — upload
+  //   Multiple files concatenated into a single Sonnet call so the
+  //   model sees ALL inputs at once (cross-file sub-recipe refs work
+  //   automatically — sauce defined in File A, used in File B's
+  //   pinsa, both get linked). Per-file handling:
+  //     PDF / image → Sonnet doc/image content block
+  //     Word .docx  → server-side mammoth → text, concatenated with
+  //                   visible header delimiters
   let businessId = ''
   let menuText   = ''
-  type FileInput =
-    | { kind: 'pdf';   base64: string }
-    | { kind: 'image'; base64: string; mediaType: string }
-  let fileInput: FileInput | null = null
+  // Mixed PDF + Word + image upload becomes a list of content blocks
+  // appended to the user message. Word docs collapse to text and
+  // append to menuText with a header so the model can tell files apart.
+  type FileBlock =
+    | { kind: 'pdf';   name: string; base64: string }
+    | { kind: 'image'; name: string; base64: string; mediaType: string }
+  const fileBlocks: FileBlock[] = []
+
+  const MAX_FILES       = 10
+  const MAX_TOTAL_BYTES = 25 * 1024 * 1024  // 25 MB total across files
 
   const contentType = req.headers.get('content-type') ?? ''
   if (contentType.includes('multipart/form-data')) {
     const form = await req.formData().catch(() => null)
     if (!form) return NextResponse.json({ error: 'invalid form data' }, { status: 400 })
     businessId = String(form.get('business_id') ?? '').trim()
-    const file = form.get('file')
-    if (!(file instanceof File)) return NextResponse.json({ error: 'file required in multipart form' }, { status: 400 })
-    const bytes = Buffer.from(await file.arrayBuffer())
-    const fname = (file.name ?? '').toLowerCase()
-    const ftype = (file.type ?? '').toLowerCase()
-    if (fname.endsWith('.pdf') || ftype === 'application/pdf') {
-      fileInput = { kind: 'pdf', base64: bytes.toString('base64') }
-    } else if (fname.endsWith('.docx') || ftype.includes('officedocument.wordprocessingml')) {
-      // Word .docx — extract text via mammoth (server-side). Older .doc
-      // binary is NOT supported (mammoth handles only the OOXML format);
-      // owner can re-save as .docx.
-      try {
-        const mammoth = (await import('mammoth')).default ?? (await import('mammoth'))
-        const r = await mammoth.extractRawText({ buffer: bytes })
-        menuText = (r?.value ?? '').trim().slice(0, MAX_INPUT_CHARS * 4)
-      } catch (e: any) {
-        return NextResponse.json({ error: `Could not read Word document: ${String(e?.message ?? e)}` }, { status: 400 })
-      }
-      if (!menuText) return NextResponse.json({ error: 'Word document contained no readable text' }, { status: 400 })
-    } else if (fname.match(/\.(jpe?g|png|webp|gif)$/i) || ftype.startsWith('image/')) {
-      const mediaType = ftype.startsWith('image/') ? ftype : ('image/' + (fname.match(/\.(\w+)$/)?.[1] ?? 'jpeg').replace('jpg', 'jpeg'))
-      fileInput = { kind: 'image', base64: bytes.toString('base64'), mediaType }
-    } else {
-      return NextResponse.json({ error: `Unsupported file type ${ftype || fname.split('.').pop()}. PDF, Word (.docx), or image only.` }, { status: 400 })
+    // Accept any number of files under the 'file' field. Owners can
+    // also drop in a single file (back-compat with previous v1 path).
+    const rawFiles = form.getAll('file').filter((f): f is File => f instanceof File)
+    if (rawFiles.length === 0) return NextResponse.json({ error: 'at least one file required in multipart form' }, { status: 400 })
+    if (rawFiles.length > MAX_FILES) {
+      return NextResponse.json({ error: `too many files (${rawFiles.length} > ${MAX_FILES})` }, { status: 400 })
     }
+    let totalBytes = 0
+    const wordSections: string[] = []
+    for (const file of rawFiles) {
+      const bytes = Buffer.from(await file.arrayBuffer())
+      totalBytes += bytes.length
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        return NextResponse.json({ error: `total upload size exceeds ${Math.round(MAX_TOTAL_BYTES / 1024 / 1024)} MB` }, { status: 400 })
+      }
+      const fname = (file.name ?? '').toLowerCase()
+      const ftype = (file.type ?? '').toLowerCase()
+      if (fname.endsWith('.pdf') || ftype === 'application/pdf') {
+        fileBlocks.push({ kind: 'pdf', name: file.name, base64: bytes.toString('base64') })
+      } else if (fname.endsWith('.docx') || ftype.includes('officedocument.wordprocessingml')) {
+        try {
+          const mammoth = (await import('mammoth')).default ?? (await import('mammoth'))
+          const r = await mammoth.extractRawText({ buffer: bytes })
+          const text = (r?.value ?? '').trim()
+          if (text) wordSections.push(`── ${file.name} ──\n${text}`)
+        } catch (e: any) {
+          return NextResponse.json({ error: `Could not read Word document ${file.name}: ${String(e?.message ?? e)}` }, { status: 400 })
+        }
+      } else if (fname.match(/\.(jpe?g|png|webp|gif)$/i) || ftype.startsWith('image/')) {
+        const mediaType = ftype.startsWith('image/') ? ftype : ('image/' + (fname.match(/\.(\w+)$/)?.[1] ?? 'jpeg').replace('jpg', 'jpeg'))
+        fileBlocks.push({ kind: 'image', name: file.name, base64: bytes.toString('base64'), mediaType })
+      } else {
+        return NextResponse.json({ error: `Unsupported file type for ${file.name}. PDF, Word (.docx), or image only.` }, { status: 400 })
+      }
+    }
+    // Concatenate any Word-extracted text into menuText with header
+    // separators so the model can identify which dishes came from which
+    // file (helps when the same dish name appears in two docs).
+    if (wordSections.length > 0) menuText = wordSections.join('\n\n')
   } else {
     let body: any
     try { body = await req.json() } catch { body = {} }
@@ -94,11 +118,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
-  // Either menuText OR a file must be present.
-  if (!menuText && !fileInput) return NextResponse.json({ error: 'menu_text or file required' }, { status: 400 })
+  // Either menuText OR at least one file must be present.
+  if (!menuText && fileBlocks.length === 0) return NextResponse.json({ error: 'menu_text or file(s) required' }, { status: 400 })
   if (menuText && menuText.length > MAX_INPUT_CHARS * 4) {
-    // Allow longer text for Word imports since methods can be lengthy;
-    // Sonnet's context handles ~30k tokens comfortably.
     return NextResponse.json({ error: `input too long (${menuText.length} chars)` }, { status: 400 })
   }
 
@@ -229,26 +251,32 @@ Return JSON ONLY, an array with one object per recipe (sub-recipes can appear BE
   }
 ]`
 
-  // Build the user message. For text or extracted-Word, single text
-  // block. For PDF, prepend a document content block + a text prompt.
-  // For image, prepend an image content block + a text prompt.
+  // Build the user message. Multiple inputs can co-exist in a single
+  // Sonnet call (preserves cross-file sub-recipe refs + sends the
+  // catalogue context once instead of N times). Block order:
+  //   1. catalogue prefix (text)
+  //   2. inline menuText if present (includes Word-extracted sections
+  //      with file-header delimiters)
+  //   3. one content block per PDF/image file
+  //   4. closing instruction (text)
   const cataloguePrefix = `PRODUCT CATALOGUE (reference by [prefix]):\n${catalogueText}\n\n`
-  const textTail = `Return the JSON array only.`
+  const textTail        = `Return the JSON array only.`
   let userContent: any
-  if (fileInput?.kind === 'pdf') {
-    userContent = [
-      { type: 'text', text: cataloguePrefix + 'MENU INPUT is the attached PDF.' },
-      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileInput.base64 } },
-      { type: 'text', text: textTail },
-    ]
-  } else if (fileInput?.kind === 'image') {
-    userContent = [
-      { type: 'text', text: cataloguePrefix + 'MENU INPUT is the attached image.' },
-      { type: 'image', source: { type: 'base64', media_type: fileInput.mediaType, data: fileInput.base64 } },
-      { type: 'text', text: textTail },
-    ]
-  } else {
+  if (fileBlocks.length === 0) {
     userContent = `${cataloguePrefix}MENU INPUT (free-form text):\n${menuText}\n\n${textTail}`
+  } else {
+    const blocks: any[] = []
+    blocks.push({ type: 'text', text: cataloguePrefix + (menuText ? `MENU INPUT (extracted text from Word documents):\n${menuText}\n\n` : '') + `MENU INPUT (${fileBlocks.length} attached file${fileBlocks.length === 1 ? '' : 's'} follow${fileBlocks.length === 1 ? 's' : ''}):` })
+    for (const b of fileBlocks) {
+      blocks.push({ type: 'text', text: `\n── ${b.name} ──` })
+      if (b.kind === 'pdf') {
+        blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b.base64 } })
+      } else {
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: b.mediaType, data: b.base64 } })
+      }
+    }
+    blocks.push({ type: 'text', text: `\n\n${textTail}` })
+    userContent = blocks
   }
 
   const result = await anthropicFetch({

@@ -355,7 +355,11 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
   }
   const [stage,   setStage]   = useState<'paste' | 'preview' | 'saving' | 'done'>('paste')
   const [text,    setText]    = useState('')
-  const [file,    setFile]    = useState<File | null>(null)
+  // Multi-file upload: each File goes into its own content block on
+  // the Sonnet call. Cross-file sub-recipe refs work because the model
+  // sees every file at once. Cap aligned with the server (10 files /
+  // 25 MB total).
+  const [files,   setFiles]   = useState<File[]>([])
   const [drafts,  setDrafts]  = useState<Draft[]>([])
   const [meta,    setMeta]    = useState<{ tokens_in: number; tokens_out: number; catalogue_size: number } | null>(null)
   const [busy,    setBusy]    = useState(false)
@@ -363,16 +367,17 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
   const [saveResults, setSaveResults] = useState<{ created: number; failed: { name: string; error: string }[] } | null>(null)
 
   async function parse() {
-    if (!text.trim() && !file) { setErr('Paste some menu text or attach a file first.'); return }
+    if (!text.trim() && files.length === 0) { setErr('Paste some menu text or attach a file first.'); return }
     setBusy(true); setErr(null)
     try {
       let r: Response
-      if (file) {
-        // Multipart upload — endpoint detects PDF / Word / image by
-        // mime + extension and handles each accordingly server-side.
+      if (files.length > 0) {
+        // Multipart upload — server detects each file by mime +
+        // extension. Multiple files concatenated into one Sonnet call
+        // server-side so cross-file sub-recipe references resolve.
         const fd = new FormData()
         fd.append('business_id', bizId)
-        fd.append('file', file)
+        for (const f of files) fd.append('file', f)
         r = await fetch('/api/inventory/recipes/import-parse', {
           method: 'POST', cache: 'no-store', body: fd,
         })
@@ -552,31 +557,61 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
 
         {stage === 'paste' && (
           <>
-            {/* File upload — PDF / Word / image. Wins precedence over
-                pasted text when both are set so owner doesn't have to
-                clear the textarea after picking a file. */}
+            {/* File upload — multiple PDF / Word / image. All files
+                go to a single Sonnet call server-side so cross-file
+                sub-recipe references work (sauce defined in File A,
+                used in File B's pinsa, both linked at save time).
+                Wins precedence over pasted text when set. */}
             <div style={{
               border: `1px dashed ${UXP.border}`, borderRadius: 6,
               padding: '12px 14px', marginBottom: 10,
-              background: file ? UXP.lavFill : UXP.subtleBg,
+              background: files.length > 0 ? UXP.lavFill : UXP.subtleBg,
             }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, marginBottom: 6 }}>
-                Attach a file (PDF, Word .docx, or image)
+                Attach files (PDF, Word .docx, image — up to 10 / 25 MB total)
               </div>
               <input
                 type="file"
+                multiple
                 accept=".pdf,.docx,image/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                onChange={e => { setFile(e.target.files?.[0] ?? null); setErr(null) }}
+                onChange={e => {
+                  const picked = Array.from(e.target.files ?? [])
+                  // Append rather than replace so owner can pick from
+                  // multiple folders in turn. Cap at 10 files / 25 MB.
+                  const next = [...files, ...picked].slice(0, 10)
+                  const totalBytes = next.reduce((s, f) => s + f.size, 0)
+                  if (totalBytes > 25 * 1024 * 1024) {
+                    setErr('Total upload size exceeds 25 MB — pick a smaller set.')
+                    return
+                  }
+                  setFiles(next)
+                  setErr(null)
+                  // Clear the input so picking the same file again works.
+                  e.target.value = ''
+                }}
                 disabled={busy}
                 style={{ fontSize: 11, fontFamily: 'inherit' }}
               />
-              {file && (
-                <div style={{ marginTop: 6, fontSize: 11, color: UXP.lavText }}>
-                  {file.name} · {(file.size / 1024).toFixed(0)} KB
-                  <button onClick={() => setFile(null)} disabled={busy}
-                    style={{ marginLeft: 8, background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, textDecoration: 'underline' }}>
-                    clear
-                  </button>
+              {files.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                  {files.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: UXP.lavText }}>
+                      <span style={{ flex: 1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                        {f.name}
+                      </span>
+                      <span style={{ color: UXP.ink4, fontSize: 10, whiteSpace: 'nowrap' as const }}>{(f.size / 1024).toFixed(0)} KB</span>
+                      <button
+                        onClick={() => setFiles(files.filter((_, j) => j !== i))}
+                        disabled={busy}
+                        style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, padding: 0 }}
+                        aria-label={`Remove ${f.name}`}
+                      >×</button>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 4 }}>
+                    {files.length} file{files.length === 1 ? '' : 's'} · {(files.reduce((s, f) => s + f.size, 0) / 1024).toFixed(0)} KB total
+                    {files.length > 1 && ' · Sub-recipes referenced across files will resolve automatically'}
+                  </div>
                 </div>
               )}
               <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 6, lineHeight: 1.5 }}>
@@ -591,22 +626,22 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
               value={text}
               onChange={e => setText(e.target.value)}
               placeholder={'e.g.\nPinsa Margherita — pomodoro, mozzarella, basilika, olivolja  — 195 kr\nPinsa Chevre — chèvre, honung, valnötter, ruccola — 219 kr\nMargherita — pizzatomater, mozzarella, basilika — 165 kr'}
-              rows={file ? 5 : 12}
-              disabled={busy || !!file}
+              rows={files.length > 0 ? 5 : 12}
+              disabled={busy || files.length > 0}
               style={{
                 width: '100%', boxSizing: 'border-box', padding: 10,
                 fontFamily: 'inherit', fontSize: 12, borderRadius: 6,
                 border: `1px solid ${UXP.border}`, resize: 'vertical' as const,
-                opacity: file ? 0.4 : 1,
+                opacity: files.length > 0 ? 0.4 : 1,
               }}
             />
             <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 6 }}>
-              {file ? `File attached — text input disabled.` : `${text.length}/8000 chars`} · Each parse uses one Sonnet call (~$0.10 per typical menu / ~$0.25 with vision) and counts toward your daily AI quota.
+              {files.length > 0 ? `${files.length} file${files.length === 1 ? '' : 's'} attached — text input disabled.` : `${text.length}/8000 chars`} · One Sonnet call per import (~$0.10 text-only / ~$0.25–$0.50 with files) — quota-counted.
             </div>
             {err && <div style={{ marginTop: 8, fontSize: 11, color: UXP.roseText, background: UXP.roseFill, padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, gap: 8 }}>
               <button onClick={onClose} disabled={busy} style={secondaryBtn}>Cancel</button>
-              <button onClick={parse} disabled={busy || (!text.trim() && !file)} style={primaryBtn}>
+              <button onClick={parse} disabled={busy || (!text.trim() && files.length === 0)} style={primaryBtn}>
                 {busy ? 'Drafting…' : 'Draft recipes'}
               </button>
             </div>
