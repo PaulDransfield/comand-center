@@ -79,7 +79,9 @@
     "recipes": {
       "label": "Recipes",
       "pages": {
-        "recipes": "Recipes"
+        "recipes": "Recipes",
+        "prep":    "Prep list",
+        "orders":  "Order list"
       }
     },
     "bookkeeping": {

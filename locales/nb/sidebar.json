@@ -79,7 +79,9 @@
     "recipes": {
       "label": "Oppskrifter",
       "pages": {
-        "recipes": "Oppskrifter"
+        "recipes": "Oppskrifter",
+        "prep":    "Prepliste",
+        "orders":  "Bestillingsliste"
       }
     },
     "bookkeeping": {
