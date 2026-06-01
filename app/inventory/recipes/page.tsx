@@ -49,6 +49,7 @@ export default function InventoryRecipesPage() {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [openId,  setOpenId]  = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
   // Drill-down back-stack: when you click "Open" on a sub-recipe row, the
   // parent's id pushes onto the stack. The drawer's back arrow pops it.
   const [drillStack, setDrillStack] = useState<string[]>([])
@@ -122,11 +123,18 @@ export default function InventoryRecipesPage() {
               {t('subtitle')}
             </p>
           </div>
-          <button onClick={() => setCreating(true)} disabled={!bizId}
-            title={!bizId ? 'Select a business in the sidebar first' : undefined}
-            style={{ ...primaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
-            {t('addRecipe')}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setImporting(true)} disabled={!bizId}
+              title={!bizId ? 'Select a business in the sidebar first' : 'Bulk-import recipes from your menu text — Sonnet drafts ingredients from your catalogue'}
+              style={{ ...secondaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
+              Bulk import
+            </button>
+            <button onClick={() => setCreating(true)} disabled={!bizId}
+              title={!bizId ? 'Select a business in the sidebar first' : undefined}
+              style={{ ...primaryBtn, opacity: bizId ? 1 : 0.5, cursor: bizId ? 'pointer' : 'not-allowed' }}>
+              {t('addRecipe')}
+            </button>
+          </div>
         </div>
 
         {/* KPI strip — reflects the visible filter (dishes / sub-recipes / all). */}
@@ -258,6 +266,9 @@ export default function InventoryRecipesPage() {
       {creating && bizId && (
         <CreateModal bizId={bizId} onClose={() => setCreating(false)} onCreated={(id) => { setCreating(false); setOpenId(id); load() }} />
       )}
+      {importing && bizId && (
+        <BulkImportModal bizId={bizId} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); load() }} />
+      )}
       {openId && bizId && (
         <RecipeDrawer
           recipeId={openId}
@@ -301,6 +312,267 @@ const UNIT_OPTIONS = [
 ] as const
 
 const PRODUCT_CATEGORIES = ['food', 'beverage', 'alcohol', 'disposables', 'takeaway_material', 'cleaning', 'other'] as const
+
+// Bulk import — owner pastes a menu, Sonnet drafts recipes drawn from
+// the existing catalogue, owner reviews + saves all in one go. Saves
+// via the existing /api/inventory/recipes POST + /[id]/ingredients POST
+// endpoints; no schema change.
+//
+// Two-stage modal: PASTE → PREVIEW. Owner can edit any draft (rename,
+// remove ingredients, edit quantities) before committing. Cancel at
+// either stage discards everything; only the explicit "Create N
+// recipes" button writes.
+function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: () => void; onSaved: () => void }) {
+  type Ingredient = { product_id: string; product_name: string; quantity: number; unit: string }
+  type Draft      = { name: string; portions: number; selling_price_inc_vat: number | null; note: string | null; ingredients: Ingredient[] }
+  const [stage,   setStage]   = useState<'paste' | 'preview' | 'saving' | 'done'>('paste')
+  const [text,    setText]    = useState('')
+  const [drafts,  setDrafts]  = useState<Draft[]>([])
+  const [meta,    setMeta]    = useState<{ tokens_in: number; tokens_out: number; catalogue_size: number } | null>(null)
+  const [busy,    setBusy]    = useState(false)
+  const [err,     setErr]     = useState<string | null>(null)
+  const [saveResults, setSaveResults] = useState<{ created: number; failed: { name: string; error: string }[] } | null>(null)
+
+  async function parse() {
+    if (!text.trim()) { setErr('Paste some menu text first.'); return }
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch('/api/inventory/recipes/import-parse', {
+        method:  'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId, menu_text: text }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`)
+      if (!Array.isArray(j.drafts) || j.drafts.length === 0) {
+        throw new Error('AI returned no dishes — try rephrasing the menu input.')
+      }
+      setDrafts(j.drafts)
+      setMeta({ tokens_in: j.tokens_in, tokens_out: j.tokens_out, catalogue_size: j.catalogue_size })
+      setStage('preview')
+    } catch (e: any) {
+      setErr(e?.message ?? String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveAll() {
+    setBusy(true); setErr(null); setStage('saving')
+    const results = { created: 0, failed: [] as { name: string; error: string }[] }
+    for (const d of drafts) {
+      try {
+        // 1. Create recipe header.
+        const r = await fetch('/api/inventory/recipes', {
+          method:  'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            business_id:           bizId,
+            name:                  d.name,
+            type:                  null,
+            menu_price_inc_vat:    d.selling_price_inc_vat ?? null,
+            vat_rate:              12,            // owner edits in detail drawer; 12% safe default for dine-in
+            channel:               'dine_in',
+            portions:              d.portions,
+            notes:                 d.note ? `AI DRAFT — ${d.note}` : 'AI DRAFT — review quantities before trusting cost.',
+          }),
+        })
+        const j = await r.json()
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+        const recipeId = j.recipe?.id ?? j.id
+        if (!recipeId) throw new Error('No recipe id returned')
+
+        // 2. Append ingredients.
+        for (let pos = 0; pos < d.ingredients.length; pos++) {
+          const g = d.ingredients[pos]
+          const ar = await fetch(`/api/inventory/recipes/${recipeId}/ingredients`, {
+            method:  'POST', cache: 'no-store',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({
+              product_id: g.product_id,
+              quantity:   g.quantity,
+              unit:       g.unit,
+              position:   pos,
+            }),
+          })
+          if (!ar.ok) {
+            const j2 = await ar.json().catch(() => ({}))
+            // Soft-fail one ingredient — record + continue so the recipe still saves.
+            results.failed.push({ name: d.name, error: `${g.product_name}: ${j2.error ?? 'HTTP ' + ar.status}` })
+          }
+        }
+        results.created++
+      } catch (e: any) {
+        results.failed.push({ name: d.name, error: String(e?.message ?? e).slice(0, 200) })
+      }
+    }
+    setSaveResults(results)
+    setStage('done')
+    setBusy(false)
+  }
+
+  function editIngredient(di: number, ii: number, patch: Partial<Ingredient>) {
+    setDrafts(prev => {
+      const next = prev.slice()
+      const draft = { ...next[di] }
+      draft.ingredients = draft.ingredients.slice()
+      draft.ingredients[ii] = { ...draft.ingredients[ii], ...patch }
+      next[di] = draft
+      return next
+    })
+  }
+  function removeIngredient(di: number, ii: number) {
+    setDrafts(prev => {
+      const next = prev.slice()
+      const draft = { ...next[di] }
+      draft.ingredients = draft.ingredients.filter((_, i) => i !== ii)
+      next[di] = draft
+      return next
+    })
+  }
+  function removeDraft(di: number) {
+    setDrafts(prev => prev.filter((_, i) => i !== di))
+  }
+  function editDraftName(di: number, name: string) {
+    setDrafts(prev => prev.map((d, i) => i === di ? { ...d, name } : d))
+  }
+  function editDraftPrice(di: number, price: string) {
+    const v = price === '' ? null : Number(price)
+    setDrafts(prev => prev.map((d, i) => i === di ? { ...d, selling_price_inc_vat: v != null && Number.isFinite(v) && v > 0 ? v : null } : d))
+  }
+
+  return (
+    <Backdrop onClose={onClose}>
+      <div style={{ width: 'min(820px, 96vw)', maxHeight: '90vh', overflow: 'auto' as const, background: UXP.cardBg, borderRadius: 12, padding: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>Bulk import recipes from menu</div>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2, maxWidth: 560 }}>
+              Paste your menu text (one dish per line works well). Sonnet drafts each recipe using your existing catalogue. Review + edit before saving.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 18 }} aria-label="Close">×</button>
+        </div>
+
+        {stage === 'paste' && (
+          <>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder={'e.g.\nPinsa Margherita — pomodoro, mozzarella, basilika, olivolja  — 195 kr\nPinsa Chevre — chèvre, honung, valnötter, ruccola — 219 kr\nMargherita — pizzatomater, mozzarella, basilika — 165 kr'}
+              rows={12}
+              disabled={busy}
+              style={{ width: '100%', boxSizing: 'border-box', padding: 10, fontFamily: 'inherit', fontSize: 12, borderRadius: 6, border: `1px solid ${UXP.border}`, resize: 'vertical' as const }}
+            />
+            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 6 }}>
+              {text.length}/8000 chars · Each parse uses one Sonnet call (~$0.10 per typical menu) and counts toward your daily AI quota.
+            </div>
+            {err && <div style={{ marginTop: 8, fontSize: 11, color: UXP.roseText, background: UXP.roseFill, padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, gap: 8 }}>
+              <button onClick={onClose} disabled={busy} style={secondaryBtn}>Cancel</button>
+              <button onClick={parse} disabled={busy || !text.trim()} style={primaryBtn}>
+                {busy ? 'Drafting…' : 'Draft recipes'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {stage === 'preview' && (
+          <>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 10, padding: '8px 10px', background: UXP.subtleBg, borderRadius: 6 }}>
+              Sonnet drafted <strong>{drafts.length}</strong> dish{drafts.length === 1 ? '' : 'es'} from <strong>{meta?.catalogue_size}</strong> products in your catalogue. Review + edit; quantities are AI estimates and should be confirmed by the chef. Anything you can't find here — set the yield and ingredients later from the recipe drawer.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
+              {drafts.map((d, di) => (
+                <div key={di} style={{ border: `1px solid ${UXP.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    <input
+                      value={d.name}
+                      onChange={e => editDraftName(di, e.target.value)}
+                      style={{ flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 500, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
+                    />
+                    <input
+                      type="number" min="0" step="1" placeholder="price inc VAT"
+                      value={d.selling_price_inc_vat ?? ''}
+                      onChange={e => editDraftPrice(di, e.target.value)}
+                      style={{ width: 110, padding: '4px 8px', fontSize: 12, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
+                    />
+                    <button onClick={() => removeDraft(di)} title="Drop this dish" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink4, fontSize: 16 }}>×</button>
+                  </div>
+                  {d.note && <div style={{ fontSize: 10, color: UXP.ink4, marginBottom: 6 }}>{d.note}</div>}
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                    {d.ingredients.length === 0 && (
+                      <div style={{ fontSize: 11, color: UXP.ink4, padding: '4px 6px', fontStyle: 'italic' }}>
+                        AI couldn't find matching products in your catalogue. Add ingredients manually from the recipe drawer after save.
+                      </div>
+                    )}
+                    {d.ingredients.map((g, ii) => (
+                      <div key={ii} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 50px 24px', gap: 6, alignItems: 'center' }}>
+                        <div style={{ fontSize: 11, color: UXP.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }} title={g.product_name}>
+                          {g.product_name}
+                        </div>
+                        <input
+                          type="number" min="0" step="0.01" value={g.quantity}
+                          onChange={e => editIngredient(di, ii, { quantity: Number(e.target.value) })}
+                          style={{ padding: '3px 6px', fontSize: 11, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit', textAlign: 'right' as const }}
+                        />
+                        <input
+                          value={g.unit}
+                          onChange={e => editIngredient(di, ii, { unit: e.target.value })}
+                          style={{ padding: '3px 6px', fontSize: 11, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
+                        />
+                        <button onClick={() => removeIngredient(di, ii)} aria-label="Remove ingredient" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink4, fontSize: 14 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {err && <div style={{ marginTop: 8, fontSize: 11, color: UXP.roseText, background: UXP.roseFill, padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, gap: 8 }}>
+              <button onClick={() => setStage('paste')} disabled={busy} style={secondaryBtn}>← Back to paste</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={onClose} disabled={busy} style={secondaryBtn}>Cancel</button>
+                <button onClick={saveAll} disabled={busy || drafts.length === 0} style={primaryBtn}>
+                  {busy ? 'Saving…' : `Create ${drafts.length} recipe${drafts.length === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {stage === 'saving' && (
+          <div style={{ textAlign: 'center' as const, padding: 30, color: UXP.ink3, fontSize: 12 }}>
+            Saving {drafts.length} recipes…
+          </div>
+        )}
+
+        {stage === 'done' && saveResults && (
+          <>
+            <div style={{ padding: '10px 12px', background: UXP.greenFill, color: UXP.greenDeep, borderRadius: 6, marginBottom: 10, fontSize: 12 }}>
+              Created {saveResults.created} of {drafts.length} recipes.
+              {saveResults.failed.length > 0 && (
+                <> {saveResults.failed.length} ingredient/recipe issues — see below.</>
+              )}
+            </div>
+            {saveResults.failed.length > 0 && (
+              <div style={{ maxHeight: 200, overflow: 'auto' as const, fontSize: 11, marginBottom: 10 }}>
+                {saveResults.failed.map((f, i) => (
+                  <div key={i} style={{ padding: '4px 8px', borderBottom: `0.5px solid ${UXP.borderSoft}`, color: UXP.ink3 }}>
+                    <strong>{f.name}:</strong> {f.error}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={onSaved} style={primaryBtn}>Done</button>
+            </div>
+          </>
+        )}
+      </div>
+    </Backdrop>
+  )
+}
 
 function CreateModal({ bizId, onClose, onCreated }: { bizId: string; onClose: () => void; onCreated: (id: string) => void }) {
   const t = useTranslations('operations.inventory.recipes')
