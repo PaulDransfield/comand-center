@@ -59,13 +59,42 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const componentIds = lines.filter(l => l.kind === 'component').map(l => l.entity_id)
   const productIds   = lines.filter(l => l.kind === 'product'  ).map(l => l.entity_id)
 
+  // Method + notes (fallback when method is null — legacy recipes /
+  // bulk-importer writes often land in notes instead) + the sub-recipe's
+  // own ingredient list so the modal can let the chef write prep notes
+  // ("juice the lemon" / "chop the garlic") against each ingredient
+  // EVEN when the sub has no yield set (so its ingredients aren't
+  // rolled up as separate product lines).
   const methodById = new Map<string, string | null>()
+  const notesById  = new Map<string, string | null>()
+  const subIngredientsByRecipe = new Map<string, Array<{ ingredient_id: string; product_id: string | null; product_name: string | null; quantity: number; unit: string | null; notes: string | null; position: number }>>()
   if (componentIds.length > 0) {
     const { data: rs } = await db
       .from('recipes')
-      .select('id, method')
+      .select('id, method, notes')
       .in('id', componentIds)
-    for (const r of rs ?? []) methodById.set(r.id, r.method ?? null)
+    for (const r of rs ?? []) {
+      methodById.set(r.id, (r as any).method ?? null)
+      notesById.set(r.id, (r as any).notes ?? null)
+    }
+    const { data: subIngs } = await db
+      .from('recipe_ingredients')
+      .select('id, recipe_id, product_id, quantity, unit, notes, position, products(name)')
+      .in('recipe_id', componentIds)
+      .order('position')
+    for (const i of subIngs ?? []) {
+      const list = subIngredientsByRecipe.get((i as any).recipe_id) ?? []
+      list.push({
+        ingredient_id: (i as any).id,
+        product_id:    (i as any).product_id,
+        product_name:  ((i as any).products as any)?.name ?? null,
+        quantity:      Number((i as any).quantity ?? 0),
+        unit:          (i as any).unit ?? null,
+        notes:         (i as any).notes ?? null,
+        position:      Number((i as any).position ?? 0),
+      })
+      subIngredientsByRecipe.set((i as any).recipe_id, list)
+    }
   }
 
   // Map product_id → list of uses across recipes in this business.
@@ -100,8 +129,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const enrichedLines = lines.map(l => ({
     ...l,
     meta: l.kind === 'component'
-      ? { method: methodById.get(l.entity_id) ?? null }
-      : { uses:   usesByProductId.get(l.entity_id) ?? [] },
+      ? {
+          method:      methodById.get(l.entity_id) ?? null,
+          notes:       notesById.get(l.entity_id)  ?? null,
+          ingredients: subIngredientsByRecipe.get(l.entity_id) ?? [],
+        }
+      : { uses: usesByProductId.get(l.entity_id) ?? [] },
   }))
 
   return NextResponse.json({ session, lines: enrichedLines }, {

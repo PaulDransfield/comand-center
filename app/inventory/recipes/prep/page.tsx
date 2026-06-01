@@ -38,6 +38,15 @@ interface UseRef {
   quantity:      number
   unit:          string | null
 }
+interface SubIngredient {
+  ingredient_id: string
+  product_id:    string | null
+  product_name:  string | null
+  quantity:      number
+  unit:          string | null
+  notes:         string | null
+  position:      number
+}
 interface PrepComponentLine {
   subrecipe_id:     string
   name:             string | null
@@ -101,15 +110,20 @@ interface PrepSessionLine {
   source_recipe_ids: string[]
   checked_at:        string | null
   position:          number
-  // Server enrichment. For component lines: meta.method (sub-recipe's
-  // own method). For product lines: meta.uses (per-recipe ingredient
-  // notes — "quarter the carciofi" etc.). Loaded live by the GET
-  // endpoint so owner method edits flow through immediately. ingredient_id
-  // is the recipe_ingredients row id — used by the inline-edit UI to
-  // PATCH the right target when the chef writes a prep note.
+  // Server enrichment. Loaded live by the GET endpoint so owner edits
+  // flow through immediately (text is read-side, not frozen).
+  //   - component: method (with notes fallback), notes, ingredients
+  //     (the sub-recipe's OWN recipe_ingredients rows so the modal can
+  //     surface per-ingredient prep notes — even when the sub has no
+  //     yield set and its ingredients don't appear as separate product
+  //     lines on the prep list).
+  //   - product: uses (recipes that consume this product, each with
+  //     its own notes the chef can fill in).
   meta?: {
-    method?: string | null
-    uses?:   UseRef[]
+    method?:      string | null
+    notes?:       string | null
+    ingredients?: SubIngredient[]
+    uses?:        UseRef[]
   }
 }
 
@@ -139,6 +153,11 @@ export default function PrepListPage() {
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
   const [coversInput, setCoversInput] = useState<string>('')
+  // The currently open line modal (tap the row body to open it).
+  // Holds a session-line id; the modal pulls full data from that line's
+  // meta. Checkbox tap stays a separate target that toggles check.
+  const [openLineId, setOpenLineId] = useState<string | null>(null)
+
   // M118 — pre-orders for the chosen service_date. Default service
   // date is tomorrow (most prep is done the day before).
   const [serviceDate, setServiceDate] = useState<string>(() => {
@@ -628,38 +647,57 @@ export default function PrepListPage() {
                   {(tab === 'components' ? sessionComponents : sessionProducts).map(line => {
                     const f = formatPrepQty(line.total_qty, line.unit)
                     const checked = line.checked_at != null
+                    const disabled = !!activeSession.completed_at
                     return (
-                      <button
+                      <div
                         key={line.id}
-                        onClick={() => toggleLine(line)}
-                        disabled={!!activeSession.completed_at}
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: '28px 1fr 130px',
-                          alignItems: 'flex-start',
-                          gap: 10,
-                          width: '100%',
-                          padding: '12px 14px',
+                          gridTemplateColumns: '44px 1fr 130px',
+                          alignItems: 'center',
+                          gap: 0,
                           background: checked ? UXP.subtleBg : UXP.cardBg,
                           borderTop: `0.5px solid ${UXP.border}`,
-                          border: 'none', borderRadius: 0,
-                          textAlign: 'left' as const,
-                          cursor: 'pointer', fontFamily: 'inherit',
                           opacity: checked ? 0.55 : 1,
                         }}
                       >
-                        {/* Custom checkbox — big tap target for tablets. */}
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          width: 22, height: 22, borderRadius: 5,
-                          border: `1.5px solid ${checked ? UXP.lavDeep : UXP.border}`,
-                          background: checked ? UXP.lavDeep : 'transparent',
-                          color: '#fff', fontSize: 14, fontWeight: 700,
-                          flexShrink: 0,
-                        }}>
-                          {checked ? 'OK' : ''}
-                        </span>
-                        <span style={{ minWidth: 0 }}>
+                        {/* Tap target 1: checkbox column. Toggles
+                            check. Wide tap area (44px) for tablet. */}
+                        <button
+                          onClick={() => toggleLine(line)}
+                          disabled={disabled}
+                          aria-label={checked ? 'Uncheck' : 'Check'}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            height: 56, width: 44, padding: 0,
+                            background: 'transparent', border: 'none', cursor: 'pointer',
+                          }}
+                        >
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 22, height: 22, borderRadius: 5,
+                            border: `1.5px solid ${checked ? UXP.lavDeep : UXP.border}`,
+                            background: checked ? UXP.lavDeep : 'transparent',
+                            color: '#fff', fontSize: 14, fontWeight: 700,
+                          }}>
+                            {checked ? 'OK' : ''}
+                          </span>
+                        </button>
+
+                        {/* Tap target 2: row body. Opens the modal
+                            with method + ingredients (for components)
+                            or per-recipe notes (for products). */}
+                        <button
+                          onClick={() => setOpenLineId(line.id)}
+                          disabled={disabled}
+                          style={{
+                            display: 'block', textAlign: 'left' as const,
+                            width: '100%', minWidth: 0,
+                            padding: '12px 14px 12px 4px',
+                            background: 'transparent', border: 'none',
+                            cursor: 'pointer', fontFamily: 'inherit',
+                          }}
+                        >
                           <div style={{
                             fontSize: 13, color: UXP.ink1, fontWeight: 500,
                             textDecoration: checked ? 'line-through' as const : 'none' as const,
@@ -676,52 +714,21 @@ export default function PrepListPage() {
                               shared across {line.source_recipe_ids.length} dishes
                             </div>
                           )}
+                          <div style={{ fontSize: 10, color: UXP.lavText, marginTop: 4 }}>
+                            Tap for method &amp; ingredients →
+                          </div>
+                        </button>
 
-                          {/* COMPONENT method — sub-recipe's own
-                              instructions. Inline-editable textarea
-                              so the chef can fill missing methods
-                              without leaving the prep page. Writes
-                              target recipes.method on the sub-recipe;
-                              autosaves on blur. */}
-                          {line.kind === 'component' && (
-                            <InlineMethodEditor
-                              recipeId={line.entity_id}
-                              value={line.meta?.method ?? null}
-                              onSaved={(newValue) => {
-                                setSessionLines(prev => prev.map(l => l.id === line.id
-                                  ? { ...l, meta: { ...(l.meta ?? {}), method: newValue } }
-                                  : l))
-                              }}
-                            />
-                          )}
-
-                          {/* PRODUCT per-recipe prep notes — one
-                              editable row per recipe that uses this
-                              product. Chef writes "juice & zest" /
-                              "quarter" against each recipe. Writes
-                              target recipe_ingredients.notes;
-                              autosaves on blur. */}
-                          {line.kind === 'product' && (
-                            <InlineUsesEditor
-                              uses={line.meta?.uses ?? []}
-                              onSaved={(ingredientId, newNotes) => {
-                                setSessionLines(prev => prev.map(l => {
-                                  if (l.id !== line.id) return l
-                                  const uses = (l.meta?.uses ?? []).map(u => u.ingredient_id === ingredientId ? { ...u, notes: newNotes } : u)
-                                  return { ...l, meta: { ...(l.meta ?? {}), uses } }
-                                }))
-                              }}
-                            />
-                          )}
-                        </span>
-                        <span style={{
+                        {/* Qty column. Not a tap target. */}
+                        <div style={{
+                          padding: '12px 14px',
                           textAlign: 'right' as const,
                           fontSize: 14, fontWeight: 600, color: UXP.ink1,
                           fontVariantNumeric: 'tabular-nums' as const,
                         }}>
                           {line.uncertain ? '—' : `${f.qty} ${f.unit}`}
-                        </span>
-                      </button>
+                        </div>
+                      </div>
                     )
                   })}
                 </div>
@@ -1277,7 +1284,303 @@ export default function PrepListPage() {
           </div>
         )}
       </div>
+
+      {/* Line-detail modal — opens on row body tap in prep mode.
+          Shows method + ingredient list (component) or per-recipe uses
+          (product). Edits autosave via the same PATCH endpoints as
+          before. Reuses backdrop pattern from the recipe drawer. */}
+      {openLineId && activeSession && (() => {
+        const line = sessionLines.find(l => l.id === openLineId)
+        if (!line) { setOpenLineId(null); return null }
+        return (
+          <LinePrepModal
+            line={line}
+            recipeNameById={dishById}
+            onClose={() => setOpenLineId(null)}
+            onMethodSaved={(newValue) => {
+              setSessionLines(prev => prev.map(l => l.id === line.id
+                ? { ...l, meta: { ...(l.meta ?? {}), method: newValue } }
+                : l))
+            }}
+            onIngredientNoteSaved={(ingredientId, newNotes) => {
+              setSessionLines(prev => prev.map(l => {
+                if (l.id !== line.id) return l
+                if (l.kind === 'component') {
+                  const ings = (l.meta?.ingredients ?? []).map(i =>
+                    i.ingredient_id === ingredientId ? { ...i, notes: newNotes } : i)
+                  return { ...l, meta: { ...(l.meta ?? {}), ingredients: ings } }
+                }
+                const uses = (l.meta?.uses ?? []).map(u =>
+                  u.ingredient_id === ingredientId ? { ...u, notes: newNotes } : u)
+                return { ...l, meta: { ...(l.meta ?? {}), uses } }
+              }))
+            }}
+          />
+        )
+      })()}
     </AppShell>
+  )
+}
+
+function LinePrepModal({
+  line, recipeNameById, onClose, onMethodSaved, onIngredientNoteSaved,
+}: {
+  line: PrepSessionLine
+  recipeNameById: Map<string, DishRow>
+  onClose: () => void
+  onMethodSaved: (v: string | null) => void
+  onIngredientNoteSaved: (ingredientId: string, v: string | null) => void
+}) {
+  // Method fallback: prefer recipes.method, fall back to recipes.notes
+  // when method is empty. Legacy / bulk-importer flows sometimes wrote
+  // the cooking instructions to notes rather than method.
+  const methodVal = line.meta?.method && line.meta.method.trim()
+    ? line.meta.method
+    : (line.meta?.notes && line.meta.notes.trim() ? line.meta.notes : null)
+
+  return (
+    <div
+      role="dialog"
+      onClick={onClose}
+      style={{
+        position: 'fixed' as const, inset: 0,
+        background: 'rgba(20,18,40,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 20,
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(600px, 100%)', maxHeight: '90vh', overflowY: 'auto' as const,
+          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+          borderRadius: 10, padding: 20,
+          boxShadow: '0 12px 32px rgba(58,53,80,0.20)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: UXP.ink1 }}>
+              {line.name_snapshot}
+            </h2>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
+              {line.kind === 'component' ? 'Component to prep' : 'Ingredient to pull'}
+              {!line.uncertain && (
+                <span style={{ marginLeft: 8, color: UXP.ink1, fontWeight: 600 }}>
+                  {(() => {
+                    const f = formatPrepQty(line.total_qty, line.unit)
+                    return `${f.qty} ${f.unit}`
+                  })()}
+                </span>
+              )}
+            </div>
+            {line.uncertain && (
+              <div style={{ fontSize: 11, color: UXP.coral, marginTop: 4 }}>
+                {line.uncertain_reason}
+              </div>
+            )}
+          </div>
+          <button onClick={onClose}
+            aria-label="Close"
+            style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 22, padding: 0, lineHeight: 1 }}>
+            ×
+          </button>
+        </div>
+
+        {/* COMPONENT: method + ingredients */}
+        {line.kind === 'component' && (
+          <>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+                Method
+              </div>
+              <InlineMethodEditor
+                recipeId={line.entity_id}
+                value={methodVal}
+                onSaved={onMethodSaved}
+              />
+              {!line.meta?.method && line.meta?.notes && (
+                <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const, marginTop: 4 }}>
+                  Shown from recipe&apos;s Notes — edit above to save as the official Method.
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+                Ingredients
+              </div>
+              {(line.meta?.ingredients ?? []).length === 0 && (
+                <div style={{ fontSize: 11, color: UXP.ink4, fontStyle: 'italic' as const }}>
+                  No ingredients recorded on this recipe yet.
+                </div>
+              )}
+              {(line.meta?.ingredients ?? []).map(ing => (
+                <SubIngredientRow
+                  key={ing.ingredient_id}
+                  recipeId={line.entity_id}
+                  ing={ing}
+                  onSaved={(v) => onIngredientNoteSaved(ing.ingredient_id, v)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* PRODUCT: per-recipe prep notes */}
+        {line.kind === 'product' && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 6 }}>
+              Used in
+            </div>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginBottom: 8 }}>
+              Write what to do with this ingredient against each recipe that uses it ({'"'}juice &amp; zest{'"'}, {'"'}quarter{'"'}, {'"'}dice{'"'}). Saves to that recipe&apos;s ingredient note.
+            </div>
+            {(line.meta?.uses ?? []).length === 0 && (
+              <div style={{ fontSize: 11, color: UXP.ink4, fontStyle: 'italic' as const }}>
+                Not used in any recipe yet.
+              </div>
+            )}
+            {(line.meta?.uses ?? []).map(u => (
+              <ProductUseRow
+                key={u.ingredient_id}
+                use={u}
+                onSaved={(v) => onIngredientNoteSaved(u.ingredient_id, v)}
+              />
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={primaryBtn}>Done</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SubIngredientRow({
+  recipeId, ing, onSaved,
+}: {
+  recipeId: string
+  ing: SubIngredient
+  onSaved: (v: string | null) => void
+}) {
+  const [draft, setDraft] = useState(ing.notes ?? '')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setDraft(ing.notes ?? '') }, [ing.notes])
+
+  const save = useCallback(async () => {
+    const trimmed = draft.trim()
+    const incoming = (ing.notes ?? '').trim()
+    if (trimmed === incoming) return
+    setSaving(true)
+    try {
+      const r = await fetch(
+        `/api/inventory/recipes/${recipeId}/ingredients/${ing.ingredient_id}`,
+        {
+          method: 'PATCH', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: trimmed || null }),
+        },
+      )
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      onSaved(trimmed || null)
+    } catch (e) {
+      // Surface as a row-local error; full toast UI isn't worth it here.
+      console.error(e)
+    } finally {
+      setSaving(false)
+    }
+  }, [draft, ing.notes, recipeId, ing.ingredient_id, onSaved])
+
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '160px 80px 1fr',
+      alignItems: 'center', gap: 8,
+      padding: '6px 0', borderTop: `0.5px solid ${UXP.border}`,
+    }}>
+      <span style={{ fontSize: 12, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+        {ing.product_name ?? '—'}
+      </span>
+      <span style={{ fontSize: 11, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
+        {ing.quantity} {ing.unit ?? ''}
+      </span>
+      <input
+        type="text"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={save}
+        placeholder="e.g. juice & zest"
+        disabled={saving}
+        style={{
+          width: '100%', boxSizing: 'border-box', padding: '4px 8px',
+          fontSize: 11, color: UXP.ink2,
+          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+          borderRadius: 4, fontFamily: 'inherit',
+        }}
+      />
+    </div>
+  )
+}
+
+function ProductUseRow({
+  use, onSaved,
+}: {
+  use: UseRef
+  onSaved: (v: string | null) => void
+}) {
+  const [draft, setDraft] = useState(use.notes ?? '')
+  const [saving, setSaving] = useState(false)
+  useEffect(() => { setDraft(use.notes ?? '') }, [use.notes])
+
+  const save = useCallback(async () => {
+    const trimmed = draft.trim()
+    const incoming = (use.notes ?? '').trim()
+    if (trimmed === incoming) return
+    setSaving(true)
+    try {
+      const r = await fetch(
+        `/api/inventory/recipes/${use.recipe_id}/ingredients/${use.ingredient_id}`,
+        {
+          method: 'PATCH', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: trimmed || null }),
+        },
+      )
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      onSaved(trimmed || null)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setSaving(false)
+    }
+  }, [draft, use.notes, use.recipe_id, use.ingredient_id, onSaved])
+
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '180px 1fr',
+      alignItems: 'center', gap: 8,
+      padding: '6px 0', borderTop: `0.5px solid ${UXP.border}`,
+    }}>
+      <span style={{ fontSize: 12, color: UXP.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+        {use.recipe_name ?? '—'}
+      </span>
+      <input
+        type="text"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={save}
+        placeholder="e.g. juice & zest"
+        disabled={saving}
+        style={{
+          width: '100%', boxSizing: 'border-box', padding: '4px 8px',
+          fontSize: 11, color: UXP.ink2,
+          background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+          borderRadius: 4, fontFamily: 'inherit',
+        }}
+      />
+    </div>
   )
 }
 
