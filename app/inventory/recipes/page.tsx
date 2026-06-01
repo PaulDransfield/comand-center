@@ -79,7 +79,36 @@ export default function InventoryRecipesPage() {
     else setLoading(false)   // No biz selected yet — stop the loading spinner and surface the empty-biz state.
   }, [bizId, load])
 
-  const rows = data?.recipes ?? []
+  const allRows = data?.recipes ?? []
+  // Phase 1 menu-engineering filter. A "dish" has a selling price set
+  // (ex-VAT canonical, or legacy menu_price). A "sub-recipe" doesn't —
+  // it's a yield batch consumed by other recipes. Default view is
+  // dishes-only so the margin numbers aren't drowned by zero-priced
+  // sub-recipes that legitimately have no GP%.
+  const [viewFilter, setViewFilter] = useState<'dishes' | 'subrecipes' | 'all'>('dishes')
+  const isDish = (r: any) =>
+    (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
+    || (r.menu_price != null && Number(r.menu_price) > 0)
+  const rows = viewFilter === 'dishes'     ? allRows.filter(isDish)
+            : viewFilter === 'subrecipes'  ? allRows.filter((r: any) => !isDish(r))
+            :                                allRows
+  const dishCount = allRows.filter(isDish).length
+  const subCount  = allRows.length - dishCount
+  // Phase 1 KPI strip should reflect what's actually on screen.
+  const visibleSummary = (() => {
+    const visGp = rows.filter((r: any) => r.gp_pct != null && r.missing_prices === 0 && r.unit_mismatches === 0) as any[]
+    const avgGp = visGp.length ? visGp.reduce((s: number, r: any) => s + r.gp_pct, 0) / visGp.length : null
+    const lowGp = visGp.filter((r: any) => r.gp_pct < 65).length
+    const visPrice = rows.filter((r: any) => r.menu_price != null && r.menu_price > 0) as any[]
+    const avgPrice = visPrice.length ? visPrice.reduce((s: number, r: any) => s + r.menu_price, 0) / visPrice.length : null
+    return {
+      count:           rows.length,
+      avg_gp_pct:      avgGp != null ? Math.round(avgGp * 10) / 10 : null,
+      low_gp_count:    lowGp,
+      avg_menu_price:  avgPrice != null ? Math.round(avgPrice) : null,
+      incomplete_count: rows.filter((r: any) => r.missing_prices > 0 || r.unit_mismatches > 0).length,
+    }
+  })()
 
   return (
     <AppShell>
@@ -100,14 +129,35 @@ export default function InventoryRecipesPage() {
           </button>
         </div>
 
-        {/* KPI strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
-          <Stat label={t('kpiCount')}      value={String(data?.summary.count ?? 0)} />
-          <Stat label={t('kpiAvgGp')}      value={data?.summary.avg_gp_pct != null ? `${data.summary.avg_gp_pct.toFixed(1)} %` : '—'} />
-          <Stat label={t('kpiLowGp')}      value={String(data?.summary.low_gp_count ?? 0)}
-                tone={(data?.summary.low_gp_count ?? 0) > 0 ? 'coral' : 'ink'} />
-          <Stat label={t('kpiAvgPrice')}   value={data?.summary.avg_menu_price != null ? fmtKr(data.summary.avg_menu_price) : '—'} />
+        {/* KPI strip — reflects the visible filter (dishes / sub-recipes / all). */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
+          <Stat label={t('kpiCount')}      value={String(visibleSummary.count)} />
+          <Stat label={t('kpiAvgGp')}      value={visibleSummary.avg_gp_pct != null ? `${visibleSummary.avg_gp_pct.toFixed(1)} %` : '—'} />
+          <Stat label={t('kpiLowGp')}      value={String(visibleSummary.low_gp_count)}
+                tone={visibleSummary.low_gp_count > 0 ? 'coral' : 'ink'} />
+          <Stat label={t('kpiAvgPrice')}   value={visibleSummary.avg_menu_price != null ? fmtKr(visibleSummary.avg_menu_price) : '—'} />
         </div>
+
+        {/* Phase 1 view filter. Defaults to dishes — the menu-engineering
+            view. Sub-recipes are accessible via their own pill for
+            authoring; "All" exposes the legacy combined list. */}
+        {bizId && allRows.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' as const }}>
+            <ViewPill active={viewFilter === 'dishes'}     onClick={() => setViewFilter('dishes')}     label="Dishes"      count={dishCount} />
+            <ViewPill active={viewFilter === 'subrecipes'} onClick={() => setViewFilter('subrecipes')} label="Sub-recipes" count={subCount} />
+            <ViewPill active={viewFilter === 'all'}        onClick={() => setViewFilter('all')}        label="All"         count={allRows.length} />
+            {visibleSummary.incomplete_count > 0 && (
+              <span style={{
+                marginLeft: 'auto', fontSize: 10, padding: '3px 9px',
+                background: '#fef3e0', color: UXP.coral, fontWeight: 600,
+                borderRadius: 999, letterSpacing: '0.02em',
+              }}
+              title="Dishes with unmapped or missing-cost ingredients. Their GP% is shown as 'Incomplete cost' until the gap is fixed.">
+                {visibleSummary.incomplete_count} incomplete cost
+              </span>
+            )}
+          </div>
+        )}
 
         {error && (
           <div style={{ padding: '10px 14px', background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`,
@@ -155,8 +205,36 @@ export default function InventoryRecipesPage() {
                     <td style={{ ...numTd(), color: r.food_pct == null ? UXP.ink3 : foodPctColor(r.food_pct) }}>
                       {r.food_pct != null ? `${r.food_pct.toFixed(1)} %` : '—'}
                     </td>
-                    <td style={{ ...numTd(), color: r.gp_pct == null ? UXP.ink3 : gpColor(r.gp_pct), fontWeight: 500 }}>
-                      {r.gp_pct != null ? `${r.gp_pct.toFixed(1)} %` : '—'}
+                    {/* Phase 1 honest-incomplete rule: when warnings fire,
+                        replace the (likely confident-but-wrong) GP% with
+                        an "Incomplete cost" badge. Owner sees the same
+                        warning count chip on the far right but the margin
+                        cell never lies. GP kr sits under GP% as the
+                        secondary number (ratio first, money second). */}
+                    <td style={{ ...numTd(), fontWeight: 500 }}>
+                      {(r.missing_prices > 0 || r.unit_mismatches > 0) ? (
+                        <span style={{
+                          display:       'inline-block',
+                          padding:       '2px 8px',
+                          background:    '#fef3e0',
+                          color:         UXP.coral,
+                          fontSize:      10,
+                          fontWeight:    600,
+                          borderRadius:  6,
+                          letterSpacing: '0.02em',
+                        }}>Incomplete cost</span>
+                      ) : r.gp_pct != null ? (
+                        <span style={{ color: gpColor(r.gp_pct) }}>
+                          {r.gp_pct.toFixed(1)} %
+                          {r.gp_kr != null && (
+                            <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, fontWeight: 400, marginTop: 1 }}>
+                              {fmtKr(r.gp_kr)}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span style={{ color: UXP.ink3 }}>—</span>
+                      )}
                     </td>
                     <td style={{ ...td(), textAlign: 'center' as const }}>
                       {(r.missing_prices > 0 || r.unit_mismatches > 0) && (
@@ -1498,6 +1576,29 @@ function DrawerStat({ label, value, color }: { label: string; value: string; col
     </div>
   )
 }
+function ViewPill({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding:       '4px 12px',
+        background:    active ? UXP.lavFill : UXP.cardBg,
+        color:         active ? UXP.lavText : UXP.ink2,
+        border:        `0.5px solid ${active ? UXP.lav : UXP.border}`,
+        borderRadius:  999,
+        fontSize:      11,
+        fontWeight:    500,
+        fontFamily:    'inherit',
+        cursor:        'pointer',
+        letterSpacing: '0.02em',
+      }}
+    >
+      {label} <span style={{ color: UXP.ink4, marginLeft: 4 }}>· {count}</span>
+    </button>
+  )
+}
+
 function Empty({ label }: { label: string }) {
   return (
     <div style={{ padding: 36, textAlign: 'center' as const, color: UXP.ink3, fontSize: 13,
