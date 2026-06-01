@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
   const { data: recipes, error: rErr } = await db
     .from('recipes')
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       notes,
       method,
     })
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
     .single()
   if (error) {
     if ((error as any).code === '23505') {

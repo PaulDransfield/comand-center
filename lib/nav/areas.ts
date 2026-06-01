@@ -111,7 +111,15 @@ export const AREAS: Area[] = [
     // dish-level margin and a top-level operator concern, not a
     // bookkeeping artefact of supplier invoices.
     pages: [
-      { key: 'recipes', label: 'Recipes', href: '/inventory/recipes' },
+      { key: 'recipes', label: 'Recipes',    href: '/inventory/recipes' },
+      // Manual-covers prep list — owner enters expected production, system
+      // aggregates shared sub-recipes + raw ingredients. v1; demand-prediction
+      // (POS-driven) is the future seam in lib/inventory/prep-list.ts.
+      { key: 'prep',    label: 'Prep list',  href: '/inventory/recipes/prep' },
+      // Smart shopping list — natural continuation of the prep list.
+      // Derived from prep sessions + pre-orders; guide only, chef fills
+      // the order qty themselves.
+      { key: 'orders',  label: 'Order list', href: '/inventory/orders' },
     ],
   },
   {
