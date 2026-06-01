@@ -464,7 +464,7 @@ async function getProductLatestPricesLeaf(
     while (from <= 50_000) {
       const { data } = await db
         .from('supplier_invoice_lines')
-        .select('id, product_alias_id, price_per_unit, unit, invoice_date, currency')
+        .select('id, product_alias_id, price_per_unit, quantity, total_excl_vat, unit, invoice_date, currency')
         .eq('business_id', businessId)
         .eq('match_status', 'matched')
         .in('product_alias_id', slice)
@@ -482,8 +482,27 @@ async function getProductLatestPricesLeaf(
     if (!productId) continue
     const existing = out.get(productId)
     if (existing && existing.latest_date) continue
-    if (l.price_per_unit == null) continue
-    const nativePrice = Number(l.price_per_unit)
+    // Derive per-unit price. PDF-extracted price_per_unit is unreliable —
+    // the model sometimes picks up the per-kg figure, a discounted unit
+    // price, or a per-something-else number when the line shows multiple
+    // numeric columns (per-unit + line total + discount + tax). The
+    // ground-truth paid-per-unit IS total_excl_vat / quantity: the line
+    // total is validated against the invoice header during extraction, so
+    // it's much harder for the model to get wrong. Mutti Pizza sauce
+    // 4,1kg jar example: PDF gave qty=3, price_per_unit=14.22, total=466.83;
+    // 14.22/jar is implausible at ~155 SEK retail, but 466.83/3 = 155.61
+    // is correct. Fall back to raw price_per_unit when qty + total aren't
+    // both present (Fortnox-row source rows often only have one).
+    const qty   = Number(l.quantity ?? 0)
+    const total = Number(l.total_excl_vat ?? 0)
+    let nativePrice: number
+    if (Number.isFinite(qty) && qty > 0 && Number.isFinite(total) && total !== 0) {
+      nativePrice = total / qty
+    } else if (l.price_per_unit != null) {
+      nativePrice = Number(l.price_per_unit)
+    } else {
+      continue
+    }
     const currency    = l.currency ?? 'SEK'
     let priceSek: number | null = nativePrice
     let fxRateUsed: number | null = 1
