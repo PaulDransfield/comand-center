@@ -98,5 +98,58 @@ export async function POST(req: NextRequest) {
     } as any))
   }
 
-  return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } })
+  // Meta enrichment — mirrors what GET /api/inventory/prep-sessions/[id]
+  // does so create-mode shows the same context (method, uses) as
+  // prep-mode. The chef can write missing notes/method here BEFORE
+  // hitting "Save & start prep" — writes target the underlying
+  // recipes.method / recipe_ingredients.notes via the existing PATCH
+  // endpoints, so every future prep list inherits them.
+  const componentIds = result.components.map(c => c.subrecipe_id)
+  const methodById = new Map<string, string | null>()
+  if (componentIds.length > 0) {
+    const { data: rs } = await db
+      .from('recipes')
+      .select('id, method')
+      .in('id', componentIds)
+    for (const r of rs ?? []) methodById.set(r.id, (r as any).method ?? null)
+  }
+  const usesByProductId = new Map<string, Array<{ ingredient_id: string; recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>>()
+  if (productIds.length > 0) {
+    const { data: ris } = await db
+      .from('recipe_ingredients')
+      .select('id, product_id, quantity, unit, notes, recipes!inner(id, name, business_id, archived_at)')
+      .in('product_id', productIds)
+      .eq('recipes.business_id', businessId)
+      .is('recipes.archived_at', null)
+    for (const r of ris ?? []) {
+      const pid = (r as any).product_id as string
+      const rec = (r as any).recipes
+      if (!rec) continue
+      const list = usesByProductId.get(pid) ?? []
+      list.push({
+        ingredient_id: (r as any).id,
+        recipe_id:     rec.id,
+        recipe_name:   rec.name ?? null,
+        notes:         (r as any).notes ?? null,
+        quantity:      Number((r as any).quantity ?? 0),
+        unit:          (r as any).unit ?? null,
+      })
+      usesByProductId.set(pid, list)
+    }
+  }
+
+  const enrichedComponents = result.components.map(c => ({
+    ...c,
+    meta: { method: methodById.get(c.subrecipe_id) ?? null },
+  }))
+  const enrichedProducts = result.products.map(p => ({
+    ...p,
+    meta: { uses: usesByProductId.get(p.product_id) ?? [] },
+  } as any))
+
+  return NextResponse.json({
+    ...result,
+    components: enrichedComponents,
+    products:   enrichedProducts,
+  }, { headers: { 'Cache-Control': 'no-store' } })
 }

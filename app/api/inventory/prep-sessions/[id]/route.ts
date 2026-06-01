@@ -69,11 +69,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   // Map product_id → list of uses across recipes in this business.
-  const usesByProductId = new Map<string, Array<{ recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>>()
+  // ingredient_id is the recipe_ingredients row id — needed by the
+  // inline-edit UI so it can PATCH the right (recipe, ingredient) target
+  // when the chef writes a prep note ("juice and zest the lemon").
+  const usesByProductId = new Map<string, Array<{ ingredient_id: string; recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>>()
   if (productIds.length > 0) {
     const { data: ris } = await db
       .from('recipe_ingredients')
-      .select('product_id, quantity, unit, notes, recipes!inner(id, name, business_id, archived_at)')
+      .select('id, product_id, quantity, unit, notes, recipes!inner(id, name, business_id, archived_at)')
       .in('product_id', productIds)
       .eq('recipes.business_id', session.business_id)
       .is('recipes.archived_at', null)
@@ -83,11 +86,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       if (!rec) continue
       const list = usesByProductId.get(pid) ?? []
       list.push({
-        recipe_id:   rec.id,
-        recipe_name: rec.name ?? null,
-        notes:       (r as any).notes ?? null,
-        quantity:    Number((r as any).quantity ?? 0),
-        unit:        (r as any).unit ?? null,
+        ingredient_id: (r as any).id,
+        recipe_id:     rec.id,
+        recipe_name:   rec.name ?? null,
+        notes:         (r as any).notes ?? null,
+        quantity:      Number((r as any).quantity ?? 0),
+        unit:          (r as any).unit ?? null,
       })
       usesByProductId.set(pid, list)
     }
