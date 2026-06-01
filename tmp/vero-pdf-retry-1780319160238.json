@@ -1,0 +1,641 @@
+{
+  "ts": "2026-06-01T13:06:00.238Z",
+  "tally": {
+    "GOOD": 0,
+    "INERT": 0,
+    "REJECTED": 0,
+    "OTHER_ACCEPTED": 10,
+    "OTHER_BLOCKED": 1,
+    "ERROR": 0
+  },
+  "totalCost": 0.24490199999999998,
+  "results": [
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8608",
+      "prev_status": "pending",
+      "prev_rows_extracted": 11,
+      "status": "extracted",
+      "rows_extracted": 11,
+      "total_extracted": 2345.9300000000003,
+      "total_header": 2345,
+      "total_delta_pct": 0.00039658848614084906,
+      "validation_warnings": [
+        {
+          "code": "escalated_to_sonnet",
+          "message": "Haiku 4.5 first pass insufficient (haiku total 2475.93 vs header 2345.00 — 5.6% delta); re-ran with Sonnet 4.6.",
+          "severity": "warn"
+        }
+      ],
+      "ai_model": "claude-sonnet-4-6",
+      "tokens_input": 11455,
+      "tokens_output": 1107,
+      "cost_usd": 0.05097,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "JAMESON 40% 1X0,70 BOT",
+          "quantity": 3,
+          "unit": "BOT",
+          "ppu": 271.11,
+          "total": 813.33
+        },
+        {
+          "description": "Avtalsrabatt JAMESON 40%",
+          "quantity": 3,
+          "unit": "BOT",
+          "ppu": -30,
+          "total": -90
+        },
+        {
+          "description": "HAVANA CLUB ANEJO 3Y 37,7% 1X0,70 BOT",
+          "quantity": 3,
+          "unit": "BOT",
+          "ppu": 226.31,
+          "total": 678.93
+        },
+        {
+          "description": "Avtalsrabatt HAVANA CLUB ANEJO 3Y",
+          "quantity": 3,
+          "unit": "BOT",
+          "ppu": -30,
+          "total": -90
+        },
+        {
+          "description": "SCHWEPPES INDIAN TONIC 24X0,20 BOT",
+          "quantity": 2,
+          "unit": "BOT",
+          "ppu": 202.11,
+          "total": 404.22
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8605",
+      "prev_status": "pending",
+      "prev_rows_extracted": 10,
+      "status": "extracted",
+      "rows_extracted": 10,
+      "total_extracted": 4778.3099999999995,
+      "total_header": 4778.2,
+      "total_delta_pct": 0.000023021221380367626,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 7630,
+      "tokens_output": 1160,
+      "cost_usd": 0.013430000000000001,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "Persilja 250g",
+          "quantity": 8,
+          "unit": "PÅS",
+          "ppu": 12.49,
+          "total": 99.92
+        },
+        {
+          "description": "Broccoli Filmad 250 g",
+          "quantity": 3,
+          "unit": "ST",
+          "ppu": 16.19,
+          "total": 48.57
+        },
+        {
+          "description": "Blomkål Ofilmad Lösvikt",
+          "quantity": 1.58,
+          "unit": "KG",
+          "ppu": 23.28,
+          "total": 36.78
+        },
+        {
+          "description": "Romansallad",
+          "quantity": 20,
+          "unit": "ST",
+          "ppu": 14.17,
+          "total": 283.4
+        },
+        {
+          "description": "Bacon Skivat Färskt EU 1,8kg",
+          "quantity": 15.33,
+          "unit": "KG",
+          "ppu": 79.95,
+          "total": 1225.63
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8723",
+      "prev_status": "pending",
+      "prev_rows_extracted": 30,
+      "status": "extracted",
+      "rows_extracted": 30,
+      "total_extracted": 3805.7200000000003,
+      "total_header": 3805.7200000000003,
+      "total_delta_pct": 0,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 9953,
+      "tokens_output": 3248,
+      "cost_usd": 0.026193,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "SVAMP CHAMPINJONER IMP",
+          "quantity": 2.89,
+          "unit": "KG",
+          "ppu": 38,
+          "total": 109.82
+        },
+        {
+          "description": "RAM MAT 1L 15%",
+          "quantity": 1,
+          "unit": "K01",
+          "ppu": 231.2,
+          "total": 231.2
+        },
+        {
+          "description": "GAR MJÖLK 1,5L STAN 3% ESL",
+          "quantity": 4,
+          "unit": "ST",
+          "ppu": 19.9,
+          "total": 79.6
+        },
+        {
+          "description": "PED PROSCIUTTO 400G SK",
+          "quantity": 5,
+          "unit": "ST",
+          "ppu": 109.9,
+          "total": 549.5
+        },
+        {
+          "description": "DEK SKINKA 5KG KOKT 72% ÄKT",
+          "quantity": 1,
+          "unit": "ST",
+          "ppu": 329,
+          "total": 329
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8618",
+      "prev_status": "pending",
+      "prev_rows_extracted": 21,
+      "status": "extracted",
+      "rows_extracted": 21,
+      "total_extracted": 4181.62,
+      "total_header": 4181.62,
+      "total_delta_pct": 0,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 9659,
+      "tokens_output": 2306,
+      "cost_usd": 0.021189,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "LAN ÄGGULA 5KG FLYTANDE",
+          "quantity": 1,
+          "unit": "ST",
+          "ppu": 425,
+          "total": 425
+        },
+        {
+          "description": "GAR MJÖLK 1,5L STAN 3% ESL",
+          "quantity": 6,
+          "unit": "ST",
+          "ppu": 19.9,
+          "total": 119.4
+        },
+        {
+          "description": "PED PROSCIUTTO 400G SK",
+          "quantity": 3,
+          "unit": "ST",
+          "ppu": 109.9,
+          "total": 329.7
+        },
+        {
+          "description": "ZIP LOCK 50P T MUGG 35/47CL",
+          "quantity": 1,
+          "unit": "ST",
+          "ppu": 28.9,
+          "total": 28.9
+        },
+        {
+          "description": "TOMAT COCKTAIL 250 G",
+          "quantity": 8,
+          "unit": "ST",
+          "ppu": 21.9,
+          "total": 175.2
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8617",
+      "prev_status": "pending",
+      "prev_rows_extracted": 18,
+      "status": "needs_review",
+      "rows_extracted": 18,
+      "total_extracted": 8259.67,
+      "total_header": 8659.84,
+      "total_delta_pct": 0.0462098606902668,
+      "validation_warnings": [
+        {
+          "code": "total_mismatch",
+          "message": "Extracted total 8259.67 vs Fortnox header 8659.84 — delta 4.6%, exceeds 2% tolerance.",
+          "severity": "block"
+        }
+      ],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 9946,
+      "tokens_output": 2018,
+      "cost_usd": 0.020035999999999998,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "Margarin Flytande Krögarns 2L",
+          "quantity": 6,
+          "unit": "DUNK",
+          "ppu": 82.33,
+          "total": 493.98
+        },
+        {
+          "description": "Dressing Caesar 2,5 kg",
+          "quantity": 3,
+          "unit": "HINK",
+          "ppu": 158.71,
+          "total": 476.13
+        },
+        {
+          "description": "Romansallad",
+          "quantity": 30,
+          "unit": "ST",
+          "ppu": 14.17,
+          "total": 425.1
+        },
+        {
+          "description": "Persilja Krus 250g Knippe",
+          "quantity": 2,
+          "unit": "ST",
+          "ppu": 34.19,
+          "total": 68.38
+        },
+        {
+          "description": "Kycklingfile Grill Skivad",
+          "quantity": 8,
+          "unit": "PÅS",
+          "ppu": 219.87,
+          "total": 1758.96
+        }
+      ],
+      "classification": "OTHER_BLOCKED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8626",
+      "prev_status": "pending",
+      "prev_rows_extracted": 29,
+      "status": "extracted",
+      "rows_extracted": 29,
+      "total_extracted": 3262.240000000001,
+      "total_header": 3262.2400000000002,
+      "total_delta_pct": 2.7879454049148077e-16,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 9916,
+      "tokens_output": 2588,
+      "cost_usd": 0.022856,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "BIR BIRRA MORE 33CL 4,6%",
+          "quantity": 1,
+          "unit": "K01",
+          "ppu": 381.6,
+          "total": 381.6
+        },
+        {
+          "description": "FRI GETOST 1KG RLE I KRT",
+          "quantity": 2,
+          "unit": "ST",
+          "ppu": 145.9,
+          "total": 291.8
+        },
+        {
+          "description": "GAS ÄGG 30P INNE L",
+          "quantity": 2,
+          "unit": "ST",
+          "ppu": 79.9,
+          "total": 159.8
+        },
+        {
+          "description": "GRA GORG DOLCE CA 1,5KG VV",
+          "quantity": 1.358,
+          "unit": "KG",
+          "ppu": 148.9985,
+          "total": 202.34
+        },
+        {
+          "description": "SAN TORTILLA 10P 30CM WRAP",
+          "quantity": 1,
+          "unit": "ST",
+          "ppu": 49.9,
+          "total": 49.9
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8688",
+      "prev_status": "pending",
+      "prev_rows_extracted": 2,
+      "status": "extracted",
+      "rows_extracted": 2,
+      "total_extracted": 14000,
+      "total_header": 14000,
+      "total_delta_pct": 0,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 7467,
+      "tokens_output": 330,
+      "cost_usd": 0.009117,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "Menytavla 75x100cm",
+          "quantity": 1,
+          "unit": "st",
+          "ppu": 6000,
+          "total": 6000
+        },
+        {
+          "description": "Menytavla 60x80cm",
+          "quantity": 2,
+          "unit": "st",
+          "ppu": 4000,
+          "total": 8000
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8693",
+      "prev_status": "pending",
+      "prev_rows_extracted": 28,
+      "status": "extracted",
+      "rows_extracted": 28,
+      "total_extracted": 45934.86,
+      "total_header": 45934.58,
+      "total_delta_pct": 0.000006095625561370885,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 10659,
+      "tokens_output": 3064,
+      "cost_usd": 0.025979000000000002,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "BAILEYS ORIG IRISH CRE 70EG ST",
+          "quantity": 1,
+          "unit": "ST",
+          "ppu": 199,
+          "total": 199
+        },
+        {
+          "description": "PROSECCO DOC BRUT EKO 75EG",
+          "quantity": 7,
+          "unit": "KLI",
+          "ppu": 654,
+          "total": 4578
+        },
+        {
+          "description": "LA MERIDIONALE ROUGE 75EG",
+          "quantity": 2,
+          "unit": "KLI",
+          "ppu": 485.4,
+          "total": 970.8
+        },
+        {
+          "description": "LA MERIDIONALE BLANC 75EG",
+          "quantity": 7,
+          "unit": "KLI",
+          "ppu": 485.4,
+          "total": 3397.8
+        },
+        {
+          "description": "BRISKA PÄRON 4,5 33EG",
+          "quantity": 1,
+          "unit": "KLI",
+          "ppu": 527.56,
+          "total": 527.56
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8696",
+      "prev_status": "pending",
+      "prev_rows_extracted": 11,
+      "status": "extracted",
+      "rows_extracted": 11,
+      "total_extracted": 3387.5699999999997,
+      "total_header": 3348.92,
+      "total_delta_pct": 0.011541034124434036,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 9680,
+      "tokens_output": 1302,
+      "cost_usd": 0.01619,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "Broccoli Filmad 250 g",
+          "quantity": 3,
+          "unit": "ST",
+          "ppu": 12.03,
+          "total": 36.09
+        },
+        {
+          "description": "Blomkål Ofilmad Lösvikt",
+          "quantity": 2.3,
+          "unit": "KG",
+          "ppu": 26.86,
+          "total": 61.78
+        },
+        {
+          "description": "Romansallad",
+          "quantity": 20,
+          "unit": "ST",
+          "ppu": 18.92,
+          "total": 378.4
+        },
+        {
+          "description": "Gurka Bas Ofilm. Lösv.",
+          "quantity": 1.96,
+          "unit": "KG",
+          "ppu": 31.47,
+          "total": 61.68
+        },
+        {
+          "description": "Pasta Fusilli 5kg",
+          "quantity": 6,
+          "unit": "PÅS",
+          "ppu": 135.58,
+          "total": 813.48
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8779",
+      "prev_status": "pending",
+      "prev_rows_extracted": 8,
+      "status": "extracted",
+      "rows_extracted": 8,
+      "total_extracted": 2776.4899999999993,
+      "total_header": 2776.4900000000002,
+      "total_delta_pct": 3.275699540689605e-16,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 9472,
+      "tokens_output": 1005,
+      "cost_usd": 0.014497,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "HAVANA CLUB ANEJO 3Y 37,7% 1X0,70 BOT",
+          "quantity": 6,
+          "unit": "BOT",
+          "ppu": 226.31,
+          "total": 1357.86
+        },
+        {
+          "description": "Avtalsrabatt HAVANA CLUB ANEJO 3Y",
+          "quantity": 1,
+          "unit": null,
+          "ppu": -30,
+          "total": -180
+        },
+        {
+          "description": "BEEFEATER LOND DRY GIN 40% 1X0,70 BOT",
+          "quantity": 4,
+          "unit": "BOT",
+          "ppu": 232.01,
+          "total": 928.04
+        },
+        {
+          "description": "Avtalsrabatt BEEFEATER LOND DRY GIN",
+          "quantity": 1,
+          "unit": null,
+          "ppu": -32,
+          "total": -128
+        },
+        {
+          "description": "HAVANA CLUB ANE ESP 37,50% 1X0,70 BOT",
+          "quantity": 3,
+          "unit": "BOT",
+          "ppu": 249.97,
+          "total": 749.91
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    },
+    {
+      "business_id": "0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99",
+      "fortnox_invoice_number": "8923",
+      "prev_status": "pending",
+      "prev_rows_extracted": 33,
+      "status": "extracted",
+      "rows_extracted": 33,
+      "total_extracted": 6175.050000000002,
+      "total_header": 6175.05,
+      "total_delta_pct": 2.9457079757181827e-16,
+      "validation_warnings": [
+        {
+          "code": "unusual_vat",
+          "message": "Row 1 has VAT rate null — outside standard Swedish 0/6/12/25.",
+          "severity": "warn"
+        },
+        {
+          "code": "unusual_vat",
+          "message": "Row 2 has VAT rate null — outside standard Swedish 0/6/12/25.",
+          "severity": "warn"
+        },
+        {
+          "code": "unusual_vat",
+          "message": "Row 3 has VAT rate null — outside standard Swedish 0/6/12/25.",
+          "severity": "warn"
+        },
+        {
+          "code": "unusual_vat",
+          "message": "Row 4 has VAT rate null — outside standard Swedish 0/6/12/25.",
+          "severity": "warn"
+        },
+        {
+          "code": "unusual_vat",
+          "message": "Row 5 has VAT rate null — outside standard Swedish 0/6/12/25.",
+          "severity": "warn"
+        },
+        {
+          "code": "unusual_vat",
+          "message": "Row 6 has VAT rate null — outside standard Swedish 0/6/12/25.",
+          "severity": "warn"
+        }
+      ],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 10060,
+      "tokens_output": 2877,
+      "cost_usd": 0.024445,
+      "error_message": null,
+      "sample_rows": [
+        {
+          "description": "SALLAD ROMAN IMPORT",
+          "quantity": 10,
+          "unit": "ST",
+          "ppu": 12.927,
+          "total": 129.27
+        },
+        {
+          "description": "TOMAT COCKTAIL 250 G",
+          "quantity": 9,
+          "unit": "ST",
+          "ppu": 18.5067,
+          "total": 166.56
+        },
+        {
+          "description": "CITRON KG",
+          "quantity": 0.93,
+          "unit": "KG",
+          "ppu": 26.8817,
+          "total": 25
+        },
+        {
+          "description": "PROVENCE MIX 500G KL1",
+          "quantity": 2,
+          "unit": "ST",
+          "ppu": 42.685,
+          "total": 85.37
+        },
+        {
+          "description": "PERSILJA KRUS 250G",
+          "quantity": 1,
+          "unit": "ST",
+          "ppu": 26.88,
+          "total": 26.88
+        }
+      ],
+      "classification": "OTHER_ACCEPTED"
+    }
+  ]
+}
