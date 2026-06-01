@@ -56,7 +56,12 @@ export const BAS_BUCKET_MAP: Record<string, BucketEntry> = {
   '3019': { sub: 'dine_in',        label_sv: 'Försäljning mat 12 %',     label_en: 'Dine-in food sales (12 % VAT)' },
   '3051': { sub: 'dine_in',        label_sv: 'Försäljning mat 12 %',     label_en: 'Dine-in food sales (12 % VAT)' },
   '3052': { sub: 'alcohol',        label_sv: 'Försäljning alkohol 25 %', label_en: 'Alcohol sales (25 % VAT)' },
-  '3053': { sub: 'takeaway',       label_sv: 'Takeaway 6 %',             label_en: 'Takeaway food sales (6 % VAT)' },
+  // NOTE: 3053 deliberately NOT mapped to 'takeaway'. Per the
+  // 2026-05-31 VAT hotfix (CLAUDE.md Session 22): "VAT rate never
+  // implies sales channel — only explicit Wolt/Foodora/UberEats
+  // platform names map to takeaway." At Vero, 3053 carries 48,468 SEK
+  // of 6 %-VAT revenue that is NOT takeaway. Stays honest-incomplete
+  // (subcategory NULL) until a more specific signal arrives.
   '3560': { sub: 'other_revenue',  label_sv: 'Övriga intäkter',          label_en: 'Other revenue' },
   '3740': { sub: 'other_revenue',  label_sv: 'Öresavrundning',           label_en: 'Rounding' },
   '3980': { sub: 'other_revenue',  label_sv: 'Övriga rörelseintäkter',   label_en: 'Other operating income' },
@@ -152,8 +157,14 @@ export const BAS_BUCKET_MAP: Record<string, BucketEntry> = {
   '6590': { sub: 'consulting',     label_sv: 'Övriga konsultarvoden',    label_en: 'Other consulting' },
   '6591': { sub: 'consulting',     label_sv: 'Övriga konsultarvoden',    label_en: 'Other consulting' },
 
-  // 68xx — Memberships / dues
-  '6800': { sub: 'memberships',    label_sv: 'Föreningsavgifter',        label_en: 'Memberships' },
+  // 68xx — External services. Standard BAS calls this "Föreningsavgifter"
+  // (memberships/dues) but in practice Swedish restaurants use 6800 as
+  // a flexible external-services account. Vero uses it specifically for
+  // "Inhyrd personal" (agency staff) at ~144k SEK/year. Mapping to
+  // 'consulting' as the closest fit for external-service spend; if a
+  // customer turns out to use 6800 for genuine memberships, revisit
+  // per-business via the M083 pattern.
+  '6800': { sub: 'consulting',     label_sv: 'Externa tjänster',         label_en: 'External services / agency staff' },
 
   // 69xx — Other admin
   '6910': { sub: 'memberships',    label_sv: 'Föreningsavgifter',        label_en: 'Memberships' },

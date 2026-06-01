@@ -61,7 +61,8 @@ SET subcategory = CASE fortnox_account::text
   WHEN '3019' THEN 'dine_in'
   WHEN '3051' THEN 'dine_in'
   WHEN '3052' THEN 'alcohol'
-  WHEN '3053' THEN 'takeaway'
+  -- 3053 deliberately NOT mapped — VAT hotfix invariant: 6 % never
+  -- implies takeaway. See lib/overheads/basBuckets.ts comment.
   WHEN '3560' THEN 'other_revenue'
   WHEN '3740' THEN 'other_revenue'
   WHEN '3980' THEN 'other_revenue'
@@ -153,8 +154,11 @@ SET subcategory = CASE fortnox_account::text
   WHEN '6590' THEN 'consulting'
   WHEN '6591' THEN 'consulting'
 
-  -- 68xx + 69xx — Memberships, bank, admin
-  WHEN '6800' THEN 'memberships'
+  -- 68xx + 69xx — External services, bank, admin
+  -- 6800 → consulting (BAS calls this "memberships" but Vero uses it
+  -- for agency staff ~144k SEK/year; consulting is the closest fit
+  -- for external-service spend across customers).
+  WHEN '6800' THEN 'consulting'
   WHEN '6910' THEN 'memberships'
   WHEN '6950' THEN 'bank_fees'
   WHEN '6991' THEN 'bank_fees'
