@@ -324,9 +324,10 @@ const PRODUCT_CATEGORIES = ['food', 'beverage', 'alcohol', 'disposables', 'takea
 // recipes" button writes.
 function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: () => void; onSaved: () => void }) {
   type Ingredient = { product_id: string; product_name: string; quantity: number; unit: string }
-  type Draft      = { name: string; portions: number; selling_price_inc_vat: number | null; note: string | null; ingredients: Ingredient[] }
+  type Draft      = { name: string; portions: number; selling_price_inc_vat: number | null; note: string | null; method: string | null; ingredients: Ingredient[] }
   const [stage,   setStage]   = useState<'paste' | 'preview' | 'saving' | 'done'>('paste')
   const [text,    setText]    = useState('')
+  const [file,    setFile]    = useState<File | null>(null)
   const [drafts,  setDrafts]  = useState<Draft[]>([])
   const [meta,    setMeta]    = useState<{ tokens_in: number; tokens_out: number; catalogue_size: number } | null>(null)
   const [busy,    setBusy]    = useState(false)
@@ -334,18 +335,30 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
   const [saveResults, setSaveResults] = useState<{ created: number; failed: { name: string; error: string }[] } | null>(null)
 
   async function parse() {
-    if (!text.trim()) { setErr('Paste some menu text first.'); return }
+    if (!text.trim() && !file) { setErr('Paste some menu text or attach a file first.'); return }
     setBusy(true); setErr(null)
     try {
-      const r = await fetch('/api/inventory/recipes/import-parse', {
-        method:  'POST', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ business_id: bizId, menu_text: text }),
-      })
+      let r: Response
+      if (file) {
+        // Multipart upload — endpoint detects PDF / Word / image by
+        // mime + extension and handles each accordingly server-side.
+        const fd = new FormData()
+        fd.append('business_id', bizId)
+        fd.append('file', file)
+        r = await fetch('/api/inventory/recipes/import-parse', {
+          method: 'POST', cache: 'no-store', body: fd,
+        })
+      } else {
+        r = await fetch('/api/inventory/recipes/import-parse', {
+          method:  'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ business_id: bizId, menu_text: text }),
+        })
+      }
       const j = await r.json()
       if (!r.ok) throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`)
       if (!Array.isArray(j.drafts) || j.drafts.length === 0) {
-        throw new Error('AI returned no dishes — try rephrasing the menu input.')
+        throw new Error('AI returned no dishes — try rephrasing the input or attaching a clearer source.')
       }
       setDrafts(j.drafts)
       setMeta({ tokens_in: j.tokens_in, tokens_out: j.tokens_out, catalogue_size: j.catalogue_size })
@@ -375,6 +388,7 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
             channel:               'dine_in',
             portions:              d.portions,
             notes:                 d.note ? `AI DRAFT — ${d.note}` : 'AI DRAFT — review quantities before trusting cost.',
+            method:                d.method ?? null,    // M114 — chef instructions
           }),
         })
         const j = await r.json()
@@ -456,21 +470,61 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
 
         {stage === 'paste' && (
           <>
+            {/* File upload — PDF / Word / image. Wins precedence over
+                pasted text when both are set so owner doesn't have to
+                clear the textarea after picking a file. */}
+            <div style={{
+              border: `1px dashed ${UXP.border}`, borderRadius: 6,
+              padding: '12px 14px', marginBottom: 10,
+              background: file ? UXP.lavFill : UXP.subtleBg,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: UXP.ink2, marginBottom: 6 }}>
+                Attach a file (PDF, Word .docx, or image)
+              </div>
+              <input
+                type="file"
+                accept=".pdf,.docx,image/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={e => { setFile(e.target.files?.[0] ?? null); setErr(null) }}
+                disabled={busy}
+                style={{ fontSize: 11, fontFamily: 'inherit' }}
+              />
+              {file && (
+                <div style={{ marginTop: 6, fontSize: 11, color: UXP.lavText }}>
+                  {file.name} · {(file.size / 1024).toFixed(0)} KB
+                  <button onClick={() => setFile(null)} disabled={busy}
+                    style={{ marginLeft: 8, background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, textDecoration: 'underline' }}>
+                    clear
+                  </button>
+                </div>
+              )}
+              <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 6, lineHeight: 1.5 }}>
+                Word documents get text-extracted on the server. PDFs and images go to Sonnet vision directly. Method/instructions in the source are captured per dish.
+              </div>
+            </div>
+
+            <div style={{ fontSize: 10, color: UXP.ink4, marginBottom: 4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600 }}>
+              Or paste menu text
+            </div>
             <textarea
               value={text}
               onChange={e => setText(e.target.value)}
               placeholder={'e.g.\nPinsa Margherita — pomodoro, mozzarella, basilika, olivolja  — 195 kr\nPinsa Chevre — chèvre, honung, valnötter, ruccola — 219 kr\nMargherita — pizzatomater, mozzarella, basilika — 165 kr'}
-              rows={12}
-              disabled={busy}
-              style={{ width: '100%', boxSizing: 'border-box', padding: 10, fontFamily: 'inherit', fontSize: 12, borderRadius: 6, border: `1px solid ${UXP.border}`, resize: 'vertical' as const }}
+              rows={file ? 5 : 12}
+              disabled={busy || !!file}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: 10,
+                fontFamily: 'inherit', fontSize: 12, borderRadius: 6,
+                border: `1px solid ${UXP.border}`, resize: 'vertical' as const,
+                opacity: file ? 0.4 : 1,
+              }}
             />
             <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 6 }}>
-              {text.length}/8000 chars · Each parse uses one Sonnet call (~$0.10 per typical menu) and counts toward your daily AI quota.
+              {file ? `File attached — text input disabled.` : `${text.length}/8000 chars`} · Each parse uses one Sonnet call (~$0.10 per typical menu / ~$0.25 with vision) and counts toward your daily AI quota.
             </div>
             {err && <div style={{ marginTop: 8, fontSize: 11, color: UXP.roseText, background: UXP.roseFill, padding: '8px 10px', borderRadius: 6 }}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12, gap: 8 }}>
               <button onClick={onClose} disabled={busy} style={secondaryBtn}>Cancel</button>
-              <button onClick={parse} disabled={busy || !text.trim()} style={primaryBtn}>
+              <button onClick={parse} disabled={busy || (!text.trim() && !file)} style={primaryBtn}>
                 {busy ? 'Drafting…' : 'Draft recipes'}
               </button>
             </div>
@@ -718,6 +772,9 @@ interface DetailResponse {
     // can be consumed by weight in other recipes.
     yield_amount?: number | null
     yield_unit?:   string | null
+    // M114 — chef method / cooking instructions. Owner-editable in
+    // the drawer; AI bulk importer auto-populates from Word docs.
+    method?: string | null
   }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
@@ -897,6 +954,11 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                 suggestedYield={suggestYieldFromIngredients(data.summary.ingredients, data.recipe.portions)}
                 onSave={patchRecipe}
               />
+              {/* M114 — chef method / cooking instructions. Free-form
+                  text editable inline. Saves on blur when the value
+                  actually changed. Owner can paste long-form Word
+                  document text here. */}
+              <MethodEditor recipe={data.recipe} onSave={patchRecipe} />
               {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (() => {
                 // Warning cards — one per issue type, each a discrete
                 // clickable card with title + action affordance. Replaces
@@ -1063,6 +1125,55 @@ function suggestYieldFromIngredients(
     summed,
     skipped,
   }
+}
+
+// M114 — inline editor for the recipe's free-form method / cooking
+// instructions. Owner pastes long-form text (typical Word document
+// converted by mammoth). Saves on blur when the value actually
+// changed — no explicit Save button to avoid friction on long edits.
+function MethodEditor({ recipe, onSave }: {
+  recipe: DetailResponse['recipe']
+  onSave: (patch: Record<string, any>) => Promise<void>
+}) {
+  const [val, setVal]   = useState(recipe.method ?? '')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { setVal(recipe.method ?? '') }, [recipe.method])
+  const dirty = (val ?? '') !== (recipe.method ?? '')
+  async function commit() {
+    if (!dirty) return
+    setBusy(true)
+    try { await onSave({ method: val.trim() || null }) } finally { setBusy(false) }
+  }
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600, marginBottom: 4 }}>
+        Method / instructions
+      </div>
+      <textarea
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onBlur={commit}
+        disabled={busy}
+        placeholder="Cooking method, preparation, plating notes…"
+        rows={Math.max(3, Math.min(10, (val.match(/\n/g)?.length ?? 0) + 2))}
+        style={{
+          width:       '100%',
+          boxSizing:   'border-box',
+          padding:     '6px 8px',
+          fontSize:    11,
+          lineHeight:  1.5,
+          border:      `1px solid ${UXP.border}`,
+          borderRadius: 6,
+          fontFamily:  'inherit',
+          resize:      'vertical' as const,
+          color:       UXP.ink2,
+        }}
+      />
+      <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2 }}>
+        {val.length} char{val.length === 1 ? '' : 's'}{dirty && !busy && ' · click out to save'}{busy && ' · saving…'}
+      </div>
+    </div>
+  )
 }
 
 // Inline yield editor for sub-recipes (M111). Optional pair of fields:

@@ -43,15 +43,63 @@ export async function POST(req: NextRequest) {
   const auth = await getRequestAuth(req)
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  let body: any
-  try { body = await req.json() } catch { body = {} }
-  const businessId = String(body?.business_id ?? '').trim()
-  const menuText   = String(body?.menu_text   ?? '').trim()
+  // ── Input modes ───────────────────────────────────────────────────
+  // (a) JSON body { business_id, menu_text }                  — paste
+  // (b) multipart form { business_id, file }                  — upload
+  //   PDF  → passed to Sonnet as document content block
+  //   Word → extracted via mammoth, passed as text
+  //   Image → passed as image content block (Sonnet vision)
+  let businessId = ''
+  let menuText   = ''
+  type FileInput =
+    | { kind: 'pdf';   base64: string }
+    | { kind: 'image'; base64: string; mediaType: string }
+  let fileInput: FileInput | null = null
+
+  const contentType = req.headers.get('content-type') ?? ''
+  if (contentType.includes('multipart/form-data')) {
+    const form = await req.formData().catch(() => null)
+    if (!form) return NextResponse.json({ error: 'invalid form data' }, { status: 400 })
+    businessId = String(form.get('business_id') ?? '').trim()
+    const file = form.get('file')
+    if (!(file instanceof File)) return NextResponse.json({ error: 'file required in multipart form' }, { status: 400 })
+    const bytes = Buffer.from(await file.arrayBuffer())
+    const fname = (file.name ?? '').toLowerCase()
+    const ftype = (file.type ?? '').toLowerCase()
+    if (fname.endsWith('.pdf') || ftype === 'application/pdf') {
+      fileInput = { kind: 'pdf', base64: bytes.toString('base64') }
+    } else if (fname.endsWith('.docx') || ftype.includes('officedocument.wordprocessingml')) {
+      // Word .docx — extract text via mammoth (server-side). Older .doc
+      // binary is NOT supported (mammoth handles only the OOXML format);
+      // owner can re-save as .docx.
+      try {
+        const mammoth = (await import('mammoth')).default ?? (await import('mammoth'))
+        const r = await mammoth.extractRawText({ buffer: bytes })
+        menuText = (r?.value ?? '').trim().slice(0, MAX_INPUT_CHARS * 4)
+      } catch (e: any) {
+        return NextResponse.json({ error: `Could not read Word document: ${String(e?.message ?? e)}` }, { status: 400 })
+      }
+      if (!menuText) return NextResponse.json({ error: 'Word document contained no readable text' }, { status: 400 })
+    } else if (fname.match(/\.(jpe?g|png|webp|gif)$/i) || ftype.startsWith('image/')) {
+      const mediaType = ftype.startsWith('image/') ? ftype : ('image/' + (fname.match(/\.(\w+)$/)?.[1] ?? 'jpeg').replace('jpg', 'jpeg'))
+      fileInput = { kind: 'image', base64: bytes.toString('base64'), mediaType }
+    } else {
+      return NextResponse.json({ error: `Unsupported file type ${ftype || fname.split('.').pop()}. PDF, Word (.docx), or image only.` }, { status: 400 })
+    }
+  } else {
+    let body: any
+    try { body = await req.json() } catch { body = {} }
+    businessId = String(body?.business_id ?? '').trim()
+    menuText   = String(body?.menu_text   ?? '').trim()
+  }
 
   if (!businessId) return NextResponse.json({ error: 'business_id required' }, { status: 400 })
-  if (!menuText)   return NextResponse.json({ error: 'menu_text required' },   { status: 400 })
-  if (menuText.length > MAX_INPUT_CHARS) {
-    return NextResponse.json({ error: `menu_text too long (${menuText.length} > ${MAX_INPUT_CHARS} chars)` }, { status: 400 })
+  // Either menuText OR a file must be present.
+  if (!menuText && !fileInput) return NextResponse.json({ error: 'menu_text or file required' }, { status: 400 })
+  if (menuText && menuText.length > MAX_INPUT_CHARS * 4) {
+    // Allow longer text for Word imports since methods can be lengthy;
+    // Sonnet's context handles ~30k tokens comfortably.
+    return NextResponse.json({ error: `input too long (${menuText.length} chars)` }, { status: 400 })
   }
 
   const forbidden = requireBusinessAccess(auth, businessId)
@@ -132,6 +180,8 @@ RULES:
 - portions: almost always 1 unless the dish is obviously shared/family-size.
 - Up to ${MAX_DISHES} dishes per import.
 
+If the input is a recipe document (not a menu), it likely contains a METHOD / PREPARATION section per dish — cooking steps, technique, plating, timing. Capture this verbatim or summarised in the dish's "method" field, up to ~2000 chars per dish. Leave empty when the input is just a menu list with no instructions.
+
 Return JSON ONLY, an array with one object per dish, in input order:
 [
   {
@@ -139,26 +189,41 @@ Return JSON ONLY, an array with one object per dish, in input order:
     "portions": 1,
     "selling_price_inc_vat": 195,
     "note":     "one short sentence about the dish",
+    "method":   "Stretch the pinsa base… (full preparation, can be multi-paragraph)",
     "ingredients": [
       { "p": "abcd1234", "qty": 280, "unit": "g" }
     ]
   }
 ]`
 
-  const userMessage = `PRODUCT CATALOGUE (reference by [prefix]):
-${catalogueText}
-
-MENU INPUT (free-form text):
-${menuText}
-
-Return the JSON array only.`
+  // Build the user message. For text or extracted-Word, single text
+  // block. For PDF, prepend a document content block + a text prompt.
+  // For image, prepend an image content block + a text prompt.
+  const cataloguePrefix = `PRODUCT CATALOGUE (reference by [prefix]):\n${catalogueText}\n\n`
+  const textTail = `Return the JSON array only.`
+  let userContent: any
+  if (fileInput?.kind === 'pdf') {
+    userContent = [
+      { type: 'text', text: cataloguePrefix + 'MENU INPUT is the attached PDF.' },
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileInput.base64 } },
+      { type: 'text', text: textTail },
+    ]
+  } else if (fileInput?.kind === 'image') {
+    userContent = [
+      { type: 'text', text: cataloguePrefix + 'MENU INPUT is the attached image.' },
+      { type: 'image', source: { type: 'base64', media_type: fileInput.mediaType, data: fileInput.base64 } },
+      { type: 'text', text: textTail },
+    ]
+  } else {
+    userContent = `${cataloguePrefix}MENU INPUT (free-form text):\n${menuText}\n\n${textTail}`
+  }
 
   const result = await anthropicFetch({
     body: {
       model:      AI_MODELS.ANALYSIS,   // Sonnet 4.6
       max_tokens: 16384,
       system:     [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      messages:   [{ role: 'user', content: userMessage }],
+      messages:   [{ role: 'user', content: userContent }],
     },
   })
   if (!result.ok) {
@@ -208,6 +273,10 @@ Return the JSON array only.`
         portions:                Math.max(1, Math.floor(Number(d?.portions) || 1)),
         selling_price_inc_vat:   d?.selling_price_inc_vat != null ? Number(d.selling_price_inc_vat) : null,
         note:                    d?.note ? String(d.note).slice(0, 200) : null,
+        // M114 — method/instructions extracted from Word documents or
+        // any input that carries preparation steps. Capped at 20k
+        // chars; matches the recipes.method PATCH limit.
+        method:                  d?.method ? String(d.method).slice(0, 20000).trim() : null,
         ingredients,
       }
     })

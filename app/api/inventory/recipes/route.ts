@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
   const { data: recipes, error: rErr } = await db
     .from('recipes')
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, updated_at')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -127,6 +127,7 @@ export async function POST(req: NextRequest) {
   const type       = body.type       ? String(body.type).trim() : null
   const portions   = body.portions   != null ? Math.max(1, Math.floor(Number(body.portions))) : 1
   const notes      = body.notes      ? String(body.notes).trim() : null
+  const method     = body.method     ? String(body.method).trim().slice(0, 20000) : null
 
   // Price-truth invariant: selling_price_ex_vat is the canonical stored value.
   // vat_rate and channel are independent owner-set fields (no inference
@@ -162,8 +163,9 @@ export async function POST(req: NextRequest) {
       channel,
       portions,
       notes,
+      method,
     })
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, updated_at')
     .single()
   if (error) {
     if ((error as any).code === '23505') {
