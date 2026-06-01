@@ -65,6 +65,23 @@ interface PrepResult {
 
 // Active-session shape: persisted prep_session + its frozen lines.
 // Loaded from /api/inventory/prep-sessions/[id] (or via the active=1 list).
+interface PreOrder {
+  id:            string
+  service_date:  string
+  party_name:    string | null
+  party_size:    number
+  notes:         string | null
+  items:         Array<{ recipe_id: string; qty: number }>
+  created_at:    string
+  updated_at:    string
+}
+interface DraftPreOrder {
+  party_name:    string
+  party_size:    string
+  notes:         string
+  items:         Record<string, number>   // recipe_id → qty
+}
+
 interface PrepSession {
   id:           string
   name:         string | null
@@ -122,6 +139,16 @@ export default function PrepListPage() {
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
   const [coversInput, setCoversInput] = useState<string>('')
+  // M118 — pre-orders for the chosen service_date. Default service
+  // date is tomorrow (most prep is done the day before).
+  const [serviceDate, setServiceDate] = useState<string>(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1)
+    return d.toISOString().slice(0, 10)
+  })
+  const [preOrders, setPreOrders] = useState<PreOrder[]>([])
+  const [preOrdersLoading, setPreOrdersLoading] = useState(false)
+  // The collapsible add-pre-order form state. Null when collapsed.
+  const [draftPreOrder, setDraftPreOrder] = useState<DraftPreOrder | null>(null)
   const [result,   setResult]   = useState<PrepResult | null>(null)
   const [computing, setComputing] = useState(false)
   const [search, setSearch] = useState('')
@@ -179,24 +206,102 @@ export default function PrepListPage() {
     [selected],
   )
 
-  // M117 — apply covers count to fill production from each dish's
-  // mix share. Replaces the selected set with all dishes that have
-  // portions_per_cover > 0, qty = round(covers × share). Dishes with
-  // no share set are skipped — owner adds them manually or sets a
-  // share to opt in. Chef can override individual qtys after.
+  // M117/M118 — apply covers + pre-orders to fill production.
+  // Math:
+  //   1. preOrderCovers = sum of party_size across pre-orders
+  //   2. freeCovers = max(0, covers - preOrderCovers)
+  //   3. for each dish with share > 0:
+  //        share-driven qty = round(freeCovers × share)
+  //   4. add pre-order qtys on top per dish (committed items)
+  // Result: the prep list shows both predicted walk-in demand AND
+  // the specific guaranteed pre-ordered items, without double-counting
+  // the pre-ordered covers as predicted walk-ins. Chef can override.
   const applyCovers = useCallback(() => {
     const covers = Number(coversInput)
     if (!Number.isFinite(covers) || covers <= 0) return
+    const preOrderCovers = preOrders.reduce((s, p) => s + p.party_size, 0)
+    const freeCovers = Math.max(0, covers - preOrderCovers)
     const next: Record<string, number> = {}
     for (const d of dishes) {
       const share = d.portions_per_cover != null ? Number(d.portions_per_cover) : 0
       if (share > 0) {
-        const qty = Math.max(1, Math.round(covers * share))
-        next[d.id] = qty
+        const qty = Math.round(freeCovers * share)
+        if (qty > 0) next[d.id] = qty
+      }
+    }
+    // Layer the committed pre-order items on top.
+    for (const po of preOrders) {
+      for (const it of po.items) {
+        next[it.recipe_id] = (next[it.recipe_id] ?? 0) + it.qty
       }
     }
     setSelected(next)
-  }, [coversInput, dishes])
+  }, [coversInput, dishes, preOrders])
+
+  // M118 — pre-orders loader. Fires on biz / service_date change.
+  const loadPreOrders = useCallback(async () => {
+    if (!bizId) { setPreOrders([]); return }
+    setPreOrdersLoading(true)
+    try {
+      const r = await fetch(
+        `/api/inventory/prep-pre-orders?business_id=${encodeURIComponent(bizId)}&service_date=${encodeURIComponent(serviceDate)}`,
+        { cache: 'no-store' },
+      )
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      const { pre_orders } = await r.json()
+      setPreOrders(pre_orders ?? [])
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setPreOrdersLoading(false)
+    }
+  }, [bizId, serviceDate])
+  useEffect(() => { if (bizId) loadPreOrders() }, [bizId, serviceDate, loadPreOrders])
+
+  // Create a pre-order from the draft form. Refreshes the list on
+  // success and collapses the draft form.
+  const createPreOrder = useCallback(async () => {
+    if (!bizId || !draftPreOrder) return
+    const items = Object.entries(draftPreOrder.items)
+      .filter(([, qty]) => qty > 0)
+      .map(([recipe_id, qty]) => ({ recipe_id, qty }))
+    const partySize = Math.floor(Number(draftPreOrder.party_size))
+    if (!Number.isFinite(partySize) || partySize <= 0) {
+      setError('Party size must be a positive number'); return
+    }
+    try {
+      const r = await fetch('/api/inventory/prep-pre-orders', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          business_id:  bizId,
+          service_date: serviceDate,
+          party_name:   draftPreOrder.party_name.trim() || null,
+          party_size:   partySize,
+          notes:        draftPreOrder.notes.trim() || null,
+          items,
+        }),
+      })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      const { pre_order } = await r.json()
+      setPreOrders(prev => [...prev, pre_order])
+      setDraftPreOrder(null)
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [bizId, draftPreOrder, serviceDate])
+
+  const deletePreOrder = useCallback(async (id: string) => {
+    if (!window.confirm('Remove this pre-order?')) return
+    try {
+      const r = await fetch(`/api/inventory/prep-pre-orders/${id}`, { method: 'DELETE', cache: 'no-store' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      setPreOrders(prev => prev.filter(p => p.id !== id))
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [])
 
   // Save a per-recipe mix share. Targets PATCH /api/inventory/recipes/[id]
   // so the value lives on the dish and persists across sessions.
@@ -646,6 +751,152 @@ export default function PrepListPage() {
                 </div>
               </div>
 
+              {/* M118 — pre-orders for the chosen service date. Each
+                  is a party (size + optional name) with specific dish
+                  commitments. They fold into Apply's math: free covers
+                  = total − pre-order party sizes, distributed by mix
+                  share; pre-order items added on top per dish. */}
+              <div style={{
+                background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+                borderRadius: 6, padding: 8, marginBottom: 10,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600,
+                                letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+                    Pre-orders
+                  </div>
+                  <input
+                    type="date"
+                    value={serviceDate}
+                    onChange={e => setServiceDate(e.target.value)}
+                    style={{ ...inputStyle, padding: '2px 6px', fontSize: 10, width: 130 }}
+                    aria-label="Service date"
+                    title="Date these pre-orders are for"
+                  />
+                </div>
+                {preOrdersLoading && (
+                  <div style={{ fontSize: 10, color: UXP.ink4 }}>Loading…</div>
+                )}
+                {!preOrdersLoading && preOrders.length === 0 && !draftPreOrder && (
+                  <div style={{ fontSize: 10, color: UXP.ink4, marginBottom: 6 }}>
+                    No pre-orders for {serviceDate}.
+                  </div>
+                )}
+                {preOrders.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+                    {preOrders.map(po => (
+                      <div key={po.id} style={{
+                        padding: '4px 6px', background: UXP.cardBg,
+                        border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                        display: 'flex', justifyContent: 'space-between', gap: 6,
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                            {po.party_name || `Party of ${po.party_size}`} · {po.party_size}p
+                          </div>
+                          <div style={{ fontSize: 10, color: UXP.ink3, marginTop: 2 }}>
+                            {po.items.map(it => {
+                              const d = dishById.get(it.recipe_id)
+                              return `${it.qty}× ${d?.name ?? '?'}`
+                            }).join(' · ') || 'No items'}
+                          </div>
+                          {po.notes && (
+                            <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const, marginTop: 2 }}>
+                              {po.notes}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => deletePreOrder(po.id)}
+                          style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 14, padding: 0 }}
+                          aria-label="Remove pre-order"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add-pre-order form */}
+                {draftPreOrder ? (
+                  <div style={{
+                    background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+                    borderRadius: 4, padding: 8, display: 'flex', flexDirection: 'column' as const, gap: 6,
+                  }}>
+                    <input
+                      type="text" placeholder="Party name (optional, e.g. Sara's birthday)"
+                      value={draftPreOrder.party_name}
+                      onChange={e => setDraftPreOrder(d => d ? { ...d, party_name: e.target.value } : d)}
+                      style={{ ...inputStyle, fontSize: 11, padding: '4px 8px' }}
+                    />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <input
+                        type="number" min={1} placeholder="Party size"
+                        value={draftPreOrder.party_size}
+                        onChange={e => setDraftPreOrder(d => d ? { ...d, party_size: e.target.value } : d)}
+                        style={{ ...inputStyle, fontSize: 11, padding: '4px 8px' }}
+                      />
+                      <input
+                        type="text" placeholder="Notes (allergies, table)"
+                        value={draftPreOrder.notes}
+                        onChange={e => setDraftPreOrder(d => d ? { ...d, notes: e.target.value } : d)}
+                        style={{ ...inputStyle, fontSize: 11, padding: '4px 8px' }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 9, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginTop: 4 }}>
+                      Items
+                    </div>
+                    {Object.entries(draftPreOrder.items).filter(([, q]) => q > 0).length === 0 && (
+                      <div style={{ fontSize: 10, color: UXP.ink4 }}>
+                        No items yet — tap a dish in the picker below to add it.
+                      </div>
+                    )}
+                    {Object.entries(draftPreOrder.items).filter(([, q]) => q > 0).map(([rid, qty]) => {
+                      const d = dishById.get(rid)
+                      return (
+                        <div key={rid} style={{
+                          display: 'grid', gridTemplateColumns: '1fr 50px 20px',
+                          alignItems: 'center', gap: 4,
+                        }}>
+                          <span style={{ fontSize: 11, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                            {d?.name ?? '?'}
+                          </span>
+                          <input
+                            type="number" min={1} value={qty}
+                            onChange={e => {
+                              const n = Math.max(0, Math.floor(Number(e.target.value)))
+                              setDraftPreOrder(d => d ? { ...d, items: { ...d.items, [rid]: n } } : d)
+                            }}
+                            style={{ ...inputStyle, fontSize: 11, padding: '2px 4px', textAlign: 'right' as const }}
+                          />
+                          <button
+                            onClick={() => setDraftPreOrder(d => d ? { ...d, items: { ...d.items, [rid]: 0 } } : d)}
+                            style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 14, padding: 0 }}
+                          >×</button>
+                        </div>
+                      )
+                    })}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button onClick={() => setDraftPreOrder(null)} style={{ ...secondaryBtn, flex: 1, fontSize: 11, padding: '4px 8px' }}>
+                        Cancel
+                      </button>
+                      <button onClick={createPreOrder}
+                              disabled={Object.values(draftPreOrder.items).every(q => q <= 0) || !draftPreOrder.party_size}
+                              style={{ ...primaryBtn, flex: 1, fontSize: 11, padding: '4px 8px',
+                                       opacity: Object.values(draftPreOrder.items).every(q => q <= 0) || !draftPreOrder.party_size ? 0.4 : 1 }}>
+                        Save pre-order
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setDraftPreOrder({ party_name: '', party_size: '', notes: '', items: {} })}
+                    style={{ ...secondaryBtn, width: '100%', fontSize: 11, padding: '4px 8px' }}
+                  >
+                    + Add pre-order
+                  </button>
+                )}
+              </div>
+
               {/* M117 — covers auto-fill. Owner enters expected covers
                   for tomorrow, clicks Apply, and every dish with a mix
                   share set populates at qty=round(covers × share).
@@ -805,7 +1056,19 @@ export default function PrepListPage() {
                     return (
                       <button
                         key={d.id}
-                        onClick={() => setSelected(s => ({ ...s, [d.id]: (s[d.id] ?? 0) + 1 || 1 }))}
+                        onClick={() => {
+                          // If a draft pre-order form is open, tapping
+                          // a dish adds it to the draft. Otherwise add
+                          // to the main selected production list.
+                          if (draftPreOrder) {
+                            setDraftPreOrder(d2 => d2 ? {
+                              ...d2,
+                              items: { ...d2.items, [d.id]: (d2.items[d.id] ?? 0) + 1 },
+                            } : d2)
+                          } else {
+                            setSelected(s => ({ ...s, [d.id]: (s[d.id] ?? 0) + 1 || 1 }))
+                          }
+                        }}
                         style={{
                           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                           padding: '6px 10px',
