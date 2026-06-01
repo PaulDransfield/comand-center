@@ -35,13 +35,72 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const forbidden = requireBusinessAccess(auth, session.business_id)
   if (forbidden) return forbidden
 
-  const { data: lines } = await db
+  const { data: linesRaw } = await db
     .from('prep_session_lines')
     .select('id, kind, entity_id, name_snapshot, total_qty, unit, uncertain, uncertain_reason, source_recipe_ids, checked_at, checked_by, position')
     .eq('session_id', session.id)
     .order('position')
+  const lines = linesRaw ?? []
 
-  return NextResponse.json({ session, lines: lines ?? [] }, {
+  // Enrichment pass — attach live `meta` to each line so the kitchen
+  // can see HOW to prep, not just how much:
+  //
+  //   - component line: meta.method = recipes.method of the sub-recipe.
+  //     Loaded live (not frozen) so owner method edits flow through to
+  //     the kitchen mid-service. Method text doesn't change the prep
+  //     quantities, so freshness here is safe.
+  //
+  //   - product line: meta.uses = [{ recipe_id, recipe_name, notes,
+  //     quantity, unit }] — every recipe_ingredients row in the
+  //     business where product_id = this line's entity_id. Cook sees
+  //     the per-dish prep instruction ("quarter the carciofi") next to
+  //     the aggregated qty. We don't filter by session source_recipe_ids
+  //     — showing every use across the business is more useful than less.
+  const componentIds = lines.filter(l => l.kind === 'component').map(l => l.entity_id)
+  const productIds   = lines.filter(l => l.kind === 'product'  ).map(l => l.entity_id)
+
+  const methodById = new Map<string, string | null>()
+  if (componentIds.length > 0) {
+    const { data: rs } = await db
+      .from('recipes')
+      .select('id, method')
+      .in('id', componentIds)
+    for (const r of rs ?? []) methodById.set(r.id, r.method ?? null)
+  }
+
+  // Map product_id → list of uses across recipes in this business.
+  const usesByProductId = new Map<string, Array<{ recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>>()
+  if (productIds.length > 0) {
+    const { data: ris } = await db
+      .from('recipe_ingredients')
+      .select('product_id, quantity, unit, notes, recipes!inner(id, name, business_id, archived_at)')
+      .in('product_id', productIds)
+      .eq('recipes.business_id', session.business_id)
+      .is('recipes.archived_at', null)
+    for (const r of ris ?? []) {
+      const pid = r.product_id as string
+      const rec = (r as any).recipes
+      if (!rec) continue
+      const list = usesByProductId.get(pid) ?? []
+      list.push({
+        recipe_id:   rec.id,
+        recipe_name: rec.name ?? null,
+        notes:       (r as any).notes ?? null,
+        quantity:    Number((r as any).quantity ?? 0),
+        unit:        (r as any).unit ?? null,
+      })
+      usesByProductId.set(pid, list)
+    }
+  }
+
+  const enrichedLines = lines.map(l => ({
+    ...l,
+    meta: l.kind === 'component'
+      ? { method: methodById.get(l.entity_id) ?? null }
+      : { uses:   usesByProductId.get(l.entity_id) ?? [] },
+  }))
+
+  return NextResponse.json({ session, lines: enrichedLines }, {
     headers: { 'Cache-Control': 'no-store' },
   })
 }

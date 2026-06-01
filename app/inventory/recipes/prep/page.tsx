@@ -70,6 +70,14 @@ interface PrepSessionLine {
   source_recipe_ids: string[]
   checked_at:        string | null
   position:          number
+  // Server enrichment. For component lines: meta.method (sub-recipe's
+  // own method). For product lines: meta.uses (per-recipe ingredient
+  // notes — "quarter the carciofi" etc.). Loaded live by the GET
+  // endpoint so owner method edits flow through immediately.
+  meta?: {
+    method?: string | null
+    uses?:   Array<{ recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>
+  }
 }
 
 // Local copy of the kitchen-display formatter so we don't have to ship
@@ -465,7 +473,7 @@ export default function PrepListPage() {
                         style={{
                           display: 'grid',
                           gridTemplateColumns: '28px 1fr 130px',
-                          alignItems: 'center',
+                          alignItems: 'flex-start',
                           gap: 10,
                           width: '100%',
                           padding: '12px 14px',
@@ -503,6 +511,52 @@ export default function PrepListPage() {
                           {line.source_recipe_ids.length >= 2 && (
                             <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
                               shared across {line.source_recipe_ids.length} dishes
+                            </div>
+                          )}
+
+                          {/* COMPONENT method — sub-recipe's own
+                              instructions. Always visible so the cook
+                              can read while working. Empty state hints
+                              the owner to add one. */}
+                          {line.kind === 'component' && (
+                            line.meta?.method
+                              ? <div style={{
+                                  marginTop: 6, padding: '6px 10px',
+                                  background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+                                  borderRadius: 5, fontSize: 11, color: UXP.ink2,
+                                  lineHeight: 1.5, whiteSpace: 'pre-wrap' as const,
+                                  overflowWrap: 'break-word' as const,
+                                  textDecoration: 'none' as const,
+                                }}>
+                                  {line.meta.method}
+                                </div>
+                              : <div style={{
+                                  marginTop: 6, fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const,
+                                }}>
+                                  No method recorded yet — add one on the recipe so the kitchen sees it here.
+                                </div>
+                          )}
+
+                          {/* PRODUCT per-recipe prep notes — surfaces
+                              "quarter the carciofi" etc. from the
+                              recipe_ingredients.notes on each parent
+                              recipe. Only shown when at least one use
+                              has a note (otherwise it's just clutter). */}
+                          {line.kind === 'product' && (line.meta?.uses ?? []).some(u => u.notes && u.notes.trim()) && (
+                            <div style={{
+                              marginTop: 6, padding: '6px 10px',
+                              background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+                              borderRadius: 5, fontSize: 11, color: UXP.ink2, lineHeight: 1.5,
+                              textDecoration: 'none' as const,
+                            }}>
+                              {(line.meta?.uses ?? [])
+                                .filter(u => u.notes && u.notes.trim())
+                                .map((u, i) => (
+                                  <div key={i} style={{ marginTop: i === 0 ? 0 : 4 }}>
+                                    <span style={{ color: UXP.ink4 }}>{u.recipe_name ?? '—'}: </span>
+                                    {u.notes}
+                                  </div>
+                                ))}
                             </div>
                           )}
                         </span>
