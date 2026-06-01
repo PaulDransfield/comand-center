@@ -346,40 +346,9 @@ export async function extractInvoicePdf(
   const HEADER_NOISE_THRESHOLD = 0.01
   const headerIsReal = headerTotal != null && Math.abs(headerTotal) >= HEADER_NOISE_THRESHOLD
   if (headerIsReal && !selfInvoiceRescued) {
-    totalDeltaPct = Math.abs(totalExtracted - headerTotal) / Math.abs(headerTotal)
-
-    // Rebill-loose tolerance. Frimurarholmen-style rebill invoices
-    // (one supplier passes through another supplier's purchase) have
-    // a quirk: the Fortnox header reflects the bookkeeper's allocation
-    // / VAT split / öresavrundning, which can legitimately differ
-    // from the PDF face value by 5-15% in either direction. Claude's
-    // extracted rows are correct per the PDF; the discrepancy isn't
-    // an extraction bug.
-    //
-    // Detection: ALL extracted rows have descriptions matching the
-    // "[OtherSupplier] [InvoiceNumber]" pattern — typical of rebill
-    // lines like "Axfood 0021035252" or "Menigo 12345678". Conservative
-    // — won't accidentally loosen tolerance for genuinely-wrong
-    // extractions on normal invoices.
-    const REBILL_LINE_RE = /^[A-Z][\wåäöÅÄÖ]*(\s+[A-Z][\wåäöÅÄÖ]*)?\s+\d{6,12}$/
-    const allRebillLike  = validRows.length > 0 && validRows.every(r => REBILL_LINE_RE.test(String(r.description ?? '').trim()))
-    const REBILL_TOL_PCT = 0.15
-
-    if (totalDeltaPct > TOTAL_MATCH_TOL_PCT) {
-      if (allRebillLike && totalDeltaPct <= REBILL_TOL_PCT) {
-        warnings.push({
-          code: 'rebill_loose_tolerance',
-          message: `Rebill invoice detected (all rows are '[Supplier] [InvoiceNumber]' format). Extracted ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(totalDeltaPct * 100).toFixed(1)}%. Within rebill 15% tolerance (bookkeeper-side allocation/VAT-split is the usual cause). Accepting.`,
-          severity: 'warn',
-        })
-      } else {
-        warnings.push({
-          code: 'total_mismatch',
-          message: `Extracted total ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(totalDeltaPct * 100).toFixed(1)}%, exceeds ${(TOTAL_MATCH_TOL_PCT * 100).toFixed(0)}% tolerance.`,
-          severity: 'block',
-        })
-      }
-    }
+    const recon = evaluateReconciliation(totalExtracted, headerTotal, validRows)
+    totalDeltaPct = recon.delta_pct
+    if (recon.warning) warnings.push(recon.warning)
   } else if (headerIsReal && selfInvoiceRescued) {
     // Self-invoice rescue already verified the inc-VAT vs ex-VAT match
     // to within 2%. Surface a notional delta for the dashboard but skip
@@ -689,56 +658,73 @@ MULTI-INVOICE / PASSTHROUGH / REBILL — third common pattern:
 - The supplier hint we pass in (\`Supplier on Fortnox\`) tells you who
   ACTUALLY billed the buyer. That is the supplier whose invoice you
   should extract.
-- Two sub-classes exist; you MUST distinguish them by RECONCILIATION,
-  not by keyword pattern. The discriminator is whether the page-2+
-  itemized rows SUM (within ~5 %) to the page-1 line they appear
-  beneath:
 
-  (A) PASSTHROUGH — page-1 has a SUMMARY line; page-2+ enumerates the
-  items it summarises; the itemization SUMS to the summary line.
-  The buyer DID receive every page-2 item; the summary is just the
-  total. → Extract the page-2 ITEMS (every product row, with their
-  own quantities and prices). OMIT the page-1 summary line. The
-  extracted items will still sum to the invoice header total — the
-  totals reconcile, no double-counting.
-  - Typical phrasing on the summary line: "Levererat från X 2025 MM",
-    "Sammanställning för perioden", "Summa enligt bilaga",
-    "Period delivery", or just the supplier-period as a single line.
-  - The page-2 items have their own descriptions, qty, ppu, total —
-    they're a full itemization, not a one-line aggregate.
+YOU MUST APPLY THIS PROCEDURE STEP BY STEP. Do not skip ahead. If a
+later step contradicts an earlier choice, restart from the top.
 
-  (B) THIN REBILL — page-1 has a single rebill line (often referencing
-  an underlying receipt number like "Axfood 0021035252"); the attached
-  receipt itemizes a DIFFERENT, LARGER total because the rebiller only
-  passed through SOME of the underlying purchases (or only one
-  receipt's worth out of many). The receipt is informational / audit
-  trail, not what the buyer actually owes. → Extract ONLY the page-1
-  rebill line. IGNORE the attached receipt items — they would record
-  goods the buyer didn't receive.
-  - Typical phrasing: "Axfood NNNNNNN", "Faktura NNNNNNN", "Snabbgross
-    NNNNNN" referencing the underlying supplier+receipt number.
-  - The attached receipt total > the rebilled amount (or != it
-    materially).
+STEP 1 — Is there a page-1 summary line + page-2+ itemization?
+A "summary line" means a single page-1 line whose total ALONE equals
+(or nearly equals) the invoice header total, and which describes a
+period or receipt-reference rather than a product. Typical phrasings:
+  - "Levererat från X YYYY MM" / "Sammanställning för perioden"
+  - "Summa enligt bilaga" / "Period delivery"
+  - "Axfood NNNNNNN", "Faktura NNNNNNN" (receipt-number references)
+  - A bare supplier-period as a single line
+If NO summary line + itemization structure exists → this isn't a
+passthrough/rebill case. Skip to normal extraction.
 
-- HOW TO DECIDE — apply the reconciliation test:
-    1. Sum the page-2+ itemized rows.
-    2. Compare to the page-1 summary/rebill line total.
-    3. If they match within ~5 % → PASSTHROUGH (case A). Extract the
-       page-2 items, drop the page-1 summary.
-    4. If they DON'T match (page-2 total > page-1 total, or the page-2
-       items belong to a different supplier+receipt than the page-1
-       line and don't sum to it) → THIN REBILL (case B). Extract only
-       the page-1 line, ignore the attachment.
-- Do NOT use the page-1 wording alone to decide. "Levererat från X"
-  and "Axfood NNNNNNN" can BOTH appear on rebills OR passthroughs —
-  reconciliation is the discriminator. The earlier wording-based rule
-  caused real passthrough invoices (Laweka/Eventcenter "Levererat från
-  Marini/Rima") to be mis-classified as rebills, losing ~225 line items.
-- Note: in case A, you are still extracting one supplier's invoice
-  (the one on the Fortnox header). The page-2 itemization IS that
-  supplier's itemization of the goods they billed for; you're not
-  enumerating a different supplier's receipt. In case B you ARE
-  looking at a different supplier's receipt, which is why you skip it.
+STEP 2 — SUM the page-2+ itemized product rows. Hold this number.
+
+STEP 3 — Compare the page-2 sum to the invoice HEADER TOTAL
+(the actual amount the buyer owes — usually printed top-right on
+page 1 as "Att betala", "Totalt", or "Summa exkl. moms"). Three cases:
+
+  CASE A — PASSTHROUGH. Page-2 sum is within ~5 % of the header total.
+  This means the page-2 items SUM to what the buyer owes — they ARE
+  the invoice content; the page-1 summary is just their total.
+  → Return the PAGE-2 ITEMS, every product row. OMIT the page-1
+    summary line. The returned rows will sum to the header total
+    (because they DO sum to it — that's how you got here).
+
+  CASE B — THIN REBILL. Page-2 sum exceeds the header total by MORE
+  than ~5 % (often 2-5× larger). This means the attached receipt
+  contains items the buyer was NOT billed for — the rebiller only
+  passed through a subset. Enumerating the attached items would
+  record goods the buyer did not receive. This is a serious
+  accounting error.
+  → Return ONLY the page-1 summary line (one row, total = the
+    rebilled amount). DO NOT extract any item from the attached
+    receipt. Even if the items are clearly printed, they are NOT
+    yours to extract.
+
+  CASE C — Page-2 sum is LESS than the header total by more than 5 %.
+  Your itemization is incomplete — you missed rows. Re-scan more
+  carefully. Do not return a partial extraction.
+
+STEP 4 — Self-check before returning:
+  - Compute sum(rows.total_excl_vat).
+  - It MUST be within ~5 % of the invoice header total. If it isn't,
+    you've made the wrong CASE choice or missed/added rows. Restart
+    from Step 1 with corrected data.
+
+Why this procedure exists: the old rule was keyword-based ("Axfood
+NNNN" → ignore attachment) and it correctly ignored thin rebills BUT
+also wrongly ignored real passthroughs that happened to use similar
+wording (Laweka/Eventcenter "Levererat från Marini/Rima") — losing
+~225 line items. The earlier prompt rewrite asked you to "use the
+reconciliation test" but didn't FORCE the order of operations, and
+you still over-extracted a thin rebill (Frimurarholmen 3462: returned
+4,759 SEK of attached-receipt items against a 1,442 SEK invoice — a
+3.3× over-count of goods the buyer never received). This is the
+exact failure both versions of the rule must prevent. Steps 1-4 force
+the sum-and-compare BEFORE any case choice. Step 4 is the final
+guard rail.
+
+NOTE: A server-side validator will REJECT any extraction where
+sum(rows.total_excl_vat) > header_total × 1.05. The procedure above
+is your in-prompt safeguard; the server-side check is the hard floor.
+If you get this wrong, the extraction is rejected and the invoice
+falls back to manual review — costly. Get it right.
 
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
@@ -805,6 +791,113 @@ interface ClaudeCallResult {
 export { fetchPdfBytes as _dryRunFetchPdfBytes }
 export { callClaude    as _dryRunCallClaude }
 
+// Reconciliation evaluator — the load-bearing safety floor that decides
+// whether an extraction's row sum is acceptable against the invoice
+// header total. Returns the delta percentage + an optional warning the
+// caller pushes into its warnings array.
+//
+// Tolerance ladder (tuned against the dry-run baselines):
+//   delta ≤ 2%                     — clean, pass (öresavrundning, FX
+//                                    rounding across many lines fit
+//                                    here; M&S 3598 delta = 0.003%,
+//                                    Trädgårdshallen 3599 delta = 0.017%)
+//   2% < delta ≤ 5% (over OR under) — outside clean tolerance; block
+//                                    with `total_mismatch` (existing)
+//   delta > 5% AND extracted > header — `over_extraction` block, distinct
+//                                    code so dashboards can flag the
+//                                    rebill-attachment-double-count
+//                                    failure mode specifically
+//                                    (Frimurarholmen 3462 was 229.9%
+//                                    over — caught here)
+//   delta > 5% AND extracted < header  — keep loose rebill tolerance
+//                                    (≤15%) when ALL rows match the
+//                                    "[Supplier] [InvoiceNumber]"
+//                                    rebill format; otherwise block
+//
+// Why the asymmetry on over- vs under-extraction: an under-extraction
+// where the model captured fewer items than billed is recoverable —
+// owner can review and trigger re-extraction. An over-extraction
+// records GOODS THE BUYER DID NOT RECEIVE, which corrupts the catalogue
+// and double-counts food cost. Stricter on the upside, looser on the
+// downside.
+//
+// The 5% over-extraction threshold is comfortably above öresavrundning
+// (typically <0.1%) and FX line-wise drift (typically <1%), and
+// comfortably below the kind of "extracted one extra row by mistake"
+// case (a single extra item on a 10-line invoice = 10%+ over). Anything
+// between 2% and 5% over still trips total_mismatch — the over_extraction
+// code is reserved for the >5% case where intent is unambiguously
+// "pulled in an attached receipt that doesn't belong".
+export interface ReconciliationResult {
+  delta_pct: number
+  signed_delta_pct: number      // negative if extracted < header
+  warning: { code: string; message: string; severity: 'warn' | 'block' } | null
+}
+
+const RECON_CLEAN_TOL_PCT          = 0.02   // ≤2% delta = clean
+const RECON_OVER_EXTRACTION_TOL    = 0.05   // >5% over = over_extraction block
+const RECON_REBILL_LOOSE_TOL_PCT   = 0.15   // up to 15% under on rebill-like rows
+
+export function evaluateReconciliation(
+  totalExtracted: number,
+  headerTotal:    number,
+  validRows:      Array<{ description?: string | null }>,
+): ReconciliationResult {
+  const signedDelta = (totalExtracted - headerTotal) / Math.abs(headerTotal)
+  const deltaPct    = Math.abs(signedDelta)
+
+  if (deltaPct <= RECON_CLEAN_TOL_PCT) {
+    return { delta_pct: deltaPct, signed_delta_pct: signedDelta, warning: null }
+  }
+
+  // Over-extraction (extracted > header by > 5%): the most dangerous case
+  // — records items the buyer didn't receive. Block with a distinct code
+  // so observability flags it separately from generic total mismatches.
+  if (signedDelta > RECON_OVER_EXTRACTION_TOL) {
+    return {
+      delta_pct: deltaPct,
+      signed_delta_pct: signedDelta,
+      warning: {
+        code: 'over_extraction',
+        message: `Extracted total ${totalExtracted.toFixed(2)} EXCEEDS Fortnox header ${headerTotal.toFixed(2)} by ${(signedDelta * 100).toFixed(1)}% — likely enumerated an attached receipt the buyer was not billed for. Rejecting to prevent recording goods the buyer did not receive.`,
+        severity: 'block',
+      },
+    }
+  }
+
+  // Existing rebill-loose tolerance — only for rows matching the
+  // "[Supplier] [InvoiceNumber]" rebill format and only on the UNDER
+  // side (header > extracted by 5-15% from bookkeeper allocation/VAT
+  // splits). Doesn't apply to over-extraction (handled above).
+  const REBILL_LINE_RE = /^[A-Z][\wåäöÅÄÖ]*(\s+[A-Z][\wåäöÅÄÖ]*)?\s+\d{6,12}$/
+  const allRebillLike  = validRows.length > 0
+    && validRows.every(r => REBILL_LINE_RE.test(String(r.description ?? '').trim()))
+
+  if (allRebillLike && deltaPct <= RECON_REBILL_LOOSE_TOL_PCT && signedDelta < 0) {
+    return {
+      delta_pct: deltaPct,
+      signed_delta_pct: signedDelta,
+      warning: {
+        code: 'rebill_loose_tolerance',
+        message: `Rebill invoice detected (all rows are '[Supplier] [InvoiceNumber]' format). Extracted ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(deltaPct * 100).toFixed(1)}%. Within rebill 15% tolerance (bookkeeper-side allocation/VAT-split is the usual cause). Accepting.`,
+        severity: 'warn',
+      },
+    }
+  }
+
+  // 2-5% mismatch in either direction OR larger under-extraction — block
+  // as generic total_mismatch.
+  return {
+    delta_pct: deltaPct,
+    signed_delta_pct: signedDelta,
+    warning: {
+      code: 'total_mismatch',
+      message: `Extracted total ${totalExtracted.toFixed(2)} vs Fortnox header ${headerTotal.toFixed(2)} — delta ${(deltaPct * 100).toFixed(1)}%, exceeds ${(RECON_CLEAN_TOL_PCT * 100).toFixed(0)}% tolerance.`,
+      severity: 'block',
+    },
+  }
+}
+
 async function callClaude(pdfBase64: string, input: ExtractInput, model: string): Promise<ClaudeCallResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured')
@@ -850,7 +943,13 @@ async function callClaude(pdfBase64: string, input: ExtractInput, model: string)
       },
       body: JSON.stringify({
         model,                                    // Haiku 4.5 (first pass) OR Sonnet 4.6 (escalation)
-        max_tokens:  4096,
+        // Headroom for the biggest real invoices. 4096 was fine when the
+        // rebill rule made the model return 1-row summaries on passthrough
+        // invoices, but the rewritten rule asks for every item — Laweka's
+        // 45-line statements needed ~6,750 tokens and were getting cut
+        // off. 16384 covers 100+ line invoices with comfortable headroom;
+        // bumping further if a real invoice ever runs longer.
+        max_tokens:  16384,
         system:      SYSTEM_PROMPT,
         tools:       [RECORD_TOOL],
         tool_choice: { type: 'tool', name: 'record_invoice_rows' },

@@ -18,7 +18,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { unstable_noStore as noStore } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/server'
 import { AI_MODELS } from '@/lib/ai/models'
-import { _dryRunFetchPdfBytes, _dryRunCallClaude } from '@/lib/inventory/pdf-extractor'
+import { _dryRunFetchPdfBytes, _dryRunCallClaude, evaluateReconciliation } from '@/lib/inventory/pdf-extractor'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -98,14 +98,22 @@ export async function POST(req: NextRequest) {
       const rows = claude.payload?.rows ?? []
       const totalExtracted = rows.reduce((s: number, r: any) => s + Number(r.total_excl_vat ?? 0), 0)
       const headerTotal = Number(ext.total_header ?? 0)
-      const reconciles = headerTotal > 0
-        ? Math.abs(totalExtracted - headerTotal) / headerTotal < 0.05
+
+      // The server-side guard — the LOAD-BEARING safety floor. Call the
+      // same evaluateReconciliation the prod extractor calls, so the
+      // dry-run surfaces exactly what would happen on a real run.
+      const recon = headerTotal && Math.abs(headerTotal) > 0.01
+        ? evaluateReconciliation(totalExtracted, headerTotal, rows)
         : null
 
       result.rows_count        = rows.length
       result.total_extracted   = Math.round(totalExtracted * 100) / 100
       result.total_header      = headerTotal
-      result.reconciles_5pct   = reconciles
+      result.recon_delta_pct      = recon ? Math.round(recon.signed_delta_pct * 1000) / 10 : null
+      result.recon_warning_code   = recon?.warning?.code ?? null
+      result.recon_warning_msg    = recon?.warning?.message ?? null
+      result.would_block          = recon?.warning?.severity === 'block'
+      result.would_accept         = recon?.warning === null || recon?.warning?.severity === 'warn'
       result.tokens_input      = claude.tokensIn
       result.tokens_output     = claude.tokensOut
       result.sample_rows       = rows.slice(0, 5).map((r: any) => ({
@@ -126,12 +134,15 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     results,
     summary: {
-      total:                    results.length,
-      with_errors:              results.filter(r => r.error).length,
-      one_row_extractions:      results.filter(r => r.rows_count === 1).length,
-      multi_row_extractions:    results.filter(r => (r.rows_count ?? 0) > 1).length,
-      reconciliations_passed:   results.filter(r => r.reconciles_5pct === true).length,
-      reconciliations_failed:   results.filter(r => r.reconciles_5pct === false).length,
+      total:                       results.length,
+      with_errors:                 results.filter(r => r.error).length,
+      one_row_extractions:         results.filter(r => r.rows_count === 1).length,
+      multi_row_extractions:       results.filter(r => (r.rows_count ?? 0) > 1).length,
+      would_accept:                results.filter(r => r.would_accept === true).length,
+      would_block:                 results.filter(r => r.would_block === true).length,
+      blocked_over_extraction:     results.filter(r => r.recon_warning_code === 'over_extraction').length,
+      blocked_total_mismatch:      results.filter(r => r.recon_warning_code === 'total_mismatch').length,
+      accepted_rebill_loose:       results.filter(r => r.recon_warning_code === 'rebill_loose_tolerance').length,
     },
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
