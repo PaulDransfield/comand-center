@@ -820,7 +820,27 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
           onBlur={() => { const v = Number(qty); const cur = ing.quantity_stated ?? ing.quantity; if (Number.isFinite(v) && v > 0 && v !== cur) onChange({ quantity: v }) }}
           style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }}
         />
-        <div style={{ color: UXP.ink3, fontSize: 11 }}>{ing.unit ?? ing.invoice_unit ?? ''}</div>
+        {/* Unit is editable per-line. Picking the wrong unit silently bloats
+            the line cost (e.g. "30 st" of a 580g pack scales by 580; "30 g"
+            doesn't). Owner needs to fix this without deleting + re-adding the
+            ingredient. Sub-recipes are locked to 'portion'. */}
+        {ing.is_subrecipe ? (
+          <div style={{ color: UXP.ink3, fontSize: 11 }}>{ing.unit ?? 'portion'}</div>
+        ) : (() => {
+          const current = ing.unit ?? ing.invoice_unit ?? 'g'
+          const inList = (UNIT_OPTIONS as readonly string[]).includes(current)
+          return (
+            <select
+              value={current}
+              onChange={e => { const v = e.target.value; if (v && v !== current) onChange({ unit: v }) }}
+              title="Recipe unit. Must match what the engine can convert from the product's pack/base unit — mismatches show in the cost row above."
+              style={{ ...inputStyle, padding: '3px 4px', fontSize: 11 }}
+            >
+              {!inList && <option value={current}>{current}</option>}
+              {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          )
+        })()}
         {/* Waste % per line — yield-loss inflation applied in loadRecipeIndex
             so engine math stays pure (per recipe-authoring-tool-prompt review).
             Default 0 = no-op. Bounded 0..<100 (CHECK + clamp). Muted display
