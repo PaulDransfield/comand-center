@@ -49,6 +49,29 @@ interface PrepResult {
   flags:      Array<{ recipe_id: string; reason: string }>
 }
 
+// Active-session shape: persisted prep_session + its frozen lines.
+// Loaded from /api/inventory/prep-sessions/[id] (or via the active=1 list).
+interface PrepSession {
+  id:           string
+  name:         string | null
+  inputs:       Array<{ recipe_id: string; qty: number }>
+  created_at:   string
+  completed_at: string | null
+}
+interface PrepSessionLine {
+  id:                string
+  kind:              'component' | 'product'
+  entity_id:         string
+  name_snapshot:     string
+  total_qty:         number
+  unit:              string
+  uncertain:         null | 'sub_no_yield' | 'unit_mismatch' | 'cycle'
+  uncertain_reason:  string | null
+  source_recipe_ids: string[]
+  checked_at:        string | null
+  position:          number
+}
+
 // Local copy of the kitchen-display formatter so we don't have to ship
 // a server dependency to the client just for one helper. Keep in sync
 // with lib/inventory/prep-list.ts::formatPrepQty.
@@ -76,10 +99,18 @@ export default function PrepListPage() {
   const [result,   setResult]   = useState<PrepResult | null>(null)
   const [computing, setComputing] = useState(false)
   const [search, setSearch] = useState('')
-  // Tab between the two result lists so the page isn't a wall of tables.
+  // Tab between the result lists so the page isn't a wall of tables.
   // Default is components (the higher-value aggregation) — owner can flip
   // to ingredients when they want to pull stock or write a shopping list.
   const [tab, setTab] = useState<'components' | 'ingredients' | 'flags'>('components')
+
+  // v1.1 — active session. When set, the page renders prep-mode: frozen
+  // summary + checkable rows. When null, create-mode: select dishes,
+  // preview the aggregation, click "Save & start prep" to persist.
+  const [activeSession, setActiveSession] = useState<PrepSession | null>(null)
+  const [sessionLines,  setSessionLines]  = useState<PrepSessionLine[]>([])
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   // Read the sidebar's selected biz from localStorage; mirror across tabs.
   useEffect(() => {
@@ -116,10 +147,138 @@ export default function PrepListPage() {
     else setLoadingDishes(false)
   }, [bizId, loadDishes])
 
+  // Derived: items in the order the owner picked them.
   const selectedItems = useMemo(
     () => Object.entries(selected).filter(([, q]) => q > 0).map(([recipe_id, qty]) => ({ recipe_id, qty })),
     [selected],
   )
+
+  // Active session loader. Looks up whether the business has an open
+  // prep session and, if so, pulls its frozen lines. Runs on biz change
+  // and on demand after create/complete/discard actions.
+  const loadActiveSession = useCallback(async () => {
+    if (!bizId) { setSessionLoading(false); return }
+    setSessionLoading(true)
+    try {
+      const r = await fetch(`/api/inventory/prep-sessions?business_id=${encodeURIComponent(bizId)}&active=1`, { cache: 'no-store' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      const { sessions } = await r.json()
+      const s = sessions?.[0]
+      if (!s) { setActiveSession(null); setSessionLines([]); return }
+      // Load the full session with lines.
+      const r2 = await fetch(`/api/inventory/prep-sessions/${s.id}`, { cache: 'no-store' })
+      if (!r2.ok) throw new Error((await r2.json().catch(() => ({}))).error ?? `HTTP ${r2.status}`)
+      const { session, lines } = await r2.json()
+      setActiveSession(session)
+      setSessionLines(lines ?? [])
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSessionLoading(false)
+    }
+  }, [bizId])
+  useEffect(() => {
+    if (bizId) loadActiveSession()
+    else setSessionLoading(false)
+  }, [bizId, loadActiveSession])
+
+  // Persist the current preview as a session — lines are frozen at save
+  // time (engine re-run server-side, materialised into prep_session_lines).
+  const saveSession = useCallback(async () => {
+    if (!bizId || selectedItems.length === 0) return
+    setSaving(true); setError(null)
+    try {
+      const r = await fetch('/api/inventory/prep-sessions', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ business_id: bizId, items: selectedItems }),
+      })
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}))
+        if (r.status === 409 && b.error === 'active_session_exists') {
+          // Refresh the active session — owner already had one going.
+          await loadActiveSession()
+          return
+        }
+        throw new Error(b.error ?? `HTTP ${r.status}`)
+      }
+      const { session, lines } = await r.json()
+      setActiveSession(session)
+      setSessionLines(lines ?? [])
+      // Reset the create-mode state since we've transitioned to prep-mode.
+      setSelected({})
+      setResult(null)
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }, [bizId, selectedItems, loadActiveSession])
+
+  // Toggle a single line's check state. Optimistic update so the
+  // checkbox feels instant on a tablet; rolls back on error.
+  const toggleLine = useCallback(async (line: PrepSessionLine) => {
+    if (!activeSession) return
+    const targetChecked = line.checked_at == null
+    const newCheckedAt  = targetChecked ? new Date().toISOString() : null
+    // Optimistic patch.
+    setSessionLines(prev => prev.map(l => l.id === line.id ? { ...l, checked_at: newCheckedAt } : l))
+    try {
+      const r = await fetch(
+        `/api/inventory/prep-sessions/${activeSession.id}/lines/${line.id}/toggle`,
+        {
+          method: 'POST',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ checked: targetChecked }),
+        },
+      )
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      const { line: updated } = await r.json()
+      setSessionLines(prev => prev.map(l => l.id === line.id ? updated : l))
+    } catch (e: any) {
+      // Roll back the optimistic patch.
+      setSessionLines(prev => prev.map(l => l.id === line.id ? line : l))
+      setError(e.message)
+    }
+  }, [activeSession])
+
+  // Mark the whole session done.
+  const completeSession = useCallback(async () => {
+    if (!activeSession) return
+    if (!window.confirm('Mark this prep list as complete? It moves to history and lines become read-only.')) return
+    try {
+      const r = await fetch(`/api/inventory/prep-sessions/${activeSession.id}`, {
+        method: 'PATCH',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ complete: 'now' }),
+      })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      setActiveSession(null)
+      setSessionLines([])
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [activeSession])
+
+  // Discard — only works while not completed. Drops the session + lines.
+  const discardSession = useCallback(async () => {
+    if (!activeSession) return
+    if (!window.confirm('Discard this prep list? All check progress will be lost.')) return
+    try {
+      const r = await fetch(`/api/inventory/prep-sessions/${activeSession.id}`, {
+        method: 'DELETE',
+        cache: 'no-store',
+      })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
+      setActiveSession(null)
+      setSessionLines([])
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [activeSession])
 
   const compute = useCallback(async () => {
     if (!bizId || selectedItems.length === 0) return
@@ -160,6 +319,13 @@ export default function PrepListPage() {
     return m
   }, [dishes])
 
+  // Split session lines by kind for the tabbed prep-mode display.
+  const sessionComponents = useMemo(() => sessionLines.filter(l => l.kind === 'component'), [sessionLines])
+  const sessionProducts   = useMemo(() => sessionLines.filter(l => l.kind === 'product'),   [sessionLines])
+  const totalLines        = sessionLines.length
+  const doneLines         = useMemo(() => sessionLines.filter(l => l.checked_at != null).length, [sessionLines])
+  const allDone           = totalLines > 0 && doneLines === totalLines
+
   return (
     <AppShell>
       <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
@@ -173,14 +339,30 @@ export default function PrepListPage() {
               sub-recipes and raw ingredients so the kitchen sees one prep line per component.
             </p>
           </div>
-          {selectedItems.length > 0 && (
+          {/* Header right-side actions differ by mode. Prep-mode: complete + discard.
+              Create-mode (no active session): "Clear all" when something is picked. */}
+          {activeSession ? (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={discardSession} style={secondaryBtn}>Discard</button>
+              <button
+                onClick={completeSession}
+                style={{
+                  ...primaryBtn,
+                  background: allDone ? UXP.lavDeep : UXP.lavMid,
+                }}
+                title={allDone ? 'All lines done — close the session' : 'Mark the prep list as complete even with unchecked lines'}
+              >
+                Complete prep
+              </button>
+            </div>
+          ) : selectedItems.length > 0 ? (
             <button
               onClick={() => { setSelected({}); setResult(null) }}
               style={secondaryBtn}
             >
               Clear all
             </button>
-          )}
+          ) : null}
         </div>
 
         {error && (
@@ -194,14 +376,157 @@ export default function PrepListPage() {
             Select a business in the sidebar to load its dishes.
           </div>
         )}
-        {bizId && loadingDishes && <div style={emptyCard}>Loading dishes…</div>}
+        {bizId && (loadingDishes || sessionLoading) && <div style={emptyCard}>Loading…</div>}
         {bizId && !loadingDishes && dishes.length === 0 && !error && (
           <div style={emptyCard}>
             No dishes found. Add or import dishes from <a href="/inventory/recipes" style={{ color: UXP.lavText }}>Recipes</a> first.
           </div>
         )}
 
-        {bizId && !loadingDishes && dishes.length > 0 && (
+        {/* ──────────────────────────────────────────────────────────────
+            PREP MODE — an active session exists. Show progress + checkable
+            rows; hide the dish picker (session is frozen). Owner uses the
+            Complete / Discard buttons in the header to leave this mode.
+            ────────────────────────────────────────────────────────────── */}
+        {bizId && activeSession && (
+          <>
+            <div style={{
+              background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+              borderRadius: 8, padding: 14, marginBottom: 14,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 9, color: UXP.lavText, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+                    Active prep session
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1 }}>
+                    {activeSession.name || 'Today’s prep'}
+                  </div>
+                  <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
+                    {activeSession.inputs.map(it => {
+                      const d = dishById.get(it.recipe_id)
+                      return `${it.qty}× ${d?.name ?? it.recipe_id.slice(0, 8)}`
+                    }).join(' · ')}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' as const, minWidth: 140 }}>
+                  <div style={{ fontSize: 20, fontWeight: 600, color: UXP.ink1, fontVariantNumeric: 'tabular-nums' as const }}>
+                    {doneLines} <span style={{ color: UXP.ink4, fontSize: 13, fontWeight: 400 }}>of {totalLines}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>lines done</div>
+                </div>
+              </div>
+              {/* Progress bar — fills lavender as lines tick off. */}
+              <div style={{ marginTop: 10, height: 6, background: UXP.cardBg, borderRadius: 3, overflow: 'hidden' as const }}>
+                <div style={{
+                  height: '100%',
+                  width: `${totalLines > 0 ? (doneLines / totalLines) * 100 : 0}%`,
+                  background: UXP.lavDeep,
+                  transition: 'width 200ms ease',
+                }} />
+              </div>
+            </div>
+
+            {/* Tab strip — same shape as create-mode. */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
+              <TabPill
+                active={tab === 'components'} onClick={() => setTab('components')}
+                label="Components to prep"
+                count={sessionComponents.length}
+              />
+              <TabPill
+                active={tab === 'ingredients'} onClick={() => setTab('ingredients')}
+                label="Raw ingredients to pull"
+                count={sessionProducts.length}
+              />
+            </div>
+
+            <Section
+              title={tab === 'components' ? 'Components to prep' : 'Raw ingredients to pull'}
+              subtitle={tab === 'components'
+                ? 'Tap each row when you’ve made the component.'
+                : 'Tap each row when you’ve pulled the ingredient.'}
+            >
+              {(tab === 'components' ? sessionComponents : sessionProducts).length === 0 && (
+                <Empty label={tab === 'components'
+                  ? 'No sub-recipe components in this session.'
+                  : 'No raw ingredients in this session (likely all components are flagged — fix yields then start a new session).'} />
+              )}
+              {(tab === 'components' ? sessionComponents : sessionProducts).length > 0 && (
+                <div>
+                  {(tab === 'components' ? sessionComponents : sessionProducts).map(line => {
+                    const f = formatPrepQty(line.total_qty, line.unit)
+                    const checked = line.checked_at != null
+                    return (
+                      <button
+                        key={line.id}
+                        onClick={() => toggleLine(line)}
+                        disabled={!!activeSession.completed_at}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: '28px 1fr 130px',
+                          alignItems: 'center',
+                          gap: 10,
+                          width: '100%',
+                          padding: '12px 14px',
+                          background: checked ? UXP.subtleBg : UXP.cardBg,
+                          borderTop: `0.5px solid ${UXP.border}`,
+                          border: 'none', borderRadius: 0,
+                          textAlign: 'left' as const,
+                          cursor: 'pointer', fontFamily: 'inherit',
+                          opacity: checked ? 0.55 : 1,
+                        }}
+                      >
+                        {/* Custom checkbox — big tap target for tablets. */}
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 22, height: 22, borderRadius: 5,
+                          border: `1.5px solid ${checked ? UXP.lavDeep : UXP.border}`,
+                          background: checked ? UXP.lavDeep : 'transparent',
+                          color: '#fff', fontSize: 14, fontWeight: 700,
+                          flexShrink: 0,
+                        }}>
+                          {checked ? 'OK' : ''}
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <div style={{
+                            fontSize: 13, color: UXP.ink1, fontWeight: 500,
+                            textDecoration: checked ? 'line-through' as const : 'none' as const,
+                          }}>
+                            {line.name_snapshot}
+                          </div>
+                          {line.uncertain && (
+                            <div style={{ fontSize: 10, color: UXP.coral, marginTop: 2 }} title={line.uncertain_reason ?? ''}>
+                              {line.uncertain_reason ?? 'Set yield to roll up'}
+                            </div>
+                          )}
+                          {line.source_recipe_ids.length >= 2 && (
+                            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+                              shared across {line.source_recipe_ids.length} dishes
+                            </div>
+                          )}
+                        </span>
+                        <span style={{
+                          textAlign: 'right' as const,
+                          fontSize: 14, fontWeight: 600, color: UXP.ink1,
+                          fontVariantNumeric: 'tabular-nums' as const,
+                        }}>
+                          {line.uncertain ? '—' : `${f.qty} ${f.unit}`}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </Section>
+          </>
+        )}
+
+        {/* ──────────────────────────────────────────────────────────────
+            CREATE MODE — no active session. Pick dishes, preview the
+            aggregation, "Save & start prep" persists it.
+            ────────────────────────────────────────────────────────────── */}
+        {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 16, alignItems: 'start' }}>
 
             {/* ── LEFT: dish picker + qty inputs ───────────────────── */}
@@ -336,6 +661,30 @@ export default function PrepListPage() {
                 <>
                   {computing && (
                     <div style={{ fontSize: 11, color: UXP.ink4, marginBottom: 8 }}>Aggregating…</div>
+                  )}
+
+                  {/* CTA: persist the preview as an active session so the
+                      kitchen can tick lines off. Appears as soon as the
+                      preview has any content. */}
+                  {result && (result.components.length > 0 || result.products.length > 0) && (
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      gap: 12, padding: '10px 14px', marginBottom: 12,
+                      background: UXP.lavFill, border: `0.5px solid ${UXP.lavMid}`,
+                      borderRadius: 8,
+                    }}>
+                      <div style={{ fontSize: 11, color: UXP.ink2, lineHeight: 1.4 }}>
+                        Happy with the list? Save it so the kitchen can tick each line off as it's done.
+                        Lines freeze at save — recipe edits after this won't change what's already in the list.
+                      </div>
+                      <button onClick={saveSession} disabled={saving} style={{
+                        ...primaryBtn,
+                        opacity: saving ? 0.6 : 1, cursor: saving ? 'wait' as const : 'pointer' as const,
+                        whiteSpace: 'nowrap' as const,
+                      }}>
+                        {saving ? 'Saving…' : 'Save & start prep'}
+                      </button>
+                    </div>
                   )}
 
                   {/* Tabbed result — components is the primary view since
@@ -564,6 +913,11 @@ const secondaryBtn: React.CSSProperties = {
   padding: '6px 12px', fontSize: 12, fontWeight: 500,
   background: 'transparent', color: UXP.ink3, border: `0.5px solid ${UXP.border}`,
   borderRadius: 5, cursor: 'pointer', fontFamily: 'inherit',
+}
+const primaryBtn: React.CSSProperties = {
+  padding: '6px 14px', fontSize: 12, fontWeight: 600,
+  background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 5,
+  cursor: 'pointer', fontFamily: 'inherit',
 }
 const uncertainBadge: React.CSSProperties = {
   display: 'inline-block', padding: '2px 8px',
