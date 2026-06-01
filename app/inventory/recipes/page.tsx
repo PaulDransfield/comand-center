@@ -87,9 +87,18 @@ export default function InventoryRecipesPage() {
   // dishes-only so the margin numbers aren't drowned by zero-priced
   // sub-recipes that legitimately have no GP%.
   const [viewFilter, setViewFilter] = useState<'dishes' | 'subrecipes' | 'all'>('dishes')
+  // A recipe is a "dish" when it has either:
+  //   - a selling price set (owner explicitly listed it on the menu), OR
+  //   - a dish-shaped type (starter/main/pasta/pizza/dessert/drink/
+  //     cocktail/side) — this catches AI-imported dishes that didn't
+  //     have a price in the source but ARE menu items.
+  // Sub-recipes are the leftover: no price AND no dish-shaped type
+  // (sauce/other/null land here).
+  const DISH_TYPES = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'drink', 'cocktail', 'side'])
   const isDish = (r: any) =>
     (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
     || (r.menu_price != null && Number(r.menu_price) > 0)
+    || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
   const rows = viewFilter === 'dishes'     ? allRows.filter(isDish)
             : viewFilter === 'subrecipes'  ? allRows.filter((r: any) => !isDish(r))
             :                                allRows
@@ -334,6 +343,7 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
     | { kind: 'sub';     sub_name:   string; quantity: number; unit: string }
   type Draft = {
     name:                   string
+    type:                   string | null
     is_subrecipe:           boolean
     portions:               number
     selling_price_inc_vat:  number | null
@@ -410,7 +420,7 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
           body:    JSON.stringify({
             business_id:           bizId,
             name:                  d.name,
-            type:                  null,
+            type:                  d.type,                  // Sonnet-inferred dish type; null for sub-recipes
             menu_price_inc_vat:    d.selling_price_inc_vat ?? null,
             vat_rate:              12,            // owner edits in drawer; 12% safe default for dine-in
             channel:               'dine_in',

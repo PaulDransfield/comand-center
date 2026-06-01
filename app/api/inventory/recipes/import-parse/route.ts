@@ -180,6 +180,10 @@ RULES:
 - portions: almost always 1 unless the dish is obviously shared/family-size.
 - Up to ${MAX_DISHES} dishes per import.
 
+DISH TYPE — set the "type" field on each dish (NOT on sub-recipes) to one of:
+  starter | main | pasta | pizza | dessert | drink | cocktail | side | other
+Pick based on the dish's role on the menu. If unsure, leave null. Sub-recipes (sauces, doughs, marinades) leave type null — they're not dishes.
+
 If the input is a recipe document (not a menu), it likely contains a METHOD / PREPARATION section per dish — cooking steps, technique, plating, timing. Capture this verbatim or summarised in the dish's "method" field, up to ~2000 chars per dish. Leave empty when the input is just a menu list with no instructions.
 
 ── SUB-RECIPES (very common in Word documents) ──
@@ -213,6 +217,7 @@ Return JSON ONLY, an array with one object per recipe (sub-recipes can appear BE
   },
   {
     "name":     "Pinsa Margherita",
+    "type":     "pizza",
     "portions": 1,
     "selling_price_inc_vat": 195,
     "note":     "Classic pinsa with the house white sauce.",
@@ -317,8 +322,15 @@ Return JSON ONLY, an array with one object per recipe (sub-recipes can appear BE
       // parent recipes via M111.
       const yieldAmt = Number(d?.yield_amount)
       const yieldUnit = d?.yield_unit ? String(d.yield_unit).trim() : null
+      // Type is a free-form string but the UI's RECIPE_TYPES enum is the
+      // canonical set; passing an unknown value just renders as "—".
+      // Sub-recipes never get a type (they're not dishes).
+      const rawType  = d?.type ? String(d.type).trim().toLowerCase() : null
+      const TYPES    = ['starter', 'main', 'pasta', 'pizza', 'dessert', 'drink', 'cocktail', 'side', 'sauce', 'other']
+      const dishType = rawType && TYPES.includes(rawType) ? rawType : null
       return {
         name,
+        type:                    !d?.is_subrecipe ? dishType : null,
         is_subrecipe:            !!d?.is_subrecipe,
         portions:                Math.max(1, Math.floor(Number(d?.portions) || 1)),
         selling_price_inc_vat:   d?.selling_price_inc_vat != null ? Number(d.selling_price_inc_vat) : null,
