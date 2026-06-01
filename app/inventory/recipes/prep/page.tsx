@@ -55,7 +55,11 @@ interface PrepComponentLine {
   source_recipes:   string[]
   uncertain:        null | 'sub_no_yield' | 'unit_mismatch' | 'cycle'
   uncertain_reason: string | null
-  meta?: { method?: string | null }
+  meta?: {
+    method?:      string | null
+    notes?:       string | null
+    ingredients?: SubIngredient[]
+  }
 }
 interface PrepProductLine {
   product_id:     string
@@ -153,10 +157,14 @@ export default function PrepListPage() {
   const [selected, setSelected] = useState<Record<string, number>>({})
   // M117 — expected covers for auto-fill. Empty string when not in use.
   const [coversInput, setCoversInput] = useState<string>('')
-  // The currently open line modal (tap the row body to open it).
-  // Holds a session-line id; the modal pulls full data from that line's
-  // meta. Checkbox tap stays a separate target that toggles check.
-  const [openLineId, setOpenLineId] = useState<string | null>(null)
+  // The currently open line modal — works for both prep mode (taps a
+  // session line) and create mode (taps a preview row). Holds the line
+  // payload + an optional session_line_id so save handlers know whether
+  // to write back into sessionLines (prep) or refetch the preview.
+  const [openModal, setOpenModal] = useState<{
+    line: PrepSessionLine
+    session_line_id: string | null
+  } | null>(null)
 
   // M118 — pre-orders for the chosen service_date. Default service
   // date is tomorrow (most prep is done the day before).
@@ -688,7 +696,7 @@ export default function PrepListPage() {
                             with method + ingredients (for components)
                             or per-recipe notes (for products). */}
                         <button
-                          onClick={() => setOpenLineId(line.id)}
+                          onClick={() => setOpenModal({ line, session_line_id: line.id })}
                           disabled={disabled}
                           style={{
                             display: 'block', textAlign: 'left' as const,
@@ -1188,7 +1196,15 @@ export default function PrepListPage() {
                               const f = formatPrepQty(c.total_qty, c.unit)
                               const sourceNames = c.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
                               return (
-                                <tr key={c.subrecipe_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
+                                <tr key={c.subrecipe_id} style={{
+                                  borderTop: `0.5px solid ${UXP.border}`,
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => setOpenModal({
+                                  line: previewComponentToSessionLine(c),
+                                  session_line_id: null,
+                                })}
+                                title="Tap to view method & ingredients">
                                   <td style={td}>
                                     <div style={{ color: UXP.ink1, fontWeight: 500 }}>{c.name ?? '—'}</div>
                                   </td>
@@ -1238,7 +1254,15 @@ export default function PrepListPage() {
                               const f = formatPrepQty(p.total_qty, p.unit)
                               const sourceNames = p.source_recipes.map(rid => dishById.get(rid)?.name ?? '?')
                               return (
-                                <tr key={p.product_id} style={{ borderTop: `0.5px solid ${UXP.border}` }}>
+                                <tr key={p.product_id} style={{
+                                  borderTop: `0.5px solid ${UXP.border}`,
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => setOpenModal({
+                                  line: previewProductToSessionLine(p),
+                                  session_line_id: null,
+                                })}
+                                title="Tap to add prep notes per recipe">
                                   <td style={td}>
                                     <div style={{ color: UXP.ink1, fontWeight: 500 }}>{p.name ?? '—'}</div>
                                     {p.category && (
@@ -1285,41 +1309,106 @@ export default function PrepListPage() {
         )}
       </div>
 
-      {/* Line-detail modal — opens on row body tap in prep mode.
-          Shows method + ingredient list (component) or per-recipe uses
-          (product). Edits autosave via the same PATCH endpoints as
-          before. Reuses backdrop pattern from the recipe drawer. */}
-      {openLineId && activeSession && (() => {
-        const line = sessionLines.find(l => l.id === openLineId)
-        if (!line) { setOpenLineId(null); return null }
+      {/* Line-detail modal — works in BOTH prep mode (session line tap)
+          and create mode (preview row tap). Shows method + ingredient
+          list (component) or per-recipe uses (product). Edits autosave
+          via the same PATCH endpoints regardless of mode.
+          openModal.session_line_id: non-null = update sessionLines on
+          save; null = preview mode, refetch the preview so subsequent
+          opens see fresh data. */}
+      {openModal && (() => {
+        const { line, session_line_id } = openModal
         return (
           <LinePrepModal
             line={line}
             recipeNameById={dishById}
-            onClose={() => setOpenLineId(null)}
+            onClose={() => setOpenModal(null)}
             onMethodSaved={(newValue) => {
-              setSessionLines(prev => prev.map(l => l.id === line.id
-                ? { ...l, meta: { ...(l.meta ?? {}), method: newValue } }
-                : l))
+              // Update modal-local view so re-opening shows the latest.
+              setOpenModal(prev => prev ? {
+                ...prev,
+                line: { ...prev.line, meta: { ...(prev.line.meta ?? {}), method: newValue } },
+              } : prev)
+              if (session_line_id) {
+                // Prep mode — write into sessionLines too.
+                setSessionLines(prev => prev.map(l => l.id === session_line_id
+                  ? { ...l, meta: { ...(l.meta ?? {}), method: newValue } }
+                  : l))
+              } else {
+                // Preview mode — recompute to pick up the latest.
+                compute()
+              }
             }}
             onIngredientNoteSaved={(ingredientId, newNotes) => {
-              setSessionLines(prev => prev.map(l => {
-                if (l.id !== line.id) return l
+              setOpenModal(prev => {
+                if (!prev) return prev
+                const l = prev.line
                 if (l.kind === 'component') {
                   const ings = (l.meta?.ingredients ?? []).map(i =>
                     i.ingredient_id === ingredientId ? { ...i, notes: newNotes } : i)
-                  return { ...l, meta: { ...(l.meta ?? {}), ingredients: ings } }
+                  return { ...prev, line: { ...l, meta: { ...(l.meta ?? {}), ingredients: ings } } }
                 }
                 const uses = (l.meta?.uses ?? []).map(u =>
                   u.ingredient_id === ingredientId ? { ...u, notes: newNotes } : u)
-                return { ...l, meta: { ...(l.meta ?? {}), uses } }
-              }))
+                return { ...prev, line: { ...l, meta: { ...(l.meta ?? {}), uses } } }
+              })
+              if (session_line_id) {
+                setSessionLines(prev => prev.map(l => {
+                  if (l.id !== session_line_id) return l
+                  if (l.kind === 'component') {
+                    const ings = (l.meta?.ingredients ?? []).map(i =>
+                      i.ingredient_id === ingredientId ? { ...i, notes: newNotes } : i)
+                    return { ...l, meta: { ...(l.meta ?? {}), ingredients: ings } }
+                  }
+                  const uses = (l.meta?.uses ?? []).map(u =>
+                    u.ingredient_id === ingredientId ? { ...u, notes: newNotes } : u)
+                  return { ...l, meta: { ...(l.meta ?? {}), uses } }
+                }))
+              } else {
+                compute()
+              }
             }}
           />
         )
       })()}
     </AppShell>
   )
+}
+
+// Adapt a create-mode preview row into the PrepSessionLine shape the
+// modal already understands. id is empty (we use null session_line_id
+// to mean "preview mode") and position is irrelevant for the modal.
+function previewComponentToSessionLine(c: PrepComponentLine): PrepSessionLine {
+  return {
+    id:                '',
+    kind:              'component',
+    entity_id:         c.subrecipe_id,
+    name_snapshot:     c.name ?? c.subrecipe_id.slice(0, 8),
+    total_qty:         c.total_qty,
+    unit:              c.unit,
+    uncertain:         c.uncertain,
+    uncertain_reason:  c.uncertain_reason,
+    source_recipe_ids: c.source_recipes,
+    checked_at:        null,
+    position:          0,
+    meta:              c.meta as any,
+  }
+}
+function previewProductToSessionLine(p: PrepProductLine): PrepSessionLine {
+  return {
+    id:                '',
+    kind:              'product',
+    entity_id:         p.product_id,
+    name_snapshot:     p.name ?? p.product_id.slice(0, 8),
+    total_qty:         p.total_qty,
+    unit:              p.unit,
+    uncertain:         null,
+    uncertain_reason:  null,
+    source_recipe_ids: p.source_recipes,
+    checked_at:        null,
+    position:          0,
+    meta:              p.meta as any,
+  }
 }
 
 function LinePrepModal({

@@ -104,14 +104,42 @@ export async function POST(req: NextRequest) {
   // hitting "Save & start prep" — writes target the underlying
   // recipes.method / recipe_ingredients.notes via the existing PATCH
   // endpoints, so every future prep list inherits them.
+  // Component meta — method, notes (fallback when method is empty),
+  // and the sub-recipe's own ingredient list (so the modal can show
+  // editable per-ingredient prep notes even for yield-less subs whose
+  // ingredients don't surface as separate product lines). Mirrors what
+  // GET /api/inventory/prep-sessions/[id] does for the session view.
   const componentIds = result.components.map(c => c.subrecipe_id)
   const methodById = new Map<string, string | null>()
+  const notesById  = new Map<string, string | null>()
+  const subIngredientsByRecipe = new Map<string, Array<{ ingredient_id: string; product_id: string | null; product_name: string | null; quantity: number; unit: string | null; notes: string | null; position: number }>>()
   if (componentIds.length > 0) {
     const { data: rs } = await db
       .from('recipes')
-      .select('id, method')
+      .select('id, method, notes')
       .in('id', componentIds)
-    for (const r of rs ?? []) methodById.set(r.id, (r as any).method ?? null)
+    for (const r of rs ?? []) {
+      methodById.set(r.id, (r as any).method ?? null)
+      notesById.set(r.id, (r as any).notes ?? null)
+    }
+    const { data: subIngs } = await db
+      .from('recipe_ingredients')
+      .select('id, recipe_id, product_id, quantity, unit, notes, position, products(name)')
+      .in('recipe_id', componentIds)
+      .order('position')
+    for (const i of subIngs ?? []) {
+      const list = subIngredientsByRecipe.get((i as any).recipe_id) ?? []
+      list.push({
+        ingredient_id: (i as any).id,
+        product_id:    (i as any).product_id,
+        product_name:  ((i as any).products as any)?.name ?? null,
+        quantity:      Number((i as any).quantity ?? 0),
+        unit:          (i as any).unit ?? null,
+        notes:         (i as any).notes ?? null,
+        position:      Number((i as any).position ?? 0),
+      })
+      subIngredientsByRecipe.set((i as any).recipe_id, list)
+    }
   }
   const usesByProductId = new Map<string, Array<{ ingredient_id: string; recipe_id: string; recipe_name: string | null; notes: string | null; quantity: number; unit: string | null }>>()
   if (productIds.length > 0) {
@@ -140,7 +168,11 @@ export async function POST(req: NextRequest) {
 
   const enrichedComponents = result.components.map(c => ({
     ...c,
-    meta: { method: methodById.get(c.subrecipe_id) ?? null },
+    meta: {
+      method:      methodById.get(c.subrecipe_id) ?? null,
+      notes:       notesById.get(c.subrecipe_id)  ?? null,
+      ingredients: subIngredientsByRecipe.get(c.subrecipe_id) ?? [],
+    },
   }))
   const enrichedProducts = result.products.map(p => ({
     ...p,
