@@ -93,7 +93,7 @@ export const AREAS: Area[] = [
     // the owner-overridden classification list. Counts / waste /
     // variance remain vision-stage behind a DemoDataBanner.
     pages: [
-      { key: 'items',       label: 'Articles',                   href: '/inventory/items' },
+      { key: 'items',       label: 'Articles / Price creep',     href: '/inventory/items' },
       { key: 'review',      label: 'Article review',             href: '/inventory/review' },
       { key: 'skipped',     label: 'Non-inventory suppliers',    href: '/inventory/skipped' },
       { key: 'extractions', label: 'PDF review',                 href: '/inventory/extractions' },
