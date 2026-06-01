@@ -1,0 +1,1627 @@
+{
+  "ts": "2026-06-01T10:27:32.445Z",
+  "tally": {
+    "GOOD": 4,
+    "INERT": 1,
+    "REJECTED": 0,
+    "OTHER_ACCEPTED": 0,
+    "OTHER_BLOCKED": 0,
+    "ERROR": 0
+  },
+  "results": [
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "3174",
+      "classification": "GOOD",
+      "status": "extracted",
+      "rows_extracted": 46,
+      "total_extracted": 104320.22000000002,
+      "total_header": 104320.57,
+      "total_delta_pct": 0.000003355043017798588,
+      "validation_warnings": [
+        {
+          "code": "escalated_to_sonnet",
+          "message": "Haiku 4.5 first pass insufficient (haiku total 8577.45 vs header 104320.57 — 91.8% delta); re-ran with Sonnet 4.6.",
+          "severity": "warn"
+        },
+        {
+          "code": "proportional_scaling_applied",
+          "message": "Passthrough scaling applied: model reported page-1 header=104320.24 and page-2 grand total=94836.58 (SEK). Server-computed scale=1.1000 × every row. New sum=104320.22.",
+          "severity": "warn"
+        }
+      ],
+      "ai_model": "claude-sonnet-4-6",
+      "tokens_input": 10649,
+      "tokens_output": 4378,
+      "cost_usd": 0.09761700000000001,
+      "error_message": null,
+      "extracted_rows": [
+        {
+          "row_number": 1,
+          "description": "Mozzarella per pizza Julienne",
+          "article_number": "ABB1 B1",
+          "quantity": 55,
+          "unit": null,
+          "price_per_unit": 7.656,
+          "total_excl_vat": 4655.67,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 2,
+          "description": "Burrata 3x100 gr",
+          "article_number": "ABB2 A1",
+          "quantity": 26.4,
+          "unit": null,
+          "price_per_unit": 13.97,
+          "total_excl_vat": 4077.72,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 3,
+          "description": "Burrata 3x100 gr FRYST",
+          "article_number": "ABB2 FRYS",
+          "quantity": 28.8,
+          "unit": null,
+          "price_per_unit": 13.97,
+          "total_excl_vat": 4448.43,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 4,
+          "description": "Stracciatella di Burrata 250 gr",
+          "article_number": "ABB3 A2",
+          "quantity": 40,
+          "unit": null,
+          "price_per_unit": 13.288,
+          "total_excl_vat": 5876.75,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 5,
+          "description": "Stracciatella di Burrata 250 gr FRYST",
+          "article_number": "ABB3 FRYS",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": 13.288,
+          "total_excl_vat": 587.68,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 6,
+          "description": "Ricotta canestrata 1,75 kg",
+          "article_number": "ABB4",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": 2.552,
+          "total_excl_vat": 339.09,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 7,
+          "description": "Mascarpone 2 kg",
+          "article_number": "ABB5",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": 10.263,
+          "total_excl_vat": 453.89,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 8,
+          "description": "Aceto di Balsamico di M.IGP Bio Gold 250 ml",
+          "article_number": "ACE3 C3",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": 9.845,
+          "total_excl_vat": 1306.22,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 9,
+          "description": "Formaggio Oro nero in mosto cotto duva 1/2",
+          "article_number": "BEF2 D1",
+          "quantity": 3.17,
+          "unit": null,
+          "price_per_unit": 29.37,
+          "total_excl_vat": 1029.4,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 10,
+          "description": "Olio e.v.o. drago chef PET 5L",
+          "article_number": "COP1 B2",
+          "quantity": 8,
+          "unit": null,
+          "price_per_unit": 31.075,
+          "total_excl_vat": 2748.65,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 11,
+          "description": "Crema al formaggio Pecorino 580 gr",
+          "article_number": "CRP1 E3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 13.53,
+          "total_excl_vat": 897.57,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 12,
+          "description": "Salame con Tartufo bianco di S.Miniato s/v",
+          "article_number": "FAL10 D2",
+          "quantity": 3.72,
+          "unit": null,
+          "price_per_unit": 23.65,
+          "total_excl_vat": 972.73,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 13,
+          "description": "Impasto di salsicca di Suino Grigio s/v",
+          "article_number": "FAL9 FRYS",
+          "quantity": 10.59,
+          "unit": null,
+          "price_per_unit": 11.275,
+          "total_excl_vat": 1320.2,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 14,
+          "description": "Parmigiano Reggiano DOP 24 messi ottavi s/v",
+          "article_number": "FAP1 C1",
+          "quantity": 37.07,
+          "unit": null,
+          "price_per_unit": 22.319,
+          "total_excl_vat": 9149.22,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 15,
+          "description": "Farina 00 Molino Pasini 25 kg",
+          "article_number": "FAR1 Pall",
+          "quantity": 2,
+          "unit": null,
+          "price_per_unit": 42.515,
+          "total_excl_vat": 940.14,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 16,
+          "description": "Semola di grano duro Mininni S2 25 kg",
+          "article_number": "FAR2 Pall",
+          "quantity": 22,
+          "unit": null,
+          "price_per_unit": 31.922,
+          "total_excl_vat": 7764.32,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 17,
+          "description": "Fiocco di patata 25 kg",
+          "article_number": "FAR7 Pall",
+          "quantity": 1,
+          "unit": null,
+          "price_per_unit": 0,
+          "total_excl_vat": 0,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 18,
+          "description": "Peperoni rossi mignon in agrodolce 780 gr",
+          "article_number": "GIN10r E1",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 10.945,
+          "total_excl_vat": 726.08,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 19,
+          "description": "Tonno Y-fin in olio dóliva latta 1580 gr",
+          "article_number": "GIN26 E3",
+          "quantity": 2,
+          "unit": null,
+          "price_per_unit": 24.53,
+          "total_excl_vat": 542.43,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 20,
+          "description": "Pomodori rossi s/d \"O sole mio\" in olio 770 gr",
+          "article_number": "GIN3r F2",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 7.997,
+          "total_excl_vat": 530.51,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 21,
+          "description": "Ciliegini rossi semi-dry alle erbette 770 gr",
+          "article_number": "GIN4 F2",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": 9.592,
+          "total_excl_vat": 1908.97,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 22,
+          "description": "Grissini rustici al sesamo 200 gr",
+          "article_number": "GRI1 B3",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": 5.28,
+          "total_excl_vat": 233.51,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 23,
+          "description": "Granella di Pistacchi 500 gr",
+          "article_number": "GRP1 B3",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": 16.808,
+          "total_excl_vat": 557.63,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 24,
+          "description": "Nduja piccante",
+          "article_number": "NDU1 D3",
+          "quantity": 1.94,
+          "unit": null,
+          "price_per_unit": 16.5,
+          "total_excl_vat": 353.91,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 25,
+          "description": "Olive Nocellara Castelvetrano secchio 3 kg",
+          "article_number": "NOC2 B2",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": 26.213,
+          "total_excl_vat": 869.59,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 26,
+          "description": "Nocciole sgusciate tostate Italia 500gr",
+          "article_number": "NOT1",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 8.58,
+          "total_excl_vat": 569.18,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 27,
+          "description": "Noci sgusciate 500gr",
+          "article_number": "NOX1",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": 5.5,
+          "total_excl_vat": 243.24,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 28,
+          "description": "Biscotti pavesini 200 gr",
+          "article_number": "PAV1 D3",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": 3.586,
+          "total_excl_vat": 475.78,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 29,
+          "description": "Trito di peperoncino Calebrese in olio 1 kg",
+          "article_number": "PCA1 F3",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": 19.569,
+          "total_excl_vat": 649.1,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 30,
+          "description": "Pecorino Romano DOP Nero",
+          "article_number": "PET1 D2",
+          "quantity": 10.66,
+          "unit": null,
+          "price_per_unit": 21.769,
+          "total_excl_vat": 2565.73,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 31,
+          "description": "Pinoli sgusciati 500 gr",
+          "article_number": "PIN2 C3",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": 20.669,
+          "total_excl_vat": 685.58,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 32,
+          "description": "Pizza sauce Classica 4,1 kg Mutti",
+          "article_number": "PIS1C",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 13.035,
+          "total_excl_vat": 864.73,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 33,
+          "description": "Olio e.v.o. \"Moraiolo\" Pistelli 750 ml",
+          "article_number": "PIS3 C2",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 14.025,
+          "total_excl_vat": 930.4,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 34,
+          "description": "Base pizza (flat pinsa) 38x16 cm 230 gr (10/krt)",
+          "article_number": "PIZ1b FRYS",
+          "quantity": 545,
+          "unit": null,
+          "price_per_unit": 2.849,
+          "total_excl_vat": 17167.48,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 35,
+          "description": "Base pizza tonda senza glutine 29 cm 220 gr (14/krt)",
+          "article_number": "PIZ4 FRYS",
+          "quantity": 42,
+          "unit": null,
+          "price_per_unit": 5.049,
+          "total_excl_vat": 2344.62,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 36,
+          "description": "Schiacciata Fiorentina 60x40 cm 1200 gr (8/krt)",
+          "article_number": "PIZ5 FRYS",
+          "quantity": 32,
+          "unit": null,
+          "price_per_unit": 15.367,
+          "total_excl_vat": 5436.97,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 37,
+          "description": "Prosciutto Toscano DOP disossato s/v R",
+          "article_number": "REN1 D1",
+          "quantity": 7.43,
+          "unit": null,
+          "price_per_unit": 24.53,
+          "total_excl_vat": 2015.15,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 38,
+          "description": "Prosciutto crudo Magnifico s/v R",
+          "article_number": "REN2 D1",
+          "quantity": 7.98,
+          "unit": null,
+          "price_per_unit": 24.53,
+          "total_excl_vat": 2164.25,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 39,
+          "description": "Frutti del cappero in aceto 530 gr",
+          "article_number": "RIG1 E3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 6.215,
+          "total_excl_vat": 412.3,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 40,
+          "description": "Olive taggiasche denocciolate in olio 900 gr",
+          "article_number": "RIG2 F1",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": 16.335,
+          "total_excl_vat": 1083.64,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 41,
+          "description": "Carciofi alla romana in olio 2400 gr",
+          "article_number": "RIG3 F1",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": 20.185,
+          "total_excl_vat": 4017.16,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 42,
+          "description": "Riso Carnaroli IGP Delta del Po 1 kg",
+          "article_number": "RIS1 C2",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": 4.675,
+          "total_excl_vat": 620.27,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 43,
+          "description": "Scatole per pizza 40x20x5 cm",
+          "article_number": "SCA1 A3",
+          "quantity": 300,
+          "unit": null,
+          "price_per_unit": 0.616,
+          "total_excl_vat": 2043.24,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 44,
+          "description": "Salame Napoli piccante S",
+          "article_number": "SCS1 C1",
+          "quantity": 13.82,
+          "unit": null,
+          "price_per_unit": 11.99,
+          "total_excl_vat": 1832.11,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 45,
+          "description": "Pomodori Pelati San Marzano DOP 2,5 kg",
+          "article_number": "SMD2 E1",
+          "quantity": 48,
+          "unit": null,
+          "price_per_unit": 9.515,
+          "total_excl_vat": 5049.73,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 46,
+          "description": "Salsa al tartufo nero 500 gr",
+          "article_number": "TAR2 B2",
+          "quantity": 9,
+          "unit": null,
+          "price_per_unit": 8.635,
+          "total_excl_vat": 859.25,
+          "vat_rate": 12
+        }
+      ]
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "2902",
+      "classification": "GOOD",
+      "status": "extracted",
+      "rows_extracted": 50,
+      "total_extracted": 234690.63999999998,
+      "total_header": 234691.12,
+      "total_delta_pct": 0.0000020452414220464645,
+      "validation_warnings": [
+        {
+          "code": "escalated_to_sonnet",
+          "message": "Haiku 4.5 first pass insufficient (haiku total 19621.57 vs header 234691.12 — 91.6% delta); re-ran with Sonnet 4.6.",
+          "severity": "warn"
+        },
+        {
+          "code": "proportional_scaling_applied",
+          "message": "Passthrough scaling applied: model reported page-1 header=234690.65 and page-2 grand total=19621.57 (EUR). Server-computed scale=11.9608 × every row. New sum=234690.64.",
+          "severity": "warn"
+        }
+      ],
+      "ai_model": "claude-sonnet-4-6",
+      "tokens_input": 10252,
+      "tokens_output": 4529,
+      "cost_usd": 0.098691,
+      "error_message": null,
+      "extracted_rows": [
+        {
+          "row_number": 1,
+          "description": "Mozzarella per pizza Julienne",
+          "article_number": "ABB1 B1",
+          "quantity": 110,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 9157.23,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 2,
+          "description": "Mozarella per pizza Julienne FRYST",
+          "article_number": "ABB1 FRYS",
+          "quantity": 10,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 832.48,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 3,
+          "description": "Burrata 3x100 gr",
+          "article_number": "ABB2 A1",
+          "quantity": 60,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 9114.17,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 4,
+          "description": "Stracciatella di Burrata 250 gr",
+          "article_number": "ABB3 A2",
+          "quantity": 72,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 10403.07,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 5,
+          "description": "Gorgonzola DOP",
+          "article_number": "ABB9 D2",
+          "quantity": 10.97,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1376.69,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 6,
+          "description": "Aceto di Balsamico di M.IGP Bio Gold 250 ml",
+          "article_number": "ACE3 C3",
+          "quantity": 36,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4069.08,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 7,
+          "description": "Buste di carta 40x35x35 cm Chicce",
+          "article_number": "BUS1 B3",
+          "quantity": 100,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1614.71,
+          "vat_rate": 25
+        },
+        {
+          "row_number": 8,
+          "description": "Buste di carta 32x22/24",
+          "article_number": "BUS2 A3",
+          "quantity": 400,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3588.25,
+          "vat_rate": 25
+        },
+        {
+          "row_number": 9,
+          "description": "Olio e.v.o. drago chef PET 5L",
+          "article_number": "COP1 B2",
+          "quantity": 8,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3087.1,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 10,
+          "description": "Crema al formaggio Pecorino 580 gr",
+          "article_number": "CRP1 E3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 882.71,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 11,
+          "description": "Prosciutto crudo San Miniato dissato s/v",
+          "article_number": "FAL1 D1",
+          "quantity": 36.4,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 9708.98,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 12,
+          "description": "Salame con Tartufo bianco di S.Miniato s/v 6st",
+          "article_number": "FAL10 D2",
+          "quantity": 4.52,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1162.36,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 13,
+          "description": "Impasto di salsicca di Suino Grigio s/v",
+          "article_number": "FAL9 FRYS",
+          "quantity": 40.72,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4992.22,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 14,
+          "description": "Parmigiano Reggiano DOP 24 messi ottavi s/v",
+          "article_number": "FAP1 C1",
+          "quantity": 67.13,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 15335.96,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 15,
+          "description": "Farina 00 Molino Pasini 25 kg",
+          "article_number": "FAR1 Pall",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1849.15,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 16,
+          "description": "Semola di grano duro Mininni S2 25 kg",
+          "article_number": "FAR2 Pall",
+          "quantity": 40,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 19089.52,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 17,
+          "description": "Semola Rimacinata di Grano Duro",
+          "article_number": "FAR8 Pall",
+          "quantity": 1,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1227.78,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 18,
+          "description": "Frutti del cappero in aceto 500 gr",
+          "article_number": "FCP6 E3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 444.94,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 19,
+          "description": "Condimento di Olio e.v.o. al Limone 250 ml",
+          "article_number": "GAL1 C3",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 258.35,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 20,
+          "description": "Condimento di Olio e.v.o. al Basilico 250 ml",
+          "article_number": "GAL2 C3",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 258.35,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 21,
+          "description": "Carciofi alla romana in olio 1900 gr",
+          "article_number": "GIN1 F1",
+          "quantity": 36,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 8654.87,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 22,
+          "description": "Peperoni rossi mignon in agrodolce 780 gr",
+          "article_number": "GIN10r E1",
+          "quantity": 24,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2856.25,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 23,
+          "description": "Tonno Y-fin in olio d'oliva latta 1580 gr",
+          "article_number": "GIN26 E3",
+          "quantity": 14,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3734.18,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 24,
+          "description": "Pomodori rossi s/d \"O sole mio\" in olio 770 gr",
+          "article_number": "GIN3r F2",
+          "quantity": 54,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4695.59,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 25,
+          "description": "Ciliegini rossi semi-dry alle erbette 770 gr",
+          "article_number": "GIN4 F2",
+          "quantity": 66,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 6883.71,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 26,
+          "description": "Pomodorini gialli semi-dry \"Pomosole\" 770 gr",
+          "article_number": "GIN5 E2",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1877.37,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 27,
+          "description": "Grissini rustici al sesamo 200 gr",
+          "article_number": "GRI1 B3",
+          "quantity": 13,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 746.36,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 28,
+          "description": "Granella di Pistacchi 500 gr",
+          "article_number": "GRP1 B3",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 668.85,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 29,
+          "description": "Prosciutto cotto scelto s/v Kings",
+          "article_number": "KIC2",
+          "quantity": 7.42,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 796.95,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 30,
+          "description": "Mortadella Bologna IGP meta c/p Kings",
+          "article_number": "KIM1 D3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 686.07,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 31,
+          "description": "Nduja piccante",
+          "article_number": "NDU1 D3",
+          "quantity": 3.85,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 690.74,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 32,
+          "description": "Olive Nocellara Castelvetrano secchio 3 kg",
+          "article_number": "NOC2 B2",
+          "quantity": 4,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1076.48,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 33,
+          "description": "Biscotti pavesini 200 gr",
+          "article_number": "PAV1 D3",
+          "quantity": 24,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 935.82,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 34,
+          "description": "Trito di peperoncino Calebrese in olio 1 kg",
+          "article_number": "PCA1 F3",
+          "quantity": 1,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 212.78,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 35,
+          "description": "Pecorino Romano DOP Nero",
+          "article_number": "PER2 D2",
+          "quantity": 3.78,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 944.43,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 36,
+          "description": "Pecorino Romano DOP Nero",
+          "article_number": "PET1 D2",
+          "quantity": 16.36,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3872.44,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 37,
+          "description": "Pecorino al Tartufo nero s/v P",
+          "article_number": "PET2 D2",
+          "quantity": 4.1,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1789.94,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 38,
+          "description": "Pinoli sgusciati 500 gr",
+          "article_number": "PIN2 C3",
+          "quantity": 1,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 224.74,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 39,
+          "description": "Olio e.v.o. \"Moraiolo\" Pistelli 750 ml",
+          "article_number": "PIS3 C2",
+          "quantity": 30,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4575.03,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 40,
+          "description": "Base pizza (flat pinsa) 38x16 cm 230 gr (10/krt)",
+          "article_number": "PIZ1b FRYS",
+          "quantity": 1400,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 43370.04,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 41,
+          "description": "Base pizza tonda senza glutine 29 cm 220 gr (14/krt)",
+          "article_number": "PIZ4 FRYS",
+          "quantity": 42,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2305.81,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 42,
+          "description": "Schiacciata Fiorentina 60x40 cm 1200 gr (8/krt)",
+          "article_number": "PIZ5 FRYS",
+          "quantity": 120,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 20051.17,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 43,
+          "description": "Olive taggiasche denocciolate in olio 900 gr",
+          "article_number": "RIG2 F1",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3197.14,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 44,
+          "description": "Carciofi alla romana in olio 2400 gr",
+          "article_number": "RIG3 F1",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2633.78,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 45,
+          "description": "Riso Carnaroli IGP Delta del Po 1 kg",
+          "article_number": "RIS1 C2",
+          "quantity": 24,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1220.01,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 46,
+          "description": "Scatole per pizza 40x20x5 cm",
+          "article_number": "SCA1 A3",
+          "quantity": 700,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4688.65,
+          "vat_rate": 25
+        },
+        {
+          "row_number": 47,
+          "description": "Salame Napoli piccante S",
+          "article_number": "SCS1 C1",
+          "quantity": 14.44,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1882.64,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 48,
+          "description": "Pancetta tesa stagionata al pape meta s/v",
+          "article_number": "SCS2 G2",
+          "quantity": 4.18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 527.47,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 49,
+          "description": "Pomodori Pelati San Marzano DOP 2,5 kg",
+          "article_number": "SMD2 E1",
+          "quantity": 90,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 9311.52,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 50,
+          "description": "Salsa al tartufo nero 500 gr",
+          "article_number": "TAR2 B2",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1126.71,
+          "vat_rate": 12
+        }
+      ]
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "2948",
+      "classification": "GOOD",
+      "status": "extracted",
+      "rows_extracted": 29,
+      "total_extracted": 90242.32999999999,
+      "total_header": 90241.92,
+      "total_delta_pct": 0.000004543343049316111,
+      "validation_warnings": [
+        {
+          "code": "escalated_to_sonnet",
+          "message": "Haiku 4.5 first pass insufficient (haiku total 7357.71 vs header 90241.92 — 91.8% delta); re-ran with Sonnet 4.6.",
+          "severity": "warn"
+        },
+        {
+          "code": "proportional_scaling_applied",
+          "message": "Passthrough scaling applied: model reported page-1 header=90242.32 and page-2 grand total=7357.71 (EUR). Server-computed scale=12.2650 × every row. New sum=90242.33.",
+          "severity": "warn"
+        }
+      ],
+      "ai_model": "claude-sonnet-4-6",
+      "tokens_input": 9700,
+      "tokens_output": 2688,
+      "cost_usd": 0.06942000000000001,
+      "error_message": null,
+      "extracted_rows": [
+        {
+          "row_number": 1,
+          "description": "Mozzarella per pizza Julienne",
+          "article_number": "ABB1",
+          "quantity": 42,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3585.31,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 2,
+          "description": "Burrata 3x100 gr",
+          "article_number": "ABB2",
+          "quantity": 24,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3738.37,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 3,
+          "description": "Stracciatella di Burrata 250 gr",
+          "article_number": "ABB3",
+          "quantity": 36,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 5333.8,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 4,
+          "description": "Gorgonzola DOP",
+          "article_number": "ABB9",
+          "quantity": 3.09,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 404.75,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 5,
+          "description": "Aceto di Balsamico di M.IGP Bio Gold 250 ml",
+          "article_number": "ACE3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 695.43,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 6,
+          "description": "Olio e.v.o. drago chef PET 5L",
+          "article_number": "COP1",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1138.81,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 7,
+          "description": "Impasto di salsicca di Suino Grigio s/v",
+          "article_number": "FAL9",
+          "quantity": 16.99,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2135.95,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 8,
+          "description": "Parmigiano Reggiano DOP 24 messi ottavi s/v",
+          "article_number": "FAP1",
+          "quantity": 36.83,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 8627.81,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 9,
+          "description": "Farina 00 Molino Pasini 25 kg",
+          "article_number": "FAR1",
+          "quantity": 7,
+          "unit": "Pall",
+          "price_per_unit": null,
+          "total_excl_vat": 3318.3,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 10,
+          "description": "Semola di grano duro Mininni S2 25 kg",
+          "article_number": "FAR2",
+          "quantity": 20,
+          "unit": "Pall",
+          "price_per_unit": null,
+          "total_excl_vat": 9787.47,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 11,
+          "description": "Frutti del cappero in aceto 500 gr",
+          "article_number": "FCP6",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 456.26,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 12,
+          "description": "Peperoni rossi mignon in agrodolce 780 gr",
+          "article_number": "GIN10r",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2196.66,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 13,
+          "description": "Tonno Y-fin in olio d'oliva latta 1580 gr",
+          "article_number": "GIN26",
+          "quantity": 7,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1914.57,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 14,
+          "description": "Pomodori rossi s/d \"O sole mio\" in olio 770 gr",
+          "article_number": "GIN3r",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1070,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 15,
+          "description": "Ciliegini rossi semi-dry alle erbette 770 gr",
+          "article_number": "GIN4",
+          "quantity": 24,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2566.82,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 16,
+          "description": "Grissini rustici al sesamo 200 gr",
+          "article_number": "GRI1",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 176.62,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 17,
+          "description": "Olive Nocellara Castelvetrano secchio 3 kg",
+          "article_number": "NOC2",
+          "quantity": 1,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 275.96,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 18,
+          "description": "Biscotti pavesini 200 gr",
+          "article_number": "PAV1",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 479.81,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 19,
+          "description": "Pecorino Romano DOP Nero",
+          "article_number": "PET1",
+          "quantity": 13.47,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 3269.48,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 20,
+          "description": "Pecorino al Tartufo nero s/v P",
+          "article_number": "PET2",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1343.02,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 21,
+          "description": "Base pizza (flat pinsa) 38x16 cm 230 gr (10/krt)",
+          "article_number": "PIZ1b",
+          "quantity": 660,
+          "unit": "FRYS",
+          "price_per_unit": null,
+          "total_excl_vat": 20965.79,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 22,
+          "description": "Base pizza tonda senza glutine 29 cm 220 gr (14/krt)",
+          "article_number": "PIZ4",
+          "quantity": 42,
+          "unit": "FRYS",
+          "price_per_unit": null,
+          "total_excl_vat": 2364.45,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 23,
+          "description": "Schiacciata Fiorentina 60x40 cm 1200 gr (8/krt)",
+          "article_number": "PIZ5",
+          "quantity": 40,
+          "unit": "FRYS",
+          "price_per_unit": null,
+          "total_excl_vat": 6853.68,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 24,
+          "description": "Pizza/Focaccia al formaggio 650 gr",
+          "article_number": "PIZ6",
+          "quantity": 8,
+          "unit": "FRYS",
+          "price_per_unit": null,
+          "total_excl_vat": 1500.25,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 25,
+          "description": "Frutti del cappero in aceto 530 gr",
+          "article_number": "RIG1",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 415.78,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 26,
+          "description": "Olive taggiasche denocciolate in olio 900 gr",
+          "article_number": "RIG2",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1092.81,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 27,
+          "description": "Riso Carnaroli IGP Delta del Po 1 kg",
+          "article_number": "RIS1",
+          "quantity": 24,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1251.03,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 28,
+          "description": "Scatole per pizza 40x20x5 cm",
+          "article_number": "SCA1",
+          "quantity": 200,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1373.68,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 29,
+          "description": "Pomodori Pelati San Marzano DOP 2,5 kg",
+          "article_number": "SMD2",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1909.66,
+          "vat_rate": 12
+        }
+      ]
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "2975",
+      "classification": "GOOD",
+      "status": "extracted",
+      "rows_extracted": 22,
+      "total_extracted": 58323.030000000006,
+      "total_header": 58323.24,
+      "total_delta_pct": 0.0000036006230105160643,
+      "validation_warnings": [
+        {
+          "code": "escalated_to_sonnet",
+          "message": "Haiku 4.5 first pass insufficient (haiku total 4750.98 vs header 58323.24 — 91.9% delta); re-ran with Sonnet 4.6.",
+          "severity": "warn"
+        },
+        {
+          "code": "proportional_scaling_applied",
+          "message": "Passthrough scaling applied: model reported page-1 header=58323.03 and page-2 grand total=4750.98 (EUR). Server-computed scale=12.2760 × every row. New sum=58323.03.",
+          "severity": "warn"
+        }
+      ],
+      "ai_model": "claude-sonnet-4-6",
+      "tokens_input": 9426,
+      "tokens_output": 2095,
+      "cost_usd": 0.059703000000000006,
+      "error_message": null,
+      "extracted_rows": [
+        {
+          "row_number": 1,
+          "description": "Mozzarella per pizza Julienne",
+          "article_number": "ABB1 B1",
+          "quantity": 50,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4272.05,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 2,
+          "description": "Burrata 3x100 gr",
+          "article_number": "ABB2 A1",
+          "quantity": 19.2,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2993.38,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 3,
+          "description": "Stracciatella di Burrata 250 gr",
+          "article_number": "ABB3 A2",
+          "quantity": 28,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 4152.23,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 4,
+          "description": "Gorgonzola DOP",
+          "article_number": "ABB9 D2",
+          "quantity": 2.88,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 377.61,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 5,
+          "description": "Formaggio Oro nero in mosto cotto duva 1/2",
+          "article_number": "BEF2 D1",
+          "quantity": 1.49,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 488.34,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 6,
+          "description": "Buste di carta 40x35x35 cm Chicce",
+          "article_number": "BUS1 B3",
+          "quantity": 100,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1657.26,
+          "vat_rate": 25
+        },
+        {
+          "row_number": 7,
+          "description": "Crema al formaggio Pecorino 580 gr",
+          "article_number": "CRP1 E3",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 905.97,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 8,
+          "description": "Impasto di salsicca di Suino Grigio s/v",
+          "article_number": "FAL9 FRYS",
+          "quantity": 16.96,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 2134.06,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 9,
+          "description": "Parmigiano Reggiano DOP 24 messi ottavi s/v",
+          "article_number": "FAP1 C1",
+          "quantity": 23.16,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 5430.41,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 10,
+          "description": "Semola di grano duro Mininni S2 25 kg",
+          "article_number": "FAR2 Pall",
+          "quantity": 20,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 9796.25,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 11,
+          "description": "Peperoni rossi mignon in agrodolce 780 gr",
+          "article_number": "GIN10r E1",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 732.88,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 12,
+          "description": "Tonno Y-fin in olio d'oliva latta 1580 gr",
+          "article_number": "GIN26 E3",
+          "quantity": 3,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 821.26,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 13,
+          "description": "Pomodori rossi s/d \"O sole mio\" in olio 770 gr",
+          "article_number": "GIN3r F2",
+          "quantity": 6,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 535.48,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 14,
+          "description": "Ciliegini rossi semi-dry alle erbette 770 gr",
+          "article_number": "GIN4 F2",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1926.84,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 15,
+          "description": "Nduja piccante",
+          "article_number": "NDU1 D3",
+          "quantity": 0.81,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 149.15,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 16,
+          "description": "Biscotti pavesini 200 gr",
+          "article_number": "PAV1 D3",
+          "quantity": 12,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 480.24,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 17,
+          "description": "Pecorino Romano DOP Nero",
+          "article_number": "PET1 D2",
+          "quantity": 7.95,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1931.38,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 18,
+          "description": "Base pizza (flat pinsa) 38x16 cm 230 gr (10/krt)",
+          "article_number": "PIZ1b FRYS",
+          "quantity": 440,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 13989.73,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 19,
+          "description": "Base pizza tonda senza glutine 29 cm 220 gr (14/krt)",
+          "article_number": "PIZ4 FRYS",
+          "quantity": 28,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1577.71,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 20,
+          "description": "Schiacciata Fiorentina 60x40 cm 1200 gr (8/krt)",
+          "article_number": "PIZ5 FRYS",
+          "quantity": 8,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1371.97,
+          "vat_rate": 12
+        },
+        {
+          "row_number": 21,
+          "description": "Scatole per pizza 40x20x5 cm",
+          "article_number": "SCA1 A3",
+          "quantity": 100,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 687.46,
+          "vat_rate": 25
+        },
+        {
+          "row_number": 22,
+          "description": "Pomodori Pelati San Marzano DOP 2,5 kg",
+          "article_number": "SMD2 E1",
+          "quantity": 18,
+          "unit": null,
+          "price_per_unit": null,
+          "total_excl_vat": 1911.37,
+          "vat_rate": 12
+        }
+      ]
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "3278",
+      "classification": "INERT",
+      "status": "extracted",
+      "rows_extracted": 1,
+      "total_extracted": -10898,
+      "total_header": -10898.24,
+      "total_delta_pct": 0.00002202190445427718,
+      "validation_warnings": [],
+      "ai_model": "claude-haiku-4-5-20251001",
+      "tokens_input": 8923,
+      "tokens_output": 268,
+      "cost_usd": 0.010263000000000001,
+      "error_message": null,
+      "extracted_rows": [
+        {
+          "row_number": 1,
+          "description": "Levererat från Marini/Rima 2025 11 - Kreditering av fakturanummer 1397 - Felfakturerat ingredienser till Pastatillverkning",
+          "article_number": null,
+          "quantity": -1,
+          "unit": "st",
+          "price_per_unit": 10898,
+          "total_excl_vat": -10898,
+          "vat_rate": 12
+        }
+      ]
+    }
+  ]
+}

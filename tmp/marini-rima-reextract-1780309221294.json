@@ -1,0 +1,38 @@
+{
+  "ts": "2026-06-01T10:20:21.294Z",
+  "tally": {
+    "GOOD": 0,
+    "INERT": 0,
+    "REJECTED": 0,
+    "OTHER_ACCEPTED": 0,
+    "OTHER_BLOCKED": 0,
+    "ERROR": 5
+  },
+  "results": [
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "3174",
+      "error": "no record"
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "2902",
+      "error": "no record"
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "2948",
+      "error": "no record"
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "2975",
+      "error": "no record"
+    },
+    {
+      "business_id": "63ada0ac-18af-406a-8ad3-4acfd0379f2c",
+      "fortnox_invoice_number": "3278",
+      "error": "no record"
+    }
+  ]
+}
