@@ -70,6 +70,20 @@ const DEPOSIT_LOGISTICS_REBATE_PATTERN = new RegExp(
     '|lokalhyra' +
     '|hyra\\s+lokal' +
     '|lokal\\s+hyra' +
+    // ── M113 overhead sweep (2026-06-01) ──
+    // All passed both-directions dry-run (scripts/diag-m113-overhead-sweep-dryrun.mjs)
+    // at the time of writing — Direction A catches the noise, Direction B
+    // returns zero product-name false positives at Chicce or Vero.
+    '|öres.{0,3}och\\s+kron' +              // "Öres- och kronutjämning" (Kungsholmens) — extends existing öresavrundning arm
+    '|brand(släckar|\\s+ansulex)' +         // Brandsläckarservice, Brand ansulexservice (fire-extinguisher annual service)
+    '|förpackningsavgift' +                 // "Förpackningsavgift" (PAC-PRODUCTION packaging fee)
+    '|försenings(ersättning|avgift)' +     // "Förseningsersättning (DMI NNNN)" (late delivery compensation) — forward-defensive
+
+    // ── Anchored M113 arms ──
+    '|^eng[åa]ngsemballage\\b' +            // "ENGÅNGSEMBALLAGE KOLLI/STYCK" (Spendrups single-use packaging)
+    '|^europapall(e)?\\b' +                 // "EUROPAPALLE 4 VEJS" (Carlsberg) — sibling to existing ^eur[-\\s]?pall
+
+
 
     // ── Anchored deposit/return arms ──
     '|^pantgr[öo]n\\b' +              // PANTGRÖN Retur SRS Back
