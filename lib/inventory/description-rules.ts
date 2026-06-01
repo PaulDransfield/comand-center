@@ -46,10 +46,19 @@
 // in scripts/diag-gate0-precedence-deposit-dryrun.mjs to confirm).
 const DEPOSIT_LOGISTICS_REBATE_PATTERN = new RegExp(
   '(' +
-    // ── Unanchored compound-word arms (P2.0 originals) ──
+    // ── Unanchored compound-word arms (P2.0 originals + 2026-06-01 lokalhyra) ──
     // These compound words don't appear inside real product names; safe
     // as substring matches. Avtalsrabatt specifically can be a SUFFIX on
     // product-named credit lines.
+    //
+    // lokalhyra / "hyra lokal" / "lokal hyra" caught here because real
+    // rent invoices land as "<room name> – Hyra lokal" (e.g. "Förråd –
+    // Hyra lokal", "Restaurang/café – Hyra lokal" — Behrn landlord
+    // invoices at Chicce). An ^-anchored arm would miss all of these.
+    // Both-directions dry-run 2026-06-01 confirmed 65/65 rent lines
+    // caught, 0 false positives on Loka-brand drink products at Vero
+    // ("Lokal Hallon/Rabarber" — contains "lokal" alone but not the
+    // compound `lokal\\s+hyra` or `hyra\\s+lokal`).
     'avtalsrabatt' +
     '|^rabatt' +
     '|^pant\\b' +
@@ -58,6 +67,9 @@ const DEPOSIT_LOGISTICS_REBATE_PATTERN = new RegExp(
     '|faktureringsavg' +
     '|inkassoarvode' +
     '|påminnelseavg' +
+    '|lokalhyra' +
+    '|hyra\\s+lokal' +
+    '|lokal\\s+hyra' +
 
     // ── Anchored deposit/return arms ──
     '|^pantgr[öo]n\\b' +              // PANTGRÖN Retur SRS Back
