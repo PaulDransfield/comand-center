@@ -13,6 +13,7 @@ export const dynamic = 'force-dynamic'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
+import { convertQuantity } from '@/lib/inventory/unit-conversion'
 import { UXP } from '@/lib/constants/tokens'
 import { EditItemModal } from '@/components/EditItemModal'
 import { fmtKr } from '@/lib/format'
@@ -516,8 +517,14 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                   Setting this lets the recipe be consumed by weight in
                   other recipes (e.g. "30 g of White Sauce"). Optional;
                   recipes without yield can still be consumed in portions.
-                  Empty + empty = clears both (DB CHECK enforces). */}
-              <YieldEditor recipe={data.recipe} onSave={patchRecipe} />
+                  Empty + empty = clears both (DB CHECK enforces).
+                  Auto-fill suggestion is computed from the current
+                  ingredient list — sum of grams ÷ portions. */}
+              <YieldEditor
+                recipe={data.recipe}
+                suggestedYield={suggestYieldFromIngredients(data.summary.ingredients, data.recipe.portions)}
+                onSave={patchRecipe}
+              />
               {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (() => {
                 // Warning cards — one per issue type, each a discrete
                 // clickable card with title + action affordance. Replaces
@@ -640,14 +647,66 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
   )
 }
 
+// Compute a yield suggestion from the recipe's ingredients. The idea:
+// the kitchen-yield of a sub-recipe is usually just the sum of what
+// went in (in grams) divided by portions. Cooking reduction (sauces
+// boiling down, stock concentrating) is the exception — and the owner
+// catches that by overriding the suggested value.
+//
+// Convention:
+//   - Sum each ingredient's quantity_stated (pre-waste — yield is the
+//     finished weight from what actually goes in the pot).
+//   - Convert to g where possible; treat ml as g (water density ≈ 1
+//     close enough for cooking suggestions).
+//   - Ingredients in 'st' or with unit_mismatch get skipped + counted
+//     so the UI can disclose partial coverage.
+//   - Sub-recipe ingredients that already have yield set contribute
+//     their resolved gram weight; without yield they're skipped.
+//   - Returns null when nothing summable exists or portions is 0.
+function suggestYieldFromIngredients(
+  ingredients: DetailIngredient[] | undefined,
+  portions: number,
+): { amount: number; unit: 'g'; summed: number; skipped: number } | null {
+  if (!ingredients || ingredients.length === 0 || portions <= 0) return null
+  let totalG = 0
+  let summed = 0
+  let skipped = 0
+  for (const ing of ingredients) {
+    if (ing.unit_mismatch || ing.cycle) { skipped++; continue }
+    const q = Number(ing.quantity_stated ?? ing.quantity ?? 0)
+    if (!Number.isFinite(q) || q <= 0) { skipped++; continue }
+    const unit = ing.unit ?? ing.invoice_unit ?? ''
+    // Try mass first; fall back to volume (cooking ≈ 1:1).
+    const inG  = convertQuantity(q, unit, 'g')
+    const inMl = inG == null ? convertQuantity(q, unit, 'ml') : null
+    const contribution = inG ?? inMl
+    if (contribution == null) { skipped++; continue }
+    totalG += contribution
+    summed++
+  }
+  if (summed === 0 || totalG <= 0) return null
+  return {
+    amount:  Math.round((totalG / portions) * 10) / 10,
+    unit:    'g',
+    summed,
+    skipped,
+  }
+}
+
 // Inline yield editor for sub-recipes (M111). Optional pair of fields:
 // amount + unit. When BOTH are set, parent recipes can consume this
 // recipe in any unit family-compatible with the yield_unit (g↔kg,
 // ml↔l). When EITHER is cleared, both clear (DB CHECK enforces the
 // pair invariant) — so the sub-recipe falls back to portion-only.
 // Honest-incomplete: a half-set yield never saves.
-function YieldEditor({ recipe, onSave }: {
+//
+// `suggestedYield` is computed from the recipe's ingredients by the
+// parent (RecipeDrawer) and shown as a one-click apply chip when no
+// yield is set. Reduction recipes (sauces boiling down) override
+// manually.
+function YieldEditor({ recipe, suggestedYield, onSave }: {
   recipe: DetailResponse['recipe']
+  suggestedYield: { amount: number; unit: 'g'; summed: number; skipped: number } | null
   onSave: (patch: Record<string, any>) => Promise<void>
 }) {
   const [amt,  setAmt]  = useState(recipe.yield_amount != null ? String(recipe.yield_amount) : '')
@@ -699,9 +758,46 @@ function YieldEditor({ recipe, onSave }: {
           </button>
         )}
       </div>
+      {/* Auto-fill suggestion. Shows when there's a summable ingredient
+          list AND either the field is empty or the saved value differs
+          from the suggestion by >5% (the override is meaningful). */}
+      {(() => {
+        if (!suggestedYield) return null
+        const savedAmt = Number(amt)
+        const isEmpty = amt === '' && unit === ''
+        const driftPct = savedAmt > 0
+          ? Math.abs(savedAmt - suggestedYield.amount) / suggestedYield.amount
+          : null
+        const showDrift = driftPct != null && driftPct > 0.05 && unit === suggestedYield.unit
+        if (!isEmpty && !showDrift) return null
+        const label = isEmpty
+          ? `Auto-fill: ${suggestedYield.amount} ${suggestedYield.unit} / portion`
+          : `Ingredients sum to ${suggestedYield.amount} ${suggestedYield.unit} — your yield differs by ${((driftPct as number) * 100).toFixed(0)}% (cooking reduction?)`
+        return (
+          <button
+            type="button"
+            onClick={() => { setAmt(String(suggestedYield.amount)); setUnit(suggestedYield.unit) }}
+            disabled={busy}
+            style={{
+              alignSelf:    'flex-start' as const,
+              fontSize:     10,
+              padding:      '3px 9px',
+              border:       `0.5px solid ${UXP.lav}`,
+              background:   UXP.lavFill,
+              color:        UXP.lavText,
+              borderRadius: 999,
+              cursor:       'pointer',
+              fontFamily:   'inherit',
+            }}
+            title={`Computed from ${suggestedYield.summed} ingredient${suggestedYield.summed === 1 ? '' : 's'}${suggestedYield.skipped > 0 ? ` (${suggestedYield.skipped} skipped — wrong unit or no data)` : ''}.`}
+          >
+            {label}
+          </button>
+        )
+      })()}
       {err && <div style={{ fontSize: 10, color: UXP.coral }}>{err}</div>}
       <div style={{ fontSize: 9, color: UXP.ink4, lineHeight: 1.4 }}>
-        Lets this recipe be consumed by weight/volume in other recipes (e.g. 30 g of sauce). Leave blank for portion-only.
+        Lets this recipe be consumed by weight/volume in other recipes (e.g. 30 g of sauce). Leave blank for portion-only. Owner overrides the auto-fill when there's cooking reduction (e.g. a sauce that boils down).
       </div>
     </div>
   )
