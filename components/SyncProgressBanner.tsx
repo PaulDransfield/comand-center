@@ -36,6 +36,10 @@ interface SyncJob {
   detail:     string | null
   finishedAt: string | null
   error:      string | null
+  // Optional action target when `detail` should be clickable. Currently
+  // set on the 'invoices' job in the done state when there's a non-zero
+  // review queue waiting (task #69 owner-facing copy).
+  link?:      string | null
 }
 
 interface Feed {
@@ -257,7 +261,24 @@ function JobRow({ job }: { job: SyncJob }) {
       </span>
 
       {job.detail && (
-        <span style={{ color: UXP.ink3, whiteSpace: 'nowrap' }}>· {job.detail}</span>
+        job.link ? (
+          // Task #69 — action-oriented copy gets a click target. Use
+          // a real anchor so middle-click / open-in-new-tab works, and
+          // so it's keyboard-focusable for accessibility.
+          <a
+            href={job.link}
+            style={{
+              color:          UXP.lavDeep,
+              fontWeight:     600,
+              whiteSpace:     'nowrap',
+              textDecoration: 'none',
+              borderBottom:   `1px solid ${UXP.lav}`,
+            }}>
+            · {job.detail} →
+          </a>
+        ) : (
+          <span style={{ color: UXP.ink3, whiteSpace: 'nowrap' }}>· {job.detail}</span>
+        )
       )}
 
       {eta && !isDone && !isFailed && (

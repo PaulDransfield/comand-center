@@ -210,9 +210,13 @@ function buildInvoicesJob(invState: any): SyncJob {
 
   const needsReview = Number(progress.lines_needs_review ?? 0)
   let detail: string | null = null
+  // Action-oriented copy per task #69. The "newly added" framing is
+  // stronger than the older "items need review" — tells the owner the
+  // queue has just grown and points them at action. Banner makes this
+  // clickable via the `link` field.
   if (state === 'done') {
     detail = needsReview > 0
-      ? `${needsReview} items need review`
+      ? `${needsReview} newly added for review`
       : (found > 0 ? `${found} invoices scanned` : 'Invoices scanned')
   } else if (state === 'running') {
     if (found > 0) detail = `${processed} of ${found} invoices`
@@ -228,5 +232,9 @@ function buildInvoicesJob(invState: any): SyncJob {
     detail,
     finishedAt: invState.finished_at ?? null,
     error:      state === 'failed' ? (invState.error_message ?? 'Scan failed') : null,
-  }
+    // Click target for action-oriented detail (task #69). Only set on
+    // the invoices job + only when there's a real queue waiting — never
+    // show a dead link when there's nothing to review.
+    link:       state === 'done' && needsReview > 0 ? '/inventory/review' : null,
+  } as any
 }
