@@ -201,6 +201,14 @@ function AreaIconSvg({ name }: { name: AreaIcon }) {
           <path d="M12 12v9" />
         </svg>
       )
+    case 'chef-hat':
+      // Tabler-style chef hat: domed crown + flat band, 1.4 stroke.
+      return (
+        <svg {...common}>
+          <path d="M12 3a4 4 0 0 0 -4 4 4 4 0 0 0 -4 4c0 1.7 1.3 3.1 3 3.5V19a2 2 0 0 0 2 2h6a2 2 0 0 0 2 -2v-4.5c1.7 -0.4 3 -1.8 3 -3.5a4 4 0 0 0 -4 -4 4 4 0 0 0 -4 -4z" />
+          <path d="M7 15h10" />
+        </svg>
+      )
     case 'file-invoice':
       return (
         <svg {...common}>

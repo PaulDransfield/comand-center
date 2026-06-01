@@ -32,6 +32,7 @@ const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, lo
 import AppShell from '@/components/AppShell'
 import KpiCardUX from '@/components/ux/KpiCard'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
+import Sparkline from '@/components/ui/Sparkline'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr, fmtPct } from '@/lib/format'
 
@@ -285,6 +286,10 @@ export default function OverheadsPage() {
               benchmarks={benchmarks}
               total={total}
               monthsCovered={monthsCovered.size}
+              allRows={rows}
+              bizId={bizId}
+              year={year}
+              monthFilter={monthFilter}
             />
 
             {/* Line-item table */}
@@ -437,15 +442,53 @@ function FilterPill({ active, onClick, children }: any) {
 }
 
 // ── Subcategory breakdown ──────────────────────────────────────────
-function SubcategoryBreakdown({ subs, prevSubs, benchmarks, total, monthsCovered }: any) {
+// 6-month trend column derives a per-subcategory monthly series from the
+// raw line-item rows of the current year. We pick the LAST 6 months of
+// data we actually have rows for so the sparkline shows the recent
+// trajectory rather than zero-padded leading months.
+//
+// The "Invoices" column opens a drawer that fetches the Fortnox
+// drilldown for the current month-filter selection (year + month +
+// category=other_cost) and shows the invoices touching that subcategory
+// with one-click PDF buttons — same pattern as /suppliers.
+function SubcategoryBreakdown({
+  subs, prevSubs, benchmarks, total, monthsCovered,
+  allRows, bizId, year, monthFilter,
+}: any) {
+  const [openSub, setOpenSub] = useState<any>(null)
   if (!subs || subs.length === 0) return null
   const top = subs.slice(0, 12)
+
+  // Build the per-subcategory 6-month series.
+  // We bucket allRows by (subcategory_key, month) and emit the last 6
+  // months that have ANY data across all subs (so all sparklines share
+  // the same x-axis).
+  const trendBySub = useMemo(() => {
+    const monthsWithData = new Set<number>()
+    const byKey: Record<string, Record<number, number>> = {}
+    for (const r of (allRows ?? [])) {
+      const key = r.subcategory ?? r.label_sv ?? 'other'
+      const m = r.period_month
+      monthsWithData.add(m)
+      if (!byKey[key]) byKey[key] = {}
+      byKey[key][m] = (byKey[key][m] ?? 0) + Number(r.amount ?? 0)
+    }
+    const sortedMonths = Array.from(monthsWithData).sort((a, b) => a - b)
+    const sliceMonths  = sortedMonths.slice(-6) // trailing 6
+    const out: Record<string, { months: number[]; series: number[] }> = {}
+    for (const [k, bucket] of Object.entries(byKey)) {
+      const series = sliceMonths.map(m => bucket[m] ?? 0)
+      out[k] = { months: sliceMonths, series }
+    }
+    return out
+  }, [allRows])
+
   return (
     <div>
       <div style={{ marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>Subcategory breakdown</div>
         <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-          Ranked by spend · YoY chip when prior-year data exists
+          Ranked by spend · 6-mo trend · YoY chip · click invoices for PDF
         </div>
       </div>
       <BreakdownTable
@@ -471,6 +514,24 @@ function SubcategoryBreakdown({ subs, prevSubs, benchmarks, total, monthsCovered
           } },
           { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => fmtKr(r.total_kr) },
           { key: 'months', header: 'Months', align: 'right', render: (r: any) => `${r.months_seen} of ${monthsCovered}` },
+          { key: 'trend', header: '6-mo trend', align: 'right', render: (r: any) => {
+            const t = trendBySub[r.key]
+            if (!t || t.series.length < 2) return <span style={{ color: UXP.ink4 }}>—</span>
+            // Tone: compare last value to mean of earlier values.
+            const last = t.series[t.series.length - 1]
+            const earlier = t.series.slice(0, -1)
+            const mean = earlier.reduce((s, v) => s + v, 0) / Math.max(1, earlier.length)
+            const tone: 'good' | 'bad' | 'warning' | 'neutral' =
+              mean === 0                        ? 'neutral'
+              : last > mean * 1.10              ? 'bad'
+              : last < mean * 0.90              ? 'good'
+              :                                   'warning'
+            return (
+              <span style={{ display: 'inline-block' }}>
+                <Sparkline points={t.series} tone={tone} width={88} height={20} />
+              </span>
+            )
+          } },
           { key: 'yoy', header: 'YoY', align: 'right', render: (r: any) => {
             const prev = prevSubs?.find((p: any) => p.key === r.key)
             if (!prev || prev.total_kr === 0) return <span style={{ color: UXP.ink4 }}>—</span>
@@ -498,20 +559,52 @@ function SubcategoryBreakdown({ subs, prevSubs, benchmarks, total, monthsCovered
               </span>
             )
           } },
+          { key: 'invoices', header: '', align: 'right', render: (r: any) => (
+            <button
+              type="button"
+              onClick={() => setOpenSub(r)}
+              style={{
+                padding:      '3px 8px',
+                background:   UXP.lavFill,
+                color:        UXP.lavText,
+                border:       'none',
+                borderRadius: 999,
+                fontSize:     9,
+                fontWeight:   500,
+                fontFamily:   'inherit',
+                cursor:       'pointer',
+                letterSpacing: '0.02em',
+              }}
+            >
+              Invoices →
+            </button>
+          ) },
         ]}
         sections={[{ rows: top }]}
         footer={{
           label: 'Total',
           cells: {
-            bar:    '',
-            amount: fmtKr(total),
-            months: '',
-            yoy:    '',
-            bench:  '',
+            bar:      '',
+            amount:   fmtKr(total),
+            months:   '',
+            trend:    '',
+            yoy:      '',
+            bench:    '',
+            invoices: '',
           },
         }}
         rowKey={(row: any) => row.key}
       />
+      {openSub && (
+        <OverheadInvoiceDrawer
+          sub={openSub}
+          bizId={bizId}
+          year={year}
+          monthFilter={monthFilter}
+          monthlySeries={trendBySub[openSub.key] ?? null}
+          onClose={() => setOpenSub(null)}
+        />
+      )}
     </div>
   )
 }
@@ -661,6 +754,304 @@ function MiniStat({ label, value }: { label: string; value: string }) {
         marginTop:          2,
         fontVariantNumeric: 'tabular-nums' as const,
       }}>{value}</div>
+    </div>
+  )
+}
+
+// ── Invoice drilldown drawer ───────────────────────────────────────
+// Mirror of the /suppliers InvoiceDrawer pattern. On open: POST to the
+// existing /api/integrations/fortnox/drilldown for each month covered
+// (cached server-side at 5min TTL so subsequent opens are cheap), then
+// filter the supplier-invoice list to those touching THIS subcategory.
+//
+// PDF buttons stream through the existing /api/integrations/fortnox/file
+// proxy in an inline iframe modal — never link out to Fortnox web.
+function OverheadInvoiceDrawer({
+  sub, bizId, year, monthFilter, monthlySeries, onClose,
+}: {
+  sub: any
+  bizId: string | null
+  year: number
+  monthFilter: 'all' | number
+  monthlySeries: { months: number[]; series: number[] } | null
+  onClose: () => void
+}) {
+  const [loading,  setLoading]  = useState(false)
+  const [invoices, setInvoices] = useState<any[]>([])
+  const [error,    setError]    = useState<string | null>(null)
+  const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
+
+  // Months to query: respect monthFilter when set, else hit every month
+  // in monthlySeries.months (the months we know have data — typically
+  // the trailing 6). Each is a separate cached drilldown call.
+  const monthsToQuery = useMemo(() => {
+    if (monthFilter !== 'all') return [monthFilter]
+    return monthlySeries?.months ?? []
+  }, [monthFilter, monthlySeries])
+
+  useEffect(() => {
+    if (!bizId || monthsToQuery.length === 0) {
+      setInvoices([])
+      return
+    }
+    let cancelled = false
+    async function load() {
+      setLoading(true)
+      setError(null)
+      try {
+        const responses = await Promise.all(monthsToQuery.map(month =>
+          fetch('/api/integrations/fortnox/drilldown', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ business_id: bizId, year, month, category: 'other_cost' }),
+            cache:   'no-store',
+          }).then(r => r.ok ? r.json() : { error: `HTTP ${r.status}` }),
+        ))
+        const targetKey = sub.subcategory ?? sub.label ?? sub.key
+        const targetKeyLc = String(targetKey ?? '').toLowerCase().trim()
+        const labelLc     = String(sub.label ?? '').toLowerCase().trim()
+        const flat: any[] = []
+        for (const resp of responses) {
+          if (!resp || resp.error) {
+            if (resp?.error) setError(String(resp.error))
+            continue
+          }
+          for (const supplier of (resp.suppliers ?? [])) {
+            for (const inv of (supplier.invoices ?? [])) {
+              // Match the subcategory by description/account-description
+              // substring. tracker_line_items.subcategory is derived from
+              // the same source classify.ts uses; matching by description
+              // is the most reliable client-side filter.
+              const desc  = String(inv.description ?? '').toLowerCase()
+              const accD  = String(inv.account_description ?? '').toLowerCase()
+              const accNo = String(inv.account ?? '')
+              if (
+                desc.includes(targetKeyLc) ||
+                desc.includes(labelLc) ||
+                accD.includes(targetKeyLc) ||
+                accD.includes(labelLc) ||
+                // Fallback when subcategory is the BAS account number itself
+                accNo === targetKeyLc
+              ) {
+                flat.push({ ...inv, _supplier_name: supplier.supplier_name })
+              }
+            }
+          }
+        }
+        flat.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')))
+        if (!cancelled) setInvoices(flat)
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? String(e))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [bizId, year, monthsToQuery.join(','), sub.key])
+
+  const totalShown = invoices.reduce((s, i) => s + Number(i.amount ?? 0), 0)
+
+  return (
+    <div role="dialog" aria-label={`Invoices for ${sub.label}`} style={{
+      position:   'fixed' as const,
+      top:        0, right: 0, bottom: 0,
+      width:      'min(460px, 100%)',
+      background: UXP.cardBg,
+      borderLeft: `0.5px solid ${UXP.border}`,
+      boxShadow:  '-8px 0 24px rgba(58,53,80,0.08)',
+      padding:    '18px 22px',
+      overflow:   'auto' as const,
+      zIndex:     50,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, marginBottom: 4 }}>
+            Subcategory
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 500, color: UXP.ink1, textTransform: 'capitalize' as const }}>{sub.label}</div>
+          <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 4 }}>
+            {monthFilter === 'all'
+              ? `${monthsToQuery.length} month${monthsToQuery.length === 1 ? '' : 's'} · ${year}`
+              : `${MONTHS[monthFilter - 1]} ${year}`}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 16 }}
+        >×</button>
+      </div>
+
+      {/* Summary stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+        <DrawerStat label="Year total" value={fmtKr(sub.total_kr)} />
+        <DrawerStat label="Shown" value={loading ? '…' : fmtKr(totalShown)} />
+        <DrawerStat label="Invoices" value={loading ? '…' : String(invoices.length)} />
+      </div>
+
+      {/* Invoice list */}
+      <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500, marginBottom: 6 }}>
+        Invoices touching this subcategory
+      </div>
+      {loading && (
+        <div style={{ padding: '20px 0', textAlign: 'center' as const, fontSize: 11, color: UXP.ink3 }}>
+          Loading from Fortnox…
+        </div>
+      )}
+      {error && !loading && (
+        <div style={{ padding: '10px 12px', background: UXP.roseFill, border: `0.5px solid ${UXP.rose}`, borderRadius: 6, fontSize: 11, color: UXP.roseText, marginBottom: 10 }}>
+          {error}
+        </div>
+      )}
+      {!loading && !error && invoices.length === 0 && (
+        <div style={{ fontSize: 11, color: UXP.ink4, padding: '14px 0' }}>
+          No matching invoices for this subcategory in the queried month(s). Try selecting a different month from the filter above.
+        </div>
+      )}
+      {!loading && invoices.length > 0 && (
+        <div style={{ display: 'grid', gap: 0 }}>
+          {invoices.slice(0, 30).map((inv, idx) => (
+            <div key={`${inv.source_id}-${idx}`} style={{
+              display:             'grid',
+              gridTemplateColumns: '1fr auto auto',
+              gap:                 12,
+              padding:             '10px 0',
+              borderBottom:        idx < Math.min(invoices.length, 30) - 1 ? `0.5px solid ${UXP.borderSoft}` : 'none',
+              alignItems:          'center',
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                  {inv._supplier_name ?? 'Manual journal'}
+                </div>
+                <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1, fontFamily: 'ui-monospace, monospace' }}>
+                  #{inv.invoice_number} · {inv.date} · BAS {inv.account}
+                </div>
+              </div>
+              <span style={{
+                fontSize:           11,
+                fontWeight:         500,
+                color:              UXP.ink1,
+                fontVariantNumeric: 'tabular-nums' as const,
+                minWidth:           80,
+                textAlign:          'right' as const,
+              }}>
+                {fmtKr(Number(inv.amount ?? 0))}
+              </span>
+              {bizId && inv.file_id ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `/api/integrations/fortnox/file?business_id=${encodeURIComponent(bizId)}&file_id=${encodeURIComponent(inv.file_id)}`
+                    setPdfModal({ url, title: `${inv._supplier_name ?? 'Invoice'} — #${inv.invoice_number}` })
+                  }}
+                  style={{
+                    padding:        '4px 10px',
+                    background:     UXP.lavFill,
+                    color:          UXP.lavText,
+                    border:         'none',
+                    borderRadius:   999,
+                    fontSize:       10,
+                    fontWeight:     500,
+                    cursor:         'pointer',
+                    fontFamily:     'inherit',
+                  }}
+                >PDF</button>
+              ) : inv.fortnox_url ? (
+                <a
+                  href={inv.fortnox_url} target="_blank" rel="noopener noreferrer"
+                  style={{
+                    padding: '4px 10px', background: 'transparent',
+                    color: UXP.ink3, border: `0.5px solid ${UXP.border}`,
+                    borderRadius: 999, fontSize: 10, fontWeight: 500,
+                    textDecoration: 'none', fontFamily: 'inherit',
+                  }}
+                >Fortnox ↗</a>
+              ) : (
+                <span style={{ color: UXP.ink4, fontSize: 10 }}>—</span>
+              )}
+            </div>
+          ))}
+          {invoices.length > 30 && (
+            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, textAlign: 'center' as const }}>
+              {invoices.length - 30} more invoices not shown — filter by a single month to narrow.
+            </div>
+          )}
+        </div>
+      )}
+
+      {pdfModal && (
+        <OverheadPdfModal url={pdfModal.url} title={pdfModal.title} onClose={() => setPdfModal(null)} />
+      )}
+    </div>
+  )
+}
+
+function DrawerStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ background: UXP.subtleBg, padding: '8px 10px', borderRadius: 8 }}>
+      <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>{label}</div>
+      <div style={{
+        fontSize:           13,
+        fontWeight:         500,
+        color:              UXP.ink1,
+        marginTop:          2,
+        fontVariantNumeric: 'tabular-nums' as const,
+      }}>{value}</div>
+    </div>
+  )
+}
+
+// Inline PDF viewer — embedded iframe of /api/integrations/fortnox/file.
+// Esc closes. Footer has 'Open in new tab' fallback for browsers that
+// don't render PDFs in iframes (rare mobile Chrome).
+function OverheadPdfModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div onClick={onClose}
+      style={{
+        position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.65)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 200, padding: 16,
+      }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{
+          width: 'min(960px, 100%)', height: '90vh',
+          background: '#fff', borderRadius: 8, overflow: 'hidden' as const,
+          display: 'flex', flexDirection: 'column' as const,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.40)',
+        }}>
+        <div style={{
+          padding: '10px 14px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                background: 'transparent', color: UXP.ink3,
+                border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                textDecoration: 'none', fontFamily: 'inherit',
+              }}>Open in new tab ↗</a>
+            <button onClick={onClose}
+              style={{
+                padding: '5px 12px', fontSize: 11, fontWeight: 600,
+                background: UXP.ink1, color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Close (Esc)</button>
+          </div>
+        </div>
+        <iframe src={url} title="Invoice PDF"
+          style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }} />
+      </div>
     </div>
   )
 }

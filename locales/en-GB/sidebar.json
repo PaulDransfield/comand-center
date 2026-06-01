@@ -66,15 +66,20 @@
     "inventory": {
       "label": "Inventory",
       "pages": {
-        "items":       "Catalogue",
-        "review":      "Bulk review",
-        "skipped":     "Skipped suppliers",
+        "items":       "Articles",
+        "review":      "Article review",
+        "skipped":     "Non-inventory suppliers",
         "extractions": "PDF review",
-        "recipes":     "Recipes",
-        "sales":       "Sales (manual)",
+        "sales":       "Connect dishes to POS",
         "counts":      "Stock counts",
         "waste":       "Waste",
         "variance":    "Variance"
+      }
+    },
+    "recipes": {
+      "label": "Recipes",
+      "pages": {
+        "recipes": "Recipes"
       }
     },
     "bookkeeping": {

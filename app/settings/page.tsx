@@ -274,6 +274,28 @@ export default function SettingsPage() {
           <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
         </a>
 
+        {/* Integrations — link card to /integrations */}
+        <a
+          href="/integrations"
+          style={{
+            ...S.card,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            textDecoration: 'none',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <div>
+            <div style={S.title}>Integrations</div>
+            <div style={{ fontSize: 12, color: UXP.ink3, marginTop: 2 }}>
+              Connect Fortnox, Personalkollen, POS systems and other tools per business. Reconnect when an integration drops.
+            </div>
+          </div>
+          <span style={{ fontSize: 13, color: UXP.lavDeep, fontWeight: 500 }}>Manage →</span>
+        </a>
+
         {/* Restaurants */}
         <div style={S.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>

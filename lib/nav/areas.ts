@@ -20,6 +20,7 @@ export type AreaKey =
   | 'insights'
   | 'schedule'
   | 'inventory'
+  | 'recipes'
   | 'bookkeeping'
   | 'alerts'
   | 'ask'
@@ -44,6 +45,7 @@ export type AreaIcon =
   | 'chart-pie'
   | 'calendar-event'
   | 'box'
+  | 'chef-hat'
   | 'file-invoice'
   | 'alert-triangle'
   | 'sparkles'
@@ -85,20 +87,31 @@ export const AREAS: Area[] = [
     key:   'inventory',
     label: 'Inventory',
     icon:  'box',
-    // Catalogue is real (built from supplier invoices). Extractions is
-    // the review queue (Phase B.4). Recipes / counts / waste remain
-    // vision-stage behind a DemoDataBanner — kept here so the area is
-    // discoverable; will pull through useTranslations in a later pass.
+    // Articles (formerly Catalogue) is real (built from supplier
+    // invoices). Article review (formerly Bulk review) is the review
+    // queue. Non-inventory suppliers (formerly Skipped suppliers) is
+    // the owner-overridden classification list. Counts / waste /
+    // variance remain vision-stage behind a DemoDataBanner.
     pages: [
-      { key: 'items',       label: 'Catalogue',         href: '/inventory/items' },
-      { key: 'review',      label: 'Bulk review',       href: '/inventory/review' },
-      { key: 'skipped',     label: 'Skipped suppliers', href: '/inventory/skipped' },
-      { key: 'extractions', label: 'PDF review',        href: '/inventory/extractions' },
-      { key: 'recipes',     label: 'Recipes',           href: '/inventory/recipes' },
-      { key: 'sales',       label: 'Sales (manual)',    href: '/inventory/sales' },
-      { key: 'counts',      label: 'Stock counts',      href: '/inventory/counts' },
-      { key: 'waste',       label: 'Waste',             href: '/inventory/waste' },
-      { key: 'variance',    label: 'Variance',          href: '/inventory/variance' },
+      { key: 'items',       label: 'Articles',                   href: '/inventory/items' },
+      { key: 'review',      label: 'Article review',             href: '/inventory/review' },
+      { key: 'skipped',     label: 'Non-inventory suppliers',    href: '/inventory/skipped' },
+      { key: 'extractions', label: 'PDF review',                 href: '/inventory/extractions' },
+      { key: 'sales',       label: 'Connect dishes to POS',      href: '/inventory/sales' },
+      { key: 'counts',      label: 'Stock counts',               href: '/inventory/counts' },
+      { key: 'waste',       label: 'Waste',                      href: '/inventory/waste' },
+      { key: 'variance',    label: 'Variance',                   href: '/inventory/variance' },
+    ],
+  },
+  {
+    key:   'recipes',
+    label: 'Recipes',
+    icon:  'chef-hat',
+    // Lifted out of Inventory 2026-06-01 — recipes are the heart of
+    // dish-level margin and a top-level operator concern, not a
+    // bookkeeping artefact of supplier invoices.
+    pages: [
+      { key: 'recipes', label: 'Recipes', href: '/inventory/recipes' },
     ],
   },
   {

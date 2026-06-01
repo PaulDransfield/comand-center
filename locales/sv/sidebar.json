@@ -66,15 +66,20 @@
     "inventory": {
       "label": "Lager",
       "pages": {
-        "items":       "Katalog",
-        "review":      "Massgranskning",
-        "skipped":     "Överhoppade leverantörer",
+        "items":       "Artiklar",
+        "review":      "Artikelgranskning",
+        "skipped":     "Icke-lagerleverantörer",
         "extractions": "PDF-granskning",
-        "recipes":     "Recept",
-        "sales":       "Försäljning (manuell)",
+        "sales":       "Koppla rätter till kassan",
         "counts":      "Lagerräkning",
         "waste":       "Svinn",
         "variance":    "Avvikelse"
+      }
+    },
+    "recipes": {
+      "label": "Recept",
+      "pages": {
+        "recipes": "Recept"
       }
     },
     "bookkeeping": {
