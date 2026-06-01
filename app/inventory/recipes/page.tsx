@@ -839,9 +839,31 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                       ← {t('detail.back')}
                     </button>
                   )}
-                  <div style={{ fontSize: 10, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
-                    {data.recipe.type ? t(`type.${data.recipe.type}`) : t('type.other')}
-                  </div>
+                  {/* Type is editable inline — bulk-import sets it to NULL
+                      since the AI doesn't know the dish category, and
+                      owners want to fix it later without re-opening the
+                      whole recipe. PATCH supports type:null already, so
+                      "—" sends null. */}
+                  <select
+                    value={data.recipe.type ?? ''}
+                    onChange={e => patchRecipe({ type: e.target.value || null })}
+                    style={{
+                      fontSize:      10,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase' as const,
+                      color:         UXP.ink4,
+                      background:    'transparent',
+                      border:        'none',
+                      padding:       0,
+                      cursor:        'pointer',
+                      fontFamily:    'inherit',
+                    }}
+                  >
+                    <option value="">—</option>
+                    {RECIPE_TYPES.map(k => (
+                      <option key={k} value={k}>{t(`type.${k}`)}</option>
+                    ))}
+                  </select>
                   <div style={{ fontSize: 18, fontWeight: 600, color: UXP.ink1, marginTop: 2 }}>{data.recipe.name}</div>
                 </div>
                 <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 18 }}>×</button>
