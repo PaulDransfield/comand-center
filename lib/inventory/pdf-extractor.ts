@@ -679,31 +679,66 @@ INCLUSIVE vs EXCLUSIVE OF VAT — second most common bug:
 - The sum of total_excl_vat across all rows MUST match the invoice's
   ex-VAT header total within ~2%, NOT the inc-VAT "att betala" total.
 
-MULTI-INVOICE REBILLS — third common pattern:
+MULTI-INVOICE / PASSTHROUGH / REBILL — third common pattern:
 - Some PDFs contain MULTIPLE invoices or receipts stitched together:
   the supplier's invoice to YOU on page 1, then the supplier's OWN
-  underlying purchase receipt from a wholesaler attached as pages 2+.
-  Common when a small supplier resells / passes through goods from
-  Axfood Snabbgross, Martin Servera, Menigo, Granngården, etc.
+  underlying purchase receipt OR detailed itemization attached as
+  pages 2+. Common when a small supplier resells / passes through
+  goods from Axfood Snabbgross, Martin Servera, Menigo, Granngården,
+  or distributes goods from a producer (Marini/Rima, etc).
 - The supplier hint we pass in (\`Supplier on Fortnox\`) tells you who
   ACTUALLY billed the buyer. That is the supplier whose invoice you
   should extract.
-- Extract ONLY from the TOP-LEVEL invoice — the one from the supplier
-  on the Fortnox header. IGNORE attached receipts from other
-  suppliers. The buyer only owes the rebilled amount, not the
-  underlying full purchase. Detail receipts are supporting docs.
-- The top-level rebill line is often a single line like:
-    "Axfood 0021035252  1 st  1 610,00 kr"
-  Extract that one line as-is. DO NOT dig into the attached Axfood
-  receipt to enumerate 15 product rows — the buyer didn't receive
-  all 15 of those items in those quantities.
-- Indicators that a PDF is a rebill:
-    * "Sida 1(1)" on page 1 followed by a separate "Sida 1(2)" or
-      "Faktura" header from a DIFFERENT supplier on page 2
-    * Two distinct organisationsnummer (one per invoice section)
-    * The page-1 line description references the other supplier's
-      invoice number directly (e.g. "Axfood 0021035252")
-    * Total mismatch between page-1 sum and pages-2+ sum
+- Two sub-classes exist; you MUST distinguish them by RECONCILIATION,
+  not by keyword pattern. The discriminator is whether the page-2+
+  itemized rows SUM (within ~5 %) to the page-1 line they appear
+  beneath:
+
+  (A) PASSTHROUGH — page-1 has a SUMMARY line; page-2+ enumerates the
+  items it summarises; the itemization SUMS to the summary line.
+  The buyer DID receive every page-2 item; the summary is just the
+  total. → Extract the page-2 ITEMS (every product row, with their
+  own quantities and prices). OMIT the page-1 summary line. The
+  extracted items will still sum to the invoice header total — the
+  totals reconcile, no double-counting.
+  - Typical phrasing on the summary line: "Levererat från X 2025 MM",
+    "Sammanställning för perioden", "Summa enligt bilaga",
+    "Period delivery", or just the supplier-period as a single line.
+  - The page-2 items have their own descriptions, qty, ppu, total —
+    they're a full itemization, not a one-line aggregate.
+
+  (B) THIN REBILL — page-1 has a single rebill line (often referencing
+  an underlying receipt number like "Axfood 0021035252"); the attached
+  receipt itemizes a DIFFERENT, LARGER total because the rebiller only
+  passed through SOME of the underlying purchases (or only one
+  receipt's worth out of many). The receipt is informational / audit
+  trail, not what the buyer actually owes. → Extract ONLY the page-1
+  rebill line. IGNORE the attached receipt items — they would record
+  goods the buyer didn't receive.
+  - Typical phrasing: "Axfood NNNNNNN", "Faktura NNNNNNN", "Snabbgross
+    NNNNNN" referencing the underlying supplier+receipt number.
+  - The attached receipt total > the rebilled amount (or != it
+    materially).
+
+- HOW TO DECIDE — apply the reconciliation test:
+    1. Sum the page-2+ itemized rows.
+    2. Compare to the page-1 summary/rebill line total.
+    3. If they match within ~5 % → PASSTHROUGH (case A). Extract the
+       page-2 items, drop the page-1 summary.
+    4. If they DON'T match (page-2 total > page-1 total, or the page-2
+       items belong to a different supplier+receipt than the page-1
+       line and don't sum to it) → THIN REBILL (case B). Extract only
+       the page-1 line, ignore the attachment.
+- Do NOT use the page-1 wording alone to decide. "Levererat från X"
+  and "Axfood NNNNNNN" can BOTH appear on rebills OR passthroughs —
+  reconciliation is the discriminator. The earlier wording-based rule
+  caused real passthrough invoices (Laweka/Eventcenter "Levererat från
+  Marini/Rima") to be mis-classified as rebills, losing ~225 line items.
+- Note: in case A, you are still extracting one supplier's invoice
+  (the one on the Fortnox header). The page-2 itemization IS that
+  supplier's itemization of the goods they billed for; you're not
+  enumerating a different supplier's receipt. In case B you ARE
+  looking at a different supplier's receipt, which is why you skip it.
 
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
@@ -762,6 +797,13 @@ interface ClaudeCallResult {
   tokensIn:   number
   tokensOut:  number
 }
+
+// Exported for the rebill-rule dry-run admin endpoint. Direct re-export
+// so the dry-run path uses the EXACT same prompt + model wiring as prod —
+// the whole point is to verify what the updated SYSTEM_PROMPT does on the
+// known passthrough/rebill set without persisting to DB.
+export { fetchPdfBytes as _dryRunFetchPdfBytes }
+export { callClaude    as _dryRunCallClaude }
 
 async function callClaude(pdfBase64: string, input: ExtractInput, model: string): Promise<ClaudeCallResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY
