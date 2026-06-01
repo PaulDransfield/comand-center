@@ -367,6 +367,15 @@ export default function PrepListPage() {
       const r2 = await fetch(`/api/inventory/prep-sessions/${s.id}`, { cache: 'no-store' })
       if (!r2.ok) throw new Error((await r2.json().catch(() => ({}))).error ?? `HTTP ${r2.status}`)
       const { session, lines } = await r2.json()
+      // Temporary debug — owner reports meta empty in modal despite data being present
+      // server-side. Logs the meta shape per line so we can see if the API is returning
+      // it correctly to the browser. Remove once verified.
+      if (typeof window !== 'undefined') {
+        console.log('[prep] loadActiveSession lines:', lines?.length)
+        for (const l of (lines ?? [])) {
+          console.log(`[prep]  ${l.kind} ${l.name_snapshot}: meta=`, l.meta)
+        }
+      }
       setActiveSession(session)
       setSessionLines(lines ?? [])
     } catch (e: any) {
