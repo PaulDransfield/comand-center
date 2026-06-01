@@ -221,11 +221,14 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                       </select>
                     </Field>
                   </div>
-                  <Field label="Default waste % (auto-fills new recipe lines)">
+                  <Field label="Default waste %">
                     <input type="number" step="1" min="0" max="95"
                       value={current.default_waste_pct ?? 0}
                       onChange={e => setEdits(p => ({ ...p, default_waste_pct: Number(e.target.value) }))}
                       style={inputStyle} />
+                    <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 3, lineHeight: 1.4 }}>
+                      Applies to NEW recipe lines added after this save. Existing recipe lines keep their own waste — change them per-line in the recipe drawer.
+                    </div>
                   </Field>
                   <Field label="Price override (kr)">
                     <input type="number" step="0.01" min="0" value={current.price_override ?? ''}
