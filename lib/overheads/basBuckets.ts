@@ -105,6 +105,7 @@ export const BAS_BUCKET_MAP: Record<string, BucketEntry> = {
 
   // 56xx — Vehicle / delivery
   '5611': { sub: 'vehicle',        label_sv: 'Drivmedel',                label_en: 'Fuel' },
+  '5612': { sub: 'vehicle',        label_sv: 'Försäkring & skatt fordon', label_en: 'Vehicle insurance & tax' },
   '5613': { sub: 'vehicle',        label_sv: 'Fordonsskatt',             label_en: 'Vehicle tax' },
   '5615': { sub: 'vehicle',        label_sv: 'Fordonsförsäkring',        label_en: 'Vehicle insurance' },
   '5619': { sub: 'vehicle',        label_sv: 'Övriga fordonskostnader',  label_en: 'Other vehicle costs' },
@@ -169,6 +170,8 @@ export const BAS_BUCKET_MAP: Record<string, BucketEntry> = {
   // 69xx — Other admin
   '6910': { sub: 'memberships',    label_sv: 'Föreningsavgifter',        label_en: 'Memberships' },
   '6950': { sub: 'bank_fees',      label_sv: 'Bankavgifter',             label_en: 'Bank fees' },
+  '6981': { sub: 'memberships',    label_sv: 'Föreningsavgifter, avdr.',  label_en: 'Memberships (deductible)' },
+  '6982': { sub: 'memberships',    label_sv: 'Föreningsavgifter, ej avdr.', label_en: 'Memberships (non-deductible)' },
   '6991': { sub: 'bank_fees',      label_sv: 'Övriga bankavgifter',      label_en: 'Other bank fees' },
   '6992': { sub: 'other_admin',    label_sv: 'Övriga admin­kostnader',   label_en: 'Other admin costs' },
 

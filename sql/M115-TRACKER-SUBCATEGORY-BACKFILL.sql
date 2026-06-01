@@ -104,6 +104,7 @@ SET subcategory = CASE fortnox_account::text
 
   -- 56xx — Vehicle / delivery
   WHEN '5611' THEN 'vehicle'
+  WHEN '5612' THEN 'vehicle'
   WHEN '5613' THEN 'vehicle'
   WHEN '5615' THEN 'vehicle'
   WHEN '5619' THEN 'vehicle'
@@ -161,6 +162,8 @@ SET subcategory = CASE fortnox_account::text
   WHEN '6800' THEN 'consulting'
   WHEN '6910' THEN 'memberships'
   WHEN '6950' THEN 'bank_fees'
+  WHEN '6981' THEN 'memberships'
+  WHEN '6982' THEN 'memberships'
   WHEN '6991' THEN 'bank_fees'
   WHEN '6992' THEN 'other_admin'
 
