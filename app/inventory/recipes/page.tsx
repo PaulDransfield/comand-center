@@ -563,7 +563,7 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                   in IngredientRow so headers sit directly above the numbers. */}
               {data.summary.ingredients.length > 0 && (
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
+                  display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
                   padding: '4px 0', fontSize: 9, color: UXP.ink4,
                   letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600,
                   borderBottom: `0.5px solid ${UXP.border}`,
@@ -775,7 +775,7 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
         borderRadius: highlighted ? 4 : 0,
       }}>
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
+        display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
         alignItems: 'center', fontSize: 12,
       }}>
         <div style={{ minWidth: 0 }}>
