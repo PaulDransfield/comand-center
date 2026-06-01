@@ -709,3 +709,204 @@ export async function getProductLatestPrices(
 
   return out
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Price-trend reader
+//
+// Used by the edit-item modal to display "X% senaste veckan" alongside
+// the current cost. Splits a product's recent supplier_invoice_lines into
+// two windows (most-recent vs prior) and returns the delta as a signed
+// percentage. Returns null when there's too little history — the modal
+// MUST render that as honest absence ("ingen prishistorik") and not as
+// "0.0% stable", per the prompt's honest-incomplete-state rule.
+// ─────────────────────────────────────────────────────────────────────
+export interface ProductPriceTrend {
+  latest_price:  number
+  prev_price:    number
+  delta_pct:     number    // signed: positive = price rose
+  latest_date:   string
+  prev_date:     string
+  window_days:   number
+  data_points:   number    // total invoice lines used to compute the trend
+}
+
+export async function getProductPriceTrend(
+  db: any,
+  businessId: string,
+  productId: string,
+  windowDays = 7,
+): Promise<ProductPriceTrend | null> {
+  // Find aliases for this product (one product → may have several aliases
+  // across suppliers/SKUs). All matched lines via those aliases feed the
+  // trend reader — the trend is product-level, not alias-level.
+  const { data: aliases } = await db
+    .from('product_aliases')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('product_id', productId)
+    .eq('is_active', true)
+  const aliasIds = (aliases ?? []).map((a: any) => a.id)
+  if (aliasIds.length === 0) return null
+
+  // Recent matched lines with the per-line ground-truth price (post-merge
+  // we derive total/qty rather than trust raw price_per_unit).
+  const { data: lines } = await db
+    .from('supplier_invoice_lines')
+    .select('invoice_date, quantity, total_excl_vat, price_per_unit')
+    .eq('business_id', businessId)
+    .eq('match_status', 'matched')
+    .in('product_alias_id', aliasIds)
+    .order('invoice_date', { ascending: false })
+    .limit(50)
+  if (!lines || lines.length < 2) return null
+
+  // Per-line price = total / qty when both present (matches the engine's
+  // ground-truth rule); fall back to raw price_per_unit otherwise.
+  const priced = lines.map((l: any) => {
+    const qty = Number(l.quantity ?? 0)
+    const tot = Number(l.total_excl_vat ?? 0)
+    const ppu = Number.isFinite(qty) && qty > 0 && Number.isFinite(tot) && tot !== 0
+      ? tot / qty
+      : (l.price_per_unit != null ? Number(l.price_per_unit) : null)
+    return { date: l.invoice_date, ppu }
+  }).filter((p: any) => p.ppu != null && Number.isFinite(p.ppu))
+  if (priced.length < 2) return null
+
+  // Latest = the single most-recent line. Prev = the most-recent line
+  // outside the latest-window-days window. If no prior data point falls
+  // beyond the window (e.g. the supplier ships weekly and all data is
+  // from the last week), return null — owner sees "ingen prishistorik"
+  // rather than a delta computed against a same-week sibling.
+  const latest = priced[0]
+  const latestTime = new Date(latest.date).getTime()
+  const cutoffTime = latestTime - windowDays * 24 * 60 * 60 * 1000
+  const prev = priced.slice(1).find((p: any) => new Date(p.date).getTime() < cutoffTime)
+  if (!prev) return null
+
+  const deltaPct = ((latest.ppu - prev.ppu) / Math.abs(prev.ppu)) * 100
+  return {
+    latest_price: Math.round(latest.ppu * 100) / 100,
+    prev_price:   Math.round(prev.ppu   * 100) / 100,
+    delta_pct:    Math.round(deltaPct * 10) / 10,
+    latest_date:  latest.date,
+    prev_date:    prev.date,
+    window_days:  windowDays,
+    data_points:  priced.length,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Product-cost reliability signal
+//
+// FIRST-CLASS REQUIREMENT for the edit-item modal: surface when a
+// product's price comes from an extraction the system itself doesn't
+// trust. Without this, the modal would show e.g. "331 kr/kg" with quiet
+// confidence on a Laweka product whose underlying invoice line is wrong
+// by an order of magnitude (per-line value-extraction bug, pending fix).
+//
+// Two independent checks; if EITHER fires, the product is "unreliable":
+//
+//   1. Per-line internal inconsistency: the most-recent matched
+//      supplier_invoice_line has quantity × price_per_unit ≉ total_excl_vat
+//      (more than 5% off). This catches the Marini/Rima per-line bug
+//      directly without needing to find the parent extraction record.
+//
+//   2. Parent extraction was flagged: the line's invoice has an
+//      invoice_pdf_extractions row whose validation_warnings contains
+//      'over_extraction' or 'total_mismatch'. Belt-and-braces against
+//      future failure modes where the per-line numbers look internally
+//      consistent but the aggregate extraction was wrong.
+//
+// Returns { reliable: true } when both checks pass, { reliable: false,
+// reason } when either fires. Callers MUST render the reason; never
+// silently default to "reliable" if the check errors.
+// ─────────────────────────────────────────────────────────────────────
+export interface ProductReliabilitySignal {
+  reliable: boolean
+  reason:   string | null     // owner-facing, in English (UI localises if needed)
+  evidence: {
+    invoice_number?:           string | null
+    invoice_date?:             string | null
+    qty?:                      number | null
+    price_per_unit?:           number | null
+    total_excl_vat?:           number | null
+    extraction_warning_codes?: string[]
+  } | null
+}
+
+const LINE_CONSISTENCY_TOL_PCT = 0.05   // qty × ppu within 5% of total_excl_vat
+
+export async function getProductReliabilitySignal(
+  db: any,
+  businessId: string,
+  productId: string,
+): Promise<ProductReliabilitySignal> {
+  const { data: aliases } = await db
+    .from('product_aliases')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('product_id', productId)
+    .eq('is_active', true)
+  const aliasIds = (aliases ?? []).map((a: any) => a.id)
+  if (aliasIds.length === 0) {
+    return { reliable: false, reason: 'No supplier invoice yet — price will be reliable once an invoice is matched', evidence: null }
+  }
+
+  const { data: lines } = await db
+    .from('supplier_invoice_lines')
+    .select('fortnox_invoice_number, invoice_date, quantity, price_per_unit, total_excl_vat')
+    .eq('business_id', businessId)
+    .eq('match_status', 'matched')
+    .in('product_alias_id', aliasIds)
+    .order('invoice_date', { ascending: false })
+    .limit(1)
+  const latest = (lines ?? [])[0]
+  if (!latest) {
+    return { reliable: false, reason: 'No matched invoice line yet', evidence: null }
+  }
+
+  // Check 1: per-line internal consistency.
+  const qty = Number(latest.quantity ?? 0)
+  const ppu = Number(latest.price_per_unit ?? 0)
+  const tot = Number(latest.total_excl_vat ?? 0)
+  if (Number.isFinite(qty) && qty > 0 && Number.isFinite(ppu) && Number.isFinite(tot) && tot !== 0) {
+    const computed = qty * ppu
+    const delta = Math.abs(computed - tot) / Math.abs(tot)
+    if (delta > LINE_CONSISTENCY_TOL_PCT) {
+      return {
+        reliable: false,
+        reason:   `Latest invoice line is internally inconsistent: qty × price_per_unit = ${computed.toFixed(2)} but total = ${tot.toFixed(2)} (${(delta * 100).toFixed(0)}% off). Price may be unreliable — extraction needs review.`,
+        evidence: {
+          invoice_number: latest.fortnox_invoice_number,
+          invoice_date:   latest.invoice_date,
+          qty, price_per_unit: ppu, total_excl_vat: tot,
+        },
+      }
+    }
+  }
+
+  // Check 2: parent extraction was flagged. JSONB containment query.
+  const { data: ext } = await db
+    .from('invoice_pdf_extractions')
+    .select('validation_warnings')
+    .eq('business_id', businessId)
+    .eq('fortnox_invoice_number', latest.fortnox_invoice_number)
+    .maybeSingle()
+  const warnings = Array.isArray(ext?.validation_warnings) ? ext.validation_warnings : []
+  const flaggedCodes = warnings
+    .map((w: any) => w?.code)
+    .filter((c: any) => c === 'over_extraction' || c === 'total_mismatch')
+  if (flaggedCodes.length > 0) {
+    return {
+      reliable: false,
+      reason:   `The invoice this price came from is flagged (${flaggedCodes.join(', ')}). Price may be unreliable — extraction needs review.`,
+      evidence: {
+        invoice_number:           latest.fortnox_invoice_number,
+        invoice_date:             latest.invoice_date,
+        extraction_warning_codes: flaggedCodes,
+      },
+    }
+  }
+
+  return { reliable: true, reason: null, evidence: null }
+}

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
+import { EditItemModal } from '@/components/EditItemModal'
 import { fmtKr } from '@/lib/format'
 
 interface RecipeRow {
@@ -382,6 +383,10 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
   const [loading, setLoading] = useState(true)
   const [err,     setErr]     = useState<string | null>(null)
   const [adding,  setAdding]  = useState(false)
+  // Edit-Item modal target — clicking the new ⚙ button on an ingredient row
+  // sets this to the product_id; the modal mounts at drawer scope so it
+  // renders above the drawer backdrop.
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
   // When the missing-prices / unit-mismatch banner is clicked, this gets
   // the offending ingredient id. IngredientRow with that id auto-expands
   // its inline edit panel + flashes a soft highlight so the owner sees
@@ -558,7 +563,7 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                   in IngredientRow so headers sit directly above the numbers. */}
               {data.summary.ingredients.length > 0 && (
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
+                  display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
                   padding: '4px 0', fontSize: 9, color: UXP.ink4,
                   letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600,
                   borderBottom: `0.5px solid ${UXP.border}`,
@@ -580,6 +585,7 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                   onChange={(patch) => updateIngredient(ing.id, patch)}
                   onProductEdit={load}
                   onOpenSubrecipe={onOpenSubrecipe}
+                  onOpenEditModal={(pid) => setEditingProductId(pid)}
                 />
               ))}
             </div>
@@ -608,6 +614,13 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
 
             {adding && (
               <IngredientPicker bizId={bizId} recipeId={recipeId} onClose={() => setAdding(false)} onAdded={() => { setAdding(false); load() }} />
+            )}
+            {editingProductId && (
+              <EditItemModal
+                productId={editingProductId}
+                onClose={() => setEditingProductId(null)}
+                onSaved={() => { setEditingProductId(null); load() }}
+              />
             )}
           </>
         )}
@@ -703,13 +716,14 @@ function PriceVatEditor({ recipe, onSave }: {
   )
 }
 
-function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, onOpenSubrecipe }: {
+function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, onOpenSubrecipe, onOpenEditModal }: {
   ing: DetailIngredient
   highlighted?: boolean
   onRemove: () => void
   onChange: (patch: { quantity?: number; unit?: string; waste_pct?: number }) => void
   onProductEdit: () => void
   onOpenSubrecipe: (id: string) => void
+  onOpenEditModal?: (productId: string) => void
 }) {
   const t = useTranslations('operations.inventory.recipes')
   const [qty, setQty] = useState(String(ing.quantity_stated ?? ing.quantity))
@@ -761,7 +775,7 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
         borderRadius: highlighted ? 4 : 0,
       }}>
       <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
+        display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
         alignItems: 'center', fontSize: 12,
       }}>
         <div style={{ minWidth: 0 }}>
@@ -835,12 +849,24 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
               cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
             }}>→</button>
         ) : (
-          <button onClick={() => setExpanded(v => !v)} aria-label={t('detail.editProduct')}
-            title={t('detail.editProductHint')}
-            style={{
-              background: 'transparent', border: 'none', color: expanded ? UXP.lavDeep : UXP.ink4,
-              cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
-            }}>{expanded ? '▾' : '✎'}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* Full edit modal — opens the shared EditItemModal at drawer scope.
+                Quick inline pack/base/price edit (✎) below stays as-is. */}
+            {onOpenEditModal && ing.product_id && (
+              <button onClick={() => onOpenEditModal(ing.product_id!)}
+                aria-label="Edit item (full)" title="Edit item — cost, articles, used-in-recipes"
+                style={{
+                  background: 'transparent', border: 'none', color: UXP.lavText,
+                  cursor: 'pointer', padding: '2px 4px', fontSize: 11, fontFamily: 'inherit',
+                }}>⚙</button>
+            )}
+            <button onClick={() => setExpanded(v => !v)} aria-label={t('detail.editProduct')}
+              title={t('detail.editProductHint')}
+              style={{
+                background: 'transparent', border: 'none', color: expanded ? UXP.lavDeep : UXP.ink4,
+                cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
+              }}>{expanded ? '▾' : '✎'}</button>
+          </div>
         )}
         <button onClick={onRemove} aria-label="Remove" style={{
           background: 'transparent', border: 'none', color: UXP.ink4, cursor: 'pointer',
