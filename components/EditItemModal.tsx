@@ -158,6 +158,32 @@ export function EditItemModal({ productId, onClose, onSaved }: {
     } catch (e: any) { alert(e.message) }
   }
 
+  // ── Link supplier article ────────────────────────────────────────
+  // Open a sub-picker that searches unmatched supplier_invoice_lines at
+  // this business and lets the owner attach one as the cost source for
+  // this product. Closes the gap for products created via the recipe-
+  // authoring tool / AI bulk importer (no automatic alias on creation).
+  const [linking, setLinking] = useState(false)
+  async function linkSupplierLine(lineId: string) {
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch(`/api/inventory/items/${productId}/link-supplier-article`, {
+        method:  'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ supplier_invoice_line_id: lineId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        if (j.error === 'alias_already_linked_to_other_product') {
+          throw new Error('This supplier article is already linked to a different product. Edit that product and repoint its article first.')
+        }
+        throw new Error(j.error ?? `HTTP ${r.status}`)
+      }
+      setLinking(false)
+      await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+
   const product = data?.product
   const current = { ...product, ...edits }
   const hasUnsaved = Object.keys(edits).length > 0
@@ -239,9 +265,26 @@ export function EditItemModal({ productId, onClose, onSaved }: {
 
                 {/* RIGHT — supplier articles + used-in-recipes */}
                 <div>
-                  <SectionLabel>Supplier articles ({data.aliases.length})</SectionLabel>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <SectionLabel style={{ margin: 0 }}>Supplier articles ({data.aliases.length})</SectionLabel>
+                    <button
+                      onClick={() => setLinking(true)}
+                      disabled={busy}
+                      style={{
+                        padding:      '3px 10px',
+                        background:   UXP.lavFill,
+                        color:        UXP.lavText,
+                        border:       'none',
+                        borderRadius: 999,
+                        fontSize:     10,
+                        fontWeight:   500,
+                        cursor:       'pointer',
+                        fontFamily:   'inherit',
+                      }}
+                    >+ Link article</button>
+                  </div>
                   {data.aliases.length === 0 && (
-                    <Empty>No supplier articles linked yet. Price comes from any override above, or stays empty until an invoice line matches.</Empty>
+                    <Empty>No supplier articles linked yet. Price comes from any override above, or stays empty until an invoice line matches. Use <strong>+ Link article</strong> to manually attach an existing supplier line.</Empty>
                   )}
                   {data.aliases.map(a => (
                     <div key={a.id} style={aliasCard}>
@@ -297,6 +340,14 @@ export function EditItemModal({ productId, onClose, onSaved }: {
           </>
         )}
       </div>
+      {linking && data && (
+        <LinkArticlePicker
+          productId={productId}
+          productName={data.product.name}
+          onPick={linkSupplierLine}
+          onClose={() => setLinking(false)}
+        />
+      )}
     </div>
   )
 }
@@ -418,6 +469,114 @@ const aliasCard: React.CSSProperties = {
   display: 'flex', alignItems: 'flex-start', gap: 8,
   padding: '8px 10px', background: UXP.cardBg,
   border: `0.5px solid ${UXP.border}`, borderRadius: 6, marginBottom: 6,
+}
+
+// ── Link-supplier-article sub-picker ──────────────────────────────
+// Owner searches the unmatched supplier_invoice_lines at this business
+// (returned grouped by raw_description+supplier), clicks one → creates
+// a product_alias + back-fills every matching line.
+function LinkArticlePicker({ productId, productName, onPick, onClose }: {
+  productId:   string
+  productName: string
+  onPick:      (lineId: string) => void
+  onClose:     () => void
+}) {
+  const [q, setQ]         = useState('')
+  const [results, setRes] = useState<any[] | null>(null)
+  const [loading, setL]   = useState(false)
+  const [err, setErr]     = useState<string | null>(null)
+
+  const search = useCallback(async (query: string) => {
+    setL(true); setErr(null)
+    try {
+      const r = await fetch(`/api/inventory/items/${productId}/link-search?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+      setRes(Array.isArray(j.groups) ? j.groups : [])
+    } catch (e: any) { setErr(e.message) } finally { setL(false) }
+  }, [productId])
+
+  // Initial search on open + on query change (debounced lightly).
+  useEffect(() => {
+    const t = setTimeout(() => search(q), q ? 250 : 0)
+    return () => clearTimeout(t)
+  }, [q, search])
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+        zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div onClick={e => e.stopPropagation()} style={{
+        width: 'min(640px, 96vw)', maxHeight: '85vh', overflow: 'auto' as const,
+        background: UXP.cardBg, borderRadius: 12, padding: 18,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: UXP.ink1 }}>Link supplier article</div>
+            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2 }}>
+              Pick a supplier invoice line that represents <strong>{productName}</strong>. The link will back-fill every matching invoice line at this business so cost history populates immediately.
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: UXP.ink3, fontSize: 18, cursor: 'pointer' }} aria-label="Close">×</button>
+        </div>
+
+        <input
+          autoFocus
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search supplier invoice lines… (e.g. ruccola, parma, mozzarella)"
+          style={{
+            width: '100%', boxSizing: 'border-box', padding: '8px 10px',
+            border: `1px solid ${UXP.border}`, borderRadius: 6, fontSize: 12, marginBottom: 10, fontFamily: 'inherit',
+          }}
+        />
+
+        {loading && <div style={{ padding: 14, color: UXP.ink3, fontSize: 11 }}>Searching…</div>}
+        {err && <div style={{ padding: 10, background: UXP.roseFill, color: UXP.roseText, borderRadius: 6, fontSize: 11, marginBottom: 8 }}>{err}</div>}
+
+        {results && results.length === 0 && !loading && (
+          <div style={{ padding: 14, fontSize: 11, color: UXP.ink4 }}>
+            No unmatched supplier lines {q ? `containing "${q}"` : ''} at this business. Either the supplier hasn't sent this article yet, or it's already linked to another product.
+          </div>
+        )}
+
+        {results && results.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+            {results.map(g => (
+              <button
+                key={g.group_key}
+                onClick={() => onPick(g.sample_line_id)}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  padding: '8px 10px', textAlign: 'left' as const,
+                  background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+                  borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', width: '100%',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = UXP.lavFill)}
+                onMouseLeave={e => (e.currentTarget.style.background = UXP.cardBg)}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+                    {g.raw_description}
+                  </div>
+                  <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
+                    {g.supplier_name ?? '?'}{g.article_number && ` · ${g.article_number}`} · {g.line_count} line{g.line_count === 1 ? '' : 's'} · last {g.latest_invoice_date ?? '?'}
+                  </div>
+                </div>
+                <div style={{ fontSize: 11, color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const, alignSelf: 'center' as const }}>
+                  {g.latest_price != null ? `${g.latest_price} kr/${g.unit ?? '?'}` : '—'}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 const recipeRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', padding: '6px 0',
