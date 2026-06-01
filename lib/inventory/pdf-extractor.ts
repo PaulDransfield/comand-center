@@ -744,36 +744,56 @@ Some passthrough invoices apply a distributor markup. The signature is:
   the supplier's billing currency, and an FX rate (e.g. 11,0565) is
   printed at the top of page 2 to convert EUR → SEK.
 
-To extract correctly:
-1. Detect the markup multiplier from page 1 (the "Lev ant" value on
-   the single summary line, e.g. 1.10). If it's 1.00 or absent, there
-   is no markup — skip step 4 below.
-2. For each page-2 product row, read the per-row total. Use the SEK
-   column if it has a value; otherwise use EUR × the page-2 FX rate.
-3. Multiply each per-row total by the markup multiplier from step 1.
-   That value goes into row.total_excl_vat.
-4. The sum of marked-up row totals should equal the invoice header
-   total within ~5%. If it doesn't, you've mis-identified one of the
-   conversion factors — re-check.
+TO EXTRACT CORRECTLY — use the PROPORTIONAL ALLOCATION method. Do NOT
+try to chain FX × markup multiplications; that's where extractions miss
+a step and the sum doesn't reconcile. Instead:
 
-Worked example for "Levererat från Marini/Rima 2025 09" (Laweka 3174):
-- Page 1: Lev ant=1.10, à-pris=94 836,58, Summa=104 320,24 SEK
-- Page 2: 46 product rows, SEK column populated, sum to 94 836,58
-- Per-row buyer cost = page-2 SEK × 1.10 → sum = 104 320,24 SEK ✓
+  STEP 1: Find the page-2 grand total — the column total at the top
+  or bottom of the itemized table. It's usually labeled like a normal
+  total (e.g. "Summa", "Total"). The grand total may appear in EUR
+  AND/OR SEK; pick whichever column you can also read per-row. Call
+  this value PAGE2_GRAND_TOTAL.
 
-Worked example for "Levererat från Marini/Rima 2025 06" (Eventcenter 2948):
-- Page 1: Lev ant=1.10, à-pris=82 038,47, Summa=90 242,32 SEK
-- Page 2: 29 product rows, SEK column BLANK per row, EUR column
-  populated, sum of EUR = 7 357,71. FX rate at top = 11,15.
-- Per-row buyer cost = page-2 EUR × 11.15 × 1.10
-  → sum = 7 357,71 × 11.15 × 1.10 = 90 242 SEK ✓
+  STEP 2: Read the invoice header total from page 1 (the Summa or
+  Att betala ex-moms field). Call this HEADER_TOTAL.
+
+  STEP 3: For each page-2 product row, read its value in the SAME
+  column you used for PAGE2_GRAND_TOTAL. Call this ROW_RAW.
+
+  STEP 4: Compute row.total_excl_vat = (ROW_RAW / PAGE2_GRAND_TOTAL)
+  × HEADER_TOTAL. This is the per-row contribution to the invoice
+  header. By construction, sum of all rows equals HEADER_TOTAL.
+
+This works regardless of whether the table is in EUR or SEK, regardless
+of whether there's a markup, regardless of the FX rate. The math is
+proportional allocation: each row gets its fair share of the invoice
+header total, weighted by its size in the supplier's itemization.
+
+WORKED EXAMPLE — Laweka 3174 (SEK column populated):
+- HEADER_TOTAL = 104 320,24 SEK
+- PAGE2_GRAND_TOTAL = 94 836,58 (SEK column grand total)
+- Mozzarella row SEK value = 76,89
+- Mozzarella row.total_excl_vat = (76.89 / 94836.58) × 104320.24 = 84,58 SEK ✓
+- Sum of all 46 rows' computed totals = 104 320,24 by construction ✓
+
+WORKED EXAMPLE — Eventcenter 2948 (SEK column blank, EUR populated):
+- HEADER_TOTAL = 90 242,32 SEK
+- PAGE2_GRAND_TOTAL = 7 357,71 (EUR column grand total — both columns
+  reconcile equally well; pick whichever is populated per row)
+- Mozzarella row EUR value = 292,32
+- Mozzarella row.total_excl_vat = (292.32 / 7357.71) × 90242.32 = 3 585,80 SEK ✓
+- Sum of all 29 rows = 90 242,32 by construction ✓
 
 quantity, price_per_unit, and unit on each row stay in the SUPPLIER'S
-units (the Antal value, the description's implicit unit, whatever's
-printed). Only total_excl_vat needs the FX × markup applied so the sum
-reconciles to the header. The catalogue / cost engine derives per-unit
-buyer cost as total_excl_vat / quantity at read time, so applying the
-markup at the total level propagates correctly.
+units (the Antal value as printed, the unit implicit in the description).
+Only total_excl_vat carries the proportional-allocation result. The
+catalogue / cost engine derives per-unit buyer cost as total_excl_vat
+/ quantity at read time.
+
+VERIFICATION before returning:
+- sum(row.total_excl_vat) must equal HEADER_TOTAL within öresavrundning
+  (~0.01 SEK). If it doesn't, you used a different PAGE2_GRAND_TOTAL
+  than the column you read per-row — re-check that they match.
 
 Currency detection (header.currency):
 - Default is SEK if the invoice clearly shows kr / SEK / "Svenska kronor".
