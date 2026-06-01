@@ -562,6 +562,26 @@ function haikuLooksGoodEnough(
     }
   }
 
+  // Marini/Rima passthrough force-escalation: when Haiku returns exactly
+  // one row whose description matches the Levererat-från-Marini/Rima
+  // signature, escalate to Sonnet even though the single summary line
+  // technically reconciles to the header. The page-1 summary IS valid
+  // arithmetic — but it conceals page-2 itemization (~20-50 catalogue
+  // rows) that Sonnet can recover via passthrough_scaling. Without this
+  // trigger, the 5% total-match guard accepts the 1-line summary and we
+  // never see the detail. Scope is narrow (literal "Marini/Rima" string
+  // following "Levererat från"), so normal Laweka/Eventcenter invoices
+  // and other rebill patterns are untouched.
+  if (validRows.length === 1) {
+    const onlyDesc = String(validRows[0].description ?? '')
+    if (/levererat\s+från\s+marini.?rima/i.test(onlyDesc)) {
+      return {
+        ok: false,
+        reason: `marini-rima passthrough signature on 1-row haiku response — escalate to attempt page-2 itemization`,
+      }
+    }
+  }
+
   return { ok: true }
 }
 
