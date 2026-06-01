@@ -266,6 +266,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.archived !== undefined) {
     patch.archived_at = body.archived ? new Date().toISOString() : null
   }
+  // M110 — default yield-loss for this product. Auto-fills recipe_ingredients
+  // .waste_pct at link time so the same product costs consistently across
+  // dishes. Bounds match the recipe-line CHECK (0..<100); 95% is the hard
+  // ceiling per inflateForWaste's clamp.
+  if (body.default_waste_pct !== undefined) {
+    if (body.default_waste_pct === null) patch.default_waste_pct = 0
+    else {
+      const w = Number(body.default_waste_pct)
+      if (!Number.isFinite(w) || w < 0 || w >= 100) {
+        return NextResponse.json({ error: 'default_waste_pct must be between 0 and < 100' }, { status: 400 })
+      }
+      patch.default_waste_pct = w
+    }
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }
