@@ -1,0 +1,341 @@
+{
+  "generated_at": "2026-06-01T17:13:00.649Z",
+  "businesses": {
+    "Chicce": {
+      "lines_total": 9429,
+      "lines_with_account": 898,
+      "account_source_dist": {
+        "fortnox_row": 8531,
+        "voucher_backfill": 898
+      },
+      "total_spend": 8500587,
+      "spend_with_account": 2010222,
+      "distinct_accounts": 19,
+      "top20_accounts_by_spend": [
+        {
+          "account": "4011",
+          "spend": 1486272,
+          "lines": 548
+        },
+        {
+          "account": "4014",
+          "spend": 148755,
+          "lines": 85
+        },
+        {
+          "account": "6420",
+          "spend": 54500,
+          "lines": 2
+        },
+        {
+          "account": "4012",
+          "spend": 53703,
+          "lines": 16
+        },
+        {
+          "account": "6591",
+          "spend": 51406,
+          "lines": 7
+        },
+        {
+          "account": "6060",
+          "spend": 48083,
+          "lines": 42
+        },
+        {
+          "account": "5420",
+          "spend": 30114,
+          "lines": 57
+        },
+        {
+          "account": "5520",
+          "spend": 23278,
+          "lines": 23
+        },
+        {
+          "account": "5461",
+          "spend": 20919,
+          "lines": 14
+        },
+        {
+          "account": "5970",
+          "spend": 20550,
+          "lines": 4
+        },
+        {
+          "account": "6950",
+          "spend": 17940,
+          "lines": 2
+        },
+        {
+          "account": "5465",
+          "spend": 15276,
+          "lines": 30
+        },
+        {
+          "account": "6370",
+          "spend": 8570,
+          "lines": 8
+        },
+        {
+          "account": "4013",
+          "spend": 7723,
+          "lines": 5
+        },
+        {
+          "account": "5062",
+          "spend": 7561,
+          "lines": 34
+        },
+        {
+          "account": "5620",
+          "spend": 6250,
+          "lines": 7
+        },
+        {
+          "account": "5500",
+          "spend": 5841,
+          "lines": 6
+        },
+        {
+          "account": "5460",
+          "spend": 2028,
+          "lines": 2
+        },
+        {
+          "account": "4016",
+          "spend": 1453,
+          "lines": 6
+        }
+      ],
+      "extractions_total": 793,
+      "extraction_status_dist": {
+        "extracted": 723,
+        "needs_review": 59,
+        "pending": 10,
+        "failed": 1
+      },
+      "extraction_status_spend": {
+        "extracted": 5613518,
+        "needs_review": 1060416,
+        "pending": 5713,
+        "failed": 0
+      },
+      "over_extraction_count": 0,
+      "total_mismatch_count": 31,
+      "blank_raw_description_count": 0,
+      "blank_raw_description_spend": 0,
+      "blank_by_source": {},
+      "tracker_line_items_count": 561,
+      "tracker_category_combos": 9,
+      "tracker_top10_combos": [
+        {
+          "key": "other_cost/?",
+          "lines": 247
+        },
+        {
+          "key": "staff_cost/?",
+          "lines": 70
+        },
+        {
+          "key": "revenue/alcohol",
+          "lines": 50
+        },
+        {
+          "key": "revenue/?",
+          "lines": 48
+        },
+        {
+          "key": "food_cost/alcohol",
+          "lines": 44
+        },
+        {
+          "key": "revenue/food",
+          "lines": 36
+        },
+        {
+          "key": "food_cost/goods",
+          "lines": 36
+        },
+        {
+          "key": "financial/other",
+          "lines": 19
+        },
+        {
+          "key": "depreciation/depreciation",
+          "lines": 11
+        }
+      ]
+    },
+    "Vero": {
+      "lines_total": 8221,
+      "lines_with_account": 6900,
+      "account_source_dist": {
+        "fortnox_row": 1321,
+        "voucher_backfill": 6900
+      },
+      "total_spend": 17632955,
+      "spend_with_account": 11713313,
+      "distinct_accounts": 19,
+      "top20_accounts_by_spend": [
+        {
+          "account": "4010",
+          "spend": 5134764,
+          "lines": 3299
+        },
+        {
+          "account": "4011",
+          "spend": 4364546,
+          "lines": 2732
+        },
+        {
+          "account": "5010",
+          "spend": 850929,
+          "lines": 150
+        },
+        {
+          "account": "6550",
+          "spend": 297596,
+          "lines": 33
+        },
+        {
+          "account": "5160",
+          "spend": 242376,
+          "lines": 67
+        },
+        {
+          "account": "5990",
+          "spend": 197109,
+          "lines": 120
+        },
+        {
+          "account": "5500",
+          "spend": 109775,
+          "lines": 127
+        },
+        {
+          "account": "6540",
+          "spend": 104046,
+          "lines": 47
+        },
+        {
+          "account": "6530",
+          "spend": 102438,
+          "lines": 100
+        },
+        {
+          "account": "5460",
+          "spend": 70697,
+          "lines": 69
+        },
+        {
+          "account": "6200",
+          "spend": 54438,
+          "lines": 6
+        },
+        {
+          "account": "5410",
+          "spend": 51197,
+          "lines": 19
+        },
+        {
+          "account": "6370",
+          "spend": 25850,
+          "lines": 12
+        },
+        {
+          "account": "4000",
+          "spend": 24513,
+          "lines": 12
+        },
+        {
+          "account": "5480",
+          "spend": 24422,
+          "lines": 6
+        },
+        {
+          "account": "5090",
+          "spend": 24237,
+          "lines": 47
+        },
+        {
+          "account": "5012",
+          "spend": 19360,
+          "lines": 18
+        },
+        {
+          "account": "6950",
+          "spend": 10384,
+          "lines": 5
+        },
+        {
+          "account": "6040",
+          "spend": 4638,
+          "lines": 31
+        }
+      ],
+      "extractions_total": 1083,
+      "extraction_status_dist": {
+        "no_pdf": 452,
+        "extracted": 554,
+        "needs_review": 54,
+        "pending": 23
+      },
+      "extraction_status_spend": {
+        "no_pdf": 0,
+        "extracted": 6806287,
+        "needs_review": 866956,
+        "pending": 384100
+      },
+      "over_extraction_count": 0,
+      "total_mismatch_count": 34,
+      "blank_raw_description_count": 0,
+      "blank_raw_description_spend": 0,
+      "blank_by_source": {},
+      "tracker_line_items_count": 446,
+      "tracker_category_combos": 23,
+      "tracker_top10_combos": [
+        {
+          "key": "other_cost/?",
+          "lines": 186
+        },
+        {
+          "key": "staff_cost/?",
+          "lines": 52
+        },
+        {
+          "key": "depreciation/depreciation",
+          "lines": 37
+        },
+        {
+          "key": "financial/other",
+          "lines": 34
+        },
+        {
+          "key": "food_cost/goods",
+          "lines": 26
+        },
+        {
+          "key": "revenue/alcohol",
+          "lines": 16
+        },
+        {
+          "key": "revenue/food",
+          "lines": 15
+        },
+        {
+          "key": "food_cost/alcohol",
+          "lines": 15
+        },
+        {
+          "key": "revenue/takeaway",
+          "lines": 11
+        },
+        {
+          "key": "staff_cost/salaries",
+          "lines": 9
+        }
+      ]
+    }
+  }
+}
