@@ -323,8 +323,26 @@ const PRODUCT_CATEGORIES = ['food', 'beverage', 'alcohol', 'disposables', 'takea
 // either stage discards everything; only the explicit "Create N
 // recipes" button writes.
 function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: () => void; onSaved: () => void }) {
-  type Ingredient = { product_id: string; product_name: string; quantity: number; unit: string }
-  type Draft      = { name: string; portions: number; selling_price_inc_vat: number | null; note: string | null; method: string | null; ingredients: Ingredient[] }
+  // Two ingredient shapes coming back from import-parse:
+  //   - product: linked to an existing catalogue product
+  //   - sub:     references another draft in THIS batch by name; the
+  //              save flow resolves to subrecipe_id after the sub is
+  //              created (sub-recipes process first, build a
+  //              name→id map, parents reference into it).
+  type Ingredient =
+    | { kind: 'product'; product_id: string; product_name: string; quantity: number; unit: string }
+    | { kind: 'sub';     sub_name:   string; quantity: number; unit: string }
+  type Draft = {
+    name:                   string
+    is_subrecipe:           boolean
+    portions:               number
+    selling_price_inc_vat:  number | null
+    yield_amount:           number | null
+    yield_unit:             string | null
+    note:                   string | null
+    method:                 string | null
+    ingredients:            Ingredient[]
+  }
   const [stage,   setStage]   = useState<'paste' | 'preview' | 'saving' | 'done'>('paste')
   const [text,    setText]    = useState('')
   const [file,    setFile]    = useState<File | null>(null)
@@ -373,7 +391,17 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
   async function saveAll() {
     setBusy(true); setErr(null); setStage('saving')
     const results = { created: 0, failed: [] as { name: string; error: string }[] }
-    for (const d of drafts) {
+
+    // Two-pass: sub-recipes first so their IDs exist when parent
+    // dishes reference them. Within each pass, drafts are independent
+    // so order doesn't matter.
+    const subs    = drafts.filter(d => d.is_subrecipe)
+    const parents = drafts.filter(d => !d.is_subrecipe)
+    // name → id map. Lowercased trimmed keys to forgive case
+    // mismatches between Sonnet's parent ref and sub name.
+    const nameToId = new Map<string, string>()
+
+    async function createOne(d: Draft): Promise<string | null> {
       try {
         // 1. Create recipe header.
         const r = await fetch('/api/inventory/recipes', {
@@ -384,53 +412,97 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
             name:                  d.name,
             type:                  null,
             menu_price_inc_vat:    d.selling_price_inc_vat ?? null,
-            vat_rate:              12,            // owner edits in detail drawer; 12% safe default for dine-in
+            vat_rate:              12,            // owner edits in drawer; 12% safe default for dine-in
             channel:               'dine_in',
             portions:              d.portions,
             notes:                 d.note ? `AI DRAFT — ${d.note}` : 'AI DRAFT — review quantities before trusting cost.',
-            method:                d.method ?? null,    // M114 — chef instructions
+            method:                d.method ?? null,
+            yield_amount:          d.yield_amount,
+            yield_unit:            d.yield_unit,
           }),
         })
         const j = await r.json()
-        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
+        if (!r.ok) {
+          // 23505 name conflict — link to existing instead of failing the whole import.
+          if (j.error && /already exists/i.test(j.error)) {
+            // Best-effort lookup by name to get the existing id.
+            const search = await fetch(`/api/inventory/recipes/search?business_id=${encodeURIComponent(bizId)}&q=${encodeURIComponent(d.name)}`, { cache: 'no-store' })
+            const sj = await search.json().catch(() => ({}))
+            const existing = Array.isArray(sj.recipes) ? sj.recipes.find((rr: any) => String(rr.name ?? '').toLowerCase() === d.name.toLowerCase()) : null
+            if (existing?.recipe_id) {
+              results.failed.push({ name: d.name, error: 'A recipe with this name already exists — using the existing one; not overwriting ingredients.' })
+              return existing.recipe_id
+            }
+          }
+          throw new Error(j.error ?? `HTTP ${r.status}`)
+        }
         const recipeId = j.recipe?.id ?? j.id
         if (!recipeId) throw new Error('No recipe id returned')
 
-        // 2. Append ingredients.
+        // 2. Append ingredients. Resolve sub references via nameToId.
         for (let pos = 0; pos < d.ingredients.length; pos++) {
           const g = d.ingredients[pos]
+          const payload: any = { quantity: g.quantity, unit: g.unit, position: pos }
+          if (g.kind === 'product') {
+            payload.product_id = g.product_id
+          } else {
+            // Sub-recipe reference. Resolve by lowercased trimmed name.
+            const key  = g.sub_name.trim().toLowerCase()
+            const subId = nameToId.get(key)
+            if (!subId) {
+              results.failed.push({ name: d.name, error: `Sub-recipe "${g.sub_name}" not found among created sub-recipes — skipped` })
+              continue
+            }
+            payload.subrecipe_id = subId
+          }
           const ar = await fetch(`/api/inventory/recipes/${recipeId}/ingredients`, {
             method:  'POST', cache: 'no-store',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({
-              product_id: g.product_id,
-              quantity:   g.quantity,
-              unit:       g.unit,
-              position:   pos,
-            }),
+            body:    JSON.stringify(payload),
           })
           if (!ar.ok) {
             const j2 = await ar.json().catch(() => ({}))
-            // Soft-fail one ingredient — record + continue so the recipe still saves.
-            results.failed.push({ name: d.name, error: `${g.product_name}: ${j2.error ?? 'HTTP ' + ar.status}` })
+            const label = g.kind === 'product' ? g.product_name : `sub: ${g.sub_name}`
+            results.failed.push({ name: d.name, error: `${label}: ${j2.error ?? 'HTTP ' + ar.status}` })
           }
         }
         results.created++
+        return recipeId
       } catch (e: any) {
         results.failed.push({ name: d.name, error: String(e?.message ?? e).slice(0, 200) })
+        return null
       }
     }
+
+    // Phase 1 — create sub-recipes, populate the name map BEFORE any
+    // parent tries to resolve a sub reference.
+    for (const d of subs) {
+      const id = await createOne(d)
+      if (id) nameToId.set(d.name.trim().toLowerCase(), id)
+    }
+    // Phase 2 — create parent dishes, resolving sub references.
+    for (const d of parents) await createOne(d)
+
     setSaveResults(results)
     setStage('done')
     setBusy(false)
   }
 
-  function editIngredient(di: number, ii: number, patch: Partial<Ingredient>) {
+  // Only qty + unit are edit-targets in the preview UI; the discriminator
+  // (kind/product_id/sub_name) is fixed at parse time. Narrowing patch to
+  // { quantity?: number; unit?: string } keeps the union honest.
+  function editIngredient(di: number, ii: number, patch: { quantity?: number; unit?: string }) {
     setDrafts(prev => {
       const next = prev.slice()
       const draft = { ...next[di] }
       draft.ingredients = draft.ingredients.slice()
-      draft.ingredients[ii] = { ...draft.ingredients[ii], ...patch }
+      const existing = draft.ingredients[ii]
+      // Preserve the existing union variant by re-applying it after spread.
+      draft.ingredients[ii] = (
+        existing.kind === 'product'
+          ? { ...existing, quantity: patch.quantity ?? existing.quantity, unit: patch.unit ?? existing.unit }
+          : { ...existing, quantity: patch.quantity ?? existing.quantity, unit: patch.unit ?? existing.unit }
+      )
       next[di] = draft
       return next
     })
@@ -538,20 +610,40 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
             </div>
             <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 10 }}>
               {drafts.map((d, di) => (
-                <div key={di} style={{ border: `1px solid ${UXP.border}`, borderRadius: 8, padding: '10px 12px' }}>
+                <div key={di} style={{
+                  border:        `1px solid ${d.is_subrecipe ? UXP.lavMid : UXP.border}`,
+                  borderRadius:  8,
+                  padding:       '10px 12px',
+                  background:    d.is_subrecipe ? UXP.subtleBg : 'transparent',
+                }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                    {d.is_subrecipe && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                        padding: '2px 6px', background: UXP.lavFill, color: UXP.lavText,
+                        borderRadius: 3, textTransform: 'uppercase' as const, whiteSpace: 'nowrap' as const,
+                      }}>Sub</span>
+                    )}
                     <input
                       value={d.name}
                       onChange={e => editDraftName(di, e.target.value)}
                       style={{ flex: 1, padding: '4px 8px', fontSize: 13, fontWeight: 500, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
                     />
-                    <input
-                      type="number" min="0" step="1" placeholder="price inc VAT"
-                      value={d.selling_price_inc_vat ?? ''}
-                      onChange={e => editDraftPrice(di, e.target.value)}
-                      style={{ width: 110, padding: '4px 8px', fontSize: 12, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
-                    />
-                    <button onClick={() => removeDraft(di)} title="Drop this dish" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink4, fontSize: 16 }}>×</button>
+                    {/* Sub-recipes don't sell directly — hide price field. */}
+                    {!d.is_subrecipe && (
+                      <input
+                        type="number" min="0" step="1" placeholder="price inc VAT"
+                        value={d.selling_price_inc_vat ?? ''}
+                        onChange={e => editDraftPrice(di, e.target.value)}
+                        style={{ width: 110, padding: '4px 8px', fontSize: 12, border: `1px solid ${UXP.border}`, borderRadius: 4, fontFamily: 'inherit' }}
+                      />
+                    )}
+                    {d.is_subrecipe && d.yield_amount && d.yield_unit && (
+                      <span style={{ fontSize: 10, color: UXP.ink4, whiteSpace: 'nowrap' as const }}>
+                        yields {d.yield_amount} {d.yield_unit}/portion
+                      </span>
+                    )}
+                    <button onClick={() => removeDraft(di)} title="Drop this recipe" style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink4, fontSize: 16 }}>×</button>
                   </div>
                   {d.note && <div style={{ fontSize: 10, color: UXP.ink4, marginBottom: 6 }}>{d.note}</div>}
                   <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
@@ -562,8 +654,16 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
                     )}
                     {d.ingredients.map((g, ii) => (
                       <div key={ii} style={{ display: 'grid', gridTemplateColumns: '1fr 60px 50px 24px', gap: 6, alignItems: 'center' }}>
-                        <div style={{ fontSize: 11, color: UXP.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }} title={g.product_name}>
-                          {g.product_name}
+                        <div style={{ fontSize: 11, color: UXP.ink2, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, display: 'flex', alignItems: 'center', gap: 5 }}
+                             title={g.kind === 'product' ? g.product_name : `sub-recipe: ${g.sub_name}`}>
+                          {g.kind === 'sub' && (
+                            <span style={{
+                              fontSize: 8, fontWeight: 600, padding: '1px 4px',
+                              background: UXP.lavFill, color: UXP.lavText,
+                              borderRadius: 2, textTransform: 'uppercase' as const, flexShrink: 0,
+                            }}>sub</span>
+                          )}
+                          {g.kind === 'product' ? g.product_name : g.sub_name}
                         </div>
                         <input
                           type="number" min="0" step="0.01" value={g.quantity}

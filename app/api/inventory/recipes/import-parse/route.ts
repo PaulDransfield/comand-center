@@ -182,16 +182,44 @@ RULES:
 
 If the input is a recipe document (not a menu), it likely contains a METHOD / PREPARATION section per dish — cooking steps, technique, plating, timing. Capture this verbatim or summarised in the dish's "method" field, up to ~2000 chars per dish. Leave empty when the input is just a menu list with no instructions.
 
-Return JSON ONLY, an array with one object per dish, in input order:
+── SUB-RECIPES (very common in Word documents) ──
+
+Recipe documents frequently define a preparation (a sauce, a base, a dressing, a marinade, a stock, a dough, a syrup, a spice mix) ONCE and then reference it by name across multiple dishes. Examples:
+
+- "For the white sauce: 400 g crème fraîche, 30 g pecorino cream… (used in Pinsa Margherita)"
+- "Pizza dough — see master recipe below. … Pizza dough master: 1 kg flour, 700 g water, 20 g salt, 5 g yeast"
+- "Tomato sauce (yields 4 kg): 4.1 kg pizzatomater + 35 g oregano + 40 g salt"
+
+When you see this pattern:
+1. Treat the preparation as a SEPARATE recipe entry in the output array with \`"is_subrecipe": true\` and \`"selling_price_inc_vat": null\` (sub-recipes aren't sold directly).
+2. In the PARENT dish's ingredient list, reference it as \`{ "sub": "<exact-sub-recipe-name>", "qty": 30, "unit": "g" }\` instead of using a product prefix \`p\`.
+3. \`sub\` value must match the sub-recipe's \`name\` field exactly (case-insensitive).
+4. Sub-recipes can themselves reference OTHER sub-recipes (e.g. white sauce uses a stock that's also a sub-recipe). Same \`sub\` syntax.
+5. If the source declares a yield for the sub-recipe (e.g. "white sauce yields 430 g"), include it as \`"yield_amount": 430, "yield_unit": "g"\` on the sub-recipe so the engine can convert grams in parent dishes to portion fractions.
+
+Return JSON ONLY, an array with one object per recipe (sub-recipes can appear BEFORE the dishes that use them — the server resolves cross-references):
 [
+  {
+    "name":     "White sauce",
+    "is_subrecipe": true,
+    "portions": 1,
+    "yield_amount": 430,
+    "yield_unit": "g",
+    "method":   "Whisk crème fraîche and pecorino cream until smooth…",
+    "ingredients": [
+      { "p": "abcd1234", "qty": 400, "unit": "g" },
+      { "p": "wxyz5678", "qty": 30,  "unit": "g" }
+    ]
+  },
   {
     "name":     "Pinsa Margherita",
     "portions": 1,
     "selling_price_inc_vat": 195,
-    "note":     "one short sentence about the dish",
-    "method":   "Stretch the pinsa base… (full preparation, can be multi-paragraph)",
+    "note":     "Classic pinsa with the house white sauce.",
+    "method":   "Stretch the pinsa base… (multi-paragraph)",
     "ingredients": [
-      { "p": "abcd1234", "qty": 280, "unit": "g" }
+      { "p": "abcd1234", "qty": 280, "unit": "g" },
+      { "sub": "White sauce", "qty": 30, "unit": "g" }
     ]
   }
 ]`
@@ -251,16 +279,31 @@ Return JSON ONLY, an array with one object per dish, in input order:
 
   // Resolve prefixes → product info; drop any hallucinated products.
   // Owner sees friendly product names in the preview, not 8-char IDs.
+  //
+  // Sub-recipe references (ingredient.sub) are kept by NAME at this
+  // stage — the parent recipe and the sub-recipe might come in the
+  // same response array, and we don't know the sub's ID until save
+  // time. The save flow processes sub-recipes first to build a
+  // name→id map then resolves parent references.
   const drafts = (Array.isArray(parsed) ? parsed : [])
     .map((d: any) => {
       const name = String(d?.name ?? '').trim().slice(0, 200)
       if (!name) return null
       const ingredients = (Array.isArray(d?.ingredients) ? d.ingredients : [])
         .map((g: any) => {
+          const qty = Number(g?.qty)
+          if (!Number.isFinite(qty) || qty <= 0) return null
+          const unit = g?.unit ? String(g.unit).trim() : 'g'
+          // Sub-recipe reference takes precedence — sub names in this
+          // batch never collide with 8-char product prefixes.
+          if (g?.sub) {
+            const subName = String(g.sub).trim().slice(0, 200)
+            if (subName) return { kind: 'sub' as const, sub_name: subName, quantity: qty, unit }
+          }
           const prod = prodByPrefix.get(String(g?.p ?? '').slice(0, 8))
-          const qty  = Number(g?.qty)
-          if (!prod || !Number.isFinite(qty) || qty <= 0) return null
+          if (!prod) return null
           return {
+            kind:         'product' as const,
             product_id:   prod.id,
             product_name: prod.name,
             quantity:     qty,
@@ -268,10 +311,19 @@ Return JSON ONLY, an array with one object per dish, in input order:
           }
         })
         .filter(Boolean)
+      // Yield only meaningful for sub-recipes (parent dishes don't
+      // expose a yield — that's a per-portion plate). Capture both
+      // when present so the engine knows how to convert grams in
+      // parent recipes via M111.
+      const yieldAmt = Number(d?.yield_amount)
+      const yieldUnit = d?.yield_unit ? String(d.yield_unit).trim() : null
       return {
         name,
+        is_subrecipe:            !!d?.is_subrecipe,
         portions:                Math.max(1, Math.floor(Number(d?.portions) || 1)),
         selling_price_inc_vat:   d?.selling_price_inc_vat != null ? Number(d.selling_price_inc_vat) : null,
+        yield_amount:            Number.isFinite(yieldAmt) && yieldAmt > 0 ? yieldAmt : null,
+        yield_unit:              yieldUnit,
         note:                    d?.note ? String(d.note).slice(0, 200) : null,
         // M114 — method/instructions extracted from Word documents or
         // any input that carries preparation steps. Capped at 20k
