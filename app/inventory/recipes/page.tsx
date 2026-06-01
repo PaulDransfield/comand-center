@@ -553,7 +553,9 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                 </div>
               )}
               {/* Column header — makes "Waste %" explicit (owner kept asking
-                  if that column was "5 grams or 5 percent"). */}
+                  if that column was "5 grams or 5 percent"). Inner padding
+                  on the right-aligned columns matches the input padding
+                  in IngredientRow so headers sit directly above the numbers. */}
               {data.summary.ingredients.length > 0 && (
                 <div style={{
                   display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px auto auto', gap: 10,
@@ -562,9 +564,9 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
                   borderBottom: `0.5px solid ${UXP.border}`,
                 }}>
                   <div>Ingredient</div>
-                  <div style={{ textAlign: 'right' as const }}>Qty</div>
+                  <div style={{ textAlign: 'right' as const, paddingRight: 6 }}>Qty</div>
                   <div>Unit</div>
-                  <div style={{ textAlign: 'right' as const }}>Waste %</div>
+                  <div style={{ textAlign: 'right' as const, paddingRight: 6 }}>Waste %</div>
                   <div style={{ textAlign: 'right' as const }}>Line cost</div>
                   <div></div>
                   <div></div>
