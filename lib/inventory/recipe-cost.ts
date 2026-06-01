@@ -38,9 +38,15 @@ export interface IngredientForCosting {
 }
 
 export interface RecipeContextEntry {
-  id:          string
-  portions:    number
-  ingredients: IngredientForCosting[]
+  id:           string
+  portions:     number
+  // M111 — sub-recipe yield. NULL = portion-only (legacy). When both
+  // are set, a parent recipe can consume this sub-recipe in any unit
+  // family-compatible with yield_unit (g↔kg, ml↔l, etc.) and the
+  // engine converts at cost-time.
+  yield_amount: number | null
+  yield_unit:   string | null
+  ingredients:  IngredientForCosting[]
 }
 export type RecipeIndex = Map<string, RecipeContextEntry>
 
@@ -151,21 +157,56 @@ export function computeRecipeCost(
         },
       )
       const perPortion = subSummary.food_cost / subEntry.portions
-      const lineCost = Math.round(ing.quantity * perPortion * 100) / 100
+
+      // M111 — sub-recipe yield conversion. When the recipe consumes
+      // this sub-recipe in a non-portion unit (e.g. 30 g of sauce), use
+      // the sub-recipe's declared yield to convert to a portion equivalent.
+      // Math: qty_in_yield_unit / yield_amount = portion_equivalent.
+      // Falls back to honest-incomplete (unit_mismatch + null cost)
+      // when no yield is set or units are family-incompatible.
+      const recipeUnit = ing.unit ?? 'portion'
+      let lineCost: number | null
+      let unitMismatch = false
+      let displayUnit  = 'portion'
+
+      if (recipeUnit === 'portion') {
+        lineCost = Math.round(ing.quantity * perPortion * 100) / 100
+      } else if (subEntry.yield_amount && subEntry.yield_unit) {
+        const qtyInYieldUnit = convertQuantity(ing.quantity, recipeUnit, subEntry.yield_unit)
+        if (qtyInYieldUnit == null) {
+          // Family mismatch (e.g. recipe wants ml of a g-yield sauce).
+          lineCost     = null
+          unitMismatch = true
+          displayUnit  = subEntry.yield_unit
+        } else {
+          const portionEquiv = qtyInYieldUnit / subEntry.yield_amount
+          lineCost = Math.round(portionEquiv * perPortion * 100) / 100
+          displayUnit = recipeUnit
+        }
+      } else {
+        // No yield set — sub-recipe can only be consumed in portions.
+        // Honest-incomplete: surface as unit_mismatch so the UI
+        // prompts the owner to set the yield.
+        lineCost     = null
+        unitMismatch = true
+      }
+
       return {
         ...ing,
-        invoice_unit:        'portion',
+        invoice_unit:        displayUnit,
         unit_price:          Math.round(perPortion * 100) / 100,
         line_cost:           lineCost,
-        unit_mismatch:       false,
+        unit_mismatch:       unitMismatch,
         no_price:            subSummary.food_cost === 0 && subSummary.missing_prices > 0,
         latest_line_id:      null,
         latest_currency:     null,
         is_subrecipe:        true,
         cycle:               false,
-        pack_size:           null,
-        base_unit:           null,
-        cost_per_base_unit:  null,
+        pack_size:           subEntry.yield_amount,
+        base_unit:           subEntry.yield_unit,
+        cost_per_base_unit:  subEntry.yield_amount && subEntry.yield_amount > 0
+          ? Math.round((perPortion / subEntry.yield_amount) * 10000) / 10000
+          : null,
         pack_auto_detected:  false,
       }
     }
@@ -302,12 +343,18 @@ export async function loadRecipeIndex(
   const idx: RecipeIndex = new Map()
   const { data: recipes } = await db
     .from('recipes')
-    .select('id, portions')
+    .select('id, portions, yield_amount, yield_unit')
     .eq('business_id', businessId)
     .is('archived_at', null)
   if (!recipes || recipes.length === 0) return idx
   for (const r of recipes) {
-    idx.set(r.id, { id: r.id, portions: r.portions ?? 1, ingredients: [] })
+    idx.set(r.id, {
+      id:           r.id,
+      portions:     r.portions ?? 1,
+      yield_amount: r.yield_amount != null ? Number(r.yield_amount) : null,
+      yield_unit:   r.yield_unit ?? null,
+      ingredients:  [],
+    })
   }
   const recipeIds = recipes.map((r: any) => r.id)
   const { data: ings } = await db

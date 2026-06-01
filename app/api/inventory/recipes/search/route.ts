@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   let qB = db
     .from('recipes')
-    .select('id, name, type, portions')
+    .select('id, name, type, portions, yield_amount, yield_unit')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -75,6 +75,10 @@ export async function GET(req: NextRequest) {
         food_cost:        summary.food_cost,
         cost_per_portion: Math.round(perPortion * 100) / 100,
         would_cycle:      cycle,
+        // M111 — surface yield so the picker can default a non-portion
+        // unit and the qty form can enable the unit dropdown when set.
+        yield_amount:     r.yield_amount != null ? Number(r.yield_amount) : null,
+        yield_unit:       r.yield_unit ?? null,
       }
     })
 

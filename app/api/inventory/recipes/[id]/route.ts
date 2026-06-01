@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: r, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, notes, updated_at')
+    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, updated_at')
     .eq('id', params.id)
     .maybeSingle()
   if (rErr)  return NextResponse.json({ error: rErr.message }, { status: 500 })
@@ -97,6 +97,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     patch.portions = pt
   }
 
+  // M111 — sub-recipe yield. Accept either as a paired update or as
+  // explicit nulls (clearing both). The DB CHECK enforces that the pair
+  // is either fully set or fully null; mirror that here so we never
+  // submit a partial pair.
+  if (body.yield_amount !== undefined || body.yield_unit !== undefined) {
+    const amtRaw = body.yield_amount
+    const unitRaw = body.yield_unit
+    const clearing = (amtRaw === null || amtRaw === '' || amtRaw === undefined)
+                  && (unitRaw === null || unitRaw === '' || unitRaw === undefined)
+    if (clearing) {
+      patch.yield_amount = null
+      patch.yield_unit   = null
+    } else {
+      const amt  = Number(amtRaw)
+      const unit = typeof unitRaw === 'string' ? unitRaw.trim() : null
+      if (!Number.isFinite(amt) || amt <= 0) {
+        return NextResponse.json({ error: 'yield_amount must be a positive number' }, { status: 400 })
+      }
+      if (!unit) {
+        return NextResponse.json({ error: 'yield_unit required when yield_amount is set' }, { status: 400 })
+      }
+      patch.yield_amount = amt
+      patch.yield_unit   = unit
+    }
+  }
+
   // Price fields go through the single-source resolver so menu_price and
   // selling_price_ex_vat can never diverge. Only run the resolver if at
   // least one price-related field was supplied — otherwise a name-only
@@ -134,7 +160,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('recipes')
     .update(patch)
     .eq('id', params.id)
-    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, notes, updated_at')
+    .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, updated_at')
     .single()
   if (error) {
     if ((error as any).code === '23505') {

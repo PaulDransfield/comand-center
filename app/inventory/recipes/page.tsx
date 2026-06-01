@@ -362,6 +362,11 @@ interface DetailResponse {
     vat_rate: number | null;
     channel: string | null;
     portions: number; notes: string | null; updated_at: string; source_product_id?: string | null
+    // M111 — sub-recipe yield (weight/volume per portion). Both null
+    // for legacy / portion-only recipes; both set for sub-recipes that
+    // can be consumed by weight in other recipes.
+    yield_amount?: number | null
+    yield_unit?:   string | null
   }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
@@ -507,6 +512,12 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
               <div style={{ marginTop: 4, fontSize: 10, color: UXP.ink4 }}>
                 {data.recipe.portions} portion{data.recipe.portions === 1 ? '' : 's'}
               </div>
+              {/* M111 — sub-recipe yield (weight/volume per portion).
+                  Setting this lets the recipe be consumed by weight in
+                  other recipes (e.g. "30 g of White Sauce"). Optional;
+                  recipes without yield can still be consumed in portions.
+                  Empty + empty = clears both (DB CHECK enforces). */}
+              <YieldEditor recipe={data.recipe} onSave={patchRecipe} />
               {(data.summary.missing_prices > 0 || data.summary.unit_mismatches > 0) && (() => {
                 // Warning cards — one per issue type, each a discrete
                 // clickable card with title + action affordance. Replaces
@@ -626,6 +637,73 @@ function RecipeDrawer({ recipeId, bizId, onClose, onOpenSubrecipe, onBack, canGo
         )}
       </div>
     </Backdrop>
+  )
+}
+
+// Inline yield editor for sub-recipes (M111). Optional pair of fields:
+// amount + unit. When BOTH are set, parent recipes can consume this
+// recipe in any unit family-compatible with the yield_unit (g↔kg,
+// ml↔l). When EITHER is cleared, both clear (DB CHECK enforces the
+// pair invariant) — so the sub-recipe falls back to portion-only.
+// Honest-incomplete: a half-set yield never saves.
+function YieldEditor({ recipe, onSave }: {
+  recipe: DetailResponse['recipe']
+  onSave: (patch: Record<string, any>) => Promise<void>
+}) {
+  const [amt,  setAmt]  = useState(recipe.yield_amount != null ? String(recipe.yield_amount) : '')
+  const [unit, setUnit] = useState(recipe.yield_unit ?? '')
+  const [busy, setBusy] = useState(false)
+  const [err,  setErr]  = useState<string | null>(null)
+  useEffect(() => { setAmt(recipe.yield_amount != null ? String(recipe.yield_amount) : '') }, [recipe.yield_amount])
+  useEffect(() => { setUnit(recipe.yield_unit ?? '') }, [recipe.yield_unit])
+  const dirty = (amt !== (recipe.yield_amount != null ? String(recipe.yield_amount) : ''))
+             || (unit !== (recipe.yield_unit ?? ''))
+  async function save() {
+    setBusy(true); setErr(null)
+    try {
+      const trimmedAmt = amt.trim()
+      if (trimmedAmt === '' && unit === '') {
+        await onSave({ yield_amount: null, yield_unit: null })
+        return
+      }
+      const n = Number(trimmedAmt)
+      if (!Number.isFinite(n) || n <= 0) throw new Error('Yield amount must be > 0')
+      if (!unit) throw new Error('Pick a yield unit')
+      await onSave({ yield_amount: n, yield_unit: unit })
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+  // Sub-recipe yield units intentionally exclude 'portion' — yield is
+  // a description of weight/volume per portion, never portions.
+  const yieldUnitOptions = UNIT_OPTIONS.filter(u => u !== 'portion')
+  return (
+    <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+      <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600 }}>
+        Yield per portion (optional, for sub-recipes)
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input
+          type="number" min="0" step="0.01" value={amt}
+          onChange={e => setAmt(e.target.value)}
+          placeholder="e.g. 250"
+          disabled={busy}
+          style={{ ...inputStyle, width: 90 }}
+        />
+        <select value={unit} onChange={e => setUnit(e.target.value)} disabled={busy} style={{ ...inputStyle, width: 80 }}>
+          <option value="">—</option>
+          {yieldUnitOptions.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+        <span style={{ fontSize: 10, color: UXP.ink4 }}>per portion</span>
+        {dirty && (
+          <button onClick={save} disabled={busy} style={{ ...primaryBtn, padding: '4px 10px', fontSize: 11 }}>
+            {busy ? '…' : 'Save'}
+          </button>
+        )}
+      </div>
+      {err && <div style={{ fontSize: 10, color: UXP.coral }}>{err}</div>}
+      <div style={{ fontSize: 9, color: UXP.ink4, lineHeight: 1.4 }}>
+        Lets this recipe be consumed by weight/volume in other recipes (e.g. 30 g of sauce). Leave blank for portion-only.
+      </div>
+    </div>
   )
 }
 
@@ -823,21 +901,33 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
         {/* Unit is editable per-line. Picking the wrong unit silently bloats
             the line cost (e.g. "30 st" of a 580g pack scales by 580; "30 g"
             doesn't). Owner needs to fix this without deleting + re-adding the
-            ingredient. Sub-recipes are locked to 'portion'. */}
-        {ing.is_subrecipe ? (
-          <div style={{ color: UXP.ink3, fontSize: 11 }}>{ing.unit ?? 'portion'}</div>
+            ingredient.
+            For sub-recipes: editable only when the sub-recipe has a yield set
+            (engine passes yield_unit through as ing.base_unit). Without a
+            yield the sub-recipe can only be consumed in 'portion' — show
+            plain text + a hint to set the yield. */}
+        {ing.is_subrecipe && !ing.base_unit ? (
+          <div
+            style={{ color: UXP.ink3, fontSize: 11 }}
+            title="This sub-recipe has no yield set (e.g. '250 g per portion'). Open it and set a yield to consume it by weight/volume in other recipes."
+          >
+            portion
+          </div>
         ) : (() => {
-          const current = ing.unit ?? ing.invoice_unit ?? 'g'
-          const inList = (UNIT_OPTIONS as readonly string[]).includes(current)
+          const current = ing.unit ?? ing.invoice_unit ?? (ing.is_subrecipe ? (ing.base_unit ?? 'portion') : 'g')
+          const inList  = (UNIT_OPTIONS as readonly string[]).includes(current)
           return (
             <select
               value={current}
               onChange={e => { const v = e.target.value; if (v && v !== current) onChange({ unit: v }) }}
-              title="Recipe unit. Must match what the engine can convert from the product's pack/base unit — mismatches show in the cost row above."
+              title={ing.is_subrecipe
+                ? `Sub-recipe yield is ${ing.pack_size} ${ing.base_unit} per portion — consume in any unit family-compatible with ${ing.base_unit}, or in portions directly.`
+                : "Recipe unit. Must match what the engine can convert from the product's pack/base unit — mismatches show in the cost row above."}
               style={{ ...inputStyle, padding: '3px 4px', fontSize: 11 }}
             >
               {!inList && <option value={current}>{current}</option>}
-              {UNIT_OPTIONS.map(u => <option key={u} value={u}>{u}</option>)}
+              {ing.is_subrecipe && <option value="portion">portion</option>}
+              {UNIT_OPTIONS.filter(u => u !== 'portion' || !ing.is_subrecipe).map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           )
         })()}
@@ -1135,7 +1225,14 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                             const def = p.base_unit ?? p.invoice_unit ?? ''
                             setUnit(String(def).toLowerCase())
                           }
-                          else if (!p.would_cycle) { setPicked(p); setUnit('portion') }
+                          else if (!p.would_cycle) {
+                            setPicked(p)
+                            // M111 — default to the sub-recipe's yield unit
+                            // when set; lets the owner type a gram amount
+                            // immediately without flipping the dropdown.
+                            // Falls back to 'portion' for legacy sub-recipes.
+                            setUnit(p.yield_unit ?? 'portion')
+                          }
                         }}
                         disabled={tab === 'recipe' && p.would_cycle}
                         style={{
@@ -1182,10 +1279,23 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                 <input type="number" min="0" step="0.01" value={qty} autoFocus onChange={e => setQty(e.target.value)} disabled={busy} style={inputStyle} />
               </Field>
               <Field label={t('picker.unit')}>
-                <select value={unit} onChange={e => setUnit(e.target.value)} disabled={busy || tab === 'recipe'} style={inputStyle}>
-                  {/* Pre-select what the product expects (base_unit if pack
-                      is set, else invoice_unit) — owner can override. */}
-                  {tab === 'recipe' && <option value="portion">portion</option>}
+                {/* M111 — sub-recipes can be consumed by weight/volume when
+                    they have a yield set. If yield is null we fall back to
+                    portion-only (current legacy behaviour). */}
+                <select
+                  value={unit}
+                  onChange={e => setUnit(e.target.value)}
+                  disabled={busy || (tab === 'recipe' && !picked?.yield_unit)}
+                  style={inputStyle}
+                >
+                  {tab === 'recipe' && (
+                    <>
+                      <option value="portion">portion</option>
+                      {picked?.yield_unit && UNIT_OPTIONS
+                        .filter(u => u !== 'portion')
+                        .map(u => <option key={u} value={u}>{u}</option>)}
+                    </>
+                  )}
                   {tab === 'product' && UNIT_OPTIONS.map(u => (
                     <option key={u} value={u}>{u}</option>
                   ))}
@@ -1201,7 +1311,11 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
                   // No pack data — owner must enter in the invoice unit OR
                   // edit the product to add pack/base info first.
                   : <>No pack info set for this product. Enter in <strong>{picked.invoice_unit ?? '?'}</strong> or edit the product's pack/base unit first so g↔kg conversion works.</>
-              ) : t('picker.subRecipeHint')}
+              ) : picked.yield_unit && picked.yield_amount ? (
+                <>This sub-recipe yields <strong>{picked.yield_amount} {picked.yield_unit}</strong> per portion. Enter the amount you actually use — cost auto-converts via the yield.</>
+              ) : (
+                <>Quantity is in <strong>portions</strong> of the sub-recipe. To consume it by weight/volume in this recipe, set the sub-recipe's yield (e.g. "1 portion = 250 g") on its own page.</>
+              )}
             </div>
             {err && <div style={errBanner}>{err}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10 }}>

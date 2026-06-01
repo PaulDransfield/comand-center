@@ -125,9 +125,14 @@ export async function POST(req: NextRequest) {
   // editing; a stable placeholder for new recipes.
   const draftRecipeId = recipeId ?? `draft-${randomUUID()}`
   const draftEntry: RecipeContextEntry = {
-    id:          draftRecipeId,
+    id:           draftRecipeId,
     portions,
-    ingredients: draftIngredients,
+    // M111 — preview only needs the in-progress recipe's COST, not its
+    // yield; the yield only matters when this recipe is consumed AS a
+    // sub-recipe by another. Leave null; never affects preview output.
+    yield_amount: null,
+    yield_unit:   null,
+    ingredients:  draftIngredients,
   }
   recipeIndex.set(draftRecipeId, draftEntry)
 
