@@ -73,22 +73,23 @@ export async function POST(req: NextRequest) {
       details.push({ id: p.id, name: p.name, suggestion: null })
       continue
     }
-    // pack_source column (M119) pending owner SQL apply — once the
-    // column exists, write `pack_source: sug.source === 'name' ? 'name_parsed' : 'invoice_unit_inferred'`.
-    // For now the source is returned in the response details so audits
-    // can re-run the parser to recover provenance.
+    // pack_source mirrors ParsedPack.source so audits can distinguish
+    // name-parsed vs invoice_unit-inferred without re-running the parser
+    // (M119 applied 2026-06-02).
+    const packSource = sug.source === 'name' ? 'name_parsed' : 'invoice_unit_inferred'
     const { error } = await db
       .from('products')
       .update({
         pack_size:   sug.pack_size,
         base_unit:   sug.base_unit,
+        pack_source: packSource,
       })
       .eq('id', p.id)
     if (error) {
       details.push({ id: p.id, name: p.name, suggestion: { error: error.message } })
       continue
     }
-    details.push({ id: p.id, name: p.name, suggestion: { ...sug } })
+    details.push({ id: p.id, name: p.name, suggestion: { ...sug, pack_source: packSource } })
     applied++
     if (sug.source === 'name') appliedFromName++
     else appliedFromInvoice++

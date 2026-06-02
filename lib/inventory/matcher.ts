@@ -621,9 +621,12 @@ export async function createProductFromLine(
   } else {
     // Auto-detect pack size from the canonical name; fall back to the
     // supplier invoice unit (Phase A — "Citron — KG" → 1000g) when the
-    // name discloses nothing. NOTE: pack_source column (M119) is
-    // pending — once applied, also write packSourceTag here.
+    // name discloses nothing. pack_source tags provenance (M119 applied
+    // 2026-06-02).
     const parsedPack = parseProductPackSize(productName, line.unit)
+    const packSourceTag = parsedPack
+      ? (parsedPack.source === 'name' ? 'name_parsed' : 'invoice_unit_inferred')
+      : null
 
     const { data: prod, error: prodErr } = await db
       .from('products')
@@ -638,6 +641,7 @@ export async function createProductFromLine(
         created_via:             'owner_review',
         pack_size:               parsedPack?.pack_size ?? null,
         base_unit:               parsedPack?.base_unit ?? null,
+        pack_source:             packSourceTag,
       })
       .select('id')
       .single()

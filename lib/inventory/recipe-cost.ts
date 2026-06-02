@@ -8,7 +8,7 @@
 // (GET /api/inventory/recipes/[id]) call computeRecipeCost() so the
 // formula can't drift between surfaces.
 //
-import { canonicalUnit, convertQuantity, parseProductPackSize } from './unit-conversion'
+import { canonicalUnit, convertQuantity, parseProductPackSize, unitFamily } from './unit-conversion'
 import { getFxRate, type FxIndex } from './fx'
 
 // UNIT MODEL (post-M087):
@@ -62,6 +62,8 @@ export interface ProductLatestPrice {
   base_unit:       string | null    // M087 — 'g' | 'ml' | 'st'
   latest_price_sek:  number | null  // M088 — latest_price converted via fx at latest_date; null if no rate
   fx_rate_used:    number | null    // M088 — diagnostic / UI display ("@ 11.45 SEK")
+  density_g_per_ml: number | null   // M120 — for mass↔volume conversion in the cost engine
+  density_source:   string | null   // M120 — manual | ai_inferred | convention_default | null
 }
 
 export interface CostedIngredient extends IngredientForCosting {
@@ -79,6 +81,9 @@ export interface CostedIngredient extends IngredientForCosting {
   base_unit:           string | null  // 'g' | 'ml' | 'st'
   cost_per_base_unit:  number | null  // unit_price / pack_size — e.g. 0.056 kr/g
   pack_auto_detected:  boolean        // true when the parser inferred pack_size from the name (NOT saved yet)
+  // M120 — density-conversion provenance for UI ("converted via density 0.91 g/ml")
+  density_used:        number | null  // the g/ml value the engine actually used for mass↔volume conversion; null when none needed
+  density_source:      string | null  // 'manual' | 'ai_inferred' | 'convention_default' | null
 }
 
 export interface RecipeCostSummary {
@@ -123,6 +128,8 @@ export function computeRecipeCost(
           base_unit:           null,
           cost_per_base_unit:  null,
           pack_auto_detected:  false,
+          density_used:        null,
+          density_source:      null,
         }
       }
       const subEntry = index?.get(ing.subrecipe_id)
@@ -142,6 +149,8 @@ export function computeRecipeCost(
           base_unit:           null,
           cost_per_base_unit:  null,
           pack_auto_detected:  false,
+          density_used:        null,
+          density_source:      null,
         }
       }
       // Recurse — pass a copy of ancestors so siblings can re-enter the
@@ -208,6 +217,8 @@ export function computeRecipeCost(
           ? Math.round((perPortion / subEntry.yield_amount) * 10000) / 10000
           : null,
         pack_auto_detected:  false,
+        density_used:        null,
+        density_source:      null,
       }
     }
 
@@ -267,6 +278,16 @@ export function computeRecipeCost(
     // is correct because '1 st of the jar' IS unit_price by definition.
     let lineCost: number | null = null
     let unitMismatch = false
+    let densityUsed: number | null = null
+    // M120 — density-bridge for mass↔volume. If recipe asks "30 g of
+    // olive oil" but supplier base is ml, divide by density to get ml,
+    // then cost via cost-per-ml. Same in reverse for ml ingredients
+    // priced by mass. Only fires when:
+    //   - convertQuantity returned null (family mismatch)
+    //   - both families ∈ {mass, volume}
+    //   - product has density_g_per_ml set
+    // Otherwise honest-incomplete: unit_mismatch=true, line_cost=null.
+    const density = p?.density_g_per_ml ?? null
     if (!noPrice && costPerBase != null && baseUnit && ing.unit) {
       const converted = convertQuantity(ing.quantity, ing.unit, baseUnit)
       if (converted != null) {
@@ -277,8 +298,40 @@ export function computeRecipeCost(
         // owner means by "1 of these". Pack-derived base_unit is irrelevant
         // here; the supplier sells per st and the recipe specifies in st.
         lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
+      } else if (density != null && density > 0) {
+        // Mass↔volume bridge via density. First normalise both sides to
+        // their canonical SI unit (g or ml).
+        const recipeFam = unitFamily(ing.unit)
+        const baseFam   = unitFamily(baseUnit)
+        if (recipeFam && baseFam && recipeFam !== baseFam &&
+            (recipeFam === 'mass' || recipeFam === 'volume') &&
+            (baseFam   === 'mass' || baseFam   === 'volume')) {
+          // Convert recipe qty to its family base (g or ml), then apply
+          // density to bridge to the OTHER family's base.
+          const recipeBase = recipeFam === 'mass' ? 'g' : 'ml'
+          const baseBase   = baseFam   === 'mass' ? 'g' : 'ml'
+          const qtyInRecipeBase = convertQuantity(ing.quantity, ing.unit, recipeBase)
+          if (qtyInRecipeBase != null) {
+            // recipeBase=g, baseBase=ml: bridge = qty_g / density_g_per_ml = ml
+            // recipeBase=ml, baseBase=g: bridge = qty_ml × density_g_per_ml = g
+            const bridged = recipeFam === 'mass'
+              ? qtyInRecipeBase / density
+              : qtyInRecipeBase * density
+            // bridged is now in baseBase ('g' or 'ml'); base_unit equals
+            // baseBase since they're the same canonical SI unit.
+            lineCost = Math.round(bridged * costPerBase * 100) / 100
+            densityUsed = density
+            unitMismatch = false
+          } else {
+            lineCost = null
+            unitMismatch = true
+          }
+        } else {
+          lineCost = null
+          unitMismatch = true
+        }
       } else {
-        // Truly cross-family (e.g. recipe ml vs product st with no conversion)
+        // Truly cross-family without density to bridge.
         lineCost = null
         unitMismatch = true
       }
@@ -314,6 +367,8 @@ export function computeRecipeCost(
       base_unit:           baseUnit,
       cost_per_base_unit:  costPerBase != null ? Math.round(costPerBase * 10000) / 10000 : null,
       pack_auto_detected:  autoParsed,
+      density_used:        densityUsed,
+      density_source:      densityUsed != null ? (p?.density_source ?? null) : null,
     }
   })
 
@@ -464,6 +519,14 @@ export function wouldCreateCycle(
   return false
 }
 
+// M120 — set false the first time PostgREST tells us density_g_per_ml
+// doesn't exist (column not applied yet). Skips the optimistic SELECT
+// on every subsequent call so we don't pay the round-trip per batch.
+// Once the owner applies the M120 SQL the next process restart picks
+// it up; until then the cost engine silently treats density as null
+// (honest-incomplete falls back to unit_mismatch as before).
+let DENSITY_COLUMNS_AVAILABLE = true
+
 // Leaf-only price fetch — supplier_invoice_lines path. Used as a
 // building block by both `getProductLatestPrices` (the public reader)
 // and the recipe-sourced product pricing pass below. Does NOT detect
@@ -484,13 +547,36 @@ async function getProductLatestPricesLeaf(
   // See docs/investigation/no-price-root-cause.md.
   const BATCH_IN = 100
 
+  // M120-aware SELECT — try density columns first; if the column hasn't
+  // been applied yet (42703 undefined_column), retry without them. The
+  // flag flips once at module level on first miss; subsequent calls
+  // skip the retry attempt.
   for (let i = 0; i < productIds.length; i += BATCH_IN) {
     const slice = productIds.slice(i, i + BATCH_IN)
-    const { data: prods, error: pErr } = await db
-      .from('products')
-      .select('id, name, invoice_unit, pack_size, base_unit')
-      .in('id', slice)
-    if (pErr) throw new Error(`[recipe-cost] products lookup failed: ${pErr.message}`)
+    let prods: any[] | null = null
+    if (DENSITY_COLUMNS_AVAILABLE) {
+      const { data, error: pErr } = await db
+        .from('products')
+        .select('id, name, invoice_unit, pack_size, base_unit, density_g_per_ml, density_source')
+        .in('id', slice)
+      if (pErr) {
+        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message)) {
+          DENSITY_COLUMNS_AVAILABLE = false   // M120 not applied yet — stop trying.
+        } else {
+          throw new Error(`[recipe-cost] products lookup failed: ${pErr.message}`)
+        }
+      } else {
+        prods = data
+      }
+    }
+    if (prods == null) {
+      const { data, error: pErr } = await db
+        .from('products')
+        .select('id, name, invoice_unit, pack_size, base_unit')
+        .in('id', slice)
+      if (pErr) throw new Error(`[recipe-cost] products lookup failed: ${pErr.message}`)
+      prods = data
+    }
     for (const p of prods ?? []) {
       out.set(p.id, {
         product_id: p.id, product_name: p.name ?? null,
@@ -499,6 +585,8 @@ async function getProductLatestPricesLeaf(
         pack_size: p.pack_size != null ? Number(p.pack_size) : null,
         base_unit: p.base_unit ?? null,
         latest_price_sek: null, fx_rate_used: null,
+        density_g_per_ml: (p as any).density_g_per_ml != null ? Number((p as any).density_g_per_ml) : null,
+        density_source:   (p as any).density_source ?? null,
       })
     }
   }
@@ -580,6 +668,8 @@ async function getProductLatestPricesLeaf(
       latest_date: l.invoice_date, latest_line_id: l.id, latest_currency: currency,
       pack_size: existing?.pack_size ?? null, base_unit: existing?.base_unit ?? null,
       latest_price_sek: priceSek, fx_rate_used: fxRateUsed,
+      density_g_per_ml: existing?.density_g_per_ml ?? null,
+      density_source:   existing?.density_source ?? null,
     })
   }
   return out
@@ -619,11 +709,30 @@ export async function getProductLatestPrices(
   const BATCH_IN_PUBLIC = 100   // same rationale as BATCH_IN above (16 KB header cap)
   for (let i = 0; i < productIds.length; i += BATCH_IN_PUBLIC) {
     const slice = productIds.slice(i, i + BATCH_IN_PUBLIC)
-    const { data: prods, error: pErr } = await db
-      .from('products')
-      .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency')
-      .in('id', slice)
-    if (pErr) throw new Error(`[recipe-cost] products(public) lookup failed: ${pErr.message}`)
+    let prods: any[] | null = null
+    if (DENSITY_COLUMNS_AVAILABLE) {
+      const { data, error: pErr } = await db
+        .from('products')
+        .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency, density_g_per_ml, density_source')
+        .in('id', slice)
+      if (pErr) {
+        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message)) {
+          DENSITY_COLUMNS_AVAILABLE = false
+        } else {
+          throw new Error(`[recipe-cost] products(public) lookup failed: ${pErr.message}`)
+        }
+      } else {
+        prods = data
+      }
+    }
+    if (prods == null) {
+      const { data, error: pErr } = await db
+        .from('products')
+        .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency')
+        .in('id', slice)
+      if (pErr) throw new Error(`[recipe-cost] products(public) lookup failed: ${pErr.message}`)
+      prods = data
+    }
     for (const p of prods ?? []) {
       out.set(p.id, {
         product_id:        p.id,
@@ -637,6 +746,8 @@ export async function getProductLatestPrices(
         base_unit:         p.base_unit ?? null,
         latest_price_sek:  null,
         fx_rate_used:      null,
+        density_g_per_ml:  (p as any).density_g_per_ml != null ? Number((p as any).density_g_per_ml) : null,
+        density_source:    (p as any).density_source ?? null,
       })
       if (p.price_override != null) {
         overrideProducts.push({
