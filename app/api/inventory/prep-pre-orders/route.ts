@@ -78,8 +78,9 @@ export async function POST(req: NextRequest) {
   if (forbidden) return forbidden
 
   const partySize = Math.floor(Number(body.party_size ?? 0))
-  if (!Number.isFinite(partySize) || partySize <= 0) {
-    return NextResponse.json({ error: 'party_size must be a positive integer' }, { status: 400 })
+  // H2 + L8: positive int + sanity ceiling (no real party exceeds 500).
+  if (!Number.isFinite(partySize) || partySize <= 0 || partySize > 500) {
+    return NextResponse.json({ error: 'party_size must be a positive integer ≤ 500' }, { status: 400 })
   }
 
   const rawItems = Array.isArray(body.items) ? body.items : []
@@ -118,15 +119,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // H2: cap free-text inputs.
+  const partyName = body.party_name?.toString().trim().slice(0, 200) || null
+  const partyNotes = body.notes?.toString().trim().slice(0, 2000) || null
+
   const { data, error } = await db
     .from('prep_pre_orders')
     .insert({
       org_id:       auth.orgId,
       business_id:  businessId,
       service_date: serviceDate,
-      party_name:   body.party_name?.toString().trim() || null,
+      party_name:   partyName,
       party_size:   partySize,
-      notes:        body.notes?.toString().trim() || null,
+      notes:        partyNotes,
       items,
       created_by:   (auth as any).userId ?? null,
     })

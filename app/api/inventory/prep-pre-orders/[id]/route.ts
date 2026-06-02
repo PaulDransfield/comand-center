@@ -62,17 +62,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     patch.service_date = body.service_date
   }
   if (body.party_name !== undefined) {
-    patch.party_name = body.party_name?.toString().trim() || null
+    // H2: cap free-text input.
+    patch.party_name = body.party_name?.toString().trim().slice(0, 200) || null
   }
   if (body.party_size !== undefined) {
     const ps = Math.floor(Number(body.party_size))
-    if (!Number.isFinite(ps) || ps <= 0) {
-      return NextResponse.json({ error: 'party_size must be a positive integer' }, { status: 400 })
+    // H2 + L8: positive int + sanity ceiling.
+    if (!Number.isFinite(ps) || ps <= 0 || ps > 500) {
+      return NextResponse.json({ error: 'party_size must be a positive integer ≤ 500' }, { status: 400 })
     }
     patch.party_size = ps
   }
   if (body.notes !== undefined) {
-    patch.notes = body.notes?.toString().trim() || null
+    // H2: cap free-text input.
+    patch.notes = body.notes?.toString().trim().slice(0, 2000) || null
   }
   if (body.items !== undefined) {
     const rawItems = Array.isArray(body.items) ? body.items : []

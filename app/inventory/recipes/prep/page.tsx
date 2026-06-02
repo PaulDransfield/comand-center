@@ -11,7 +11,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 
@@ -126,6 +126,7 @@ interface PrepSessionLine {
   meta?: {
     method?:      string | null
     notes?:       string | null
+    archived_at?: string | null     // H3 — sub-recipe archived after session save
     ingredients?: SubIngredient[]
     uses?:        UseRef[]
   }
@@ -165,6 +166,10 @@ export default function PrepListPage() {
     line: PrepSessionLine
     session_line_id: string | null
   } | null>(null)
+  // M4 — debounce the preview-mode "save in modal → recompute" path so
+  // a chef typing fast across 5 ingredients in 5 seconds doesn't fire 5
+  // back-to-back preview rebuilds. 400 ms quiet-period.
+  const recomputeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // M118 — pre-orders for the chosen service_date. Default service
   // date is tomorrow (most prep is done the day before).
@@ -416,12 +421,20 @@ export default function PrepListPage() {
 
   // Toggle a single line's check state. Optimistic update so the
   // checkbox feels instant on a tablet; rolls back on error.
+  //
+  // M6 — capture the PRE-optimistic value from current state inside
+  // setSessionLines, not from the `line` arg (which may already
+  // include other optimistic patches from sibling toggles).
   const toggleLine = useCallback(async (line: PrepSessionLine) => {
     if (!activeSession) return
     const targetChecked = line.checked_at == null
     const newCheckedAt  = targetChecked ? new Date().toISOString() : null
-    // Optimistic patch.
-    setSessionLines(prev => prev.map(l => l.id === line.id ? { ...l, checked_at: newCheckedAt } : l))
+    let prevValue: PrepSessionLine | null = null
+    setSessionLines(prev => prev.map(l => {
+      if (l.id !== line.id) return l
+      prevValue = l                            // snapshot the actual current state
+      return { ...l, checked_at: newCheckedAt }
+    }))
     try {
       const r = await fetch(
         `/api/inventory/prep-sessions/${activeSession.id}/lines/${line.id}/toggle`,
@@ -436,8 +449,9 @@ export default function PrepListPage() {
       const { line: updated } = await r.json()
       setSessionLines(prev => prev.map(l => l.id === line.id ? updated : l))
     } catch (e: any) {
-      // Roll back the optimistic patch.
-      setSessionLines(prev => prev.map(l => l.id === line.id ? line : l))
+      // Roll back to the captured pre-optimistic value (not the stale
+      // `line` arg).
+      if (prevValue) setSessionLines(prev => prev.map(l => l.id === line.id ? prevValue! : l))
       setError(e.message)
     }
   }, [activeSession])
@@ -504,6 +518,16 @@ export default function PrepListPage() {
     const id = setTimeout(() => { compute() }, 350)
     return () => clearTimeout(id)
   }, [bizId, selectedItems, compute])
+
+  // M4 — debounced trigger for modal-side saves that need the preview
+  // refreshed. Coalesces bursts of editor blurs into one rebuild.
+  const scheduleRecompute = useCallback(() => {
+    if (recomputeTimerRef.current) clearTimeout(recomputeTimerRef.current)
+    recomputeTimerRef.current = setTimeout(() => { compute() }, 400)
+  }, [compute])
+  useEffect(() => () => {
+    if (recomputeTimerRef.current) clearTimeout(recomputeTimerRef.current)
+  }, [])
 
   const filteredDishes = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -1335,8 +1359,9 @@ export default function PrepListPage() {
                   ? { ...l, meta: { ...(l.meta ?? {}), method: newValue } }
                   : l))
               } else {
-                // Preview mode — recompute to pick up the latest.
-                compute()
+                // Preview mode — debounced recompute (M4) avoids 5
+                // round-trips when chef edits 5 ingredients in a burst.
+                scheduleRecompute()
               }
             }}
             onIngredientNoteSaved={(ingredientId, newNotes) => {
@@ -1365,7 +1390,7 @@ export default function PrepListPage() {
                   return { ...l, meta: { ...(l.meta ?? {}), uses } }
                 }))
               } else {
-                compute()
+                scheduleRecompute()                        // M4
               }
             }}
           />
@@ -1378,6 +1403,10 @@ export default function PrepListPage() {
 // Adapt a create-mode preview row into the PrepSessionLine shape the
 // modal already understands. id is empty (we use null session_line_id
 // to mean "preview mode") and position is irrelevant for the modal.
+// M5 — converters from preview-row shapes to the unified modal line
+// shape (PrepSessionLine). Both meta types are subsets of
+// PrepSessionLine.meta so the assignment is type-safe without casts;
+// previously the `as any` hid the alignment.
 function previewComponentToSessionLine(c: PrepComponentLine): PrepSessionLine {
   return {
     id:                '',
@@ -1391,7 +1420,7 @@ function previewComponentToSessionLine(c: PrepComponentLine): PrepSessionLine {
     source_recipe_ids: c.source_recipes,
     checked_at:        null,
     position:          0,
-    meta:              c.meta as any,
+    meta:              c.meta,
   }
 }
 function previewProductToSessionLine(p: PrepProductLine): PrepSessionLine {
@@ -1407,7 +1436,7 @@ function previewProductToSessionLine(p: PrepProductLine): PrepSessionLine {
     source_recipe_ids: p.source_recipes,
     checked_at:        null,
     position:          0,
-    meta:              p.meta as any,
+    meta:              p.meta,
   }
 }
 
@@ -1475,6 +1504,20 @@ function LinePrepModal({
             ×
           </button>
         </div>
+
+        {/* H3 — banner when the sub-recipe was archived after the
+            session was saved. Chef sees stale-but-historical content
+            and knows not to expect edits to it. */}
+        {line.kind === 'component' && line.meta?.archived_at && (
+          <div style={{
+            margin: '8px 0 0', padding: '6px 10px',
+            background: '#fef3e0', border: `0.5px solid ${UXP.coral}33`,
+            borderRadius: 5, fontSize: 11, color: UXP.ink2,
+          }}>
+            This sub-recipe was archived after the prep session was created.
+            What you see below reflects the recipe at the time of archive — edits won't surface in active recipe lists.
+          </div>
+        )}
 
         {/* COMPONENT: method + ingredients */}
         {line.kind === 'component' && (
@@ -1732,15 +1775,21 @@ function InlineMethodEditor({
     }
   }, [draft, value, recipeId, onSaved])
 
+  // M8 — server caps recipes.method at 20k chars; mirror client-side
+  // with maxLength + a counter when close so a chef pasting a long
+  // method doesn't suffer silent truncation on save.
+  const METHOD_MAX = 20000
+  const remaining  = METHOD_MAX - draft.length
   return (
     <div style={{ marginTop: 6 }} onClick={e => e.stopPropagation()}>
       <textarea
         value={draft}
-        onChange={e => setDraft(e.target.value)}
+        onChange={e => setDraft(e.target.value.slice(0, METHOD_MAX))}
         onBlur={save}
         placeholder="Method — write how to make this. Saves automatically."
         rows={Math.max(2, Math.min(8, draft.split('\n').length + 1))}
         disabled={saving}
+        maxLength={METHOD_MAX}
         style={{
           width: '100%', boxSizing: 'border-box', padding: '6px 10px',
           fontSize: 11, color: UXP.ink2, lineHeight: 1.5,
@@ -1749,6 +1798,13 @@ function InlineMethodEditor({
           textDecoration: 'none' as const,
         }}
       />
+      {/* M8 — counter only shows when getting close to the cap, to
+          avoid clutter on small methods. */}
+      {remaining < 500 && (
+        <div style={{ fontSize: 10, color: remaining < 0 ? UXP.coral : UXP.ink4, marginTop: 4, textAlign: 'right' as const }}>
+          {draft.length.toLocaleString()} / {METHOD_MAX.toLocaleString()} chars
+        </div>
+      )}
       {err && (
         <div style={{ fontSize: 10, color: UXP.coral, marginTop: 4 }}>{err}</div>
       )}

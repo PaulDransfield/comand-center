@@ -1,7 +1,37 @@
 # ROADMAP.md — CommandCenter
-> Version 9.1 | Updated: 2026-05-31 | Session 22 ✅ (P2.0 voucher back-fill + Gate-0 precedence Fix 1/2 + reliability paydown Ticket 1)
-> Active focus: **Phase D watch active (2026-05-31 → 2026-06-07).** Decision at end of week: agreement >55% + queue draining + normalization re-confirm trickle → P2.0 validated, open P2a (suppliers master). Else reprioritise to Phase 3 catalogue (or upstream normalisation if re-confirms volume).
+> Version 9.2 | Updated: 2026-06-02 | Session 24 ✅ (full prep + order pipeline M116/M117/M118 + architecture audit fixes)
+> Active focus: **Phase D watch still active (2026-05-31 → 2026-06-07).** Plus opportunistic Phase 2 stock-aware order list when stock counts go routine; booking-API covers when owner picks a provider.
 > Read alongside CLAUDE.md, FIXES.md, MIGRATIONS.md.
+
+---
+
+## Session 24 — 2026-06-01/02 (prep + order pipeline + architecture audit) ✅ SHIPPED
+
+Multi-day build: recipes → prep list (manual covers + pre-orders + check-off + method/notes editing) → order list (supplier-grouped guide). Closed by a structured architecture audit (the 2026-06-01 review document) addressing 11 findings before bed.
+
+### Shipped to prod
+
+1. **Prep list v1 + v1.1** — `/inventory/recipes/prep` aggregates raw ingredients across entered dishes via `aggregatePrepRequirements` engine (`lib/inventory/prep-list.ts`); v1.1 added DB-backed sessions (M116) so the kitchen can check off lines cross-device.
+2. **Covers auto-fill (M117)** — `recipes.portions_per_cover` mix share drives `qty = round(covers × share)` per dish at the click of one Apply button.
+3. **Pre-orders (M118)** — advance customer commitments per service date; folds into Apply math as `freeCovers = max(0, covers − sum(party_sizes))` + per-dish add-on.
+4. **Modal editing pattern** — tap row body opens method + ingredients (component) or per-recipe notes (product); writes target the underlying `recipes.method` / `recipe_ingredients.notes` so every future prep list inherits.
+5. **Order list v1** — `/inventory/orders` builds a supplier-grouped shopping guide from active prep session(s) + pre-orders in date range. Owner-mandated: NEEDED qty is guide-only, ORDER qty empty by default, chef types loose text, per-supplier "Copy for chat/email" packs filled lines into plain text.
+6. **PostgREST dual-FK bug fix** — `recipe_ingredients.recipes!inner(...)` embed silently picked the wrong FK (subrecipe_id vs recipe_id) and dropped product uses + sub ingredients. Two-step query is the canonical pattern; memory `feedback_postgrest_dual_fk_ambiguity` recorded.
+7. **Audit fixes** (post-pipeline) — H1 (POST race-handler), H2 (text caps across all surfaces), H3 (archived-sub banner), M1 (`sub-recipe-yield.ts` shared helper), M2 + M3 (per-product supplier batching + parallel queries on order build), M4 (debounce modal save→compute), M5 (drop `as any` casts), M6 (pre-optimistic snapshot rollback), M7 (`dropped_session_ids` in response), M8 (textarea maxLength + counter), L5 (explicit comparator), L8 (party_size cap).
+
+### Architectural principles encoded (don't re-derive)
+
+- **Frozen-vs-live discipline**: prep_session_lines.total_qty frozen at save (intent at commit time); meta (method/notes/uses/archived_at) read live on every GET.
+- **Honest-incomplete**: yield-less subs flag uncertain; never produce confident-wrong totals.
+- **Shared yield math via `lib/inventory/sub-recipe-yield.ts`**: discriminated union return; prep engine uses it; cost engine will when next touched.
+- **Modal pattern**: checkbox column = toggle; row body = open modal; one `openModal` state holds prep-mode or preview-mode line. session_line_id flag picks save target.
+
+### Parked future seams
+
+- **BOOKING-API-COVERS-PLAN.md** — replace manual covers input with SuperbExperience / OpenTable / ResDiary / Caspeco-bookings APIs. Don't build until owner picks a provider.
+- **Phase 2 stock-aware order list** — auto-deduct `last_count + purchases − waste − theoretical_consumed`. Wait until stock counts are routine.
+- **POS → dish demand (M097)** — `pos_menu_items.recipe_id` is the reservoir for predicted covers from sales history. Owner mapping or POS connector first.
+- **Order list persistence** — `prep_orders` table for draft / sent / received tracking. v1 regenerates from same sources.
 
 ---
 

@@ -83,20 +83,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'items required (at least one recipe with qty > 0)' }, { status: 400 })
   }
 
-  const name = body.name?.toString().trim() || null
+  // H2: cap free-text inputs so a paste-bomb can't fill the row.
+  const name = body.name?.toString().trim().slice(0, 200) || null
 
   const db = createAdminClient()
 
-  // Refuse if an active session already exists for this business —
-  // partial unique index `prep_sessions_one_active_idx` enforces this
-  // at the DB layer too, but a friendlier 409 here avoids the raw
-  // unique-violation error message.
-  const { data: existing } = await db
-    .from('prep_sessions')
-    .select('id, name, created_at')
-    .eq('business_id', businessId)
-    .is('completed_at', null)
-    .limit(1)
+  // Refuse if an active session already exists for this business.
+  // Two layers: the friendly pre-check returns a structured 409, the
+  // INSERT below catches Postgres unique-violation (23505) on the
+  // partial index `prep_sessions_one_active_idx` to handle the race
+  // where two concurrent POSTs both pass the pre-check.
+  async function loadExistingActive() {
+    return db
+      .from('prep_sessions')
+      .select('id, name, created_at')
+      .eq('business_id', businessId)
+      .is('completed_at', null)
+      .limit(1)
+  }
+  const { data: existing } = await loadExistingActive()
   if (existing && existing.length > 0) {
     return NextResponse.json({
       error: 'active_session_exists',
@@ -135,7 +140,9 @@ export async function POST(req: NextRequest) {
     for (const p of prods ?? []) nameByProductId.set(p.id, p.name ?? null)
   }
 
-  // Insert the session header.
+  // Insert the session header. H1: catch the 23505 unique-violation
+  // race (two concurrent POSTs both passed the pre-check) and return
+  // the same friendly 409 shape with the now-existing session id.
   const { data: session, error: sErr } = await db
     .from('prep_sessions')
     .insert({
@@ -148,6 +155,17 @@ export async function POST(req: NextRequest) {
     .select('id, name, inputs, created_at, completed_at')
     .single()
   if (sErr || !session) {
+    if ((sErr as any)?.code === '23505') {
+      const { data: now } = await loadExistingActive()
+      const winner = now?.[0]
+      return NextResponse.json({
+        error: 'active_session_exists',
+        existing_session_id: winner?.id ?? null,
+        existing_session_name: winner?.name ?? null,
+        existing_session_created_at: winner?.created_at ?? null,
+        note: 'Concurrent create; another session won the race.',
+      }, { status: 409 })
+    }
     return NextResponse.json({ error: sErr?.message ?? 'Failed to create session' }, { status: 500 })
   }
 

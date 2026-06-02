@@ -36,8 +36,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.waste_pct = w
     }
   }
-  if (body.unit !== undefined)  patch.unit  = body.unit  ? String(body.unit).trim()  : null
-  if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim() : null
+  if (body.unit !== undefined)  patch.unit  = body.unit  ? String(body.unit).trim().slice(0, 32)   : null   // H2
+  if (body.notes !== undefined) patch.notes = body.notes ? String(body.notes).trim().slice(0, 500) : null   // H2
   if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
 
   const db = createAdminClient()

@@ -85,6 +85,10 @@ export async function POST(req: NextRequest) {
   //    already aggregated per session, so we just sum them across
   //    sessions (no engine re-run needed).
   const sessionIds = (body.prep_session_ids ?? []).filter(s => typeof s === 'string' && s.length > 0)
+  // M7 — track which session_ids we silently dropped (cross-tenant or
+  // simply not found) so the response can surface them. Helps the
+  // frontend catch frontend bugs (wrong id sent) early.
+  const droppedSessionIds: string[] = []
   if (sessionIds.length > 0) {
     // Verify the caller's business owns each session (cross-tenant guard).
     const { data: sessions } = await db
@@ -92,6 +96,10 @@ export async function POST(req: NextRequest) {
       .select('id, business_id')
       .in('id', sessionIds)
     const okSessionIds = (sessions ?? []).filter((s: any) => s.business_id === businessId).map((s: any) => s.id)
+    const okSet = new Set(okSessionIds)
+    for (const requested of sessionIds) {
+      if (!okSet.has(requested)) droppedSessionIds.push(requested)
+    }
     if (okSessionIds.length > 0) {
       const { data: lines } = await db
         .from('prep_session_lines')
@@ -181,6 +189,10 @@ export async function POST(req: NextRequest) {
   //    and the latest-used supplier. Two lookups in parallel: products
   //    table (name, default supplier, pack), supplier_invoice_lines via
   //    product_aliases (latest historic supplier when default isn't set).
+  // M3 — products table + product_aliases are independent queries; fire
+  // them in parallel. The aliases→supplier_invoice_lines lookup has to
+  // wait for aliases, but parallelising the first two halves the
+  // round-trip latency at low cost.
   const productIds = [...productAccum.keys()]
   const productMeta = new Map<string, {
     name:                   string | null
@@ -191,12 +203,20 @@ export async function POST(req: NextRequest) {
     default_supplier_name:  string | null
     default_supplier_num:   string | null
   }>()
+  const latestSupplierByProduct = new Map<string, { name: string | null; number: string | null }>()
+
   if (productIds.length > 0) {
-    const { data: prods } = await db
-      .from('products')
-      .select('id, name, category, invoice_unit, pack_size, base_unit, default_supplier_name, default_supplier_fortnox_number')
-      .in('id', productIds)
-    for (const p of prods ?? []) {
+    const [prodResp, aliasResp] = await Promise.all([
+      db.from('products')
+        .select('id, name, category, invoice_unit, pack_size, base_unit, default_supplier_name, default_supplier_fortnox_number')
+        .in('id', productIds),
+      db.from('product_aliases')
+        .select('id, product_id')
+        .eq('business_id', businessId)
+        .in('product_id', productIds)
+        .eq('is_active', true),
+    ])
+    for (const p of prodResp.data ?? []) {
       productMeta.set((p as any).id, {
         name:                  (p as any).name ?? null,
         category:              (p as any).category ?? null,
@@ -207,31 +227,25 @@ export async function POST(req: NextRequest) {
         default_supplier_num:  (p as any).default_supplier_fortnox_number ?? null,
       })
     }
-  }
 
-  // Latest supplier per product when no default is set. Walk
-  // product_aliases → supplier_invoice_lines, pick most-recent.
-  const latestSupplierByProduct = new Map<string, { name: string | null; number: string | null }>()
-  if (productIds.length > 0) {
-    const { data: aliases } = await db
-      .from('product_aliases')
-      .select('id, product_id')
-      .eq('business_id', businessId)
-      .in('product_id', productIds)
-      .eq('is_active', true)
-    const aliasIds = (aliases ?? []).map((a: any) => a.id)
+    // M2 — process aliases in batches of 50, each batch limited to the
+    // 200 most-recent lines. Guarantees per-product coverage even at
+    // high invoice volumes (the old single-shot limit(2000) could miss
+    // products whose last invoice was older than 2000 lines back).
+    const aliasIds = (aliasResp.data ?? []).map((a: any) => a.id)
     const aliasToProduct = new Map<string, string>()
-    for (const a of aliases ?? []) aliasToProduct.set((a as any).id, (a as any).product_id)
-
-    if (aliasIds.length > 0) {
+    for (const a of aliasResp.data ?? []) aliasToProduct.set((a as any).id, (a as any).product_id)
+    const BATCH = 50
+    for (let i = 0; i < aliasIds.length; i += BATCH) {
+      const slice = aliasIds.slice(i, i + BATCH)
       const { data: lines } = await db
         .from('supplier_invoice_lines')
         .select('product_alias_id, supplier_name_snapshot, supplier_fortnox_number, invoice_date')
         .eq('business_id', businessId)
         .eq('match_status', 'matched')
-        .in('product_alias_id', aliasIds)
+        .in('product_alias_id', slice)
         .order('invoice_date', { ascending: false })
-        .limit(2000)
+        .limit(200)
       for (const l of lines ?? []) {
         const pid = aliasToProduct.get((l as any).product_alias_id)
         if (!pid || latestSupplierByProduct.has(pid)) continue
@@ -264,14 +278,19 @@ export async function POST(req: NextRequest) {
     }
   })
   // Sort by supplier first (so the page can group), then by qty desc.
+  // L5 — explicit comparator: NULL supplier sorts last, named suppliers
+  // alphabetical. No more 'zz_unknown' sentinel hack.
   items.sort((a, b) => {
-    const sa = a.latest_supplier_name ?? 'zz_unknown'
-    const sb = b.latest_supplier_name ?? 'zz_unknown'
-    if (sa !== sb) return sa.localeCompare(sb)
-    return b.needed_qty - a.needed_qty
+    const sa = a.latest_supplier_name
+    const sb = b.latest_supplier_name
+    if (sa == null && sb == null) return b.needed_qty - a.needed_qty
+    if (sa == null) return  1                   // a is unknown → last
+    if (sb == null) return -1                   // b is unknown → last
+    const cmp = sa.localeCompare(sb)
+    return cmp !== 0 ? cmp : b.needed_qty - a.needed_qty
   })
 
-  return NextResponse.json({ items, uncertainties }, {
+  return NextResponse.json({ items, uncertainties, dropped_session_ids: droppedSessionIds }, {
     headers: { 'Cache-Control': 'no-store' },
   })
 }
