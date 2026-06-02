@@ -1280,43 +1280,140 @@ function MethodEditor({ recipe, onSave }: {
   recipe: DetailResponse['recipe']
   onSave: (patch: Record<string, any>) => Promise<void>
 }) {
+  // Owner feedback 2026-06-02: inline textarea pushed everything else
+  // out of view on the drawer. Now a compact summary row + button that
+  // opens a popup modal — full editor in the modal, drawer stays
+  // navigable so the chef can still edit ingredients, yield, price etc.
+  const [open, setOpen] = useState(false)
   const [val, setVal]   = useState(recipe.method ?? '')
   const [busy, setBusy] = useState(false)
   useEffect(() => { setVal(recipe.method ?? '') }, [recipe.method])
   const dirty = (val ?? '') !== (recipe.method ?? '')
+
   async function commit() {
-    if (!dirty) return
+    if (!dirty) { setOpen(false); return }
     setBusy(true)
-    try { await onSave({ method: val.trim() || null }) } finally { setBusy(false) }
+    try { await onSave({ method: val.trim() || null }); setOpen(false) }
+    finally { setBusy(false) }
   }
+
+  const preview = (recipe.method ?? '').trim()
+  const previewShort = preview.length > 120 ? preview.slice(0, 120) + '…' : preview
+
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ fontSize: 9, color: UXP.ink4, letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600, marginBottom: 4 }}>
         Method / instructions
       </div>
-      <textarea
-        value={val}
-        onChange={e => setVal(e.target.value)}
-        onBlur={commit}
-        disabled={busy}
-        placeholder="Cooking method, preparation, plating notes…"
-        rows={Math.max(3, Math.min(10, (val.match(/\n/g)?.length ?? 0) + 2))}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
         style={{
-          width:       '100%',
-          boxSizing:   'border-box',
-          padding:     '6px 8px',
-          fontSize:    11,
-          lineHeight:  1.5,
-          border:      `1px solid ${UXP.border}`,
-          borderRadius: 6,
-          fontFamily:  'inherit',
-          resize:      'vertical' as const,
-          color:       UXP.ink2,
+          width: '100%', boxSizing: 'border-box', padding: '8px 10px',
+          textAlign: 'left' as const, fontFamily: 'inherit', fontSize: 11,
+          color: preview ? UXP.ink2 : UXP.ink4,
+          background: UXP.subtleBg, border: `1px solid ${UXP.border}`,
+          borderRadius: 6, cursor: 'pointer', lineHeight: 1.4,
+          display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center',
         }}
-      />
-      <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 2 }}>
-        {val.length} char{val.length === 1 ? '' : 's'}{dirty && !busy && ' · click out to save'}{busy && ' · saving…'}
-      </div>
+      >
+        <span style={{ flex: 1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
+          {previewShort || 'Click to write the method (cooking, preparation, plating)…'}
+        </span>
+        <span style={{ fontSize: 10, color: UXP.lavText, whiteSpace: 'nowrap' as const, fontWeight: 600 }}>
+          {preview ? 'Edit →' : 'Add →'}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Edit method"
+          onClick={() => !busy && commit()}
+          style={{
+            position: 'fixed' as const, inset: 0,
+            background: 'rgba(20,18,40,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 200, padding: 20,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: 'min(640px, 100%)', maxHeight: '90vh', overflow: 'auto' as const,
+              background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+              borderRadius: 10, padding: 20,
+              boxShadow: '0 12px 32px rgba(58,53,80,0.20)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>
+                  Method / instructions
+                </h2>
+                <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
+                  {recipe.name}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !busy && commit()}
+                aria-label="Close (saves)"
+                style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1 }}
+              >×</button>
+            </div>
+
+            <textarea
+              value={val}
+              onChange={e => setVal(e.target.value.slice(0, 20000))}
+              autoFocus
+              disabled={busy}
+              maxLength={20000}
+              placeholder="Cooking method, preparation, plating notes…"
+              rows={14}
+              style={{
+                width:       '100%',
+                boxSizing:   'border-box',
+                padding:     '10px 12px',
+                fontSize:    12,
+                lineHeight:  1.6,
+                border:      `1px solid ${UXP.border}`,
+                borderRadius: 6,
+                fontFamily:  'inherit',
+                resize:      'vertical' as const,
+                color:       UXP.ink1,
+                minHeight:   240,
+              }}
+            />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+              <div style={{ fontSize: 10, color: UXP.ink4 }}>
+                {val.length.toLocaleString()} / 20,000 chars
+                {dirty && !busy && ' · unsaved'}
+                {busy && ' · saving…'}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => { setVal(recipe.method ?? ''); setOpen(false) }}
+                  disabled={busy}
+                  style={secondaryBtn}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={commit}
+                  disabled={busy}
+                  style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}
+                >
+                  {busy ? 'Saving…' : (dirty ? 'Save' : 'Done')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
