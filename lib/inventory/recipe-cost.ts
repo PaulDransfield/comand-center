@@ -473,12 +473,20 @@ async function getProductLatestPricesLeaf(
   const out = new Map<string, ProductLatestPrice>()
   if (productIds.length === 0) return out
 
-  for (let i = 0; i < productIds.length; i += 500) {
-    const slice = productIds.slice(i, i + 500)
-    const { data: prods } = await db
+  // BATCH_IN: 500 UUIDs in .in() blows past Supabase's ~16 KB header
+  // limit (UND_ERR_HEADERS_OVERFLOW) and supabase-js silently returns
+  // { data: null } — every consumer of this function would lose
+  // prices silently. Keep at 100; never raise without re-measuring.
+  // See docs/investigation/no-price-root-cause.md.
+  const BATCH_IN = 100
+
+  for (let i = 0; i < productIds.length; i += BATCH_IN) {
+    const slice = productIds.slice(i, i + BATCH_IN)
+    const { data: prods, error: pErr } = await db
       .from('products')
       .select('id, name, invoice_unit, pack_size, base_unit')
       .in('id', slice)
+    if (pErr) throw new Error(`[recipe-cost] products lookup failed: ${pErr.message}`)
     for (const p of prods ?? []) {
       out.set(p.id, {
         product_id: p.id, product_name: p.name ?? null,
@@ -492,12 +500,13 @@ async function getProductLatestPricesLeaf(
   }
 
   const aliasToProduct = new Map<string, string>()
-  for (let i = 0; i < productIds.length; i += 500) {
-    const slice = productIds.slice(i, i + 500)
-    const { data: aliases } = await db
+  for (let i = 0; i < productIds.length; i += BATCH_IN) {
+    const slice = productIds.slice(i, i + BATCH_IN)
+    const { data: aliases, error: aErr } = await db
       .from('product_aliases')
       .select('id, product_id')
       .in('product_id', slice)
+    if (aErr) throw new Error(`[recipe-cost] product_aliases lookup failed: ${aErr.message}`)
     for (const a of aliases ?? []) aliasToProduct.set(a.id, a.product_id)
   }
 
@@ -603,12 +612,14 @@ export async function getProductLatestPrices(
   // prices in a second pass below.
   const recipeSourcedProducts: Array<{ product_id: string; recipe_id: string }> = []
   const overrideProducts:      Array<{ product_id: string; price: number; currency: string }> = []
-  for (let i = 0; i < productIds.length; i += 500) {
-    const slice = productIds.slice(i, i + 500)
-    const { data: prods } = await db
+  const BATCH_IN_PUBLIC = 100   // same rationale as BATCH_IN above (16 KB header cap)
+  for (let i = 0; i < productIds.length; i += BATCH_IN_PUBLIC) {
+    const slice = productIds.slice(i, i + BATCH_IN_PUBLIC)
+    const { data: prods, error: pErr } = await db
       .from('products')
       .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency')
       .in('id', slice)
+    if (pErr) throw new Error(`[recipe-cost] products(public) lookup failed: ${pErr.message}`)
     for (const p of prods ?? []) {
       out.set(p.id, {
         product_id:        p.id,

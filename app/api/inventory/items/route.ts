@@ -73,12 +73,18 @@ export async function POST(req: NextRequest) {
   if (forbidden) return forbidden
 
   const db = createAdminClient()
-  const { data: biz } = await db.from('businesses').select('id, org_id').eq('id', businessId).maybeSingle()
-  if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
+  // Fail-fast on every supabase-js call — a silent { data: null } from a
+  // transport error must not be confused with a "no rows" finding. See
+  // docs/investigation/no-price-root-cause.md for the failure mode.
+  const { data: biz, error: bizErr } = await db
+    .from('businesses').select('id, org_id').eq('id', businessId).maybeSingle()
+  if (bizErr) return NextResponse.json({ error: `business lookup failed: ${bizErr.message}` }, { status: 500 })
+  if (!biz)   return NextResponse.json({ error: 'business not found' }, { status: 404 })
 
   // Find-or-create by name (matches the matcher's dedup key).
-  const { data: existing } = await db
+  const { data: existing, error: exErr } = await db
     .from('products').select('id').eq('business_id', businessId).eq('name', name).maybeSingle()
+  if (exErr) return NextResponse.json({ error: `existing-product lookup failed: ${exErr.message}` }, { status: 500 })
   if (existing?.id) {
     return NextResponse.json({ ok: true, product_id: existing.id, reused: true, message: `"${name}" already exists.` })
   }
@@ -177,17 +183,35 @@ export async function GET(req: NextRequest) {
   }
 
   // 3. Resolve product_alias_id → product_id via product_aliases.
+  //
+  // ── BATCH_IN constant ─────────────────────────────────────────────
+  // 500 UUIDs in a .in() filter exceeds Supabase's ~16 KB HTTP header
+  // limit (UND_ERR_HEADERS_OVERFLOW). The error is silent in supabase-
+  // js — it returns { data: null } with no thrown error — so the
+  // resulting empty alias map silently mis-reported ~770 Chicce + ~930
+  // Vero products as needing attention. See docs/investigation/
+  // no-price-root-cause.md. Keep at 100; do NOT raise without re-
+  // measuring URL length.
+  const BATCH_IN = 100
+
   const aliasIds = Array.from(new Set(allLines.map(l => l.product_alias_id).filter(Boolean)))
   const aliasToProduct = new Map<string, string>()
   if (aliasIds.length > 0) {
-    // pg has a limit on .in() — chunk in batches of 500.
-    for (let i = 0; i < aliasIds.length; i += 500) {
-      const slice = aliasIds.slice(i, i + 500)
-      const { data: aliases } = await db
+    for (let i = 0; i < aliasIds.length; i += BATCH_IN) {
+      const slice = aliasIds.slice(i, i + BATCH_IN)
+      const { data: aliases, error: aErr } = await db
         .from('product_aliases')
         .select('id, product_id')
         .in('id', slice)
-      for (const a of aliases ?? []) aliasToProduct.set(a.id, a.product_id)
+      // Fail-fast — a silent { data: null } would empty the map and
+      // produce a wrong-but-plausible report (the exact failure mode
+      // that caused the false 954/930 alarm). Network failures here
+      // are an error condition, not a data fact.
+      if (aErr) {
+        console.error('[items] alias→product batch failed', { batch_size: slice.length, err: aErr })
+        return NextResponse.json({ error: `alias→product lookup failed: ${aErr.message}` }, { status: 500 })
+      }
+      for (const a of aliases ?? []) aliasToProduct.set((a as any).id, (a as any).product_id)
     }
   }
 
@@ -200,14 +224,18 @@ export async function GET(req: NextRequest) {
   const productIds = products.map((p: any) => p.id)
   const aliasCountByProduct = new Map<string, number>()
   if (productIds.length > 0) {
-    for (let i = 0; i < productIds.length; i += 500) {
-      const slice = productIds.slice(i, i + 500)
-      const { data: aliasRows } = await db
+    for (let i = 0; i < productIds.length; i += BATCH_IN) {
+      const slice = productIds.slice(i, i + BATCH_IN)
+      const { data: aliasRows, error: acErr } = await db
         .from('product_aliases')
         .select('product_id')
         .eq('business_id', businessId)
         .eq('is_active', true)
         .in('product_id', slice)
+      if (acErr) {
+        console.error('[items] alias-count batch failed', { batch_size: slice.length, err: acErr })
+        return NextResponse.json({ error: `alias-count lookup failed: ${acErr.message}` }, { status: 500 })
+      }
       for (const a of aliasRows ?? []) {
         const pid = (a as any).product_id
         aliasCountByProduct.set(pid, (aliasCountByProduct.get(pid) ?? 0) + 1)
@@ -217,11 +245,15 @@ export async function GET(req: NextRequest) {
   // Pull all extractions with validation_warnings for this business in a
   // single query. Index by fortnox_invoice_number → flagged?
   const flaggedInvoiceNumbers = new Set<string>()
-  const { data: extractions } = await db
+  const { data: extractions, error: eErr } = await db
     .from('invoice_pdf_extractions')
     .select('fortnox_invoice_number, validation_warnings')
     .eq('business_id', businessId)
     .not('validation_warnings', 'is', null)
+  if (eErr) {
+    console.error('[items] extractions lookup failed', { err: eErr })
+    return NextResponse.json({ error: `extractions lookup failed: ${eErr.message}` }, { status: 500 })
+  }
   for (const e of extractions ?? []) {
     const warnings = Array.isArray((e as any).validation_warnings) ? (e as any).validation_warnings : []
     const flagged = warnings.some((w: any) => w?.code === 'over_extraction' || w?.code === 'total_mismatch')
