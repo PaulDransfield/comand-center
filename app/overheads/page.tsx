@@ -776,10 +776,15 @@ function OverheadInvoiceDrawer({
   monthlySeries: { months: number[]; series: number[] } | null
   onClose: () => void
 }) {
-  const [loading,  setLoading]  = useState(false)
-  const [invoices, setInvoices] = useState<any[]>([])
-  const [error,    setError]    = useState<string | null>(null)
-  const [pdfModal, setPdfModal] = useState<{ url: string; title: string } | null>(null)
+  const [loading,    setLoading]    = useState(false)
+  const [invoices,   setInvoices]   = useState<any[]>([])
+  const [error,      setError]      = useState<string | null>(null)
+  const [pdfModal,   setPdfModal]   = useState<{ url: string; title: string } | null>(null)
+  // Progress: months loaded so far (out of monthsToQuery.length). Lets
+  // us show "Loaded 2 of 5 months" so a slow first-fetch doesn't look
+  // like a frozen modal. First-load can take 60–120s per month; cached
+  // for 5 min after, so subsequent opens are instant.
+  const [loadedCount, setLoadedCount] = useState(0)
 
   // Months to query: respect monthFilter when set, else hit every month
   // in monthlySeries.months (the months we know have data — typically
@@ -792,36 +797,42 @@ function OverheadInvoiceDrawer({
   useEffect(() => {
     if (!bizId || monthsToQuery.length === 0) {
       setInvoices([])
+      setLoadedCount(0)
       return
     }
     let cancelled = false
-    async function load() {
-      setLoading(true)
-      setError(null)
-      try {
-        const responses = await Promise.all(monthsToQuery.map(month =>
-          fetch('/api/integrations/fortnox/drilldown', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ business_id: bizId, year, month, category: 'other_cost' }),
-            cache:   'no-store',
-          }).then(r => r.ok ? r.json() : { error: `HTTP ${r.status}` }),
-        ))
-        const targetKey = sub.subcategory ?? sub.label ?? sub.key
-        const targetKeyLc = String(targetKey ?? '').toLowerCase().trim()
-        const labelLc     = String(sub.label ?? '').toLowerCase().trim()
-        const flat: any[] = []
-        for (const resp of responses) {
-          if (!resp || resp.error) {
-            if (resp?.error) setError(String(resp.error))
-            continue
-          }
-          for (const supplier of (resp.suppliers ?? [])) {
+    setLoading(true)
+    setError(null)
+    setInvoices([])
+    setLoadedCount(0)
+
+    const targetKey   = sub.subcategory ?? sub.label ?? sub.key
+    const targetKeyLc = String(targetKey ?? '').toLowerCase().trim()
+    const labelLc     = String(sub.label ?? '').toLowerCase().trim()
+
+    // Stream per-month — accumulate invoices as each response lands so
+    // the modal shows what we have so far while the slower months are
+    // still in flight. Otherwise a single slow month (60-120s on first
+    // load) gates the entire modal under "Loading from Fortnox…".
+    const acc: any[] = []
+    let firstError: string | null = null
+
+    const monthFetches = monthsToQuery.map(month =>
+      fetch('/api/integrations/fortnox/drilldown', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ business_id: bizId, year, month, category: 'other_cost' }),
+        cache:   'no-store',
+      })
+        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+        .then(resp => {
+          if (cancelled) return
+          for (const supplier of (resp?.suppliers ?? [])) {
             for (const inv of (supplier.invoices ?? [])) {
-              // Match the subcategory by description/account-description
+              // Match the subcategory by description / account-description
               // substring. tracker_line_items.subcategory is derived from
-              // the same source classify.ts uses; matching by description
-              // is the most reliable client-side filter.
+              // classify.ts; matching by description is the most reliable
+              // client-side filter.
               const desc  = String(inv.description ?? '').toLowerCase()
               const accD  = String(inv.account_description ?? '').toLowerCase()
               const accNo = String(inv.account ?? '')
@@ -830,23 +841,33 @@ function OverheadInvoiceDrawer({
                 desc.includes(labelLc) ||
                 accD.includes(targetKeyLc) ||
                 accD.includes(labelLc) ||
-                // Fallback when subcategory is the BAS account number itself
                 accNo === targetKeyLc
               ) {
-                flat.push({ ...inv, _supplier_name: supplier.supplier_name })
+                acc.push({ ...inv, _supplier_name: supplier.supplier_name })
               }
             }
           }
-        }
-        flat.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')))
-        if (!cancelled) setInvoices(flat)
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message ?? String(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
+          // Sort newest first; replace state with a fresh copy so the
+          // modal repaints after each month lands.
+          const sorted = [...acc].sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')))
+          setInvoices(sorted)
+        })
+        .catch(e => {
+          // Capture only the first error so we don't spam the UI; later
+          // months still get a chance.
+          if (!firstError) firstError = e?.message ?? String(e)
+        })
+        .finally(() => {
+          if (!cancelled) setLoadedCount(c => c + 1)
+        }),
+    )
+
+    Promise.allSettled(monthFetches).then(() => {
+      if (cancelled) return
+      if (firstError && acc.length === 0) setError(firstError)
+      setLoading(false)
+    })
+
     return () => { cancelled = true }
   }, [bizId, year, monthsToQuery.join(','), sub.key])
 
@@ -896,8 +917,29 @@ function OverheadInvoiceDrawer({
         Invoices touching this subcategory
       </div>
       {loading && (
-        <div style={{ padding: '20px 0', textAlign: 'center' as const, fontSize: 11, color: UXP.ink3 }}>
-          Loading from Fortnox…
+        <div style={{ padding: '12px 14px', background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+                      borderRadius: 6, marginBottom: 10 }}>
+          <div style={{ fontSize: 11, color: UXP.ink2, fontWeight: 500 }}>
+            Loading from Fortnox… <span style={{ color: UXP.ink4 }}>
+              {monthsToQuery.length > 1
+                ? `${loadedCount} of ${monthsToQuery.length} months done`
+                : '(this can take 60–120s on first load)'}
+            </span>
+          </div>
+          {/* Mini progress bar — fills as months land. */}
+          {monthsToQuery.length > 1 && (
+            <div style={{ marginTop: 6, height: 4, background: UXP.cardBg, borderRadius: 2, overflow: 'hidden' as const }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.round((loadedCount / monthsToQuery.length) * 100)}%`,
+                background: UXP.lavDeep,
+                transition: 'width 200ms ease',
+              }} />
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 6 }}>
+            Cached 5 min after first load — subsequent opens are instant. Invoices appear as each month finishes.
+          </div>
         </div>
       )}
       {error && !loading && (
