@@ -50,6 +50,38 @@ function jaccard(a, b) {
   return inter / (A.size + B.size - inter)
 }
 
+// normalisedRoot — same shape as duplicate-products-step1.mjs. Strips
+// pack tokens / supplier-code suffixes / parentheticals so two
+// fragments of the same SKU collapse to one root. Preserves
+// distinguishing tokens (FRYST = frozen, EKO = organic, PET = plastic
+// container) because those are real product differences.
+//
+// 2026-06-02 extension — used as a SECOND candidate signal alongside
+// Jaccard, so cases like "Crema al formaggio Pecorino 580 gr" vs
+// "Crema al formaggio Pecorino 580g" cluster together (Jaccard would
+// score them at 0.27 — below the floor — because '580' is short and
+// 'gr'/'g' are stripped).
+function normalisedRoot(name) {
+  if (!name) return ''
+  let s = String(name).toLowerCase().normalize('NFKD')
+  s = s.replace(/\([^)]*\)/g, ' ')
+  s = s.replace(/\b(sc|rb|se|kl1|st|stk)\b/g, ' ')
+  s = s.replace(/\b\d+(?:[.,]\d+)?\s*x\s*\d+(?:[.,]\d+)?\s*(?:kg|g|gr|gram|ml|cl|dl|l|liter|litre|eg|st|stk)?\b/g, ' ')
+  s = s.replace(/\b\d+(?:[.,]\d+)?\s*(?:kg|hg|g|gr|gram|ml|cl|dl|l|liter|litre|lt|lf|eg|st|stk|burk|flaska|paket|pkt|frp|fp|pack)\b/g, ' ')
+  s = s.replace(/[^\p{Letter}\s]/gu, ' ')
+  const toks = s.split(/\s+/).filter(t => t.length >= 3)
+  const dist = new Set()
+  for (const t of toks) {
+    if (t === 'frys' || t === 'fryst') dist.add('@frozen')
+    if (t === 'eko' || t === 'ekologisk') dist.add('@organic')
+    if (t === 'pet') dist.add('@pet')
+  }
+  const core = toks
+    .filter(t => !['frys','fryst','eko','ekologisk','pet','varav','pant','per','enhet','sek','och','med','utan'].includes(t))
+    .sort()
+  return [...core, ...[...dist].sort()].join(' ')
+}
+
 const SYSTEM_PROMPT = `You're disambiguating duplicate restaurant supplier products. For each input PRODUCT, you receive 1-3 candidate supplier-invoice descriptions. Your job:
 
   STEP 1 — Scan the candidates. Find the ONE that best matches the input product (if any do). Note its index.
@@ -211,14 +243,28 @@ for (const biz of BUSINESSES) {
   }
   console.log(`  supplier lines in scope: ${allLines.length}`)
 
-  // 7. For each no_price product, gather top-3 matched-elsewhere candidates.
+  // 7. For each no_price product, gather top-3 matched-elsewhere
+  // candidates. Combine TWO signals:
+  //   (a) Jaccard >= 0.30 on raw_description (lexical similarity)
+  //   (b) normalisedRoot equality on raw_description (catches space/case
+  //       variants Jaccard misses — e.g. "580 gr" vs "580g")
+  //
+  // A line passing EITHER signal qualifies; the LLM still verifies.
+  const noPriceRoot = new Map(noPrice.map(p => [p.id, normalisedRoot(p.name)]))
   const pairs = []
   for (const p of noPrice) {
+    const root = noPriceRoot.get(p.id)
     const matched = []
     for (const l of allLines) {
-      if (!l.product_alias_id) continue   // unmatched line — skip, that's a direct-link case
-      const sim = jaccard(p.name, l.raw_description)
-      if (sim >= 0.30) matched.push({ ...l, sim })
+      if (!l.product_alias_id) continue   // unmatched line — direct-link case, not repoint
+      const sim     = jaccard(p.name, l.raw_description)
+      const rootEq  = root && normalisedRoot(l.raw_description) === root
+      if (sim >= 0.30 || rootEq) {
+        // For ranking, prefer normalised-root hits (perfect signal) over
+        // raw Jaccard. Boost rootEq candidates above 0.30 by encoding
+        // them as sim=1.0.
+        matched.push({ ...l, sim: rootEq ? Math.max(sim, 0.99) : sim })
+      }
     }
     matched.sort((a, b) => b.sim - a.sim)
     const top3 = matched.slice(0, 3)

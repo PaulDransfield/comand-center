@@ -1,47 +1,35 @@
 {
   "business": "Vero",
-  "captured_at": "2026-06-02T19:33:25.322Z",
-  "active_products": 1009,
-  "duplicate_clusters": 82,
-  "products_in_clusters": 172,
-  "potential_collapse_savings": 90,
-  "clean_clusters": 61,
+  "captured_at": "2026-06-02T19:53:01.164Z",
+  "active_products": 955,
+  "duplicate_clusters": 29,
+  "products_in_clusters": 64,
+  "potential_collapse_savings": 35,
+  "clean_clusters": 8,
   "ambig_clusters": 21,
   "top_suppliers": [
     [
-      "Spendrups",
-      78
-    ],
-    [
       "Martin Servera Restauranghandel AB",
-      41
+      21
     ],
     [
       "Snabbgross Örebro",
-      29
+      20
     ],
     [
-      "SVENSK CATER AB",
-      10
-    ],
-    [
-      "IL Molino AB",
-      4
+      "Spendrups",
+      15
     ],
     [
       "Rosalis Aspholmen",
       3
     ],
     [
-      "Carlsberg Sverige AB",
+      "SVENSK CATER AB",
       2
     ],
     [
       "BRILL & CO AB",
-      2
-    ],
-    [
-      "Champagneimport AB",
       2
     ],
     [
@@ -51,42 +39,6 @@
   ],
   "clean_samples": [
     {
-      "root": "fat heineken",
-      "names": [
-        "Heineken 5% 30l fat",
-        "Heineken 5% 30l Fat"
-      ]
-    },
-    {
-      "root": "fat fourpure shapeshifter",
-      "names": [
-        "Fourpure Shapeshifter 5,9% 30l fat",
-        "Fourpure Shapeshifter 5,9% 30L fat"
-      ]
-    },
-    {
-      "root": "dry mehrlein riesling",
-      "names": [
-        "Mehrlein Riesling Dry 75eg",
-        "Mehrlein Riesling Dry 75cl"
-      ]
-    },
-    {
-      "root": "fel hand kor msc",
-      "names": [
-        "Fel Råkor 2,7kg Hand M Msc",
-        "Fel Råkor2,7kg Hand M Msc",
-        "Fel Räkor2,7kg Hand M Msc"
-      ]
-    },
-    {
-      "root": "gurka",
-      "names": [
-        "Gurka",
-        "Gurka Kg"
-      ]
-    },
-    {
       "root": "arla che cre frai",
       "names": [
         "Arla Crème Fraîche 2kg 32%",
@@ -94,45 +46,10 @@
       ]
     },
     {
-      "root": "brut delapierre etiqueta",
-      "names": [
-        "Delapierre Etiqueta Brut 75cl",
-        "Delapierre Etiqueta Brut 75eg"
-      ]
-    },
-    {
-      "root": "back glas",
-      "names": [
-        "Glas 50RG med Back",
-        "Glas 50rg M Back"
-      ]
-    },
-    {
-      "root": "frityrolja life long",
-      "names": [
-        "Frityrolja Long Life 10l",
-        "Frityrolja Long Life 10L"
-      ]
-    },
-    {
       "root": "duni rmeljus",
       "names": [
         "Duni Värmeljus 30p",
         "Duni Värmeljus 30p 6h"
-      ]
-    },
-    {
-      "root": "glas styck",
-      "names": [
-        "Glas 50RG Styck",
-        "Glas 50rg Styck"
-      ]
-    },
-    {
-      "root": "bbq original",
-      "names": [
-        "Sås BBQ Original 3.79L",
-        "Sås BBQ Original 3,79L"
       ]
     },
     {
@@ -158,55 +75,6 @@
       ]
     },
     {
-      "root": "briska ron",
-      "names": [
-        "Briska Päron 4,5% 33cl",
-        "Briska Päron 4,5 33eg"
-      ]
-    },
-    {
-      "root": "bufala dop migliore",
-      "names": [
-        "Bufala DOP Migliore 1kg",
-        "BUFALA DOP Migliore 8x125g (1kg)"
-      ]
-    },
-    {
-      "root": "fat melleruds pilsner rkta utma @organic",
-      "names": [
-        "Melleruds Utmärkta Pilsner Ekologisk 4,8% 30L Fat",
-        "Melleruds Utmärkta Pilsner Ekologisk 4,8% 30l fat"
-      ]
-    },
-    {
-      "root": "rapsolja",
-      "names": [
-        "Rapsolja 5l",
-        "Rapsolja 5L"
-      ]
-    },
-    {
-      "root": "alkoholfri enga menabrea ngsglas",
-      "names": [
-        "Menabrea alkoholfri 0,0% 33 cl engångsglas",
-        "Menabrea Alkoholfri 0,0% 33cl Engångsglas"
-      ]
-    },
-    {
-      "root": "bayrisch hell schweiger",
-      "names": [
-        "Schweiger Bayrisch Hell 4,9 30LF",
-        "Schweiger Bayrisch Hell 4,9% 30L"
-      ]
-    },
-    {
-      "root": "filmad gurka",
-      "names": [
-        "Gurka Filmad",
-        "Gurka Filmad SE"
-      ]
-    },
-    {
       "root": "chardonnay",
       "names": [
         "Chardonnay 75eg",
@@ -214,53 +82,18 @@
       ]
     },
     {
-      "root": "dek kokt skinka",
+      "root": "nord ppl soda sparkling",
       "names": [
-        "Dek Skinka5kg Kokt72% Äkt",
-        "Dek Skinka 5kg Kokt 72% Äkt"
+        "Sparkling Soda Nord Äppl 2",
+        "Sparkling Soda Nord Äppl"
       ]
     },
     {
-      "root": "aubergine",
+      "root": "bakverk ser",
       "names": [
-        "Aubergine",
-        "Aubergine Kg"
-      ]
-    },
-    {
-      "root": "export mariestads returglas",
-      "names": [
-        "Mariestads Export 5,3% 50cl returglas",
-        "Mariestads Export 5,3% 50cl Returglas"
-      ]
-    },
-    {
-      "root": "biogon",
-      "names": [
-        "Biogon NC50 13,4l (Blandgas 50/50)",
-        "Biogon Nc50 13,4l",
-        "Biogon NC50 13,4L"
-      ]
-    },
-    {
-      "root": "brut cava signat",
-      "names": [
-        "Signat Cava Brut 75eg",
-        "Cava Signat Brut 11,5% 75cl"
-      ]
-    },
-    {
-      "root": "koncentrat svampfond",
-      "names": [
-        "Svampfond Koncentrat 1L",
-        "Svampfond 1L Koncentrat"
-      ]
-    },
-    {
-      "root": "blu caputo mjo",
-      "names": [
-        "Mjöl Caputo BLU 00 W280/310 25kg",
-        "Mjöl Caputo BLU \"00\" W280/310 25kg"
+        "Såser+bakverk 26/8-26/10",
+        "Säser+bakverk 26/10-26/12",
+        "Såser+bakverk 26/12-25-26/2-26"
       ]
     }
   ],

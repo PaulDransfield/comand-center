@@ -1,36 +1,32 @@
 {
   "business": "Chicce",
-  "captured_at": "2026-06-02T19:33:24.877Z",
-  "active_products": 1248,
-  "duplicate_clusters": 146,
-  "products_in_clusters": 383,
-  "potential_collapse_savings": 237,
-  "clean_clusters": 67,
+  "captured_at": "2026-06-02T19:53:00.941Z",
+  "active_products": 1187,
+  "duplicate_clusters": 100,
+  "products_in_clusters": 276,
+  "potential_collapse_savings": 176,
+  "clean_clusters": 21,
   "ambig_clusters": 79,
   "top_suppliers": [
     [
       "Trädgårdshallen Sverige AB",
-      179
+      135
     ],
     [
       "Martin Servera Restauranghandel AB",
-      138
-    ],
-    [
-      "AB Tingstad Papper",
-      21
+      105
     ],
     [
       "Laweka Gross & Matevent AB",
-      19
+      15
     ],
     [
-      "RIMA Seafood AB",
+      "AB Tingstad Papper",
       5
     ],
     [
-      "Enjoy Wine & Spirits AB",
-      4
+      "RIMA Seafood AB",
+      3
     ],
     [
       "BERGSLAGSDELIKATESSER I LINDESBERG AKTIEBOLAG",
@@ -41,31 +37,19 @@
       3
     ],
     [
-      "Anora Sweden AB",
+      "Frimurarholmen AB",
       2
     ],
     [
-      "Frimurarholmen AB",
+      "Wine Affair Scandinavia AB",
+      2
+    ],
+    [
+      "Enjoy Wine & Spirits AB",
       2
     ]
   ],
   "clean_samples": [
-    {
-      "root": "ask krav rosmarin",
-      "names": [
-        "Krav Rosmarin Ask 50g",
-        "Rosmarin KRAV 50g Ask SE"
-      ]
-    },
-    {
-      "root": "flowpack roman sallad",
-      "names": [
-        "Sallad Roman DG 10st Flowpack ES",
-        "Sallad Roman 10st Flowpack RB SE",
-        "Sallad Roman 10st Flowpack",
-        "Sallad Roman 10st Flowpack ES"
-      ]
-    },
     {
       "root": "slev tra",
       "names": [
@@ -82,42 +66,12 @@
       ]
     },
     {
-      "root": "exclusive mini tad torkrulle",
-      "names": [
-        "Torkrulle Mini Exclusive TAD",
-        "Torkrulle Mini Exclusive TAD (12/fp)"
-      ]
-    },
-    {
-      "root": "hallon",
-      "names": [
-        "Bär Hallon 12x125g MA",
-        "Bär Hallon 12x125g TZ",
-        "HALLON 125G",
-        "Bär Hallon DG 12x125g PT"
-      ]
-    },
-    {
-      "root": "bla eng halkfri tyllpa",
-      "names": [
-        "Tyllpåse Halkfri Eng Blå 72",
-        "Tyllpåse Halkfri Eng Blå72"
-      ]
-    },
-    {
       "root": "mascarpone",
       "names": [
         "Mascarpone 2 kg",
         "Mascarpone 2kg",
         "Mascarpone 48% 2kg",
         "Mascarpone 47% 2kg"
-      ]
-    },
-    {
-      "root": "aubergine flow",
-      "names": [
-        "Aubergine 5kg Flow ES",
-        "Aubergine DG 5kg Flow ES"
       ]
     },
     {
@@ -130,75 +84,10 @@
       ]
     },
     {
-      "root": "bar beer icewater",
-      "names": [
-        "Bar Icewater/Beer",
-        "Bar Icewater/Beer C12"
-      ]
-    },
-    {
-      "root": "gro nka",
-      "names": [
-        "Grönkål DG 8x200g RB SE",
-        "Grönkål 8x200g ES",
-        "Grönkål 8x200g RB ES",
-        "Grönkål 8x200g RB SE"
-      ]
-    },
-    {
-      "root": "festis ron @organic",
-      "names": [
-        "FESTIS PÄRON EKO 20CL; EU-ekologisk",
-        "Festis Päron Eko 20cl"
-      ]
-    },
-    {
-      "root": "brk limon pellegri san",
-      "names": [
-        "SAN PELLEGRI LIMON BRK 33C, Varav pant per enhet: 21,36",
-        "San Pellegri Limon Brk 33c"
-      ]
-    },
-    {
-      "root": "flyt ggvita @organic",
-      "names": [
-        "Äggvita Flyt Eko 1kg",
-        "ÄGGVITA FLYT EKO 1KG EU-ekologisk;"
-      ]
-    },
-    {
-      "root": "barbera cigliuti clx serraboella",
-      "names": [
-        "Cigliuti Barbera Serraboella 22 75clx6",
-        "Cigliuti Barbera Serraboella 75clx6"
-      ]
-    },
-    {
-      "root": "oliv skiv svart",
-      "names": [
-        "Oliv Svart Skiv PÅSe 3,8kg",
-        "Oliv Svart Skiv Påse 3,8kg"
-      ]
-    },
-    {
       "root": "gro mix shisokrasse vrigt",
       "names": [
         "Grönt övrigt Shisokrasse Mix 16 st NL",
         "Grönt övrigt Shisokrasse Mix Växa 16 st SE"
-      ]
-    },
-    {
-      "root": "matfilm refill",
-      "names": [
-        "Matfilm Refill 45cm x 300m (3/fp)",
-        "Matfilm Refill 45cm x 300m"
-      ]
-    },
-    {
-      "root": "broccoli ofilmad",
-      "names": [
-        "Broccoli Ofilmad 6kg ES",
-        "Broccoli Ofilmad 6kg RB SE"
       ]
     },
     {
@@ -213,22 +102,6 @@
       "names": [
         "Potatis Söt XL 6kg US",
         "Potatis Söt M/L 6kg EG"
-      ]
-    },
-    {
-      "root": "mos potatis skalad",
-      "names": [
-        "Skalad Potatis Mos 3N 7kg (1020) SE",
-        "Potatis Skalad Mos 7kg"
-      ]
-    },
-    {
-      "root": "kvist tomat",
-      "names": [
-        "Tomat Kvist 5kg ES",
-        "Tomat Kvist 5kg NL",
-        "Tomat Kvist 5kg RB SE",
-        "Tomat Kvist 5kg BE"
       ]
     },
     {
@@ -255,25 +128,81 @@
       ]
     },
     {
-      "root": "bro panko stro",
-      "names": [
-        "Panko ströbröd 1 kg",
-        "Ströbröd Panko 1kg",
-        "Panko Ströbröd 10 x 1 Kg"
-      ]
-    },
-    {
-      "root": "flingsalt havs",
-      "names": [
-        "Flingsalt havs 1kg",
-        "Flingsalt Havs 1kg"
-      ]
-    },
-    {
       "root": "tomat",
       "names": [
         "Tomat Se",
         "Tomat 1kg"
+      ]
+    },
+    {
+      "root": "citron",
+      "names": [
+        "Citron 1kg ZA",
+        "Citron",
+        "Citron 1kg ES"
+      ]
+    },
+    {
+      "root": "blomka",
+      "names": [
+        "Blomkål Se",
+        "Blomkål Kg"
+      ]
+    },
+    {
+      "root": "kumquat",
+      "names": [
+        "Kumquat 2kg ZA",
+        "Kumquat 2kg ES"
+      ]
+    },
+    {
+      "root": "rsgele svartvinba",
+      "names": [
+        "Svartvinbärsgele 1,5kg",
+        "Svartvinbärsgele 1,5kg Häl"
+      ]
+    },
+    {
+      "root": "banan schalottenlo",
+      "names": [
+        "Schalottenlök Banan 5kg FR",
+        "Schalottenlök Banan 5kg"
+      ]
+    },
+    {
+      "root": "npa plast",
+      "names": [
+        "NPA Plast Hög",
+        "NPA Plast Låg"
+      ]
+    },
+    {
+      "root": "blockljus par vit",
+      "names": [
+        "Blockljus Vit Par 7x15 1st",
+        "Blockljus Vit Par 6x13 1st"
+      ]
+    },
+    {
+      "root": "rsba tomat wildmix",
+      "names": [
+        "Tomat Körsbär Wildmix 3kg MA",
+        "Tomat Körsbär Wildmix 3kg ES"
+      ]
+    },
+    {
+      "root": "clx pellegrino",
+      "names": [
+        "SP S.Pellegrino 75clx12",
+        "SP S.Pellegrino 25clx24"
+      ]
+    },
+    {
+      "root": "papperssugro",
+      "names": [
+        "Papperssugrör Sv 6x150 250",
+        "Papperssugrör Sv 6x200 250"
       ]
     }
   ],
