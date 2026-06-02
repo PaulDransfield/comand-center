@@ -32,6 +32,7 @@
 
 import type { RecipeIndex, IngredientForCosting } from './recipe-cost'
 import { canonicalUnit, convertQuantity, unitFamily, baseUnitForFamily } from './unit-conversion'
+import { resolveSubRecipeYield } from './sub-recipe-yield'
 
 export interface PrepListInput {
   recipe_id: string
@@ -144,7 +145,6 @@ export function aggregatePrepRequirements(
     }
 
     if (!subEntry || subEntry.portions <= 0) {
-      // No sub data — flag component line uncertain
       const slot = ensureSubSlot(subs, subId, ing.unit ?? 'portion')
       slot.uncertain = 'sub_no_yield'
       slot.uncertain_reason = `Sub-recipe "${subName ?? subId.slice(0, 8)}" has no portion count — can't aggregate.`
@@ -152,57 +152,40 @@ export function aggregatePrepRequirements(
       return
     }
 
-    const recipeUnit = ing.unit ?? 'portion'
+    // M1 — yield math lives in lib/inventory/sub-recipe-yield.ts so the
+    // cost engine and prep-list engine share the same source of truth.
+    const r = resolveSubRecipeYield({
+      adjustedQty,
+      recipeUnit:  ing.unit,
+      subPortions: subEntry.portions,
+      yieldAmount: subEntry.yield_amount,
+      yieldUnit:   subEntry.yield_unit,
+    })
 
-    // Component-line accumulation: how much of this sub the cook needs
-    // to prep, in the sub's natural prep unit.
-    //   - yield set: roll up in the yield_unit (g/ml/portion)
-    //   - no yield set: roll up in portions if the recipe used 'portion';
-    //     otherwise flag uncertain (the cook can't be told "prep 250 g"
-    //     of something they only know as portions).
-
-    if (recipeUnit === 'portion') {
-      const slot = ensureSubSlot(subs, subId, 'portion')
-      slot.total_qty += adjustedQty
+    if (r.kind === 'unit_mismatch') {
+      const slot = ensureSubSlot(subs, subId, r.displayUnit)
+      slot.uncertain = 'unit_mismatch'
+      slot.uncertain_reason = `Sub-recipe "${subName ?? subId.slice(0, 8)}" yield is ${r.displayUnit} but recipe asks in ${ing.unit ?? 'portion'} — units don't reconcile.`
       slot.source_recipes.add(rootRecipeId)
-      // Recurse into the sub for raw ingredients: each entered portion
-      // corresponds to (1 / sub.portions) of a sub-batch.
-      const subMultiplier = adjustedQty / subEntry.portions
-      walk(subId, subMultiplier, rootRecipeId, ancestors)
       return
     }
 
-    // Recipe asks in mass/volume. Need yield to convert.
-    if (subEntry.yield_amount && subEntry.yield_unit) {
-      const qtyInYieldUnit = convertQuantity(adjustedQty, recipeUnit, subEntry.yield_unit)
-      if (qtyInYieldUnit == null) {
-        // Family mismatch (e.g. recipe ml of g-yield sauce). Flag.
-        const slot = ensureSubSlot(subs, subId, subEntry.yield_unit)
-        slot.uncertain = 'unit_mismatch'
-        slot.uncertain_reason = `Sub-recipe "${subName ?? subId.slice(0, 8)}" yield is ${subEntry.yield_unit} but recipe asks in ${recipeUnit} — units don't reconcile.`
-        slot.source_recipes.add(rootRecipeId)
-        return
-      }
-      const slot = ensureSubSlot(subs, subId, subEntry.yield_unit)
-      slot.total_qty += qtyInYieldUnit
+    if (r.kind === 'no_yield') {
+      const slot = ensureSubSlot(subs, subId, r.displayUnit)
+      slot.total_qty += r.qtyInDisplayUnit
+      slot.uncertain = 'sub_no_yield'
+      slot.uncertain_reason = `Sub-recipe "${subName ?? subId.slice(0, 8)}" has no yield set — can't roll up its raw ingredients. Set yield on the sub to fix.`
       slot.source_recipes.add(rootRecipeId)
-      // Recurse — convert to portion equivalent for the leaf walk:
-      //   qty_in_yield_unit / yield_amount = portion_equivalent
-      //   portion_equivalent / sub.portions = sub-batch multiplier
-      const portionEquiv = qtyInYieldUnit / subEntry.yield_amount
-      const subMultiplier = portionEquiv / subEntry.portions
-      walk(subId, subMultiplier, rootRecipeId, ancestors)
       return
     }
 
-    // Recipe asks in mass/volume but no yield set. Honest-incomplete:
-    // component line shown as uncertain, raw ingredients NOT aggregated
-    // for this sub (we'd be guessing).
-    const slot = ensureSubSlot(subs, subId, recipeUnit)
-    slot.total_qty += adjustedQty
-    slot.uncertain = 'sub_no_yield'
-    slot.uncertain_reason = `Sub-recipe "${subName ?? subId.slice(0, 8)}" has no yield set — can't roll up its raw ingredients. Set yield on the sub to fix.`
+    // 'portions' or 'mass_or_volume' — accumulate the qty AND recurse
+    // into the sub's leaf ingredients using the engine-agnostic
+    // portionMultiplier the helper computed for us.
+    const slot = ensureSubSlot(subs, subId, r.displayUnit)
+    slot.total_qty += r.qtyInDisplayUnit
     slot.source_recipes.add(rootRecipeId)
+    walk(subId, r.portionMultiplier, rootRecipeId, ancestors)
   }
 
   function accProduct(

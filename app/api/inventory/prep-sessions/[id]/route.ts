@@ -64,18 +64,22 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // own ingredient list so the modal can let the chef write prep notes
   // ("juice the lemon" / "chop the garlic") against each ingredient
   // EVEN when the sub has no yield set (so its ingredients aren't
-  // rolled up as separate product lines).
-  const methodById = new Map<string, string | null>()
-  const notesById  = new Map<string, string | null>()
+  // rolled up as separate product lines). archived_at carried so the
+  // UI can surface a "sub-recipe was archived after this session was
+  // saved" banner instead of silently serving stale content (H3).
+  const methodById   = new Map<string, string | null>()
+  const notesById    = new Map<string, string | null>()
+  const archivedById = new Map<string, string | null>()
   const subIngredientsByRecipe = new Map<string, Array<{ ingredient_id: string; product_id: string | null; product_name: string | null; quantity: number; unit: string | null; notes: string | null; position: number }>>()
   if (componentIds.length > 0) {
     const { data: rs } = await db
       .from('recipes')
-      .select('id, method, notes')
+      .select('id, method, notes, archived_at')
       .in('id', componentIds)
     for (const r of rs ?? []) {
       methodById.set(r.id, (r as any).method ?? null)
       notesById.set(r.id, (r as any).notes ?? null)
+      archivedById.set(r.id, (r as any).archived_at ?? null)
     }
     const { data: subIngs } = await db
       .from('recipe_ingredients')
@@ -147,8 +151,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     ...l,
     meta: l.kind === 'component'
       ? {
-          method:      methodById.get(l.entity_id) ?? null,
-          notes:       notesById.get(l.entity_id)  ?? null,
+          method:      methodById.get(l.entity_id)   ?? null,
+          notes:       notesById.get(l.entity_id)    ?? null,
+          archived_at: archivedById.get(l.entity_id) ?? null,  // H3
           ingredients: subIngredientsByRecipe.get(l.entity_id) ?? [],
         }
       : { uses: usesByProductId.get(l.entity_id) ?? [] },
@@ -185,7 +190,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (forbidden) return forbidden
 
   const patch: Record<string, any> = {}
-  if (body.name !== undefined) patch.name = body.name?.toString().trim() || null
+  if (body.name !== undefined) patch.name = body.name?.toString().trim().slice(0, 200) || null  // H2
   if (body.complete === 'now' && !session.completed_at) {
     patch.completed_at = new Date().toISOString()
   }
