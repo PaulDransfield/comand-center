@@ -15,6 +15,7 @@ import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { convertQuantity } from '@/lib/inventory/unit-conversion'
 import { UXP } from '@/lib/constants/tokens'
+import { Modal, Drawer, overlayBtn } from '@/components/ui/Overlay'
 import { EditItemModal } from '@/components/EditItemModal'
 import { fmtKr } from '@/lib/format'
 
@@ -543,17 +544,15 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
   }
 
   return (
-    <Backdrop onClose={onClose}>
-      <div style={{ width: 'min(820px, 96vw)', maxHeight: '90vh', overflow: 'auto' as const, background: UXP.cardBg, borderRadius: 12, padding: 22 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>Bulk import recipes from menu</div>
-            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 2, maxWidth: 560 }}>
-              Paste your menu text (one dish per line works well). Sonnet drafts each recipe using your existing catalogue. Review + edit before saving.
-            </div>
-          </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: UXP.ink3, fontSize: 18 }} aria-label="Close">×</button>
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      size="xl"
+      title="Bulk import recipes from menu"
+      subtitle="Paste your menu text (one dish per line works well). Sonnet drafts each recipe using your existing catalogue. Review + edit before saving."
+      ariaLabel="Bulk import recipes"
+    >
+      <div>
 
         {stage === 'paste' && (
           <>
@@ -769,7 +768,7 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
           </>
         )}
       </div>
-    </Backdrop>
+    </Modal>
   )
 }
 
@@ -1325,95 +1324,62 @@ function MethodEditor({ recipe, onSave }: {
         </span>
       </button>
 
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Edit method"
-          onClick={() => !busy && commit()}
-          style={{
-            position: 'fixed' as const, inset: 0,
-            background: 'rgba(20,18,40,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 200, padding: 20,
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              width: 'min(640px, 100%)', maxHeight: '90vh', overflow: 'auto' as const,
-              background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
-              borderRadius: 10, padding: 20,
-              boxShadow: '0 12px 32px rgba(58,53,80,0.20)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: UXP.ink1 }}>
-                  Method / instructions
-                </h2>
-                <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 4 }}>
-                  {recipe.name}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => !busy && commit()}
-                aria-label="Close (saves)"
-                style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 20, padding: 0, lineHeight: 1 }}
-              >×</button>
-            </div>
-
-            <textarea
-              value={val}
-              onChange={e => setVal(e.target.value.slice(0, 20000))}
-              autoFocus
+      <Modal
+        open={open}
+        onClose={() => !busy && commit()}
+        size="lg"
+        title="Method / instructions"
+        subtitle={recipe.name}
+        ariaLabel="Edit method"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => { setVal(recipe.method ?? ''); setOpen(false) }}
               disabled={busy}
-              maxLength={20000}
-              placeholder="Cooking method, preparation, plating notes…"
-              rows={14}
-              style={{
-                width:       '100%',
-                boxSizing:   'border-box',
-                padding:     '10px 12px',
-                fontSize:    12,
-                lineHeight:  1.6,
-                border:      `1px solid ${UXP.border}`,
-                borderRadius: 6,
-                fontFamily:  'inherit',
-                resize:      'vertical' as const,
-                color:       UXP.ink1,
-                minHeight:   240,
-              }}
-            />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
-              <div style={{ fontSize: 10, color: UXP.ink4 }}>
-                {val.length.toLocaleString()} / 20,000 chars
-                {dirty && !busy && ' · unsaved'}
-                {busy && ' · saving…'}
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <button
-                  type="button"
-                  onClick={() => { setVal(recipe.method ?? ''); setOpen(false) }}
-                  disabled={busy}
-                  style={secondaryBtn}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={commit}
-                  disabled={busy}
-                  style={{ ...primaryBtn, opacity: busy ? 0.6 : 1 }}
-                >
-                  {busy ? 'Saving…' : (dirty ? 'Save' : 'Done')}
-                </button>
-              </div>
-            </div>
-          </div>
+              style={overlayBtn.secondary}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={commit}
+              disabled={busy}
+              style={{ ...overlayBtn.primary, opacity: busy ? 0.6 : 1 }}
+            >
+              {busy ? 'Saving…' : (dirty ? 'Save' : 'Done')}
+            </button>
+          </>
+        }
+      >
+        <textarea
+          value={val}
+          onChange={e => setVal(e.target.value.slice(0, 20000))}
+          autoFocus
+          disabled={busy}
+          maxLength={20000}
+          placeholder="Cooking method, preparation, plating notes…"
+          rows={14}
+          style={{
+            width:       '100%',
+            boxSizing:   'border-box',
+            padding:     '10px 12px',
+            fontSize:    12,
+            lineHeight:  1.6,
+            border:      `1px solid ${UXP.border}`,
+            borderRadius: 6,
+            fontFamily:  'inherit',
+            resize:      'vertical' as const,
+            color:       UXP.ink1,
+            minHeight:   240,
+          }}
+        />
+        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, textAlign: 'right' as const }}>
+          {val.length.toLocaleString()} / 20,000 chars
+          {dirty && !busy && ' · unsaved'}
+          {busy && ' · saving…'}
         </div>
-      )}
+      </Modal>
     </div>
   )
 }
@@ -1965,7 +1931,7 @@ function IngredientPicker({ bizId, recipeId, onClose, onAdded }: { bizId: string
 
   return (
     <Backdrop onClose={onClose}>
-      <div style={{ ...modalCard, width: 'min(520px, 100%)' }}>
+      <div style={modalCard}>
         <div style={{ fontSize: 15, fontWeight: 600, color: UXP.ink1, marginBottom: 10 }}>{t('picker.title')}</div>
         {!picked && (
           <>
@@ -2271,13 +2237,40 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   )
 }
+// Backdrop is the side-anchored scrim shared by the recipe drawers
+// (BulkImportModal / CreateModal / RecipeDrawer / IngredientPicker).
+// Each caller's inner card supplies its own width via modalCard or
+// drawerCard. The scrim color, z-stack, body-scroll-lock and Esc-to-
+// close behaviour come from a single source here so all four cards
+// behave identically. Future migration: each caller swaps to <Drawer>
+// from components/ui/Overlay individually; this shim is the bridge.
 function Backdrop({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prev
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
   return (
-    <div role="dialog" onClick={onClose}
-         style={{
-           position: 'fixed' as const, inset: 0, background: 'rgba(20,18,40,0.35)',
-           display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', zIndex: 100,
-         }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position:        'fixed' as const, inset: 0,
+        background:      'rgba(20,18,40,0.45)',        // canonical scrim
+        display:         'flex',
+        alignItems:      'stretch',
+        justifyContent:  'flex-end',
+        zIndex:          200,                          // Z.modal
+        animation:       'cc-overlay-in 180ms ease-out',
+      }}
+    >
+      <style>{`@keyframes cc-overlay-in { from { opacity: 0; } to { opacity: 1; } }`}</style>
       <div onClick={e => e.stopPropagation()} style={{ height: '100%', display: 'flex', alignItems: 'stretch' }}>
         {children}
       </div>
