@@ -1,5 +1,35 @@
 # CommandCenter — Known Issues & Fixes
-Last updated: 2026-05-31
+Last updated: 2026-06-02
+
+---
+
+## 0cv. Prep + order pipeline + architecture audit (2026-06-01 → 2026-06-02)
+
+End-to-end kitchen pipeline shipped over two days, then a structured audit closed 11 follow-up issues before bed. Detail across CLAUDE.md Session 24, MIGRATIONS.md M116/M117/M118, ROADMAP.md Session 24.
+
+### §0cv-1: PostgREST dual-FK ambiguity bug (2026-06-01)
+**Symptom:** Modal showed "Not used in any recipe yet" for Carciofi product despite the product clearly being an ingredient of the dish that put it on the prep list. Same shape — `meta.uses` empty + `meta.ingredients` empty.
+
+**Root cause:** `recipe_ingredients` has TWO foreign keys to `recipes` (`recipe_id` AND `subrecipe_id`). The PostgREST embed `recipes!inner(...)` auto-detected and picked `subrecipe_id` for the join — most product ingredients have `subrecipe_id IS NULL` (it's exactly-one-of with `product_id`), so the inner join dropped every row.
+
+**Fix:** Rewrite as a two-step query — fetch the business's non-archived recipe ids first, then filter `recipe_ingredients` by `.in('recipe_id', bizRecipeIds)`. Applied identically to both `GET /api/inventory/prep-sessions/[id]` and `POST /api/inventory/prep-list`. Memory `feedback_postgrest_dual_fk_ambiguity.md` for future tables with this shape.
+
+### §0cv-2: Audit fixes closed in one branch (2026-06-02)
+
+11 findings from the architecture audit, batched into one preview build. Detail per fix in commit `8a8381e`:
+- **H1** — POST session race handler catches 23505 → 409 friendly response
+- **H2 + L8** — text/qty caps across sessions/pre-orders/notes/method (200/2000/500/32/20000)
+- **H3** — archived sub-recipe banner in modal
+- **M1** — `lib/inventory/sub-recipe-yield.ts` shared yield-resolution helper (prep engine uses it; cost engine migration deferred)
+- **M2 + M3** — order-build batches per-product supplier lookups + parallel independent queries
+- **M4** — debounced modal save→compute (400 ms)
+- **M5** — drop `as any` casts in modal-line converters
+- **M6** — pre-optimistic snapshot for accurate rollback on toggle
+- **M7** — `dropped_session_ids` in order-build response
+- **M8** — textarea maxLength + counter on method editor
+- **L5** — explicit null-checks instead of `'zz_unknown'` comparator hack
+
+Engine test (`scripts/test-prep-list-engine.ts`) still PASSES after the M1 helper extraction. TS clean across the codebase.
 
 ---
 

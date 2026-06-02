@@ -1,6 +1,41 @@
 # MIGRATIONS.md — CommandCenter Database Change Log
-> Last updated: 2026-05-31 | Session 22: M108 + Vero April VAT corrective backfill + P2.0 voucher rebate backfill + Fix 2 deposit/logistics backfill + Ticket 1 voucher-column backfill
+> Last updated: 2026-06-02 | Session 24: M116 (prep_sessions) + M117 (recipes.portions_per_cover) + M118 (prep_pre_orders) all applied via owner during the prep + order pipeline build
 > Record every SQL change run in Supabase here. Never edit old entries — add new ones.
+
+---
+
+## Applied — 2026-06-01 to 2026-06-02 (Session 24: prep + order pipeline)
+
+### M116 — prep_sessions + prep_session_lines ✅ applied 2026-06-01
+**File:** `sql/M116-PREP-SESSIONS.sql`
+**Purpose:** Persistence for prep-list sessions so the kitchen can check off lines cross-device. Owner enters dishes×portions, system freezes the aggregated raw-ingredient + sub-recipe lines as `prep_session_lines`; chef toggles `checked_at` per line; session closes via `completed_at = NOW()`.
+**Schema:**
+- `prep_sessions(id, org_id, business_id, name, inputs JSONB, created_at, created_by, completed_at)`
+- `prep_session_lines(id, session_id, kind CHECK IN ('component','product'), entity_id, name_snapshot, total_qty, unit, uncertain CHECK IN ('sub_no_yield','unit_mismatch','cycle')|NULL, uncertain_reason, source_recipe_ids UUID[], checked_at, checked_by, position, created_at)`
+- Partial unique index `prep_sessions_one_active_idx ON (business_id) WHERE completed_at IS NULL` — enforces one active per business
+- Standard indexes on `(business_id, created_at DESC)` and `(session_id, position)`, plus `(session_id) WHERE checked_at IS NULL` for "open lines" queries
+- RLS via `current_user_org_ids()` on parent; child policy via EXISTS-on-parent
+**Idempotent.** All CREATE TABLE / INDEX / POLICY use IF NOT EXISTS or DROP+CREATE.
+
+### M117 — recipes.portions_per_cover ✅ applied 2026-06-01
+**File:** `sql/M117-RECIPE-PORTIONS-PER-COVER.sql`
+**Purpose:** Per-dish mix share for the prep-list covers auto-fill. 0.15 = 15 % of guests order this dish. Drives `qty = round(covers × share)` per dish when owner clicks Apply on the covers card.
+**Schema:**
+- `ALTER TABLE recipes ADD COLUMN IF NOT EXISTS portions_per_cover NUMERIC`
+- `CHECK (portions_per_cover IS NULL OR (portions_per_cover >= 0 AND portions_per_cover <= 10))` — bounds prevent the "typed 15 thinking percent" typo (would predict 3,000 portions for 200 covers)
+- Constraint wrapped in `DO $$ IF NOT EXISTS pg_constraint $$` block for re-run safety
+**Idempotent.** NULL = no share set; dish skips auto-fill. UI translates fraction↔percentage at the boundary.
+
+### M118 — prep_pre_orders ✅ applied 2026-06-01
+**File:** `sql/M118-PREP-PRE-ORDERS.sql`
+**Purpose:** Advance customer commitments (party-of-N pre-ordering specific dishes for a future service date). Folds into the Apply math: `freeCovers = max(0, covers − sum(party_sizes))`; share-driven qty per dish on freeCovers; pre-order items added on top per-dish.
+**Schema:**
+- `prep_pre_orders(id, org_id, business_id, service_date, party_name, party_size CHECK >0, notes, items JSONB CHECK array, created_at, created_by, updated_at, archived_at)`
+- Partial index `(business_id, service_date) WHERE archived_at IS NULL` for the prep-page query path
+- Soft delete via `archived_at` preserves audit history
+- RLS via `current_user_org_ids()`
+- `set_updated_at` trigger
+**Idempotent.** Standard pattern.
 
 ---
 
