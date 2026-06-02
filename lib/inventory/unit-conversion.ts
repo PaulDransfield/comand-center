@@ -87,44 +87,105 @@ export function convertQuantity(
   return qty * TO_BASE[f] / TO_BASE[t]
 }
 
-// Match a pack-size token like "4,1 kg", "500 ml", "30 st", "1L".
-// Swedish uses comma decimals; we accept both.
-const PACK_RE = /(\d+(?:[.,]\d+)?)\s*(kg|hg|g|l|dl|cl|ml|st|frp|fp|pack|paket)\b/gi
+// Match a pack-size token like "4,1 kg", "500 ml", "30 st", "1L",
+// "10 liter SE", "1 burk", "75cl flaska". Swedish uses comma decimals;
+// we accept both. Long-form alternations (liter, litre, gram, gr,
+// styck, stk, burk, flaska) added 2026-06-02 (Phase A) to catch
+// supplier-written names like "Olja Rapsolja 10 liter SE" that the
+// short-form-only regex missed because `l\b` doesn't match inside
+// `liter`.
+const PACK_RE = /(\d+(?:[.,]\d+)?)\s*(kilogram|kilograms|kilo|kg|hg|gram|grams|gr|g|liter|litre|lt|l|deciliter|decilitre|dl|centiliter|centilitre|cl|milliliter|millilitre|ml|styck|stk|st|pcs|burk|flaska|paket|pkt|frp|fp|pack)\b/gi
 
 export interface ParsedPack {
   pack_size: number    // in base_unit
   base_unit: BaseUnit  // g | ml | st
   raw_match: string    // the matched substring for owner display
+  // Phase A — provenance of the parse. 'name' = pulled from the product
+  // name itself; 'invoice_unit' = inferred from the supplier's invoice
+  // unit when the name disclosed nothing. Callers can route this to
+  // the products.pack_source column so the owner can audit later.
+  source: 'name' | 'invoice_unit'
 }
 
 /**
- * Best-effort: parse pack size + base unit from a product name.
- * Returns the LARGEST match, since "Pizza sauce 4,1 kg" can have the
- * same regex match "kg" inside "4,1 kg" and there's only one. Returns
- * null when nothing matches or the unit is unrecognised.
+ * Best-effort: parse pack size + base unit from a product name, with an
+ * optional fall-back to the supplier `invoice_unit` when the name itself
+ * discloses nothing.
+ *
+ * Resolution order (deterministic):
+ *
+ *   1. Match a "<number> <unit>" token in the name (the original
+ *      behaviour). This is the strongest signal — owners commonly
+ *      write "Pizza sauce 4,1 kg" or "Olive oil 500ml".
+ *
+ *   2. If that fails AND `invoice_unit` is provided AND it normalizes
+ *      to a known mass / volume / count unit, return that unit's
+ *      conversion factor to its base unit. E.g. invoice_unit='KG' →
+ *      pack_size=1000, base_unit='g'. The supplier sells by weight and
+ *      we know the dictionary answer; no judgement required.
+ *
+ *   3. Otherwise null. Caller handles honest-incomplete.
+ *
+ * IMPORTANT — the invoice_unit fallback ONLY fires for canonical units
+ * already in the {mass, volume, count} families. Multi-unit packaging
+ * names like 'KRT' / 'KOLLI' / 'PKT' / 'FRP' that imply "a box of N
+ * items" are deliberately NOT inferred from — those require the owner
+ * to disclose the box contents.
  *
  * Examples:
- *   "Pizza sauce Classica 4,1 kg Mutti"  → { pack_size: 4100, base_unit: 'g' }
- *   "Vitlök Skalad 1kg Kl1"              → { pack_size: 1000, base_unit: 'g' }
- *   "Olive oil 500ml"                    → { pack_size: 500,  base_unit: 'ml' }
- *   "Mjölk 1L"                           → { pack_size: 1000, base_unit: 'ml' }
- *   "Ägg 30 st"                          → { pack_size: 30,   base_unit: 'st' }
- *   "Mozzarella"                         → null
+ *   "Pizza sauce Classica 4,1 kg Mutti"           → { pack: 4100, base: 'g',  source: 'name' }
+ *   "Olive oil 500ml"                             → { pack:  500, base: 'ml', source: 'name' }
+ *   "Citron",                  invoice_unit='KG'  → { pack: 1000, base: 'g',  source: 'invoice_unit' }
+ *   "Gurka Kg",                invoice_unit='KG'  → { pack: 1000, base: 'g',  source: 'invoice_unit' }   (name parse fails — 'Kg' has no number)
+ *   "Råa Vannamei",            invoice_unit='st'  → { pack:    1, base: 'st', source: 'invoice_unit' }
+ *   "Olivolja XV",             invoice_unit='CL'  → { pack:   10, base: 'ml', source: 'invoice_unit' }
+ *   "Mozzarella",              invoice_unit='KRT' → null    (KRT is a box, contents unknown)
+ *   "Mozzarella",              invoice_unit=null  → null
  */
-export function parseProductPackSize(name: string | null | undefined): ParsedPack | null {
-  if (!name) return null
-  const matches = Array.from(String(name).matchAll(PACK_RE))
-  if (matches.length === 0) return null
-  // Use the LAST match — pack sizes tend to come after the product name.
-  // "Pizza sauce 4,1 kg" → "4,1 kg" is the last (and only) match.
-  const m = matches[matches.length - 1]
-  const num  = Number(m[1].replace(',', '.'))
-  if (!Number.isFinite(num) || num <= 0) return null
-  const unit = canonicalUnit(m[2])
-  if (!unit) return null
-  const fam = FAMILY[unit]
-  if (!fam) return null
-  const base = baseUnitForFamily(fam)
-  const pack_size = num * TO_BASE[unit]
-  return { pack_size, base_unit: base, raw_match: m[0] }
+export function parseProductPackSize(
+  name:         string | null | undefined,
+  invoice_unit?: string | null | undefined,
+): ParsedPack | null {
+  // 1. Name-based parse (strongest signal — original behaviour).
+  if (name) {
+    const matches = Array.from(String(name).matchAll(PACK_RE))
+    if (matches.length > 0) {
+      const m = matches[matches.length - 1]
+      const num  = Number(m[1].replace(',', '.'))
+      if (Number.isFinite(num) && num > 0) {
+        const unit = canonicalUnit(m[2])
+        if (unit) {
+          const fam = FAMILY[unit]
+          if (fam) {
+            return {
+              pack_size: num * TO_BASE[unit],
+              base_unit: baseUnitForFamily(fam),
+              raw_match: m[0],
+              source:    'name',
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. invoice_unit fallback — supplier sells by a known weight/volume/
+  //    count unit. The dictionary answer: pack_size = unit→base factor.
+  if (invoice_unit) {
+    const inv = canonicalUnit(invoice_unit)
+    if (inv) {
+      const fam = FAMILY[inv]
+      if (fam) {
+        return {
+          pack_size: TO_BASE[inv],
+          base_unit: baseUnitForFamily(fam),
+          raw_match: `invoice unit ${invoice_unit}`,
+          source:    'invoice_unit',
+        }
+      }
+    }
+  }
+
+  // 3. Honest-incomplete.
+  return null
 }

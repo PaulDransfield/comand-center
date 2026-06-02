@@ -619,10 +619,11 @@ export async function createProductFromLine(
     productId   = existing.id
     wasExisting = true
   } else {
-    // Auto-detect pack size from the canonical name. Free fill-in for
-    // every product created via owner-review — they land already
-    // priced-per-gram in recipes without owner curation.
-    const parsedPack = parseProductPackSize(productName)
+    // Auto-detect pack size from the canonical name; fall back to the
+    // supplier invoice unit (Phase A — "Citron — KG" → 1000g) when the
+    // name discloses nothing. NOTE: pack_source column (M119) is
+    // pending — once applied, also write packSourceTag here.
+    const parsedPack = parseProductPackSize(productName, line.unit)
 
     const { data: prod, error: prodErr } = await db
       .from('products')

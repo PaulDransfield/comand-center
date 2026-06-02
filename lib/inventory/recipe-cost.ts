@@ -232,7 +232,11 @@ export function computeRecipeCost(
     let baseUnit:   string | null = p?.base_unit ?? null
     let autoParsed = false
     if ((packSize == null || baseUnit == null) && p?.product_name) {
-      const parsed = parseProductPackSize(p.product_name)
+      // Phase A — parseProductPackSize now does the invoice_unit fallback
+      // itself (name first, invoice_unit second). The dedicated
+      // inferPackFromInvoiceUnit call below is retained as belt-and-
+      // braces but should be a no-op since the parser covers it.
+      const parsed = parseProductPackSize(p.product_name, invoiceUnit)
       if (parsed) {
         packSize = parsed.pack_size
         baseUnit = parsed.base_unit

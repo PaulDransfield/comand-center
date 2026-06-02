@@ -25,16 +25,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: p } = await db
     .from('products')
-    .select('id, business_id, name, pack_size, base_unit')
+    .select('id, business_id, name, pack_size, base_unit, invoice_unit')
     .eq('id', params.id)
     .maybeSingle()
   if (!p) return NextResponse.json({ error: 'product not found' }, { status: 404 })
   const forbidden = requireBusinessAccess(auth, p.business_id)
   if (forbidden) return forbidden
 
-  const suggestion = parseProductPackSize(p.name)
+  // Phase A — parser does name-first, invoice_unit-fallback in one call.
+  // `suggestion.source` distinguishes them so the UI can render
+  // "from product name (4,1 kg)" vs "from invoice unit (KG)".
+  const suggestion = parseProductPackSize(p.name, p.invoice_unit)
   return NextResponse.json({
-    current: { pack_size: p.pack_size, base_unit: p.base_unit },
+    current:   { pack_size: p.pack_size, base_unit: p.base_unit },
     suggested: suggestion,    // null when nothing parseable
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
