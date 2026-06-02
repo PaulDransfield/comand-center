@@ -194,6 +194,7 @@
       "colObs":            "Antal",
       "colSupplier":       "Leverantör",
       "categories": {
+        "sellable":          "Säljbart",
         "all":               "Alla",
         "food":              "Mat",
         "beverage":          "Dryck",

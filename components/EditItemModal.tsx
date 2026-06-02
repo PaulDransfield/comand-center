@@ -159,10 +159,12 @@ export function EditItemModal({ productId, onClose, onSaved }: {
   }
 
   // ── Link supplier article ────────────────────────────────────────
-  // Open a sub-picker that searches unmatched supplier_invoice_lines at
-  // this business and lets the owner attach one as the cost source for
-  // this product. Closes the gap for products created via the recipe-
-  // authoring tool / AI bulk importer (no automatic alias on creation).
+  // Open a sub-picker that searches supplier_invoice_lines at this
+  // business and lets the owner attach one as the cost source for this
+  // product. Two paths:
+  //   - linkSupplierLine: line has NO alias yet — POST link-supplier-article
+  //   - repointSupplierAlias: line is matched to a DIFFERENT product
+  //     (duplicate-product consolidation) — POST /product-aliases/[id]/repoint
   const [linking, setLinking] = useState(false)
   async function linkSupplierLine(lineId: string) {
     setBusy(true); setErr(null)
@@ -179,6 +181,21 @@ export function EditItemModal({ productId, onClose, onSaved }: {
         }
         throw new Error(j.error ?? `HTTP ${r.status}`)
       }
+      setLinking(false)
+      await load()
+    } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
+  }
+  async function repointSupplierAlias(aliasId: string, fromProductName: string | null) {
+    if (!confirm(`Move this supplier article from "${fromProductName ?? 'the other product'}" to this product?\n\nThe other product will lose this article's cost history. (You can repoint it back any time.)`)) return
+    setBusy(true); setErr(null)
+    try {
+      const r = await fetch(`/api/inventory/product-aliases/${aliasId}/repoint`, {
+        method:  'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ product_id: productId }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       setLinking(false)
       await load()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
@@ -345,6 +362,7 @@ export function EditItemModal({ productId, onClose, onSaved }: {
           productId={productId}
           productName={data.product.name}
           onPick={linkSupplierLine}
+          onRepoint={repointSupplierAlias}
           onClose={() => setLinking(false)}
         />
       )}
@@ -472,19 +490,26 @@ const aliasCard: React.CSSProperties = {
 }
 
 // ── Link-supplier-article sub-picker ──────────────────────────────
-// Owner searches the unmatched supplier_invoice_lines at this business
-// (returned grouped by raw_description+supplier), clicks one → creates
-// a product_alias + back-fills every matching line.
-function LinkArticlePicker({ productId, productName, onPick, onClose }: {
+// Owner searches supplier_invoice_lines at this business (returned
+// grouped by raw_description+supplier in TWO buckets):
+//   - unmatched_groups: no alias yet  → onPick → POST link-supplier-article
+//   - matched_groups:   alias points at a DIFFERENT product (duplicate-
+//                       product consolidation case, e.g. "Burrata 125g"
+//                       vs "Mozzarella Burrata 8x125g" being two
+//                       products that should be one) → onRepoint →
+//                       POST /product-aliases/[id]/repoint
+function LinkArticlePicker({ productId, productName, onPick, onRepoint, onClose }: {
   productId:   string
   productName: string
   onPick:      (lineId: string) => void
+  onRepoint:   (aliasId: string, currentProductName: string | null) => void
   onClose:     () => void
 }) {
-  const [q, setQ]         = useState('')
-  const [results, setRes] = useState<any[] | null>(null)
-  const [loading, setL]   = useState(false)
-  const [err, setErr]     = useState<string | null>(null)
+  const [q, setQ]               = useState('')
+  const [unmatched, setUnmatched] = useState<any[] | null>(null)
+  const [matched,   setMatched]   = useState<any[] | null>(null)
+  const [loading, setL]         = useState(false)
+  const [err, setErr]           = useState<string | null>(null)
 
   const search = useCallback(async (query: string) => {
     setL(true); setErr(null)
@@ -492,7 +517,8 @@ function LinkArticlePicker({ productId, productName, onPick, onClose }: {
       const r = await fetch(`/api/inventory/items/${productId}/link-search?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
-      setRes(Array.isArray(j.groups) ? j.groups : [])
+      setUnmatched(Array.isArray(j.unmatched_groups) ? j.unmatched_groups : (Array.isArray(j.groups) ? j.groups : []))
+      setMatched(Array.isArray(j.matched_groups) ? j.matched_groups : [])
     } catch (e: any) { setErr(e.message) } finally { setL(false) }
   }, [productId])
 
@@ -501,6 +527,8 @@ function LinkArticlePicker({ productId, productName, onPick, onClose }: {
     const t = setTimeout(() => search(q), q ? 250 : 0)
     return () => clearTimeout(t)
   }, [q, search])
+
+  const totalResults = (unmatched?.length ?? 0) + (matched?.length ?? 0)
 
   return (
     <div
@@ -538,45 +566,121 @@ function LinkArticlePicker({ productId, productName, onPick, onClose }: {
         {loading && <div style={{ padding: 14, color: UXP.ink3, fontSize: 11 }}>Searching…</div>}
         {err && <div style={{ padding: 10, background: UXP.roseFill, color: UXP.roseText, borderRadius: 6, fontSize: 11, marginBottom: 8 }}>{err}</div>}
 
-        {results && results.length === 0 && !loading && (
+        {!loading && totalResults === 0 && (
           <div style={{ padding: 14, fontSize: 11, color: UXP.ink4 }}>
-            No unmatched supplier lines {q ? `containing "${q}"` : ''} at this business. Either the supplier hasn't sent this article yet, or it's already linked to another product.
+            No supplier lines {q ? `containing "${q}"` : ''} at this business. The supplier hasn't sent this article yet.
           </div>
         )}
 
-        {results && results.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
-            {results.map(g => (
-              <button
-                key={g.group_key}
-                onClick={() => onPick(g.sample_line_id)}
-                style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10,
-                  padding: '8px 10px', textAlign: 'left' as const,
-                  background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
-                  borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', width: '100%',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = UXP.lavFill)}
-                onMouseLeave={e => (e.currentTarget.style.background = UXP.cardBg)}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}>
-                    {g.raw_description}
+        {/* Unmatched bucket — primary action: link */}
+        {unmatched && unmatched.length > 0 && (
+          <>
+            <div style={pickerSectionLabel}>
+              Unmatched · {unmatched.length} — link directly
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, marginBottom: 12 }}>
+              {unmatched.map(g => (
+                <button
+                  key={g.group_key}
+                  onClick={() => onPick(g.sample_line_id)}
+                  style={pickerRowBtn}
+                  onMouseEnter={e => (e.currentTarget.style.background = UXP.lavFill)}
+                  onMouseLeave={e => (e.currentTarget.style.background = UXP.cardBg)}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={pickerDesc}>{g.raw_description}</div>
+                    <div style={pickerMeta}>
+                      {g.supplier_name ?? '?'}{g.article_number && ` · ${g.article_number}`} · {g.line_count} line{g.line_count === 1 ? '' : 's'} · last {g.latest_invoice_date ?? '?'}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 2 }}>
-                    {g.supplier_name ?? '?'}{g.article_number && ` · ${g.article_number}`} · {g.line_count} line{g.line_count === 1 ? '' : 's'} · last {g.latest_invoice_date ?? '?'}
+                  <div style={pickerPrice}>
+                    {g.latest_price != null ? `${g.latest_price} kr/${g.unit ?? '?'}` : '—'}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Matched bucket — secondary action: repoint (steal from other product) */}
+        {matched && matched.length > 0 && (
+          <>
+            <div style={pickerSectionLabel}>
+              Currently linked to another product · {matched.length} — repoint to consolidate duplicates
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+              {matched.map(g => (
+                <div
+                  key={g.group_key}
+                  style={{
+                    ...pickerRowBtn,
+                    cursor: 'default',
+                    borderColor: '#fde68a',   // amber border (informational, not error)
+                    background:  '#fef3c7',   // amber soft fill — UXP has no amber yet
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={pickerDesc}>{g.raw_description}</div>
+                    <div style={pickerMeta}>
+                      {g.supplier_name ?? '?'}{g.article_number && ` · ${g.article_number}`} · {g.line_count} line{g.line_count === 1 ? '' : 's'} · last {g.latest_invoice_date ?? '?'}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#d97706', marginTop: 3, fontWeight: 600 }}>
+                      Linked to: {g.current_product_name ?? '(unnamed product)'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' as const, alignItems: 'flex-end', gap: 4 }}>
+                    <div style={pickerPrice}>
+                      {g.latest_price != null ? `${g.latest_price} kr/${g.unit ?? '?'}` : '—'}
+                    </div>
+                    {g.sample_alias_id && (
+                      <button
+                        onClick={() => onRepoint(g.sample_alias_id, g.current_product_name)}
+                        style={{
+                          padding: '5px 10px', fontSize: 10, fontWeight: 600,
+                          background: '#d97706', color: '#fff',   // amber (informational)
+                          border: 'none', borderRadius: 4, cursor: 'pointer',
+                          fontFamily: 'inherit', whiteSpace: 'nowrap' as const,
+                        }}
+                      >
+                        Repoint to "{productName}" →
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div style={{ fontSize: 11, color: UXP.ink2, fontVariantNumeric: 'tabular-nums' as const, whiteSpace: 'nowrap' as const, alignSelf: 'center' as const }}>
-                  {g.latest_price != null ? `${g.latest_price} kr/${g.unit ?? '?'}` : '—'}
-                </div>
-              </button>
-            ))}
-          </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, lineHeight: 1.5 }}>
+              <strong>Repoint</strong> moves a supplier article from one product to another (used to consolidate duplicate products into one canonical entry). The other product loses this article's cost history; you can repoint back any time.
+            </div>
+          </>
         )}
       </div>
     </div>
   )
+}
+
+const pickerSectionLabel: React.CSSProperties = {
+  fontSize: 10, fontWeight: 600, color: UXP.ink3,
+  letterSpacing: '0.04em', textTransform: 'uppercase' as const,
+  marginBottom: 6, padding: '0 2px',
+}
+const pickerRowBtn: React.CSSProperties = {
+  display: 'flex', alignItems: 'flex-start', gap: 10,
+  padding: '8px 10px', textAlign: 'left' as const,
+  background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+  borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit', width: '100%',
+}
+const pickerDesc: React.CSSProperties = {
+  fontSize: 12, fontWeight: 500, color: UXP.ink1,
+  overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const,
+}
+const pickerMeta: React.CSSProperties = {
+  fontSize: 10, color: UXP.ink4, marginTop: 2,
+}
+const pickerPrice: React.CSSProperties = {
+  fontSize: 11, color: UXP.ink2,
+  fontVariantNumeric: 'tabular-nums' as const,
+  whiteSpace: 'nowrap' as const, alignSelf: 'center' as const,
 }
 const recipeRow: React.CSSProperties = {
   display: 'flex', alignItems: 'center', padding: '6px 0',

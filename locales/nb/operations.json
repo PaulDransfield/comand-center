@@ -194,6 +194,7 @@
       "colObs":            "Antall",
       "colSupplier":       "Leverandør",
       "categories": {
+        "sellable":          "Selgbart",
         "all":               "Alle",
         "food":              "Mat",
         "beverage":          "Drikke",

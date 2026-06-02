@@ -54,8 +54,15 @@ const REASON_LABEL: Record<CatalogueItem['attention_reasons'][number], string> =
 
 // Category keys are kept here so the rest of the file iterates a stable list
 // regardless of locale. Labels are resolved via useTranslations at render.
+//
+// 'sellable' is a VIRTUAL bundle = food + beverage + alcohol. The default
+// because owners almost always want to look at things they cook or pour,
+// not packaging / cleaning / disposables (the "rullbar" class the owner
+// flagged 2026-06-02). Server doesn't know about it; client requests
+// ?category=all and post-filters to the sellable set.
+const SELLABLE_CATEGORIES = new Set(['food', 'beverage', 'alcohol'])
 const CATEGORY_KEYS = [
-  'all', 'food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other',
+  'sellable', 'all', 'food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other',
 ] as const
 
 type SortKey = 'name' | 'latest_price' | 'change_pct' | 'observation_count' | 'latest_date'
@@ -64,7 +71,7 @@ export default function InventoryItemsPage() {
   const router = useRouter()
   const t = useTranslations('operations.inventory.items')
   const [bizId,    setBizId]    = useState<string | null>(null)
-  const [filter,   setFilter]   = useState<string>('all')
+  const [filter,   setFilter]   = useState<string>('sellable')
   const [data,     setData]     = useState<CatalogueResponse | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
@@ -100,7 +107,10 @@ export default function InventoryItemsPage() {
     setLoading(true)
     setError(null)
     try {
-      const r = await fetch(`/api/inventory/items?business_id=${encodeURIComponent(bizId)}&category=${encodeURIComponent(filter)}`,
+      // Map the 'sellable' virtual filter back to 'all' for the server —
+      // the server has no concept of the bundle; we post-filter below.
+      const serverCategory = filter === 'sellable' ? 'all' : filter
+      const r = await fetch(`/api/inventory/items?business_id=${encodeURIComponent(bizId)}&category=${encodeURIComponent(serverCategory)}`,
                             { cache: 'no-store' })
       if (!r.ok) throw new Error((await r.json().catch(() => ({} as any))).error ?? `HTTP ${r.status}`)
       setData(await r.json())
@@ -114,6 +124,9 @@ export default function InventoryItemsPage() {
   useEffect(() => { if (bizId) load() }, [bizId, filter, load])
 
   const items = (data?.items ?? [])
+    // Virtual 'sellable' bundle = food + beverage + alcohol. Server
+    // ignores this filter (we sent 'all'); applied here.
+    .filter(i => filter !== 'sellable' || SELLABLE_CATEGORIES.has(i.category))
     .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()))
     .filter(i => !needsOnly || i.needs_attention)
     .slice()
@@ -343,7 +356,12 @@ export default function InventoryItemsPage() {
         {/* Filters + search */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' as const, alignItems: 'center' }}>
           {CATEGORY_KEYS.map((key) => {
-            const count = key === 'all' ? (data?.counts?.all ?? 0) : (data?.counts?.[key] ?? 0)
+            // 'sellable' is a client-side bundle — sum food + beverage + alcohol.
+            const count = key === 'all'
+              ? (data?.counts?.all ?? 0)
+              : key === 'sellable'
+                ? (data?.counts?.food ?? 0) + (data?.counts?.beverage ?? 0) + (data?.counts?.alcohol ?? 0)
+                : (data?.counts?.[key] ?? 0)
             const active = filter === key
             return (
               <button

@@ -194,6 +194,7 @@
       "colObs":            "Obs.",
       "colSupplier":       "Supplier",
       "categories": {
+        "sellable":          "Sellable",
         "all":               "All",
         "food":              "Food",
         "beverage":          "Beverage",
