@@ -1,0 +1,505 @@
+{
+  "business": "Vero",
+  "captured_at": "2026-06-02T19:33:25.322Z",
+  "active_products": 1009,
+  "duplicate_clusters": 82,
+  "products_in_clusters": 172,
+  "potential_collapse_savings": 90,
+  "clean_clusters": 61,
+  "ambig_clusters": 21,
+  "top_suppliers": [
+    [
+      "Spendrups",
+      78
+    ],
+    [
+      "Martin Servera Restauranghandel AB",
+      41
+    ],
+    [
+      "Snabbgross Örebro",
+      29
+    ],
+    [
+      "SVENSK CATER AB",
+      10
+    ],
+    [
+      "IL Molino AB",
+      4
+    ],
+    [
+      "Rosalis Aspholmen",
+      3
+    ],
+    [
+      "Carlsberg Sverige AB",
+      2
+    ],
+    [
+      "BRILL & CO AB",
+      2
+    ],
+    [
+      "Champagneimport AB",
+      2
+    ],
+    [
+      "Robertsons Charkuteri AB",
+      1
+    ]
+  ],
+  "clean_samples": [
+    {
+      "root": "fat heineken",
+      "names": [
+        "Heineken 5% 30l fat",
+        "Heineken 5% 30l Fat"
+      ]
+    },
+    {
+      "root": "fat fourpure shapeshifter",
+      "names": [
+        "Fourpure Shapeshifter 5,9% 30l fat",
+        "Fourpure Shapeshifter 5,9% 30L fat"
+      ]
+    },
+    {
+      "root": "dry mehrlein riesling",
+      "names": [
+        "Mehrlein Riesling Dry 75eg",
+        "Mehrlein Riesling Dry 75cl"
+      ]
+    },
+    {
+      "root": "fel hand kor msc",
+      "names": [
+        "Fel Råkor 2,7kg Hand M Msc",
+        "Fel Råkor2,7kg Hand M Msc",
+        "Fel Räkor2,7kg Hand M Msc"
+      ]
+    },
+    {
+      "root": "gurka",
+      "names": [
+        "Gurka",
+        "Gurka Kg"
+      ]
+    },
+    {
+      "root": "arla che cre frai",
+      "names": [
+        "Arla Crème Fraîche 2kg 32%",
+        "Arla Crème Fraîche 2kg Lätt 13%"
+      ]
+    },
+    {
+      "root": "brut delapierre etiqueta",
+      "names": [
+        "Delapierre Etiqueta Brut 75cl",
+        "Delapierre Etiqueta Brut 75eg"
+      ]
+    },
+    {
+      "root": "back glas",
+      "names": [
+        "Glas 50RG med Back",
+        "Glas 50rg M Back"
+      ]
+    },
+    {
+      "root": "frityrolja life long",
+      "names": [
+        "Frityrolja Long Life 10l",
+        "Frityrolja Long Life 10L"
+      ]
+    },
+    {
+      "root": "duni rmeljus",
+      "names": [
+        "Duni Värmeljus 30p",
+        "Duni Värmeljus 30p 6h"
+      ]
+    },
+    {
+      "root": "glas styck",
+      "names": [
+        "Glas 50RG Styck",
+        "Glas 50rg Styck"
+      ]
+    },
+    {
+      "root": "bbq original",
+      "names": [
+        "Sås BBQ Original 3.79L",
+        "Sås BBQ Original 3,79L"
+      ]
+    },
+    {
+      "root": "pack papperssugro",
+      "names": [
+        "Papperssugrör 6x200mm 250-pack",
+        "Papperssugrör 6x150-pack"
+      ]
+    },
+    {
+      "root": "fsc papperssugro",
+      "names": [
+        "Papperssugrör Sv 6x150 250 Fsc",
+        "Papperssugrör Sv 6x200 250 Fsc"
+      ]
+    },
+    {
+      "root": "apelsin",
+      "names": [
+        "Apelsin",
+        "Apelsin 1kg",
+        "Apelsin Röd 1kg"
+      ]
+    },
+    {
+      "root": "briska ron",
+      "names": [
+        "Briska Päron 4,5% 33cl",
+        "Briska Päron 4,5 33eg"
+      ]
+    },
+    {
+      "root": "bufala dop migliore",
+      "names": [
+        "Bufala DOP Migliore 1kg",
+        "BUFALA DOP Migliore 8x125g (1kg)"
+      ]
+    },
+    {
+      "root": "fat melleruds pilsner rkta utma @organic",
+      "names": [
+        "Melleruds Utmärkta Pilsner Ekologisk 4,8% 30L Fat",
+        "Melleruds Utmärkta Pilsner Ekologisk 4,8% 30l fat"
+      ]
+    },
+    {
+      "root": "rapsolja",
+      "names": [
+        "Rapsolja 5l",
+        "Rapsolja 5L"
+      ]
+    },
+    {
+      "root": "alkoholfri enga menabrea ngsglas",
+      "names": [
+        "Menabrea alkoholfri 0,0% 33 cl engångsglas",
+        "Menabrea Alkoholfri 0,0% 33cl Engångsglas"
+      ]
+    },
+    {
+      "root": "bayrisch hell schweiger",
+      "names": [
+        "Schweiger Bayrisch Hell 4,9 30LF",
+        "Schweiger Bayrisch Hell 4,9% 30L"
+      ]
+    },
+    {
+      "root": "filmad gurka",
+      "names": [
+        "Gurka Filmad",
+        "Gurka Filmad SE"
+      ]
+    },
+    {
+      "root": "chardonnay",
+      "names": [
+        "Chardonnay 75eg",
+        "Chardonnay 875ml 75cl"
+      ]
+    },
+    {
+      "root": "dek kokt skinka",
+      "names": [
+        "Dek Skinka5kg Kokt72% Äkt",
+        "Dek Skinka 5kg Kokt 72% Äkt"
+      ]
+    },
+    {
+      "root": "aubergine",
+      "names": [
+        "Aubergine",
+        "Aubergine Kg"
+      ]
+    },
+    {
+      "root": "export mariestads returglas",
+      "names": [
+        "Mariestads Export 5,3% 50cl returglas",
+        "Mariestads Export 5,3% 50cl Returglas"
+      ]
+    },
+    {
+      "root": "biogon",
+      "names": [
+        "Biogon NC50 13,4l (Blandgas 50/50)",
+        "Biogon Nc50 13,4l",
+        "Biogon NC50 13,4L"
+      ]
+    },
+    {
+      "root": "brut cava signat",
+      "names": [
+        "Signat Cava Brut 75eg",
+        "Cava Signat Brut 11,5% 75cl"
+      ]
+    },
+    {
+      "root": "koncentrat svampfond",
+      "names": [
+        "Svampfond Koncentrat 1L",
+        "Svampfond 1L Koncentrat"
+      ]
+    },
+    {
+      "root": "blu caputo mjo",
+      "names": [
+        "Mjöl Caputo BLU 00 W280/310 25kg",
+        "Mjöl Caputo BLU \"00\" W280/310 25kg"
+      ]
+    }
+  ],
+  "ambig_samples": [
+    {
+      "root": "halloumiburgare",
+      "packs": [
+        "60g",
+        "900g"
+      ],
+      "names": [
+        "Halloumiburgare 12x60g (60 g)",
+        "Halloumiburgare 900g (900 g)"
+      ]
+    },
+    {
+      "root": "gra slo",
+      "packs": [
+        "100g",
+        "15g"
+      ],
+      "names": [
+        "Gräslök 100g (100 g)",
+        "Gräslök 15g (15 g)"
+      ]
+    },
+    {
+      "root": "bionda menabrea",
+      "packs": [
+        "660ml",
+        "30000ml",
+        "330ml"
+      ],
+      "names": [
+        "Menabrea Bionda 4,8% 66cl (660 ml)",
+        "Menabrea Bionda 4,8 30lf (30000 ml)",
+        "Menabrea Bionda 4,8 66eg (660 ml)",
+        "Menabrea Bionda 4,8 33eg (330 ml)"
+      ]
+    },
+    {
+      "root": "gul",
+      "packs": [
+        "12000g",
+        "2000g"
+      ],
+      "names": [
+        "Lök Gul 12kg (12000 g)",
+        "Lök Gul 2kg (2000 g)"
+      ]
+    },
+    {
+      "root": "socker stro",
+      "packs": [
+        "2000g",
+        "10000g"
+      ],
+      "names": [
+        "Strösocker 2kg (2000 g)",
+        "Strösocker 10kg (10000 g)"
+      ]
+    },
+    {
+      "root": "cocktail kvist tomat",
+      "packs": [
+        "∅∅",
+        "500g"
+      ],
+      "names": [
+        "Tomat Cocktail Röd Kvist 3 (∅ ∅)",
+        "Tomat Cocktail Kvist 500g (500 g)"
+      ]
+    },
+    {
+      "root": "bro panko stro",
+      "packs": [
+        "1000g",
+        "10000g"
+      ],
+      "names": [
+        "Ströbröd Panko 1kg (1000 g)",
+        "Ströbröd Panko 10kg (10000 g)",
+        "Panko Ströbröd 1kg (1000 g)"
+      ]
+    },
+    {
+      "root": "cocktail tomat",
+      "packs": [
+        "250g",
+        "1000g"
+      ],
+      "names": [
+        "Tomat Cocktail 250g (250 g)",
+        "Tomat Cocktail Röd (1000 g)"
+      ]
+    },
+    {
+      "root": "citadelle gin",
+      "packs": [
+        "700ml",
+        "1st"
+      ],
+      "names": [
+        "Citadelle Gin 70cl (700 ml)",
+        "Citadelle Gin 70eg St (1 st)"
+      ]
+    },
+    {
+      "root": "parmigiano reggiano",
+      "packs": [
+        "200g",
+        "1000g"
+      ],
+      "names": [
+        "Parmigiano Reggiano 200g 22 mån (200 g)",
+        "Parmigiano Reggiano ca 1kg (1000 g)"
+      ]
+    },
+    {
+      "root": "gare pack",
+      "packs": [
+        "200ml",
+        "100ml"
+      ],
+      "names": [
+        "Bägare 200ml 50-pack (200 ml)",
+        "Bägare 100ml 100-pack (100 ml)"
+      ]
+    },
+    {
+      "root": "enkelvikt pannkaka",
+      "packs": [
+        "6000g",
+        "60g"
+      ],
+      "names": [
+        "Pannkaka Enkelvikt 6kg (6000 g)",
+        "Pannkaka Enkelvikt 60g (60 g)"
+      ]
+    },
+    {
+      "root": "export mstads",
+      "packs": [
+        "∅∅",
+        "30000ml"
+      ],
+      "names": [
+        "Mstads Export 5,3 50rg (∅ ∅)",
+        "Mstads Export 5,3 30lf (30000 ml)"
+      ]
+    },
+    {
+      "root": "blanc cazcabel tequila",
+      "packs": [
+        "1st",
+        "700ml"
+      ],
+      "names": [
+        "Cazcabel Tequila Blanc 70eg St (1 st)",
+        "Cazcabel Tequila Blanc 70cl (700 ml)"
+      ]
+    },
+    {
+      "root": "entreco",
+      "packs": [
+        "4000g",
+        "3400g"
+      ],
+      "names": [
+        "Entrecôte ca4kg (4000 g)",
+        "Entrecôte ca2,8-3,4kg (3400 g)",
+        "Entrecôte ca 2,8-3,4kg (3400 g)"
+      ]
+    },
+    {
+      "root": "gin jinzu",
+      "packs": [
+        "1st",
+        "700ml"
+      ],
+      "names": [
+        "Jinzu Gin 70eg St (1 st)",
+        "Jinzu Gin 70cl (700 ml)"
+      ]
+    },
+    {
+      "root": "kalvfa",
+      "packs": [
+        "1000g",
+        "1st"
+      ],
+      "names": [
+        "Kalvfärs (1000 g)",
+        "Kalvfärs 10% Nl Dm Ky 2,5k (1 st)"
+      ]
+    },
+    {
+      "root": "rostad",
+      "packs": [
+        "1500g",
+        "500g"
+      ],
+      "names": [
+        "Lök rostad 1,5kg (1500 g)",
+        "Lök Rostad 500g (500 g)"
+      ]
+    },
+    {
+      "root": "export mariestads",
+      "packs": [
+        "500ml",
+        "30000ml"
+      ],
+      "names": [
+        "Mariestads Export 5,3% 50cl (500 ml)",
+        "Mariestads Export 5,3% 30L (30000 ml)"
+      ]
+    },
+    {
+      "root": "chipotle chips ddfil gra lime",
+      "packs": [
+        "100g",
+        "50g"
+      ],
+      "names": [
+        "Lime, Gräddfil, Chipotle 100 g Ö-Chips (100 g)",
+        "Lime, Gräddfil, Chipotle 50 g Ö-Chips (50 g)"
+      ]
+    },
+    {
+      "root": "burger chicken crispy",
+      "packs": [
+        "2500g",
+        "∅∅"
+      ],
+      "names": [
+        "Crispy Chicken Burger 2,5kg (2500 g)",
+        "Crispy Chicken Burger 2,5k (∅ ∅)"
+      ]
+    }
+  ]
+}

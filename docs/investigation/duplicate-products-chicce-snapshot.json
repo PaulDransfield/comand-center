@@ -1,0 +1,678 @@
+{
+  "business": "Chicce",
+  "captured_at": "2026-06-02T19:33:24.877Z",
+  "active_products": 1248,
+  "duplicate_clusters": 146,
+  "products_in_clusters": 383,
+  "potential_collapse_savings": 237,
+  "clean_clusters": 67,
+  "ambig_clusters": 79,
+  "top_suppliers": [
+    [
+      "Trädgårdshallen Sverige AB",
+      179
+    ],
+    [
+      "Martin Servera Restauranghandel AB",
+      138
+    ],
+    [
+      "AB Tingstad Papper",
+      21
+    ],
+    [
+      "Laweka Gross & Matevent AB",
+      19
+    ],
+    [
+      "RIMA Seafood AB",
+      5
+    ],
+    [
+      "Enjoy Wine & Spirits AB",
+      4
+    ],
+    [
+      "BERGSLAGSDELIKATESSER I LINDESBERG AKTIEBOLAG",
+      3
+    ],
+    [
+      "Eventcenter i Örebro AB",
+      3
+    ],
+    [
+      "Anora Sweden AB",
+      2
+    ],
+    [
+      "Frimurarholmen AB",
+      2
+    ]
+  ],
+  "clean_samples": [
+    {
+      "root": "ask krav rosmarin",
+      "names": [
+        "Krav Rosmarin Ask 50g",
+        "Rosmarin KRAV 50g Ask SE"
+      ]
+    },
+    {
+      "root": "flowpack roman sallad",
+      "names": [
+        "Sallad Roman DG 10st Flowpack ES",
+        "Sallad Roman 10st Flowpack RB SE",
+        "Sallad Roman 10st Flowpack",
+        "Sallad Roman 10st Flowpack ES"
+      ]
+    },
+    {
+      "root": "slev tra",
+      "names": [
+        "Träslev 400mm",
+        "Träslev350mm"
+      ]
+    },
+    {
+      "root": "apelsin",
+      "names": [
+        "Apelsin 15x1kg ES",
+        "Apelsin 15x1kg Nät ZA",
+        "Apelsin 8x1kg RB EG"
+      ]
+    },
+    {
+      "root": "exclusive mini tad torkrulle",
+      "names": [
+        "Torkrulle Mini Exclusive TAD",
+        "Torkrulle Mini Exclusive TAD (12/fp)"
+      ]
+    },
+    {
+      "root": "hallon",
+      "names": [
+        "Bär Hallon 12x125g MA",
+        "Bär Hallon 12x125g TZ",
+        "HALLON 125G",
+        "Bär Hallon DG 12x125g PT"
+      ]
+    },
+    {
+      "root": "bla eng halkfri tyllpa",
+      "names": [
+        "Tyllpåse Halkfri Eng Blå 72",
+        "Tyllpåse Halkfri Eng Blå72"
+      ]
+    },
+    {
+      "root": "mascarpone",
+      "names": [
+        "Mascarpone 2 kg",
+        "Mascarpone 2kg",
+        "Mascarpone 48% 2kg",
+        "Mascarpone 47% 2kg"
+      ]
+    },
+    {
+      "root": "aubergine flow",
+      "names": [
+        "Aubergine 5kg Flow ES",
+        "Aubergine DG 5kg Flow ES"
+      ]
+    },
+    {
+      "root": "morot",
+      "names": [
+        "Morot DG 15x1kg RB SE",
+        "Morot 15x1kg RB SE",
+        "Morot 12x1kg RB SE",
+        "Morot 1kg"
+      ]
+    },
+    {
+      "root": "bar beer icewater",
+      "names": [
+        "Bar Icewater/Beer",
+        "Bar Icewater/Beer C12"
+      ]
+    },
+    {
+      "root": "gro nka",
+      "names": [
+        "Grönkål DG 8x200g RB SE",
+        "Grönkål 8x200g ES",
+        "Grönkål 8x200g RB ES",
+        "Grönkål 8x200g RB SE"
+      ]
+    },
+    {
+      "root": "festis ron @organic",
+      "names": [
+        "FESTIS PÄRON EKO 20CL; EU-ekologisk",
+        "Festis Päron Eko 20cl"
+      ]
+    },
+    {
+      "root": "brk limon pellegri san",
+      "names": [
+        "SAN PELLEGRI LIMON BRK 33C, Varav pant per enhet: 21,36",
+        "San Pellegri Limon Brk 33c"
+      ]
+    },
+    {
+      "root": "flyt ggvita @organic",
+      "names": [
+        "Äggvita Flyt Eko 1kg",
+        "ÄGGVITA FLYT EKO 1KG EU-ekologisk;"
+      ]
+    },
+    {
+      "root": "barbera cigliuti clx serraboella",
+      "names": [
+        "Cigliuti Barbera Serraboella 22 75clx6",
+        "Cigliuti Barbera Serraboella 75clx6"
+      ]
+    },
+    {
+      "root": "oliv skiv svart",
+      "names": [
+        "Oliv Svart Skiv PÅSe 3,8kg",
+        "Oliv Svart Skiv Påse 3,8kg"
+      ]
+    },
+    {
+      "root": "gro mix shisokrasse vrigt",
+      "names": [
+        "Grönt övrigt Shisokrasse Mix 16 st NL",
+        "Grönt övrigt Shisokrasse Mix Växa 16 st SE"
+      ]
+    },
+    {
+      "root": "matfilm refill",
+      "names": [
+        "Matfilm Refill 45cm x 300m (3/fp)",
+        "Matfilm Refill 45cm x 300m"
+      ]
+    },
+    {
+      "root": "broccoli ofilmad",
+      "names": [
+        "Broccoli Ofilmad 6kg ES",
+        "Broccoli Ofilmad 6kg RB SE"
+      ]
+    },
+    {
+      "root": "lfri standardmjo",
+      "names": [
+        "Standardmjölk Lfri 3% 1l",
+        "Standardmjölk Lfri 1l"
+      ]
+    },
+    {
+      "root": "potatis",
+      "names": [
+        "Potatis Söt XL 6kg US",
+        "Potatis Söt M/L 6kg EG"
+      ]
+    },
+    {
+      "root": "mos potatis skalad",
+      "names": [
+        "Skalad Potatis Mos 3N 7kg (1020) SE",
+        "Potatis Skalad Mos 7kg"
+      ]
+    },
+    {
+      "root": "kvist tomat",
+      "names": [
+        "Tomat Kvist 5kg ES",
+        "Tomat Kvist 5kg NL",
+        "Tomat Kvist 5kg RB SE",
+        "Tomat Kvist 5kg BE"
+      ]
+    },
+    {
+      "root": "skalad vitlo",
+      "names": [
+        "Vitlök Skalad 1kg",
+        "Vitlök Skalad 10x1kg CN",
+        "Vitlök Skalad1kg Kl1"
+      ]
+    },
+    {
+      "root": "npa papper",
+      "names": [
+        "NPA Papper Låg",
+        "NPA Papper Hög"
+      ]
+    },
+    {
+      "root": "tfa",
+      "names": [
+        "Nötfärs 23% Ky Eu 2,5kg",
+        "Nötfärs 10% Ky Se 2,5kg",
+        "Nötfärs 10% Ky Eu 2,5kg"
+      ]
+    },
+    {
+      "root": "bro panko stro",
+      "names": [
+        "Panko ströbröd 1 kg",
+        "Ströbröd Panko 1kg",
+        "Panko Ströbröd 10 x 1 Kg"
+      ]
+    },
+    {
+      "root": "flingsalt havs",
+      "names": [
+        "Flingsalt havs 1kg",
+        "Flingsalt Havs 1kg"
+      ]
+    },
+    {
+      "root": "tomat",
+      "names": [
+        "Tomat Se",
+        "Tomat 1kg"
+      ]
+    }
+  ],
+  "ambig_samples": [
+    {
+      "root": "burrata",
+      "packs": [
+        "125g",
+        "1st"
+      ],
+      "names": [
+        "Burrata 125g (125 g)",
+        "Burrata 3x100 gr (1 st)"
+      ]
+    },
+    {
+      "root": "paprika",
+      "packs": [
+        "5000g",
+        "1000g"
+      ],
+      "names": [
+        "Paprika Röd 111+ 5kg NL (5000 g)",
+        "Paprika Röd 70+ 5 Kg PL (5000 g)",
+        "Paprika Röd 5kg ES (5000 g)",
+        "Paprika Röd (1000 g)",
+        "Paprika Röd 5kg BE (5000 g)",
+        "Paprika Röd 141+ 5kg NL (5000 g)",
+        "Paprika Röd 181+ 5kg NL (5000 g)",
+        "Paprika Röd 70-90mm 5kg NL (5000 g)"
+      ]
+    },
+    {
+      "root": "bulgur mellangrov midyat",
+      "packs": [
+        "1st",
+        "1000g"
+      ],
+      "names": [
+        "Bulgur Mellangrov Midyat 1k (1 st)",
+        "Bulgur Mellangrov Midyat 1kg (1000 g)"
+      ]
+    },
+    {
+      "root": "grapefrukt",
+      "packs": [
+        "1000g",
+        "15000g",
+        "2000g",
+        "45st"
+      ],
+      "names": [
+        "Grapefrukt Röd 45st (15kg) MA 1kg (1000 g)",
+        "Grapefrukt Röd 45st (15kg) ES (15000 g)",
+        "Grapefrukt Röd 55st (15kg) ES (15000 g)",
+        "Grapefrukt Röd 40st 15kg ZA (15000 g)",
+        "Grapefrukt Röd 50st (15kg) MA (15000 g)",
+        "Grapefrukt Röd 55st (15kg) ES 2kg (2000 g)",
+        "Grapefrukt Röd 40st (15kg) ZA (15000 g)",
+        "Grapefrukt Röd 55st (15kg) MA 1kg (1000 g)",
+        "Grapefrukt Röd 45st (15kg) ZA (15000 g)",
+        "Grapefrukt Röd DG 45st ES (45 st)"
+      ]
+    },
+    {
+      "root": "baby spenat",
+      "packs": [
+        "100g",
+        "500g"
+      ],
+      "names": [
+        "Spenat Baby 8x100g DK (100 g)",
+        "Spenat Baby Tv 500g (500 g)"
+      ]
+    },
+    {
+      "root": "kapkummelfile msc",
+      "packs": [
+        "7000g",
+        "170g"
+      ],
+      "names": [
+        "Kapkummelfilé MSC 170/230 gr 7 kg (7000 g)",
+        "Kapkummelfile Msc110-170g/ (170 g)"
+      ]
+    },
+    {
+      "root": "lime",
+      "packs": [
+        "63st",
+        "1st",
+        "1000g",
+        "60st",
+        "54st"
+      ],
+      "names": [
+        "Lime 63st MX (63 st)",
+        "Lime St (1 st)",
+        "Lime 60st BR 1kg (1000 g)",
+        "Lime 60st BR (60 st)",
+        "Lime 54st BR (54 st)",
+        "Lime 54st BR 1kg (1000 g)"
+      ]
+    },
+    {
+      "root": "avocado hass rte",
+      "packs": [
+        "24st",
+        "26st"
+      ],
+      "names": [
+        "Avocado Hass RTE 24st ES (24 st)",
+        "Avocado Hass RTE 26st CO (26 st)",
+        "Avocado Hass RTE 26st ÖV (26 st)",
+        "Avocado Hass RTE 24st PE (24 st)",
+        "Avocado Hass RTE 26st PE (26 st)",
+        "Avocado Hass RTE 24st DO (24 st)",
+        "Avocado Hass RTE 24st CO (24 st)"
+      ]
+    },
+    {
+      "root": "granata pple",
+      "packs": [
+        "3800g",
+        "12st",
+        "4000g",
+        "14st"
+      ],
+      "names": [
+        "Granatäpple 8-12st ca 3.8kg PE (3800 g)",
+        "Granatäpple 12st ES (12 st)",
+        "Granatäpple 7-9st ca 4kg ES (4000 g)",
+        "Granatäpple 14st PE (14 st)"
+      ]
+    },
+    {
+      "root": "gul paprika",
+      "packs": [
+        "5000g",
+        "1000g"
+      ],
+      "names": [
+        "Paprika Gul 181+ 5kg NL (5000 g)",
+        "Paprika Gul 5kg ES (5000 g)",
+        "Paprika Gul (1000 g)",
+        "Paprika Gul G/GG 5kg MA (5000 g)"
+      ]
+    },
+    {
+      "root": "kapris nonpareille @pet",
+      "packs": [
+        "1st",
+        "2400g"
+      ],
+      "names": [
+        "Kapris Nonpareille Pet2,4k (1 st)",
+        "Kapris Nonpareille Pet 2,4kg (2400 g)"
+      ]
+    },
+    {
+      "root": "dbetor",
+      "packs": [
+        "6000g",
+        "1000g"
+      ],
+      "names": [
+        "Rödbetor 6kg RB SE (6000 g)",
+        "Rödbetor 6x1kg RB SE (1000 g)",
+        "Rödbetor 6kg (6000 g)"
+      ]
+    },
+    {
+      "root": "hjortytterfile",
+      "packs": [
+        "1000g",
+        "1800g"
+      ],
+      "names": [
+        "Hjortytterfile Nz 1,5-2/12 (1000 g)",
+        "Hjortytterfile 1,1-1,8kg (1800 g)"
+      ]
+    },
+    {
+      "root": "sopsa svart",
+      "packs": [
+        "160000ml",
+        "25st"
+      ],
+      "names": [
+        "Sopsäck 160L Svart (150/fp) (160000 ml)",
+        "Sopsäck Svart 60l 25st (25 st)"
+      ]
+    },
+    {
+      "root": "honung melon",
+      "packs": [
+        "1000g",
+        "12000g",
+        "10000g"
+      ],
+      "names": [
+        "Melon Honung Kg (1000 g)",
+        "Melon Honung 4-8st 12kg ES (12000 g)",
+        "Melon Honung 6-9st ca 12kg ES (12000 g)",
+        "Melon Honung 6-9st 10kg CR (10000 g)",
+        "Melon Honung 14-16st ca 12kg ES (12000 g)",
+        "Melon Honung 6-10st 10kg BR (10000 g)",
+        "Melon Honung 5-8st 10kg BR (10000 g)"
+      ]
+    },
+    {
+      "root": "butternut pumpa",
+      "packs": [
+        "10000g",
+        "10200g"
+      ],
+      "names": [
+        "Pumpa Butternut 10kg ES (10000 g)",
+        "Pumpa Butternut 10kg BR (10000 g)",
+        "Pumpa Butternut 10,200 Kg (10200 g)"
+      ]
+    },
+    {
+      "root": "jordgubbe",
+      "packs": [
+        "500g",
+        "2500g"
+      ],
+      "names": [
+        "Jordgubbe Aa 500g (500 g)",
+        "Jordgubbe 2,5kg (2500 g)"
+      ]
+    },
+    {
+      "root": "zucchini",
+      "packs": [
+        "5000g",
+        "14st"
+      ],
+      "names": [
+        "Zucchini 5kg ES (5000 g)",
+        "Zucchini 14st ES (14 st)"
+      ]
+    },
+    {
+      "root": "pellegrino san",
+      "packs": [
+        "250ml",
+        "750ml"
+      ],
+      "names": [
+        "San Pellegrino 25cl (250 ml)",
+        "San Pellegrino 75cl (750 ml)"
+      ]
+    },
+    {
+      "root": "grissini rustici sesamo",
+      "packs": [
+        "1st",
+        "200g"
+      ],
+      "names": [
+        "Grissini rustici al sesamo 200 gr (1 st)",
+        "Grissini rustici al sesamo 200g (200 g)"
+      ]
+    },
+    {
+      "root": "kycklfile",
+      "packs": [
+        "3000g",
+        "2500g"
+      ],
+      "names": [
+        "Kycklfile 10%140-180g/3kg (3000 g)",
+        "Kycklfile Ky 2,5kg (2500 g)",
+        "KYCKLFILE KY 2,5KG (2500 g)"
+      ]
+    },
+    {
+      "root": "krav",
+      "packs": [
+        "1740g",
+        "1330g",
+        "1.785g"
+      ],
+      "names": [
+        "Ägg Lv M Krav 30p 1,74kg (1740 g)",
+        "Ägg L Lv Krav 20p 1,33kg (1330 g)",
+        "Ägg Lv M Krav 30p 1,785g (1.785 g)"
+      ]
+    },
+    {
+      "root": "rosmarin",
+      "packs": [
+        "275g",
+        "100g"
+      ],
+      "names": [
+        "Rosmarin 275g (275 g)",
+        "Rosmarin 100g (100 g)"
+      ]
+    },
+    {
+      "root": "purjolo",
+      "packs": [
+        "1000g",
+        "10000g",
+        "8000g"
+      ],
+      "names": [
+        "Purjolök (1000 g)",
+        "Purjolök 10kg RB NL (10000 g)",
+        "Purjolök 10kg BE (10000 g)",
+        "Purjolök 10kg DK (10000 g)",
+        "Purjolök 8kg RB SE (8000 g)"
+      ]
+    },
+    {
+      "root": "gurka ofilmad",
+      "packs": [
+        "5500g",
+        "6500g",
+        "11000g"
+      ],
+      "names": [
+        "Gurka Ofilmad 5.5kg NL (5500 g)",
+        "Gurka Ofilmad 6.5kg NL (6500 g)",
+        "Gurka Ofilmad M 12st 5.5kg ES (5500 g)",
+        "Gurka Ofilmad 6.5kg ES (6500 g)",
+        "Gurka Ofilmad 11kg RB ES (11000 g)"
+      ]
+    },
+    {
+      "root": "philadelphia",
+      "packs": [
+        "10000g",
+        "1650g"
+      ],
+      "names": [
+        "Philadelphia 10kg (10000 g)",
+        "Philadelphia 1,65kg (1650 g)"
+      ]
+    },
+    {
+      "root": "sparris",
+      "packs": [
+        "450g",
+        "250g"
+      ],
+      "names": [
+        "Sparris XL 11x450g ES (450 g)",
+        "Sparris 12x250g IT (250 g)",
+        "Sparris 10x250g ES (250 g)",
+        "Sparris 10x250g MX (250 g)",
+        "Sparris 10x250g PE (250 g)"
+      ]
+    },
+    {
+      "root": "filmad spetska",
+      "packs": [
+        "9000g",
+        "14st",
+        "7000g",
+        "15st"
+      ],
+      "names": [
+        "Spetskål Filmad 9kg RB NL (9000 g)",
+        "Spetskål Filmad 14st RB PT (14 st)",
+        "Spetskål Filmad 9kg RB PT (9000 g)",
+        "Spetskål Filmad 7kg RB SE (7000 g)",
+        "Spetskål Filmad 15st RB PT (15 st)"
+      ]
+    },
+    {
+      "root": "bla",
+      "packs": [
+        "2500g",
+        "125g"
+      ],
+      "names": [
+        "Blåbär 2,5kg (2500 g)",
+        "Blåbär 125g (125 g)",
+        "Bär Blåbär 12x125g MA (125 g)",
+        "Bär Blåbär 12x125g ES (125 g)",
+        "Bär Blåbär DG 12x125g PT (125 g)",
+        "Bär Blåbär 12x125g PT (125 g)"
+      ]
+    },
+    {
+      "root": "fla skkarre",
+      "packs": [
+        "1000g",
+        "2500g"
+      ],
+      "names": [
+        "FLÄSKKARRE BF SE DF 2,2/11 (1000 g)",
+        "Fläskkarré EU (1000 g)",
+        "Fläskkarre Bf Se Df 2,5kg (2500 g)"
+      ]
+    }
+  ]
+}
