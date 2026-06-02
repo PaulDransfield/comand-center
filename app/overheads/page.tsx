@@ -817,14 +817,32 @@ function OverheadInvoiceDrawer({
     const acc: any[] = []
     let firstError: string | null = null
 
-    const monthFetches = monthsToQuery.map(month =>
-      fetch('/api/integrations/fortnox/drilldown', {
+    // Per-fetch hard timeout via AbortController so a hung Vercel
+    // function or browser-level stall can't leave the modal at "0 of 5
+    // done" forever. 180s is generous given the function's own 300s cap
+    // — if anything completes, it does so faster than this.
+    const FETCH_TIMEOUT_MS = 180_000
+    function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+      const ctrl = new AbortController()
+      const id = setTimeout(() => ctrl.abort(), timeoutMs)
+      return fetch(url, { ...init, signal: ctrl.signal }).finally(() => clearTimeout(id))
+    }
+
+    console.log('[drilldown] starting', { bizId, year, months: monthsToQuery, sub: sub.key })
+
+    const monthFetches = monthsToQuery.map(month => {
+      const start = Date.now()
+      console.log('[drilldown] fetch start', { month })
+      return fetchWithTimeout('/api/integrations/fortnox/drilldown', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ business_id: bizId, year, month, category: 'other_cost' }),
         cache:   'no-store',
-      })
-        .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+      }, FETCH_TIMEOUT_MS)
+        .then(r => {
+          console.log('[drilldown] fetch resp', { month, status: r.status, ms: Date.now() - start })
+          return r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))
+        })
         .then(resp => {
           if (cancelled) return
           for (const supplier of (resp?.suppliers ?? [])) {
@@ -855,16 +873,23 @@ function OverheadInvoiceDrawer({
         .catch(e => {
           // Capture only the first error so we don't spam the UI; later
           // months still get a chance.
-          if (!firstError) firstError = e?.message ?? String(e)
+          console.warn('[drilldown] fetch error', { month, message: e?.message ?? String(e), ms: Date.now() - start })
+          if (!firstError) {
+            firstError = e?.name === 'AbortError'
+              ? `Timed out after ${Math.round(FETCH_TIMEOUT_MS / 1000)} s — Fortnox may be slow or the connection may be down.`
+              : e?.message ?? String(e)
+          }
         })
         .finally(() => {
           if (!cancelled) setLoadedCount(c => c + 1)
-        }),
-    )
+        })
+    })
 
     Promise.allSettled(monthFetches).then(() => {
       if (cancelled) return
-      if (firstError && acc.length === 0) setError(firstError)
+      // Always surface the first error if we hit one — even if SOME
+      // months returned data we want the chef to know others didn't.
+      if (firstError) setError(firstError)
       setLoading(false)
     })
 
