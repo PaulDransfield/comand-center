@@ -26,11 +26,14 @@ export function canonicalUnit(raw: string | null | undefined): string | null {
   if (['g', 'gram', 'gr', 'grams'].includes(u)) return 'g'
   if (['kg', 'kilo', 'kilogram', 'kilograms'].includes(u)) return 'kg'
   if (['hg', 'hekto', 'hektogram'].includes(u)) return 'hg'
-  // Volume
+  // Volume — 'eg' is Swedish supplier shorthand for cl bottles
+  // ("75eg" = 75 cl wine bottle, "70eg" = 70 cl spirits, "27,5eg" =
+  // 27,5 cl FAB). Always disambiguated by leading digits in the regex.
   if (['ml', 'milliliter', 'millilitre'].includes(u)) return 'ml'
-  if (['cl', 'centiliter', 'centilitre'].includes(u)) return 'cl'
+  if (['cl', 'centiliter', 'centilitre', 'eg'].includes(u)) return 'cl'
   if (['dl', 'deciliter', 'decilitre'].includes(u)) return 'dl'
-  if (['l', 'liter', 'litre', 'lt'].includes(u)) return 'l'
+  // 'lf' is Swedish for "liter fat" (liter keg — beer/cider draught).
+  if (['l', 'liter', 'litre', 'lt', 'lf'].includes(u)) return 'l'
   // Count
   if (['st', 'styck', 'stk', 'pcs', 'piece', 'pieces', 'each', 'ea'].includes(u)) return 'st'
   // Pack-like (we treat these as count for parsing — pack_size deals with the rest)
@@ -94,7 +97,7 @@ export function convertQuantity(
 // supplier-written names like "Olja Rapsolja 10 liter SE" that the
 // short-form-only regex missed because `l\b` doesn't match inside
 // `liter`.
-const PACK_RE = /(\d+(?:[.,]\d+)?)\s*(kilogram|kilograms|kilo|kg|hg|gram|grams|gr|g|liter|litre|lt|l|deciliter|decilitre|dl|centiliter|centilitre|cl|milliliter|millilitre|ml|styck|stk|st|pcs|burk|flaska|paket|pkt|frp|fp|pack)\b/gi
+const PACK_RE = /(\d+(?:[.,]\d+)?)\s*(kilogram|kilograms|kilo|kg|hg|gram|grams|gr|g|liter|litre|lt|lf|l|deciliter|decilitre|dl|centiliter|centilitre|cl|eg|milliliter|millilitre|ml|styck|stk|st|pcs|burk|flaska|paket|pkt|frp|fp|pack)\b/gi
 
 export interface ParsedPack {
   pack_size: number    // in base_unit

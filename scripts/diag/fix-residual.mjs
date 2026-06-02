@@ -13,7 +13,9 @@ const env = Object.fromEntries(
 )
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
-const PACK_RE = /(\d+(?:[.,]\d+)?)\s*(kg|hg|g|l|liter|litre|dl|cl|ml|st|stk|styck|pcs|frp|fp|pack|paket|burk|flaska)\b/gi
+// Mirrors lib/inventory/unit-conversion.ts — 'eg' → cl (Swedish wine
+// bottle shorthand "75eg" = 75 cl); 'lf' → l (liter fat / keg).
+const PACK_RE = /(\d+(?:[.,]\d+)?)\s*(kg|hg|g|l|liter|litre|lf|dl|cl|eg|ml|st|stk|styck|pcs|frp|fp|pack|paket|burk|flaska)\b/gi
 function canonicalUnit(raw) {
   if (!raw) return null
   const u = String(raw).trim().toLowerCase()
@@ -21,9 +23,9 @@ function canonicalUnit(raw) {
   if (['kg','kilo','kilogram','kilograms'].includes(u)) return 'kg'
   if (['hg','hekto','hektogram'].includes(u)) return 'hg'
   if (['ml','milliliter','millilitre'].includes(u)) return 'ml'
-  if (['cl','centiliter','centilitre'].includes(u)) return 'cl'
+  if (['cl','centiliter','centilitre','eg'].includes(u)) return 'cl'
   if (['dl','deciliter','decilitre'].includes(u)) return 'dl'
-  if (['l','liter','litre','lt'].includes(u)) return 'l'
+  if (['l','liter','litre','lt','lf'].includes(u)) return 'l'
   if (['st','styck','stk','pcs','piece','pieces','each','ea'].includes(u)) return 'st'
   if (['frp','fp','pack','paket','burk','flaska'].includes(u)) return 'st'
   return u
