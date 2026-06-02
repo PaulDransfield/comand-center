@@ -181,9 +181,36 @@ export function computeRecipeCost(
       if (recipeUnit === 'portion') {
         lineCost = Math.round(ing.quantity * perPortion * 100) / 100
       } else if (subEntry.yield_amount && subEntry.yield_unit) {
-        const qtyInYieldUnit = convertQuantity(ing.quantity, recipeUnit, subEntry.yield_unit)
+        let qtyInYieldUnit = convertQuantity(ing.quantity, recipeUnit, subEntry.yield_unit)
         if (qtyInYieldUnit == null) {
-          // Family mismatch (e.g. recipe wants ml of a g-yield sauce).
+          // Cross-family between mass and volume — for sub-recipes the
+          // cooking convention is 1 ml ≈ 1 g (vinaigrettes, sauces,
+          // pestos). Even for pure oils (density ~0.91) the error is
+          // <10%, well within recipe-cost noise floor where the chef's
+          // pour estimate is the dominant uncertainty anyway.
+          //
+          // Engineered for sub-recipes only — products go through their
+          // own density column when one is set (M120 density resolver).
+          const rFam = unitFamily(recipeUnit)
+          const yFam = unitFamily(subEntry.yield_unit)
+          const isMassVolBridge = rFam && yFam && rFam !== yFam &&
+            (rFam === 'mass' || rFam === 'volume') &&
+            (yFam === 'mass' || yFam === 'volume')
+          if (isMassVolBridge) {
+            // Convert recipe qty to its family base (g or ml), then
+            // bridge 1:1 to the other family's base.
+            const recipeBase = rFam === 'mass' ? 'g' : 'ml'
+            const yieldBase  = yFam === 'mass' ? 'g' : 'ml'
+            const qtyInRecipeBase = convertQuantity(ing.quantity, recipeUnit, recipeBase)
+            if (qtyInRecipeBase != null) {
+              // 1:1 cooking density. qtyInRecipeBase is already in the
+              // "other family base" (g or ml) just by interpretation.
+              // Then convert from that family base to subEntry.yield_unit.
+              qtyInYieldUnit = convertQuantity(qtyInRecipeBase, yieldBase, subEntry.yield_unit)
+            }
+          }
+        }
+        if (qtyInYieldUnit == null) {
           lineCost     = null
           unitMismatch = true
           displayUnit  = subEntry.yield_unit
