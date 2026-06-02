@@ -32,6 +32,10 @@ interface CatalogueItem {
   observation_count:    number
   is_recipe_sourced:    boolean           // M089 — true when this product is a promoted recipe
   source_recipe_id:     string | null
+  // Needs-attention signals (Session 25 — items-upgrade-plus-recipe-qol-prompt
+  // Part A). Each signal is a flag the owner can act on from the modal.
+  needs_attention:      boolean
+  attention_reasons:    Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'>
 }
 
 const VALID_CATEGORIES = ['food', 'beverage', 'alcohol', 'cleaning', 'takeaway_material', 'disposables', 'other']
@@ -130,7 +134,7 @@ export async function GET(req: NextRequest) {
   //    every category other than the active one.
   const { data: allProducts, error: pErr } = await db
     .from('products')
-    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id')
+    .select('id, name, category, default_supplier_fortnox_number, default_supplier_name, source_recipe_id, price_override')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
@@ -158,7 +162,7 @@ export async function GET(req: NextRequest) {
   while (true) {
     const { data, error } = await db
       .from('supplier_invoice_lines')
-      .select('product_alias_id, price_per_unit, quantity, unit, invoice_date, supplier_name_snapshot, fortnox_invoice_number')
+      .select('product_alias_id, price_per_unit, total_excl_vat, quantity, unit, invoice_date, supplier_name_snapshot, fortnox_invoice_number')
       .eq('business_id', businessId)
       .eq('match_status', 'matched')
       .not('product_alias_id', 'is', null)
@@ -187,6 +191,45 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // 3b. Needs-attention preflight — compute per-product signal inputs in
+  //     batched queries so the per-row builder below can derive flags
+  //     without N+1. Two extra batches:
+  //     - Active alias count per product (for "no article")
+  //     - Set of fortnox_invoice_numbers flagged unreliable
+  //       (for "unreliable extraction")
+  const productIds = products.map((p: any) => p.id)
+  const aliasCountByProduct = new Map<string, number>()
+  if (productIds.length > 0) {
+    for (let i = 0; i < productIds.length; i += 500) {
+      const slice = productIds.slice(i, i + 500)
+      const { data: aliasRows } = await db
+        .from('product_aliases')
+        .select('product_id')
+        .eq('business_id', businessId)
+        .eq('is_active', true)
+        .in('product_id', slice)
+      for (const a of aliasRows ?? []) {
+        const pid = (a as any).product_id
+        aliasCountByProduct.set(pid, (aliasCountByProduct.get(pid) ?? 0) + 1)
+      }
+    }
+  }
+  // Pull all extractions with validation_warnings for this business in a
+  // single query. Index by fortnox_invoice_number → flagged?
+  const flaggedInvoiceNumbers = new Set<string>()
+  const { data: extractions } = await db
+    .from('invoice_pdf_extractions')
+    .select('fortnox_invoice_number, validation_warnings')
+    .eq('business_id', businessId)
+    .not('validation_warnings', 'is', null)
+  for (const e of extractions ?? []) {
+    const warnings = Array.isArray((e as any).validation_warnings) ? (e as any).validation_warnings : []
+    const flagged = warnings.some((w: any) => w?.code === 'over_extraction' || w?.code === 'total_mismatch')
+    if (flagged && (e as any).fortnox_invoice_number) {
+      flaggedInvoiceNumbers.add(String((e as any).fortnox_invoice_number))
+    }
+  }
+
   // 4. Aggregate per product.
   const NOW = Date.now()
   const NINETY_DAYS_MS = 90 * 86_400_000
@@ -203,6 +246,16 @@ export async function GET(req: NextRequest) {
       (b.invoice_date ?? '').localeCompare(a.invoice_date ?? '')
     )
     if (lines.length === 0) {
+      // No matched invoice lines yet. attention signals derive from
+      // the product alone: alias count + price_override + default
+      // supplier. Recipe-sourced products get their price below; do
+      // NOT pre-flag those as no_price here — the linked-recipe
+      // pass overwrites latest_price.
+      const reasons: Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'> = []
+      if ((aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
+      if (p.price_override == null && !p.source_recipe_id) reasons.push('no_price')
+      if (!p.default_supplier_name) reasons.push('no_supplier')
+      // No matched lines → no extraction to flag → 'unreliable' is N/A.
       return {
         product_id:         p.id,
         name:               p.name,
@@ -217,6 +270,8 @@ export async function GET(req: NextRequest) {
         observation_count:  0,
         is_recipe_sourced:  !!p.source_recipe_id,
         source_recipe_id:   p.source_recipe_id ?? null,
+        needs_attention:    reasons.length > 0,
+        attention_reasons:  reasons,
       }
     }
     const latest = lines[0]
@@ -235,6 +290,24 @@ export async function GET(req: NextRequest) {
     const changePct = priorMedian != null && priorMedian !== 0 && latest.price_per_unit != null
       ? (Number(latest.price_per_unit) - priorMedian) / priorMedian
       : null
+    // Needs-attention signals for products with matched lines.
+    //
+    // no_price: mirrors the engine's "any usable price?" derivation —
+    // the cost reader prefers total_excl_vat/quantity (more reliable
+    // than raw price_per_unit), so flag no_price only when BOTH are
+    // missing AND there's no price_override.
+    const hasUsablePrice =
+      p.price_override != null
+      || latest.price_per_unit != null
+      || (latest.total_excl_vat != null && latest.quantity != null && Number(latest.quantity) > 0)
+    const reasons: Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'> = []
+    if ((aliasCountByProduct.get(p.id) ?? 0) === 0) reasons.push('no_article')
+    if (!hasUsablePrice) reasons.push('no_price')
+    if (latest.fortnox_invoice_number && flaggedInvoiceNumbers.has(String(latest.fortnox_invoice_number))) {
+      reasons.push('unreliable')
+    }
+    if (!p.default_supplier_name && !latest.supplier_name_snapshot) reasons.push('no_supplier')
+
     return {
       product_id:         p.id,
       name:               p.name,
@@ -249,6 +322,8 @@ export async function GET(req: NextRequest) {
       observation_count:  lines.length,
       is_recipe_sourced:  !!p.source_recipe_id,
       source_recipe_id:   p.source_recipe_id ?? null,
+      needs_attention:    reasons.length > 0,
+      attention_reasons:  reasons,
     }
   })
 
@@ -287,10 +362,16 @@ export async function GET(req: NextRequest) {
   // filter is active.
   const counts: Record<string, number> = { all: allProducts.length }
   for (const p of allProducts) counts[p.category] = (counts[p.category] ?? 0) + 1
-
+  // needs_attention count uses the CURRENT items[] (which is already
+  // filtered by category if the owner selected one). For the filter
+  // chip to feel like a worklist, we surface it at the response root
+  // and (separately) compute a "global" total across all categories so
+  // the chip reads the same regardless of category filter.
+  const needsAttentionInView = items.filter(i => i.needs_attention).length
   return NextResponse.json({
     counts,
     items,
+    needs_attention_count: needsAttentionInView,
   }, { headers: { 'Cache-Control': 'no-store' } })
 }
 

@@ -17,6 +17,7 @@ import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
+import { EditItemModal } from '@/components/EditItemModal'
 
 interface CatalogueItem {
   product_id:           string
@@ -32,12 +33,23 @@ interface CatalogueItem {
   observation_count:    number
   is_recipe_sourced:    boolean
   source_recipe_id:     string | null
+  needs_attention:      boolean
+  attention_reasons:    Array<'no_article' | 'no_price' | 'unreliable' | 'no_supplier'>
 }
 
 interface CatalogueResponse {
-  counts:  Record<string, number>
-  items:   CatalogueItem[]
-  message?: string
+  counts:                 Record<string, number>
+  items:                  CatalogueItem[]
+  needs_attention_count:  number
+  message?:               string
+}
+
+// Owner-facing labels for the "Needs attention" reason pills.
+const REASON_LABEL: Record<CatalogueItem['attention_reasons'][number], string> = {
+  no_article:  'no article',
+  no_price:    'no price',
+  unreliable:  'unreliable',
+  no_supplier: 'no supplier',
 }
 
 // Category keys are kept here so the rest of the file iterates a stable list
@@ -59,6 +71,16 @@ export default function InventoryItemsPage() {
   const [sortKey,  setSortKey]  = useState<SortKey>('change_pct')
   const [sortDesc, setSortDesc] = useState(true)
   const [search,   setSearch]   = useState('')
+  // Session 25 Part A — "Needs attention" filter. When on, restricts
+  // the items list to rows with at least one signal and sorts by
+  // reason-count desc so the worst offenders surface first.
+  const [needsOnly, setNeedsOnly] = useState(false)
+  // Part A2 — EditItemModal mount on the items list. Clicking a row
+  // body opens the modal here instead of navigating to the detail
+  // page. The detail page (/inventory/items/[id]) remains accessible
+  // via a "Full history" link inside the modal for the full
+  // per-product invoice-line table + sparkline.
+  const [editingProductId, setEditingProductId] = useState<string | null>(null)
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -93,8 +115,16 @@ export default function InventoryItemsPage() {
 
   const items = (data?.items ?? [])
     .filter(i => !search || i.name.toLowerCase().includes(search.toLowerCase()))
+    .filter(i => !needsOnly || i.needs_attention)
     .slice()
     .sort((a, b) => {
+      // When the Needs-attention filter is ON, sort by reason-count
+      // desc first — the worst offenders bubble to the top — then by
+      // the existing sortKey as the secondary criterion.
+      if (needsOnly) {
+        const rd = (b.attention_reasons?.length ?? 0) - (a.attention_reasons?.length ?? 0)
+        if (rd !== 0) return rd
+      }
       const av = sortValue(a, sortKey)
       const bv = sortValue(b, sortKey)
       if (av == null && bv == null) return 0
@@ -330,6 +360,24 @@ export default function InventoryItemsPage() {
               </button>
             )
           })}
+          {/* Session 25 Part A1 — "Needs attention" worklist chip. Toggles
+              alongside the category filter (independent boolean). Coral
+              tint marks it as a worklist, not just a category. */}
+          {(data?.needs_attention_count ?? 0) > 0 && (
+            <button
+              onClick={() => setNeedsOnly(v => !v)}
+              title="Items missing a connected article, price, default supplier, or with an unreliable extraction. Fix from the modal to drop them off this list."
+              style={{
+                padding: '6px 12px', fontSize: 11, fontWeight: 600,
+                background:  needsOnly ? '#fef3e0' : 'transparent',
+                color:       needsOnly ? UXP.coral : UXP.coral,
+                border:      `0.5px solid ${needsOnly ? UXP.coral : UXP.coralLine}`,
+                borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Needs attention <span style={{ marginLeft: 4 }}>{data?.needs_attention_count ?? 0}</span>
+            </button>
+          )}
           <input
             type="text" value={search} onChange={e => setSearch(e.target.value)}
             placeholder={t('searchPlaceholder')}
@@ -385,7 +433,7 @@ export default function InventoryItemsPage() {
               <tbody>
                 {items.map(it => (
                   <tr key={it.product_id}
-                      onClick={() => router.push(`/inventory/items/${it.product_id}`)}
+                      onClick={() => setEditingProductId(it.product_id)}
                       style={{ cursor: 'pointer', borderTop: `0.5px solid ${UXP.borderSoft}` }}
                       onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -399,6 +447,22 @@ export default function InventoryItemsPage() {
                           borderRadius: 3, textTransform: 'uppercase' as const,
                         }} title={t('recipeSourcedTooltip')}>
                           {t('recipeSourcedBadge')}
+                        </span>
+                      )}
+                      {/* Session 25 Part A1 — reason pills. Surfaces which
+                          specific signal(s) make this item need attention,
+                          so owners know what to fix in the modal. */}
+                      {it.attention_reasons?.length > 0 && (
+                        <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, flexWrap: 'wrap' as const, verticalAlign: 'middle' }}>
+                          {it.attention_reasons.map(r => (
+                            <span key={r} style={{
+                              fontSize: 9, fontWeight: 600,
+                              padding: '1px 6px', background: '#fef3e0', color: UXP.coral,
+                              borderRadius: 3, letterSpacing: '0.02em',
+                            }}>
+                              {REASON_LABEL[r]}
+                            </span>
+                          ))}
                         </span>
                       )}
                     </td>
@@ -426,6 +490,22 @@ export default function InventoryItemsPage() {
           </div>
         )}
       </div>
+
+      {/* Session 25 Part A2 — EditItemModal as the canonical row-click
+          target. The same component the recipe drawer uses; opening from
+          here exercises the same edit-context endpoint + save/connect/
+          repoint/disconnect paths. On save, refresh the list so an item
+          the owner just grounded drops off the Needs-attention filter
+          immediately. The /inventory/items/[id] detail page is still
+          reachable from inside the modal for the full invoice-line
+          history + sparkline. */}
+      {editingProductId && (
+        <EditItemModal
+          productId={editingProductId}
+          onClose={() => setEditingProductId(null)}
+          onSaved={() => { setEditingProductId(null); load() }}
+        />
+      )}
     </AppShell>
   )
 }

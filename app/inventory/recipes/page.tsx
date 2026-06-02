@@ -10,7 +10,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { convertQuantity } from '@/lib/inventory/unit-conversion'
@@ -1596,8 +1596,23 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
   const [expanded, setExpanded] = useState(false)
   const [busy,   setBusy]   = useState(false)
   const [err,    setErr]    = useState<string | null>(null)
+  // Session 25 Part B1 — brief "saved" tick after a successful blur-
+  // autosave so the owner has a visible "did that save?" answer. The
+  // commit logic stays in onBlur (autosave); this just paints a green
+  // ✓ next to the row for ~1.5 s after the parent re-fetches.
+  const [justSaved, setJustSaved] = useState(false)
+  const skipFirstSaveFlash = useRef(true)
   useEffect(() => { setQty(String(ing.quantity_stated ?? ing.quantity)) }, [ing.quantity, ing.quantity_stated])
   useEffect(() => { setWaste(String(ing.waste_pct ?? 0)) }, [ing.waste_pct])
+  // When the parent's quantity or waste_pct snapshot changes (the patch
+  // round-trip completed and the parent re-fetched), flash the tick.
+  // Skip on initial render — only on actual updates.
+  useEffect(() => {
+    if (skipFirstSaveFlash.current) { skipFirstSaveFlash.current = false; return }
+    setJustSaved(true)
+    const id = setTimeout(() => setJustSaved(false), 1500)
+    return () => clearTimeout(id)
+  }, [ing.quantity, ing.waste_pct])
   // When the parent banner click flagged this row, auto-expand the inline
   // edit panel (pack/base/price) so the owner lands on the fix UI.
   useEffect(() => { if (highlighted && !ing.is_subrecipe) setExpanded(true) }, [highlighted, ing.is_subrecipe])
@@ -1680,11 +1695,27 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
             )}
           </div>
         </div>
-        <input type="number" min="0" step="0.01" value={qty}
-          onChange={e => setQty(e.target.value)}
-          onBlur={() => { const v = Number(qty); const cur = ing.quantity_stated ?? ing.quantity; if (Number.isFinite(v) && v > 0 && v !== cur) onChange({ quantity: v }) }}
-          style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }}
-        />
+        <div style={{ position: 'relative' as const }}>
+          <input type="number" min="0" step="0.01" value={qty}
+            onChange={e => setQty(e.target.value)}
+            onBlur={() => { const v = Number(qty); const cur = ing.quantity_stated ?? ing.quantity; if (Number.isFinite(v) && v > 0 && v !== cur) onChange({ quantity: v }) }}
+            style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const }}
+          />
+          {/* B1 — brief saved tick. Position absolute so it overlays without
+              shifting the layout. Fades in/out via CSS animation. */}
+          {justSaved && (
+            <span style={{
+              position: 'absolute' as const, right: -16, top: 4,
+              color: UXP.green, fontSize: 12, fontWeight: 700,
+              animation: 'cc-ing-saved-fade 1500ms ease-out forwards',
+              pointerEvents: 'none' as const,
+            }}
+              aria-label="saved"
+              title="Saved"
+            >✓</span>
+          )}
+          <style>{`@keyframes cc-ing-saved-fade { 0% { opacity: 0; transform: translateX(-4px); } 15% { opacity: 1; transform: translateX(0); } 80% { opacity: 1; } 100% { opacity: 0; } }`}</style>
+        </div>
         {/* Unit is editable per-line. Picking the wrong unit silently bloats
             the line cost (e.g. "30 st" of a 580g pack scales by 580; "30 g"
             doesn't). Owner needs to fix this without deleting + re-adding the
