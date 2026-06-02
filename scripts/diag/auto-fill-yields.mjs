@@ -29,7 +29,8 @@ const env = Object.fromEntries(
 )
 const db = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
 
-const APPLY = process.argv.includes('--apply')
+const APPLY        = process.argv.includes('--apply')
+const REEVAL_ALL   = process.argv.includes('--reeval')   // include subs that already have a yield, propose replacement
 const BUSINESSES = [
   { name: 'Chicce', id: '63ada0ac-18af-406a-8ad3-4acfd0379f2c' },
   { name: 'Vero',   id: '0f948ac3-aa8e-4915-8ae0-a6c4c11ddf99' },
@@ -101,7 +102,7 @@ for (const biz of BUSINESSES) {
     if (ing.unit === 'portion' || !ing.unit) continue
     const sub = recipes.get(ing.subrecipe_id)
     if (!sub) continue
-    if (sub.yield_amount && sub.yield_unit) continue   // already has yield
+    if (sub.yield_amount && sub.yield_unit && !REEVAL_ALL) continue   // already has yield
     const arr = yieldlessSubsConsumed.get(ing.subrecipe_id) ?? []
     arr.push({ recipe_id: ing.recipe_id, recipe_name: recipes.get(ing.recipe_id)?.name ?? '?', unit: ing.unit, quantity: ing.quantity })
     yieldlessSubsConsumed.set(ing.subrecipe_id, arr)
@@ -110,17 +111,15 @@ for (const biz of BUSINESSES) {
   if (yieldlessSubsConsumed.size === 0) continue
 
   // 5. For each yieldless sub, compute its yield from own ingredients.
-  // Conservative: sum_grams of leaf-ingredient masses (recipe_ingredients
-  // owned by THIS sub-recipe). Skip sub-sub references (no yield to
-  // recurse safely) — we'd need a topo-sort which is overkill for now.
+  // Conservative: sum_grams of leaf-ingredient masses.
   const ingredientsByRecipe = new Map()
   for (const ing of ingredients) {
     const arr = ingredientsByRecipe.get(ing.recipe_id) ?? []
     arr.push(ing); ingredientsByRecipe.set(ing.recipe_id, arr)
   }
 
-  const suggestions = []   // { sub_id, sub_name, yield_amount, summed, skipped, sample_consumer }
-  const skipped = []       // { sub_id, sub_name, why }
+  const suggestions = []
+  const skipped = []
   for (const [subId, consumers] of yieldlessSubsConsumed) {
     const sub = recipes.get(subId)
     const subIngs = ingredientsByRecipe.get(subId) ?? []
@@ -134,23 +133,34 @@ for (const biz of BUSINESSES) {
       const qty = Number(subIng.quantity)
       if (!Number.isFinite(qty) || qty <= 0) { skippedI++; continue }
 
-      // First try direct unit → grams.
+      // Path 1 — direct unit → grams (g/kg/ml/cl/dl/l/etc.).
       let g = toGrams(qty, subIng.unit)
 
-      // If sub-sub-recipe, can't recurse safely without computed yield.
+      // Path 2 — recipe asks in 'st' for a product with pack_size+base_unit set.
+      // E.g. "2 st of Catergula Äggula 1kg" (pack=1000 g) = 2000 g contribution.
+      // This catches the chef-shorthand-pattern where a bulk product is
+      // consumed by the pack-count rather than the gram-weight.
+      if (g == null && subIng.product_id) {
+        const p = products.get(subIng.product_id)
+        if (p && p.pack_size && p.base_unit) {
+          const unitLc = String(subIng.unit ?? '').toLowerCase()
+          // If recipe asks 'st'/'styck' and product base is g/ml, multiply
+          // qty by pack_size (qty st × pack g per st).
+          if (['st','styck','stk','pcs'].includes(unitLc) && ['g','ml'].includes(p.base_unit)) {
+            g = qty * Number(p.pack_size)
+          }
+        }
+      }
+
+      // Path 3 — sub-sub-recipe with known yield contributes the qty
+      // (already in g/ml).
       if (g == null && subIng.subrecipe_id) {
         const subSub = recipes.get(subIng.subrecipe_id)
         if (subSub?.yield_amount && subSub?.yield_unit) {
-          // Sub-sub HAS yield — use it: qty_in_yield × yield_per_portion.
-          // Recipe asks e.g. "30 ml of stock" where stock yields "200 ml/portion".
-          // 30 ml × 1 (already in yield_unit) = 30 g (approx).
           const qtyAsYield = toGrams(qty, subIng.unit)
           if (qtyAsYield != null) g = qtyAsYield
         }
       }
-
-      // Apply density when product has it (e.g. olive oil 0.91 g/ml).
-      // Skip — sum-of-masses is approximate; density refinement is overkill.
 
       if (g == null) { skippedI++; skipReason = `couldn't convert ${qty} ${subIng.unit}`; continue }
       totalG += g
@@ -163,12 +173,27 @@ for (const biz of BUSINESSES) {
     }
 
     const yieldAmount = Math.round((totalG / sub.portions) * 10) / 10
+
+    // In --reeval mode, only propose an UPDATE when the new yield is
+    // meaningfully higher than stored (within 1% considered no-op).
+    // Lower-yield revisions are skipped — they'd downgrade an
+    // owner-set value the script can't see.
+    if (sub.yield_amount && REEVAL_ALL) {
+      const stored = Number(sub.yield_amount)
+      const drift  = (yieldAmount - stored) / Math.max(1, stored)
+      if (drift <= 0.01) {
+        skipped.push({ sub_id: subId, sub_name: sub.name, why: `stored ${stored} g >= new ${yieldAmount} g (no improvement)` })
+        continue
+      }
+    }
+
     suggestions.push({
       sub_id:        subId,
       sub_name:      sub.name,
       portions:      sub.portions,
       yield_amount:  yieldAmount,
       yield_unit:    'g',
+      previous_yield: sub.yield_amount,
       summed,
       skipped:       skippedI,
       sample_consumer: consumers[0],
@@ -181,7 +206,8 @@ for (const biz of BUSINESSES) {
   if (suggestions.length > 0) {
     console.log(`\n  Sample suggestions (first 15):`)
     for (const s of suggestions.slice(0, 15)) {
-      console.log(`    • "${s.sub_name}" → yield ${s.yield_amount} g / portion  (summed ${s.summed} ing, skipped ${s.skipped})`)
+      const prevStr = s.previous_yield ? ` (was ${s.previous_yield} g)` : ''
+      console.log(`    • "${s.sub_name}" → yield ${s.yield_amount} g / portion${prevStr}  (summed ${s.summed} ing, skipped ${s.skipped})`)
       console.log(`        consumed e.g. by "${s.sample_consumer.recipe_name}" as ${s.sample_consumer.quantity} ${s.sample_consumer.unit}`)
     }
   }
