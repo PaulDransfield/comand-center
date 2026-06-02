@@ -115,15 +115,20 @@ export async function POST(req: NextRequest) {
         }
 
         // Resolve alias → product
+        // BATCH_IN=100: 500-UUID .in() exceeds Supabase's 16 KB header
+        // cap; supabase-js returns { data: null } silently and the cron
+        // would skip most products' price-creep checks. See
+        // docs/investigation/no-price-root-cause.md.
         const aliasIds = Array.from(new Set(allLines.map(l => l.product_alias_id).filter(Boolean)))
         const aliasToProduct = new Map<string, string>()
         const aliasToProductName = new Map<string, string>()
-        for (let i = 0; i < aliasIds.length; i += 500) {
-          const slice = aliasIds.slice(i, i + 500)
-          const { data: aliases } = await db
+        for (let i = 0; i < aliasIds.length; i += 100) {
+          const slice = aliasIds.slice(i, i + 100)
+          const { data: aliases, error: aErr } = await db
             .from('product_aliases')
             .select('id, product_id, products(name)')
             .in('id', slice)
+          if (aErr) throw new Error(`[price-creep] alias lookup failed: ${aErr.message}`)
           for (const a of aliases ?? []) {
             aliasToProduct.set(a.id, (a as any).product_id)
             aliasToProductName.set(a.id, ((a as any).products?.name) ?? '?')

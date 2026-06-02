@@ -291,13 +291,15 @@ export async function POST(req: NextRequest) {
   })
 }
 
-// Chunked .in() update (500-row PostgREST cap).
+// Chunked .in() update. Batch=100 keeps the URL under Supabase's 16 KB
+// HTTP header cap (UND_ERR_HEADERS_OVERFLOW at 500 UUIDs, silently null
+// in supabase-js). See docs/investigation/no-price-root-cause.md.
 async function updateLines(db: any, ids: string[], patch: Record<string, any>): Promise<void> {
-  for (let i = 0; i < ids.length; i += 500) {
+  for (let i = 0; i < ids.length; i += 100) {
     const { error } = await db
       .from('supplier_invoice_lines')
       .update(patch)
-      .in('id', ids.slice(i, i + 500))
+      .in('id', ids.slice(i, i + 100))
     if (error) throw new Error(error.message)
   }
 }

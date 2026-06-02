@@ -72,8 +72,10 @@ export async function POST(req: NextRequest) {
 
   const ids = matching.map((l: any) => l.id)
   let updated = 0
-  for (let i = 0; i < ids.length; i += 500) {
-    const slice = ids.slice(i, i + 500)
+  // BATCH_IN=100: 500-UUID .in() blows past Supabase's 16 KB header cap;
+  // see docs/investigation/no-price-root-cause.md.
+  for (let i = 0; i < ids.length; i += 100) {
+    const slice = ids.slice(i, i + 100)
     const { data, error: uErr } = await db
       .from('supplier_invoice_lines')
       .update({ match_status: 'not_inventory' })

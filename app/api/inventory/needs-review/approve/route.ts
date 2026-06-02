@@ -141,12 +141,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `createProduct failed: ${err?.message ?? err}` }, { status: 500 })
   }
 
-  // Re-link every matching line. Chunk into 500-row batches for the .in()
-  // limit.
+  // Re-link every matching line. Chunk into 100-id batches so the URL
+  // stays under Supabase's ~16 KB header cap (UND_ERR_HEADERS_OVERFLOW
+  // on 500-UUID slices, silently null in supabase-js). See
+  // docs/investigation/no-price-root-cause.md.
   const ids = matching.map((l: any) => l.id)
   let updated = 0
-  for (let i = 0; i < ids.length; i += 500) {
-    const slice = ids.slice(i, i + 500)
+  for (let i = 0; i < ids.length; i += 100) {
+    const slice = ids.slice(i, i + 100)
     const { data, error } = await db
       .from('supplier_invoice_lines')
       .update({

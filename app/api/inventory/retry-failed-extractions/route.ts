@@ -61,11 +61,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, scanned: 0, reset: 0, message: 'no failed rows matching filter' })
   }
 
-  // Reset in chunks of 500 to stay under .in() row cap
+  // Reset in 100-id chunks to stay under Supabase's 16 KB HTTP header
+  // cap (UND_ERR_HEADERS_OVERFLOW on 500-UUID slices, silently null in
+  // supabase-js). See docs/investigation/no-price-root-cause.md.
   const ids = candidates.map(c => c.id)
   let reset = 0
-  for (let i = 0; i < ids.length; i += 500) {
-    const slice = ids.slice(i, i + 500)
+  for (let i = 0; i < ids.length; i += 100) {
+    const slice = ids.slice(i, i + 100)
     const { data: upd, error: uErr } = await db
       .from('invoice_pdf_extractions')
       .update({
