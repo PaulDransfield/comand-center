@@ -1,12 +1,12 @@
 {
   "business": "Chicce",
-  "captured_at": "2026-06-02T19:53:00.941Z",
-  "active_products": 1187,
-  "duplicate_clusters": 100,
-  "products_in_clusters": 276,
-  "potential_collapse_savings": 176,
+  "captured_at": "2026-06-02T20:00:21.596Z",
+  "active_products": 1178,
+  "duplicate_clusters": 92,
+  "products_in_clusters": 259,
+  "potential_collapse_savings": 167,
   "clean_clusters": 21,
-  "ambig_clusters": 79,
+  "ambig_clusters": 71,
   "top_suppliers": [
     [
       "Trädgårdshallen Sverige AB",
@@ -14,11 +14,11 @@
     ],
     [
       "Martin Servera Restauranghandel AB",
-      105
+      90
     ],
     [
       "Laweka Gross & Matevent AB",
-      15
+      13
     ],
     [
       "AB Tingstad Papper",
@@ -236,17 +236,6 @@
       ]
     },
     {
-      "root": "bulgur mellangrov midyat",
-      "packs": [
-        "1st",
-        "1000g"
-      ],
-      "names": [
-        "Bulgur Mellangrov Midyat 1k (1 st)",
-        "Bulgur Mellangrov Midyat 1kg (1000 g)"
-      ]
-    },
-    {
       "root": "grapefrukt",
       "packs": [
         "1000g",
@@ -349,17 +338,6 @@
         "Paprika Gul 5kg ES (5000 g)",
         "Paprika Gul (1000 g)",
         "Paprika Gul G/GG 5kg MA (5000 g)"
-      ]
-    },
-    {
-      "root": "kapris nonpareille @pet",
-      "packs": [
-        "1st",
-        "2400g"
-      ],
-      "names": [
-        "Kapris Nonpareille Pet2,4k (1 st)",
-        "Kapris Nonpareille Pet 2,4kg (2400 g)"
       ]
     },
     {
@@ -601,6 +579,29 @@
         "FLÄSKKARRE BF SE DF 2,2/11 (1000 g)",
         "Fläskkarré EU (1000 g)",
         "Fläskkarre Bf Se Df 2,5kg (2500 g)"
+      ]
+    },
+    {
+      "root": "dragon",
+      "packs": [
+        "95g",
+        "100g"
+      ],
+      "names": [
+        "Dragon 95g (95 g)",
+        "Dragon 100g (100 g)"
+      ]
+    },
+    {
+      "root": "oxfile svans",
+      "packs": [
+        "1000g",
+        "2st"
+      ],
+      "names": [
+        "Oxfilésvans (1000 g)",
+        "Oxfilé svans 2,5kg x 2st (2 st)",
+        "Oxfilé svans 2,5kg x 2st (Sverige) (2 st)"
       ]
     }
   ]

@@ -1,24 +1,24 @@
 {
   "business": "Vero",
-  "captured_at": "2026-06-02T19:53:01.164Z",
-  "active_products": 955,
-  "duplicate_clusters": 29,
-  "products_in_clusters": 64,
-  "potential_collapse_savings": 35,
+  "captured_at": "2026-06-02T20:00:21.785Z",
+  "active_products": 954,
+  "duplicate_clusters": 28,
+  "products_in_clusters": 62,
+  "potential_collapse_savings": 34,
   "clean_clusters": 8,
-  "ambig_clusters": 21,
+  "ambig_clusters": 20,
   "top_suppliers": [
-    [
-      "Martin Servera Restauranghandel AB",
-      21
-    ],
     [
       "Snabbgross Örebro",
       20
     ],
     [
+      "Martin Servera Restauranghandel AB",
+      20
+    ],
+    [
       "Spendrups",
-      15
+      14
     ],
     [
       "Rosalis Aspholmen",
@@ -266,17 +266,6 @@
         "Entrecôte ca4kg (4000 g)",
         "Entrecôte ca2,8-3,4kg (3400 g)",
         "Entrecôte ca 2,8-3,4kg (3400 g)"
-      ]
-    },
-    {
-      "root": "gin jinzu",
-      "packs": [
-        "1st",
-        "700ml"
-      ],
-      "names": [
-        "Jinzu Gin 70eg St (1 st)",
-        "Jinzu Gin 70cl (700 ml)"
       ]
     },
     {
