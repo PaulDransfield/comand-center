@@ -229,6 +229,12 @@ export function EditItemModal({ productId, onClose, onSaved }: {
               <CostHeader latest={data.latest_cost} trend={data.trend} reliability={data.reliability} />
             </div>
 
+            {/* Supplier-article spec section (image + official supplier
+                data — populated by the Playwright scraper that hits
+                Martin Servera et al. and writes to supplier_articles).
+                Silent when no scraped data exists yet. */}
+            <SupplierArticleSection productId={productId} />
+
             <div style={{ flex: 1, overflowY: 'auto' as const, padding: '14px 22px' }}>
               {/* Two-column layout */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22 }}>
@@ -711,4 +717,124 @@ const secondaryDangerBtn: React.CSSProperties = {
 const tinyDangerBtn: React.CSSProperties = {
   background: 'transparent', border: 'none', color: UXP.ink4,
   cursor: 'pointer', fontSize: 16, padding: '2px 6px', lineHeight: 1,
+}
+
+// ── Supplier-article spec section ─────────────────────────────────────
+//
+// Renders the official supplier data for this product if we've scraped
+// it (image + spec table from the supplier_articles cross-customer
+// catalogue). Silent when nothing exists yet. Cross-supplier-aware —
+// if a product has aliases at multiple suppliers and we have data for
+// more than one, shows the most-recently-fetched first with tabs.
+function SupplierArticleSection({ productId }: { productId: string }) {
+  const [rows, setRows] = useState<any[] | null>(null)
+  const [pickedIdx, setPickedIdx] = useState(0)
+  const [loaded, setLoaded] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`/api/inventory/items/${productId}/supplier-article`, { cache: 'no-store' })
+        const j = await r.json().catch(() => ({}))
+        if (cancelled) return
+        setRows(Array.isArray(j.supplier_articles) ? j.supplier_articles : [])
+      } catch { setRows([]) }
+      if (!cancelled) setLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [productId])
+  if (!loaded || !rows || rows.length === 0) return null
+
+  const a = rows[pickedIdx] ?? rows[0]
+  const img = a.image_cached_url || a.image_url
+  // Spec rows — only render the ones with values to avoid empty noise.
+  const specs: Array<[string, string | null]> = [
+    ['Brand',       a.brand],
+    ['GTIN',        a.gtin],
+    ['Brutto vikt', a.brutto_weight_g != null ? formatWeight(a.brutto_weight_g) : null],
+    ['Netto vikt',  a.net_weight_g    != null ? formatWeight(a.net_weight_g)    : null],
+    ['Enhet',       a.unit],
+    ['Antal/enhet', a.units_per_pack_label],
+    ['Antal per hel förpackning', a.packs_per_master != null ? String(a.packs_per_master) : null],
+    ['Varutyp',     a.storage_type],
+    ['Land',        a.country_origin],
+    ['Art.nr',      a.article_number],
+    ['Art.nr leverantör', a.supplier_internal_sku],
+  ]
+  const visibleSpecs = specs.filter(([, v]) => v != null && v !== '')
+
+  return (
+    <div style={{
+      padding: '14px 22px', borderBottom: `0.5px solid ${UXP.borderSoft}`,
+      background: UXP.subtleBg,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 10, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+          Supplier article details
+        </div>
+        {rows.length > 1 && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {rows.map((r, i) => (
+              <button key={i} onClick={() => setPickedIdx(i)} style={{
+                padding: '2px 8px', fontSize: 10, fontWeight: 500,
+                background: i === pickedIdx ? UXP.lavFill : 'transparent',
+                color: i === pickedIdx ? UXP.lavText : UXP.ink3,
+                border: `0.5px solid ${i === pickedIdx ? UXP.lavMid : UXP.border}`,
+                borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+              }}>
+                Source {i + 1}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: img ? '120px 1fr' : '1fr', gap: 14, alignItems: 'start' }}>
+        {img && (
+          <a href={img} target="_blank" rel="noopener noreferrer" style={{
+            display: 'block', background: '#fff',
+            border: `0.5px solid ${UXP.border}`, borderRadius: 8,
+            padding: 6, lineHeight: 0,
+          }}>
+            <img src={img} alt={a.official_name ?? ''}
+                 style={{ width: 108, height: 108, objectFit: 'contain' as const, display: 'block' }} />
+          </a>
+        )}
+        <div>
+          {a.official_name && (
+            <div style={{ fontSize: 13, fontWeight: 600, color: UXP.ink1, marginBottom: 4 }}>
+              {a.official_name}
+            </div>
+          )}
+          {a.category_path && (
+            <div style={{ fontSize: 10, color: UXP.ink4, marginBottom: 8 }}>
+              {a.category_path}
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '3px 12px', fontSize: 11 }}>
+            {visibleSpecs.map(([k, v]) => (
+              <Fragment_ key={k}>
+                <div style={{ color: UXP.ink4 }}>{k}</div>
+                <div style={{ color: UXP.ink1, fontWeight: 500 }}>{v}</div>
+              </Fragment_>
+            ))}
+          </div>
+          {a.description && (
+            <div style={{ fontSize: 11, color: UXP.ink3, marginTop: 8, lineHeight: 1.5 }}>
+              {a.description}
+            </div>
+          )}
+          <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 8 }}>
+            From {a.source === 'martinservera_scrape' ? 'martinservera.se' : a.source}
+            {a.fetched_at && ` · scraped ${new Date(a.fetched_at).toLocaleDateString('sv-SE')}`}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+// React.Fragment alias for inline use in the grid above.
+function Fragment_({ children }: { children: React.ReactNode }) { return <>{children}</> }
+function formatWeight(g: number): string {
+  if (g >= 1000) return `${(g / 1000).toLocaleString('sv-SE', { maximumFractionDigits: 2 })} kg`
+  return `${g.toLocaleString('sv-SE')} g`
 }
