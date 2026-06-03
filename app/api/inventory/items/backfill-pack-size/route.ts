@@ -146,16 +146,35 @@ export async function POST(req: NextRequest) {
   for (const p of orphans) {
     const sup = suppliersByProduct.get(p.id); if (!sup) continue
     const catalogue = catalogueBySupplier.get(sup) ?? []
-    let best: { sim: number; row: any } | null = null
-    let secondBest = 0
+    // Collect ALL matches at or near the best sim so we can check
+    // whether tied results produce the SAME helper decision.
+    let bestSim = 0
+    const matchesAtTop: any[] = []
     for (const row of catalogue) {
       if (!row.official_name) continue
       const sim = jaccard(p.name, row.official_name)
-      if (!best || sim > best.sim) { secondBest = best?.sim ?? 0; best = { sim, row } }
-      else if (sim > secondBest) { secondBest = sim }
+      if (sim > bestSim) {
+        bestSim = sim
+        matchesAtTop.length = 0
+        matchesAtTop.push({ sim, row })
+      } else if (Math.abs(sim - bestSim) < 0.05) {
+        matchesAtTop.push({ sim, row })
+      }
     }
-    if (best && best.sim >= 0.5 && (best.sim - secondBest) >= 0.1) {
-      productNameFallback.set(p.id, best.row)
+    if (bestSim < 0.5) continue
+    // If only one top match, accept it.
+    // If multiple top matches, accept only when ALL of them produce
+    // the SAME helper decision (same kind, pack, base) — i.e. the
+    // tied articles agree about the pack info even if the name
+    // similarity can't pick one specifically.
+    const decisions = matchesAtTop.map(m => packFromSupplierArticle(m.row as any))
+    const first = decisions[0]
+    if (first.kind === 'skip') continue
+    const allAgree = decisions.every(d => d.kind === first.kind
+      && (d as any).pack_size === (first as any).pack_size
+      && (d as any).base_unit === (first as any).base_unit)
+    if (matchesAtTop.length === 1 || allAgree) {
+      productNameFallback.set(p.id, matchesAtTop[0].row)
     }
   }
 
