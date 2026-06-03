@@ -1,0 +1,116 @@
+
+=== Chicce (63ada0ac) ===
+  1178 active products
+  Bucket A (recipe-importer, no aliases): 1
+  Bucket B (aliases but no lines):        111
+  Bucket C (lines but no article):        16
+  Bucket D (true orphan):                 11
+  Bucket E (dupe candidate, ≥0.5 Jaccard): 46
+  Total no-article: 185
+
+  --- Bucket A (showing first 5 of 1) ---
+    "Schalottenlök Banan 5kg" sup="Trädgårdshallen Sverige AB" cat=food
+      aliases=0 lines=0 recipeRefs=3
+
+  --- Bucket B (showing first 5 of 111) ---
+    "Langhe Nebbiolo Arcapla 2022" sup="Wine Affair Scandinavia AB" cat=alcohol
+      aliases=1 lines=0 recipeRefs=0
+    "Paprika Röd Klass 2 5kg ES" sup="Trädgårdshallen Sverige AB" cat=food
+      aliases=1 lines=0 recipeRefs=0
+    "Pfa Juice 500ml Rödbe Eko" sup="Frimurarholmen AB" cat=food
+      aliases=2 lines=0 recipeRefs=0
+    "Styrenhet Dixell XR60CX Tefcold XR06K UD-1-2" sup="KOGI FÖRSÄLJNINGS AKTIEBOLAG" cat=other
+      aliases=1 lines=0 recipeRefs=0
+    "Strassalat 950g" sup="Frimurarholmen AB" cat=food
+      aliases=1 lines=0 recipeRefs=0
+
+  --- Bucket C (showing first 5 of 16) ---
+    "Stenbitsrom 340g" sup="Frimurarholmen AB" cat=food
+      aliases=1 lines=1 recipeRefs=0
+    "Diageo Spirits - Zacapa Rum" sup="SPENDRUPS BRYGGERI AB" cat=alcohol
+      aliases=1 lines=1 recipeRefs=0
+    "Diageo Spirits - Tanqueray Gin" sup="SPENDRUPS BRYGGERI AB" cat=alcohol
+      aliases=1 lines=1 recipeRefs=0
+    "Diageo Spirits - Don Julio Tequi" sup="SPENDRUPS BRYGGERI AB" cat=alcohol
+      aliases=1 lines=1 recipeRefs=0
+    "Ste Kasse 44L Papp SGB" sup="Frimurarholmen AB" cat=disposables
+      aliases=1 lines=2 recipeRefs=0
+
+  --- Bucket D (showing first 5 of 11) ---
+    "SALLADSSKÅL BAGASSE900ML40, Varav NPA avgift per enhet: 24,01 SEK" sup="Martin Servera Restauranghandel AB" cat=takeaway_material
+      aliases=0 lines=0 recipeRefs=0
+    "Oxfilésvans" sup="BERGSLAGSDELIKATESSER I LINDESBERG AKTIEBOLAG" cat=food
+      aliases=0 lines=0 recipeRefs=0
+    "LAMMYTTERFILE NZ 0,2/8-9KG Ursprungsland: Nya Zeeland" sup="Martin Servera Restauranghandel AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+    "Kycklingbrösfilé Sverige färsk" sup="Kungsholmens Kött AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+    "HJORTYTTERFILE 1,1-1,8KG Ursprungsland:Nya Zeeland" sup="Martin Servera Restauranghandel AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+
+  --- Bucket E (showing first 5 of 46) ---
+    "Argentinsk kummelfilé 110/220 MSC" sup="RIMA Seafood AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Stillahavskummelfilé 110/220 MSC" sim=0.50
+    "HALLON KRAV 2,5KG, EU-ekologisk;KRAV;Nyckelhål;" sup="Martin Servera Restauranghandel AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "QUINOA TITICACA KRAV 2,5KG EU-ekologisk;KRAV;Nyckelhål" sim=0.63
+    "Lammytterfile Nz 0,2/8-9kg" sup="Martin Servera Restauranghandel AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Nz 0,2/8-9kg" sim=0.67
+    "HARICOTS VERTS 2,5KG, Nyckelhål;" sup="Martin Servera Restauranghandel AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Haricots Verts 2,5kg" sim=0.75
+    "Högrev Marmor Kl4 4kg+" sup="Martin Servera Restauranghandel AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Högrev Marm Kl4 4kg+" sim=0.60
+
+=== Vero (0f948ac3) ===
+  979 active products
+  Bucket A (recipe-importer, no aliases): 0
+  Bucket B (aliases but no lines):        0
+  Bucket C (lines but no article):        310
+  Bucket D (true orphan):                 61
+  Bucket E (dupe candidate, ≥0.5 Jaccard): 44
+  Total no-article: 415
+
+  --- Bucket C (showing first 5 of 310) ---
+    "Brio Kollegieblock A4 Linjerad" sup="Snabbgross Örebro" cat=other
+      aliases=1 lines=2 recipeRefs=0
+    "Gas Vitpeppar 500g Malen" sup="Snabbgross Örebro" cat=food
+      aliases=1 lines=1 recipeRefs=0
+    "Honeyfresh 72g" sup="Snabbgross Örebro" cat=food
+      aliases=1 lines=2 recipeRefs=0
+    "MAR Mjölkchoklad Schweiz Nöt 160g" sup="Snabbgross Örebro" cat=food
+      aliases=1 lines=1 recipeRefs=0
+    "Citronjuice" sup="Citric Labs AB" cat=food
+      aliases=2 lines=7 recipeRefs=0
+
+  --- Bucket D (showing first 5 of 61) ---
+    "Pagus Bisano Valp Rip Doc 75eg" sup="Spendrups" cat=alcohol
+      aliases=0 lines=0 recipeRefs=0
+    "Smirnoff Ice Raspb 4,0 27,5eg" sup="Spendrups" cat=alcohol
+      aliases=0 lines=0 recipeRefs=0
+    "Lokal Hallon/Rabarber 33cl Burk" sup="Snabbgross Örebro" cat=beverage
+      aliases=0 lines=0 recipeRefs=0
+    "Lok Hallon/Rabarber 33cl Burk" sup="Snabbgross Örebro" cat=beverage
+      aliases=0 lines=0 recipeRefs=0
+    "Kro Jäst 50g Färsk Hush" sup="Snabbgross Örebro" cat=food
+      aliases=0 lines=0 recipeRefs=0
+
+  --- Bucket E (showing first 5 of 44) ---
+    "MOZZ TAGLIO NAPOLI OLATT 2,5kg TRÅG OLATT 2,5KG" sup="IL Molino AB" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Mozzarella Taglio Napoli 2,5kg Tråg" sim=0.57
+    "Tanqueray No Ten Gin 70egst" sup="Spendrups" cat=alcohol
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Tanqueray No. Ten Gin 70cl" sim=0.67
+    "Krusovice Imperial 5,0% 30l fat" sup="Spendrups" cat=alcohol
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Krusovice Imperial 5,0% 30L" sim=0.75
+    "Fat 30l Murphys" sup="Spendrups" cat=takeaway_material
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Murphys Irish Stout 4% 30L fat" sim=0.60
+    "Apelsin" sup="Snabbgross Örebro" cat=food
+      aliases=0 lines=0 recipeRefs=0
+      DUPE? "Apelsin EKO" sim=0.50
