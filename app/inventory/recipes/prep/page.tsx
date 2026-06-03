@@ -16,6 +16,7 @@ import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { ProductThumb } from '@/components/ui/ProductThumb'
 import { PageContainer } from '@/components/ui/Layout'
+import { PageErrorBoundary } from '@/components/ui/PageErrorBoundary'
 
 interface DishRow {
   id:                  string
@@ -151,6 +152,18 @@ const isDish = (r: any) =>
   || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
 
 export default function PrepListPage() {
+  // Wrapping the inner page in a PageErrorBoundary so a render-time
+  // exception surfaces the actual error message in-page instead of
+  // bubbling to the global "Something went wrong" fallback. Owner sees
+  // a screenshot-able error; we get the stack in Sentry.
+  return (
+    <PageErrorBoundary surface="Prep list">
+      <PrepListPageInner />
+    </PageErrorBoundary>
+  )
+}
+
+function PrepListPageInner() {
   const [bizId, setBizId] = useState<string | null>(null)
   const [dishes, setDishes] = useState<DishRow[]>([])
   const [loadingDishes, setLoadingDishes] = useState(true)
@@ -977,9 +990,19 @@ export default function PrepListPage() {
                   <input
                     type="number"
                     min={0}
+                    step={1}
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     placeholder="e.g. 200"
                     value={coversInput}
-                    onChange={e => setCoversInput(e.target.value)}
+                    onChange={e => {
+                      // Strip everything that isn't a digit or decimal sep
+                      // so mobile autocomplete / voice input ("oak 200")
+                      // can't smuggle non-numeric text into a value that
+                      // the rest of the page treats as a Number.
+                      const cleaned = e.target.value.replace(/[^0-9.]/g, '')
+                      setCoversInput(cleaned)
+                    }}
                     onKeyDown={e => { if (e.key === 'Enter') applyCovers() }}
                     style={{
                       ...inputStyle, flex: 1, padding: '4px 8px', fontSize: 12,
@@ -1047,11 +1070,15 @@ export default function PrepListPage() {
                           <input
                             type="number"
                             min={0}
+                            step={1}
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             value={qty}
                             aria-label={`Portions of ${d.name}`}
                             onChange={e => {
-                              const n = Number(e.target.value)
-                              setSelected(s => ({ ...s, [recipe_id]: Number.isFinite(n) ? n : 0 }))
+                              const cleaned = e.target.value.replace(/[^0-9.]/g, '')
+                              const n = cleaned === '' ? 0 : Number(cleaned)
+                              setSelected(s => ({ ...s, [recipe_id]: Number.isFinite(n) && n >= 0 ? n : 0 }))
                             }}
                             style={{
                               ...inputStyle, padding: '4px 6px', fontSize: 11,
