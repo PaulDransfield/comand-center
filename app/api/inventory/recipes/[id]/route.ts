@@ -183,12 +183,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const forbidden = requireBusinessAccess(auth, existing.business_id)
   if (forbidden) return forbidden
 
-  const { data, error } = await db
+  let { data, error } = await db
     .from('recipes')
     .update(patch)
     .eq('id', params.id)
     .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
     .single()
+  // Defensive: M124 (is_subrecipe) may not be applied yet. Drop the
+  // field from the patch and retry once.
+  if (error && /is_subrecipe/.test(error.message) && 'is_subrecipe' in patch) {
+    const { is_subrecipe: _drop, ...patchWithout } = patch
+    const retry = await db
+      .from('recipes')
+      .update(patchWithout)
+      .eq('id', params.id)
+      .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+      .single()
+    data = retry.data; error = retry.error
+  }
   if (error) {
     if ((error as any).code === '23505') {
       return NextResponse.json({ error: `A recipe called "${patch.name}" already exists.` }, { status: 409 })

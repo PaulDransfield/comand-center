@@ -162,24 +162,33 @@ export async function POST(req: NextRequest) {
   const { data: biz } = await db.from('businesses').select('id, org_id').eq('id', businessId).maybeSingle()
   if (!biz) return NextResponse.json({ error: 'business not found' }, { status: 404 })
 
-  const { data, error } = await db
+  const baseRow: any = {
+    business_id: businessId,
+    org_id:      biz.org_id,
+    name,
+    type,
+    menu_price,                  // derived (or legacy passthrough if no ex_vat)
+    selling_price_ex_vat,        // canonical truth
+    vat_rate,
+    channel,
+    portions,
+    notes,
+    method,
+  }
+  let { data, error } = await db
     .from('recipes')
-    .insert({
-      business_id: businessId,
-      org_id:      biz.org_id,
-      name,
-      type,
-      menu_price,                  // derived (or legacy passthrough if no ex_vat)
-      selling_price_ex_vat,        // canonical truth
-      vat_rate,
-      channel,
-      portions,
-      notes,
-      method,
-      is_subrecipe,
-    })
+    .insert({ ...baseRow, is_subrecipe })
     .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
     .single()
+  // Defensive: M124 may not be applied yet (or PostgREST schema cache stale).
+  if (error && /is_subrecipe/.test(error.message)) {
+    const retry = await db
+      .from('recipes')
+      .insert(baseRow)
+      .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+      .single()
+    data = retry.data as any; error = retry.error
+  }
   if (error) {
     if ((error as any).code === '23505') {
       return NextResponse.json({ error: `A recipe called "${name}" already exists. Pick a different name.` }, { status: 409 })
