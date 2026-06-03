@@ -17,6 +17,7 @@
 //   • footer row      : bg #f7f6fb, color rgba(58,53,80,0.6)
 
 import { UXP } from '@/lib/constants/tokens'
+import { useViewport } from '@/lib/hooks/useViewport'
 import type { ReactNode } from 'react'
 
 export type ColumnAlign = 'left' | 'right' | 'center'
@@ -46,6 +47,10 @@ export interface BreakdownTableProps<T = any> {
   } | null
   /** Optional row key getter. Defaults to `row.id` / `row.key` / array index. */
   rowKey?:   (row: T, idx: number) => string
+  /** When true, on mobile each row renders as a card (first column = title,
+   *  remaining columns become label/value pairs). Default true. Pass false
+   *  for surfaces where preserving the grid is more important than legibility. */
+  cardsOnMobile?: boolean
 }
 
 const rowPad        = '10px 16px'
@@ -72,11 +77,22 @@ const tableCell = {
 }
 
 export default function BreakdownTable<T extends Record<string, any>>({
-  columns, sections, footer, rowKey,
+  columns, sections, footer, rowKey, cardsOnMobile = true,
 }: BreakdownTableProps<T>) {
+  const tier = useViewport()
+  const useCards = cardsOnMobile && tier === 'mobile'
   const gridTemplateColumns = columns
     .map(c => c.width ?? '1fr')
     .join(' ')
+
+  if (useCards) return (
+    <BreakdownCards<T>
+      columns={columns}
+      sections={sections}
+      footer={footer}
+      rowKey={rowKey}
+    />
+  )
 
   return (
     <div style={{ background: '#fff', border: headerBorder, borderRadius: 12, overflow: 'hidden' }}>
@@ -161,6 +177,105 @@ export default function BreakdownTable<T extends Record<string, any>>({
     </div>
   )
 }
+
+// ── Mobile card rendering ──────────────────────────────────────────
+// One card per row. First column = title (typically the line name);
+// remaining columns = label/value pairs in a 2-col mini-grid. Section
+// labels stay as group headers; the footer row stays at the bottom
+// styled like a summary card.
+function BreakdownCards<T extends Record<string, any>>({
+  columns, sections, footer, rowKey,
+}: BreakdownTableProps<T>) {
+  const [titleCol, ...detailCols] = columns
+  return (
+    <div style={{ background: '#fff', border: headerBorder, borderRadius: 12, overflow: 'hidden' }}>
+      {sections.map((section, si) => (
+        <div key={`s-${si}`}>
+          {section.label && (
+            <div style={{
+              padding:      '8px 14px',
+              fontSize:     10,
+              fontWeight:   500,
+              color:        UXP.ink3,
+              background:   UXP.subtleBg,
+              borderBottom: bodyBorder,
+              textTransform: 'uppercase' as const,
+              letterSpacing: '0.04em',
+            }}>{section.label}</div>
+          )}
+          {section.rows.map((row, ri) => {
+            const title = titleCol.render ? titleCol.render(row, titleCol.key) : (row as any)[titleCol.key]
+            return (
+              <div
+                key={rowKey?.(row, ri) ?? row.id ?? row.key ?? `r-${si}-${ri}`}
+                style={{
+                  padding: '10px 14px',
+                  borderBottom: bodyBorder,
+                  display: 'flex',
+                  flexDirection: 'column' as const,
+                  gap: 6,
+                }}
+              >
+                <div style={{ fontSize: 12, color: UXP.ink1, fontWeight: 500 }}>{title}</div>
+                {detailCols.length > 0 && (
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'auto 1fr',
+                    gap: '2px 12px',
+                    fontSize: 11,
+                  }}>
+                    {detailCols.map(c => {
+                      const v = c.render ? c.render(row, c.key) : (row as any)[c.key]
+                      return (
+                        <Frag key={c.key}>
+                          <div style={{ color: UXP.ink4 }}>{c.header}</div>
+                          <div style={{
+                            color: UXP.ink2,
+                            textAlign: 'right' as const,
+                            fontVariantNumeric: 'tabular-nums' as const,
+                          }}>
+                            {v ?? <span style={{ color: UXP.ink4 }}>—</span>}
+                          </div>
+                        </Frag>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+      {footer && (
+        <div style={{
+          padding: '10px 14px',
+          background: footerBg,
+          display: 'flex',
+          flexDirection: 'column' as const,
+          gap: 6,
+        }}>
+          <div style={{ fontSize: 12, color: footerColor, fontWeight: 500 }}>{footer.label}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 12px', fontSize: 11 }}>
+            {detailCols.map(c => (
+              <Frag key={c.key}>
+                <div style={{ color: UXP.ink4 }}>{c.header}</div>
+                <div style={{
+                  color: footerColor,
+                  textAlign: 'right' as const,
+                  fontVariantNumeric: 'tabular-nums' as const,
+                }}>
+                  {footer.cells[c.key] ?? ''}
+                </div>
+              </Frag>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Frag({ children }: { children: ReactNode }) { return <>{children}</> }
 
 // ── Delta chip ─────────────────────────────────────────────────────
 // Reusable utility for the "+9.6%" / "-1 200 kr" cell renderer.

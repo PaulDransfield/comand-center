@@ -30,6 +30,7 @@ import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { labourTier, DEFAULT_TIER_CONFIG } from '@/lib/utils/labourTier'
+import { PageContainer } from '@/components/ui/Layout'
 
 // Local AttentionItem type — the legacy import is gone but the
 // buildTunableItems helper below still returns this shape.
@@ -632,7 +633,7 @@ export default function PerformancePage() {
 
   return (
     <AppShell>
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* Header — granularity + period + compare controls */}
         <HeaderRow
@@ -666,10 +667,11 @@ export default function PerformancePage() {
 
         {currentData && (
           <>
-            {/* Profit composition — waterfall + donut side-by-side */}
+            {/* Profit composition — waterfall + donut. Side-by-side on
+                desktop/tablet; stacks on mobile via auto-fit minmax. */}
             <div style={{
               display:             'grid',
-              gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))',
               gap:                 12,
             }}>
               <WaterfallCard data={currentData} />
@@ -686,7 +688,7 @@ export default function PerformancePage() {
             <TunableCard items={buildTunableItems(period, currentData, compareData)} />
           </>
         )}
-      </div>
+      </PageContainer>
 
       <AskAI
         page="performance"
@@ -900,7 +902,7 @@ function KpiStrip({ data, compare, compareLabel }: any) {
     return (
       <div style={{
         display:             'grid',
-        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         gap:                 12,
       }}>
         {[0,1,2,3].map(i => (
