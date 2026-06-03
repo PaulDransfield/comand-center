@@ -120,15 +120,23 @@ export async function POST(req: NextRequest) {
 
   // 5. Build the by_product map. For each product, pick the first combo
   // that has data with a cached image (prefer cached over upstream).
+  //
+  // IMAGE URL: use the Supabase image-transformation endpoint to serve
+  // thumb-sized PNGs (256×256, contain) instead of the original cached
+  // file. Scraped MS images are up to 2.5 MB each; without transformation
+  // every page load downloads megabytes per visible product. The
+  // transformation endpoint is CDN-cached after the first request, so
+  // subsequent loads of the same URL are instant for the whole user
+  // base.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const cdnBase    = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/${STORAGE_BUCKET}` : null
+  const transformBase = supabaseUrl ? `${supabaseUrl}/storage/v1/render/image/public/${STORAGE_BUCKET}` : null
   const by_product: Record<string, { image_url: string; brand: string | null; official_name: string | null }> = {}
   for (const [pid, combos] of productToCombos) {
     for (const k of combos) {
       const a = articleByCombo.get(k); if (!a) continue
-      if (a.image_cached_path && cdnBase) {
+      if (a.image_cached_path && transformBase) {
         by_product[pid] = {
-          image_url:     `${cdnBase}/${a.image_cached_path}`,
+          image_url:     `${transformBase}/${a.image_cached_path}?width=256&height=256&resize=contain&quality=80`,
           brand:         a.brand ?? null,
           official_name: a.official_name ?? null,
         }

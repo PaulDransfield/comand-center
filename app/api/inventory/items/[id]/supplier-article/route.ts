@@ -95,12 +95,18 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     .order('updated_at', { ascending: false })
   if (aErr) return NextResponse.json({ error: aErr.message }, { status: 500 })
 
-  // 5. Build public CDN URL for each cached image.
+  // 5. Build public URL for each cached image. Uses the Supabase
+  // image-transformation endpoint to serve resized PNGs (max 512×512,
+  // contain) instead of original 1-3 MB files. The transformation is
+  // CDN-cached after first request.
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const cdnBase    = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/${STORAGE_BUCKET}` : null
+  const transformBase = supabaseUrl ? `${supabaseUrl}/storage/v1/render/image/public/${STORAGE_BUCKET}` : null
   const withCdn = (articles ?? []).map(a => ({
     ...a,
-    image_cached_url: a.image_cached_path && cdnBase ? `${cdnBase}/${a.image_cached_path}` : null,
+    image_cached_url: a.image_cached_path && transformBase
+      ? `${transformBase}/${a.image_cached_path}?width=512&height=512&resize=contain&quality=85`
+      : null,
   }))
 
   return NextResponse.json({
