@@ -19,6 +19,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import { UXP } from '@/lib/constants/tokens'
 
 interface ActivityResp {
@@ -90,7 +91,7 @@ export default function AgentActivityPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '20px 24px 60px' }}>
+      <PageContainer maxWidth={980}>
         <div style={{ marginBottom: 14 }}>
           <Link href="/settings/ai-agents" style={{ fontSize: 12, color: UXP.ink3, textDecoration: 'none' }}>
             ← All AI agents
@@ -109,7 +110,7 @@ export default function AgentActivityPage() {
             <LlmSection calls={data.llm_calls} hasRequests={data.meta.request_types.length > 0} />
           </>
         )}
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

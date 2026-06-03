@@ -18,6 +18,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useMemo, useState } from 'react'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import KpiCardUX from '@/components/ux/KpiCard'
 import Sparkline from '@/components/ui/Sparkline'
@@ -100,7 +101,7 @@ export default function SuppliersPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1280 }}>
+      <PageContainer>
 
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
           <div>
@@ -319,7 +320,7 @@ export default function SuppliersPage() {
         {openRow && (
           <InvoiceDrawer row={openRow} bizId={bizId} onClose={() => setOpenRow(null)} />
         )}
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

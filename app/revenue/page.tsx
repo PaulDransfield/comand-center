@@ -22,6 +22,7 @@ import dynamicImport from 'next/dynamic'
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
@@ -236,7 +237,7 @@ function RevenueInner() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* Header row — W/M toggle + Log covers action */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8 }}>
@@ -308,7 +309,7 @@ function RevenueInner() {
           totalFood={foodRev}
           totalBev={bevRev}
         />
-      </div>
+      </PageContainer>
 
       <AskAI
         page="revenue"

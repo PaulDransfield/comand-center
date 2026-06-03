@@ -11,6 +11,7 @@
 
 import { useEffect, useState } from 'react'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import { UXP } from '@/lib/constants/tokens'
 
 interface Member {
@@ -77,7 +78,7 @@ export default function TeamPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 24px 60px' }}>
+      <PageContainer maxWidth={900}>
         <div style={{ marginBottom: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
@@ -119,7 +120,7 @@ export default function TeamPage() {
             onInvited={() => { setShowInvite(false); loadAll() }}
           />
         )}
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

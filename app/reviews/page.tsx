@@ -21,6 +21,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
@@ -205,7 +206,7 @@ export default function ReviewsPage() {
 
   return (
     <AppShell>
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {error && <Banner tone="bad" text={error} />}
 
@@ -279,7 +280,7 @@ export default function ReviewsPage() {
             )}
           </>
         )}
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

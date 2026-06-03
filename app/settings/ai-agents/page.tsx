@@ -19,6 +19,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import { UXP } from '@/lib/constants/tokens'
 
 interface Agent {
@@ -84,7 +85,7 @@ export default function AiAgentsPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '20px 24px 60px' }}>
+      <PageContainer maxWidth={900}>
         <div style={{ marginBottom: 18 }}>
           <h1 style={{ fontSize: 22, fontWeight: 600, color: UXP.ink1, margin: 0 }}>
             AI agents
@@ -111,7 +112,7 @@ export default function AiAgentsPage() {
         </div>
 
         <Footnote />
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

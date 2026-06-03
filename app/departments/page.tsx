@@ -20,6 +20,7 @@ import dynamicImport from 'next/dynamic'
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
@@ -158,7 +159,7 @@ export default function DepartmentsPage() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* Header row — Metric + W/M toggles */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
@@ -202,7 +203,7 @@ export default function DepartmentsPage() {
             )}
           </>
         )}
-      </div>
+      </PageContainer>
 
       <AskAI
         page="departments"

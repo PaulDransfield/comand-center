@@ -24,6 +24,7 @@ import dynamicImport from 'next/dynamic'
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import PairedBarChart from '@/components/ux/PairedBarChart'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
@@ -222,7 +223,7 @@ function StaffInner() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* W/M toggle row */}
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -271,7 +272,7 @@ function StaffInner() {
           search={search}
           onSearch={setSearch}
         />
-      </div>
+      </PageContainer>
 
       <AskAI
         page="staff"

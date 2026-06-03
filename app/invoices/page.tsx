@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { UXP } from '@/lib/constants/tokens'
@@ -173,7 +174,7 @@ export default function InvoicesPage() {
 
   return (
     <AppShell>
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* Fortnox live-fallback banner — only visible when the local
             invoices table is empty and we're rendering data straight from
@@ -435,7 +436,7 @@ export default function InvoicesPage() {
             rowKey={(row) => row.id}
           />
         )}
-      </div>
+      </PageContainer>
       {pdfModal && <PdfModal url={pdfModal.url} title={pdfModal.title} onClose={() => setPdfModal(null)} />}
     </AppShell>
   )

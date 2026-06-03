@@ -20,6 +20,7 @@ export const dynamic = 'force-dynamic'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { runCompliance, hasHardFailures, type ComplianceCheck } from '@/lib/scheduling/compliance'
@@ -340,7 +341,7 @@ export default function SchedulingGridPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1400, padding: '20px 24px' }}>
+      <PageContainer maxWidth={1400}>
 
         {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
@@ -540,7 +541,7 @@ export default function SchedulingGridPage() {
           Click <strong style={{ color: UXP.greenDeep }}>✓</strong> to approve or <strong>×</strong> to reject directly in the cell. Tap the cell to see the AI's reasoning.
           When you've reviewed the week, click <strong>Apply &amp; open PK</strong> — we'll copy a summary to your clipboard since PK doesn't accept third-party writes.
         </p>
-      </div>
+      </PageContainer>
 
       {reviewOpen && data && (
         <ReviewPanel

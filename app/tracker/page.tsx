@@ -24,6 +24,7 @@ import dynamicImport from 'next/dynamic'
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { UXP } from '@/lib/constants/tokens'
@@ -224,7 +225,7 @@ export default function TrackerPage() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* KPI strip */}
         <KpiStrip
@@ -288,7 +289,7 @@ export default function TrackerPage() {
             onClose={() => setOpenRow(null)}
           />
         )}
-      </div>
+      </PageContainer>
 
       <AskAI
         page="tracker"

@@ -30,6 +30,7 @@ import dynamicImport from 'next/dynamic'
 const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, loading: () => null })
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import Sparkline from '@/components/ui/Sparkline'
@@ -183,7 +184,7 @@ export default function OverheadsPage() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* Header row — Cost review badge + Upload action */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
@@ -305,7 +306,7 @@ export default function OverheadsPage() {
             {vat && <VatCard vat={vat} />}
           </>
         )}
-      </div>
+      </PageContainer>
 
       <AskAI
         page="overheads"
