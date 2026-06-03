@@ -29,12 +29,23 @@ export async function GET(req: NextRequest) {
 
   const db = createAdminClient()
 
-  const { data: recipes, error: rErr } = await db
+  // Defensive: M124 (is_subrecipe column) may not be applied yet at
+  // every business. If the column is missing, retry without it.
+  let { data: recipes, error: rErr } = await db
     .from('recipes')
     .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
     .eq('business_id', businessId)
     .is('archived_at', null)
     .order('name')
+  if (rErr && /is_subrecipe/.test(rErr.message)) {
+    const retry = await db
+      .from('recipes')
+      .select('id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+      .eq('business_id', businessId)
+      .is('archived_at', null)
+      .order('name')
+    recipes = retry.data as any; rErr = retry.error
+  }
   if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 })
   if (!recipes || recipes.length === 0) {
     return NextResponse.json({

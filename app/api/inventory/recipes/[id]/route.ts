@@ -21,11 +21,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   if (!auth) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
   const db = createAdminClient()
-  const { data: r, error: rErr } = await db
+  // Defensive: M124 may not be applied yet.
+  let { data: r, error: rErr } = await db
     .from('recipes')
     .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
     .eq('id', params.id)
     .maybeSingle()
+  if (rErr && /is_subrecipe/.test(rErr.message)) {
+    const retry = await db
+      .from('recipes')
+      .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+      .eq('id', params.id)
+      .maybeSingle()
+    r = retry.data as any; rErr = retry.error
+  }
   if (rErr)  return NextResponse.json({ error: rErr.message }, { status: 500 })
   if (!r)    return NextResponse.json({ error: 'recipe not found' }, { status: 404 })
   const forbidden = requireBusinessAccess(auth, r.business_id)
