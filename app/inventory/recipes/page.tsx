@@ -17,6 +17,8 @@ import { useTranslations } from 'next-intl'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { Modal, overlayBtn } from '@/components/ui/Overlay'
+import { PageContainer } from '@/components/ui/Layout'
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable'
 import { fmtKr } from '@/lib/format'
 
 interface RecipeRow {
@@ -104,8 +106,8 @@ export default function InventoryRecipesPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+      <PageContainer>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
               {t('title')}
@@ -170,79 +172,65 @@ export default function InventoryRecipesPage() {
         {bizId && loading && <Empty label={t('loading')} />}
         {bizId && !loading && rows.length === 0 && !error && <Empty label={t('empty')} />}
 
-        {!loading && rows.length > 0 && (
-          <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' as const, fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: UXP.subtleBg }}>
-                  <Th label={t('colName')} />
-                  <Th label={t('colType')} />
-                  <Th label={t('colIngredients')} align="right" />
-                  <Th label={t('colMenuPrice')} align="right" />
-                  <Th label={t('colFoodCost')} align="right" />
-                  <Th label={t('colFoodPct')} align="right" />
-                  <Th label={t('colGp')} align="right" />
-                  <Th label={t('colWarnings')} align="center" />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={r.id}
-                      onClick={() => router.push(`/inventory/recipes/${r.id}`)}
-                      style={{ cursor: 'pointer', borderTop: `0.5px solid ${UXP.borderSoft}` }}
-                      onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <td style={{ ...td(), fontWeight: 500, color: UXP.ink1 }}>{r.name}</td>
-                    <td style={{ ...td(), color: UXP.ink3 }}>{r.type ?? '—'}</td>
-                    <td style={{ ...td(), textAlign: 'right' as const, color: UXP.ink3 }}>{r.ingredient_count}</td>
-                    <td style={numTd()}>{r.menu_price != null ? fmtKr(r.menu_price) : '—'}</td>
-                    <td style={numTd()}>{fmtKr(r.food_cost)}</td>
-                    <td style={{ ...numTd(), color: r.food_pct == null ? UXP.ink3 : foodPctColor(r.food_pct) }}>
-                      {r.food_pct != null ? `${r.food_pct.toFixed(1)} %` : '—'}
-                    </td>
-                    <td style={{ ...numTd(), fontWeight: 500 }}>
-                      {(r.missing_prices > 0 || r.unit_mismatches > 0) ? (
-                        <span style={{
-                          display:       'inline-block',
-                          padding:       '2px 8px',
-                          background:    '#fef3e0',
-                          color:         UXP.coral,
-                          fontSize:      10,
-                          fontWeight:    600,
-                          borderRadius:  6,
-                          letterSpacing: '0.02em',
-                        }}>Incomplete cost</span>
-                      ) : r.gp_pct != null ? (
-                        <span style={{ color: gpColor(r.gp_pct) }}>
-                          {r.gp_pct.toFixed(1)} %
-                          {r.gp_kr != null && (
-                            <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, fontWeight: 400, marginTop: 1 }}>
-                              {fmtKr(r.gp_kr)}
-                            </span>
-                          )}
-                        </span>
-                      ) : (
-                        <span style={{ color: UXP.ink3 }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ ...td(), textAlign: 'center' as const }}>
-                      {(r.missing_prices > 0 || r.unit_mismatches > 0) && (
-                        <span style={{
-                          display: 'inline-block', padding: '1px 7px',
-                          background: '#fef3e0', color: UXP.coral,
-                          fontSize: 10, fontWeight: 600, borderRadius: 4,
-                        }} title={t('warningsTooltip', { missing: String(r.missing_prices), mismatch: String(r.unit_mismatches) })}>
-                          {r.missing_prices + r.unit_mismatches}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        {!loading && rows.length > 0 && (() => {
+          const incomplete = (r: RecipeRow) => r.missing_prices > 0 || r.unit_mismatches > 0
+          const cols: Array<DataTableColumn<RecipeRow>> = [
+            { id: 'name',  header: t('colName'),  primary: true,
+              cell: r => <span style={{ fontWeight: 500, color: UXP.ink1 }}>{r.name}</span> },
+            { id: 'type',  header: t('colType'),
+              cell: r => <span style={{ color: UXP.ink3 }}>{r.type ?? '—'}</span> },
+            { id: 'ing',   header: t('colIngredients'), align: 'right' as const,
+              cell: r => <span style={{ color: UXP.ink3 }}>{r.ingredient_count}</span> },
+            { id: 'menu',  header: t('colMenuPrice'),   align: 'right' as const, hideOnMobile: true,
+              cell: r => r.menu_price != null ? fmtKr(r.menu_price) : '—' },
+            { id: 'food',  header: t('colFoodCost'),    align: 'right' as const, hideOnMobile: true,
+              cell: r => fmtKr(r.food_cost) },
+            { id: 'foodpct', header: t('colFoodPct'),   align: 'right' as const, hideOnMobile: true,
+              cell: r => (
+                <span style={{ color: r.food_pct == null ? UXP.ink3 : foodPctColor(r.food_pct) }}>
+                  {r.food_pct != null ? `${r.food_pct.toFixed(1)} %` : '—'}
+                </span>
+              ) },
+            // GP renders Incomplete badge on top — chef-readable. Shown on every tier.
+            { id: 'gp',    header: t('colGp'),  align: 'right' as const,
+              cell: r => incomplete(r) ? (
+                <span style={{
+                  display: 'inline-block', padding: '2px 8px',
+                  background: '#fef3e0', color: UXP.coral,
+                  fontSize: 10, fontWeight: 600, borderRadius: 6, letterSpacing: '0.02em',
+                }}>Incomplete cost</span>
+              ) : r.gp_pct != null ? (
+                <span style={{ color: gpColor(r.gp_pct), fontWeight: 500 }}>
+                  {r.gp_pct.toFixed(1)} %
+                  {r.gp_kr != null && (
+                    <span style={{ display: 'block', fontSize: 10, color: UXP.ink4, fontWeight: 400, marginTop: 1 }}>
+                      {fmtKr(r.gp_kr)}
+                    </span>
+                  )}
+                </span>
+              ) : <span style={{ color: UXP.ink3 }}>—</span> },
+            { id: 'warn',  header: t('colWarnings'), align: 'center' as const, hideOnMobile: true,
+              cell: r => incomplete(r) ? (
+                <span style={{
+                  display: 'inline-block', padding: '1px 7px',
+                  background: '#fef3e0', color: UXP.coral,
+                  fontSize: 10, fontWeight: 600, borderRadius: 4,
+                }} title={t('warningsTooltip', { missing: String(r.missing_prices), mismatch: String(r.unit_mismatches) })}>
+                  {r.missing_prices + r.unit_mismatches}
+                </span>
+              ) : null },
+          ]
+          return (
+            <DataTable<RecipeRow>
+              columns={cols}
+              data={rows}
+              getKey={r => r.id}
+              onRowClick={r => router.push(`/inventory/recipes/${r.id}`)}
+              style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}
+            />
+          )
+        })()}
+      </PageContainer>
 
       {importing && bizId && (
         <BulkImportModal bizId={bizId} onClose={() => setImporting(false)} onSaved={() => { setImporting(false); load() }} />
