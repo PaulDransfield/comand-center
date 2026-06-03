@@ -107,9 +107,18 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   const [openBreakdown, setOpenBreakdown] = useSectionState('breakdown', false)
 
   // ── Load detail (edit mode) ─────────────────────────────────────────
+  //
+  // `loading` is only ever set to true on the initial mount (via the
+  // useState default `!!recipeId`). Every subsequent reload — after a
+  // save, a unit change, an ingredient add — refetches silently. The
+  // existing UI stays painted while the new payload swaps in.
+  //
+  // Without this, every interactive edit flashed a full-page "Loading…"
+  // state that read as a page refresh and lost the owner's scroll +
+  // collapsible state.
   const load = useCallback(async () => {
     if (!recipeId) { setLoading(false); return }
-    setLoading(true); setErr(null)
+    setErr(null)
     try {
       const r = await fetch(`/api/inventory/recipes/${recipeId}`, { cache: 'no-store' })
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`)
