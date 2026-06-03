@@ -81,11 +81,28 @@ Article numbers seen in `supplier_invoice_lines` for Spendrups are 7-digit codes
 
 ## Recommendation
 
-**Ship Approach A (Systembolaget) first.** It's the highest-leverage build — one scraper covers multiple beverage suppliers, no auth, no fragility. Coverage will likely hit 60 % of Vero's Spendrups SKUs from one focused day's work.
+**REVISED 2026-06-03** after Q1 diag (`scripts/diag/diag-spendrups-articles.mjs`):
 
-Then reassess: if the gap matters (specialty restaurant wines not in Systembolaget), escalate to Approach C for the long tail.
+| Article-number shape | Count | Example |
+|---|---:|---|
+| 7-digit Spendrups internal code | 130/200 (65 %) | `2512514` "TENUTA FRESCOB DI CASTIGL 75EG" |
+| Non-product overhead (pallets / deposits / gas) | 70/200 (35 %) | `39510` "EUR-PALL GODKÄND", `39733` "BIOGON NC50" |
+| EAN/GTIN in article_number field | 0/200 | — |
+| EAN/GTIN in raw_description | 0/200 | — |
 
-Approach B is parked unless A reveals a specific class C can't cover.
+**Spendrups doesn't emit EANs on invoices.** The 7-digit codes are Spendrups-internal SKUs that don't map to any public identifier.
+
+This downgrades Approach A from "60-80 % coverage via EAN bridge" to **name-match-only** against the Systembolaget catalogue — lower confidence (Jaccard on "TENUTA FRESCOB DI CASTIGL 75EG" vs Systembolaget's full name "Tenuta Frescobaldi Castiglioni 75cl"). Still useful but no longer the obvious winner.
+
+**New recommended sequence:**
+
+1. **First — Approach B (Spendrups consumer JS scrape)** with a quick probe to see if Spendrups' own consumer search (`/hitta-dryck/`) exposes the same 7-digit codes used on invoices. If yes → MS-style scraper, 5 h, **100 % match by code**. If no → drop B entirely.
+2. **Second — Approach A as name-match fallback** for everything B doesn't cover (Jaccard ≥ 0.6 against Systembolaget, owner-review queue for uncertain matches). ~3 h on top of B.
+3. **Long tail — Approach C (B2B session scrape)** only if A+B coverage < 60 %.
+
+Net effort if B works: **5-8 h**. If B fails entirely: **~9-15 h with C**.
+
+Approach C is parked behind B/A; revisit after measuring.
 
 ## Open questions before build
 
