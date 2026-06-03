@@ -33,7 +33,11 @@ if (!ANTHROPIC_KEY) { console.error('ANTHROPIC_API_KEY missing'); process.exit(1
 
 const APPLY = process.argv.includes('--apply')
 const MODEL = 'claude-haiku-4-5-20251001'
-const CONF_FLOOR = 0.92
+// Raised from 0.92 → 0.95 after 2026-06-03 over-merge incident:
+// 223 archived targets were left orphaned by aliases the script
+// hadn't tracked yet, AND the LLM verdict approved cross-origin /
+// cross-vintage / cross-count clusters at 0.92.
+const CONF_FLOOR = 0.95
 
 const BUSINESSES = [
   { name: 'Chicce', id: '63ada0ac-18af-406a-8ad3-4acfd0379f2c' },
@@ -74,7 +78,15 @@ CLUSTERS ARE DIFFERENT (set verdict='different') when:
   - Fat percentages differ ("Mascarpone 47%" vs "Mascarpone 48%" — strictly different, even if interchangeable in recipes — owner judgment)
   - Grade indicators differ ("Paprika 70+" vs "Paprika 141+")
   - Brand differs and isn't obviously the same line
-  - Anything that looks like a different SKU even with same pack
+  - Origin / country codes differ ("Melon Honung 10kg BR" vs "Melon Honung 10kg CR" — Brazil vs Costa Rica are NOT the same SKU)
+  - Vintage years differ on wines ("Nebbiolo 2023" vs "Nebbiolo 2022")
+  - Size-count digits differ ("Melon 6-10st" vs "Melon 6-9st", "Lime 60st" vs "Lime 54st")
+  - Pack-size words inside the NAME disagree even if the stored pack_size column happens to match (e.g. "Lök Gul 12kg" vs "Lök Gul 2kg" — trust the name, not the column)
+  - Color / variety differs ("Tomat Cocktail Röd" vs "Tomat Cocktail Gul")
+  - Bone-in vs boneless, with/without skin, smoked vs unsmoked
+  - Anything that looks like a different SKU even with same stored pack format
+
+WHEN IN DOUBT, set verdict='uncertain'. The cost of a false merge is much higher than the cost of leaving two near-duplicates uncollapsed.
 
 EXAMPLES (cluster name first, then members):
 
