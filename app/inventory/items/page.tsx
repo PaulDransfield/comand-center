@@ -209,6 +209,11 @@ export default function InventoryItemsPage() {
   const [addPack, setAddPack] = useState('')
   const [addBusy, setAddBusy] = useState(false)
   const [addErr,  setAddErr]  = useState<string | null>(null)
+  // Server-side dedupe response — when a chef tries to add a product
+  // whose name matches an existing one (normalised or similar), the
+  // server returns 200 with { ok:false, candidates:[...] } and we
+  // surface those before letting the chef force-create.
+  const [addCandidates, setAddCandidates] = useState<Array<{ product_id: string; name: string; category: string; default_supplier: string | null; similarity: number; via_line?: string }> | null>(null)
 
   const lbl: React.CSSProperties = {
     display: 'block', fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
@@ -220,7 +225,7 @@ export default function InventoryItemsPage() {
     boxSizing: 'border-box',
   }
 
-  async function addProduct() {
+  async function addProduct(opts: { force?: boolean } = {}) {
     if (!bizId || !addName.trim()) { setAddErr('Name is required'); return }
     setAddBusy(true); setAddErr(null)
     try {
@@ -228,16 +233,23 @@ export default function InventoryItemsPage() {
         method: 'POST', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          business_id: bizId,
-          name:        addName.trim(),
-          category:    addCat,
-          unit:        addUnit.trim() || null,
-          pack_size:   addPack.trim() || null,
+          business_id:  bizId,
+          name:         addName.trim(),
+          category:     addCat,
+          unit:         addUnit.trim() || null,
+          pack_size:    addPack.trim() || null,
+          force_create: opts.force === true ? true : undefined,
         }),
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
-      setShowAdd(false); setAddName(''); setAddUnit(''); setAddPack(''); setAddCat('food')
+      // Dedupe ladder hit — server returns 200 with ok:false + candidates.
+      if (j.ok === false && j.error === 'similar_product_exists') {
+        setAddCandidates(j.candidates ?? [])
+        setAddBusy(false)
+        return
+      }
+      setShowAdd(false); setAddName(''); setAddUnit(''); setAddPack(''); setAddCat('food'); setAddCandidates(null)
       load()
     } catch (e: any) {
       setAddErr(e.message)
@@ -355,13 +367,44 @@ export default function InventoryItemsPage() {
                   <input value={addPack} onChange={e => setAddPack(e.target.value)} placeholder="e.g. 2.5" style={inp} />
                 </div>
               </div>
+              {addCandidates && addCandidates.length > 0 && (
+                <div style={{ marginTop: 10, padding: 10, background: '#fff7e0', border: '0.5px solid #f5d99a', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#7a5a00', marginBottom: 6 }}>
+                    {addCandidates.length} similar product{addCandidates.length === 1 ? '' : 's'} already exist{addCandidates.length === 1 ? 's' : ''}
+                  </div>
+                  {addCandidates.map(c => (
+                    <button key={c.product_id} type="button"
+                      onClick={() => { setEditingProductId(c.product_id); setShowAdd(false); setAddCandidates(null); setAddName(''); setAddUnit(''); setAddPack(''); setAddCat('food') }}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left' as const,
+                        padding: '5px 8px', marginBottom: 2,
+                        background: '#fff', border: `0.5px solid ${UXP.border}`, borderRadius: 4,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      <div style={{ fontSize: 11, color: UXP.ink1, fontWeight: 500 }}>{c.name}</div>
+                      <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1 }}>
+                        {c.category}{c.default_supplier ? ` · ${c.default_supplier}` : ''} · {Math.round(c.similarity * 100)}% match
+                      </div>
+                    </button>
+                  ))}
+                  <div style={{ fontSize: 10, color: UXP.ink3, marginTop: 6 }}>Click one to open it, or:</div>
+                  <button type="button" onClick={() => addProduct({ force: true })} disabled={addBusy}
+                    style={{
+                      marginTop: 6, padding: '4px 10px',
+                      background: 'transparent', color: '#7a5a00', border: '0.5px solid #f5d99a',
+                      borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                    }}>
+                    No, mine's different — create "{addName.trim()}" anyway
+                  </button>
+                </div>
+              )}
               {addErr && <div style={{ color: UXP.roseText, fontSize: 12, marginTop: 8 }}>{addErr}</div>}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-                <button onClick={() => setShowAdd(false)}
+                <button onClick={() => { setShowAdd(false); setAddCandidates(null) }}
                   style={{ padding: '7px 14px', fontSize: 12, background: 'transparent', color: UXP.ink2, border: `0.5px solid ${UXP.border}`, borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
                   Cancel
                 </button>
-                <button onClick={addProduct} disabled={addBusy}
+                <button onClick={() => addProduct()} disabled={addBusy || !!addCandidates}
                   style={{ padding: '7px 14px', fontSize: 12, fontWeight: 600, background: UXP.lavDeep, color: '#fff', border: 'none', borderRadius: 6, cursor: addBusy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
                   {addBusy ? 'Adding…' : 'Add article'}
                 </button>
