@@ -730,20 +730,33 @@ function SupplierArticleSection({ productId }: { productId: string }) {
   const [rows, setRows] = useState<any[] | null>(null)
   const [pickedIdx, setPickedIdx] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [debugErr, setDebugErr] = useState<string | null>(null)
+  const [debugStatus, setDebugStatus] = useState<number | null>(null)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         const r = await fetch(`/api/inventory/items/${productId}/supplier-article`, { cache: 'no-store' })
+        if (cancelled) return
+        setDebugStatus(r.status)
         const j = await r.json().catch(() => ({}))
         if (cancelled) return
+        if (j.error) setDebugErr(j.error)
         setRows(Array.isArray(j.supplier_articles) ? j.supplier_articles : [])
-      } catch { setRows([]) }
+      } catch (e: any) { if (!cancelled) setDebugErr(e?.message ?? String(e)); setRows([]) }
       if (!cancelled) setLoaded(true)
     })()
     return () => { cancelled = true }
   }, [productId])
-  if (!loaded || !rows || rows.length === 0) return null
+  if (!loaded) {
+    return <div style={{ padding: '10px 22px', fontSize: 10, color: UXP.ink4 }}>Loading supplier article…</div>
+  }
+  if (!rows || rows.length === 0) {
+    return <div style={{ padding: '10px 22px', fontSize: 10, color: UXP.ink4, background: UXP.subtleBg }}>
+      No supplier article data yet for this product.
+      {debugStatus != null && ` (API: ${debugStatus}${debugErr ? ' · ' + debugErr : ''})`}
+    </div>
+  }
 
   const a = rows[pickedIdx] ?? rows[0]
   const img = a.image_cached_url || a.image_url
