@@ -116,6 +116,33 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   }, [recipeId])
   useEffect(() => { if (recipeId) load() }, [recipeId, load])
 
+  // ── Supplier-article thumbnails ─────────────────────────────────────
+  // Batch-fetch image URLs for every product-linked ingredient. Cross-
+  // customer cached images from supplier_articles. Silent fallback for
+  // products without scraped data.
+  const [imageByProduct, setImageByProduct] = useState<Record<string, { image_url: string; brand: string | null }>>({})
+  useEffect(() => {
+    if (!data) return
+    const productIds = data.summary.ingredients
+      .filter(i => !i.is_subrecipe && i.product_id)
+      .map(i => i.product_id!) as string[]
+    if (productIds.length === 0) { setImageByProduct({}); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/inventory/supplier-article/batch', {
+          method: 'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_ids: productIds }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (cancelled) return
+        setImageByProduct(j.by_product ?? {})
+      } catch { setImageByProduct({}) }
+    })()
+    return () => { cancelled = true }
+  }, [data])
+
   // ── Mutators (edit mode) ────────────────────────────────────────────
   async function removeIngredient(ingId: string) {
     if (!recipeId) return
@@ -447,6 +474,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
             {summary.ingredients.map(ing => (
               <IngredientRow key={ing.id}
                 ing={ing}
+                imageUrl={!ing.is_subrecipe && ing.product_id ? imageByProduct[ing.product_id]?.image_url : undefined}
                 highlighted={highlightIngId === ing.id}
                 onRemove={() => removeIngredient(ing.id)}
                 onChange={(patch) => updateIngredient(ing.id, patch)}
@@ -1051,8 +1079,9 @@ function PriceVatEditor({ recipe, onSave }: {
 }
 
 // ── IngredientRow (preserved verbatim from drawer — B1 green-tick) ────
-function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, onOpenSubrecipe, onOpenEditModal }: {
+function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProductEdit, onOpenSubrecipe, onOpenEditModal }: {
   ing: DetailIngredient
+  imageUrl?: string                  // optional supplier-article thumbnail
   highlighted?: boolean
   onRemove: () => void
   onChange: (patch: { quantity?: number; unit?: string; waste_pct?: number }) => void
@@ -1118,7 +1147,16 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
         display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
         alignItems: 'center', fontSize: 12,
       }}>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Supplier-article thumbnail when available — silent fallback when not. */}
+          {imageUrl && !ing.is_subrecipe && (
+            <img src={imageUrl} alt="" loading="lazy" style={{
+              width: 28, height: 28, objectFit: 'contain' as const,
+              background: '#fff', border: `0.5px solid ${UXP.border}`,
+              borderRadius: 4, flexShrink: 0,
+            }} />
+          )}
+          <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, display: 'flex', alignItems: 'center', gap: 6 }}>
             {ing.is_subrecipe && (
               <span style={{
@@ -1152,6 +1190,7 @@ function IngredientRow({ ing, highlighted, onRemove, onChange, onProductEdit, on
                 · pack auto-detected
               </span>
             )}
+          </div>
           </div>
         </div>
         <div style={{ position: 'relative' as const }}>

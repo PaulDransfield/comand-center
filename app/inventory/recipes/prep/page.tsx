@@ -182,6 +182,28 @@ export default function PrepListPage() {
   // The collapsible add-pre-order form state. Null when collapsed.
   const [draftPreOrder, setDraftPreOrder] = useState<DraftPreOrder | null>(null)
   const [result,   setResult]   = useState<PrepResult | null>(null)
+  // Supplier-article thumbnails for prep row product cells (cross-customer
+  // cached images from supplier_articles). Silent fallback for products
+  // without scraped data.
+  const [prepImages, setPrepImages] = useState<Record<string, { image_url: string }>>({})
+  useEffect(() => {
+    if (!result) { setPrepImages({}); return }
+    const ids = (result.products ?? []).map(p => p.product_id).filter((x): x is string => !!x)
+    if (ids.length === 0) { setPrepImages({}); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch('/api/inventory/supplier-article/batch', {
+          method: 'POST', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_ids: ids }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (!cancelled) setPrepImages(j.by_product ?? {})
+      } catch { if (!cancelled) setPrepImages({}) }
+    })()
+    return () => { cancelled = true }
+  }, [result])
   const [computing, setComputing] = useState(false)
   const [search, setSearch] = useState('')
   // Tab between the result lists so the page isn't a wall of tables.
@@ -1288,10 +1310,21 @@ export default function PrepListPage() {
                                 })}
                                 title="Tap to add prep notes per recipe">
                                   <td style={td}>
-                                    <div style={{ color: UXP.ink1, fontWeight: 500 }}>{p.name ?? '—'}</div>
-                                    {p.category && (
-                                      <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>{p.category}</div>
-                                    )}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      {prepImages[p.product_id]?.image_url && (
+                                        <img src={prepImages[p.product_id].image_url} alt="" loading="lazy" style={{
+                                          width: 32, height: 32, objectFit: 'contain' as const,
+                                          background: '#fff', border: `0.5px solid ${UXP.border}`,
+                                          borderRadius: 4, flexShrink: 0,
+                                        }} />
+                                      )}
+                                      <div style={{ minWidth: 0 }}>
+                                        <div style={{ color: UXP.ink1, fontWeight: 500 }}>{p.name ?? '—'}</div>
+                                        {p.category && (
+                                          <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 1 }}>{p.category}</div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </td>
                                   <td style={{ ...td, textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const }}>
                                     {f.qty} {f.unit}
