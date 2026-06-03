@@ -28,6 +28,7 @@ import { categoryForBasAccount, type InventoryCategory } from './categories'
 import { categoryForSupplier, type SupplierClassification } from './suppliers'
 import { descriptionRule } from './description-rules'
 import { parseProductPackSize } from './unit-conversion'
+import { packFromSupplierArticle } from './pack-from-supplier-article'
 
 const SAME_SUPPLIER_THRESHOLD  = 0.80
 const CROSS_SUPPLIER_THRESHOLD = 0.85
@@ -619,14 +620,42 @@ export async function createProductFromLine(
     productId   = existing.id
     wasExisting = true
   } else {
-    // Auto-detect pack size from the canonical name; fall back to the
-    // supplier invoice unit (Phase A — "Citron — KG" → 1000g) when the
-    // name discloses nothing. pack_source tags provenance (M119 applied
-    // 2026-06-02).
-    const parsedPack = parseProductPackSize(productName, line.unit)
-    const packSourceTag = parsedPack
-      ? (parsedPack.source === 'name' ? 'name_parsed' : 'invoice_unit_inferred')
-      : null
+    // Pack-size derivation, highest-confidence first:
+    //   1. supplier_articles (cross-customer catalogue) — the scrape-fed
+    //      ground truth. Set when (supplier, article_number) is present
+    //      AND a supplier_articles row exists with a derivable pack.
+    //   2. name parser (existing parseProductPackSize) — "Olja Rapsolja
+    //      10 liter" → 10000 ml
+    //   3. invoice_unit fallback — "Citron / KG" → 1000 g
+    //   4. null — owner review later
+    let packSize: number | null      = null
+    let baseUnit: string | null      = null
+    let packSourceTag: string | null = null
+
+    if (line.article_number) {
+      const { data: art } = await db.from('supplier_articles')
+        .select('unit, net_weight_g, units_per_pack, units_per_pack_label, official_name')
+        .eq('supplier_fortnox_number', line.supplier_fortnox_number)
+        .eq('article_number',          line.article_number)
+        .eq('fetch_status',            'ok')
+        .maybeSingle()
+      if (art) {
+        const decision = packFromSupplierArticle(art as any)
+        if (decision.kind !== 'skip') {
+          packSize      = decision.pack_size
+          baseUnit      = decision.base_unit
+          packSourceTag = 'supplier_official'
+        }
+      }
+    }
+    if (packSize == null) {
+      const parsedPack = parseProductPackSize(productName, line.unit)
+      if (parsedPack) {
+        packSize      = parsedPack.pack_size
+        baseUnit      = parsedPack.base_unit
+        packSourceTag = parsedPack.source === 'name' ? 'name_parsed' : 'invoice_unit_inferred'
+      }
+    }
 
     const { data: prod, error: prodErr } = await db
       .from('products')
@@ -639,8 +668,8 @@ export async function createProductFromLine(
         default_supplier_fortnox_number: line.supplier_fortnox_number,
         default_supplier_name:   line.supplier_name_snapshot,
         created_via:             'owner_review',
-        pack_size:               parsedPack?.pack_size ?? null,
-        base_unit:               parsedPack?.base_unit ?? null,
+        pack_size:               packSize,
+        base_unit:               baseUnit,
         pack_source:             packSourceTag,
       })
       .select('id')
