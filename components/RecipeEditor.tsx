@@ -127,6 +127,28 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   }, [recipeId])
   useEffect(() => { if (recipeId) load() }, [recipeId, load])
 
+  // Auto-apply yield once per recipe load when it's unset AND the
+  // ingredients sum to something measurable. Owners shouldn't have to
+  // open the collapsible and re-key a number they already typed. Drift
+  // / cooking-reduction case keeps the suggestion chip in YieldEditor —
+  // that needs owner judgement, so it stays explicit.
+  const autoYieldAppliedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (!data) return
+    const { recipe, summary } = data
+    if (!recipe.id) return
+    if (autoYieldAppliedFor.current === recipe.id) return
+    if (recipe.yield_amount != null && recipe.yield_unit) return
+    const sug = suggestYieldFromIngredients(summary.ingredients, recipe.portions)
+    if (!sug) return
+    autoYieldAppliedFor.current = recipe.id
+    void fetch(`/api/inventory/recipes/${recipe.id}`, {
+      method: 'PATCH', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yield_amount: sug.amount, yield_unit: sug.unit }),
+    }).then(r => { if (r.ok) load() })
+  }, [data, load])
+
   // ── Supplier-article thumbnails ─────────────────────────────────────
   // Batch-fetch image URLs for every product-linked ingredient. Cross-
   // customer cached images from supplier_articles. Silent fallback for
@@ -362,6 +384,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
   const missingList  = summary.ingredients.filter(i => i.no_price && !i.is_subrecipe)
   const mismatchList = summary.ingredients.filter(i => i.unit_mismatch && !i.is_subrecipe)
   const suggested    = suggestYieldFromIngredients(summary.ingredients, recipe.portions)
+
 
   return (
     <div style={pageWrap}>
