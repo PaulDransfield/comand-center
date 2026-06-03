@@ -5,6 +5,7 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 
 // Bottom-bar tabs are the four surfaces the kitchen + owner reach for
 // every service. Everything else moves into the More drawer.
@@ -27,6 +28,7 @@ const MORE_ITEMS = [
   { label: 'Integrations',     href: '/integrations'   },
   { label: 'Settings',         href: '/settings'       },
   { label: 'Upgrade',          href: '/upgrade'        },
+  { label: 'Sign out',         href: '__signout__'     },
 ]
 
 export default function MobileNav() {
@@ -48,12 +50,27 @@ export default function MobileNav() {
             onClick={e => e.stopPropagation()}>
             <div style={{ width: 32, height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 2, margin: '0 auto 16px' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              {MORE_ITEMS.map(item => (
-                <div key={item.href} onClick={() => { router.push(item.href); setShowMore(false) }}
-                  style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: item.label.startsWith('AI') ? '#a5b4fc' : 'white' }}>{item.label}</div>
-                </div>
-              ))}
+              {MORE_ITEMS.map(item => {
+                const isSignOut = item.href === '__signout__'
+                const colour = isSignOut ? '#f87171' : item.label.startsWith('AI') ? '#a5b4fc' : 'white'
+                return (
+                  <div
+                    key={item.href}
+                    onClick={async () => {
+                      if (isSignOut) {
+                        await createClient().auth.signOut()
+                        router.push('/login')
+                      } else {
+                        router.push(item.href)
+                      }
+                      setShowMore(false)
+                    }}
+                    style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 500, color: colour }}>{item.label}</div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
