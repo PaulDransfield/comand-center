@@ -186,6 +186,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  // Promoted-product name sync: if this recipe has a linked catalogue
+  // product (source_recipe_id), keep its name in lockstep with the
+  // recipe's. Cost already flows through automatically (engine reads
+  // live), so name is the only field that can drift. Best-effort —
+  // failure shouldn't block the recipe save.
+  if (patch.name) {
+    await db.from('products')
+      .update({ name: patch.name })
+      .eq('business_id', existing.business_id)
+      .eq('source_recipe_id', params.id)
+  }
+
   return NextResponse.json({ ok: true, recipe: data }, { headers: { 'Cache-Control': 'no-store' } })
 }
 

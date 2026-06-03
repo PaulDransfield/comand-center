@@ -391,7 +391,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
             {recipe.source_product_id ? (
-              <button onClick={unpromote} title={t('unpromoteHint')} style={promoteBadge}>{t('promotedBadge')}</button>
+              <span title="Already in inventory — manage from the Connected sales articles section below" style={promotedPill}>In inventory</span>
             ) : (
               <button onClick={promote} title={t('promoteHint')} style={promoteBtn}>{t('promote')}</button>
             )}
@@ -1965,6 +1965,13 @@ const promoteBadge: CSSProperties = {
   background: UXP.greenFill, color: UXP.greenDeep,
   border: `0.5px solid ${UXP.green}`, borderRadius: 5,
   cursor: 'pointer', fontFamily: 'inherit',
+}
+const promotedPill: CSSProperties = {
+  display: 'inline-flex', alignItems: 'center',
+  padding: '8px 14px', fontSize: 11, fontWeight: 500,
+  background: UXP.greenFill, color: UXP.greenDeep,
+  border: `0.5px solid ${UXP.green}`, borderRadius: 5,
+  cursor: 'default', fontFamily: 'inherit',
 }
 const incompleteBadge: CSSProperties = {
   display: 'inline-block', padding: '4px 12px',
