@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslations } from 'next-intl'
+import { useViewport } from '@/lib/hooks/useViewport'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface DayRow {
@@ -266,7 +267,15 @@ export default function OverviewChart({
   anomalyCallout,
 }: OverviewChartProps) {
   const t = useTranslations('dashboard.chart')
+  const tier = useViewport()
   const isWeek = viewMode === 'week'
+  // Label stride. On wide viewports show every day. On mobile cap the
+  // rendered count at ~7 so 30 daily ticks don't overlap into mush.
+  // Week view always shows all 7 — no thinning needed at any width.
+  const labelStride = isWeek ? 1
+    : tier === 'mobile' ? Math.max(1, Math.ceil(days.length / 7))
+    : tier === 'tablet' ? Math.max(1, Math.ceil(days.length / 14))
+    : 1
 
   // ── Controlled / uncontrolled state ────────────────────────────────────────
   const [internalSelected,   setInternalSelected] = useState<Set<string>>(new Set())
@@ -937,6 +946,14 @@ export default function OverviewChart({
             const isWeekend = dow === 0 || dow === 6
             const isHoliday = !!holidayDates?.has(d.date)
             const isRedDay  = isWeekend || isHoliday
+            // Stride: thin labels on narrow viewports to prevent overlap.
+            // Always keep today + the first label so the axis has anchors.
+            const keepLabel = labelStride === 1
+              || i === 0
+              || i === days.length - 1
+              || d.isToday
+              || i % labelStride === 0
+            if (!keepLabel) return null
             // Per-day tier from labour ratio — lets the X-axis weekday
             // pick up the same green/amber/red signal as the bars
             // (without colliding with the today / red-day rules).
