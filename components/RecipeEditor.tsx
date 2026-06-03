@@ -521,7 +521,7 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
           ? `${fmtKr(recipe.selling_price_ex_vat)} ex-VAT @ ${recipe.vat_rate ?? 12}% · ${recipe.channel ?? 'dine_in'}`
           : 'Not set'}
       >
-        <PriceVatEditor recipe={recipe} onSave={patchRecipe} />
+        <PriceVatEditor recipe={recipe} foodCost={summary.food_cost} onSave={patchRecipe} />
         <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 8, lineHeight: 1.5 }}>
           Ex-VAT is what's stored — margin is computed off it. Inc-VAT updates it via the rate.
           VAT rate and channel are <strong>independent</strong>: takeaway can be 6% OR 12% OR 25% depending on the product.
@@ -1009,24 +1009,77 @@ function YieldEditor({ recipe, suggestedYield, onSave }: {
   )
 }
 
-// ── PriceVatEditor (preserved from drawer) ────────────────────────────
-function PriceVatEditor({ recipe, onSave }: {
-  recipe: DetailResponse['recipe']
-  onSave: (patch: Record<string, any>) => Promise<void>
+// ── PriceVatEditor ────────────────────────────────────────────────────
+//
+// Two-way editable: type ex-VAT OR inc-VAT (whichever matches the
+// menu), the other side back-computes via the rate. Live GP% + GP kr
+// preview render as the owner types so they can land on a target
+// margin by eye instead of pricing-then-checking.
+//
+// `lastEdited` tracks which input the owner is actively editing so we
+// can prefer that as the source-of-truth when the rate changes (e.g.
+// they typed 199 inc-VAT @ 12% then switch to 25% — we re-derive
+// ex-VAT, not re-derive inc-VAT from a stale ex-VAT).
+function PriceVatEditor({ recipe, foodCost, onSave }: {
+  recipe:   DetailResponse['recipe']
+  foodCost: number
+  onSave:   (patch: Record<string, any>) => Promise<void>
 }) {
   const [exVat,   setExVat]   = useState(recipe.selling_price_ex_vat != null ? String(recipe.selling_price_ex_vat) : '')
   const [vatRate, setVatRate] = useState<number>(recipe.vat_rate != null ? Number(recipe.vat_rate) : 12)
   const [channel, setChannel] = useState<'dine_in' | 'takeaway'>(recipe.channel === 'takeaway' ? 'takeaway' : 'dine_in')
   const [busy,    setBusy]    = useState(false)
+  // Free-text inc-VAT input — derived from exVat unless the owner
+  // typed in it directly, then it becomes the source of truth for the
+  // next ex-VAT recompute (handles "I priced this at 199 kr inc-VAT" UX).
+  const initialInc = recipe.selling_price_ex_vat != null && recipe.vat_rate != null
+    ? String(Math.round(Number(recipe.selling_price_ex_vat) * (1 + Number(recipe.vat_rate) / 100) * 100) / 100)
+    : ''
+  const [incVat, setIncVat] = useState(initialInc)
+  const [lastEdited, setLastEdited] = useState<'ex' | 'inc'>('ex')
+
   useEffect(() => {
     setExVat(recipe.selling_price_ex_vat != null ? String(recipe.selling_price_ex_vat) : '')
     setVatRate(recipe.vat_rate != null ? Number(recipe.vat_rate) : 12)
     setChannel(recipe.channel === 'takeaway' ? 'takeaway' : 'dine_in')
+    setIncVat(
+      recipe.selling_price_ex_vat != null && recipe.vat_rate != null
+        ? String(Math.round(Number(recipe.selling_price_ex_vat) * (1 + Number(recipe.vat_rate) / 100) * 100) / 100)
+        : ''
+    )
+    setLastEdited('ex')
   }, [recipe.selling_price_ex_vat, recipe.vat_rate, recipe.channel])
-  const exVatNum = Number(exVat)
-  const incVatDisplay = Number.isFinite(exVatNum) && exVatNum > 0
-    ? fmtKr(Math.round(exVatNum * (1 + vatRate / 100) * 100) / 100)
-    : '—'
+
+  // Re-derive the OTHER side whenever the rate changes — keep the
+  // owner's last-typed price as authoritative.
+  useEffect(() => {
+    if (lastEdited === 'ex') {
+      const n = Number(exVat)
+      if (Number.isFinite(n) && n > 0) {
+        setIncVat(String(Math.round(n * (1 + vatRate / 100) * 100) / 100))
+      }
+    } else {
+      const n = Number(incVat)
+      if (Number.isFinite(n) && n > 0) {
+        setExVat(String(Math.round((n / (1 + vatRate / 100)) * 100) / 100))
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vatRate])
+
+  function onExChange(v: string) {
+    setExVat(v); setLastEdited('ex')
+    const n = Number(v)
+    if (v === '') setIncVat('')
+    else if (Number.isFinite(n) && n >= 0) setIncVat(String(Math.round(n * (1 + vatRate / 100) * 100) / 100))
+  }
+  function onIncChange(v: string) {
+    setIncVat(v); setLastEdited('inc')
+    const n = Number(v)
+    if (v === '') setExVat('')
+    else if (Number.isFinite(n) && n >= 0) setExVat(String(Math.round((n / (1 + vatRate / 100)) * 100) / 100))
+  }
+
   async function commit() {
     if (busy) return
     const exN = Number(exVat)
@@ -1038,37 +1091,101 @@ function PriceVatEditor({ recipe, onSave }: {
     setBusy(true)
     try { await onSave(patch) } finally { setBusy(false) }
   }
+
+  // Live GP preview off the current ex-VAT (or null if the field is empty
+  // or the price/food cost combination doesn't yield a real margin).
+  const exVatNum   = Number(exVat)
+  const validPrice = Number.isFinite(exVatNum) && exVatNum > 0
+  const gpKrLive   = validPrice ? Math.round((exVatNum - foodCost) * 100) / 100 : null
+  const gpPctLive  = validPrice ? Math.round(((exVatNum - foodCost) / exVatNum) * 1000) / 10 : null
+  const foodPctLive = validPrice ? Math.round((foodCost / exVatNum) * 1000) / 10 : null
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 100px 110px auto', gap: 10, alignItems: 'end' }}>
-      <div>
-        <div style={fieldLabelStyle}>Selling price ex-VAT (primary)</div>
-        <input type="number" min="0" step="0.01" value={exVat}
-          onChange={e => setExVat(e.target.value)}
-          onBlur={commit}
-          disabled={busy}
-          style={inputStyle} />
-        <div style={{ fontSize: 10, color: UXP.ink4, marginTop: 4 }}>
-          inc-VAT @ {vatRate}%: {incVatDisplay}
+    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+      {/* Inputs — wrap on mobile, keep desktop grid otherwise. */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))',
+        gap: 10, alignItems: 'end',
+      }}>
+        <div>
+          <div style={fieldLabelStyle}>Price ex-VAT</div>
+          <input type="number" min="0" step="0.01" value={exVat}
+            onChange={e => onExChange(e.target.value)} onBlur={commit} disabled={busy}
+            placeholder="0" style={inputStyle} />
+        </div>
+        <div>
+          <div style={fieldLabelStyle}>Price inc-VAT (menu price)</div>
+          <input type="number" min="0" step="0.01" value={incVat}
+            onChange={e => onIncChange(e.target.value)} onBlur={commit} disabled={busy}
+            placeholder="0" style={inputStyle} />
+        </div>
+        <div>
+          <div style={fieldLabelStyle}>VAT %</div>
+          <select value={vatRate} onChange={e => setVatRate(Number(e.target.value))} onBlur={commit} disabled={busy} style={inputStyle}>
+            {VAT_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={fieldLabelStyle}>Channel</div>
+          <select value={channel} onChange={e => setChannel(e.target.value as any)} onBlur={commit} disabled={busy} style={inputStyle}>
+            <option value="dine_in">Dine-in</option>
+            <option value="takeaway">Takeaway</option>
+          </select>
         </div>
       </div>
-      <div>
-        <div style={fieldLabelStyle}>VAT %</div>
-        <select value={vatRate} onChange={e => setVatRate(Number(e.target.value))} onBlur={commit} disabled={busy} style={inputStyle}>
-          {VAT_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
-        </select>
+
+      {/* Live preview — updates as the owner types so they can land on
+          a target GP by eye. Food cost is fixed (it's the recipe cost);
+          GP shifts with selling price. */}
+      <div style={{
+        display: 'flex', flexWrap: 'wrap' as const, gap: 16, alignItems: 'baseline',
+        padding: '10px 12px', background: UXP.subtleBg,
+        border: `0.5px solid ${UXP.border}`, borderRadius: 8,
+      }}>
+        <PreviewStat label="Food cost" value={fmtKr(foodCost)} />
+        <PreviewStat label="Food %"
+          value={foodPctLive != null ? `${foodPctLive.toFixed(1)}%` : '—'}
+          tone={foodPctLive != null ? foodPctTone(foodPctLive) : undefined} />
+        <PreviewStat label="GP %"
+          value={gpPctLive != null ? `${gpPctLive.toFixed(1)}%` : '—'}
+          tone={gpPctLive != null ? gpTone(gpPctLive) : undefined} />
+        <PreviewStat label="GP kr"
+          value={gpKrLive != null ? fmtKr(gpKrLive) : '—'}
+          tone={gpPctLive != null ? gpTone(gpPctLive) : undefined} />
+        <button onClick={commit} disabled={busy}
+          style={{ ...overlayBtn.primary, padding: '8px 14px', marginLeft: 'auto' }}>
+          {busy ? '…' : 'Save'}
+        </button>
       </div>
-      <div>
-        <div style={fieldLabelStyle}>Channel</div>
-        <select value={channel} onChange={e => setChannel(e.target.value as any)} onBlur={commit} disabled={busy} style={inputStyle}>
-          <option value="dine_in">Dine-in</option>
-          <option value="takeaway">Takeaway</option>
-        </select>
-      </div>
-      <button onClick={commit} disabled={busy} style={{ ...overlayBtn.primary, padding: '8px 14px' }}>
-        {busy ? '…' : 'Save'}
-      </button>
     </div>
   )
+}
+
+function PreviewStat({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'warning' | 'bad' }) {
+  const color = tone === 'good' ? UXP.greenDeep : tone === 'warning' ? UXP.coral : tone === 'bad' ? UXP.roseText : UXP.ink1
+  return (
+    <div>
+      <div style={{ fontSize: 9, color: UXP.ink4, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 14, color, fontWeight: 600, fontVariantNumeric: 'tabular-nums' as const, marginTop: 2 }}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+// Tone helpers — match the GP/food coloring already used in the recipe list.
+function gpTone(pct: number): 'good' | 'warning' | 'bad' {
+  if (pct >= 70) return 'good'
+  if (pct >= 60) return 'warning'
+  return 'bad'
+}
+function foodPctTone(pct: number): 'good' | 'warning' | 'bad' {
+  if (pct <= 30) return 'good'
+  if (pct <= 38) return 'warning'
+  return 'bad'
 }
 
 // Desktop-only column headers above the ingredient list.
