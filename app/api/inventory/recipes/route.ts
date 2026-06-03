@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
       missing_prices:       summary.missing_prices,
       unit_mismatches:      summary.unit_mismatches,
       subrecipe_count:      ings.filter(i => i.subrecipe_id != null).length,
+      is_subrecipe:         r.is_subrecipe === true,
     }
   })
 
