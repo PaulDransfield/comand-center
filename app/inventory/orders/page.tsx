@@ -12,6 +12,7 @@ export const dynamic = 'force-dynamic'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
+import { ProductThumb } from '@/components/ui/ProductThumb'
 
 interface OrderItem {
   product_id:              string
@@ -78,6 +79,10 @@ export default function OrderListPage() {
   const [rows, setRows] = useState<LocalRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Supplier-article thumbs — cross-customer cached images keyed by
+  // product_id (LocalRow.key for catalogue items). Silent fallback when
+  // none. Ad-hoc rows (is_custom) carry no product_id and get no thumb.
+  const [imageByProduct, setImageByProduct] = useState<Record<string, string | null>>({})
 
   // Sidebar biz.
   useEffect(() => {
@@ -132,6 +137,31 @@ export default function OrderListPage() {
       setLoading(false)
     }
   }, [bizId, selectedSessionIds, dateFrom, dateTo])
+
+  // Batch-fetch supplier-article thumbnails for catalogue rows in the
+  // current build. One round-trip per build. is_custom rows skipped —
+  // their `key` is a `custom-<rand>` synthetic, not a product_id.
+  useEffect(() => {
+    const ids = rows.filter(r => !r.is_custom).map(r => r.key)
+    if (ids.length === 0) return
+    const ctrl = new AbortController()
+    fetch('/api/inventory/supplier-article/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_ids: ids }),
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j?.by_product) return
+        const next: Record<string, string | null> = {}
+        for (const pid of ids) next[pid] = j.by_product[pid]?.image_url ?? null
+        setImageByProduct(next)
+      })
+      .catch(() => {/* silent */})
+    return () => ctrl.abort()
+  }, [build])
 
   // Group rows by supplier for the rendered list.
   const visibleRows = rows.filter(r => !r.removed)
@@ -305,6 +335,7 @@ export default function OrderListPage() {
                     key={supplier}
                     supplier={supplier}
                     rows={supplierRows}
+                    imageByProduct={imageByProduct}
                     onChange={updateRow}
                     onRemove={removeRow}
                     onCopy={() => copySupplier(supplier, supplierRows)}
@@ -331,10 +362,11 @@ export default function OrderListPage() {
 }
 
 function SupplierGroup({
-  supplier, rows, onChange, onRemove, onCopy,
+  supplier, rows, imageByProduct, onChange, onRemove, onCopy,
 }: {
   supplier: string
   rows: LocalRow[]
+  imageByProduct: Record<string, string | null>
   onChange: (key: string, patch: Partial<LocalRow>) => void
   onRemove: (key: string) => void
   onCopy: () => void
@@ -371,7 +403,9 @@ function SupplierGroup({
           gap: 8, padding: '8px 14px', alignItems: 'center',
           borderTop: `0.5px solid ${UXP.border}`,
         }}>
-          {/* Name — editable for ad-hoc lines; static for catalogue items. */}
+          {/* Name — editable for ad-hoc lines; static for catalogue items.
+              Catalogue rows render the canonical supplier-article thumb
+              left of the name when one is available. */}
           {r.is_custom ? (
             <input
               type="text"
@@ -381,9 +415,12 @@ function SupplierGroup({
               style={{ ...inputStyle, fontSize: 11, padding: '4px 8px' }}
             />
           ) : (
-            <div style={{ fontSize: 12, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}
-                 title={r.name}>
-              {r.name}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              <ProductThumb url={imageByProduct[r.key]} size="sm" />
+              <div style={{ fontSize: 12, color: UXP.ink1, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const }}
+                   title={r.name}>
+                {r.name}
+              </div>
             </div>
           )}
 

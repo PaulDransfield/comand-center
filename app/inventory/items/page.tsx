@@ -18,6 +18,7 @@ import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { EditItemModal } from '@/components/EditItemModal'
+import { ProductThumb } from '@/components/ui/ProductThumb'
 
 interface CatalogueItem {
   product_id:           string
@@ -82,6 +83,9 @@ export default function InventoryItemsPage() {
   // the items list to rows with at least one signal and sorts by
   // reason-count desc so the worst offenders surface first.
   const [needsOnly, setNeedsOnly] = useState(false)
+  // Supplier-article thumbnails — cross-customer cached images from the
+  // shared catalogue. Silent fallback when no url. Map keyed by product_id.
+  const [imageByProduct, setImageByProduct] = useState<Record<string, string | null>>({})
   // Part A2 — EditItemModal mount on the items list. Clicking a row
   // body opens the modal here instead of navigating to the detail
   // page. The detail page (/inventory/items/[id]) remains accessible
@@ -122,6 +126,30 @@ export default function InventoryItemsPage() {
   }, [bizId, filter])
 
   useEffect(() => { if (bizId) load() }, [bizId, filter, load])
+
+  // Batch-fetch supplier-article thumbnails for the currently loaded
+  // items. One round-trip per refresh; silent fallback when none match.
+  useEffect(() => {
+    const ids = (data?.items ?? []).map(i => i.product_id)
+    if (ids.length === 0) return
+    const ctrl = new AbortController()
+    fetch('/api/inventory/supplier-article/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_ids: ids }),
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => {
+        if (!j?.by_product) return
+        const next: Record<string, string | null> = {}
+        for (const pid of ids) next[pid] = j.by_product[pid]?.image_url ?? null
+        setImageByProduct(next)
+      })
+      .catch(() => {/* silent */})
+    return () => ctrl.abort()
+  }, [data])
 
   const items = (data?.items ?? [])
     // Virtual 'sellable' bundle = food + beverage + alcohol. Server
@@ -456,33 +484,32 @@ export default function InventoryItemsPage() {
                       onMouseEnter={e => (e.currentTarget.style.background = UXP.subtleBg)}
                       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                     <td style={{ ...td(), fontWeight: 500, color: UXP.ink1 }}>
-                      {it.name}
-                      {it.is_recipe_sourced && (
-                        <span style={{
-                          marginLeft: 6,
-                          fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
-                          padding: '1px 6px', background: UXP.lavFill, color: UXP.lavText,
-                          borderRadius: 3, textTransform: 'uppercase' as const,
-                        }} title={t('recipeSourcedTooltip')}>
-                          {t('recipeSourcedBadge')}
-                        </span>
-                      )}
-                      {/* Session 25 Part A1 — reason pills. Surfaces which
-                          specific signal(s) make this item need attention,
-                          so owners know what to fix in the modal. */}
-                      {it.attention_reasons?.length > 0 && (
-                        <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, flexWrap: 'wrap' as const, verticalAlign: 'middle' }}>
-                          {it.attention_reasons.map(r => (
-                            <span key={r} style={{
-                              fontSize: 9, fontWeight: 600,
-                              padding: '1px 6px', background: '#fef3e0', color: UXP.coral,
-                              borderRadius: 3, letterSpacing: '0.02em',
-                            }}>
-                              {REASON_LABEL[r]}
-                            </span>
-                          ))}
-                        </span>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const }}>
+                        <ProductThumb url={imageByProduct[it.product_id]} size="md" />
+                        <span>{it.name}</span>
+                        {it.is_recipe_sourced && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                            padding: '1px 6px', background: UXP.lavFill, color: UXP.lavText,
+                            borderRadius: 3, textTransform: 'uppercase' as const,
+                          }} title={t('recipeSourcedTooltip')}>
+                            {t('recipeSourcedBadge')}
+                          </span>
+                        )}
+                        {it.attention_reasons?.length > 0 && (
+                          <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' as const, verticalAlign: 'middle' }}>
+                            {it.attention_reasons.map(r => (
+                              <span key={r} style={{
+                                fontSize: 9, fontWeight: 600,
+                                padding: '1px 6px', background: '#fef3e0', color: UXP.coral,
+                                borderRadius: 3, letterSpacing: '0.02em',
+                              }}>
+                                {REASON_LABEL[r]}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td style={td()}><CategoryTag c={it.category} /></td>
                     <td style={{ ...td(), color: UXP.ink3, fontSize: 11 }}>{it.latest_date ?? '—'}</td>

@@ -31,6 +31,7 @@ import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
 import { Modal, overlayBtn } from '@/components/ui/Overlay'
+import { ProductThumb } from '@/components/ui/ProductThumb'
 import { EditItemModal } from '@/components/EditItemModal'
 import { fmtKr } from '@/lib/format'
 import { convertQuantity } from '@/lib/inventory/unit-conversion'
@@ -1148,14 +1149,8 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
         alignItems: 'center', fontSize: 12,
       }}>
         <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Supplier-article thumbnail when available — silent fallback when not. */}
-          {imageUrl && !ing.is_subrecipe && (
-            <img src={imageUrl} alt="" loading="lazy" style={{
-              width: 28, height: 28, objectFit: 'contain' as const,
-              background: '#fff', border: `0.5px solid ${UXP.border}`,
-              borderRadius: 4, flexShrink: 0,
-            }} />
-          )}
+          {/* Canonical product thumbnail — silent fallback when no url. */}
+          {!ing.is_subrecipe && <ProductThumb url={imageUrl} size="sm" />}
           <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ color: UXP.ink1, fontWeight: 500, overflow: 'hidden' as const, textOverflow: 'ellipsis' as const, whiteSpace: 'nowrap' as const, display: 'flex', alignItems: 'center', gap: 6 }}>
             {ing.is_subrecipe && (

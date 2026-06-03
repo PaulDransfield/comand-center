@@ -14,6 +14,7 @@ export const dynamic = 'force-dynamic'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
+import { ProductThumb } from '@/components/ui/ProductThumb'
 
 interface DishRow {
   id:                  string
@@ -1311,13 +1312,7 @@ export default function PrepListPage() {
                                 title="Tap to add prep notes per recipe">
                                   <td style={td}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                      {prepImages[p.product_id]?.image_url && (
-                                        <img src={prepImages[p.product_id].image_url} alt="" loading="lazy" style={{
-                                          width: 32, height: 32, objectFit: 'contain' as const,
-                                          background: '#fff', border: `0.5px solid ${UXP.border}`,
-                                          borderRadius: 4, flexShrink: 0,
-                                        }} />
-                                      )}
+                                      <ProductThumb url={prepImages[p.product_id]?.image_url} size="md" />
                                       <div style={{ minWidth: 0 }}>
                                         <div style={{ color: UXP.ink1, fontWeight: 500 }}>{p.name ?? '—'}</div>
                                         {p.category && (
