@@ -1,0 +1,132 @@
+
+=== Chicce ===
+Orphans considered: 1151
+Eligible auto-merges: 180
+
+  • orphan "Syltlök Extra Prima 3,2kg"
+    → merge into owner "Pickles Extra Prima 3,2kg"
+    article=PCF454073, 5 matching line(s)
+
+  • orphan "Laxfilé fryst 1,5+ vack 12/14"
+    → merge into owner "Laxfilé fryst m/s D-trim"
+    article=1013977, 6 matching line(s)
+
+  • orphan "Getost Rulle 23% 1kg"
+    → merge into owner "Getost Affine 23% 1kg"
+    article=394478, 45 matching line(s)
+
+  • orphan "Baladin Sidro 33cl"
+    → merge into owner "Baladin Lippa 33cl"
+    article=140902, 11 matching line(s)
+
+  • orphan "Ruccola 8x100g DK"
+    → merge into owner "Maché 8x100g DK"
+    article=448665687, 5 matching line(s)
+
+  • orphan "Tomatpure 22% Krav 800g"
+    → merge into owner "Tomatpure 800g"
+    article=368373, 21 matching line(s)
+
+  • orphan "Mikroform 1000ml Trp 50st"
+    → merge into owner "Lock Mikroform Trp 50st"
+    article=580852, 6 matching line(s)
+
+  • orphan "Sallad Roman Stor 10st Flowpack ES"
+    → merge into owner "Sallad Roman 10st Flowpack RB SE"
+    article=623823715, 21 matching line(s)
+
+  • orphan "Lammytterfile Nz 0,2/8-9kg"
+    → merge into owner "Nz 0,2/8-9kg"
+    article=873984, 11 matching line(s)
+
+  • orphan "Argentinsk Kummelfilé 100-300g"
+    → merge into owner "Stillahavskummelfilé 110/220 MSC"
+    article=108586, 3 matching line(s)
+
+  • orphan "Kalvytterfile Rose Mk 1,5-"
+    → merge into owner "Utf Kalvytterfile Rose 1,5"
+    article=151738, 6 matching line(s)
+
+  • orphan "Pumpa Butternut 10kg ES"
+    → merge into owner "Pumpa Butternut 10kg BR"
+    article=707909357, 34 matching line(s)
+
+  • orphan "QUINOA RÖD 500G S EU-ekologisk;KRAV"
+    → merge into owner "Quinoa Röd 500g S"
+    article=132247, 4 matching line(s)
+
+  • orphan "Grissini rustici al sesamo 200 gr"
+    → merge into owner "Grissini rustici al sesamo 200g"
+    article=GRI1, 4 matching line(s)
+
+  • orphan "Mozzarella per pizza Julienne FRYST"
+    → merge into owner "Mozzarella per pizza Julienne"
+    article=ABB1, 6 matching line(s)
+
+(DRY — re-run with --apply to merge)
+
+=== Vero ===
+Orphans considered: 949
+Eligible auto-merges: 62
+
+  • orphan "Fel Råkor 2,7kg Hand M Msc"
+    → merge into owner "Torrkärl/Torkrulle M2 Gul"
+    article=K01, 7 matching line(s)
+
+  • orphan "Chips Lättsaltade 40g"
+    → merge into owner "Lantchips Lättsaltade 40g"
+    article=571, 4 matching line(s)
+
+  • orphan "Gurka"
+    → merge into owner "Gurka Filmad Spanien"
+    article=12135016, 21 matching line(s)
+
+  • orphan "Smirnoff Ice Raspb 4,0 27,5eg"
+    → merge into owner "Smirnoff Ice Raspberry 4,0% 27,5cl"
+    article=2746210, 7 matching line(s)
+
+  • orphan "Glas 50RG Styck"
+    → merge into owner "Glas 50RG med Back"
+    article=39575, 66 matching line(s)
+
+  • orphan "Ogier Cotes du Rhone Gentilhomme 14,5% 75cl engångsglas"
+    → merge into owner "Ogier Côtes du Rhône Gentilhomme 14,5% 75cl"
+    article=2583814, 2 matching line(s)
+
+  • orphan "Fan Exotic 33cl Burk"
+    → merge into owner "Torrkärl/Torkrulle M2 Gul"
+    article=K01, 13 matching line(s)
+
+  • orphan "Lök Gul 12kg"
+    → merge into owner "Lök Gul 2kg"
+    article=105802, 5 matching line(s)
+
+  • orphan "Tomat Cocktail Röd Kvist 3"
+    → merge into owner "Tomat Cocktail Röd"
+    article=111203, 5 matching line(s)
+
+  • orphan "Fan Orange Zero 33cl Burk"
+    → merge into owner "Torrkärl/Torkrulle M2 Gul"
+    article=K01, 21 matching line(s)
+
+  • orphan "Gar Hambb 200g Brioche 4p"
+    → merge into owner "Torrkärl/Torkrulle M2 Gul"
+    article=K01, 1 matching line(s)
+
+  • orphan "Biogon Nc50 13,4l Tomemb"
+    → merge into owner "Biogon NC50 13,4L"
+    article=X39733, 69 matching line(s)
+
+  • orphan "Bb Ship Full Of Ipa 5,8 30lf"
+    → merge into owner "Brutal Brewing A Ship Full of IPA 5,8% 30L"
+    article=1172291, 13 matching line(s)
+
+  • orphan "Chavin Grenache Syrah 14% 75cl engångsglas"
+    → merge into owner "Chavin Grenache Syrah 14% 75cl"
+    article=2674914, 2 matching line(s)
+
+  • orphan "Heineken Alkoholfri 0,0% 30L fat"
+    → merge into owner "Heineken 5% 30l Fat"
+    article=1101191, 3 matching line(s)
+
+(DRY — re-run with --apply to merge)

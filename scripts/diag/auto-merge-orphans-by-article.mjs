@@ -11,8 +11,11 @@
 //
 // Conservative gates:
 //   - Orphan has 0 active aliases
-//   - At least 3 invoice lines at this business share Jaccard ≥ 0.5
-//     with the orphan name
+//   - At least 1 invoice line at this business shares Jaccard ≥ 0.5
+//     with the orphan name (load-bearing protection is the same-article
+//     constraint below, not the line count — orphans created from chef-
+//     typed CAPS+annotation variants commonly hit only 1 line in the
+//     picker. The ÄRTER GRÖNA case the user reported is one such)
 //   - ALL matched lines share the same article_number (unambiguous SKU)
 //   - The owner_product (the one whose aliases point at those lines)
 //     is single-valued (one product owns the cluster)
@@ -62,13 +65,27 @@ for (const biz of [
     if (data.length < 1000) break; from += 1000
   }
 
-  // 2. Find orphans
+  // 2. Find merge candidates.
+  // Previously we only considered products with 0 active aliases (true
+  // orphans). But the ÄRTER GRÖNA case (2026-06-03) showed that a
+  // product can have 1-2 sparse aliases AND still be a duplicate of a
+  // canonical owner with the same article number. So we consider EVERY
+  // active product as a candidate; the (owners excluding self) gate
+  // below screens out anything that's already canonical.
+  //
+  // To avoid endlessly considering products that obviously won't merge,
+  // we cap at products with ≤ 5 active aliases (more than that, it's
+  // clearly canonical itself).
   const orphans = []
   for (let i = 0; i < allProducts.length; i += 200) {
     const slice = allProducts.slice(i, i + 200)
     const { data: aliases } = await db.from('product_aliases').select('product_id').in('product_id', slice.map(p => p.id)).eq('is_active', true)
-    const withAliases = new Set((aliases ?? []).map(a => a.product_id))
-    for (const p of slice) if (!withAliases.has(p.id)) orphans.push(p)
+    const aliasCounts = new Map()
+    for (const a of aliases ?? []) aliasCounts.set(a.product_id, (aliasCounts.get(a.product_id) ?? 0) + 1)
+    for (const p of slice) {
+      const cnt = aliasCounts.get(p.id) ?? 0
+      if (cnt <= 5) orphans.push(p)
+    }
   }
 
   // 3. Pull recent lines with article_number
@@ -95,14 +112,27 @@ for (const biz of [
       const sim = jaccard(orphan.name, l.raw_description)
       if (sim >= 0.5) candidates.push({ sim, line: l })
     }
-    if (candidates.length < 3) continue
-    const articleNumbers = new Set(candidates.map(c => c.line.article_number))
-    if (articleNumbers.size !== 1) continue
+    if (candidates.length < 1) continue
+    // Load-bearing gate: all candidate lines must trace back to ONE owner
+    // product (other than the orphan itself). Article-number variation
+    // is fine — MS sometimes uses both the standard catalogue number
+    // (e.g. 345603) AND an internal "M/S NNNNN" reference for the same
+    // SKU. As long as all NON-SELF aliases point at a single product,
+    // that product IS the canonical owner.
+    //
+    // The orphan-is-an-owner-too case (ÄRTER GRÖNA 2026-06-03): orphan
+    // has 1 alias pointing at itself with sparse lines, canonical owner
+    // has the historical aliases with rich history. They share the same
+    // article. Both are "owners" of candidate lines but only the other
+    // is the canonical target.
     const aliasIds = [...new Set(candidates.map(c => c.line.product_alias_id).filter(Boolean))]
     if (aliasIds.length === 0) continue
     const { data: aliasRows } = await db.from('product_aliases').select('id, product_id').in('id', aliasIds).eq('is_active', true)
-    const ownerIds = new Set((aliasRows ?? []).map(a => a.product_id))
+    const rawOwners = new Set((aliasRows ?? []).map(a => a.product_id))
+    const ownerIds = new Set([...rawOwners].filter(id => id !== orphan.id))
     if (ownerIds.size !== 1) continue
+    // Capture the article number(s) for the audit log — first article seen.
+    const articleNumbers = new Set(candidates.map(c => c.line.article_number))
     const ownerId = [...ownerIds][0]
     // Owner product must have at least 4 lines of history (not another stub)
     const { count: ownerLineCount } = await db.from('supplier_invoice_lines')
