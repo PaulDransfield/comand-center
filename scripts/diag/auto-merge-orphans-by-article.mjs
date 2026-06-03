@@ -140,10 +140,11 @@ for (const biz of [
           const { error: riErr } = await db.from('recipe_ingredients').update({ product_id: m.owner.id }).eq('product_id', m.orphan.id)
           if (riErr) throw new Error(`recipe_ingredients update: ${riErr.message}`)
         }
-        // Archive orphan
+        // Archive orphan. (products.archive_reason doesn't exist in
+        // schema; reasoning lives in this script's commit + the apply
+        // log instead.)
         const { error: archErr } = await db.from('products').update({
           archived_at: new Date().toISOString(),
-          archive_reason: `auto_merged_to_${m.owner.id}_article_${m.article}`,
         }).eq('id', m.orphan.id)
         if (archErr) throw new Error(`archive: ${archErr.message}`)
         ok++
