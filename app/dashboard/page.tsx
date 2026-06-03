@@ -710,7 +710,17 @@ function ChartCard({ days, loading }: { days: any[]; loading: boolean }) {
   return (
     <Card title="Revenue & labour" subtitle="Daily bars · labour as % of revenue · today in peach (scheduled, not final)">
       {loading ? (
-        <div style={{ padding: 60, textAlign: 'center' as const, color: UXP.ink3 }}>Loading…</div>
+        // Reserve the chart's height during reload (when the owner
+        // clicks Week/Month) so the card doesn't collapse to a thin
+        // "Loading…" strip and then expand back when data arrives.
+        // The visible height shift used to read as a "page flips to a
+        // different layout" jump — keeping the box at 260px eliminates
+        // the layout shift entirely.
+        <div style={{
+          minHeight: 260,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: UXP.ink3, fontSize: 12,
+        }}>Loading…</div>
       ) : (
         // Container-aware width via <ResponsiveChart> — replaces the
         // earlier `window.innerWidth - 120` hack so the chart resizes
