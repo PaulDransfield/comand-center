@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import { UXP, UX } from '@/lib/constants/tokens'
 
 type CheckStatus = 'ok' | 'warn' | 'fail' | 'pending'
@@ -104,7 +105,7 @@ export default function SetupHealthPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 800, padding: '20px 24px' }}>
+      <PageContainer maxWidth={800}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
           Setup-status
         </h1>
@@ -235,7 +236,7 @@ export default function SetupHealthPage() {
             ))}
           </div>
         )}
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }

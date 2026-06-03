@@ -31,6 +31,7 @@ const AskAI = dynamicImport(() => import('@/components/AskAI'), { ssr: false, lo
 const AiLimitReached = dynamicImport(() => import('@/components/AiLimitReached'), { ssr: false, loading: () => null })
 
 import AppShell from '@/components/AppShell'
+import { PageContainer } from '@/components/ui/Layout'
 import KpiCardUX from '@/components/ux/KpiCard'
 import BreakdownTable, { DeltaChip } from '@/components/ux/BreakdownTable'
 import { UXP } from '@/lib/constants/tokens'
@@ -217,7 +218,7 @@ export default function BudgetPage() {
       onPrev={() => step(-1)}
       onNext={canStepNext ? () => step(1) : undefined}
     >
-      <div style={{ display: 'grid', gap: 14, maxWidth: 1280 }}>
+      <PageContainer style={{ display: 'grid', gap: 14 }}>
 
         {/* Header row — Generate AI action */}
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -320,7 +321,7 @@ export default function BudgetPage() {
             businessId={bizId}
           />
         )}
-      </div>
+      </PageContainer>
 
       <AskAI
         page="budget"
