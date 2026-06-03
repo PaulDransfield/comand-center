@@ -202,7 +202,7 @@ export function packFromSupplierArticle(row: SupplierArticleRow): PackDecision {
         return {
           kind: 'multi_pack_count', pack_size: direct.n, base_unit: 'st',
           confidence: 'high',
-          notes: `Name "${direct.matched}" → ${direct.n} pieces × ${direct.perItemG}g = ${claimed}g (matches net ${netG}g)`,
+          notes: `Name "${direct.matched}" → ${direct.n} pieces × ${direct.perItemG}g = ${claimed}g (matches net ${effectiveNetG}g)`,
         }
       }
     }
@@ -211,7 +211,7 @@ export function packFromSupplierArticle(row: SupplierArticleRow): PackDecision {
     const np = parseNPackFromName(name)
     const perPackG = parsePerPackWeightG(name)
     if (np && perPackG && perPackG > 0) {
-      const subPacks = Math.round(netG / perPackG)
+      const subPacks = Math.round(effectiveNetG / perPackG)
       if (subPacks >= 1 && subPacks <= 50) {
         const totalSt = np.n * subPacks
         return {
