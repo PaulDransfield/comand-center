@@ -21,6 +21,7 @@ export const dynamic = 'force-dynamic'
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { PageContainer } from '@/components/ui/Layout'
+import { useViewport } from '@/lib/hooks/useViewport'
 import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { runCompliance, hasHardFailures, type ComplianceCheck } from '@/lib/scheduling/compliance'
@@ -138,6 +139,12 @@ export default function SchedulingGridPage() {
   const [generatingAi, setGeneratingAi] = useState(false)
   const [reviewOpen,   setReviewOpen]   = useState(false)
   const [applying,     setApplying]     = useState(false)
+  // Mobile: which day's roster the owner is currently viewing.
+  // null = falls back to today (or the first day of the week if today
+  // is outside the loaded week).
+  const [mobileDayIso, setMobileDayIso] = useState<string | null>(null)
+  const tier      = useViewport()
+  const isMobile  = tier === 'mobile'
 
   useEffect(() => {
     const s = localStorage.getItem('cc_selected_biz')
@@ -353,7 +360,7 @@ export default function SchedulingGridPage() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const }}>
             <button onClick={() => shiftWeek(-1)} style={navBtn()}>&lt; Prev</button>
             <button onClick={() => setWeekIso(isoWeekToday())} style={navBtn()}>This week</button>
             <button onClick={() => shiftWeek(+1)} style={navBtn()}>Next &gt;</button>
@@ -433,7 +440,7 @@ export default function SchedulingGridPage() {
         {/* Week summary strip */}
         {data && (
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14,
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 14,
           }}>
             <Kpi label="Planned cost (week)" value={fmtKr(data.week.planned_cost_sek)} />
             <Kpi label="Forecast revenue" value={data.week.forecast_revenue_sek > 0 ? fmtKr(data.week.forecast_revenue_sek) : '—'} />
@@ -470,7 +477,25 @@ export default function SchedulingGridPage() {
           </Empty>
         )}
 
-        {data && data.shifts.length > 0 && (
+        {data && data.shifts.length > 0 && isMobile && (
+          <MobileScheduleView
+            view={view}
+            days={data.days}
+            templates={data.templates}
+            profiles={data.profiles}
+            templatesBySection={templatesBySection}
+            profilesBySection={profilesBySection}
+            shiftsByDateTemplate={shiftsByDateTemplate}
+            shiftsByDateStaff={shiftsByDateStaff}
+            pendingByShiftId={pendingByShiftId}
+            pendingSavingsByDate={pendingSavingsByDate}
+            onSuggestionAction={actOnSuggestion}
+            selectedDayIso={mobileDayIso}
+            onSelectDay={setMobileDayIso}
+          />
+        )}
+
+        {data && data.shifts.length > 0 && !isMobile && (
           <div style={{
             background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 10, overflow: 'hidden',
           }}>
@@ -954,6 +979,299 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 function Empty({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ padding: 32, textAlign: 'center' as const, fontSize: 12, color: UXP.ink3, background: UXP.cardBg, border: `0.5px dashed ${UXP.border}`, borderRadius: 8, lineHeight: 1.7 }}>{children}</div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Mobile one-day view
+//
+// The desktop 220px + 7-day grid is unreadable below ~700px viewport
+// (each day-column squashes to <40px). Phase 4 redesign: at mobile
+// tier we render a horizontally-scrolling day chip strip + the chosen
+// day's roster as card-per-row. ShiftBlock cells are unchanged — the
+// pending-suggestion overlay + tap-to-expand reasoning keep working.
+//
+// Defaults:
+//   - selected day = `selectedDayIso` prop if it's in the loaded week,
+//     else today if today is in range, else day[0]. Defaulting in the
+//     component keeps the page state simple (null = "auto").
+function MobileScheduleView({
+  view, days, templates, profiles,
+  templatesBySection, profilesBySection,
+  shiftsByDateTemplate, shiftsByDateStaff,
+  pendingByShiftId, pendingSavingsByDate, onSuggestionAction,
+  selectedDayIso, onSelectDay,
+}: {
+  view: ViewMode
+  days: DayHeader[]
+  templates: Template[]
+  profiles: Profile[]
+  templatesBySection: Record<string, Template[]>
+  profilesBySection: Record<string, Profile[]>
+  shiftsByDateTemplate: Map<string, Shift[]>
+  shiftsByDateStaff:    Map<string, Shift[]>
+  pendingByShiftId:     Map<string, AISuggestion>
+  pendingSavingsByDate: Map<string, number>
+  onSuggestionAction:   (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
+  selectedDayIso:       string | null
+  onSelectDay:          (iso: string) => void
+}) {
+  // Default to today if it's in the loaded week, else the first day.
+  const todayIso = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.toISOString().slice(0,10) })()
+  const dayInWeek = days.find(d => d.date === selectedDayIso)
+  const todayInWeek = days.find(d => d.date === todayIso)
+  const activeDay = dayInWeek ?? todayInWeek ?? days[0]
+  if (!activeDay) return null
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 12 }}>
+      {/* Day picker — horizontal chip row. Each chip shows day-of-week,
+          day-number, planned hours; today gets a coloured ring. */}
+      <div style={{
+        display: 'flex',
+        overflowX: 'auto' as const,
+        gap: 6,
+        paddingBottom: 4,
+        // Hide the scrollbar visually while keeping it scrollable.
+        scrollbarWidth: 'thin' as const,
+        WebkitOverflowScrolling: 'touch' as const,
+      }}>
+        {days.map(d => {
+          const isActive = d.date === activeDay.date
+          const isToday  = d.date === todayIso
+          const isWeekend = d.day_of_week === 'Sat' || d.day_of_week === 'Sun'
+          const isHoliday = !!d.holiday
+          const accent = isWeekend || isHoliday
+          return (
+            <button
+              key={d.date}
+              type="button"
+              onClick={() => onSelectDay(d.date)}
+              style={{
+                flex: '0 0 auto',
+                minWidth: 56,
+                padding: '8px 10px',
+                background: isActive ? UXP.lavDeep : UXP.cardBg,
+                color: isActive ? '#fff' : accent ? UXP.rose : UXP.ink2,
+                border: `0.5px solid ${isActive ? UXP.lavDeep : isToday ? UXP.lavMid : UXP.border}`,
+                borderRadius: 8,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                display: 'flex', flexDirection: 'column' as const, alignItems: 'center', gap: 2,
+              }}
+            >
+              <span style={{ fontSize: 10, letterSpacing: '0.04em', textTransform: 'uppercase' as const, opacity: 0.85 }}>
+                {d.day_of_week}
+              </span>
+              <span style={{ fontSize: 16, fontWeight: 500, fontVariantNumeric: 'tabular-nums' as const, lineHeight: 1 }}>
+                {d.day_number}
+              </span>
+              <span style={{
+                fontSize: 9, fontVariantNumeric: 'tabular-nums' as const,
+                opacity: isActive ? 0.95 : 0.6,
+              }}>
+                {d.planned_hours}h
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Selected day header — mirrors what DayHeaderCell shows on
+          desktop (forecast revenue, planned hours, % chips). */}
+      <DayHeaderMobile day={activeDay} aiSavingsSek={pendingSavingsByDate.get(activeDay.date) ?? 0} />
+
+      {/* Roster card list — sectioned. */}
+      <div style={{
+        background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
+        borderRadius: 10, overflow: 'hidden',
+      }}>
+        {view === 'shift' && SECTION_ORDER.filter(sec => templatesBySection[sec]?.length > 0).map(sec => (
+          <div key={sec}>
+            <MobileSectionHeader label={SECTION_LABELS[sec] ?? sec} count={templatesBySection[sec].length} />
+            {templatesBySection[sec].map(template => (
+              <MobileTemplateCard
+                key={template.id}
+                template={template}
+                day={activeDay}
+                shifts={shiftsByDateTemplate}
+                pendingByShiftId={pendingByShiftId}
+                onSuggestionAction={onSuggestionAction}
+              />
+            ))}
+          </div>
+        ))}
+        {view === 'staff' && SECTION_ORDER.filter(sec => profilesBySection[sec]?.length > 0).map(sec => (
+          <div key={sec}>
+            <MobileSectionHeader label={SECTION_LABELS[sec] ?? sec} count={profilesBySection[sec].length} />
+            {profilesBySection[sec].map(profile => (
+              <MobileStaffCard
+                key={profile.staff_uid}
+                profile={profile}
+                day={activeDay}
+                shifts={shiftsByDateStaff}
+                pendingByShiftId={pendingByShiftId}
+                onSuggestionAction={onSuggestionAction}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DayHeaderMobile({ day, aiSavingsSek }: { day: DayHeader; aiSavingsSek: number }) {
+  const isWeekend = day.day_of_week === 'Sat' || day.day_of_week === 'Sun'
+  const isHoliday = !!day.holiday
+  const dateFg = (isWeekend || isHoliday) ? UXP.rose : UXP.ink2
+  const postAiPct = (() => {
+    if (!day.forecast_revenue || day.forecast_revenue <= 0) return null
+    if (!aiSavingsSek) return null
+    const planned = day.planned_cost ?? 0
+    const newPlan = Math.max(0, planned - aiSavingsSek)
+    return Math.round((newPlan / day.forecast_revenue) * 1000) / 10
+  })()
+  return (
+    <div style={{
+      background: UXP.subtleBg, border: `0.5px solid ${UXP.border}`,
+      borderRadius: 8, padding: '10px 12px',
+      display: 'flex', flexDirection: 'column' as const, gap: 6,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: dateFg }}>{day.day_of_week} {day.day_number}</span>
+        {day.holiday && (
+          <span title={day.holiday.name_en} style={{ fontSize: 10, color: UXP.roseText, fontStyle: 'italic' as const }}>
+            {day.holiday.name_en}
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: UXP.ink3, fontVariantNumeric: 'tabular-nums' as const }}>
+        <span>Forecast {day.forecast_revenue != null ? fmtKr(day.forecast_revenue) : '—'}</span>
+        <span>{day.planned_hours}h planned</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' as const }}>
+        {day.projected_staff_pct != null && day.target_staff_pct != null && (() => {
+          const gap = day.projected_staff_pct - day.target_staff_pct
+          const tone = gap > 2 ? 'rose' : gap < -2 ? 'green' : 'neutral'
+          const bg = tone === 'rose' ? UXP.roseFill : tone === 'green' ? UXP.greenFill : UXP.subtleBg
+          const fg = tone === 'rose' ? UXP.roseText : tone === 'green' ? UXP.greenDeep : UXP.ink3
+          return (
+            <span style={{ fontSize: 10, fontWeight: 500, color: fg, background: bg, borderRadius: 999, padding: '2px 9px' }}>
+              Labour {day.projected_staff_pct.toFixed(0)}% / target {day.target_staff_pct}%
+            </span>
+          )
+        })()}
+        {postAiPct != null && (
+          <span style={{ fontSize: 10, fontWeight: 500, color: UXP.lavText, background: UXP.lavFill, borderRadius: 999, padding: '2px 9px', border: `0.5px dashed ${UXP.lavMid}` }}>
+            AI {postAiPct.toFixed(0)}% (saves {fmtKr(aiSavingsSek)})
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MobileSectionHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <div style={{
+      padding: '6px 12px', fontSize: 10, fontWeight: 500, color: UXP.lavText,
+      background: UXP.lavFill, borderBottom: `0.5px solid ${UXP.borderSoft}`,
+      letterSpacing: '0.02em',
+    }}>
+      {label} <span style={{ color: UXP.ink4, fontWeight: 400, marginLeft: 6 }}>{count}</span>
+    </div>
+  )
+}
+
+function MobileTemplateCard({ template, day, shifts, pendingByShiftId, onSuggestionAction }: {
+  template: Template
+  day:      DayHeader
+  shifts:   Map<string, Shift[]>
+  pendingByShiftId:    Map<string, AISuggestion>
+  onSuggestionAction:  (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
+}) {
+  const cellShifts = shifts.get(`${day.date}|${template.id}`) ?? []
+  return (
+    <div style={{
+      padding: '10px 12px',
+      borderBottom: `0.5px solid ${UXP.borderSoft}`,
+      display: 'flex', flexDirection: 'column' as const, gap: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 2, background: template.display_colour ?? '#9b9b9b', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: UXP.ink1 }}>{template.name}</div>
+          {template.modal_start_time && template.modal_end_time && (
+            <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1, fontVariantNumeric: 'tabular-nums' as const }}>
+              {template.modal_start_time.slice(0, 5)}–{template.modal_end_time.slice(0, 5)}
+            </div>
+          )}
+        </div>
+      </div>
+      {cellShifts.length === 0 ? (
+        <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const, paddingLeft: 16 }}>
+          No shifts scheduled.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, paddingLeft: 16 }}>
+          {cellShifts.map(s => (
+            <ShiftBlock key={s.id} shift={s}
+              colour={template.display_colour ?? '#a99ce6'} showStaff
+              pendingSuggestion={pendingByShiftId.get(s.id) ?? null}
+              onSuggestionAction={onSuggestionAction} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MobileStaffCard({ profile, day, shifts, pendingByShiftId, onSuggestionAction }: {
+  profile: Profile
+  day:     DayHeader
+  shifts:  Map<string, Shift[]>
+  pendingByShiftId:    Map<string, AISuggestion>
+  onSuggestionAction:  (id: string, action: 'approved' | 'rejected', reason?: string) => Promise<void>
+}) {
+  const cellShifts = shifts.get(`${day.date}|${profile.staff_uid}`) ?? []
+  const initials = (profile.display_name ?? profile.full_name ?? '?').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase()
+  return (
+    <div style={{
+      padding: '10px 12px',
+      borderBottom: `0.5px solid ${UXP.borderSoft}`,
+      display: 'flex', flexDirection: 'column' as const, gap: 6,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span style={{
+          width: 26, height: 26, borderRadius: '50%', background: UXP.lavFill, color: UXP.lavText,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 9, fontWeight: 500, flexShrink: 0,
+        }}>{initials}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, color: UXP.ink1 }}>{profile.display_name ?? profile.full_name ?? profile.staff_uid}</div>
+          {profile.service_grade_pct != null && (
+            <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 1 }}>
+              {profile.service_grade_pct}% {profile.salary_type === 'monthly' ? 'monthly' : 'hourly'}
+            </div>
+          )}
+        </div>
+      </div>
+      {cellShifts.length === 0 ? (
+        <div style={{ fontSize: 10, color: UXP.ink4, fontStyle: 'italic' as const, paddingLeft: 35 }}>
+          Off.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, paddingLeft: 35 }}>
+          {cellShifts.map(s => (
+            <ShiftBlock key={s.id} shift={s}
+              colour={'#a99ce6'} showTemplate
+              pendingSuggestion={pendingByShiftId.get(s.id) ?? null}
+              onSuggestionAction={onSuggestionAction} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
