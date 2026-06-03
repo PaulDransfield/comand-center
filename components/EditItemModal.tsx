@@ -748,14 +748,14 @@ function SupplierArticleSection({ productId }: { productId: string }) {
     })()
     return () => { cancelled = true }
   }, [productId])
-  if (!loaded) {
-    return <div style={{ padding: '10px 22px', fontSize: 10, color: UXP.ink4 }}>Loading supplier article…</div>
-  }
+  // Silent while loading + silent on empty (the common case for non-MS
+  // products without scraped data). Only surface when there's an error.
+  if (!loaded) return null
   if (!rows || rows.length === 0) {
-    return <div style={{ padding: '10px 22px', fontSize: 10, color: UXP.ink4, background: UXP.subtleBg }}>
-      No supplier article data yet for this product.
-      {debugStatus != null && ` (API: ${debugStatus}${debugErr ? ' · ' + debugErr : ''})`}
-    </div>
+    if (debugErr) {
+      return <div style={{ padding: '8px 22px', fontSize: 10, color: UXP.coral }}>Supplier article unavailable: {debugErr}</div>
+    }
+    return null
   }
 
   const a = rows[pickedIdx] ?? rows[0]
