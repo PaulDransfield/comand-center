@@ -71,7 +71,8 @@ export default function LandingPage() {
         @media (max-width: 880px) {
           .cc-hero        { grid-template-columns: 1fr !important; gap: 32px !important; }
           .cc-grid3       { grid-template-columns: 1fr !important; }
-          .cc-navlinks    { display: none !important; }
+          .cc-navlinks    { gap: 12px !important; }
+          .cc-nav-anchor  { display: none !important; }
           .cc-problem-pad { padding: 40px 28px !important; }
         }
       `}</style>
@@ -83,10 +84,10 @@ export default function LandingPage() {
           <span style={{ fontFamily: F.display, fontSize: 19, fontWeight: 600 }}>CommandCenter</span>
         </Link>
         <div className="cc-navlinks" style={{ display: 'flex', gap: 30, alignItems: 'center', fontSize: 14, color: C.ink2 }}>
-          <a href="#how"      style={{ color: 'inherit' }}>How it works</a>
-          <a href="#platform" style={{ color: 'inherit' }}>Platform</a>
-          <a href="#pricing"  style={{ color: 'inherit' }}>Pricing</a>
-          <LanguageSelector variant="inline" onTone="light" />
+          <a href="#how"      className="cc-nav-anchor" style={{ color: 'inherit' }}>How it works</a>
+          <a href="#platform" className="cc-nav-anchor" style={{ color: 'inherit' }}>Platform</a>
+          <a href="#pricing"  className="cc-nav-anchor" style={{ color: 'inherit' }}>Pricing</a>
+          <span className="cc-nav-anchor"><LanguageSelector variant="inline" onTone="light" /></span>
           <Link href="/login" style={inkBtn}>Log in</Link>
           <Link href="/login?mode=signup&plan=founding" style={lavBtn}>Book a demo</Link>
         </div>
