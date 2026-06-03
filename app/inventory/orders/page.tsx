@@ -13,6 +13,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { ProductThumb } from '@/components/ui/ProductThumb'
+import { PageContainer } from '@/components/ui/Layout'
+import { useViewport } from '@/lib/hooks/useViewport'
 
 interface OrderItem {
   product_id:              string
@@ -223,8 +225,8 @@ export default function OrderListPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+      <PageContainer>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
               Order list
@@ -250,13 +252,13 @@ export default function OrderListPage() {
 
         {bizId && (
           <>
-            {/* Source picker */}
+            {/* Source picker — wraps to single column on mobile via flex */}
             <div style={{
               background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
               borderRadius: 8, padding: 14, marginBottom: 14,
-              display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 14, alignItems: 'flex-start',
+              display: 'flex', flexWrap: 'wrap' as const, gap: 14, alignItems: 'flex-start',
             }}>
-              <div>
+              <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                 <div style={smallLabel}>Active prep session(s)</div>
                 {activeSessions.length === 0 ? (
                   <div style={{ fontSize: 11, color: UXP.ink4 }}>
@@ -286,7 +288,7 @@ export default function OrderListPage() {
                   </div>
                 )}
               </div>
-              <div>
+              <div style={{ flex: '1 1 240px', minWidth: 0 }}>
                 <div style={smallLabel}>Pre-orders date range</div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: UXP.ink3 }}>
                   <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
@@ -356,7 +358,7 @@ export default function OrderListPage() {
             )}
           </>
         )}
-      </div>
+      </PageContainer>
     </AppShell>
   )
 }
@@ -371,6 +373,8 @@ function SupplierGroup({
   onRemove: (key: string) => void
   onCopy: () => void
 }) {
+  const tier = useViewport()
+  const isMobile = tier === 'mobile'
   return (
     <div style={{ background: UXP.cardBg, border: `0.5px solid ${UXP.border}`, borderRadius: 8, overflow: 'hidden' }}>
       <div style={{
@@ -383,21 +387,32 @@ function SupplierGroup({
         </button>
       </div>
 
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 80px 100px 100px 1fr 24px',
-        gap: 8, padding: '6px 14px', fontSize: 9, color: UXP.ink4,
-        fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const,
-        background: UXP.cardBg, borderBottom: `0.5px solid ${UXP.border}`,
-      }}>
-        <div>Item</div>
-        <div style={{ textAlign: 'right' as const }}>Need</div>
-        <div>Pack</div>
-        <div>Order</div>
-        <div>Notes</div>
-        <div />
-      </div>
+      {/* Column headers only render on desktop/tablet — mobile cards label inline */}
+      {!isMobile && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 80px 100px 100px 1fr 24px',
+          gap: 8, padding: '6px 14px', fontSize: 9, color: UXP.ink4,
+          fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const,
+          background: UXP.cardBg, borderBottom: `0.5px solid ${UXP.border}`,
+        }}>
+          <div>Item</div>
+          <div style={{ textAlign: 'right' as const }}>Need</div>
+          <div>Pack</div>
+          <div>Order</div>
+          <div>Notes</div>
+          <div />
+        </div>
+      )}
 
-      {rows.map(r => (
+      {rows.map(r => isMobile ? (
+        <OrderRowCard
+          key={r.key}
+          row={r}
+          thumbUrl={imageByProduct[r.key]}
+          onChange={onChange}
+          onRemove={onRemove}
+        />
+      ) : (
         <div key={r.key} style={{
           display: 'grid', gridTemplateColumns: '1fr 80px 100px 100px 1fr 24px',
           gap: 8, padding: '8px 14px', alignItems: 'center',
@@ -458,11 +473,71 @@ function SupplierGroup({
                   aria-label="Remove">×</button>
         </div>
       ))}
+    </div>
+  )
+}
 
-      {/* Supplier-name editor for ad-hoc lines that landed in this group;
-          chef can move a line to a different supplier by editing here.
-          Multi-row supplier rename is rare; per-row inline editor below
-          would clutter — easier to remove + add. */}
+// Mobile card: name on top with thumb + remove on right, then a 2-col
+// grid for needed/pack/order/notes. Larger inputs since touch targets
+// matter more than density here.
+function OrderRowCard({ row, thumbUrl, onChange, onRemove }: {
+  row:      LocalRow
+  thumbUrl: string | null | undefined
+  onChange: (key: string, patch: Partial<LocalRow>) => void
+  onRemove: (key: string) => void
+}) {
+  return (
+    <div style={{
+      padding: 10, borderTop: `0.5px solid ${UXP.border}`,
+      display: 'flex', flexDirection: 'column' as const, gap: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {!row.is_custom && <ProductThumb url={thumbUrl} size="sm" />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {row.is_custom ? (
+            <input
+              type="text"
+              value={row.name}
+              onChange={e => onChange(row.key, { name: e.target.value })}
+              placeholder="Ingredient / item"
+              style={{ ...inputStyle, fontSize: 13, padding: '6px 10px' }}
+            />
+          ) : (
+            <div style={{ fontSize: 13, fontWeight: 500, color: UXP.ink1, wordBreak: 'break-word' as const }}>
+              {row.name}
+            </div>
+          )}
+        </div>
+        <button onClick={() => onRemove(row.key)}
+                style={{ background: 'none', border: 'none', color: UXP.ink3, cursor: 'pointer', fontSize: 18, padding: '4px 8px' }}
+                aria-label="Remove">×</button>
+      </div>
+      <div style={{ display: 'flex', gap: 12, fontSize: 11, color: UXP.ink3 }}>
+        <span><strong style={{ color: UXP.ink2 }}>Need:</strong> {row.needed_qty != null ? `${row.needed_qty} ${row.unit}` : '—'}</span>
+        {row.pack_size != null && row.pack_unit && (
+          <span><strong style={{ color: UXP.ink2 }}>Pack:</strong> {row.pack_size} {row.pack_unit}</span>
+        )}
+      </div>
+      <div>
+        <div style={{ ...smallLabel, marginBottom: 4 }}>Order qty</div>
+        <input
+          type="text"
+          value={row.order_qty}
+          onChange={e => onChange(row.key, { order_qty: e.target.value })}
+          placeholder='e.g. "2 jars" / "10 kg" / "1 box"'
+          style={{ ...inputStyle, fontSize: 13, padding: '6px 10px' }}
+        />
+      </div>
+      <div>
+        <div style={{ ...smallLabel, marginBottom: 4 }}>Notes</div>
+        <input
+          type="text"
+          value={row.notes}
+          onChange={e => onChange(row.key, { notes: e.target.value })}
+          placeholder="Optional notes"
+          style={{ ...inputStyle, fontSize: 13, padding: '6px 10px' }}
+        />
+      </div>
     </div>
   )
 }

@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AppShell from '@/components/AppShell'
 import { UXP } from '@/lib/constants/tokens'
 import { ProductThumb } from '@/components/ui/ProductThumb'
+import { PageContainer } from '@/components/ui/Layout'
 
 interface DishRow {
   id:                  string
@@ -573,8 +574,8 @@ export default function PrepListPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+      <PageContainer>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
               Prep list
@@ -797,10 +798,11 @@ export default function PrepListPage() {
             aggregation, "Save & start prep" persists it.
             ────────────────────────────────────────────────────────────── */}
         {bizId && !activeSession && !sessionLoading && !loadingDishes && dishes.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 16, alignItems: 'start' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
 
             {/* ── LEFT: dish picker + qty inputs ───────────────────── */}
             <div style={{
+              flex: '1 1 380px', minWidth: 0, maxWidth: 480,
               background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
               borderRadius: 8, padding: 14, position: 'sticky' as const, top: 16,
             }}>
@@ -1159,7 +1161,7 @@ export default function PrepListPage() {
             </div>
 
             {/* ── RIGHT: aggregated prep list ───────────────────────── */}
-            <div>
+            <div style={{ flex: '1 1 380px', minWidth: 0 }}>
               {selectedItems.length === 0 ? (
                 <div style={emptyCard}>
                   Pick the dishes you're prepping for from the panel on the left and set the cover count. The
@@ -1359,7 +1361,7 @@ export default function PrepListPage() {
             </div>
           </div>
         )}
-      </div>
+      </PageContainer>
 
       {/* Line-detail modal — works in BOTH prep mode (session line tap)
           and create mode (preview row tap). Shows method + ingredient
