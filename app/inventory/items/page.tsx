@@ -128,26 +128,40 @@ export default function InventoryItemsPage() {
   useEffect(() => { if (bizId) load() }, [bizId, filter, load])
 
   // Batch-fetch supplier-article thumbnails for the currently loaded
-  // items. One round-trip per refresh; silent fallback when none match.
+  // items. The batch endpoint caps at 500 product_ids per call to keep
+  // payload bounded — for businesses with >500 sellable products
+  // (Chicce has ~844, Vero ~760), we have to chunk client-side or the
+  // tail gets silently dropped (looks like "some thumbs load, some
+  // don't"). Multiple in-flight chunks, merged into one state update.
   useEffect(() => {
     const ids = (data?.items ?? []).map(i => i.product_id)
     if (ids.length === 0) return
     const ctrl = new AbortController()
-    fetch('/api/inventory/supplier-article/batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_ids: ids }),
-      cache: 'no-store',
-      signal: ctrl.signal,
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(j => {
-        if (!j?.by_product) return
+    const CHUNK = 500
+    const chunks: string[][] = []
+    for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK))
+    Promise.all(chunks.map(c =>
+      fetch('/api/inventory/supplier-article/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_ids: c }),
+        cache: 'no-store',
+        signal: ctrl.signal,
+      })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+    ))
+      .then(results => {
         const next: Record<string, string | null> = {}
-        for (const pid of ids) next[pid] = j.by_product[pid]?.image_url ?? null
+        for (const pid of ids) next[pid] = null
+        for (const j of results) {
+          if (!j?.by_product) continue
+          for (const pid of Object.keys(j.by_product)) {
+            next[pid] = j.by_product[pid]?.image_url ?? null
+          }
+        }
         setImageByProduct(next)
       })
-      .catch(() => {/* silent */})
     return () => ctrl.abort()
   }, [data])
 

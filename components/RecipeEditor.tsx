@@ -27,6 +27,7 @@
 // drawer they came from.
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useViewport } from '@/lib/hooks/useViewport'
 import { useRouter } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 import { UXP } from '@/lib/constants/tokens'
@@ -458,20 +459,11 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
 
         {summary.ingredients.length > 0 && (
           <>
-            <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
-              padding: '4px 0', fontSize: 9, color: UXP.ink4,
-              letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600,
-              borderBottom: `0.5px solid ${UXP.border}`,
-            }}>
-              <div>Ingredient</div>
-              <div style={{ textAlign: 'right' as const, paddingRight: 6 }}>Qty</div>
-              <div>Unit</div>
-              <div style={{ textAlign: 'right' as const, paddingRight: 6 }}>Waste %</div>
-              <div style={{ textAlign: 'right' as const }}>Line cost</div>
-              <div></div>
-              <div></div>
-            </div>
+            {/* Desktop-only column headers. On mobile the IngredientRow
+                renders as a card with inline label/value pairs so no
+                separate header row makes sense. */}
+            <IngredientColumnHeaders />
+
             {summary.ingredients.map(ing => (
               <IngredientRow key={ing.id}
                 ing={ing}
@@ -1079,6 +1071,28 @@ function PriceVatEditor({ recipe, onSave }: {
   )
 }
 
+// Desktop-only column headers above the ingredient list.
+function IngredientColumnHeaders() {
+  const tier = useViewport()
+  if (tier === 'mobile') return null
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
+      padding: '4px 0', fontSize: 9, color: UXP.ink4,
+      letterSpacing: '0.04em', textTransform: 'uppercase' as const, fontWeight: 600,
+      borderBottom: `0.5px solid ${UXP.border}`,
+    }}>
+      <div>Ingredient</div>
+      <div style={{ textAlign: 'right' as const, paddingRight: 6 }}>Qty</div>
+      <div>Unit</div>
+      <div style={{ textAlign: 'right' as const, paddingRight: 6 }}>Waste %</div>
+      <div style={{ textAlign: 'right' as const }}>Line cost</div>
+      <div></div>
+      <div></div>
+    </div>
+  )
+}
+
 // ── IngredientRow (preserved verbatim from drawer — B1 green-tick) ────
 function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProductEdit, onOpenSubrecipe, onOpenEditModal }: {
   ing: DetailIngredient
@@ -1091,6 +1105,8 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
   onOpenEditModal?: (productId: string) => void
 }) {
   const t = useTranslations('operations.inventory.recipes')
+  const tier = useViewport()
+  const isMobile = tier === 'mobile'
   const [qty, setQty] = useState(String(ing.quantity_stated ?? ing.quantity))
   const [waste, setWaste] = useState(String(ing.waste_pct ?? 0))
   const [expanded, setExpanded] = useState(false)
@@ -1144,11 +1160,16 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
         transition: 'background 400ms ease',
         borderRadius: highlighted ? 4 : 0,
       }}>
-      <div style={{
+      <div style={isMobile ? {
+        display: 'grid',
+        gridTemplateColumns: '60px 60px 1fr',
+        gridTemplateAreas: '"name name close" "qty unit waste" "cost acts acts"',
+        gap: 8, fontSize: 12, alignItems: 'center',
+      } : {
         display: 'grid', gridTemplateColumns: '1fr 80px 60px 60px 90px 56px 28px', gap: 10,
         alignItems: 'center', fontSize: 12,
       }}>
-        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, gridArea: isMobile ? 'name' : undefined }}>
           {/* Canonical product thumbnail — silent fallback when no url. */}
           {!ing.is_subrecipe && <ProductThumb url={imageUrl} size="sm" />}
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -1188,7 +1209,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
           </div>
           </div>
         </div>
-        <div style={{ position: 'relative' as const }}>
+        <div style={{ position: 'relative' as const, gridArea: isMobile ? 'qty' : undefined }}>
           <input type="number" min="0" step="0.01" value={qty}
             onChange={e => setQty(e.target.value)}
             onBlur={() => { const v = Number(qty); const cur = ing.quantity_stated ?? ing.quantity; if (Number.isFinite(v) && v > 0 && v !== cur) onChange({ quantity: v }) }}
@@ -1206,6 +1227,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
           )}
           <style>{`@keyframes cc-ing-saved-fade { 0% { opacity: 0; transform: translateX(-4px); } 15% { opacity: 1; transform: translateX(0); } 80% { opacity: 1; } 100% { opacity: 0; } }`}</style>
         </div>
+        <div style={{ gridArea: isMobile ? 'unit' : undefined }}>
         {ing.is_subrecipe && !ing.base_unit ? (
           <div style={{ color: UXP.ink3, fontSize: 11 }}
             title="This sub-recipe has no yield set. Open it and set a yield to consume it by weight/volume.">
@@ -1218,7 +1240,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
             <select
               value={current}
               onChange={e => { const v = e.target.value; if (v && v !== current) onChange({ unit: v }) }}
-              style={{ ...inputStyle, padding: '3px 4px', fontSize: 11 }}
+              style={{ ...inputStyle, padding: '3px 4px', fontSize: 11, width: '100%' }}
             >
               {!inList && <option value={current}>{current}</option>}
               {ing.is_subrecipe && <option value="portion">portion</option>}
@@ -1226,6 +1248,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
             </select>
           )
         })()}
+        </div>
         <input type="number" min="0" max="95" step="1" value={waste}
           onChange={e => setWaste(e.target.value)}
           onBlur={() => { const v = Number(waste); const cur = ing.waste_pct ?? 0; if (Number.isFinite(v) && v >= 0 && v < 100 && v !== cur) onChange({ waste_pct: v }) }}
@@ -1233,11 +1256,14 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
           style={{ ...inputStyle, padding: '3px 6px', fontSize: 11, textAlign: 'right' as const,
             color: Number(waste) > 0 ? UXP.lavText : UXP.ink4,
             fontWeight: Number(waste) > 0 ? 600 : 400,
+            gridArea: isMobile ? 'waste' : undefined,
           }}
         />
-        <div style={{ textAlign: 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500 }}>
+        <div style={{ textAlign: isMobile ? 'left' : 'right' as const, fontVariantNumeric: 'tabular-nums' as const, color: ing.no_price ? UXP.ink4 : UXP.ink1, fontWeight: 500, gridArea: isMobile ? 'cost' : undefined }}>
+          {isMobile && <span style={{ fontSize: 10, color: UXP.ink4, marginRight: 4 }}>Cost:</span>}
           {ing.line_cost != null ? fmtKr(ing.line_cost) : '—'}
         </div>
+        <div style={{ gridArea: isMobile ? 'acts' : undefined, display: 'flex', justifyContent: isMobile ? 'flex-end' : 'flex-start', alignItems: 'center', gap: 2 }}>
         {ing.is_subrecipe ? (
           <button onClick={() => ing.subrecipe_id && onOpenSubrecipe(ing.subrecipe_id)}
             aria-label={t('detail.openSubrecipe')}
@@ -1247,7 +1273,7 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
               cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
             }}>→</button>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <>
             {onOpenEditModal && ing.product_id && (
               <button onClick={() => onOpenEditModal(ing.product_id!)}
                 aria-label="Edit item (full)" title="Edit item — cost, articles, used-in-recipes"
@@ -1262,11 +1288,13 @@ function IngredientRow({ ing, imageUrl, highlighted, onRemove, onChange, onProdu
                 background: 'transparent', border: 'none', color: expanded ? UXP.lavDeep : UXP.ink4,
                 cursor: 'pointer', padding: '2px 6px', fontSize: 11, fontFamily: 'inherit',
               }}>{expanded ? '▾' : '✎'}</button>
-          </div>
+          </>
         )}
+        </div>
         <button onClick={onRemove} aria-label="Remove" style={{
           background: 'transparent', border: 'none', color: UXP.ink4, cursor: 'pointer',
-          padding: '2px 6px', fontSize: 14,
+          padding: '2px 6px', fontSize: 14, gridArea: isMobile ? 'close' : undefined,
+          justifySelf: isMobile ? 'end' : undefined,
         }}>×</button>
       </div>
 
