@@ -6,16 +6,21 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+// Bottom-bar tabs are the four surfaces the kitchen + owner reach for
+// every service. Everything else moves into the More drawer.
 const TABS = [
-  { label: 'Overview',  href: '/dashboard'  },
-  { label: 'P&L',       href: '/tracker'    },
-  { label: 'Invoices',  href: '/invoices'   },
-  { label: 'Alerts',    href: '/alerts'     },
-  { label: 'More',      href: null          },
+  { label: 'Overview',    href: '/dashboard'              },
+  { label: 'Prep list',   href: '/inventory/recipes/prep' },
+  { label: 'Order list',  href: '/inventory/orders'       },
+  { label: 'Stock count', href: '/inventory/counts'       },
+  { label: 'More',        href: null                      },
 ]
 
 const MORE_ITEMS = [
-  { label: 'Budget vs Actual', href: '/budget'        },
+  { label: 'P&L',              href: '/tracker'        },
+  { label: 'Invoices',         href: '/invoices'       },
+  { label: 'Alerts',           href: '/alerts'         },
+  { label: 'Budget vs Actual', href: '/budget'         },
   { label: 'Scheduling',       href: '/scheduling'     },
   { label: 'Revenue',          href: '/revenue'        },
   { label: 'AI Assistant',     href: '/notebook'       },
