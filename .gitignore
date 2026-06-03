@@ -20,6 +20,8 @@ nextjs/.env*
 
 # Debug
 npm-debug.log*
+scripts/diag/*-run.log
+scripts/diag/*.html
 
 # OS
 .DS_Store

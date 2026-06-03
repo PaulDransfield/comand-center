@@ -64,6 +64,8 @@ export interface ProductLatestPrice {
   fx_rate_used:    number | null    // M088 — diagnostic / UI display ("@ 11.45 SEK")
   density_g_per_ml: number | null   // M120 — for mass↔volume conversion in the cost engine
   density_source:   string | null   // M120 — manual | ai_inferred | convention_default | null
+  weight_per_piece_g:       number | null  // M122 — for mass↔count conversion in the cost engine
+  weight_per_piece_source:  string | null  // M122 — manual | supplier_article | name_parsed | null
 }
 
 export interface CostedIngredient extends IngredientForCosting {
@@ -84,6 +86,9 @@ export interface CostedIngredient extends IngredientForCosting {
   // M120 — density-conversion provenance for UI ("converted via density 0.91 g/ml")
   density_used:        number | null  // the g/ml value the engine actually used for mass↔volume conversion; null when none needed
   density_source:      string | null  // 'manual' | 'ai_inferred' | 'convention_default' | null
+  // M122 — mass↔count conversion provenance
+  weight_per_piece_used:    number | null  // the g/piece value the engine actually used for mass↔count conversion
+  weight_per_piece_source:  string | null  // 'manual' | 'supplier_article' | 'name_parsed' | null
 }
 
 export interface RecipeCostSummary {
@@ -130,6 +135,8 @@ export function computeRecipeCost(
           pack_auto_detected:  false,
           density_used:        null,
           density_source:      null,
+          weight_per_piece_used:    null,
+          weight_per_piece_source:  null,
         }
       }
       const subEntry = index?.get(ing.subrecipe_id)
@@ -151,6 +158,8 @@ export function computeRecipeCost(
           pack_auto_detected:  false,
           density_used:        null,
           density_source:      null,
+          weight_per_piece_used:    null,
+          weight_per_piece_source:  null,
         }
       }
       // Recurse — pass a copy of ancestors so siblings can re-enter the
@@ -246,6 +255,8 @@ export function computeRecipeCost(
         pack_auto_detected:  false,
         density_used:        null,
         density_source:      null,
+        weight_per_piece_used:    null,
+        weight_per_piece_source:  null,
       }
     }
 
@@ -306,6 +317,8 @@ export function computeRecipeCost(
     let lineCost: number | null = null
     let unitMismatch = false
     let densityUsed: number | null = null
+    let weightPerPieceUsed: number | null = null
+    const weightPerPiece = p?.weight_per_piece_g ?? null
     // M120 — density-bridge for mass↔volume. If recipe asks "30 g of
     // olive oil" but supplier base is ml, divide by density to get ml,
     // then cost via cost-per-ml. Same in reverse for ml ingredients
@@ -325,6 +338,22 @@ export function computeRecipeCost(
         // owner means by "1 of these". Pack-derived base_unit is irrelevant
         // here; the supplier sells per st and the recipe specifies in st.
         lineCost = Math.round(ing.quantity * (unitPrice ?? 0) * 100) / 100
+      } else if (weightPerPiece != null && weightPerPiece > 0 &&
+                 baseUnit === 'st' && unitFamily(ing.unit) === 'mass') {
+        // M122 — mass↔count bridge via weight_per_piece_g.
+        // Recipe asks "30 g of egg"; product is base_unit='st' with
+        // weight_per_piece_g=60. Convert grams → pieces, then cost via
+        // cost_per_base_unit (kr/st).
+        const qtyInGrams = convertQuantity(ing.quantity, ing.unit, 'g')
+        if (qtyInGrams != null) {
+          const pieces = qtyInGrams / weightPerPiece
+          lineCost = Math.round(pieces * costPerBase * 100) / 100
+          weightPerPieceUsed = weightPerPiece
+          unitMismatch = false
+        } else {
+          lineCost = null
+          unitMismatch = true
+        }
       } else if (density != null && density > 0) {
         // Mass↔volume bridge via density. First normalise both sides to
         // their canonical SI unit (g or ml).
@@ -396,6 +425,8 @@ export function computeRecipeCost(
       pack_auto_detected:  autoParsed,
       density_used:        densityUsed,
       density_source:      densityUsed != null ? (p?.density_source ?? null) : null,
+      weight_per_piece_used:    weightPerPieceUsed,
+      weight_per_piece_source:  weightPerPieceUsed != null ? (p?.weight_per_piece_source ?? null) : null,
     }
   })
 
@@ -584,11 +615,11 @@ async function getProductLatestPricesLeaf(
     if (DENSITY_COLUMNS_AVAILABLE) {
       const { data, error: pErr } = await db
         .from('products')
-        .select('id, name, invoice_unit, pack_size, base_unit, density_g_per_ml, density_source')
+        .select('id, name, invoice_unit, pack_size, base_unit, density_g_per_ml, density_source, weight_per_piece_g, weight_per_piece_source')
         .in('id', slice)
       if (pErr) {
-        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message)) {
-          DENSITY_COLUMNS_AVAILABLE = false   // M120 not applied yet — stop trying.
+        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message) || /weight_per_piece_g.*does not exist/i.test(pErr.message)) {
+          DENSITY_COLUMNS_AVAILABLE = false   // M120 / M122 not applied yet — stop trying.
         } else {
           throw new Error(`[recipe-cost] products lookup failed: ${pErr.message}`)
         }
@@ -614,6 +645,8 @@ async function getProductLatestPricesLeaf(
         latest_price_sek: null, fx_rate_used: null,
         density_g_per_ml: (p as any).density_g_per_ml != null ? Number((p as any).density_g_per_ml) : null,
         density_source:   (p as any).density_source ?? null,
+        weight_per_piece_g:      (p as any).weight_per_piece_g != null ? Number((p as any).weight_per_piece_g) : null,
+        weight_per_piece_source: (p as any).weight_per_piece_source ?? null,
       })
     }
   }
@@ -697,6 +730,8 @@ async function getProductLatestPricesLeaf(
       latest_price_sek: priceSek, fx_rate_used: fxRateUsed,
       density_g_per_ml: existing?.density_g_per_ml ?? null,
       density_source:   existing?.density_source ?? null,
+      weight_per_piece_g:      existing?.weight_per_piece_g ?? null,
+      weight_per_piece_source: existing?.weight_per_piece_source ?? null,
     })
   }
   return out
@@ -740,10 +775,10 @@ export async function getProductLatestPrices(
     if (DENSITY_COLUMNS_AVAILABLE) {
       const { data, error: pErr } = await db
         .from('products')
-        .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency, density_g_per_ml, density_source')
+        .select('id, name, invoice_unit, pack_size, base_unit, source_recipe_id, price_override, price_override_currency, density_g_per_ml, density_source, weight_per_piece_g, weight_per_piece_source')
         .in('id', slice)
       if (pErr) {
-        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message)) {
+        if ((pErr as any).code === '42703' || /density_g_per_ml.*does not exist/i.test(pErr.message) || /weight_per_piece_g.*does not exist/i.test(pErr.message)) {
           DENSITY_COLUMNS_AVAILABLE = false
         } else {
           throw new Error(`[recipe-cost] products(public) lookup failed: ${pErr.message}`)
@@ -775,6 +810,8 @@ export async function getProductLatestPrices(
         fx_rate_used:      null,
         density_g_per_ml:  (p as any).density_g_per_ml != null ? Number((p as any).density_g_per_ml) : null,
         density_source:    (p as any).density_source ?? null,
+        weight_per_piece_g:      (p as any).weight_per_piece_g != null ? Number((p as any).weight_per_piece_g) : null,
+        weight_per_piece_source: (p as any).weight_per_piece_source ?? null,
       })
       if (p.price_override != null) {
         overrideProducts.push({
