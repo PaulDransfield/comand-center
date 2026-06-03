@@ -70,21 +70,36 @@ export default function UserMenu() {
 
       {open && (
         <div
+          className="cc-user-menu-pop"
           style={{
             position:     'absolute' as const,
             top:          'calc(100% + 6px)',
             right:        0,
             minWidth:     220,
+            maxWidth:     'calc(100vw - 16px)',
             background:   UXP.cardBg,
             border:       `0.5px solid ${UXP.border}`,
             borderRadius: UXP.r_md,
             padding:      6,
-            zIndex:       40,
+            zIndex:       400,
             boxShadow:    '0 8px 24px rgba(58,53,80,0.12)',
             display:      'grid',
             gap:          4,
           }}
         >
+          <style>{`
+            @media (max-width: 600px) {
+              .cc-user-menu-pop {
+                position: fixed !important;
+                top: auto !important;
+                bottom: 8px !important;
+                left: 8px !important;
+                right: 8px !important;
+                min-width: 0 !important;
+                max-width: none !important;
+              }
+            }
+          `}</style>
           <div style={{
             padding:    '6px 8px',
             fontSize:   10,
