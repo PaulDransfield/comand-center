@@ -256,5 +256,16 @@ if (APPLY) {
 }
 
 function branchSlug(arg) {
-  return ({ '1':'single_container_weight','2':'count_carton','3':'volume_parsed','4':'multi_pack_count', 'all':'all' })[arg] ?? arg
+  // Slug numbers MUST match the byBranch declaration order at the top
+  // of the file so the DRY report's branch labels and the --branch=N
+  // CLI flag agree.
+  return ({
+    '1': 'count_carton',
+    '2': 'volume_from_label',
+    '3': 'volume_from_name',
+    '4': 'viktvara',
+    '5': 'single_container_weight',
+    '6': 'multi_pack_count',
+    'all': 'all',
+  })[arg] ?? arg
 }

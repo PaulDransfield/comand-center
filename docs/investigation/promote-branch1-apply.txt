@@ -1,0 +1,176 @@
+Loading supplier_articles…
+Loaded 725 supplier_articles rows.
+Aliases pointing at scraped articles: 738
+Distinct products: 685
+
+=== Proposals by branch ===
+  count_carton: 32
+  volume_from_label: 6
+  volume_from_name: 13
+  viktvara: 7
+  single_container_weight: 33
+  multi_pack_count: 0
+
+Skipped: owner_set=0, no_change=330, conflict=47, branch_skip=217
+
+--- count_carton (showing first 8 of 32) ---
+  • "Lock Salladsskål Ru Rpet40"
+      ∅ ∅ (∅) → 160 st  conf=high
+      Label "160 st/Kartong" → 160 pieces per buy unit
+  • "Salladsskål Bagasse900ml40"
+      ∅ ∅ (∅) → 160 st  conf=high
+      Label "160 st/Kartong" → 160 pieces per buy unit
+  • "Kvittorul 80x80x12 75m The"
+      ∅ ∅ (∅) → 30 st  conf=high
+      Label "30 st/Kartong" → 30 pieces per buy unit
+  • "Papperssugrör 6x200mm 250-pack"
+      ∅ ∅ (∅) → 250 st  conf=high
+      Label "250 st/Innerförpackning" → 250 pieces per buy unit
+  • "Papperssugrör 6x150-pack"
+      ∅ ∅ (∅) → 250 st  conf=high
+      Label "250 st/Innerförpackning" → 250 pieces per buy unit
+  • "Bakplåtspapper53x32,5cm100"
+      ∅ ∅ (∅) → 1000 st  conf=high
+      Label "1000 st/Kartong" → 1000 pieces per buy unit
+  • "Kulpenna Nord Ecocl Blå 50"
+      ∅ ∅ (∅) → 50 st  conf=high
+      Label "50 st/Paket" → 50 pieces per buy unit
+  • "Urnfilter 457/203mm Vit 50-pack"
+      ∅ ∅ (∅) → 500 st  conf=high
+      Label "500 st/Kartong" → 500 pieces per buy unit
+
+--- volume_from_label (showing first 8 of 6) ---
+  • "Syrup Vattenmelon Mtsr 70c"
+      1 st (invoice_unit_inferred) → 700 ml  conf=high
+      Label "0,70 l/Styck" → 700 ml per buy unit
+  • "Kalvfond Sign FÄRd Oscar 1"
+      1 st (invoice_unit_inferred) → 1000 ml  conf=high
+      Label "1,00 l/Styck" → 1000 ml per buy unit
+  • "Kyckl Fond Rost Färd Oscar"
+      1 st (invoice_unit_inferred) → 1000 ml  conf=high
+      Label "1,00 l/Styck" → 1000 ml per buy unit
+  • "Flora Prof Plant Veg 31% 1"
+      1 st (invoice_unit_inferred) → 1000 ml  conf=high
+      Label "1,00 l/Styck" → 1000 ml per buy unit
+  • "TIGER SÅS ORIGINAL 3,785L"
+      3785 ml (name_parsed) → 3780 ml  conf=high
+      Label "3,78 l/Styck" → 3780 ml per buy unit
+  • "Sweet Chilisås Exofun 700m"
+      1 st (invoice_unit_inferred) → 700 ml  conf=high
+      Label "0,70 l/Styck" → 700 ml per buy unit
+
+--- volume_from_name (showing first 8 of 13) ---
+  • "San Pellegr Aran Dolce 20c"
+      ∅ ∅ (∅) → 200 ml  conf=high
+      Volume "20cl" from name → 200 ml
+  • "Scrappy Bitter Kanel 14,8c"
+      1 st (invoice_unit_inferred) → 148 ml  conf=high
+      Volume "14,8cl" from name → 148 ml
+  • "Hernö Gin Old Tom Eko Fl 5"
+      1 st (invoice_unit_inferred) → 500 ml  conf=high
+      Volume "50 cl" from name → 500 ml
+  • "Droppflaska Svart M Pipe6c"
+      1 st (invoice_unit_inferred) → 60 ml  conf=high
+      Volume "6cl" from name → 60 ml
+  • "Lock Dressingbägare 60ml10"
+      ∅ ∅ (∅) → 60 ml  conf=high
+      Volume "60ml" from name → 60 ml
+  • "Vispgrädde Rama Lfri 30% 1"
+      ∅ ∅ (∅) → 1000 ml  conf=high
+      Volume "1L" from name → 1000 ml
+  • "Gräddsifon Dessert Rfr 50c"
+      1 st (invoice_unit_inferred) → 500 ml  conf=high
+      Volume "50cl" from name → 500 ml
+  • "St Germain Fläderlikör 70c"
+      1 st (invoice_unit_inferred) → 700 ml  conf=high
+      Volume "70cl" from name → 700 ml
+
+--- viktvara (showing first 8 of 7) ---
+  • "Fläskfile Hel Puts Fi 690g"
+      690 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+  • "Lax Krö Skiv 0,9-1,5kg"
+      1500 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+  • "Gorgonzola Dolce Dop 1,5kg"
+      1500 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+  • "Tryffelsalami 1,5kg"
+      1500 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+  • "Hjortytterfile 1,1-1,8kg"
+      1800 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+  • "Lax Krö Skiv Df 1,3-1,7kg"
+      1700 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+  • "Dovhjortytt File Se Df 0,5kg"
+      500 g (name_parsed) → 1000 g  conf=high
+      Label "Viktvara" with unit=KG → 1000 g (1 kg)
+
+--- single_container_weight (showing first 8 of 33) ---
+  • "Fikon St"
+      1 st (invoice_unit_inferred) → 50 g  conf=high
+      Unit=ST treated as single container, net_weight=50g
+  • "Lime St"
+      1 st (invoice_unit_inferred) → 83 g  conf=high
+      Unit=ST treated as single container, net_weight=83g
+  • "Sambal Harissa Chilipa 380"
+      1 st (invoice_unit_inferred) → 380 g  conf=high
+      Unit=ST treated as single container, net_weight=380g
+  • "Sallad Roman Se"
+      1 st (invoice_unit_inferred) → 250 g  conf=high
+      Unit=ST treated as single container, net_weight=250g
+  • "Blekselleri EKO"
+      1 st (invoice_unit_inferred) → 400 g  conf=high
+      Unit=ST treated as single container, net_weight=400g
+  • "Majsstärkelse Maizena 2,5k"
+      1 st (invoice_unit_inferred) → 2500 g  conf=high
+      Unit=ST treated as single container, net_weight=2500g
+  • "Feta Ost Spillbit Pdo 1kg"
+      1000 g (name_parsed) → 1500 g  conf=high
+      Unit=ST treated as single container, net_weight=1500g
+  • "Mutti Pizzasås Classi 4,1k"
+      1 st (invoice_unit_inferred) → 4100 g  conf=high
+      Unit=ST treated as single container, net_weight=4100g
+
+=== CONFLICTS — needs owner review (47, showing first 12) ===
+  • "KYCKLFILE KY 2,5KG"  (viktvara)
+      currently 2500 g   vs   MS implies 1000 g
+      MS art 140029 "Kycklingbröstfilé utan innerfilé 2,5kg" unit=KG net=2500g label="Viktvara"
+  • "Kikärtor Påse 3kg Lin"  (single_container_weight)
+      currently 3000 g   vs   MS implies 15000 g
+      MS art 119161 "Kikärtor påse 5x3kg" unit=ST net=15000g label="3,00 kg/Styck"
+  • "Svamp Champinjon 3,000 Kg"  (viktvara)
+      currently 3000 g   vs   MS implies 1000 g
+      MS art 108902 "Champinjon" unit=KG net=1000g label="Viktvara"
+  • "Ägg Lv L Frig 30p 2,04kg"  (multi_pack_count)
+      currently 2040 g   vs   MS implies 120 st
+      MS art 101002 "Ägg lösvikt frigående L 30p 2,04kg" unit=KRT net=8160g label="8,16 kg/Kartong"
+  • "Hönsbuljong Pasta 1kg"  (volume_from_label)
+      currently 1000 g   vs   MS implies 1000 ml
+      MS art 237768 "Hönsbuljong pasta 1kg" unit=ST net=1000g label="1,00 l/Styck"
+  • "Kalvhögrev Rose Nl 5kg"  (viktvara)
+      currently 5000 g   vs   MS implies 1000 g
+      MS art 181610 "Kalvhögrev rose 5kg" unit=KG net=5000g label="Viktvara"
+  • "Chorizo Ibérico 1/4kg"  (viktvara)
+      currently 4000 g   vs   MS implies 1000 g
+      MS art 132415 "Chorizo Iberico 1kg" unit=KG net=1000g label="Viktvara"
+  • "Manchego 6 mån 37% 3kg"  (viktvara)
+      currently 3000 g   vs   MS implies 1000 g
+      MS art 107863 "Manchego 6mån 37% 3kg" unit=KG net=3000g label="Viktvara"
+  • "Pannoumi Stek Skiv 12x90g"  (single_container_weight)
+      currently 90 g   vs   MS implies 1080 g
+      MS art 141391 "Pannoumi Stek & Grillost skivad 12x90g" unit=ST net=1080g label="1,08 kg/Styck"
+  • "Quinoa Röd 500g S"  (single_container_weight)
+      currently 500 g   vs   MS implies 3000 g
+      MS art 132247 "Quinoa Röd 500g" unit=ST net=3000g label="0,50 kg/Styck"
+  • "Tortilla Wrap 28cm 110g/1,"  (single_container_weight)
+      currently 110 g   vs   MS implies 6600 g
+      MS art 133237 "Tortilla Wrap Glutenfri 28cm 110g/1,1kg" unit=ST net=6600g label="1,10 kg/Styck"
+  • "KALVYTTERFILE 2,5KG SK Kött fr Sverige"  (viktvara)
+      currently 2500 g   vs   MS implies 1000 g
+      MS art 135493 "Kalvytterfilé 2,5kg" unit=KG net=2500g label="Viktvara"
+
+=== APPLYING 33 ===
+Updated: 33 / 33
