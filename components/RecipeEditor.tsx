@@ -666,8 +666,11 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
 
 // ── BackLink ──────────────────────────────────────────────────────────
 function BackLink({ router }: { router: ReturnType<typeof useRouter> }) {
+  // router.refresh() invalidates the App Router cache so the recipes
+  // list refetches — without this, toggling is_subrecipe (or any
+  // recipe edit) doesn't surface on the list page until a hard reload.
   return (
-    <button onClick={() => router.push('/inventory/recipes')} style={{
+    <button onClick={() => { router.push('/inventory/recipes'); router.refresh() }} style={{
       background: 'transparent', border: 'none', cursor: 'pointer',
       color: UXP.ink3, fontSize: 12, padding: 0, marginBottom: 10,
       fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 4,
