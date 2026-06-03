@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const db = createAdminClient()
   const { data: r, error: rErr } = await db
     .from('recipes')
-    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, updated_at')
+    .select('id, business_id, name, type, menu_price, selling_price_ex_vat, vat_rate, channel, portions, yield_amount, yield_unit, notes, method, portions_per_cover, is_subrecipe, updated_at')
     .eq('id', params.id)
     .maybeSingle()
   if (rErr)  return NextResponse.json({ error: rErr.message }, { status: 500 })
@@ -92,6 +92,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.type !== undefined)       patch.type       = body.type ? String(body.type).trim() : null
   if (body.notes !== undefined)      patch.notes      = body.notes ? String(body.notes).trim() : null
   if (body.method !== undefined)     patch.method     = body.method ? String(body.method).trim().slice(0, 20000) : null
+  if (body.is_subrecipe !== undefined) patch.is_subrecipe = body.is_subrecipe === true
   if (body.portions !== undefined) {
     const pt = Math.max(1, Math.floor(Number(body.portions)))
     if (!Number.isFinite(pt)) return NextResponse.json({ error: 'portions must be a positive integer' }, { status: 400 })

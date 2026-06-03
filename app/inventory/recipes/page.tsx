@@ -81,6 +81,7 @@ export default function InventoryRecipesPage() {
   const [viewFilter, setViewFilter] = useState<'dishes' | 'subrecipes' | 'all'>('dishes')
   const DISH_TYPES = new Set(['starter', 'main', 'pasta', 'pizza', 'dessert', 'drink', 'cocktail', 'side'])
   const isDish = (r: any) =>
+    r.is_subrecipe === true ? false :
     (r.selling_price_ex_vat != null && Number(r.selling_price_ex_vat) > 0)
     || (r.menu_price != null && Number(r.menu_price) > 0)
     || (r.type && DISH_TYPES.has(String(r.type).toLowerCase()))
@@ -327,6 +328,7 @@ function BulkImportModal({ bizId, onClose, onSaved }: { bizId: string; onClose: 
             method:                d.method ?? null,
             yield_amount:          d.yield_amount,
             yield_unit:            d.yield_unit,
+            is_subrecipe:          d.is_subrecipe === true,
           }),
         })
         const j = await r.json()

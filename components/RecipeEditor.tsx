@@ -61,6 +61,7 @@ interface DetailResponse {
     yield_amount?: number | null
     yield_unit?:   string | null
     method?: string | null
+    is_subrecipe?: boolean
   }
   summary: {
     food_cost: number; food_pct: number | null; gp_pct: number | null; gp_kr: number | null
@@ -370,11 +371,13 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
 
   const { recipe, summary } = data
   const isIncomplete = summary.missing_prices > 0 || summary.unit_mismatches > 0
-  const isSubRecipe = !(
-    (recipe.selling_price_ex_vat != null && Number(recipe.selling_price_ex_vat) > 0) ||
-    (recipe.menu_price != null && Number(recipe.menu_price) > 0) ||
-    (recipe.type && DISH_TYPES.has(String(recipe.type).toLowerCase()))
-  ) || (recipe.type != null && SUB_TYPES.has(String(recipe.type).toLowerCase()))
+  const isSubRecipe = recipe.is_subrecipe === true || (
+    !(
+      (recipe.selling_price_ex_vat != null && Number(recipe.selling_price_ex_vat) > 0) ||
+      (recipe.menu_price != null && Number(recipe.menu_price) > 0) ||
+      (recipe.type && DISH_TYPES.has(String(recipe.type).toLowerCase()))
+    ) || (recipe.type != null && SUB_TYPES.has(String(recipe.type).toLowerCase()))
+  )
 
   function jumpTo(ingId: string) {
     const el = document.getElementById(`ing-row-${ingId}`)
@@ -404,12 +407,31 @@ export function RecipeEditor({ recipeId, bizId }: { recipeId: string | null; biz
               {RECIPE_TYPES.map(k => <option key={k} value={k}>{t(`type.${k}`)}</option>)}
             </select>
             <InlineEditName name={recipe.name} onSave={(v) => patchRecipe({ name: v })} />
-            <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 4 }}>
-              {recipe.portions} portion{recipe.portions === 1 ? '' : 's'}
+            <div style={{ fontSize: 11, color: UXP.ink4, marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span>{recipe.portions} portion{recipe.portions === 1 ? '' : 's'}</span>
               {recipe.yield_amount && recipe.yield_unit && (
-                <> · yields <strong>{recipe.yield_amount} {recipe.yield_unit}</strong> per portion</>
+                <span>· yields <strong>{recipe.yield_amount} {recipe.yield_unit}</strong> per portion</span>
               )}
-              {isSubRecipe && <> · sub-recipe</>}
+              <span>·</span>
+              <label
+                title="Treat as sub-recipe: shows in the Sub-recipes filter + ingredient picker. Override the auto-inference (e.g. mark a Tiramisu Whole Tray as sub even though type=dessert)."
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '2px 8px', borderRadius: 999,
+                  background: isSubRecipe ? UXP.lavFill : 'transparent',
+                  border: `0.5px solid ${isSubRecipe ? UXP.lav : UXP.border}`,
+                  color: isSubRecipe ? UXP.lavText : UXP.ink3,
+                  fontSize: 11, cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSubRecipe}
+                  onChange={e => patchRecipe({ is_subrecipe: e.target.checked })}
+                  style={{ margin: 0, cursor: 'pointer' }}
+                />
+                Sub-recipe
+              </label>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
