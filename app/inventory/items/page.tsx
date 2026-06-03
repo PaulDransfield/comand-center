@@ -19,6 +19,8 @@ import { UXP } from '@/lib/constants/tokens'
 import { fmtKr } from '@/lib/format'
 import { EditItemModal } from '@/components/EditItemModal'
 import { ProductThumb } from '@/components/ui/ProductThumb'
+import { PageContainer, MetricCardRow } from '@/components/ui/Layout'
+import { useViewport } from '@/lib/hooks/useViewport'
 
 interface CatalogueItem {
   product_id:           string
@@ -71,6 +73,8 @@ type SortKey = 'name' | 'latest_price' | 'change_pct' | 'observation_count' | 'l
 export default function InventoryItemsPage() {
   const router = useRouter()
   const t = useTranslations('operations.inventory.items')
+  const tier = useViewport()
+  const isMobile = tier === 'mobile'
   const [bizId,    setBizId]    = useState<string | null>(null)
   const [filter,   setFilter]   = useState<string>('sellable')
   const [data,     setData]     = useState<CatalogueResponse | null>(null)
@@ -301,8 +305,8 @@ export default function InventoryItemsPage() {
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 1280, padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+      <PageContainer>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: UXP.ink1, letterSpacing: '-0.01em' }}>
               {t('title')}
@@ -429,15 +433,13 @@ export default function InventoryItemsPage() {
         )}
 
         {/* KPI strip */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16,
-        }}>
+        <MetricCardRow style={{ marginBottom: 16 }}>
           <Stat label={t('kpiItems')} value={String(data?.counts?.all ?? 0)} />
           <Stat label={t('kpiObservations')} value={totalObservations.toLocaleString('en-GB')} />
           <Stat label={t('kpiLatestTotal')} value={fmtKr(totalRecent)} />
           <Stat label={t('kpiHikes')} value={String(creeping)}
                 tone={creeping > 0 ? 'coral' : 'ink'} />
-        </div>
+        </MetricCardRow>
 
         {/* Filters + search */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' as const, alignItems: 'center' }}>
@@ -517,7 +519,20 @@ export default function InventoryItemsPage() {
           </div>
         )}
 
-        {!loading && items.length > 0 && (
+        {!loading && items.length > 0 && isMobile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {items.map(it => (
+              <ItemCard
+                key={it.product_id}
+                item={it}
+                thumbUrl={imageByProduct[it.product_id]}
+                onClick={() => setEditingProductId(it.product_id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {!loading && items.length > 0 && !isMobile && (
           <div style={{
             background: UXP.cardBg, border: `0.5px solid ${UXP.border}`,
             borderRadius: 8, overflow: 'hidden',
@@ -592,7 +607,7 @@ export default function InventoryItemsPage() {
             </table>
           </div>
         )}
-      </div>
+      </PageContainer>
 
       {/* Session 25 Part A2 — EditItemModal as the canonical row-click
           target. The same component the recipe drawer uses; opening from
@@ -632,6 +647,84 @@ function Th({ label, k, sortKey, sortDesc, onSort, align = 'left', noSort = fals
     }} onClick={() => !noSort && onSort(k)}>
       {label}{isActive ? (sortDesc ? ' ↓' : ' ↑') : ''}
     </th>
+  )
+}
+
+// Mobile card render for one item row. Primary line = thumb + name (+
+// recipe-sourced + needs-attention badges). Body shows price (with
+// delta color), category, and supplier. Tap opens the same
+// EditItemModal as the desktop row click. Last-seen date + observation
+// count are intentionally dropped on mobile — they're audit numbers,
+// not action-blockers.
+function ItemCard({ item, thumbUrl, onClick }: {
+  item:     CatalogueItem
+  thumbUrl: string | null | undefined
+  onClick:  () => void
+}) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        padding: 10,
+        background: UXP.cardBg,
+        border: `0.5px solid ${UXP.border}`,
+        borderRadius: 8,
+        cursor: 'pointer',
+        display: 'flex',
+        gap: 10,
+      }}
+    >
+      <ProductThumb url={thumbUrl} size="md" />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ fontWeight: 600, color: UXP.ink1, fontSize: 13, lineHeight: 1.3, wordBreak: 'break-word' }}>
+            {item.name}
+          </div>
+          <div style={{
+            fontSize: 13, fontWeight: 600,
+            color: changeColor(item.change_pct),
+            fontVariantNumeric: 'tabular-nums' as const,
+            whiteSpace: 'nowrap' as const,
+          }}>
+            {item.latest_price != null ? fmtKr(item.latest_price) : '—'}
+            {item.latest_unit && item.latest_price != null && (
+              <span style={{ fontSize: 10, color: UXP.ink4 }}> /{item.latest_unit}</span>
+            )}
+          </div>
+        </div>
+        <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap' as const, gap: 6, alignItems: 'center' }}>
+          <CategoryTag c={item.category} />
+          {item.change_pct != null && (
+            <span style={{
+              fontSize: 10, fontWeight: 500,
+              color: changeColor(item.change_pct),
+              fontVariantNumeric: 'tabular-nums' as const,
+            }}>
+              {item.change_pct >= 0 ? '+' : ''}{(item.change_pct * 100).toFixed(1)}%
+            </span>
+          )}
+          {(item.latest_supplier ?? item.default_supplier) && (
+            <span style={{ fontSize: 10, color: UXP.ink3 }}>
+              · {item.latest_supplier ?? item.default_supplier}
+            </span>
+          )}
+          {item.is_recipe_sourced && (
+            <span style={{
+              fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+              padding: '1px 6px', background: UXP.lavFill, color: UXP.lavText,
+              borderRadius: 3, textTransform: 'uppercase' as const,
+            }}>recipe</span>
+          )}
+          {item.attention_reasons?.map(r => (
+            <span key={r} style={{
+              fontSize: 9, fontWeight: 600,
+              padding: '1px 6px', background: '#fef3e0', color: UXP.coral,
+              borderRadius: 3, letterSpacing: '0.02em',
+            }}>{REASON_LABEL[r]}</span>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
