@@ -1,0 +1,132 @@
+
+=== Chicce ===
+Orphans considered: 57
+Eligible auto-merges: 26
+
+  • orphan "Argentinsk kummelfilé 110/220 MSC"
+    → merge into owner "Stillahavskummelfilé 110/220 MSC"
+    article=108586, 4 matching line(s)
+
+  • orphan "HARICOTS VERTS 2,5KG, Nyckelhål;"
+    → merge into owner "Haricots Verts 2,5kg"
+    article=635086, 13 matching line(s)
+
+  • orphan "HASSELNÖTSKÄRNA BLANCH 1KG Nyckelhål;"
+    → merge into owner "Hasselnötskärna Blanch 1kg"
+    article=621102, 5 matching line(s)
+
+  • orphan "Rödingfile färsk / salvelinus alpinus / od. Sverig"
+    → merge into owner "Rödingfile färsk / salvelinus alpinus / od. Sverig tors"
+    article=121155, 11 matching line(s)
+
+  • orphan "Rödingfile färsk / salvelinus alpinus / od. Sverige"
+    → merge into owner "Rödingfile färsk / salvelinus alpinus / od. Sverig tors"
+    article=121155, 11 matching line(s)
+
+  • orphan "Oxfilésvans"
+    → merge into owner "Oxfilé svans 2,5kg x 2st (Sverige)"
+    article=638, 13 matching line(s)
+
+  • orphan "Villa Massa Limoncello 50cl"
+    → merge into owner "Villa Massa Limoncello 50c"
+    article=712836, 9 matching line(s)
+
+  • orphan "Kallrökt lax skivad fryst"
+    → merge into owner "Kallrökt lax skivad fryst Vinga Seafood"
+    article=101069, 17 matching line(s)
+
+  • orphan "Tvål & Shampoo ULTRA 2,5L"
+    → merge into owner "Tvål & Schampo ULTRA 2,5L (2/fp)"
+    article=382500, 4 matching line(s)
+
+  • orphan "Hummerkött vac 320g * MSC"
+    → merge into owner "Hummerkött vac 300g * MSC"
+    article=106116, 7 matching line(s)
+
+  • orphan "Nitrilhandske Puderfri Blå L (200/infp)"
+    → merge into owner "Nitrilhandskar Puderfri L (200/infp)"
+    article=220256L, 8 matching line(s)
+
+  • orphan "HJORTYTTERFILE 1,1-1,8KG Ursprungsland:Nya Zeeland"
+    → merge into owner "Hjortytterfile 1,1-1,8kg"
+    article=377325, 3 matching line(s)
+
+  • orphan "KÖRSBÄR UKÄ 2,5KG Nyckelhål;"
+    → merge into owner "Körsbär Ukä 2,5kg"
+    article=402059, 6 matching line(s)
+
+  • orphan "Oxfilé svans 2,5kg x 2st"
+    → merge into owner "Oxfilé svans 2,5kg x 2st (Sverige)"
+    article=638, 14 matching line(s)
+
+  • orphan "Il Fattorino Bianco Eko 75eg"
+    → merge into owner "Il Fattorino Bianco VdI Ekologisk 13% 75cl engångsglas"
+    article=2660414, 17 matching line(s)
+
+(DRY — re-run with --apply to merge)
+
+=== Vero ===
+Orphans considered: 105
+Eligible auto-merges: 38
+
+  • orphan "Pagus Bisano Valp Rip Doc 75eg"
+    → merge into owner "Pagus Bisano Valpolicella Ripasso DOC 14% 75cl Engångsglas"
+    article=2531814, 23 matching line(s)
+
+  • orphan "MOZZ TAGLIO NAPOLI OLATT 2,5kg TRÅG OLATT 2,5KG"
+    → merge into owner "Mozzarella Taglio Napoli 2,5kg Tråg"
+    article=13671, 7 matching line(s)
+
+  • orphan "Lok Hallon/Rabarber 33cl Burk"
+    → merge into owner "Torrkärl/Torkrulle M2 Gul"
+    article=K01, 12 matching line(s)
+
+  • orphan "Krusovice Imperial 5,0% 30l fat"
+    → merge into owner "Krusovice Imperial 5,0% 30L"
+    article=1165491, 7 matching line(s)
+
+  • orphan "Citroner Bas Lösv."
+    → merge into owner "Citron Bas Lösvikt"
+    article=27359360, 6 matching line(s)
+
+  • orphan "Heineken 5,0 30lf"
+    → merge into owner "Heineken 5% 30l Fat"
+    article=1101191, 12 matching line(s)
+
+  • orphan "Chardonnay 75eg"
+    → merge into owner "Chardonnay 875ml 75cl"
+    article=2528114, 6 matching line(s)
+
+  • orphan "Getost Chevre Rulle BE ca1kg"
+    → merge into owner "Getost Chèvre Rulle BE ca 1kg"
+    article=104575, 38 matching line(s)
+
+  • orphan "Cotes Du Rhone Gentil 75eg"
+    → merge into owner "Ogier Côtes du Rhône Gentilhomme 14,5% 75cl"
+    article=2583814, 8 matching line(s)
+
+  • orphan "Krusovice Imper 5,0 30lf"
+    → merge into owner "Krusovice Imperial 5,0% 30L"
+    article=1165491, 25 matching line(s)
+
+  • orphan "Schweiger Bayris Hell 4,9 30lf"
+    → merge into owner "Schweiger Bayrisch Hell 4,9% 30L"
+    article=2001491, 16 matching line(s)
+
+  • orphan "Briska Persika 4,5% 24p 33cl"
+    → merge into owner "Briska Halvtorr Riesling Persika 4,5% 24x33cl"
+    article=1704711, 8 matching line(s)
+
+  • orphan "Beefeater Lond Dry Gin 40% 1x0,70 Bot"
+    → merge into owner "Beefeater London Dry Gin 40% 70cl"
+    article=35058, 14 matching line(s)
+
+  • orphan "Nipozzano Riserva Chia 6p 75eg"
+    → merge into owner "Nipozzano Riserva Chianti 6p 75cl"
+    article=2552614, 4 matching line(s)
+
+  • orphan "Tor Torkrulle M2 Gul"
+    → merge into owner "Torrkärl/Torkrulle M2 Gul"
+    article=K01, 7 matching line(s)
+
+(DRY — re-run with --apply to merge)

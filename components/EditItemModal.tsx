@@ -166,6 +166,16 @@ export function EditItemModal({ productId, onClose, onSaved }: {
   //   - repointSupplierAlias: line is matched to a DIFFERENT product
   //     (duplicate-product consolidation) — POST /product-aliases/[id]/repoint
   const [linking, setLinking] = useState(false)
+  // Transient success indicator after a successful link/repoint. The link
+  // and repoint actions COMMIT immediately on click — there's no separate
+  // Save step — so we surface a brief "Linked" message so the owner knows
+  // their action took effect (otherwise the picker closes and they wonder
+  // if it saved).
+  const [linkSuccess, setLinkSuccess] = useState<string | null>(null)
+  function flashLinkSuccess(msg: string) {
+    setLinkSuccess(msg)
+    setTimeout(() => setLinkSuccess(null), 4000)
+  }
   async function linkSupplierLine(lineId: string) {
     setBusy(true); setErr(null)
     try {
@@ -183,6 +193,8 @@ export function EditItemModal({ productId, onClose, onSaved }: {
       }
       setLinking(false)
       await load()
+      flashLinkSuccess('Linked — cost history populated. No further save needed.')
+      onSaved?.()   // refresh parent so the items list reflects new link/price immediately
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
   async function repointSupplierAlias(aliasId: string, fromProductName: string | null) {
@@ -198,6 +210,8 @@ export function EditItemModal({ productId, onClose, onSaved }: {
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`)
       setLinking(false)
       await load()
+      flashLinkSuccess('Article repointed — cost history moved over.')
+      onSaved?.()
     } catch (e: any) { setErr(e.message) } finally { setBusy(false) }
   }
 
@@ -306,6 +320,20 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                       }}
                     >+ Link article</button>
                   </div>
+                  {linkSuccess && (
+                    <div style={{
+                      padding:      '6px 10px',
+                      marginBottom: 6,
+                      background:   '#e8f5e9',
+                      color:        '#2e7d32',
+                      border:       '0.5px solid #a5d6a7',
+                      borderRadius: 6,
+                      fontSize:     11,
+                      fontWeight:   500,
+                    }}>
+                      {linkSuccess}
+                    </div>
+                  )}
                   {data.aliases.length === 0 && (
                     <Empty>No supplier articles linked yet. Price comes from any override above, or stays empty until an invoice line matches. Use <strong>+ Link article</strong> to manually attach an existing supplier line.</Empty>
                   )}
