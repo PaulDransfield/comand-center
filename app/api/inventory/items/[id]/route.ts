@@ -280,6 +280,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.default_waste_pct = w
     }
   }
+  // M122 — weight_per_piece_g for count-based products (eggs, brioche,
+  // etc.). When the owner sets it manually the source flips to 'manual'
+  // so the backfill script never overwrites it. Bounds match the CHECK.
+  if (body.weight_per_piece_g !== undefined) {
+    if (body.weight_per_piece_g === null || body.weight_per_piece_g === '') {
+      patch.weight_per_piece_g      = null
+      patch.weight_per_piece_source = null
+    } else {
+      const v = Number(body.weight_per_piece_g)
+      if (!Number.isFinite(v) || v <= 0 || v > 100000) {
+        return NextResponse.json({ error: 'weight_per_piece_g must be > 0 and ≤ 100000' }, { status: 400 })
+      }
+      patch.weight_per_piece_g      = Math.round(v * 1000) / 1000
+      patch.weight_per_piece_source = 'manual'
+    }
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: 'no editable fields supplied' }, { status: 400 })
   }

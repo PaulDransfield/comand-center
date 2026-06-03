@@ -38,6 +38,8 @@ interface EditContextResponse {
     default_waste_pct: number
     price_override: number | null
     price_override_currency: string | null
+    weight_per_piece_g:      number | null   // M122
+    weight_per_piece_source: string | null   // M122 — manual / supplier_article / name_parsed
     archived_at: string | null
   }
   latest_cost: {
@@ -284,6 +286,31 @@ export function EditItemModal({ productId, onClose, onSaved }: {
                       </select>
                     </Field>
                   </div>
+                  {/* M122 — Weight per piece. Only relevant when the
+                      product is count-based (base_unit='st'); otherwise
+                      the field is hidden so it doesn't clutter the form.
+                      Lets a recipe ask "30 g of egg" against a KRT of 120
+                      pieces — engine converts via this value. */}
+                  {current.base_unit === 'st' && (
+                    <Field label="Weight per piece (g)">
+                      <input
+                        type="number" step="0.01" min="0"
+                        value={current.weight_per_piece_g ?? ''}
+                        onChange={e => setEdits(p => ({
+                          ...p,
+                          weight_per_piece_g: e.target.value === '' ? null : Number(e.target.value),
+                        }))}
+                        style={inputStyle}
+                        placeholder="e.g. 60 (an egg)"
+                      />
+                      <div style={{ fontSize: 9, color: UXP.ink4, marginTop: 3, lineHeight: 1.4 }}>
+                        Lets recipes that ask for grams of this item cost correctly.
+                        {current.weight_per_piece_source && (
+                          <> Source: <strong>{current.weight_per_piece_source}</strong>.</>
+                        )}
+                      </div>
+                    </Field>
+                  )}
                   <Field label="Default waste %">
                     <input type="number" step="1" min="0" max="95"
                       value={current.default_waste_pct ?? 0}
