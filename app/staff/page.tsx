@@ -374,6 +374,7 @@ function BestWorstStrip({ best, worst }: { best: any; worst: any }) {
             display:      'flex',
             gap:          12,
             alignItems:   'center',
+            flexWrap:     'wrap' as const,   // pill / date / pct wrap onto new lines on narrow widths
           }}>
             <span style={{
               padding:      '4px 10px',

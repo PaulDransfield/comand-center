@@ -603,14 +603,27 @@ function KpiStrip({
 }
 
 // ── Demand outlook (horizontal strip) ────────────────────────────────
+//
+// Each of the 7 days needs ~120px to be legible, so 7-up only fits
+// from ~880px viewport-width up. Below that we keep the same row but
+// let it scroll horizontally inside the Card — the page stays at the
+// container width and the user swipes through the week. Above tablet
+// width all 7 days fit side-by-side as before.
 function DemandOutlookStrip({ demand }: { demand: any }) {
   const days = demand.days as any[]
   return (
     <Card title="Demand outlook" subtitle={`Next ${days.length} days — weather × revenue correlation`}>
       <div style={{
+        overflowX: 'auto' as const,
+        WebkitOverflowScrolling: 'touch' as const,
+        margin:  '0 -16px',                 // bleed into card padding so the scroll fills it
+        padding: '0 16px',
+      }}>
+      <div style={{
         display:             'grid',
         gridTemplateColumns: `repeat(${Math.min(days.length, 7)}, minmax(120px, 1fr))`,
         gap:                 8,
+        minWidth:            `${Math.min(days.length, 7) * 120}px`,
       }}>
         {days.slice(0, 7).map((d: any) => {
           const isHoliday = d.is_holiday
@@ -678,6 +691,7 @@ function DemandOutlookStrip({ demand }: { demand: any }) {
             </div>
           )
         })}
+      </div>
       </div>
     </Card>
   )
